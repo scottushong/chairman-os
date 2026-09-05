@@ -3,6 +3,7 @@
 import { useMemo, useSyncExternalStore } from 'react'
 
 import { BusinessCard } from '@/components/dashboard/business-card'
+import { FinanceTrend } from '@/components/dashboard/finance-trend'
 import { KpiStrip } from '@/components/dashboard/kpi-strip'
 import { Icon } from '@/components/ui/icon'
 import { businesses, visibleBusinesses } from '@/data'
@@ -133,6 +134,8 @@ export function DashboardBoard() {
       </section>
 
       <KpiStrip businessIds={shown.map((b) => b.business_id)} />
+
+      <FinanceTrend businessIds={shown.map((b) => b.business_id)} />
     </div>
   )
 }

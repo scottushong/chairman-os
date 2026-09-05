@@ -35,7 +35,8 @@ export function KpiStrip({ businessIds }: { businessIds: string[] }) {
   return (
     <section aria-label="그룹 재무 KPI">
       <div className="mb-2 flex items-baseline gap-2">
-        <h2 className="text-[13px] font-semibold">그룹 전체 재무 현황</h2>
+        {/* '그룹 전체 재무 현황'은 아래 추이 카드(CH-025~026)가 쓴다. 같은 제목을 두 번 걸지 않는다. */}
+        <h2 className="text-[13px] font-semibold">그룹 KPI (당월)</h2>
         <span className="text-[11px] text-ink-muted tnum">
           {LATEST_PERIOD.replace('-', '년 ')}월 · 표시 중인 {businessIds.length}개사 합계
         </span>
