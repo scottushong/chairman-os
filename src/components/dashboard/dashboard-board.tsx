@@ -3,12 +3,12 @@
 import { useMemo, useState, useSyncExternalStore } from 'react'
 
 import { AddBusinessModal } from '@/components/dashboard/add-business-modal'
-import { BusinessCard } from '@/components/dashboard/business-card'
+import { BusinessCard, type BusinessMetrics } from '@/components/dashboard/business-card'
 import { FinanceTrend } from '@/components/dashboard/finance-trend'
 import { KpiStrip } from '@/components/dashboard/kpi-strip'
 import { Icon } from '@/components/ui/icon'
-import { businesses, visibleBusinesses } from '@/data'
-import type { Business } from '@/types'
+import { businessProgress, hasFinanceData, latestPeriodOf, valueOf } from '@/lib/finance'
+import type { Business, FinanceKpi, Project } from '@/types'
 import {
   getServerSnapshot,
   getSnapshot,
@@ -35,9 +35,18 @@ import {
  * Business 카드(CH-001~005)와 그룹 KPI(CH-006~010)를 한 상태 위에 올린다.
  * 카드를 숨기면 KPI 합계에서도 빠져야 하므로 표시 목록을 여기서 한 번만 들고 있는다.
  * 핀(CH-004)은 순서만 바꾼다 — 합계는 '표시 중'만 보므로 핀에 영향받지 않는다.
+ *
+ * 원천 데이터는 서버 컴포넌트가 repository에서 읽어 props로 내려준다.
+ * 이 파일이 시드를 직접 import 하면 live 모드에서도 시드가 그려진다.
  */
 
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+
+interface DashboardBoardProps {
+  businesses: Business[]
+  financeKpis: FinanceKpi[]
+  projects: Project[]
+}
 
 /**
  * 이니셜은 회사에 붙는 이름표다. sort_order 기준으로 한 번 정해 두고 고정한다.
@@ -51,30 +60,49 @@ function letterMap(all: Business[]): Map<string, string> {
   )
 }
 
-export function DashboardBoard() {
+export function DashboardBoard({ businesses, financeKpis, projects }: DashboardBoardProps) {
   const raw = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
   const hidden = useMemo(() => parseHidden(raw), [raw])
 
   const pinnedRaw = useSyncExternalStore(subscribePinned, pinnedSnapshot, pinnedServerSnapshot)
-  const pinned = useMemo(() => parsePinned(pinnedRaw), [pinnedRaw])
+  const pinned = useMemo(() => parsePinned(pinnedRaw, businesses), [pinnedRaw, businesses])
 
   const addedRaw = useSyncExternalStore(subscribeAdded, addedSnapshot, addedServerSnapshot)
   const added = useMemo(() => parseAdded(addedRaw), [addedRaw])
 
   const [adding, setAdding] = useState(false)
 
-  const letters = useMemo(() => letterMap([...businesses, ...added]), [added])
+  const letters = useMemo(() => letterMap([...businesses, ...added]), [businesses, added])
 
   /** 핀 우선, 그다음 sort_order. 드래그 순서(CH-005)는 아직 sort_order를 그대로 쓴다. */
   const ordered = useMemo(
     () =>
-      [...visibleBusinesses(), ...added.filter((b) => b.visible)].sort(
+      [...businesses.filter((b) => b.visible), ...added.filter((b) => b.visible)].sort(
         (a, b) =>
           Number(pinned.includes(b.business_id)) - Number(pinned.includes(a.business_id)) ||
           a.sort_order - b.sort_order,
       ),
-    [pinned, added],
+    [businesses, pinned, added],
   )
+
+  /**
+   * 카드 세 숫자를 여기서 한 번에 낸다. 카드마다 원천 배열을 훑으면
+   * 회사 수 × 지표 수만큼 같은 배열을 다시 도는 셈이 된다.
+   */
+  const metrics = useMemo(() => {
+    const period = latestPeriodOf(financeKpis)
+    return new Map<string, BusinessMetrics>(
+      ordered.map((b) => [
+        b.business_id,
+        {
+          revenue: valueOf(financeKpis, b.business_id, 'Revenue', period),
+          ebitda: valueOf(financeKpis, b.business_id, 'EBITDA', period),
+          progress: businessProgress(projects, b.business_id),
+          hasFinance: hasFinanceData(financeKpis, b.business_id),
+        },
+      ]),
+    )
+  }, [ordered, financeKpis, projects])
 
   function toggle(businessId: string) {
     setHidden(
@@ -95,6 +123,8 @@ export function DashboardBoard() {
   const shown = ordered.filter((b) => !hidden.includes(b.business_id))
   const hiddenList = ordered.filter((b) => hidden.includes(b.business_id))
 
+  const empty: BusinessMetrics = { revenue: 0, ebitda: 0, progress: 0, hasFinance: false }
+
   return (
     <div className="space-y-5">
       <section aria-label="내 비즈니스">
@@ -112,6 +142,7 @@ export function DashboardBoard() {
             <div key={b.business_id} className="min-w-[212px] flex-1">
               <BusinessCard
                 business={b}
+                metrics={metrics.get(b.business_id) ?? empty}
                 letter={letters.get(b.business_id) ?? '?'}
                 pinned={pinned.includes(b.business_id)}
                 onToggleVisible={toggle}
@@ -152,9 +183,9 @@ export function DashboardBoard() {
         ) : null}
       </section>
 
-      <KpiStrip businessIds={shown.map((b) => b.business_id)} />
+      <KpiStrip kpis={financeKpis} businessIds={shown.map((b) => b.business_id)} />
 
-      <FinanceTrend businessIds={shown.map((b) => b.business_id)} />
+      <FinanceTrend kpis={financeKpis} businessIds={shown.map((b) => b.business_id)} />
 
       {adding ? (
         <AddBusinessModal onClose={() => setAdding(false)} onCreate={addBusiness} />

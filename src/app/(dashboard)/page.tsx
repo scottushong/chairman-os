@@ -5,14 +5,25 @@ import { DecisionPanel } from '@/components/dashboard/decision-panel'
 import { StrategicCoordinates } from '@/components/dashboard/strategic-coordinates'
 import { WaitingOnMe } from '@/components/dashboard/waiting-on-me'
 import { Icon } from '@/components/ui/icon'
+import { getRepository, loadDashboard } from '@/lib/repository'
 
 /**
  * 메인 대시보드. CH-001~019가 모두 올라와 있다.
+ *
+ * 데이터를 읽는 유일한 자리다. 서버에서 한 번에 다 읽어 아래 컴포넌트로 내려 준다.
+ * 패널마다 각자 읽게 두면 live 모드에서 한 화면에 왕복이 열 번 넘게 생기고,
+ * 화면 조각마다 다른 시점의 숫자를 보여 주게 된다.
+ *
+ * 어느 어댑터로 붙는지(시드냐 Supabase냐)는 getRepository()만 안다 —
+ * 이 파일도, 아래 컴포넌트도 그걸 알 필요가 없다.
  */
 
 const TABS = ['전체 요약', '중요 지표', '예산 vs 실적', '리스크', 'AI 요약'] as const
 
-export default function DashboardPage() {
+export default async function DashboardPage() {
+  const repo = await getRepository()
+  const data = await loadDashboard(repo)
+
   const today = new Intl.DateTimeFormat('ko-KR', {
     year: 'numeric',
     month: 'long',
@@ -61,26 +72,44 @@ export default function DashboardPage() {
       </div>
 
       <div className="mt-4 space-y-5">
-        <DashboardBoard />
-        <StrategicCoordinates />
+        <DashboardBoard
+          businesses={data.businesses}
+          financeKpis={data.financeKpis}
+          projects={data.projects}
+        />
+        <StrategicCoordinates
+          topGoals={data.topGoals}
+          monthlyPriorities={data.monthlyPriorities}
+          criticalRisks={data.criticalRisks}
+          nextMilestones={data.nextMilestones}
+          businesses={data.businesses}
+        />
       </div>
 
       <div className="mt-5 grid grid-cols-12 gap-3.5 pb-6">
         {/* 결정 → 대기 → 알림 → 야간 AI. 아침에 훑는 순서 그대로 왼쪽에서 오른쪽으로 놓는다. */}
         <div className="col-span-12 h-[268px] lg:col-span-6 xl:col-span-3">
-          <DecisionPanel />
+          <DecisionPanel decisions={data.decisions} businesses={data.businesses} />
         </div>
 
         <div className="col-span-12 h-[268px] lg:col-span-6 xl:col-span-3">
-          <WaitingOnMe />
+          <WaitingOnMe
+            tasks={data.tasks}
+            projects={data.projects}
+            businesses={data.businesses}
+          />
         </div>
 
         <div className="col-span-12 h-[268px] lg:col-span-6 xl:col-span-3">
-          <AlertPanel />
+          <AlertPanel
+            alerts={data.alerts}
+            decisions={data.decisions}
+            businesses={data.businesses}
+          />
         </div>
 
         <div className="col-span-12 h-[268px] lg:col-span-6 xl:col-span-3">
-          <AiNightPanel />
+          <AiNightPanel outputs={data.aiNightOutputs} businesses={data.businesses} />
         </div>
       </div>
     </div>

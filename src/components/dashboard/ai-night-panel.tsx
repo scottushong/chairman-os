@@ -1,8 +1,8 @@
 import Link from 'next/link'
 
 import { Icon } from '@/components/ui/icon'
-import { aiNightOutputs, businessName } from '@/data'
-import type { AiNightOutput } from '@/types'
+import { businessName } from '@/lib/lookup'
+import type { AiNightOutput, Business } from '@/types'
 
 /**
  * CH-019 AI Did Last Night.
@@ -13,9 +13,14 @@ import type { AiNightOutput } from '@/types'
 /** 0.7 미만은 사람이 한 번 더 봐야 하는 결과다. 같은 크기로 나란히 두지 않는다. */
 const CONFIDENCE_FLOOR = 0.7
 
-export function AiNightPanel() {
+interface AiNightPanelProps {
+  outputs: AiNightOutput[]
+  businesses: Business[]
+}
+
+export function AiNightPanel({ outputs, businesses }: AiNightPanelProps) {
   // 최근 완료 순. 아침에 열면 마지막에 끝난 일이 맨 위에 있어야 한다.
-  const items = [...aiNightOutputs].sort((a, b) => b.completed_at.localeCompare(a.completed_at))
+  const items = [...outputs].sort((a, b) => b.completed_at.localeCompare(a.completed_at))
   const lastRun = items[0]?.completed_at
 
   return (
@@ -34,14 +39,18 @@ export function AiNightPanel() {
 
       <ul className="-mx-1.5 mt-2 flex-1 space-y-0.5 overflow-y-auto">
         {items.map((item) => (
-          <NightItem key={`${item.completed_at}-${item.business_id}`} item={item} />
+          <NightItem
+            key={`${item.completed_at}-${item.business_id}`}
+            item={item}
+            businesses={businesses}
+          />
         ))}
       </ul>
     </section>
   )
 }
 
-function NightItem({ item }: { item: AiNightOutput }) {
+function NightItem({ item, businesses }: { item: AiNightOutput; businesses: Business[] }) {
   const pct = Math.round(item.confidence * 100)
   const low = item.confidence < CONFIDENCE_FLOOR
 
@@ -58,7 +67,7 @@ function NightItem({ item }: { item: AiNightOutput }) {
             {item.job_type}
           </span>
           <span className="truncate text-[11px] text-ink-muted">
-            {businessName(item.business_id)}
+            {businessName(businesses, item.business_id)}
           </span>
           {item.status !== 'Done' ? (
             <span

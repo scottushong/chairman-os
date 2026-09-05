@@ -1,5 +1,4 @@
 import { Icon } from '@/components/ui/icon'
-import { valueOf, businessProgress, hasFinanceData } from '@/lib/finance'
 import { formatEok, formatPct } from '@/lib/format'
 import { STATUS_LABEL_KO, type Business } from '@/types'
 
@@ -28,8 +27,22 @@ const TONE: Record<string, { badge: string; bar: string; track: string }> = {
 
 const FALLBACK_TONE = { badge: 'bg-raised text-ink-dim', bar: 'bg-accent', track: 'bg-accent/15' }
 
+/**
+ * 카드에 올릴 숫자. 카드가 원천 배열을 통째로 받지 않는 이유는,
+ * 회사 수만큼 같은 배열을 다시 훑게 되기 때문이다. 집계는 부모가 한 번만 한다.
+ */
+export interface BusinessMetrics {
+  revenue: number
+  ebitda: number
+  /** DEFERRED D-04 결정 C. 목표 대비가 아니라 프로젝트 진행률 평균이다. */
+  progress: number
+  /** 재무 원천이 아예 없는 회사인가. 0억으로 쓰면 적자 0원처럼 읽힌다. */
+  hasFinance: boolean
+}
+
 interface BusinessCardProps {
   business: Business
+  metrics: BusinessMetrics
   /** 카드 좌상단 이니셜. 회사마다 고정이다 — 핀/숨김으로 순서가 바뀌어도 따라 움직이지 않는다. */
   letter: string
   /** CH-004. 시드 pinned가 아니라 사용자 설정 기준의 현재 상태. */
@@ -40,17 +53,14 @@ interface BusinessCardProps {
 
 export function BusinessCard({
   business,
+  metrics,
   letter,
   pinned,
   onToggleVisible,
   onTogglePinned,
 }: BusinessCardProps) {
   const tone = TONE[business.business_id] ?? FALLBACK_TONE
-  const revenue = valueOf(business.business_id, 'Revenue')
-  const ebitda = valueOf(business.business_id, 'EBITDA')
-  const progress = businessProgress(business.business_id)
-  // 방금 추가한 회사(CH-002)는 아직 재무 원천이 없다. 0억으로 쓰면 적자 0원처럼 읽힌다.
-  const hasFinance = hasFinanceData(business.business_id)
+  const { revenue, ebitda, progress, hasFinance } = metrics
 
   return (
     <article className="flex h-full flex-col rounded-xl border border-line-soft bg-panel p-3.5">

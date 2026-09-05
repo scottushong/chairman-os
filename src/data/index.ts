@@ -48,21 +48,8 @@ export const monthlyPriorities = strategyJson.monthly_priorities as MonthlyPrior
 export const criticalRisks = strategyJson.critical_risks as CriticalRisk[]
 export const nextMilestones = strategyJson.next_milestones as NextMilestone[]
 
-/** 시드가 담고 있는 마지막 마감 기간. 대시보드 기본 조회 월이다. */
-export const LATEST_PERIOD = '2026-08'
-
-/** 화면에 노출할 회사만, Pin 우선 · sort_order 순으로. CH-003/004/005. */
-export function visibleBusinesses(): Business[] {
-  return businesses
-    .filter((b) => b.visible)
-    .sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.sort_order - b.sort_order)
-}
-
-export function businessName(businessId: string): string {
-  return businesses.find((b) => b.business_id === businessId)?.name ?? businessId
-}
-
-/** Task는 회사를 직접 들고 있지 않다. project를 거쳐야 회사가 나온다(CH-017 그룹핑). */
-export function businessOfProject(projectId: string): string {
-  return projects.find((p) => p.project_id === projectId)?.business_id ?? 'unknown'
-}
+/**
+ * 여기 있던 조회·정렬 헬퍼(LATEST_PERIOD / visibleBusinesses / businessName / businessOfProject)는
+ * lib/finance.ts와 lib/lookup.ts로 옮겼다. 그 함수들이 시드를 직접 읽는 한
+ * live 모드 화면에도 시드 값이 섞여 나오기 때문이다. 이 파일은 이제 시드를 내보내기만 한다.
+ */

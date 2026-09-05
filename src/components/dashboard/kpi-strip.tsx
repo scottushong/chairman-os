@@ -1,9 +1,8 @@
 import { Icon } from '@/components/ui/icon'
 import { Sparkline } from '@/components/ui/sparkline'
-import { LATEST_PERIOD } from '@/data'
-import { deltaPct, groupSeries } from '@/lib/finance'
+import { deltaPct, groupSeries, latestPeriodOf } from '@/lib/finance'
 import { formatDeltaPct, formatEok } from '@/lib/format'
-import type { FinanceMetric } from '@/types'
+import type { FinanceKpi, FinanceMetric } from '@/types'
 
 /**
  * CH-006~010 그룹 KPI 스트립.
@@ -31,29 +30,47 @@ const KPIS: KpiSpec[] = [
   { metric: 'AP', label: '매입채무', upIsGood: false, spec: 'CH-010' },
 ]
 
-export function KpiStrip({ businessIds }: { businessIds: string[] }) {
+interface KpiStripProps {
+  /** 원천. repository가 준 그대로다 — 여기서 따로 필터하지 않는다. */
+  kpis: FinanceKpi[]
+  businessIds: string[]
+}
+
+export function KpiStrip({ kpis, businessIds }: KpiStripProps) {
+  // 표시 월은 데이터가 정한다. 상수로 박아 두면 다음 달 실적이 들어와도 화면이 안 움직인다.
+  const period = latestPeriodOf(kpis)
+
   return (
     <section aria-label="그룹 재무 KPI">
       <div className="mb-2 flex items-baseline gap-2">
         {/* '그룹 전체 재무 현황'은 아래 추이 카드(CH-025~026)가 쓴다. 같은 제목을 두 번 걸지 않는다. */}
         <h2 className="text-[13px] font-semibold">그룹 KPI (당월)</h2>
         <span className="text-[11px] text-ink-muted tnum">
-          {LATEST_PERIOD.replace('-', '년 ')}월 · 표시 중인 {businessIds.length}개사 합계
+          {period ? `${period.replace('-', '년 ')}월` : '기간 없음'} · 표시 중인{' '}
+          {businessIds.length}개사 합계
         </span>
       </div>
 
       <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 xl:grid-cols-8">
         {KPIS.map((kpi) => (
-          <KpiTile key={kpi.metric} kpi={kpi} businessIds={businessIds} />
+          <KpiTile key={kpi.metric} kpi={kpi} kpis={kpis} businessIds={businessIds} />
         ))}
       </div>
     </section>
   )
 }
 
-function KpiTile({ kpi, businessIds }: { kpi: KpiSpec; businessIds: string[] }) {
-  const series = groupSeries(kpi.metric, businessIds)
-  const current = series[series.length - 1]
+function KpiTile({
+  kpi,
+  kpis,
+  businessIds,
+}: {
+  kpi: KpiSpec
+  kpis: FinanceKpi[]
+  businessIds: string[]
+}) {
+  const series = groupSeries(kpis, kpi.metric, businessIds)
+  const current = series[series.length - 1] ?? 0
   const delta = deltaPct(series)
 
   // 색은 '방향 × 그 방향이 좋은지'로 정한다. 화살표를 같이 달아 색만으로 읽히지 않게 한다.

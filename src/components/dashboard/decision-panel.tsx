@@ -3,7 +3,7 @@
 import { useMemo, useSyncExternalStore } from 'react'
 
 import { Icon } from '@/components/ui/icon'
-import { businessName, decisions } from '@/data'
+import { businessName } from '@/lib/lookup'
 import {
   DECISION_ACTION,
   DECISION_ACTION_LABEL_KO,
@@ -17,7 +17,12 @@ import {
   type DecisionAction,
 } from '@/lib/decision-log'
 import { dDay, dayKey, formatDDay } from '@/lib/format'
-import { WORK_PRIORITY_LABEL_KO, type Decision, type WorkPriority } from '@/types'
+import {
+  WORK_PRIORITY_LABEL_KO,
+  type Business,
+  type Decision,
+  type WorkPriority,
+} from '@/types'
 
 /**
  * CH-015 Today Decisions + CH-016 Approve/Reject.
@@ -38,7 +43,12 @@ const IMPACT_TONE: Record<WorkPriority, string> = {
 
 const IMPACT_RANK: Record<WorkPriority, number> = { Critical: 4, High: 3, Medium: 2, Low: 1 }
 
-export function DecisionPanel() {
+interface DecisionPanelProps {
+  decisions: Decision[]
+  businesses: Business[]
+}
+
+export function DecisionPanel({ decisions, businesses }: DecisionPanelProps) {
   const raw = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
   const log = useMemo(() => parseLog(raw), [raw])
   const handled = useMemo(() => latestByDecision(log), [log])
@@ -77,7 +87,12 @@ export function DecisionPanel() {
       ) : (
         <ul className="-mx-1.5 mt-2 flex-1 space-y-1 overflow-y-auto">
           {open.map((d) => (
-            <DecisionItem key={d.decision_id} decision={d} onAct={act} />
+            <DecisionItem
+              key={d.decision_id}
+              decision={d}
+              businesses={businesses}
+              onAct={act}
+            />
           ))}
         </ul>
       )}
@@ -87,9 +102,11 @@ export function DecisionPanel() {
 
 function DecisionItem({
   decision,
+  businesses,
   onAct,
 }: {
   decision: Decision
+  businesses: Business[]
   onAct: (decisionId: string, action: DecisionAction) => void
 }) {
   // 마감이 지난 건은 D+로 뜬다. 이건 색을 줘야 하는 상태다.
@@ -104,7 +121,7 @@ function DecisionItem({
           {WORK_PRIORITY_LABEL_KO[decision.impact]}
         </span>
         <span className="truncate text-[11px] text-ink-muted">
-          {businessName(decision.business_id)}
+          {businessName(businesses, decision.business_id)}
         </span>
         <span
           className={`ml-auto shrink-0 text-[11px] font-semibold tnum ${

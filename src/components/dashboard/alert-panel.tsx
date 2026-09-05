@@ -1,8 +1,8 @@
 import Link from 'next/link'
 
 import { Icon } from '@/components/ui/icon'
-import { alerts, businessName, decisions } from '@/data'
-import { SEVERITY_LABEL_KO, type Alert } from '@/types'
+import { businessName } from '@/lib/lookup'
+import { SEVERITY_LABEL_KO, type Alert, type Business, type Decision } from '@/types'
 
 /**
  * CH-018 Red Alert.
@@ -27,7 +27,14 @@ const CATEGORY_ICON: Record<string, 'coin' | 'cart' | 'factory' | 'file-text' | 
     HR: 'users',
   }
 
-export function AlertPanel() {
+interface AlertPanelProps {
+  alerts: Alert[]
+  /** '관련 결정으로 이동'을 만들려면 열린 결정 목록이 필요하다. */
+  decisions: Decision[]
+  businesses: Business[]
+}
+
+export function AlertPanel({ alerts, decisions, businesses }: AlertPanelProps) {
   const open = alerts.filter((a) => a.status !== 'Resolved')
   const critical = open.filter((a) => a.severity === 'Critical')
   const warningCount = open.filter((a) => a.severity === 'Warning').length
@@ -59,7 +66,7 @@ export function AlertPanel() {
       ) : (
         <ul className="-mx-1.5 mt-2 flex-1 space-y-0.5 overflow-y-auto">
           {critical.map((a) => (
-            <AlertItem key={a.alert_id} alert={a} />
+            <AlertItem key={a.alert_id} alert={a} decisions={decisions} businesses={businesses} />
           ))}
         </ul>
       )}
@@ -67,7 +74,15 @@ export function AlertPanel() {
   )
 }
 
-function AlertItem({ alert }: { alert: Alert }) {
+function AlertItem({
+  alert,
+  decisions,
+  businesses,
+}: {
+  alert: Alert
+  decisions: Decision[]
+  businesses: Business[]
+}) {
   // 같은 회사에 열린 결정이 있으면 그 결정으로 보낸다. 알림만 보고 끝나면 아무 일도 안 일어난다.
   const linked = decisions.find((d) => d.business_id === alert.business_id && d.status === 'Open')
 
@@ -85,7 +100,7 @@ function AlertItem({ alert }: { alert: Alert }) {
             {SEVERITY_LABEL_KO[alert.severity]}
           </span>
           <span className="truncate text-[11px] text-ink-muted">
-            {businessName(alert.business_id)}
+            {businessName(businesses, alert.business_id)}
           </span>
           <span className="ml-auto shrink-0 text-[9px] text-ink-muted">{alert.source}</span>
         </div>
