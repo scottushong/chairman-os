@@ -371,6 +371,9 @@ create trigger audit_log_no_delete before delete on audit_log
   for each row execute function audit_log_is_append_only();
 
 revoke update, delete on audit_log from anon, authenticated;
+-- TRUNCATE는 행 트리거가 잡지 못한다. 위 append-only 트리거를 그냥 지나간다.
+-- 기본값으로도 없는 권한이지만, 나중에 누가 grant all 한 줄을 쓰는 날을 대비해 명시적으로 회수한다.
+revoke truncate on audit_log from anon, authenticated;
 
 -- ---------------------------------------------------------------------
 -- 15. user_settings (CH-003 / CH-004 / CH-056)
