@@ -5,7 +5,7 @@ import { useMemo, useSyncExternalStore } from 'react'
 import { BusinessCard } from '@/components/dashboard/business-card'
 import { KpiStrip } from '@/components/dashboard/kpi-strip'
 import { Icon } from '@/components/ui/icon'
-import { visibleBusinesses } from '@/data'
+import { businesses, visibleBusinesses } from '@/data'
 import {
   getServerSnapshot,
   getSnapshot,
@@ -13,26 +13,63 @@ import {
   setHidden,
   subscribe,
 } from '@/lib/hidden-businesses'
+import {
+  getServerSnapshot as pinnedServerSnapshot,
+  getSnapshot as pinnedSnapshot,
+  parsePinned,
+  setPinned,
+  subscribe as subscribePinned,
+} from '@/lib/pinned-businesses'
 
 /**
  * Business 카드(CH-001~005)와 그룹 KPI(CH-006~010)를 한 상태 위에 올린다.
  * 카드를 숨기면 KPI 합계에서도 빠져야 하므로 표시 목록을 여기서 한 번만 들고 있는다.
+ * 핀(CH-004)은 순서만 바꾼다 — 합계는 '표시 중'만 보므로 핀에 영향받지 않는다.
  */
 
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 
-export function DashboardBoard() {
-  /** 시드 기준 Pin 우선 정렬. 순서는 CH-005에서 손댈 자리고 지금은 고정이다. */
-  const ordered = visibleBusinesses()
+/**
+ * 이니셜은 회사에 붙는 이름표다. sort_order 기준으로 한 번 정해 두고 고정한다.
+ * 화면 순서로 매기면 핀을 누를 때마다 A와 B가 자리를 바꿔 카드를 다시 읽어야 한다.
+ */
+const LETTER_BY_ID = new Map(
+  [...businesses]
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map((b, i) => [b.business_id, LETTERS[i] ?? '?'] as const),
+)
 
+export function DashboardBoard() {
   const raw = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
   const hidden = useMemo(() => parseHidden(raw), [raw])
+
+  const pinnedRaw = useSyncExternalStore(subscribePinned, pinnedSnapshot, pinnedServerSnapshot)
+  const pinned = useMemo(() => parsePinned(pinnedRaw), [pinnedRaw])
+
+  /** 핀 우선, 그다음 sort_order. 드래그 순서(CH-005)는 아직 sort_order를 그대로 쓴다. */
+  const ordered = useMemo(
+    () =>
+      [...visibleBusinesses()].sort(
+        (a, b) =>
+          Number(pinned.includes(b.business_id)) - Number(pinned.includes(a.business_id)) ||
+          a.sort_order - b.sort_order,
+      ),
+    [pinned],
+  )
 
   function toggle(businessId: string) {
     setHidden(
       hidden.includes(businessId)
         ? hidden.filter((id) => id !== businessId)
         : [...hidden, businessId],
+    )
+  }
+
+  function togglePin(businessId: string) {
+    setPinned(
+      pinned.includes(businessId)
+        ? pinned.filter((id) => id !== businessId)
+        : [...pinned, businessId],
     )
   }
 
@@ -56,8 +93,10 @@ export function DashboardBoard() {
             <div key={b.business_id} className="min-w-[212px] flex-1">
               <BusinessCard
                 business={b}
-                letter={LETTERS[ordered.indexOf(b)] ?? '?'}
+                letter={LETTER_BY_ID.get(b.business_id) ?? '?'}
+                pinned={pinned.includes(b.business_id)}
                 onToggleVisible={toggle}
+                onTogglePinned={togglePin}
               />
             </div>
           ))}

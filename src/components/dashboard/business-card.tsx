@@ -30,12 +30,21 @@ const FALLBACK_TONE = { badge: 'bg-raised text-ink-dim', bar: 'bg-accent', track
 
 interface BusinessCardProps {
   business: Business
-  /** 카드 좌상단 이니셜. 표시 순서대로 A, B, C…를 붙인다. */
+  /** 카드 좌상단 이니셜. 회사마다 고정이다 — 핀/숨김으로 순서가 바뀌어도 따라 움직이지 않는다. */
   letter: string
+  /** CH-004. 시드 pinned가 아니라 사용자 설정 기준의 현재 상태. */
+  pinned: boolean
   onToggleVisible: (businessId: string) => void
+  onTogglePinned: (businessId: string) => void
 }
 
-export function BusinessCard({ business, letter, onToggleVisible }: BusinessCardProps) {
+export function BusinessCard({
+  business,
+  letter,
+  pinned,
+  onToggleVisible,
+  onTogglePinned,
+}: BusinessCardProps) {
   const tone = TONE[business.business_id] ?? FALLBACK_TONE
   const revenue = valueOf(business.business_id, 'Revenue')
   const ebitda = valueOf(business.business_id, 'EBITDA')
@@ -43,7 +52,7 @@ export function BusinessCard({ business, letter, onToggleVisible }: BusinessCard
 
   return (
     <article className="flex h-full flex-col rounded-xl border border-line-soft bg-panel p-3.5">
-      <div className="flex items-start gap-2.5">
+      <div className="flex items-start gap-2">
         <span
           className={`flex size-8 shrink-0 items-center justify-center rounded-lg text-[13px] font-bold ${tone.badge}`}
         >
@@ -61,6 +70,20 @@ export function BusinessCard({ business, letter, onToggleVisible }: BusinessCard
             ) : null}
           </p>
         </div>
+
+        {/* CH-004. 핀은 정렬만 바꾼다 — 그룹 KPI 합계에는 영향이 없다. */}
+        <button
+          type="button"
+          onClick={() => onTogglePinned(business.business_id)}
+          title={pinned ? '상단 고정 해제' : '상단에 고정'}
+          aria-label={`${business.name} ${pinned ? '고정 해제' : '고정'}`}
+          aria-pressed={pinned}
+          className={`rounded-md p-1 transition-colors hover:bg-raised ${
+            pinned ? 'text-gold' : 'text-ink-muted hover:text-ink'
+          }`}
+        >
+          <Icon name="pin" className="size-4" filled={pinned} />
+        </button>
 
         {/* CH-003. 데이터 삭제가 아니라 표시 여부만 바꾼다는 걸 말로 붙여 둔다. */}
         <button
