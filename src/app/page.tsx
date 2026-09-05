@@ -1,9 +1,11 @@
+import { AiNightPanel } from '@/components/dashboard/ai-night-panel'
 import { DashboardBoard } from '@/components/dashboard/dashboard-board'
+import { StrategicCoordinates } from '@/components/dashboard/strategic-coordinates'
 import { Icon } from '@/components/ui/icon'
 
 /**
  * 메인 대시보드.
- * CH-001~010은 붙었고, 아래 자리표시자 순서대로 CH-011~019가 들어온다.
+ * CH-001~014와 CH-019는 붙었고, 아래 자리표시자 순서대로 CH-015~018이 들어온다.
  */
 
 const TABS = ['전체 요약', '중요 지표', '예산 vs 실적', '리스크', 'AI 요약'] as const
@@ -11,32 +13,18 @@ const TABS = ['전체 요약', '중요 지표', '예산 vs 실적', '리스크',
 /** 다음 단계에 채울 영역. 무엇이 어디에 들어가는지 화면에서 바로 보이게 둔다. */
 const SLOTS: { id: string; title: string; note: string; span: string; height: string }[] = [
   {
-    id: 'CH-011~014',
-    title: 'Strategic Coordinates',
-    note: 'Top Goal · Monthly Priority · Critical Risk · Next Milestone',
-    span: 'col-span-12',
-    height: 'h-[128px]',
-  },
-  {
     id: 'CH-015~017',
     title: '내 결정 사항 / Waiting on Me',
     note: '오늘 결정할 3~5건 · 승인/거절/수정/위임',
     span: 'col-span-12 lg:col-span-4',
-    height: 'h-[232px]',
+    height: 'h-[268px]',
   },
   {
     id: 'CH-018',
     title: '알림 / 리스크',
     note: 'Cash · AR · 생산 · 품질 · 계약 · HR Red Alert',
     span: 'col-span-12 lg:col-span-4',
-    height: 'h-[232px]',
-  },
-  {
-    id: 'CH-019',
-    title: 'AI Did Last Night',
-    note: '야간 AI 완료 작업 · 결과물 링크 · Task 전환',
-    span: 'col-span-12 lg:col-span-4',
-    height: 'h-[232px]',
+    height: 'h-[268px]',
   },
 ]
 
@@ -88,8 +76,9 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      <div className="mt-4">
+      <div className="mt-4 space-y-5">
         <DashboardBoard />
+        <StrategicCoordinates />
       </div>
 
       <div className="mt-5 grid grid-cols-12 gap-3.5 pb-6">
@@ -107,6 +96,11 @@ export default function DashboardPage() {
             <p className="mt-1.5 text-[12px] text-ink-muted">{slot.note}</p>
           </section>
         ))}
+
+        {/* CH-019는 완성됐다. 나머지 두 자리가 채워질 때까지 같은 줄에 함께 선다. */}
+        <div className="col-span-12 h-[268px] lg:col-span-4">
+          <AiNightPanel />
+        </div>
       </div>
     </div>
   )
