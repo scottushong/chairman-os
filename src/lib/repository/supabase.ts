@@ -1,4 +1,5 @@
-import { insertRows, selectRows, type RequestContext } from '@/lib/supabase/client'
+import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js'
+
 import type {
   AiNightOutput,
   Alert,
@@ -29,8 +30,9 @@ import type { ChairmanRepository, DecisionAuditEntry } from './types'
  *   2) 담당자: DB는 owner_user_id(uuid), 앱은 owner(문자열).
  * 이 매핑이 컴포넌트로 새 나가면 화면이 DB 모양을 알게 되고, 그때부터 갈아 끼울 수 없다.
  *
- * 읽기는 서버에서만 부른다. ctx.accessToken이 없으면 anon으로 나가고,
- * RLS(0002_rls.sql)가 Default Deny라 빈 배열이 돌아오는 게 정상 동작이다.
+ * 클라이언트는 밖에서 주입받는다. 서버 컴포넌트면 쿠키 세션이 실린 것이 들어오고,
+ * 로그인 전이면 anon으로 나간다. RLS(0002_rls.sql)가 Default Deny라
+ * 그때 빈 배열이 돌아오는 것은 고장이 아니라 정상 동작이다.
  */
 
 const GROUP = 'group'
@@ -157,16 +159,23 @@ interface NightOutputRow {
   completed_at: string
 }
 
-export function createSupabaseRepository(ctx: RequestContext = {}): ChairmanRepository {
+/** PostgREST 오류는 삼키지 않는다. RLS 거부(401/403)와 스키마 오류(42P01)를 구분해야 고칠 수 있다. */
+function unwrap<T>(table: string, data: T[] | null, error: PostgrestError | null): T[] {
+  if (error) throw new Error(`Supabase ${table} ${error.code ?? '?'}: ${error.message}`)
+  return data ?? []
+}
+
+export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository {
   return {
     mode: 'live',
 
     async listBusinesses(): Promise<Business[]> {
-      const rows = await selectRows<BusinessRow>(
-        'businesses',
-        { order: { column: 'sort_order' } },
-        ctx,
-      )
+      const { data, error } = await sb
+        .from('businesses')
+        .select('*')
+        .order('sort_order')
+        .returns<BusinessRow[]>()
+      const rows = unwrap('businesses', data, error)
       return rows.map((r) => ({
         business_id: r.business_id,
         name: r.name,
@@ -180,11 +189,13 @@ export function createSupabaseRepository(ctx: RequestContext = {}): ChairmanRepo
     },
 
     async listFinanceKpis(): Promise<FinanceKpi[]> {
-      const rows = await selectRows<FinanceKpiRow>(
-        'finance_kpis',
-        { select: 'period,business_id,metric,value,target,currency', order: { column: 'period' } },
-        ctx,
-      )
+      const { data, error } = await sb
+        .from('finance_kpis')
+        // 필요한 칸만 부른다. RLS로 가려진 컬럼을 넓게 부르면 실수가 늦게 드러난다.
+        .select('period,business_id,metric,value,target,currency')
+        .order('period')
+        .returns<FinanceKpiRow[]>()
+      const rows = unwrap('finance_kpis', data, error)
       return rows.map((r) => ({
         period: r.period,
         business_id: r.business_id,
@@ -196,7 +207,8 @@ export function createSupabaseRepository(ctx: RequestContext = {}): ChairmanRepo
     },
 
     async listProjects(): Promise<Project[]> {
-      const rows = await selectRows<ProjectRow>('projects', {}, ctx)
+      const { data, error } = await sb.from('projects').select('*').returns<ProjectRow[]>()
+      const rows = unwrap('projects', data, error)
       return rows.map((r) => ({
         project_id: r.project_id,
         business_id: r.business_id,
@@ -210,7 +222,8 @@ export function createSupabaseRepository(ctx: RequestContext = {}): ChairmanRepo
     },
 
     async listTasks(): Promise<Task[]> {
-      const rows = await selectRows<TaskRow>('tasks', {}, ctx)
+      const { data, error } = await sb.from('tasks').select('*').returns<TaskRow[]>()
+      const rows = unwrap('tasks', data, error)
       return rows.map((r) => ({
         task_id: r.task_id,
         project_id: r.project_id,
@@ -225,11 +238,12 @@ export function createSupabaseRepository(ctx: RequestContext = {}): ChairmanRepo
     },
 
     async listDecisions(): Promise<Decision[]> {
-      const rows = await selectRows<DecisionRow>(
-        'decisions',
-        { order: { column: 'deadline' } },
-        ctx,
-      )
+      const { data, error } = await sb
+        .from('decisions')
+        .select('*')
+        .order('deadline')
+        .returns<DecisionRow[]>()
+      const rows = unwrap('decisions', data, error)
       return rows.map((r) => ({
         decision_id: r.decision_id,
         business_id: r.business_id,
@@ -243,7 +257,8 @@ export function createSupabaseRepository(ctx: RequestContext = {}): ChairmanRepo
     },
 
     async listAlerts(): Promise<Alert[]> {
-      const rows = await selectRows<AlertRow>('alerts', {}, ctx)
+      const { data, error } = await sb.from('alerts').select('*').returns<AlertRow[]>()
+      const rows = unwrap('alerts', data, error)
       return rows.map((r) => ({
         alert_id: r.alert_id,
         business_id: r.business_id,
@@ -256,11 +271,12 @@ export function createSupabaseRepository(ctx: RequestContext = {}): ChairmanRepo
     },
 
     async listAiNightOutputs(): Promise<AiNightOutput[]> {
-      const rows = await selectRows<NightOutputRow>(
-        'ai_night_outputs',
-        { order: { column: 'completed_at', ascending: false } },
-        ctx,
-      )
+      const { data, error } = await sb
+        .from('ai_night_outputs')
+        .select('*')
+        .order('completed_at', { ascending: false })
+        .returns<NightOutputRow[]>()
+      const rows = unwrap('ai_night_outputs', data, error)
       return rows.map((r) => ({
         completed_at: r.completed_at,
         business_id: r.business_id,
@@ -273,7 +289,8 @@ export function createSupabaseRepository(ctx: RequestContext = {}): ChairmanRepo
     },
 
     async listTopGoals(): Promise<TopGoal[]> {
-      const rows = await selectRows<GoalRow>('goals', {}, ctx)
+      const { data, error } = await sb.from('goals').select('*').returns<GoalRow[]>()
+      const rows = unwrap('goals', data, error)
       return rows.map((r) => ({
         goal_id: r.goal_id,
         business_id: toScope(r.business_id),
@@ -286,7 +303,11 @@ export function createSupabaseRepository(ctx: RequestContext = {}): ChairmanRepo
     },
 
     async listMonthlyPriorities(): Promise<MonthlyPriority[]> {
-      const rows = await selectRows<PriorityRow>('monthly_priorities', {}, ctx)
+      const { data, error } = await sb
+        .from('monthly_priorities')
+        .select('*')
+        .returns<PriorityRow[]>()
+      const rows = unwrap('monthly_priorities', data, error)
       return rows.map((r) => ({
         priority_id: r.priority_id,
         business_id: toScope(r.business_id),
@@ -298,7 +319,8 @@ export function createSupabaseRepository(ctx: RequestContext = {}): ChairmanRepo
     },
 
     async listCriticalRisks(): Promise<CriticalRisk[]> {
-      const rows = await selectRows<RiskRow>('critical_risks', {}, ctx)
+      const { data, error } = await sb.from('critical_risks').select('*').returns<RiskRow[]>()
+      const rows = unwrap('critical_risks', data, error)
       return rows.map((r) => ({
         risk_id: r.risk_id,
         business_id: toScope(r.business_id),
@@ -310,11 +332,12 @@ export function createSupabaseRepository(ctx: RequestContext = {}): ChairmanRepo
     },
 
     async listNextMilestones(): Promise<NextMilestone[]> {
-      const rows = await selectRows<MilestoneRow>(
-        'milestones',
-        { order: { column: 'deadline' } },
-        ctx,
-      )
+      const { data, error } = await sb
+        .from('milestones')
+        .select('*')
+        .order('deadline')
+        .returns<MilestoneRow[]>()
+      const rows = unwrap('milestones', data, error)
       return rows.map((r) => ({
         milestone_id: r.milestone_id,
         business_id: toScope(r.business_id),
@@ -330,20 +353,15 @@ export function createSupabaseRepository(ctx: RequestContext = {}): ChairmanRepo
      * 기록이 먼저다 — 상태만 바뀌고 기록이 없는 순간이 생기면 그게 감사 구멍이다.
      */
     async recordDecisionAction(entry: DecisionAuditEntry) {
-      await insertRows(
-        'audit_log',
-        [
-          {
-            action: entry.action,
-            entity_table: 'decisions',
-            entity_id: entry.decision_id,
-            business_id: entry.business_id ?? null,
-            actor_user_id: entry.actor_user_id ?? null,
-            note: entry.note ?? null,
-          },
-        ],
-        ctx,
-      )
+      const { error } = await sb.from('audit_log').insert({
+        action: entry.action,
+        entity_table: 'decisions',
+        entity_id: entry.decision_id,
+        business_id: entry.business_id ?? null,
+        actor_user_id: entry.actor_user_id ?? null,
+        note: entry.note ?? null,
+      })
+      if (error) throw new Error(`Supabase audit_log ${error.code ?? '?'}: ${error.message}`)
     },
   }
 }

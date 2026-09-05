@@ -19,6 +19,18 @@
 
 ---
 
+## 문서 반영 필요
+
+코드·DB에는 들어갔는데 명세 문서에는 아직 없는 것들. 문서를 고치기 전까지 명세와 구현이 다르다.
+
+| 문서 | 무엇을 | 왜 |
+|---|---|---|
+| 02_기능명세 02_데이터필드 | **Task에 `blocked_since` 추가** (ISO date, 필수, 보안등급 [일반]) | DEFERRED D-02 결정 A. "이 업무가 지금 상태로 들어간 날"이다. CH-017 대기일수를 이 값에서 잰다. 시트 Tasks에는 `deadline`만 있어 대기일수를 낼 수 없었다. 이미 반영된 곳: `src/types/domain.ts`, `src/data/tasks.json`, `supabase/migrations/0001_init.sql` (tasks.blocked_since), `src/components/dashboard/waiting-on-me.tsx` |
+| 02_기능명세 CH-008 Acceptance | "정의된 Formula와 일치" → "시트에 기록된 EBITDA를 그대로 표시" | DEFERRED D-01 결정 A |
+
+
+---
+
 ## D-01. 그룹 EBITDA가 Revenue − Cost와 맞지 않는다 (CH-008)
 
 **무엇이** 02_기능명세 CH-008은 "Revenue/Cost 기준 EBITDA 표시", Acceptance는 "정의된 Formula와 일치"다.
