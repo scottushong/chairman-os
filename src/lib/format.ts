@@ -1,0 +1,36 @@
+/** 화면 표기 규칙. 숫자는 전부 여기를 거쳐서 나간다. */
+
+const EOK = 100_000_000
+
+/**
+ * 원 단위 금액을 억으로 줄여 쓴다. Chairman 화면의 기본 단위다.
+ * 1000억을 넘어가면 소수점을 떼서 자리수 흔들림을 막는다.
+ */
+export function formatEok(value: number, digits?: number): string {
+  const eok = value / EOK
+  const d = digits ?? (Math.abs(eok) >= 1000 ? 0 : 1)
+  return `${eok.toLocaleString('ko-KR', { minimumFractionDigits: d, maximumFractionDigits: d })}억`
+}
+
+/** 전기 대비 증감률. 부호를 항상 붙여 상승/하락을 글자만 보고도 알게 한다. */
+export function formatDeltaPct(pct: number): string {
+  const sign = pct > 0 ? '+' : pct < 0 ? '' : ''
+  return `${sign}${pct.toFixed(1)}%`
+}
+
+export function formatPct(pct: number): string {
+  return `${Math.round(pct)}%`
+}
+
+/** D-Day. 마감일은 저장하고 남은 일수는 항상 계산해서 쓴다(CH-014). */
+export function dDay(deadline: string, today = new Date()): number {
+  const end = new Date(`${deadline}T00:00:00`)
+  const start = new Date(today.getFullYear(), today.getMonth(), today.getDate())
+  return Math.round((end.getTime() - start.getTime()) / 86_400_000)
+}
+
+export function formatDDay(deadline: string, today = new Date()): string {
+  const d = dDay(deadline, today)
+  if (d === 0) return 'D-DAY'
+  return d > 0 ? `D-${d}` : `D+${-d}`
+}

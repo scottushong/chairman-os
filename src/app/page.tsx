@@ -1,29 +1,15 @@
+import { DashboardBoard } from '@/components/dashboard/dashboard-board'
 import { Icon } from '@/components/ui/icon'
-import { visibleBusinesses } from '@/data'
 
 /**
- * 메인 대시보드. 지금은 셸 확인용 빈 화면이고,
- * 아래 자리표시자 순서대로 CH-001~019 카드가 들어온다.
+ * 메인 대시보드.
+ * CH-001~010은 붙었고, 아래 자리표시자 순서대로 CH-011~019가 들어온다.
  */
 
 const TABS = ['전체 요약', '중요 지표', '예산 vs 실적', '리스크', 'AI 요약'] as const
 
 /** 다음 단계에 채울 영역. 무엇이 어디에 들어가는지 화면에서 바로 보이게 둔다. */
 const SLOTS: { id: string; title: string; note: string; span: string; height: string }[] = [
-  {
-    id: 'CH-001~005',
-    title: '내 비즈니스 (A,B,C)',
-    note: '5개사 카드 · 매출/EBITDA/진행률 · 숨김·Pin·순서변경',
-    span: 'col-span-12',
-    height: 'h-[188px]',
-  },
-  {
-    id: 'CH-006~010',
-    title: 'KPI 스트립 (8개 + 스파크라인)',
-    note: '매출 · 비용 · EBITDA · 영업이익 · 순이익 · Cash · AR · AP',
-    span: 'col-span-12',
-    height: 'h-[104px]',
-  },
   {
     id: 'CH-011~014',
     title: 'Strategic Coordinates',
@@ -55,7 +41,6 @@ const SLOTS: { id: string; title: string; note: string; span: string; height: st
 ]
 
 export default function DashboardPage() {
-  const businesses = visibleBusinesses()
   const today = new Intl.DateTimeFormat('ko-KR', {
     year: 'numeric',
     month: 'long',
@@ -71,9 +56,8 @@ export default function DashboardPage() {
             안녕하세요, Chairman님
             <Icon name="crown" className="size-5 text-gold" filled />
           </h1>
-          <p className="mt-1 text-[12px] text-ink-muted">
-            표시 중인 회사 {businesses.length}개 · 오늘도 성공적인 하루 되세요.
-          </p>
+          {/* 표시 개수는 카드 줄 머리에서 말한다. 여기서 또 세면 숨김 후 두 숫자가 어긋난다. */}
+          <p className="mt-1 text-[12px] text-ink-muted">오늘도 성공적인 하루 되세요.</p>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-[12px] text-ink-dim tnum">{today}</span>
@@ -104,7 +88,11 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      <div className="mt-4 grid grid-cols-12 gap-3.5 pb-6">
+      <div className="mt-4">
+        <DashboardBoard />
+      </div>
+
+      <div className="mt-5 grid grid-cols-12 gap-3.5 pb-6">
         {SLOTS.map((slot) => (
           <section
             key={slot.id}

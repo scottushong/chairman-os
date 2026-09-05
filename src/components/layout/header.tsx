@@ -1,3 +1,4 @@
+import { DataModeBadge } from '@/components/layout/data-mode-badge'
 import { Icon } from '@/components/ui/icon'
 
 /**
@@ -20,6 +21,7 @@ export function Header() {
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
+        <DataModeBadge />
         <NotificationButton count={12} tone="critical" />
         <NotificationButton count={5} tone="accent" />
         <button
