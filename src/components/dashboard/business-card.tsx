@@ -114,7 +114,8 @@ export function BusinessCard({
           value={hasFinance ? formatEok(ebitda) : '—'}
           negative={hasFinance && ebitda < 0}
         />
-        <Metric label="진행률" value={formatPct(progress)} />
+        {/* DEFERRED D-04 결정 C. 목표 대비가 아니라 프로젝트 진행률 평균이라 이름을 그대로 쓴다. */}
+        <Metric label="프로젝트 진행률" value={formatPct(progress)} />
       </dl>
 
       <div className={`mt-3 h-1.5 w-full overflow-hidden rounded-full ${tone.track}`}>
@@ -145,7 +146,8 @@ function Metric({
 }) {
   return (
     <div className="min-w-0">
-      <dt className="truncate text-[10px] text-ink-muted">{label}</dt>
+      {/* 두 줄까지 접힐 수 있어 높이를 고정한다. 아니면 세 칸의 숫자 밑줄이 서로 어긋난다. */}
+      <dt className="min-h-[24px] text-[10px] leading-tight text-ink-muted">{label}</dt>
       <dd
         className={`mt-0.5 text-[15px] font-semibold ${negative ? 'text-critical' : 'text-ink'}`}
       >

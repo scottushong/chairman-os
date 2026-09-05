@@ -6,6 +6,7 @@
     "owner": "user_001",
     "priority": "Critical",
     "status": "Blocked",
+    "blocked_since": "2026-08-20",
     "deadline": "2026-09-03",
     "chairman_needed": true
   },
@@ -16,6 +17,7 @@
     "owner": "user_001",
     "priority": "High",
     "status": "Todo",
+    "blocked_since": "2026-08-29",
     "deadline": "2026-09-04",
     "chairman_needed": true
   },
@@ -26,6 +28,7 @@
     "owner": "user_003",
     "priority": "High",
     "status": "Doing",
+    "blocked_since": "2026-09-01",
     "deadline": "2026-09-10",
     "chairman_needed": false
   },
@@ -36,6 +39,7 @@
     "owner": "user_005",
     "priority": "High",
     "status": "Doing",
+    "blocked_since": "2026-09-02",
     "deadline": "2026-09-12",
     "chairman_needed": false
   },
@@ -46,6 +50,7 @@
     "owner": "user_004",
     "priority": "Medium",
     "status": "Todo",
+    "blocked_since": "2026-09-02",
     "deadline": "2026-09-10",
     "chairman_needed": true
   }

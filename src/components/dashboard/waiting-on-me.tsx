@@ -15,14 +15,9 @@ import { TASK_STATUS_LABEL_KO, type Task } from '@/types'
  */
 const STALE_DAYS = 7
 
-/**
- * 대기일수.
- * 시드 Task에 접수일(created_at/blocked_since)이 없어, 마감일을 기준선으로 삼아
- * 지난 일수를 센다. 마감 전이면 아직 나를 기다린 게 아니라 0일이다.
- * → 필드 추가 결정은 DEFERRED.md 참고. 필드가 생기면 이 함수만 갈아 끼운다.
- */
+/** 대기일수 = 지금 상태로 들어간 날부터 오늘까지(DEFERRED D-02 결정 A). */
 function waitingDays(task: Task, today = new Date()): number {
-  return Math.max(0, -dDay(task.deadline, today))
+  return Math.max(0, -dDay(task.blocked_since, today))
 }
 
 export function WaitingOnMe() {
@@ -101,7 +96,7 @@ function WaitingItem({ task }: { task: Task }) {
               stale ? 'text-critical' : days > 0 ? 'text-warning' : 'text-ink-muted'
             }`}
           >
-            {days > 0 ? `대기 ${days}일` : '대기 전'}
+            {days > 0 ? `대기 ${days}일` : '오늘 접수'}
           </span>
         </div>
         <p className="mt-0.5 flex items-center gap-1.5 text-[10px] text-ink-muted tnum">

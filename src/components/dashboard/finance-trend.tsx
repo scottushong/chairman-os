@@ -12,12 +12,39 @@ import type { FinanceMetric } from '@/types'
  * KPI 스트립과 이 카드가 언젠가 다른 값을 말하게 된다(CH-006~008 Acceptance).
  */
 
-const LINES: { metric: FinanceMetric; label: string; colorClass: string; dotClass: string }[] = [
-  { metric: 'Revenue', label: '매출', colorClass: 'text-accent', dotClass: 'bg-accent' },
-  { metric: 'OperatingProfit', label: '영업이익', colorClass: 'text-ok', dotClass: 'bg-ok' },
-  { metric: 'EBITDA', label: 'EBITDA', colorClass: 'text-info', dotClass: 'bg-info' },
-  { metric: 'NetIncome', label: '당기순이익', colorClass: 'text-warning', dotClass: 'bg-warning' },
+/**
+ * 축 배정(DEFERRED D-07 결정 A). 매출은 손익보다 자릿수가 10배 넘게 크다.
+ * 한 축에 같이 두면 손익 세 선이 0 위에 붙어 서로 구분되지 않는다.
+ */
+const LINES: {
+  metric: FinanceMetric
+  label: string
+  colorClass: string
+  dotClass: string
+  axis: 'left' | 'right'
+}[] = [
+  { metric: 'Revenue', label: '매출', colorClass: 'text-accent', dotClass: 'bg-accent', axis: 'left' },
+  {
+    metric: 'OperatingProfit',
+    label: '영업이익',
+    colorClass: 'text-ok',
+    dotClass: 'bg-ok',
+    axis: 'right',
+  },
+  { metric: 'EBITDA', label: 'EBITDA', colorClass: 'text-info', dotClass: 'bg-info', axis: 'right' },
+  {
+    metric: 'NetIncome',
+    label: '당기순이익',
+    colorClass: 'text-warning',
+    dotClass: 'bg-warning',
+    axis: 'right',
+  },
 ]
+
+/** 눈금 간격이 2.5억처럼 떨어지면 반올림해서 쓰면 안 된다. 필요할 때만 소수 한 자리. */
+function axisLabel(value: number): string {
+  return formatEok(value, Number.isInteger(value / 100_000_000) ? 0 : 1)
+}
 
 /** '2026-08' → '26-08'. 12칸에 연도를 다 쓰면 눈금이 서로 붙는다. */
 function shortPeriod(period: string): string {
@@ -35,6 +62,7 @@ export function FinanceTrend({ businessIds }: { businessIds: string[] }) {
     label: r.label,
     colorClass: r.colorClass,
     data: r.data,
+    axis: r.axis,
   }))
 
   return (
@@ -88,21 +116,19 @@ export function FinanceTrend({ businessIds }: { businessIds: string[] }) {
         ))}
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-3">
+      {/* 어느 선이 어느 축인지 범례에서 말해 준다. 축이 둘이면 이 말이 없으면 오독한다. */}
+      <div className="mt-3 flex flex-wrap items-center gap-3">
         {rows.map((r) => (
           <span key={r.metric} className="flex items-center gap-1.5 text-[10px] text-ink-dim">
             <span className={`h-0.5 w-3 rounded-full ${r.dotClass}`} />
             {r.label}
+            <span className="text-ink-muted">{r.axis === 'left' ? '(좌)' : '(우)'}</span>
           </span>
         ))}
       </div>
 
       <div className="mt-1.5">
-        <LineChart
-          series={series}
-          labels={PERIODS.map(shortPeriod)}
-          formatY={(v) => formatEok(v, 0)}
-        />
+        <LineChart series={series} labels={PERIODS.map(shortPeriod)} formatY={axisLabel} />
       </div>
     </section>
   )

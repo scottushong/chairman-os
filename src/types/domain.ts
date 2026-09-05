@@ -78,6 +78,11 @@ export interface Task {
   owner: UserId
   priority: WorkPriority
   status: TaskStatus
+  /**
+   * 이 업무가 지금 상태(대기/진행/막힘)로 들어간 날.
+   * Chairman 대기의 시작점이라 CH-017 대기일수를 여기서 잰다(DEFERRED D-02 결정 A).
+   */
+  blocked_since: IsoDate
   deadline: IsoDate
   chairman_needed: boolean
 }

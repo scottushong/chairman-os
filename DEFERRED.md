@@ -3,6 +3,20 @@
 무인 실행(2026-09-05) 중 명세·시드·시안이 서로 다르게 말해서 임의로 정하지 않고 남긴 항목.
 각 항목은 "무엇이 막혔나 / 왜 / 고를 수 있는 선택지" 순서다.
 
+## 결정 (2026-09-05, Chairman)
+
+| 항목 | 결정 | 반영 |
+|---|---|---|
+| D-01 EBITDA Formula | **A** — 시트값 그대로. 실 Formula는 Phase 2 ECOUNT 연동 때. | 02_기능명세 CH-008 Acceptance 문구 수정 필요(문서 쪽) |
+| D-02 대기 시작 시각 | **A** — `blocked_since` 추가. 시드 1회 수정 승인. | 완료 (`tasks.json`, `types/domain.ts`, `waiting-on-me.tsx`, `data/README.md`) |
+| D-03 시안 vs 시드 숫자 | **A** — 시드 유지, 시안은 레이아웃 참고. | 코드 변경 없음 |
+| D-04 회사 진행률 | **C** — 라벨을 "프로젝트 진행률"로. | 완료 (`business-card.tsx`) |
+| D-05 저장 위치 | **A** — Phase 1에서 DB + Audit Log 착수. | 진행 중 (Phase 1-A) |
+| D-06 제목 중복 | 그대로 확정. | 완료 |
+| D-07 차트 축 | **A** — 이중 축(좌 매출 / 우 손익 3종). | 완료 (`line-chart.tsx`, `finance-trend.tsx`) |
+
+아래 원문은 결정 근거로 남겨 둔다.
+
 ---
 
 ## D-01. 그룹 EBITDA가 Revenue − Cost와 맞지 않는다 (CH-008)
