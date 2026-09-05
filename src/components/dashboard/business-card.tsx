@@ -1,5 +1,5 @@
 import { Icon } from '@/components/ui/icon'
-import { valueOf, businessProgress } from '@/lib/finance'
+import { valueOf, businessProgress, hasFinanceData } from '@/lib/finance'
 import { formatEok, formatPct } from '@/lib/format'
 import { STATUS_LABEL_KO, type Business } from '@/types'
 
@@ -49,6 +49,8 @@ export function BusinessCard({
   const revenue = valueOf(business.business_id, 'Revenue')
   const ebitda = valueOf(business.business_id, 'EBITDA')
   const progress = businessProgress(business.business_id)
+  // 방금 추가한 회사(CH-002)는 아직 재무 원천이 없다. 0억으로 쓰면 적자 0원처럼 읽힌다.
+  const hasFinance = hasFinanceData(business.business_id)
 
   return (
     <article className="flex h-full flex-col rounded-xl border border-line-soft bg-panel p-3.5">
@@ -105,9 +107,13 @@ export function BusinessCard({
       </div>
 
       <dl className="mt-3.5 grid grid-cols-3 gap-2">
-        <Metric label="매출 (월)" value={formatEok(revenue)} />
+        <Metric label="매출 (월)" value={hasFinance ? formatEok(revenue) : '—'} />
         {/* 적자는 빨강. 카드 다섯 장을 훑을 때 부호를 놓치면 안 된다. */}
-        <Metric label="EBITDA" value={formatEok(ebitda)} negative={ebitda < 0} />
+        <Metric
+          label="EBITDA"
+          value={hasFinance ? formatEok(ebitda) : '—'}
+          negative={hasFinance && ebitda < 0}
+        />
         <Metric label="진행률" value={formatPct(progress)} />
       </dl>
 

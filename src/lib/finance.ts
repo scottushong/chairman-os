@@ -65,3 +65,8 @@ export function businessProgress(businessId: BusinessId): number {
   if (own.length === 0) return 0
   return Math.round(own.reduce((sum, p) => sum + p.progress_pct, 0) / own.length)
 }
+
+/** 시드에 재무 행이 하나도 없는 회사(CH-002로 방금 추가된 회사)는 숫자를 0으로 쓰면 안 된다. */
+export function hasFinanceData(businessId: BusinessId): boolean {
+  return financeKpis.some((k) => k.business_id === businessId)
+}

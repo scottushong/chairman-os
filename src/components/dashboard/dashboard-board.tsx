@@ -1,12 +1,14 @@
 'use client'
 
-import { useMemo, useSyncExternalStore } from 'react'
+import { useMemo, useState, useSyncExternalStore } from 'react'
 
+import { AddBusinessModal } from '@/components/dashboard/add-business-modal'
 import { BusinessCard } from '@/components/dashboard/business-card'
 import { FinanceTrend } from '@/components/dashboard/finance-trend'
 import { KpiStrip } from '@/components/dashboard/kpi-strip'
 import { Icon } from '@/components/ui/icon'
 import { businesses, visibleBusinesses } from '@/data'
+import type { Business } from '@/types'
 import {
   getServerSnapshot,
   getSnapshot,
@@ -14,6 +16,13 @@ import {
   setHidden,
   subscribe,
 } from '@/lib/hidden-businesses'
+import {
+  addBusiness,
+  getServerSnapshot as addedServerSnapshot,
+  getSnapshot as addedSnapshot,
+  parseAdded,
+  subscribe as subscribeAdded,
+} from '@/lib/added-businesses'
 import {
   getServerSnapshot as pinnedServerSnapshot,
   getSnapshot as pinnedSnapshot,
@@ -34,11 +43,13 @@ const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
  * 이니셜은 회사에 붙는 이름표다. sort_order 기준으로 한 번 정해 두고 고정한다.
  * 화면 순서로 매기면 핀을 누를 때마다 A와 B가 자리를 바꿔 카드를 다시 읽어야 한다.
  */
-const LETTER_BY_ID = new Map(
-  [...businesses]
-    .sort((a, b) => a.sort_order - b.sort_order)
-    .map((b, i) => [b.business_id, LETTERS[i] ?? '?'] as const),
-)
+function letterMap(all: Business[]): Map<string, string> {
+  return new Map(
+    [...all]
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map((b, i) => [b.business_id, LETTERS[i] ?? '?'] as const),
+  )
+}
 
 export function DashboardBoard() {
   const raw = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
@@ -47,15 +58,22 @@ export function DashboardBoard() {
   const pinnedRaw = useSyncExternalStore(subscribePinned, pinnedSnapshot, pinnedServerSnapshot)
   const pinned = useMemo(() => parsePinned(pinnedRaw), [pinnedRaw])
 
+  const addedRaw = useSyncExternalStore(subscribeAdded, addedSnapshot, addedServerSnapshot)
+  const added = useMemo(() => parseAdded(addedRaw), [addedRaw])
+
+  const [adding, setAdding] = useState(false)
+
+  const letters = useMemo(() => letterMap([...businesses, ...added]), [added])
+
   /** 핀 우선, 그다음 sort_order. 드래그 순서(CH-005)는 아직 sort_order를 그대로 쓴다. */
   const ordered = useMemo(
     () =>
-      [...visibleBusinesses()].sort(
+      [...visibleBusinesses(), ...added.filter((b) => b.visible)].sort(
         (a, b) =>
           Number(pinned.includes(b.business_id)) - Number(pinned.includes(a.business_id)) ||
           a.sort_order - b.sort_order,
       ),
-    [pinned],
+    [pinned, added],
   )
 
   function toggle(businessId: string) {
@@ -94,7 +112,7 @@ export function DashboardBoard() {
             <div key={b.business_id} className="min-w-[212px] flex-1">
               <BusinessCard
                 business={b}
-                letter={LETTER_BY_ID.get(b.business_id) ?? '?'}
+                letter={letters.get(b.business_id) ?? '?'}
                 pinned={pinned.includes(b.business_id)}
                 onToggleVisible={toggle}
                 onTogglePinned={togglePin}
@@ -102,9 +120,10 @@ export function DashboardBoard() {
             </div>
           ))}
 
-          {/* CH-002 자리. 카드 줄 끝에 붙어 있어야 '한 장 더 추가'로 읽힌다. */}
+          {/* CH-002. 카드 줄 끝에 붙어 있어야 '한 장 더 추가'로 읽힌다. */}
           <button
             type="button"
+            onClick={() => setAdding(true)}
             className="flex w-[92px] shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-line text-ink-muted transition-colors hover:border-accent hover:text-ink"
           >
             <Icon name="plus" className="size-5" />
@@ -136,6 +155,10 @@ export function DashboardBoard() {
       <KpiStrip businessIds={shown.map((b) => b.business_id)} />
 
       <FinanceTrend businessIds={shown.map((b) => b.business_id)} />
+
+      {adding ? (
+        <AddBusinessModal onClose={() => setAdding(false)} onCreate={addBusiness} />
+      ) : null}
     </div>
   )
 }
