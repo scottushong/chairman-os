@@ -34,3 +34,10 @@ export function formatDDay(deadline: string, today = new Date()): string {
   if (d === 0) return 'D-DAY'
   return d > 0 ? `D-${d}` : `D+${-d}`
 }
+
+/** 로컬 기준 'YYYY-MM-DD'. toISOString은 UTC로 밀려 자정 근처에서 하루가 어긋난다. */
+export function dayKey(date = new Date()): string {
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${date.getFullYear()}-${m}-${d}`
+}
