@@ -1,0 +1,58 @@
+[
+  {
+    "decision_id": "dec_001",
+    "business_id": "biz_vana",
+    "title": "캐나다 첫 vertical",
+    "options": [
+      "Option A",
+      "B",
+      "C"
+    ],
+    "ai_recommendation": "Option B",
+    "impact": "High",
+    "deadline": "2026-09-03",
+    "status": "Open"
+  },
+  {
+    "decision_id": "dec_002",
+    "business_id": "biz_dy",
+    "title": "Hot-melt 판매가격",
+    "options": [
+      "+0%",
+      "+3%",
+      "+5%"
+    ],
+    "ai_recommendation": "+3%",
+    "impact": "High",
+    "deadline": "2026-09-04",
+    "status": "Open"
+  },
+  {
+    "decision_id": "dec_003",
+    "business_id": "biz_sticky",
+    "title": "핫멜트 가격 인상 여부",
+    "options": [
+      "동결",
+      "+3%",
+      "+5%"
+    ],
+    "ai_recommendation": "+3%",
+    "impact": "Medium",
+    "deadline": "2026-09-08",
+    "status": "Open"
+  },
+  {
+    "decision_id": "dec_004",
+    "business_id": "biz_boram",
+    "title": "시리즈 A 투자자 제안 검토",
+    "options": [
+      "수용",
+      "조건 재협상",
+      "보류"
+    ],
+    "ai_recommendation": "조건 재협상",
+    "impact": "High",
+    "deadline": "2026-09-10",
+    "status": "Open"
+  }
+]

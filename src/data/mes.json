@@ -1,0 +1,22 @@
+[
+  {
+    "date": "2026-09-01",
+    "line": "Line-1",
+    "batch_id": "BATCH-001",
+    "product_code": "P-001",
+    "production_qty": 12458,
+    "yield_pct": 97.3,
+    "downtime_hr": 4.8,
+    "utilization_pct": 89.1
+  },
+  {
+    "date": "2026-09-01",
+    "line": "Line-2",
+    "batch_id": "BATCH-002",
+    "product_code": "P-002",
+    "production_qty": 10320,
+    "yield_pct": 96.8,
+    "downtime_hr": 6.1,
+    "utilization_pct": 86.4
+  }
+]

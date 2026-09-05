@@ -1,0 +1,47 @@
+[
+  {
+    "completed_at": "2026-09-01T06:00",
+    "business_id": "biz_vana",
+    "job_type": "Research",
+    "result_summary": "캐나다 F&B 잠재고객 128개 분석",
+    "status": "Done",
+    "artifact_link": "artifact://dummy/001",
+    "confidence": 0.91
+  },
+  {
+    "completed_at": "2026-09-01T06:10",
+    "business_id": "biz_hof",
+    "job_type": "Vendor Scout",
+    "result_summary": "Face robotics vendor 11개 shortlist",
+    "status": "Done",
+    "artifact_link": "artifact://dummy/002",
+    "confidence": 0.84
+  },
+  {
+    "completed_at": "2026-09-01T06:20",
+    "business_id": "biz_dy",
+    "job_type": "Finance",
+    "result_summary": "원가절감 후보 3건 발견",
+    "status": "Done",
+    "artifact_link": "artifact://dummy/003",
+    "confidence": 0.79
+  },
+  {
+    "completed_at": "2026-09-01T06:30",
+    "business_id": "biz_sticky",
+    "job_type": "Risk",
+    "result_summary": "폴란드 경쟁사 가격 동향 리스크 메모",
+    "status": "Done",
+    "artifact_link": "artifact://dummy/004",
+    "confidence": 0.87
+  },
+  {
+    "completed_at": "2026-09-01T06:40",
+    "business_id": "biz_boram",
+    "job_type": "Decision Memo",
+    "result_summary": "시리즈 A 조건 비교표 초안",
+    "status": "Done",
+    "artifact_link": "artifact://dummy/005",
+    "confidence": 0.82
+  }
+]

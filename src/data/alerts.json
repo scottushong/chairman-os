@@ -1,0 +1,38 @@
+[
+  {
+    "alert_id": "alt_001",
+    "business_id": "biz_dy",
+    "category": "AR",
+    "message": "60일 이상 매출채권 증가",
+    "severity": "Critical",
+    "source": "Rule",
+    "status": "Open"
+  },
+  {
+    "alert_id": "alt_002",
+    "business_id": "biz_vana",
+    "category": "Project",
+    "message": "Pilot deployment 지연",
+    "severity": "Warning",
+    "source": "AI",
+    "status": "Open"
+  },
+  {
+    "alert_id": "alt_003",
+    "business_id": "biz_sticky",
+    "category": "Margin",
+    "message": "폴란드 경쟁사 신규 진입으로 판가 압박",
+    "severity": "Warning",
+    "source": "AI",
+    "status": "Open"
+  },
+  {
+    "alert_id": "alt_004",
+    "business_id": "biz_hof",
+    "category": "Contract",
+    "message": "핵심 부품 공급 지연 가능성",
+    "severity": "Warning",
+    "source": "Rule",
+    "status": "Open"
+  }
+]

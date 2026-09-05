@@ -1,0 +1,52 @@
+[
+  {
+    "task_id": "tsk_001",
+    "project_id": "prj_001",
+    "title": "첫 North America vertical 결정",
+    "owner": "user_001",
+    "priority": "Critical",
+    "status": "Blocked",
+    "deadline": "2026-09-03",
+    "chairman_needed": true
+  },
+  {
+    "task_id": "tsk_002",
+    "project_id": "prj_002",
+    "title": "Hot-melt 가격 승인",
+    "owner": "user_001",
+    "priority": "High",
+    "status": "Todo",
+    "deadline": "2026-09-04",
+    "chairman_needed": true
+  },
+  {
+    "task_id": "tsk_003",
+    "project_id": "prj_003",
+    "title": "Face actuator 후보 비교",
+    "owner": "user_003",
+    "priority": "High",
+    "status": "Doing",
+    "deadline": "2026-09-10",
+    "chairman_needed": false
+  },
+  {
+    "task_id": "tsk_004",
+    "project_id": "prj_004",
+    "title": "폴란드 통관 서류 최종 확인",
+    "owner": "user_005",
+    "priority": "High",
+    "status": "Doing",
+    "deadline": "2026-09-12",
+    "chairman_needed": false
+  },
+  {
+    "task_id": "tsk_005",
+    "project_id": "prj_005",
+    "title": "투자자 제안서 검토",
+    "owner": "user_004",
+    "priority": "Medium",
+    "status": "Todo",
+    "deadline": "2026-09-10",
+    "chairman_needed": true
+  }
+]

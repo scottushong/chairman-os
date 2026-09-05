@@ -1,0 +1,98 @@
+{
+  "top_goals": [
+    {
+      "goal_id": "goal_group_2026",
+      "business_id": "group",
+      "title": "그룹 연매출 3,000억 · EBITDA 12%",
+      "target_value": "3,000억",
+      "current_value": "2,164억",
+      "progress_pct": 72,
+      "due": "2026-12-31"
+    },
+    {
+      "goal_id": "goal_dy_2026",
+      "business_id": "biz_dy",
+      "title": "EVA 자동화 라인 가동률 90%",
+      "target_value": "90%",
+      "current_value": "89.1%",
+      "progress_pct": 74,
+      "due": "2026-10-31"
+    },
+    {
+      "goal_id": "goal_vana_2026",
+      "business_id": "biz_vana",
+      "title": "북미 ARR 50억 달성",
+      "target_value": "50억",
+      "current_value": "24억",
+      "progress_pct": 48,
+      "due": "2026-12-31"
+    }
+  ],
+  "monthly_priorities": [
+    {
+      "priority_id": "prio_2026_09",
+      "business_id": "group",
+      "title": "VANA 북미 첫 vertical 확정",
+      "detail": "9월 안에 vertical을 못 정하면 캐나다 파일럿 계약 시점이 4분기로 밀린다.",
+      "owner": "user_002",
+      "weight": "Critical"
+    },
+    {
+      "priority_id": "prio_2026_09_dy",
+      "business_id": "biz_dy",
+      "title": "Hot-melt 판매가 조정 확정",
+      "detail": "원료 단가 +12% 반영 여부. 미결정 시 4분기 마진 훼손.",
+      "owner": "user_001",
+      "weight": "High"
+    }
+  ],
+  "critical_risks": [
+    {
+      "risk_id": "risk_001",
+      "business_id": "biz_dy",
+      "title": "60일 이상 매출채권 증가",
+      "impact": "Critical",
+      "urgency": "Critical",
+      "detail": "AR Aging 60일+ 구간이 전월 대비 확대. 회수 계획 필요."
+    },
+    {
+      "risk_id": "risk_002",
+      "business_id": "biz_hof",
+      "title": "Face actuator 후보 미확정",
+      "impact": "Warning",
+      "urgency": "Critical",
+      "detail": "부품 공급 지연 시 프로토타입 일정 전체가 밀린다."
+    },
+    {
+      "risk_id": "risk_003",
+      "business_id": "biz_sticky",
+      "title": "폴란드 경쟁사 신규 진입",
+      "impact": "Warning",
+      "urgency": "Warning",
+      "detail": "판가 압박. 가격 전략 재검토 필요."
+    }
+  ],
+  "next_milestones": [
+    {
+      "milestone_id": "ms_001",
+      "business_id": "biz_vana",
+      "title": "캐나다 파일럿 배포 완료",
+      "owner": "user_002",
+      "deadline": "2026-09-30"
+    },
+    {
+      "milestone_id": "ms_002",
+      "business_id": "biz_dy",
+      "title": "EVA 자동화 라인 양산 전환",
+      "owner": "user_005",
+      "deadline": "2026-10-13"
+    },
+    {
+      "milestone_id": "ms_003",
+      "business_id": "biz_sticky",
+      "title": "폴란드 1차 선적",
+      "owner": "user_005",
+      "deadline": "2026-09-23"
+    }
+  ]
+}

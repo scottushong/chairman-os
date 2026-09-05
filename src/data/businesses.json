@@ -1,0 +1,52 @@
+[
+  {
+    "business_id": "biz_dy",
+    "name": "DY (주)",
+    "status": "Active",
+    "industry": "제조/화학",
+    "owner_user_id": "user_001",
+    "visible": true,
+    "sort_order": 1,
+    "pinned": true
+  },
+  {
+    "business_id": "biz_vana",
+    "name": "VANA AI",
+    "status": "Active",
+    "industry": "AI/SaaS/플랫폼",
+    "owner_user_id": "user_002",
+    "visible": true,
+    "sort_order": 2,
+    "pinned": false
+  },
+  {
+    "business_id": "biz_sticky",
+    "name": "Sticky Alliance",
+    "status": "Active",
+    "industry": "글로벌 유통/화학",
+    "owner_user_id": "user_005",
+    "visible": true,
+    "sort_order": 3,
+    "pinned": false
+  },
+  {
+    "business_id": "biz_hof",
+    "name": "HOF Robotics",
+    "status": "Incubating",
+    "industry": "로봇/하드웨어",
+    "owner_user_id": "user_003",
+    "visible": true,
+    "sort_order": 4,
+    "pinned": false
+  },
+  {
+    "business_id": "biz_boram",
+    "name": "Boram Life",
+    "status": "Active",
+    "industry": "생활/소비재",
+    "owner_user_id": "user_004",
+    "visible": true,
+    "sort_order": 5,
+    "pinned": false
+  }
+]

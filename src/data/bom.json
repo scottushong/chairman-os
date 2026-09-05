@@ -1,0 +1,23 @@
+[
+  {
+    "product_code": "P-001",
+    "raw_material_code": "RM-001",
+    "ratio_pct": 35,
+    "unit": "kg",
+    "display_name": "DUMMY-A"
+  },
+  {
+    "product_code": "P-001",
+    "raw_material_code": "RM-007",
+    "ratio_pct": 45,
+    "unit": "kg",
+    "display_name": "DUMMY-B"
+  },
+  {
+    "product_code": "P-001",
+    "raw_material_code": "RM-012",
+    "ratio_pct": 20,
+    "unit": "kg",
+    "display_name": "DUMMY-C"
+  }
+]

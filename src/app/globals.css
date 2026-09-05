@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+/**
+ * Chairman OS 디자인 토큰.
+ * 다크 고정이다. 관제 화면이라 라이트 분기를 두지 않는다.
+ * 원칙: 정상 데이터는 조용히, 위험/승인대기만 색으로 올라온다(요구사항서 2번).
+ */
+@theme {
+  /* 바탕. app > panel > raised 순으로 한 단계씩 밝아진다. */
+  --color-app: #0a0d14;
+  --color-nav: #0c1017;
+  --color-panel: #111722;
+  --color-raised: #18202e;
+  --color-line: #1f2937;
+  --color-line-soft: #161e2b;
+
+  /* 글자. muted 아래로는 읽히지 않으니 더 내리지 않는다. */
+  --color-ink: #e8edf5;
+  --color-ink-dim: #9aa7bd;
+  --color-ink-muted: #64748b;
+
+  /* 강조. accent는 선택/활성, gold는 Chairman 표식 전용. */
+  --color-accent: #2563eb;
+  --color-accent-soft: #1e3a8a;
+  --color-gold: #f5c451;
+
+  /* 상태. severity 3단계와 증감 부호에 이 색만 쓴다. */
+  --color-critical: #ef4444;
+  --color-warning: #f59e0b;
+  --color-ok: #22c55e;
+  --color-info: #38bdf8;
+
+  /* 회사별 식별색. 카드 이니셜 배지와 스파크라인이 공유한다. */
+  --color-biz-dy: #3b82f6;
+  --color-biz-vana: #22c55e;
+  --color-biz-sticky: #a855f7;
+  --color-biz-hof: #f97316;
+  --color-biz-boram: #14b8a6;
+
+  --font-sans: var(--font-pretendard), system-ui, sans-serif;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-app);
+  color: var(--color-ink);
+}
+
+/* 숫자는 자리수가 흔들리면 KPI 비교가 안 된다. 표/카드에서 고정폭으로 읽는다. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* 관제 화면은 스크롤바가 늘 보인다. 바탕에 묻히게 깎아 둔다. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line) transparent;
+}

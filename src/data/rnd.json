@@ -1,0 +1,20 @@
+[
+  {
+    "rnd_id": "rnd_001",
+    "product_code": "P-001",
+    "project": "고객 A 접착력 개선",
+    "version": "v3",
+    "status": "Sample Sent",
+    "next_date": "2026-09-05",
+    "security_class": "Normal"
+  },
+  {
+    "rnd_id": "rnd_002",
+    "product_code": "P-002",
+    "project": "저VOC 개선",
+    "version": "v7",
+    "status": "Testing",
+    "next_date": "2026-09-08",
+    "security_class": "Restricted"
+  }
+]
