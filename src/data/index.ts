@@ -61,3 +61,8 @@ export function visibleBusinesses(): Business[] {
 export function businessName(businessId: string): string {
   return businesses.find((b) => b.business_id === businessId)?.name ?? businessId
 }
+
+/** Task는 회사를 직접 들고 있지 않다. project를 거쳐야 회사가 나온다(CH-017 그룹핑). */
+export function businessOfProject(projectId: string): string {
+  return projects.find((p) => p.project_id === projectId)?.business_id ?? 'unknown'
+}

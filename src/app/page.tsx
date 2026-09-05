@@ -2,24 +2,18 @@ import { AiNightPanel } from '@/components/dashboard/ai-night-panel'
 import { DashboardBoard } from '@/components/dashboard/dashboard-board'
 import { DecisionPanel } from '@/components/dashboard/decision-panel'
 import { StrategicCoordinates } from '@/components/dashboard/strategic-coordinates'
+import { WaitingOnMe } from '@/components/dashboard/waiting-on-me'
 import { Icon } from '@/components/ui/icon'
 
 /**
  * 메인 대시보드.
- * CH-001~016과 CH-019는 붙었고, 아래 자리표시자 순서대로 CH-017~018이 들어온다.
+ * CH-001~017과 CH-019는 붙었고, 남은 자리표시자는 CH-018 하나다.
  */
 
 const TABS = ['전체 요약', '중요 지표', '예산 vs 실적', '리스크', 'AI 요약'] as const
 
 /** 다음 단계에 채울 영역. 무엇이 어디에 들어가는지 화면에서 바로 보이게 둔다. */
 const SLOTS: { id: string; title: string; note: string; span: string; height: string }[] = [
-  {
-    id: 'CH-017',
-    title: 'Waiting on Me',
-    note: '내 승인 때문에 멈춰 있는 업무',
-    span: 'col-span-12 lg:col-span-6 xl:col-span-3',
-    height: 'h-[268px]',
-  },
   {
     id: 'CH-018',
     title: '알림 / 리스크',
@@ -86,6 +80,10 @@ export default function DashboardPage() {
         {/* 결정 → 대기 → 알림 → 야간 AI. 아침에 훑는 순서 그대로 왼쪽에서 오른쪽으로 놓는다. */}
         <div className="col-span-12 h-[268px] lg:col-span-6 xl:col-span-3">
           <DecisionPanel />
+        </div>
+
+        <div className="col-span-12 h-[268px] lg:col-span-6 xl:col-span-3">
+          <WaitingOnMe />
         </div>
 
         {SLOTS.map((slot) => (
