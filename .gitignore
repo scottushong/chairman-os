@@ -8,3 +8,9 @@ next-env.d.ts
 .DS_Store
 *.pem
 npm-debug.log*
+
+# 실제 UID가 박힌 부트스트랩 실행본 (수동 실행 전용)
+supabase/bootstrap/0004_ready.sql
+
+# supabase CLI 로컬 상태
+supabase/.temp/
