@@ -1,4 +1,5 @@
 import { AiNightPanel } from '@/components/dashboard/ai-night-panel'
+import { AlertPanel } from '@/components/dashboard/alert-panel'
 import { DashboardBoard } from '@/components/dashboard/dashboard-board'
 import { DecisionPanel } from '@/components/dashboard/decision-panel'
 import { StrategicCoordinates } from '@/components/dashboard/strategic-coordinates'
@@ -6,22 +7,10 @@ import { WaitingOnMe } from '@/components/dashboard/waiting-on-me'
 import { Icon } from '@/components/ui/icon'
 
 /**
- * 메인 대시보드.
- * CH-001~017과 CH-019는 붙었고, 남은 자리표시자는 CH-018 하나다.
+ * 메인 대시보드. CH-001~019가 모두 올라와 있다.
  */
 
 const TABS = ['전체 요약', '중요 지표', '예산 vs 실적', '리스크', 'AI 요약'] as const
-
-/** 다음 단계에 채울 영역. 무엇이 어디에 들어가는지 화면에서 바로 보이게 둔다. */
-const SLOTS: { id: string; title: string; note: string; span: string; height: string }[] = [
-  {
-    id: 'CH-018',
-    title: '알림 / 리스크',
-    note: 'Cash · AR · 생산 · 품질 · 계약 · HR Red Alert',
-    span: 'col-span-12 lg:col-span-6 xl:col-span-3',
-    height: 'h-[268px]',
-  },
-]
 
 export default function DashboardPage() {
   const today = new Intl.DateTimeFormat('ko-KR', {
@@ -86,20 +75,9 @@ export default function DashboardPage() {
           <WaitingOnMe />
         </div>
 
-        {SLOTS.map((slot) => (
-          <section
-            key={slot.id}
-            className={`${slot.span} ${slot.height} flex flex-col justify-center rounded-xl border border-dashed border-raised bg-panel/50 px-5`}
-          >
-            <div className="flex items-baseline gap-2">
-              <span className="rounded bg-raised px-1.5 py-0.5 text-[10px] font-semibold text-ink-muted tnum">
-                {slot.id}
-              </span>
-              <h2 className="text-[13px] font-semibold text-ink-dim">{slot.title}</h2>
-            </div>
-            <p className="mt-1.5 text-[12px] text-ink-muted">{slot.note}</p>
-          </section>
-        ))}
+        <div className="col-span-12 h-[268px] lg:col-span-6 xl:col-span-3">
+          <AlertPanel />
+        </div>
 
         <div className="col-span-12 h-[268px] lg:col-span-6 xl:col-span-3">
           <AiNightPanel />
