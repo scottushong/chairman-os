@@ -12,6 +12,7 @@ export type {
   DashboardSnapshot,
   DecisionAuditEntry,
   NewBusiness,
+  TaskPatch,
   UserSettings,
 } from './types'
 export { DUPLICATE_BUSINESS_ID, loadDashboard } from './types'

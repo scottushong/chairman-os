@@ -12,7 +12,8 @@ import {
   topGoals,
 } from '@/data'
 import { AUDIT_ACTION, type DecisionAuditRecord } from '@/lib/decision-log'
-import type { Business } from '@/types'
+import { dayKey } from '@/lib/format'
+import type { Business, Task } from '@/types'
 
 import {
   DUPLICATE_BUSINESS_ID,
@@ -20,6 +21,7 @@ import {
   type ChairmanRepository,
   type DecisionAuditEntry,
   type NewBusiness,
+  type TaskPatch,
   type UserSettings,
 } from './types'
 
@@ -34,6 +36,12 @@ const memoryAudit: DecisionAuditRecord[] = []
 
 /** CH-002로 추가한 회사도 마찬가지다. 서버가 살아 있는 동안만 남는다. */
 const memoryBusinesses: Business[] = []
+
+/**
+ * CH-040으로 바꾼 업무 상태. 시드 배열(src/data)은 읽기 전용이라 덮어쓸 수 없어
+ * 바뀐 칸만 따로 들고 있다가 listTasks에서 덮는다. 이것도 서버가 살아 있는 동안만이다.
+ */
+const memoryTaskPatches = new Map<string, TaskPatch & { blocked_since?: string }>()
 
 /** 개인 설정도 마찬가지다. 서버가 살아 있는 동안만 남는다. */
 const memorySettings: UserSettings = { hidden_businesses: [], pinned_businesses: null }
@@ -55,8 +63,8 @@ export const dummyRepository: ChairmanRepository = {
   async listProjects() {
     return [...projects]
   },
-  async listTasks() {
-    return [...tasks]
+  async listTasks(): Promise<Task[]> {
+    return tasks.map((t) => ({ ...t, ...memoryTaskPatches.get(t.task_id) }))
   },
   async listDecisions() {
     return [...decisions]
@@ -116,6 +124,22 @@ export const dummyRepository: ChairmanRepository = {
       )
     }
     return created
+  },
+
+  /** CH-040. live에서는 0002의 tasks_write가 거를 일이지만, dummy에는 RLS가 없다. */
+  async updateTask(taskId: string, patch: TaskPatch, actor: AuditActor): Promise<void> {
+    const current = memoryTaskPatches.get(taskId) ?? {}
+    const next = { ...current, ...patch }
+    // 상태가 바뀌면 대기일수 기준선도 같이 옮긴다. live 어댑터와 같은 규칙이어야 한다.
+    if (patch.status !== undefined) next.blocked_since = dayKey()
+    memoryTaskPatches.set(taskId, next)
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        `[dummy] update ${taskId} by ${actor.role} — 메모리에만 남는다. ` +
+          '영구 기록은 live 모드의 Supabase audit_log뿐이다(CH-051).',
+      )
+    }
   },
 
   async getUserSettings() {

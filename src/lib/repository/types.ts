@@ -11,6 +11,7 @@ import type {
   NextMilestone,
   Project,
   Task,
+  TaskStatus,
   TopGoal,
 } from '@/types'
 
@@ -49,6 +50,9 @@ export interface ChairmanRepository {
 
   /** CH-002. 회사를 하나 만든다. 0002에서 Chairman만 통과한다(DEFERRED D-08). */
   createBusiness(input: NewBusiness, actor: AuditActor): Promise<Business>
+
+  /** CH-040. 업무의 상태·회장확인 플래그를 옮긴다. 0002의 tasks_write가 담당자와 승인권자만 통과시킨다. */
+  updateTask(taskId: string, patch: TaskPatch, actor: AuditActor): Promise<void>
 
   /** CH-003/004/056. 지금 로그인한 사람의 개인 설정. 남의 것은 어떤 역할도 못 읽는다(0002). */
   getUserSettings(): Promise<UserSettings>
@@ -105,6 +109,20 @@ export interface NewBusiness {
   name: string
   industry: string
   status: BusinessStatus
+}
+
+/**
+ * CH-040에서 사람이 바꿀 수 있는 업무의 두 칸.
+ *
+ * 제목·담당자·마감은 없다. 이 화면은 '지금 어떻게 되고 있나'를 옮기는 자리지
+ * 업무를 편집하는 자리가 아니다 — 편집은 Business OS(Layer 1)의 일이다.
+ *
+ * blocked_since는 여기 없지만 status와 같이 움직인다. 그건 사람이 정하는 값이 아니라
+ * '지금 상태로 들어간 날'이라 어댑터가 찍는다(0001 tasks.blocked_since 주석, DEFERRED D-02).
+ */
+export interface TaskPatch {
+  status?: TaskStatus
+  chairman_needed?: boolean
 }
 
 /**

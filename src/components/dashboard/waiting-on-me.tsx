@@ -1,3 +1,5 @@
+import Link from 'next/link'
+
 import { Icon } from '@/components/ui/icon'
 import { dDay, formatDDay } from '@/lib/format'
 import { businessName, businessOfProject } from '@/lib/lookup'
@@ -51,7 +53,14 @@ export function WaitingOnMe({ tasks, projects, businesses }: WaitingOnMeProps) {
           Waiting on Me
           <span className="text-[11px] font-normal text-ink-muted tnum">{mine.length}건</span>
         </h2>
-        <span className="text-[9px] text-ink-muted tnum">CH-017</span>
+        {/* CH-040으로 넘긴다. 같은 조건(회장 확인 대기)을 URL에 달아 보내야
+            '전체 보기'가 다른 목록을 여는 것처럼 보이지 않는다. */}
+        <Link
+          href="/tasks?needed=1"
+          className="text-[11px] text-ink-muted transition-colors hover:text-ink"
+        >
+          전체 보기
+        </Link>
       </div>
       <p className="mt-0.5 text-[11px] tnum">
         {stale > 0 ? (
@@ -75,7 +84,7 @@ export function WaitingOnMe({ tasks, projects, businesses }: WaitingOnMeProps) {
               </p>
               <ul className="mt-0.5 space-y-0.5">
                 {g.items.map((t) => (
-                  <WaitingItem key={t.task_id} task={t} />
+                  <WaitingItem key={t.task_id} task={t} businessId={g.businessId} />
                 ))}
               </ul>
             </div>
@@ -86,14 +95,17 @@ export function WaitingOnMe({ tasks, projects, businesses }: WaitingOnMeProps) {
   )
 }
 
-function WaitingItem({ task }: { task: Task }) {
+function WaitingItem({ task, businessId }: { task: Task; businessId: string }) {
   const days = waitingDays(task)
   const stale = days > STALE_DAYS
 
   return (
     <li>
-      {/* TODO(CH-017): Task 상세 라우트가 생기면 원 Task로 연결한다. */}
-      <div className="rounded-lg px-1.5 py-1 transition-colors hover:bg-raised/60">
+      {/* CH-017 Acceptance의 '원 Task와 연결'. Task 단건 화면은 아직 없어서, 그 줄이 있는
+          목록까지 보낸다 — 회사와 '회장 확인 대기'를 걸면 CH-040에서 이 업무가 화면에 남는다. */}
+      <Link
+        href={`/tasks?business=${encodeURIComponent(businessId)}&needed=1`}
+        className="block rounded-lg px-1.5 py-1 transition-colors hover:bg-raised/60">
         <div className="flex items-center gap-1.5">
           <p className="min-w-0 flex-1 truncate text-[12px] leading-snug font-semibold">
             {task.title}
@@ -113,7 +125,7 @@ function WaitingItem({ task }: { task: Task }) {
             {formatDDay(task.deadline)}
           </span>
         </p>
-      </div>
+      </Link>
     </li>
   )
 }

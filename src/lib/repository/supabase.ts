@@ -1,6 +1,7 @@
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js'
 
 import { AUDIT_ACTION, DECISION_STATUS, type DecisionAuditRecord } from '@/lib/decision-log'
+import { dayKey } from '@/lib/format'
 
 import type {
   AiNightOutput,
@@ -28,6 +29,7 @@ import {
   type ChairmanRepository,
   type DecisionAuditEntry,
   type NewBusiness,
+  type TaskPatch,
   type UserSettings,
 } from './types'
 
@@ -135,6 +137,19 @@ interface TaskRow {
   blocked_since: string
   deadline: string
   chairman_needed: boolean
+}
+
+/**
+ * 업무 한 줄을 감사 기록에 남기기 위해 읽는 모양.
+ * projects는 PostgREST의 임베드다 — tasks.project_id가 projects를 FK로 물고 있어
+ * 한 요청으로 회사까지 같이 온다. 관계가 many-to-one이라 배열이 아니라 객체다.
+ */
+interface TaskAuditRow {
+  task_id: string
+  status: TaskStatus
+  chairman_needed: boolean
+  blocked_since: string
+  projects: { business_id: string } | null
 }
 
 interface DecisionRow {
@@ -570,6 +585,63 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         visible: row.visible,
         sort_order: row.sort_order,
         pinned: row.pinned,
+      }
+    },
+
+    /**
+     * CH-040 업무 상태 변경 / 회장확인 토글.
+     *
+     * before/after를 남기려면 바꾸기 전 값을 알아야 하므로 한 번 읽는다. 그 읽기는
+     * business_id를 얻는 일도 겸한다 — tasks는 회사를 직접 들고 있지 않고 projects를 거친다.
+     * 두 번 왕복하지 않으려고 임베드로 같이 가져온다.
+     *
+     * 순서는 이 파일의 다른 쓰기와 같다. 기록이 먼저다.
+     * 권한은 보지 않는다 — 0002의 tasks_write가 담당자 본인이거나 승인권자일 때만 통과시킨다.
+     */
+    async updateTask(taskId: string, patch: TaskPatch, actor: AuditActor): Promise<void> {
+      if (patch.status === undefined && patch.chairman_needed === undefined) return
+
+      const { data: before, error: readError } = await sb
+        .from('tasks')
+        .select('task_id,status,chairman_needed,blocked_since,projects(business_id)')
+        .eq('task_id', taskId)
+        .maybeSingle<TaskAuditRow>()
+
+      if (readError) throw new Error(`Supabase tasks ${readError.code ?? '?'}: ${readError.message}`)
+      // RLS가 가린 행도 여기로 온다. '없다'와 '못 본다'를 화면에서 구분할 필요는 없다 — 둘 다 못 고친다.
+      if (!before) throw new Error('Supabase tasks: 그 업무가 없거나 볼 수 없다.')
+
+      const after: Record<string, string | boolean> = {}
+      if (patch.status !== undefined) {
+        after.status = patch.status
+        // CH-017 대기일수의 기준선을 같이 옮긴다. 안 옮기면 어제 Done된 일이 30일째 대기로 보인다.
+        after.blocked_since = dayKey()
+      }
+      if (patch.chairman_needed !== undefined) after.chairman_needed = patch.chairman_needed
+
+      const { error: auditError } = await sb.from('audit_log').insert({
+        action: 'update',
+        entity_table: 'tasks',
+        entity_id: taskId,
+        business_id: before.projects?.business_id ?? null,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        // 바뀌는 칸만 넣는다. 행 전체를 남기면 무엇이 달라졌는지 읽는 사람이 다시 비교해야 한다.
+        before: Object.fromEntries(
+          Object.keys(after).map((k) => [k, before[k as keyof TaskAuditRow] ?? null]),
+        ),
+        after,
+      })
+      if (auditError) {
+        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      }
+
+      const { error: updateError } = await sb.from('tasks').update(after).eq('task_id', taskId)
+      if (updateError) {
+        throw new Error(
+          `Supabase tasks ${updateError.code ?? '?'}: ${updateError.message} ` +
+            '(감사 기록은 남았고 업무는 바뀌지 않았다. 0002의 tasks_write 정책을 본다.)',
+        )
       }
     },
 
