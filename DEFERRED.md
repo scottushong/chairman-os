@@ -15,6 +15,7 @@
 | D-06 제목 중복 | 그대로 확정. | 완료 |
 | D-07 차트 축 | **A** — 이중 축(좌 매출 / 우 손익 3종). | 완료 (`line-chart.tsx`, `finance-trend.tsx`) |
 | D-08 기업 추가 저장 위치 | 미결 | 아래 참고 |
+| D-09 담당자 이름 표시 | 미결 | 아래 참고. **live 화면에 uuid가 그대로 보인다** |
 
 아래 원문은 결정 근거로 남겨 둔다.
 
@@ -29,6 +30,37 @@
 | 02_기능명세 02_데이터필드 | **Task에 `blocked_since` 추가** (ISO date, 필수, 보안등급 [일반]) | DEFERRED D-02 결정 A. "이 업무가 지금 상태로 들어간 날"이다. CH-017 대기일수를 이 값에서 잰다. 시트 Tasks에는 `deadline`만 있어 대기일수를 낼 수 없었다. 이미 반영된 곳: `src/types/domain.ts`, `src/data/tasks.json`, `supabase/migrations/0001_init.sql` (tasks.blocked_since), `src/components/dashboard/waiting-on-me.tsx` |
 | 02_기능명세 CH-008 Acceptance | "정의된 Formula와 일치" → "시트에 기록된 EBITDA를 그대로 표시" | DEFERRED D-01 결정 A |
 
+
+---
+
+## D-09. live 모드에서 담당자 칸에 uuid가 그대로 보인다
+
+**무엇이** Phase 1-B에서 live로 붙이고 나니 아래 세 곳이 36자 uuid를 그대로 뿌린다.
+
+| 화면 | 지금 보이는 값 |
+|---|---|
+| CH-017 Waiting on Me · 담당 | `3d720a36-f18a-5182-85f4-a4b2da972b2b` |
+| CH-012 Monthly Priority · 담당 | `6989f700-c2de-5e70-8a56-40847a6fc94d` |
+| CH-014 Next Milestone · 담당 | `bc7f441e-0861-550f-986d-6f237144fc8d` |
+
+**왜 이렇게 됐나** dummy일 때는 시드의 `owner`가 `user_001` 문자열이라 그게 그대로 떴다.
+DB의 `owner_user_id`는 uuid 컬럼이라, `scripts/gen-seed-sql.ts`가 `user_001`을
+sha1로 접어 uuid 모양으로 만들어 넣었다(`userUuid`). 그 uuid들은 **auth.users에 없는 값**이고
+따라서 `user_profiles`에도 대응 행이 없다 — 즉 **이름을 꺼내 올 곳이 DB에 존재하지 않는다.**
+어댑터(`repository/supabase.ts`)는 uuid를 그대로 `owner`에 넣고, 화면은 받은 문자열을 그린다.
+
+`user_001`도 사람 이름은 아니었지만, 36자 uuid는 회장 화면에서 칸을 밀어내고 아무 정보도 주지 않는다.
+
+**골라야 할 것**
+- (A) 실제 임직원 계정을 만들고 `user_profiles`를 채운 뒤, 어댑터가 `owner_user_id → display_name`을
+  조인해서 내린다. 근본 해결이지만 계정 생성이 선행돼야 한다. 권장.
+- (B) 조인은 붙이되, 프로필이 없는 uuid는 `담당자 미지정`으로 떨어뜨린다.
+  지금 시드로도 화면이 깨끗해진다. (A)로 가는 중간 단계로도 쓸 수 있다.
+- (C) 시드 uuid ↔ 표시명 매핑표를 앱에 하나 두고 그걸로 옮긴다.
+  화면은 바로 좋아지지만 DB 밖에 두 번째 진실이 생긴다. 권하지 않는다.
+
+**주의** `user_profiles`는 `auth.users(id)`를 FK로 물고 있어(0002), 실재하지 않는 시드 uuid로는
+프로필 행을 만들 수 없다. (A)를 고르면 시드의 `owner_user_id`도 같이 갈아야 한다.
 
 ---
 
