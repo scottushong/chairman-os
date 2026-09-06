@@ -50,6 +50,8 @@ const TABLES = [
   'user_settings',
   // 0008_business_strategy.sql (CH-024)
   'business_strategy',
+  // 0011_user_invitations.sql (CH-049)
+  'user_invitations',
 ] as const
 
 /**

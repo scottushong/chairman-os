@@ -1,5 +1,3 @@
-import Link from 'next/link'
-
 import { Icon } from '@/components/ui/icon'
 import { businessName } from '@/lib/lookup'
 import type { AiNightOutput, Business } from '@/types'
@@ -54,50 +52,90 @@ function NightItem({ item, businesses }: { item: AiNightOutput; businesses: Busi
   const pct = Math.round(item.confidence * 100)
   const low = item.confidence < CONFIDENCE_FLOOR
 
+  /**
+   * CH-019 Acceptance의 '결과 링크 제공'.
+   *
+   * artifact_link가 늘 열 수 있는 주소인 것은 아니다. 시드의 값은 artifact://dummy/001 처럼
+   * 아직 실체가 없는 자리 표시라, 그걸 링크로 그리면 눌러도 아무 일이 없다.
+   * 그래서 http/https일 때만 링크로 만들고 아니면 경로를 글자로 보여 준다 —
+   * '링크가 있는 척'과 '아직 없다'를 화면에서 구분할 수 있어야 한다.
+   *
+   * javascript: 같은 스킴을 걸러 내는 일도 겸한다. 야간 Job이 채우는 칸이라
+   * 사람이 검토하지 않은 값이 그대로 회장 화면의 링크가 되는 자리다.
+   */
+  const openable = isOpenableLink(item.artifact_link)
+
+  const body = (
+    <>
+      <div className="flex items-center gap-1.5">
+        <span className="shrink-0 rounded bg-raised px-1.5 py-0.5 text-[9px] font-semibold text-ink-dim">
+          {item.job_type}
+        </span>
+        <span className="truncate text-[11px] text-ink-muted">
+          {businessName(businesses, item.business_id)}
+        </span>
+        {item.status !== 'Done' ? (
+          <span
+            className={`shrink-0 text-[9px] ${item.status === 'Failed' ? 'text-critical' : 'text-warning'}`}
+          >
+            {item.status === 'Failed' ? '실패' : '진행 중'}
+          </span>
+        ) : null}
+        <span
+          title="AI 신뢰도"
+          className={`ml-auto shrink-0 text-[11px] font-semibold tnum ${
+            low ? 'text-ink-muted' : 'text-ink'
+          }`}
+        >
+          {pct}%
+        </span>
+      </div>
+
+      <p className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-ink-dim">
+        {item.result_summary}
+      </p>
+
+      <p className="mt-0.5 flex items-center gap-1 text-[10px] text-ink-muted tnum">
+        {formatRunTime(item.completed_at)}
+        <Icon name="file-text" className="size-3" />
+        {openable ? '결과물 열기' : `결과물 경로 ${item.artifact_link || '없음'}`}
+      </p>
+    </>
+  )
+
+  const shell = 'block rounded-lg px-1.5 py-1.5'
+
   return (
     <li>
-      {/* TODO(CH-019): 결과물 상세 라우트가 생기면 artifact_link를 여기에 연결한다. */}
-      <Link
-        href="#"
-        className="block rounded-lg px-1.5 py-1.5 transition-colors hover:bg-raised"
-        aria-label={`${item.job_type} 결과 열기: ${item.result_summary}`}
-      >
-        <div className="flex items-center gap-1.5">
-          <span className="shrink-0 rounded bg-raised px-1.5 py-0.5 text-[9px] font-semibold text-ink-dim">
-            {item.job_type}
-          </span>
-          <span className="truncate text-[11px] text-ink-muted">
-            {businessName(businesses, item.business_id)}
-          </span>
-          {item.status !== 'Done' ? (
-            <span
-              className={`shrink-0 text-[9px] ${item.status === 'Failed' ? 'text-critical' : 'text-warning'}`}
-            >
-              {item.status === 'Failed' ? '실패' : '진행 중'}
-            </span>
-          ) : null}
-          <span
-            title="AI 신뢰도"
-            className={`ml-auto shrink-0 text-[11px] font-semibold tnum ${
-              low ? 'text-ink-muted' : 'text-ink'
-            }`}
-          >
-            {pct}%
-          </span>
-        </div>
-
-        <p className="mt-0.5 line-clamp-2 text-[12px] leading-snug text-ink-dim">
-          {item.result_summary}
-        </p>
-
-        <p className="mt-0.5 flex items-center gap-1 text-[10px] text-ink-muted tnum">
-          {formatRunTime(item.completed_at)}
-          <Icon name="file-text" className="size-3" />
-          결과물 열기
-        </p>
-      </Link>
+      {openable ? (
+        <a
+          href={item.artifact_link}
+          target="_blank"
+          rel="noreferrer noopener"
+          className={`${shell} transition-colors hover:bg-raised`}
+          aria-label={`${item.job_type} 결과 열기: ${item.result_summary}`}
+        >
+          {body}
+        </a>
+      ) : (
+        <div className={shell}>{body}</div>
+      )}
     </li>
   )
+}
+
+/**
+ * 열 수 있는 주소인가. documents.ts의 isStorageLink와 같은 규칙이다 —
+ * 이 프로젝트에서 '링크'라는 말의 뜻이 화면마다 달라지면 안 된다.
+ */
+function isOpenableLink(value: string | undefined): value is string {
+  if (!value) return false
+  try {
+    const url = new URL(value)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+  } catch {
+    return false
+  }
 }
 
 /** '2026-09-01T06:40' → '09-01 06:40'. 야간 작업은 날짜보다 시각이 먼저 읽힌다. */

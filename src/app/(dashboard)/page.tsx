@@ -1,5 +1,6 @@
 import { AiNightPanel } from '@/components/dashboard/ai-night-panel'
 import { AlertPanel } from '@/components/dashboard/alert-panel'
+import { CriticalBanner } from '@/components/dashboard/critical-banner'
 import { DashboardBoard } from '@/components/dashboard/dashboard-board'
 import { DecisionPanel } from '@/components/dashboard/decision-panel'
 import { StrategicCoordinates } from '@/components/dashboard/strategic-coordinates'
@@ -70,6 +71,15 @@ export default async function DashboardPage() {
           </button>
         ))}
       </div>
+
+      {/* CH-018 Acceptance는 'Critical rule 즉시 상단 노출'이다. 아래 4열 그리드의
+          AlertPanel은 KPI 8타일과 12개월 차트 뒤에 있어 스크롤해야 보인다 —
+          Critical이 있는 날에만 이 한 줄이 맨 위에 선다. */}
+      <CriticalBanner
+        alerts={data.alerts}
+        decisions={data.decisions}
+        businesses={data.businesses}
+      />
 
       <div className="mt-4 space-y-5">
         <DashboardBoard
