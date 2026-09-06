@@ -14,6 +14,7 @@ import {
 } from '@/data'
 import { AUDIT_ACTION, type DecisionAuditRecord } from '@/lib/decision-log'
 import { dayKey } from '@/lib/format'
+import type { SearchHit } from '@/lib/search'
 import type { Business, DocumentRecord, Task } from '@/types'
 
 import {
@@ -87,6 +88,81 @@ export const dummyRepository: ChairmanRepository = {
   /** CH-042. live에서는 보안등급 판정이 documents_read(0002)에 있다. dummy에는 등급도 사람도 없다. */
   async listDocuments(): Promise<DocumentRecord[]> {
     return [...memoryDocuments]
+  },
+
+  /**
+   * CH-043. live에서는 두 길(full-text / ILIKE)이 갈리지만 여기서는 하나다.
+   * dummy에는 색인도 사전도 없고, 부분 일치 하나면 시드 500행을 훑는 데 충분하다.
+   * 그래서 검색 결과가 dummy와 live에서 미묘하게 다를 수 있다 — 영문 질의에서 그렇다.
+   */
+  async search(query: string, limitPerKind: number): Promise<SearchHit[]> {
+    const q = query.trim().toLowerCase()
+    if (!q) return []
+
+    const hit = (...fields: (string | undefined)[]) =>
+      fields.some((f) => f?.toLowerCase().includes(q))
+
+    const all = [...businesses, ...memoryBusinesses]
+    const scopeName = (id: string | null) =>
+      id === null ? '그룹 공통' : (all.find((b) => b.business_id === id)?.name ?? id)
+
+    return [
+      ...all
+        .filter((b) => hit(b.name, b.industry))
+        .slice(0, limitPerKind)
+        .map((b): SearchHit => ({
+          kind: 'business',
+          id: b.business_id,
+          title: b.name,
+          subtitle: b.industry,
+          business_id: b.business_id,
+        })),
+      ...projects
+        .filter((p) => hit(p.name))
+        .slice(0, limitPerKind)
+        .map((p): SearchHit => ({
+          kind: 'project',
+          id: p.project_id,
+          title: p.name,
+          subtitle: scopeName(p.business_id),
+          business_id: p.business_id,
+        })),
+      ...tasks
+        .filter((t) => hit(t.title))
+        .slice(0, limitPerKind)
+        .map((t): SearchHit => {
+          const project = projects.find((p) => p.project_id === t.project_id)
+          return {
+            kind: 'task',
+            id: t.task_id,
+            title: t.title,
+            subtitle: project
+              ? `${scopeName(project.business_id)} · ${project.name}`
+              : '연결된 프로젝트 없음',
+            business_id: project?.business_id ?? null,
+          }
+        }),
+      ...decisions
+        .filter((d) => hit(d.title, d.ai_recommendation))
+        .slice(0, limitPerKind)
+        .map((d): SearchHit => ({
+          kind: 'decision',
+          id: d.decision_id,
+          title: d.title,
+          subtitle: scopeName(d.business_id),
+          business_id: d.business_id,
+        })),
+      ...memoryDocuments
+        .filter((d) => hit(d.title, d.doc_type))
+        .slice(0, limitPerKind)
+        .map((d): SearchHit => ({
+          kind: 'document',
+          id: d.document_id,
+          title: d.title,
+          subtitle: `${scopeName(d.business_id === 'group' ? null : d.business_id)} · ${d.doc_type}`,
+          business_id: d.business_id === 'group' ? null : d.business_id,
+        })),
+    ]
   },
 
   async listTopGoals() {

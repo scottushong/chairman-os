@@ -1,4 +1,5 @@
 import type { DecisionAuditRecord, DecisionAction } from '@/lib/decision-log'
+import type { SearchHit } from '@/lib/search'
 import type {
   AiNightOutput,
   Alert,
@@ -42,6 +43,12 @@ export interface ChairmanRepository {
 
   /** CH-042. 보이는 범위는 회사 권한과 보안등급이 같이 정한다(0002 documents_read). */
   listDocuments(): Promise<DocumentRecord[]>
+
+  /**
+   * CH-043. 5종(기업·프로젝트·업무·결정·문서)을 한 번에 찾는다.
+   * 앱에서 권한으로 거르지 않는다 — 0002의 read 정책들이 이미 걸려 있다.
+   */
+  search(query: string, limitPerKind: number): Promise<SearchHit[]>
 
   listTopGoals(): Promise<TopGoal[]>
   listMonthlyPriorities(): Promise<MonthlyPriority[]>

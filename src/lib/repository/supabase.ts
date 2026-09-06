@@ -2,6 +2,7 @@ import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js'
 
 import { AUDIT_ACTION, DECISION_STATUS, type DecisionAuditRecord } from '@/lib/decision-log'
 import { dayKey } from '@/lib/format'
+import { needsSubstringSearch, type SearchHit } from '@/lib/search'
 
 import type {
   AiNightOutput,
@@ -271,6 +272,44 @@ function createOwnerNames(sb: SupabaseClient): () => Promise<Map<string, string>
   }
 }
 
+/**
+ * business_id → 회사명. 검색 결과의 '어느 회사 건인가' 한 줄이 이걸 쓴다.
+ * ownerNames와 같은 이유로 요청 하나 동안만 캐시한다.
+ */
+function createBusinessNames(sb: SupabaseClient): () => Promise<Map<string, string>> {
+  let pending: Promise<Map<string, string>> | null = null
+
+  return () => {
+    pending ??= (async () => {
+      const { data, error } = await sb
+        .from('businesses')
+        .select('business_id,name')
+        .returns<{ business_id: string; name: string }[]>()
+      const rows = unwrap('businesses', data, error)
+      return new Map(rows.map((r) => [r.business_id, r.name]))
+    })()
+    return pending
+  }
+}
+
+/**
+ * PostgREST의 or() 필터는 문자열을 그대로 파싱한다. 쉼표와 점이 구분자라
+ * 사용자가 친 글자가 거기 섞이면 필터가 통째로 다른 뜻이 된다.
+ *
+ * 그래서 구조를 만드는 글자와 LIKE 와일드카드를 지운다. '%'를 남겨 두면
+ * 검색창에 '%'만 쳐도 모든 행이 걸린다 — 느릴 뿐 아니라 RLS 밖으로 나가지도 않으면서
+ * 목록을 통째로 훑는 질의가 된다.
+ */
+function likeSafe(query: string): string {
+  return query.replace(/[,.()"\%_*:]/g, ' ').trim()
+}
+
+/** cols 중 하나라도 부분 일치하면. 값은 큰따옴표로 감싸 공백이 섞여도 한 덩어리로 읽히게 한다. */
+function orIlike(cols: string[], query: string): string {
+  const pattern = `%${likeSafe(query)}%`
+  return cols.map((c) => `${c}.ilike."${pattern}"`).join(',')
+}
+
 function ownerName(names: Map<string, string>, userId: string | null): string {
   if (!userId) return UNKNOWN_OWNER
   return names.get(userId) ?? UNKNOWN_OWNER
@@ -279,6 +318,7 @@ function ownerName(names: Map<string, string>, userId: string | null): string {
 export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository {
   // 이 어댑터는 요청 하나마다 새로 만들어진다. 이름표 캐시의 수명도 딱 그만큼이다.
   const ownerNames = createOwnerNames(sb)
+  const businessNames = createBusinessNames(sb)
 
   return {
     mode: 'live',
@@ -286,8 +326,9 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     async listBusinesses(): Promise<Business[]> {
       const { data, error } = await sb
         .from('businesses')
-        .select('*')
-        .order('sort_order')
+        // 필요한 칸만 부른다. 0009가 붙인 search_tsv는 검색 색인이라 화면이 쓸 일이 없고,
+        // '*'로 부르면 회사 다섯 줄마다 그 벡터가 통째로 실려 온다.
+        .select('business_id,name,status,industry,owner_user_id,visible,sort_order,pinned')
         .returns<BusinessRow[]>()
       const rows = unwrap('businesses', data, error)
       return rows.map((r) => ({
@@ -322,7 +363,12 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
 
     async listProjects(): Promise<Project[]> {
       const [{ data, error }, names] = await Promise.all([
-        sb.from('projects').select('*').returns<ProjectRow[]>(),
+        sb
+          .from('projects')
+          .select(
+            'project_id,business_id,name,owner_user_id,priority,status,progress_pct,deadline',
+          )
+          .returns<ProjectRow[]>(),
         ownerNames(),
       ])
       const rows = unwrap('projects', data, error)
@@ -340,7 +386,12 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
 
     async listTasks(): Promise<Task[]> {
       const [{ data, error }, names] = await Promise.all([
-        sb.from('tasks').select('*').returns<TaskRow[]>(),
+        sb
+          .from('tasks')
+          .select(
+            'task_id,project_id,title,owner_user_id,priority,status,blocked_since,deadline,chairman_needed',
+          )
+          .returns<TaskRow[]>(),
         ownerNames(),
       ])
       const rows = unwrap('tasks', data, error)
@@ -360,7 +411,9 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     async listDecisions(): Promise<Decision[]> {
       const { data, error } = await sb
         .from('decisions')
-        .select('*')
+        .select(
+          'decision_id,business_id,title,options,ai_recommendation,impact,deadline,status,ai_confidence,attachment_url',
+        )
         .order('deadline')
         .returns<DecisionRow[]>()
       const rows = unwrap('decisions', data, error)
@@ -500,6 +553,140 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         owner: ownerName(names, r.owner_user_id),
         deadline: r.deadline,
       }))
+    },
+
+    /**
+     * CH-043 통합검색.
+     *
+     * 앱 레벨 권한 필터가 한 줄도 없다. 일부러 없다 —
+     * 아래 다섯 질의는 전부 로그인한 본인의 세션으로 나가고, 0002의 read 정책들이
+     * 각 표에서 이미 행을 자른다. businesses_read / projects_read / tasks_read /
+     * decisions_read / documents_read 가 그대로 걸리고, 문서는 거기에 보안등급까지 같이 본다.
+     * 여기서 또 거르면 판정이 두 곳으로 갈라지고, 그중 한쪽만 고치는 날이 온다.
+     *
+     * 길이 둘인 이유는 0009_search.sql 머리에 적어 두었다.
+     *   한글이 섞인 질의  → ILIKE '%…%'  (Postgres에 한국어 사전이 없다)
+     *   영문·숫자만       → search_tsv   (단어 단위. 색인이 그대로 먹는다)
+     *
+     * 다섯 표를 병렬로 친다. 순서대로 기다리면 드롭다운이 다섯 번의 왕복만큼 늦게 뜬다.
+     */
+    async search(query: string, limitPerKind: number): Promise<SearchHit[]> {
+      const q = query.trim()
+      if (!q) return []
+
+      const substring = needsSubstringSearch(q)
+
+      /** 두 길 중 하나를 고른다. 표마다 같은 판단을 반복해 적지 않으려고 한 자리에 둔다. */
+      const match = <T extends { or: (f: string) => T; textSearch: (c: string, v: string, o: { config: string; type: 'websearch' }) => T }>(
+        builder: T,
+        cols: string[],
+      ): T =>
+        substring
+          ? builder.or(orIlike(cols, q))
+          : builder.textSearch('search_tsv', q, { config: 'simple', type: 'websearch' })
+
+      const [businessRows, projectRows, taskRows, decisionRows, documentRows, names] =
+        await Promise.all([
+          match(
+            sb.from('businesses').select('business_id,name,industry').limit(limitPerKind),
+            ['name', 'industry'],
+          ).returns<{ business_id: string; name: string; industry: string }[]>(),
+
+          match(
+            sb.from('projects').select('project_id,name,business_id').limit(limitPerKind),
+            ['name'],
+          ).returns<{ project_id: string; name: string; business_id: string }[]>(),
+
+          match(
+            sb
+              .from('tasks')
+              .select('task_id,title,projects(name,business_id)')
+              .limit(limitPerKind),
+            ['title'],
+          ).returns<
+            {
+              task_id: string
+              title: string
+              projects: { name: string; business_id: string } | null
+            }[]
+          >(),
+
+          match(
+            sb.from('decisions').select('decision_id,title,business_id').limit(limitPerKind),
+            ['title', 'ai_recommendation'],
+          ).returns<{ decision_id: string; title: string; business_id: string }[]>(),
+
+          match(
+            sb
+              .from('documents')
+              .select('document_id,title,doc_type,business_id')
+              .limit(limitPerKind),
+            ['title', 'doc_type'],
+          ).returns<
+            {
+              document_id: string
+              title: string
+              doc_type: string
+              business_id: string | null
+            }[]
+          >(),
+
+          businessNames(),
+        ])
+
+      const scopeName = (id: string | null) =>
+        id === null ? '그룹 공통' : (names.get(id) ?? id)
+
+      return [
+        ...unwrap('businesses', businessRows.data, businessRows.error).map(
+          (r): SearchHit => ({
+            kind: 'business',
+            id: r.business_id,
+            title: r.name,
+            subtitle: r.industry,
+            business_id: r.business_id,
+          }),
+        ),
+        ...unwrap('projects', projectRows.data, projectRows.error).map(
+          (r): SearchHit => ({
+            kind: 'project',
+            id: r.project_id,
+            title: r.name,
+            subtitle: scopeName(r.business_id),
+            business_id: r.business_id,
+          }),
+        ),
+        ...unwrap('tasks', taskRows.data, taskRows.error).map(
+          (r): SearchHit => ({
+            kind: 'task',
+            id: r.task_id,
+            title: r.title,
+            // 업무는 회사를 project를 거쳐야 안다. 둘 다 붙여야 어느 맥락인지 읽힌다.
+            subtitle: r.projects
+              ? `${scopeName(r.projects.business_id)} · ${r.projects.name}`
+              : '연결된 프로젝트 없음',
+            business_id: r.projects?.business_id ?? null,
+          }),
+        ),
+        ...unwrap('decisions', decisionRows.data, decisionRows.error).map(
+          (r): SearchHit => ({
+            kind: 'decision',
+            id: r.decision_id,
+            title: r.title,
+            subtitle: scopeName(r.business_id),
+            business_id: r.business_id,
+          }),
+        ),
+        ...unwrap('documents', documentRows.data, documentRows.error).map(
+          (r): SearchHit => ({
+            kind: 'document',
+            id: r.document_id,
+            title: r.title,
+            subtitle: `${scopeName(r.business_id)} · ${r.doc_type}`,
+            business_id: r.business_id,
+          }),
+        ),
+      ]
     },
 
     /**

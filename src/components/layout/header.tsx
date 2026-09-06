@@ -1,11 +1,13 @@
 import { signOut } from '@/app/actions/auth'
 import { DataModeBadge } from '@/components/layout/data-mode-badge'
+import { GlobalSearch } from '@/components/layout/global-search'
 import { Icon } from '@/components/ui/icon'
 import { ROLE_LABEL_KO, type SessionUser } from '@/types'
 
 /**
  * 상단 바. CH-043 Global Search와 CH-044 AI Query가 같은 입력창을 쓰기로 되어 있어
- * 검색창을 화면 가운데 가장 넓은 자리에 둔다.
+ * 검색창을 화면 가운데 가장 넓은 자리에 둔다. 지금 그 자리는 CH-043이 쓰고 있고,
+ * AI Query(CH-044)가 붙으면 같은 컴포넌트 안에서 갈라진다.
  *
  * 오른쪽 끝의 이름은 세션에서 온다. 하드코딩해 두면 어느 계정으로 보고 있는지 알 수 없고,
  * 그건 권한이 역할마다 갈라지는 화면에서 가장 위험한 종류의 거짓말이다.
@@ -13,17 +15,9 @@ import { ROLE_LABEL_KO, type SessionUser } from '@/types'
 export function Header({ user }: { user: SessionUser | null }) {
   return (
     <header className="flex h-14 shrink-0 items-center gap-4 border-b border-line-soft bg-nav px-5">
-      <div className="relative mx-auto w-full max-w-[560px]">
-        <Icon
-          name="search"
-          className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-ink-muted"
-        />
-        <input
-          type="search"
-          placeholder="전체 검색 (회사, 프로젝트, 문서, 사람, 업무 등)"
-          className="h-9 w-full rounded-lg border border-line bg-panel pr-3 pl-9 text-[13px] text-ink placeholder:text-ink-muted focus:border-accent focus:outline-none"
-        />
-      </div>
+      {/* CH-043. 이 헤더는 서버 컴포넌트로 두고 검색창만 클라이언트로 떼어 낸다 —
+          세션(user)은 여기서 그리고, 입력·드롭다운만 브라우저로 내려간다. */}
+      <GlobalSearch />
 
       <div className="flex shrink-0 items-center gap-1">
         <DataModeBadge />
