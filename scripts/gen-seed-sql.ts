@@ -15,6 +15,8 @@
  *   3) ai-night-output.json에는 PK가 없다   → completed_at 순서로 ain_001.. 부여
  *   4) monthly_priorities.period            → priority_id의 YYYY_MM에서 뽑는다
  *   5) mes/rnd/bom.json                     → 0001에 테이블이 없다(Layer 2 · Vault). 내보내지 않는다
+ *   6) strategy.json의 business_coordinates → 0008_business_strategy.sql이 표와 시드를 같이 갖는다.
+ *      여기서도 내보내면 새 DB에 같은 5행이 두 번 들어간다. 왜 0003이 아니라 0008인지는 그 파일 머리에.
  */
 
 import { createHash } from 'node:crypto'

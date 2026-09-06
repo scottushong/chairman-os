@@ -1,3 +1,5 @@
+import Link from 'next/link'
+
 import { Icon } from '@/components/ui/icon'
 import { formatEok, formatPct } from '@/lib/format'
 import { STATUS_LABEL_KO, type Business } from '@/types'
@@ -135,12 +137,13 @@ export function BusinessCard({
         />
       </div>
 
-      <button
-        type="button"
-        className="mt-3.5 w-full rounded-lg border border-line py-1.5 text-[12px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+      {/* CH-023~024. 카드가 숫자 셋만 올리는 건 나머지를 이 화면으로 내렸기 때문이다. */}
+      <Link
+        href={`/business/${encodeURIComponent(business.business_id)}`}
+        className="mt-3.5 block w-full rounded-lg border border-line py-1.5 text-center text-[12px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
       >
         상세 보기
-      </button>
+      </Link>
     </article>
   )
 }

@@ -8,6 +8,7 @@ import type {
   Alert,
   Business,
   BusinessStatus,
+  BusinessStrategy,
   CriticalRisk,
   Decision,
   DecisionStatus,
@@ -176,6 +177,20 @@ interface AlertRow {
   severity: Severity
   source: 'Rule' | 'AI'
   status: Alert['status']
+}
+
+interface BusinessStrategyRow {
+  business_id: string
+  mission: string
+  goal_1y: string
+  goal_3y: string
+  top_kpi: string
+  current_position: string
+  target_position: string
+  gap: string
+  current_priority: string
+  bottleneck: string
+  chairman_comment: string
 }
 
 interface DocumentRow {
@@ -484,6 +499,32 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         title: r.title,
         owner: ownerName(names, r.owner_user_id),
         deadline: r.deadline,
+      }))
+    },
+
+    /**
+     * CH-024.
+     * toScope를 쓰지 않는다 — 0008은 business_id를 NOT NULL PK로 두었다.
+     * 그룹 행이라는 개념 자체가 없어서 'group' 센티널로 옮길 값이 나오지 않는다.
+     */
+    async listBusinessStrategy(): Promise<BusinessStrategy[]> {
+      const { data, error } = await sb
+        .from('business_strategy')
+        .select('*')
+        .returns<BusinessStrategyRow[]>()
+      const rows = unwrap('business_strategy', data, error)
+      return rows.map((r) => ({
+        business_id: r.business_id,
+        mission: r.mission,
+        goal_1y: r.goal_1y,
+        goal_3y: r.goal_3y,
+        top_kpi: r.top_kpi,
+        current_position: r.current_position,
+        target_position: r.target_position,
+        gap: r.gap,
+        current_priority: r.current_priority,
+        bottleneck: r.bottleneck,
+        chairman_comment: r.chairman_comment,
       }))
     },
 

@@ -54,9 +54,12 @@ function shortPeriod(period: string): string {
 interface FinanceTrendProps {
   kpis: FinanceKpi[]
   businessIds: string[]
+  /** 회사 한 곳만 볼 때(CH-023) 쓰는 제목과 범위 설명. KpiStrip과 같은 이유로 문장만 밖에서 받는다. */
+  title?: string
+  scopeNote?: string
 }
 
-export function FinanceTrend({ kpis, businessIds }: FinanceTrendProps) {
+export function FinanceTrend({ kpis, businessIds, title, scopeNote }: FinanceTrendProps) {
   const periods = periodsOf(kpis)
 
   const rows = LINES.map((line) => {
@@ -76,9 +79,10 @@ export function FinanceTrend({ kpis, businessIds }: FinanceTrendProps) {
     <section className="rounded-xl border border-line-soft bg-panel p-3.5">
       <div className="flex items-baseline justify-between">
         <h2 className="flex items-baseline gap-2 text-[13px] font-semibold">
-          그룹 전체 재무 현황
+          {title ?? '그룹 전체 재무 현황'}
           <span className="text-[11px] font-normal text-ink-muted tnum">
-            최근 {periods.length}개월 · 표시 중인 {businessIds.length}개사 합계
+            최근 {periods.length}개월 ·{' '}
+            {scopeNote ?? `표시 중인 ${businessIds.length}개사 합계`}
           </span>
         </h2>
         <div className="flex items-center gap-2">

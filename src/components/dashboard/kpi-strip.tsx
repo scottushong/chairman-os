@@ -34,20 +34,29 @@ interface KpiStripProps {
   /** 원천. repository가 준 그대로다 — 여기서 따로 필터하지 않는다. */
   kpis: FinanceKpi[]
   businessIds: string[]
+  /**
+   * 회사 한 곳만 볼 때(CH-023) 쓰는 제목과 범위 설명.
+   *
+   * 같은 8타일을 회사 상세에서 다시 쓴다. 컴포넌트를 복사하지 않는 이유는
+   * 지표 목록과 색 규칙이 두 벌이 되면 대시보드와 상세가 서로 다른 KPI를 말하게 되기 때문이다.
+   * 다른 건 머리글 문장뿐이라 그것만 밖에서 받는다.
+   */
+  title?: string
+  scopeNote?: string
 }
 
-export function KpiStrip({ kpis, businessIds }: KpiStripProps) {
+export function KpiStrip({ kpis, businessIds, title, scopeNote }: KpiStripProps) {
   // 표시 월은 데이터가 정한다. 상수로 박아 두면 다음 달 실적이 들어와도 화면이 안 움직인다.
   const period = latestPeriodOf(kpis)
 
   return (
-    <section aria-label="그룹 재무 KPI">
+    <section aria-label={title ?? '그룹 재무 KPI'}>
       <div className="mb-2 flex items-baseline gap-2">
         {/* '그룹 전체 재무 현황'은 아래 추이 카드(CH-025~026)가 쓴다. 같은 제목을 두 번 걸지 않는다. */}
-        <h2 className="text-[13px] font-semibold">그룹 KPI (당월)</h2>
+        <h2 className="text-[13px] font-semibold">{title ?? '그룹 KPI (당월)'}</h2>
         <span className="text-[11px] text-ink-muted tnum">
-          {period ? `${period.replace('-', '년 ')}월` : '기간 없음'} · 표시 중인{' '}
-          {businessIds.length}개사 합계
+          {period ? `${period.replace('-', '년 ')}월` : '기간 없음'} ·{' '}
+          {scopeNote ?? `표시 중인 ${businessIds.length}개사 합계`}
         </span>
       </div>
 

@@ -4,6 +4,7 @@ import type {
   Alert,
   Business,
   BusinessStatus,
+  BusinessStrategy,
   CriticalRisk,
   Decision,
   DocumentRecord,
@@ -46,6 +47,9 @@ export interface ChairmanRepository {
   listMonthlyPriorities(): Promise<MonthlyPriority[]>
   listCriticalRisks(): Promise<CriticalRisk[]>
   listNextMilestones(): Promise<NextMilestone[]>
+
+  /** CH-024. 회사당 한 행. 그룹 행은 없다 — 그룹의 방향은 CH-011 goals가 갖는다(0008). */
+  listBusinessStrategy(): Promise<BusinessStrategy[]>
 
   /** CH-016/CH-051. 이미 처리된 결정들. '오늘 몇 건 털었나'와 처리 이력이 여기서 나온다. */
   listDecisionAudit(): Promise<DecisionAuditRecord[]>

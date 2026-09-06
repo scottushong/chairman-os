@@ -1,6 +1,7 @@
 import {
   aiNightOutputs,
   alerts,
+  businessCoordinates,
   businesses,
   criticalRisks,
   decisions,
@@ -99,6 +100,11 @@ export const dummyRepository: ChairmanRepository = {
   },
   async listNextMilestones() {
     return [...nextMilestones]
+  },
+
+  /** CH-024. live에서는 0008 business_strategy가 같은 값을 갖는다. */
+  async listBusinessStrategy() {
+    return [...businessCoordinates]
   },
 
   async listDecisionAudit() {

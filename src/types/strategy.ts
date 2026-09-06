@@ -46,8 +46,17 @@ export interface NextMilestone {
   deadline: IsoDate
 }
 
-/** CH-024. 회사 상세의 전체 좌표. */
-export interface StrategicCoordinates {
+/**
+ * CH-024. 회사 상세의 전략 좌표. 회사당 하나다(0008 business_strategy).
+ *
+ * CH-011~014와 축이 다르다. 저쪽은 측정되는 목표(progress_pct, deadline)고
+ * 여기는 방향과 판단이다 — 전부 사람이 쓴 문장이라 계산되는 칸이 없다.
+ * gap도 current/target에서 계산하지 않는다. 무엇이 차이인지는 숫자가 아니라 판단이다.
+ *
+ * next_milestone을 들고 있지 않다. 그 값의 원천은 milestones 표(CH-014)고,
+ * 상세 화면은 그 표를 이미 따로 읽는다. 여기에 사본을 두면 두 값이 갈라진다.
+ */
+export interface BusinessStrategy {
   business_id: BusinessId
   mission: string
   goal_1y: string
@@ -58,6 +67,5 @@ export interface StrategicCoordinates {
   gap: string
   current_priority: string
   bottleneck: string
-  next_milestone: NextMilestone
   chairman_comment: string
 }

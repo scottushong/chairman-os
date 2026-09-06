@@ -3,6 +3,7 @@ import type {
   Alert,
   BomRecord,
   Business,
+  BusinessStrategy,
   CriticalRisk,
   Decision,
   FinanceKpi,
@@ -47,6 +48,8 @@ export const topGoals = strategyJson.top_goals as TopGoal[]
 export const monthlyPriorities = strategyJson.monthly_priorities as MonthlyPriority[]
 export const criticalRisks = strategyJson.critical_risks as CriticalRisk[]
 export const nextMilestones = strategyJson.next_milestones as NextMilestone[]
+/** CH-024. live에서는 0008 business_strategy가 같은 값을 갖는다. */
+export const businessCoordinates = strategyJson.business_coordinates as BusinessStrategy[]
 
 /**
  * 여기 있던 조회·정렬 헬퍼(LATEST_PERIOD / visibleBusinesses / businessName / businessOfProject)는

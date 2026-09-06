@@ -7,7 +7,7 @@ import { supabaseConfig } from '@/lib/supabase/config'
 import { createSupabaseAnonClient, createSupabaseServerClient } from '@/lib/supabase/server'
 
 /**
- * GET /api/health — Supabase가 붙었는지, 0001의 테이블 14개가 다 서 있는지,
+ * GET /api/health — Supabase가 붙었는지, 스키마의 테이블이 다 서 있는지,
  * 그리고 RLS가 양쪽 방향으로 제대로 도는지 한 번에 본다.
  *
  * 두 번 센다. 한 번으로는 답이 안 나오기 때문이다.
@@ -29,7 +29,10 @@ import { createSupabaseAnonClient, createSupabaseServerClient } from '@/lib/supa
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-/** 0001_init.sql이 만드는 물리 테이블 전부. 순서는 0001의 정의 순서다. */
+/**
+ * 지금 스키마의 물리 테이블 전부. 0001의 정의 순서로 두고, 뒤에 나중 마이그레이션이 만든 표를 붙인다.
+ * 이 배열이 곧 '무엇이 서 있어야 하는가'의 답이라, 표를 만들면 여기도 같이 는다.
+ */
 const TABLES = [
   'businesses',
   'finance_kpis',
@@ -45,12 +48,21 @@ const TABLES = [
   'documents',
   'audit_log',
   'user_settings',
+  // 0008_business_strategy.sql (CH-024)
+  'business_strategy',
 ] as const
 
-/** 0003_seed.sql이 넣은 행 수. 이 숫자와 어긋나면 시드가 덜 들어갔거나 RLS가 가리고 있다. */
-const SEEDED_ROWS = 519
+/**
+ * 마이그레이션이 넣은 시드 행 수. 어긋나면 시드가 덜 들어갔거나 RLS가 가리고 있다.
+ *   519  0003_seed.sql (11개 표)
+ *   +5   0008_business_strategy.sql (5개사 전략 좌표)
+ *
+ * 화면에서 회사·문서를 추가하면(CH-002 / CH-042) 이 숫자와 어긋난다. 그건 고장이 아니다 —
+ * 그래서 sees_all_seed는 참고값이고 ok 판정에는 들어가지 않는다.
+ */
+const SEEDED_ROWS = 524
 
-/** 0003이 손대지 않는 표. 519 검산에서 뺀다(0003 파일 머리의 '넣지 않는 테이블'). */
+/** 시드가 손대지 않는 표. 위 검산에서 뺀다(0003 파일 머리의 '넣지 않는 테이블'). */
 const NOT_SEEDED = new Set(['documents', 'audit_log', 'user_settings'])
 
 /** PostgREST가 "그런 테이블 없다"고 말하는 두 가지 방식. 나머지 오류와 구분해야 한다. */

@@ -94,5 +94,72 @@
       "owner": "user_005",
       "deadline": "2026-09-23"
     }
+  ],
+  "business_coordinates": [
+    {
+      "business_id": "biz_dy",
+      "mission": "접착 소재로 국내 제조 공정의 기준을 만든다.",
+      "goal_1y": "EVA 자동화 라인 가동률 90% · 연매출 1,100억",
+      "goal_3y": "핫멜트 국내 1위 · 해외 매출 비중 30%",
+      "top_kpi": "EVA 자동화 라인 가동률",
+      "current_position": "가동률 89.1% · 수작업 전환 구간 2곳 잔존",
+      "target_position": "가동률 90% 안정 · 전 구간 자동화",
+      "gap": "0.9%p. 숫자는 코앞이지만 남은 두 구간이 가장 어려운 구간이다.",
+      "current_priority": "Hot-melt 판매가 조정 확정 — 원료 단가 +12%를 언제 반영하는가",
+      "bottleneck": "60일 이상 매출채권. 회수가 밀리면 자동화 2차 투자 시점이 같이 밀린다.",
+      "chairman_comment": "가동률은 이미 목표 근처다. 올해 남은 문제는 라인이 아니라 회수다."
+    },
+    {
+      "business_id": "biz_vana",
+      "mission": "중견 제조사가 자기 데이터로 의사결정하게 만든다.",
+      "goal_1y": "북미 ARR 50억 · 캐나다 파일럿 3곳 계약 전환",
+      "goal_3y": "북미 vertical 3개 · ARR 300억",
+      "top_kpi": "북미 ARR",
+      "current_position": "ARR 24억 · 캐나다 파일럿 배포 중",
+      "target_position": "ARR 50억 · 첫 vertical에서 레퍼런스 3곳",
+      "gap": "26억. 파일럿을 계약으로 바꾸지 못하면 숫자가 아니라 방식이 문제다.",
+      "current_priority": "첫 North America vertical 확정 — 9월을 넘기면 계약이 4분기로 밀린다",
+      "bottleneck": "vertical 미확정. 영업·제품·채용이 전부 이 결정 하나를 기다리고 있다.",
+      "chairman_comment": "고를 수 있을 때 고르는 게 낫다. 완벽한 vertical을 기다리다 분기를 잃는다."
+    },
+    {
+      "business_id": "biz_sticky",
+      "mission": "국내 화학 소재를 유럽 유통망에 얹는다.",
+      "goal_1y": "폴란드 1차 선적 완료 · 유럽 거래처 5곳",
+      "goal_3y": "유럽 매출 비중 40% · 현지 물류 거점 확보",
+      "top_kpi": "유럽 거래처 수",
+      "current_position": "폴란드 1차 선적 준비 · 거래처 2곳",
+      "target_position": "거래처 5곳 · 반복 주문 구조",
+      "gap": "3곳. 첫 선적이 늦어지면 나머지 협상 카드가 전부 약해진다.",
+      "current_priority": "폴란드 통관 서류 최종 확인 — 선적일이 협상 일정 전체를 잡고 있다",
+      "bottleneck": "폴란드 경쟁사 신규 진입에 따른 판가 압박. 가격으로 맞서면 마진이 남지 않는다.",
+      "chairman_comment": "가격이 아니라 납기로 이긴다. 첫 선적을 날짜에 맞추는 것이 이번 분기의 전부다."
+    },
+    {
+      "business_id": "biz_hof",
+      "mission": "사람과 눈을 맞추는 로봇을 만든다.",
+      "goal_1y": "Alpha Face 프로토타입 완성 · 시연 3회",
+      "goal_3y": "양산 1호기 출하 · 파트너 2곳",
+      "top_kpi": "프로토타입 진행률",
+      "current_position": "진행률 32% · actuator 후보 미확정",
+      "target_position": "프로토타입 완성 · 시연 가능한 상태",
+      "gap": "68%p. 일정보다 부품 결정이 앞서야 하는데 그 결정이 서 있다.",
+      "current_priority": "Face actuator 후보 비교 — 여기서 막히면 뒤 일정이 통째로 밀린다",
+      "bottleneck": "핵심 부품 공급 지연 가능성. 후보를 하나로 좁히기 전에는 대안도 세울 수 없다.",
+      "chairman_comment": "육성 단계다. 일정보다 부품 결정의 질을 먼저 본다."
+    },
+    {
+      "business_id": "biz_boram",
+      "mission": "생활 소비재를 자체 브랜드로 세운다.",
+      "goal_1y": "시리즈 A 유치 완료 · 자체 브랜드 매출 비중 50%",
+      "goal_3y": "연매출 300억 · 오프라인 채널 확대",
+      "top_kpi": "자체 브랜드 매출 비중",
+      "current_position": "브랜드 비중 31% · 시리즈 A 협상 중",
+      "target_position": "브랜드 비중 50% · 투자 유치 완료",
+      "gap": "19%p와 투자 한 건. 둘 중 투자가 먼저 정리돼야 나머지가 움직인다.",
+      "current_priority": "시리즈 A 투자자 제안 검토 — 수용 / 조건 재협상 / 보류",
+      "bottleneck": "제안 조건이 브랜드 지분 구조를 건드린다. 급하다고 그대로 받으면 3년 목표가 흔들린다.",
+      "chairman_comment": "자금이 급한 것과 조건이 나쁜 것은 다른 문제다. 재협상 여지를 먼저 본다."
+    }
   ]
 }
