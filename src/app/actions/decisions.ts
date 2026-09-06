@@ -54,6 +54,8 @@ export async function decide(
   }
 
   // 목록에서 빠지고 '오늘 처리' 카운터가 오르는 건 서버가 다시 그려야 보인다.
+  // 같은 결정이 대시보드 패널(CH-015)과 전자결재 화면(CH-041) 두 곳에 떠 있다.
   revalidatePath('/')
+  revalidatePath('/approvals')
   return {}
 }

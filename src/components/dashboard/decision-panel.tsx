@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useMemo, useState, useTransition } from 'react'
 
 import { decide } from '@/app/actions/decisions'
@@ -88,7 +89,13 @@ export function DecisionPanel({ decisions, businesses, audit }: DecisionPanelPro
           <Icon name="stamp" className="size-4 text-gold" />내 결정 사항
           <span className="text-[11px] font-normal text-ink-muted tnum">{open.length}건</span>
         </h2>
-        <span className="text-[9px] text-ink-muted tnum">CH-015~016</span>
+        {/* CH-041로 넘긴다. 여기서는 제목과 선택안까지, 저기서는 첨부와 처리 이력까지 본다. */}
+        <Link
+          href="/approvals"
+          className="text-[11px] text-ink-muted transition-colors hover:text-ink"
+        >
+          전체 보기
+        </Link>
       </div>
       <p className="mt-0.5 text-[11px] text-ink-muted tnum">오늘 처리 {countOn(audit, today)}건</p>
 

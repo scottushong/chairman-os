@@ -161,6 +161,8 @@ interface DecisionRow {
   impact: WorkPriority
   deadline: string
   status: DecisionStatus
+  ai_confidence: number | string | null
+  attachment_url: string | null
 }
 
 interface AlertRow {
@@ -341,6 +343,10 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         impact: r.impact,
         deadline: r.deadline,
         status: r.status,
+        // null과 undefined를 구분한다. 화면은 '값이 없으면 그 줄을 뺀다'로 그리므로
+        // 0으로 채우면 신뢰도 0%인 추천처럼 보인다.
+        ai_confidence: r.ai_confidence === null ? undefined : num(r.ai_confidence),
+        attachment_url: r.attachment_url ?? undefined,
       }))
     },
 
@@ -442,13 +448,16 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
      * 그래서 다른 역할로 보면 '오늘 처리 N건'이 자기 몫만 세어진다. 그게 맞다.
      */
     async listDecisionAudit(): Promise<DecisionAuditRecord[]> {
-      const { data, error } = await sb
-        .from('audit_log')
-        .select('entity_id,action,occurred_at,actor_user_id')
-        .eq('entity_table', 'decisions')
-        .in('action', ['approve', 'reject', 'modify', 'delegate'])
-        .order('occurred_at', { ascending: false })
-        .returns<DecisionAuditRow[]>()
+      const [{ data, error }, names] = await Promise.all([
+        sb
+          .from('audit_log')
+          .select('entity_id,action,occurred_at,actor_user_id')
+          .eq('entity_table', 'decisions')
+          .in('action', ['approve', 'reject', 'modify', 'delegate'])
+          .order('occurred_at', { ascending: false })
+          .returns<DecisionAuditRow[]>(),
+        ownerNames(),
+      ])
       const rows = unwrap('audit_log', data, error)
       return rows
         .filter((r): r is DecisionAuditRow & { entity_id: string } => r.entity_id !== null)
@@ -457,6 +466,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
           action: r.action,
           occurred_at: r.occurred_at,
           actor_user_id: r.actor_user_id,
+          actor_name: ownerName(names, r.actor_user_id),
         }))
     },
 

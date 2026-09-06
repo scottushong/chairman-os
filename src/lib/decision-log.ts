@@ -54,6 +54,12 @@ export interface DecisionAuditRecord {
   /** 기록 시각(ISO). 감사에는 '무엇을'보다 '언제'가 먼저 필요하다. */
   occurred_at: string
   actor_user_id: UserId | null
+  /**
+   * 처리한 사람의 표시 이름. CH-041 타임라인이 쓴다.
+   * uuid를 그대로 뿌리지 않는다 — 프로필을 못 찾으면 '미지정'이다(DEFERRED D-09 결정 B).
+   * 남의 프로필은 Chairman이 아니면 0002가 내주지 않으므로, 보는 사람에 따라 값이 다를 수 있다.
+   */
+  actor_name: string
 }
 
 /** 결정별 마지막 처리. 같은 건이 여러 번 기록돼도 화면에는 최신 것 하나만 쓴다. */

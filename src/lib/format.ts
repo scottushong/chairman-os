@@ -41,3 +41,27 @@ export function dayKey(date = new Date()): string {
   const d = String(date.getDate()).padStart(2, '0')
   return `${date.getFullYear()}-${m}-${d}`
 }
+
+/**
+ * 감사 타임라인의 시각. 'M월 D일 HH:mm'.
+ *
+ * 초는 버린다 — 사람이 이력을 읽을 때 쓰는 정보가 아니다. 정밀한 값이 필요하면
+ * audit_log의 occurred_at을 직접 본다. 연도는 올해가 아닐 때만 붙인다.
+ *
+ * 서버와 브라우저가 같은 문자열을 내야 하므로 시간대를 KST로 못 박는다.
+ * 안 박으면 서버(UTC)와 브라우저(KST)가 다른 시각을 그려 하이드레이션이 어긋난다.
+ */
+export function formatDateTime(iso: string, today = new Date()): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return iso
+
+  return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    year: date.getFullYear() === today.getFullYear() ? undefined : 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date)
+}

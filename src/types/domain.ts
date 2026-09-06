@@ -90,6 +90,18 @@ export interface Task {
 export const DECISION_STATUS = ['Open', 'Approved', 'Rejected', 'Modified', 'Delegated'] as const
 export type DecisionStatus = (typeof DECISION_STATUS)[number]
 
+/**
+ * 화면 표기. 처리 '행동'의 이름(decision-log.ts의 DECISION_ACTION_LABEL_KO)과 글자가 겹치지만
+ * 축이 다르다 — 저쪽은 버튼에 쓰는 동사고 이쪽은 결정이 지금 어떤 상태인가다.
+ */
+export const DECISION_STATUS_LABEL_KO: Record<DecisionStatus, string> = {
+  Open: '대기',
+  Approved: '승인됨',
+  Rejected: '거절됨',
+  Modified: '수정요청',
+  Delegated: '위임됨',
+}
+
 /** CH-015/016. options는 시트에 'A|B|C' 형태로 들어와 배열로 정규화한다. */
 export interface Decision {
   decision_id: DecisionId
@@ -100,6 +112,10 @@ export interface Decision {
   impact: WorkPriority
   deadline: IsoDate
   status: DecisionStatus
+  /** 0~1. 시드에는 없다(gen-seed-sql.ts). 값이 없으면 화면에서 신뢰도 줄을 아예 빼는 게 맞다. */
+  ai_confidence?: Confidence
+  /** CH-041 첨부. 사내 스토리지 링크만이다 — 파일 실체는 Chairman OS에 없다(0006). */
+  attachment_url?: string
 }
 
 export const ALERT_STATUS = ['Open', 'Acknowledged', 'Resolved'] as const

@@ -160,6 +160,8 @@ export const dummyRepository: ChairmanRepository = {
       action: AUDIT_ACTION[entry.action],
       occurred_at: new Date().toISOString(),
       actor_user_id: entry.actor_user_id ?? null,
+      // dummy에는 user_profiles가 없다. live 어댑터가 프로필을 못 찾았을 때와 같은 말을 쓴다.
+      actor_name: '미지정',
     })
     if (process.env.NODE_ENV !== 'production') {
       console.warn(

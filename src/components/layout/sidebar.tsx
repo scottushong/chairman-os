@@ -29,7 +29,9 @@ const NAV: NavGroup[] = [
     items: [
       { label: '대시보드', href: '/', icon: 'home' },
       { label: '그룹 전체 현황', href: '/group', icon: 'layers' },
-      { label: '내 결정 사항', href: '/decisions', icon: 'check-circle' },
+      // CH-041 전자결재. 라벨은 시안 그대로 두고 대상만 실제 화면으로 잇는다 —
+      // 그 화면이 곧 대시보드 '내 결정 사항' 패널의 전체 화면 버전이다.
+      { label: '내 결정 사항', href: '/approvals', icon: 'check-circle' },
       { label: 'AI 인사이트', href: '/ai', icon: 'sparkles', badge: 'NEW' },
       { label: '캘린더', href: '/calendar', icon: 'calendar' },
       { label: '업무 관리', href: '/tasks', icon: 'clipboard' },
