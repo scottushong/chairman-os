@@ -1,65 +1,32 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useSearchParams } from 'next/navigation'
 
-import { Icon, type IconName } from '@/components/ui/icon'
+import { Icon } from '@/components/ui/icon'
+import { NAV, navHref, type NavItem } from '@/lib/nav'
 
 /**
  * 좌측 네비. 05_Architecture의 모듈 경로를 그대로 화면 메뉴로 편다.
  * Layer 0(관제) → 회사 → Layer 2(기능 시스템) 순서라 스크롤을 내릴수록 아래 계층으로 간다.
+ *
+ * 메뉴 목록 자체는 lib/nav.ts에 있다. /coming-soon이 같은 목록을 봐야 하기 때문이다 —
+ * 아직 없는 화면을 누르면 404 대신 그쪽으로 간다(DEFERRED D-14 선택지 B).
  */
-
-interface NavItem {
-  label: string
-  href: string
-  icon: IconName
-  badge?: string
-  /** 하위 화면이 더 있는 항목. 지금은 표식만 두고 펼침은 다음 단계다. */
-  expandable?: boolean
-}
-
-interface NavGroup {
-  title?: string
-  items: NavItem[]
-}
-
-const NAV: NavGroup[] = [
-  {
-    items: [
-      { label: '대시보드', href: '/', icon: 'home' },
-      { label: '그룹 전체 현황', href: '/group', icon: 'layers' },
-      // CH-041 전자결재. 라벨은 시안 그대로 두고 대상만 실제 화면으로 잇는다 —
-      // 그 화면이 곧 대시보드 '내 결정 사항' 패널의 전체 화면 버전이다.
-      { label: '내 결정 사항', href: '/approvals', icon: 'check-circle' },
-      { label: 'AI 인사이트', href: '/ai', icon: 'sparkles', badge: 'NEW' },
-      { label: '캘린더', href: '/calendar', icon: 'calendar' },
-      { label: '업무 관리', href: '/tasks', icon: 'clipboard' },
-      { label: '프로젝트', href: '/projects', icon: 'folder' },
-      { label: '기업 관리 (A,B,C)', href: '/businesses', icon: 'building', expandable: true },
-    ],
-  },
-  {
-    title: '기능 시스템',
-    items: [
-      { label: '재무 / 회계', href: '/finance', icon: 'coin' },
-      { label: '인사 / 조직', href: '/hr', icon: 'users' },
-      { label: '문서 / 지식', href: '/documents', icon: 'book' },
-      { label: '영업 / CRM', href: '/crm', icon: 'target' },
-      { label: '구매 / SCM', href: '/scm', icon: 'cart' },
-      { label: '생산 / MES', href: '/mes', icon: 'factory' },
-      { label: '연구 / R&D', href: '/rnd', icon: 'flask' },
-      { label: '자산 / 설비', href: '/assets', icon: 'server' },
-      { label: '리스크 / 컴플라이언스', href: '/risk', icon: 'shield' },
-    ],
-  },
-  {
-    items: [{ label: '설정', href: '/settings', icon: 'settings', expandable: true }],
-  },
-]
-
 export function Sidebar() {
   const pathname = usePathname()
+  const searchParams = useSearchParams()
+
+  /**
+   * 지금 이 메뉴에 있는가.
+   *
+   * 준비 중 메뉴는 전부 /coming-soon 한 주소를 쓴다. 경로만 비교하면 열세 개가 동시에
+   * 켜지므로 ?menu= 까지 본다 — 그게 그 화면이 어느 메뉴로 왔는지 아는 유일한 값이다.
+   */
+  const isActive = (item: NavItem) =>
+    item.ready
+      ? pathname === item.href
+      : pathname === '/coming-soon' && searchParams.get('menu') === item.label
 
   return (
     <aside className="flex w-[212px] shrink-0 flex-col border-r border-line-soft bg-nav">
@@ -78,17 +45,19 @@ export function Sidebar() {
             ) : null}
             <ul className="space-y-0.5">
               {group.items.map((item) => {
-                const active = pathname === item.href
+                const active = isActive(item)
                 return (
-                  <li key={item.href}>
+                  <li key={item.label}>
                     <Link
-                      href={item.href}
+                      href={navHref(item)}
                       aria-current={active ? 'page' : undefined}
                       className={[
                         'group flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-[13px] transition-colors',
                         active
                           ? 'bg-accent font-semibold text-white'
                           : 'text-ink-dim hover:bg-raised hover:text-ink',
+                        // 아직 없는 화면은 글자를 한 단계 죽인다. 눌러도 되지만 같은 무게는 아니다.
+                        item.ready || active ? '' : 'opacity-60',
                       ].join(' ')}
                     >
                       <Icon name={item.icon} className="size-[17px] shrink-0" />
