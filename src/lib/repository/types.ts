@@ -6,7 +6,9 @@ import type {
   BusinessStatus,
   CriticalRisk,
   Decision,
+  DocumentRecord,
   FinanceKpi,
+  SecurityClass,
   MonthlyPriority,
   NextMilestone,
   Project,
@@ -37,6 +39,9 @@ export interface ChairmanRepository {
   listAlerts(): Promise<Alert[]>
   listAiNightOutputs(): Promise<AiNightOutput[]>
 
+  /** CH-042. 보이는 범위는 회사 권한과 보안등급이 같이 정한다(0002 documents_read). */
+  listDocuments(): Promise<DocumentRecord[]>
+
   listTopGoals(): Promise<TopGoal[]>
   listMonthlyPriorities(): Promise<MonthlyPriority[]>
   listCriticalRisks(): Promise<CriticalRisk[]>
@@ -53,6 +58,9 @@ export interface ChairmanRepository {
 
   /** CH-040. 업무의 상태·회장확인 플래그를 옮긴다. 0002의 tasks_write가 담당자와 승인권자만 통과시킨다. */
   updateTask(taskId: string, patch: TaskPatch, actor: AuditActor): Promise<void>
+
+  /** CH-042. 사내 스토리지 링크 한 줄을 등록한다. 파일은 올리지 않는다. */
+  createDocument(input: NewDocument, actor: AuditActor): Promise<DocumentRecord>
 
   /** CH-003/004/056. 지금 로그인한 사람의 개인 설정. 남의 것은 어떤 역할도 못 읽는다(0002). */
   getUserSettings(): Promise<UserSettings>
@@ -109,6 +117,27 @@ export interface NewBusiness {
   name: string
   industry: string
   status: BusinessStatus
+}
+
+/**
+ * CH-042로 등록할 문서 한 건.
+ *
+ * 파일이 없다. storage_url은 사내 스토리지의 주소이고 Chairman OS는 그 주소만 안다
+ * (CLAUDE.md 데이터 원칙 / vault_columns.md 선택지 B). Vault 등급이라고 예외가 아니다 —
+ * 오히려 Vault일수록 실체가 이 DB에 없어야 한다.
+ *
+ * document_id가 없다. DB의 시퀀스가 doc_001 형태로 발급한다(0007) —
+ * 앱이 max+1을 계산하면 동시에 둘이 올릴 때 같은 번호가 난다.
+ *
+ * version도 없다. 0001의 기본값 1로 들어간다. 개정을 올리는 경로는 아직 만들지 않았다.
+ */
+export interface NewDocument {
+  title: string
+  /** 'group'이면 그룹 공통 문서. 어댑터가 DB의 NULL로 옮긴다. */
+  business_id: string
+  doc_type: string
+  security_class: SecurityClass
+  storage_url: string
 }
 
 /**

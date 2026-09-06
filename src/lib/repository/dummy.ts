@@ -13,7 +13,7 @@ import {
 } from '@/data'
 import { AUDIT_ACTION, type DecisionAuditRecord } from '@/lib/decision-log'
 import { dayKey } from '@/lib/format'
-import type { Business, Task } from '@/types'
+import type { Business, DocumentRecord, Task } from '@/types'
 
 import {
   DUPLICATE_BUSINESS_ID,
@@ -21,6 +21,7 @@ import {
   type ChairmanRepository,
   type DecisionAuditEntry,
   type NewBusiness,
+  type NewDocument,
   type TaskPatch,
   type UserSettings,
 } from './types'
@@ -42,6 +43,12 @@ const memoryBusinesses: Business[] = []
  * 바뀐 칸만 따로 들고 있다가 listTasks에서 덮는다. 이것도 서버가 살아 있는 동안만이다.
  */
 const memoryTaskPatches = new Map<string, TaskPatch & { blocked_since?: string }>()
+
+/**
+ * CH-042로 등록한 문서. 시드 JSON이 없는 표라(0003의 '넣지 않는 테이블') 처음에는 비어 있다.
+ * 여기도 서버가 살아 있는 동안만이다.
+ */
+const memoryDocuments: DocumentRecord[] = []
 
 /** 개인 설정도 마찬가지다. 서버가 살아 있는 동안만 남는다. */
 const memorySettings: UserSettings = { hidden_businesses: [], pinned_businesses: null }
@@ -74,6 +81,11 @@ export const dummyRepository: ChairmanRepository = {
   },
   async listAiNightOutputs() {
     return [...aiNightOutputs]
+  },
+
+  /** CH-042. live에서는 보안등급 판정이 documents_read(0002)에 있다. dummy에는 등급도 사람도 없다. */
+  async listDocuments(): Promise<DocumentRecord[]> {
+    return [...memoryDocuments]
   },
 
   async listTopGoals() {
@@ -140,6 +152,30 @@ export const dummyRepository: ChairmanRepository = {
           '영구 기록은 live 모드의 Supabase audit_log뿐이다(CH-051).',
       )
     }
+  },
+
+  /** CH-042. id는 live에서 DB 시퀀스가 준다. 여기서는 같은 모양(doc_001)을 흉내 낸다. */
+  async createDocument(input: NewDocument, actor: AuditActor): Promise<DocumentRecord> {
+    const created: DocumentRecord = {
+      document_id: `doc_${String(memoryDocuments.length + 1).padStart(3, '0')}`,
+      business_id: input.business_id,
+      title: input.title,
+      doc_type: input.doc_type,
+      security_class: input.security_class,
+      storage_url: input.storage_url,
+      version: 1,
+      uploaded_by: '미지정',
+      created_at: new Date().toISOString(),
+    }
+    memoryDocuments.push(created)
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        `[dummy] create ${created.document_id} by ${actor.role} — 메모리에만 남는다. ` +
+          '영구 기록은 live 모드의 Supabase audit_log뿐이다(CH-051).',
+      )
+    }
+    return created
   },
 
   async getUserSettings() {

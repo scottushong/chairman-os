@@ -11,11 +11,13 @@ import type {
   CriticalRisk,
   Decision,
   DecisionStatus,
+  DocumentRecord,
   FinanceKpi,
   FinanceMetric,
   MonthlyPriority,
   NextMilestone,
   Project,
+  SecurityClass,
   Severity,
   Task,
   TaskStatus,
@@ -29,6 +31,7 @@ import {
   type ChairmanRepository,
   type DecisionAuditEntry,
   type NewBusiness,
+  type NewDocument,
   type TaskPatch,
   type UserSettings,
 } from './types'
@@ -173,6 +176,18 @@ interface AlertRow {
   severity: Severity
   source: 'Rule' | 'AI'
   status: Alert['status']
+}
+
+interface DocumentRow {
+  document_id: string
+  business_id: string | null
+  title: string
+  doc_type: string
+  security_class: SecurityClass
+  storage_url: string
+  version: number
+  uploaded_by: string | null
+  created_at: string
 }
 
 interface UserSettingsRow {
@@ -379,6 +394,38 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         status: r.status,
         artifact_link: r.artifact_link ?? '',
         confidence: r.confidence === null ? 0 : num(r.confidence),
+      }))
+    },
+
+    /**
+     * CH-042.
+     * 앱에서 등급으로 거르지 않는다. documents_read(0002)가 회사 범위와
+     * class_rank(security_class) <= class_rank(max_class()) 를 같이 본다 —
+     * 등급이 모자란 사람에게는 그 행이 존재하지 않는 것처럼 보인다.
+     * 여기서 또 거르면 판정이 두 곳으로 갈라지고, 그중 한쪽만 고치는 날이 온다.
+     */
+    async listDocuments(): Promise<DocumentRecord[]> {
+      const [{ data, error }, names] = await Promise.all([
+        sb
+          .from('documents')
+          .select(
+            'document_id,business_id,title,doc_type,security_class,storage_url,version,uploaded_by,created_at',
+          )
+          .order('created_at', { ascending: false })
+          .returns<DocumentRow[]>(),
+        ownerNames(),
+      ])
+      const rows = unwrap('documents', data, error)
+      return rows.map((r) => ({
+        document_id: r.document_id,
+        business_id: toScope(r.business_id),
+        title: r.title,
+        doc_type: r.doc_type,
+        security_class: r.security_class,
+        storage_url: r.storage_url,
+        version: r.version,
+        uploaded_by: ownerName(names, r.uploaded_by),
+        created_at: r.created_at,
       }))
     },
 
@@ -652,6 +699,80 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
           `Supabase tasks ${updateError.code ?? '?'}: ${updateError.message} ` +
             '(감사 기록은 남았고 업무는 바뀌지 않았다. 0002의 tasks_write 정책을 본다.)',
         )
+      }
+    },
+
+    /**
+     * CH-042 링크 등록.
+     *
+     * document_id를 보내지 않는다. 0007의 시퀀스 default가 doc_001 형태로 발급하고,
+     * 방금 만든 행을 그대로 돌려받아(.select) 화면이 쓸 값을 얻는다.
+     *
+     * 그래서 이 한 자리만 이 파일의 다른 쓰기와 순서가 반대다 — INSERT가 먼저다.
+     * 감사 기록의 entity_id가 document_id인데, 그 값을 DB가 정하기 때문이다.
+     * 기록을 먼저 남기려면 id를 앱이 정해야 하고, 그러면 동시에 두 사람이 올릴 때 번호가 겹친다.
+     * 겹치는 id로 남은 감사 기록은 '기록이 없는 것'보다 나쁘다 — 두 문서의 이력이 한 줄에 섞인다.
+     *
+     * 그 대가로 'INSERT는 됐는데 기록이 안 남는' 창이 생긴다. 그때는 호출자에게 그대로 말하고,
+     * 문서는 목록에 남는다 — 조용히 지우면 그게 감사 대상 행위가 되어 버린다.
+     */
+    async createDocument(input: NewDocument, actor: AuditActor): Promise<DocumentRecord> {
+      const scope = input.business_id === GROUP ? null : input.business_id
+
+      const { data, error } = await sb
+        .from('documents')
+        .insert({
+          business_id: scope,
+          title: input.title,
+          doc_type: input.doc_type,
+          security_class: input.security_class,
+          storage_url: input.storage_url,
+          uploaded_by: actor.user_id,
+        })
+        .select(
+          'document_id,business_id,title,doc_type,security_class,storage_url,version,uploaded_by,created_at',
+        )
+        .single<DocumentRow>()
+
+      if (error || !data) {
+        throw new Error(
+          `Supabase documents ${error?.code ?? '?'}: ${error?.message ?? '행이 돌아오지 않았다'}`,
+        )
+      }
+
+      const { error: auditError } = await sb.from('audit_log').insert({
+        action: 'create',
+        entity_table: 'documents',
+        entity_id: data.document_id,
+        business_id: scope,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        // 링크 주소까지 남긴다. 어디를 가리키는 문서를 등록했는지가 이 기록의 요점이다.
+        after: {
+          title: data.title,
+          doc_type: data.doc_type,
+          security_class: data.security_class,
+          storage_url: data.storage_url,
+        },
+      })
+      if (auditError) {
+        throw new Error(
+          `Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message} ` +
+            `(문서 ${data.document_id}는 등록됐고 감사 기록만 남지 않았다.)`,
+        )
+      }
+
+      return {
+        document_id: data.document_id,
+        business_id: toScope(data.business_id),
+        title: data.title,
+        doc_type: data.doc_type,
+        security_class: data.security_class,
+        storage_url: data.storage_url,
+        version: data.version,
+        // 이 칸은 표시 이름이다. uuid를 그대로 넣으면 목록에서 읽어 온 행들과 다른 값이 섞인다.
+        uploaded_by: ownerName(await ownerNames(), actor.user_id),
+        created_at: data.created_at,
       }
     },
 

@@ -48,6 +48,13 @@ export const SEVERITY_LABEL_KO: Record<Severity, string> = {
   Critical: '긴급',
 }
 
+/** 보안등급 표기. 03_Vault_Map의 [일반]/[제한]/[Vault] 표기를 화면에서도 그대로 쓴다. */
+export const SECURITY_CLASS_LABEL_KO: Record<SecurityClass, string> = {
+  Normal: '일반',
+  Restricted: '제한',
+  Vault: 'Vault',
+}
+
 export const WORK_PRIORITY_LABEL_KO: Record<WorkPriority, string> = {
   Critical: '긴급',
   High: '높음',

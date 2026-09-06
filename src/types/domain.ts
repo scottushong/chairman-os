@@ -151,6 +151,29 @@ export interface Alert {
   status: AlertStatus
 }
 
+/**
+ * CH-042 중앙 문서.
+ *
+ * 이름을 Document로 두지 않는다 — DOM의 전역 Document와 겹쳐서, 화면 코드에서
+ * 어느 쪽을 가리키는지가 import 줄을 봐야만 알 수 있게 된다.
+ *
+ * storage_url은 사내 스토리지 링크다. 파일 실체는 Chairman OS에 없다(0007).
+ * business_id의 'group'은 DB의 NULL(그룹 공통 문서)에 대응한다 — goals와 같은 규약이다.
+ */
+export interface DocumentRecord {
+  document_id: string
+  business_id: BusinessId | 'group'
+  title: string
+  doc_type: string
+  /** 이 값이 접근 판정의 입력이다. 등급이 모자란 사람에게는 행 자체가 안 보인다(0002). */
+  security_class: SecurityClass
+  storage_url: string
+  version: number
+  /** 등록자의 표시 이름. 프로필을 못 찾으면 '미지정'이다(DEFERRED D-09 결정 B). */
+  uploaded_by: string
+  created_at: IsoDateTime
+}
+
 /** CH-034. 생산 실적/수율/비가동. */
 export interface MesRecord {
   date: IsoDate
