@@ -45,6 +45,24 @@ export interface ChairmanRepository {
 
   /** CH-016. 결정 처리를 감사 기록으로 남기고 결정 상태를 옮긴다. */
   recordDecisionAction(entry: DecisionAuditEntry): Promise<void>
+
+  /** CH-003/004/056. 지금 로그인한 사람의 개인 설정. 남의 것은 어떤 역할도 못 읽는다(0002). */
+  getUserSettings(): Promise<UserSettings>
+  saveUserSettings(patch: Partial<UserSettings>): Promise<void>
+}
+
+/**
+ * 개인 화면 설정(user_settings). 업무 데이터가 아니라 '이 사람의 화면'이다.
+ *
+ * pinned_businesses가 null을 갖는 이유는 0005_user_settings_pins.sql에 적어 두었다 —
+ * '아직 정한 적 없음'과 '전부 해제했다'는 다른 상태고, 둘을 빈 배열 하나로 뭉치면
+ * 마지막 핀을 뗄 때 기본 핀이 되살아난다.
+ */
+export interface UserSettings {
+  /** CH-003. 대시보드에서 숨긴 회사. 데이터 삭제가 아니라 표시 플래그다. */
+  hidden_businesses: string[]
+  /** CH-004. null이면 businesses.pinned를 기본값으로 쓴다. */
+  pinned_businesses: string[] | null
 }
 
 /**
@@ -76,6 +94,7 @@ export interface DashboardSnapshot {
   alerts: Alert[]
   aiNightOutputs: AiNightOutput[]
   decisionAudit: DecisionAuditRecord[]
+  userSettings: UserSettings
   topGoals: TopGoal[]
   monthlyPriorities: MonthlyPriority[]
   criticalRisks: CriticalRisk[]
@@ -92,6 +111,7 @@ export async function loadDashboard(repo: ChairmanRepository): Promise<Dashboard
     alerts,
     aiNightOutputs,
     decisionAudit,
+    userSettings,
     topGoals,
     monthlyPriorities,
     criticalRisks,
@@ -105,6 +125,7 @@ export async function loadDashboard(repo: ChairmanRepository): Promise<Dashboard
     repo.listAlerts(),
     repo.listAiNightOutputs(),
     repo.listDecisionAudit(),
+    repo.getUserSettings(),
     repo.listTopGoals(),
     repo.listMonthlyPriorities(),
     repo.listCriticalRisks(),
@@ -120,6 +141,7 @@ export async function loadDashboard(repo: ChairmanRepository): Promise<Dashboard
     alerts,
     aiNightOutputs,
     decisionAudit,
+    userSettings,
     topGoals,
     monthlyPriorities,
     criticalRisks,

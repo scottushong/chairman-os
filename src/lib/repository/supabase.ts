@@ -22,7 +22,7 @@ import type {
   WorkPriority,
 } from '@/types'
 
-import type { ChairmanRepository, DecisionAuditEntry } from './types'
+import type { ChairmanRepository, DecisionAuditEntry, UserSettings } from './types'
 
 /**
  * Supabase 어댑터.
@@ -149,6 +149,11 @@ interface AlertRow {
   severity: Severity
   source: 'Rule' | 'AI'
   status: Alert['status']
+}
+
+interface UserSettingsRow {
+  hidden_businesses: string[] | null
+  pinned_businesses: string[] | null
 }
 
 interface DecisionAuditRow {
@@ -422,6 +427,42 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
             '(감사 기록은 남았고 결정 상태만 바뀌지 않았다. 0002의 decisions_decide 정책을 본다.)',
         )
       }
+    },
+
+    /**
+     * CH-003/004/056.
+     * where 절에 user_id를 걸지 않는다 — 0002의 user_settings_own 정책이
+     * 이미 본인 행 하나만 통과시킨다. 여기서 또 거르면 판정이 두 곳으로 갈라진다.
+     *
+     * 행이 없으면 기본값이다. 첫 로그인에 행을 만들어 두지 않아도 화면은 떠야 한다.
+     */
+    async getUserSettings(): Promise<UserSettings> {
+      const { data, error } = await sb
+        .from('user_settings')
+        .select('hidden_businesses,pinned_businesses')
+        .maybeSingle<UserSettingsRow>()
+
+      if (error) throw new Error(`Supabase user_settings ${error.code ?? '?'}: ${error.message}`)
+
+      return {
+        hidden_businesses: data?.hidden_businesses ?? [],
+        // null을 그대로 넘긴다. '아직 정한 적 없음'이라는 뜻이고 []와 다르다(0005).
+        pinned_businesses: data?.pinned_businesses ?? null,
+      }
+    },
+
+    async saveUserSettings(patch: Partial<UserSettings>) {
+      // upsert는 PK가 있어야 한다. RLS가 남의 행을 막아 주더라도 넣을 값 자체는 필요하다.
+      const {
+        data: { user },
+      } = await sb.auth.getUser()
+      if (!user) throw new Error('세션이 없다. 개인 설정은 로그인한 사람에게만 있다.')
+
+      const { error } = await sb
+        .from('user_settings')
+        .upsert({ user_id: user.id, ...patch }, { onConflict: 'user_id' })
+
+      if (error) throw new Error(`Supabase user_settings ${error.code ?? '?'}: ${error.message}`)
     },
   }
 }

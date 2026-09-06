@@ -76,6 +76,7 @@ export default async function DashboardPage() {
           businesses={data.businesses}
           financeKpis={data.financeKpis}
           projects={data.projects}
+          settings={data.userSettings}
         />
         <StrategicCoordinates
           topGoals={data.topGoals}

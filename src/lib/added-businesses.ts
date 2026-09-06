@@ -2,9 +2,14 @@ import { BUSINESS_STATUS, type Business, type BusinessStatus } from '@/types'
 
 /**
  * CH-002로 추가한 회사의 저장소.
- * 시드(src/data/businesses.json)는 읽기 전용이라 새 회사를 원본에 쓰지 않는다.
- * hidden/pinned과 같은 방식으로 localStorage에 쌓고 화면에서 시드 뒤에 이어 붙인다.
- * Phase 1에서 Business DB가 붙으면 이 파일만 갈아 끼운다.
+ *
+ * 숨김·핀은 user_settings로 옮겼는데(CH-003/004) 이건 아직 localStorage에 남아 있다.
+ * 성격이 다르기 때문이다 — 숨김·핀은 '내 화면' 설정이고, 회사 추가는 조직 데이터를 만드는 일이라
+ * businesses INSERT 권한(0002에서 Chairman만)과 감사 기록(CH-051)이 같이 걸린다.
+ * 이번 단계 범위 밖이라 그대로 뒀다(DEFERRED D-08).
+ *
+ * 그래서 지금 추가한 회사는 이 브라우저에만 있고 다른 기기에서는 보이지 않는다.
+ * 모달이 그 사실을 화면에 적어 둔다.
  */
 
 const KEY = 'chairman-os:added-businesses'

@@ -13,7 +13,7 @@ import {
 } from '@/data'
 import { AUDIT_ACTION, type DecisionAuditRecord } from '@/lib/decision-log'
 
-import type { ChairmanRepository, DecisionAuditEntry } from './types'
+import type { ChairmanRepository, DecisionAuditEntry, UserSettings } from './types'
 
 /**
  * dummy 모드의 감사 기록. 서버 프로세스가 살아 있는 동안만 남는다.
@@ -23,6 +23,9 @@ import type { ChairmanRepository, DecisionAuditEntry } from './types'
  * 진짜 기록은 live 모드에서 Supabase audit_log에만 남는다(DEFERRED D-05).
  */
 const memoryAudit: DecisionAuditRecord[] = []
+
+/** 개인 설정도 마찬가지다. 서버가 살아 있는 동안만 남는다. */
+const memorySettings: UserSettings = { hidden_businesses: [], pinned_businesses: null }
 
 /**
  * JSON 시드 어댑터.
@@ -69,6 +72,14 @@ export const dummyRepository: ChairmanRepository = {
 
   async listDecisionAudit() {
     return [...memoryAudit]
+  },
+
+  async getUserSettings() {
+    return { ...memorySettings }
+  },
+
+  async saveUserSettings(patch: Partial<UserSettings>) {
+    Object.assign(memorySettings, patch)
   },
 
   /**

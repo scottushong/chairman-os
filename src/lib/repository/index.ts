@@ -6,7 +6,12 @@ import { dummyRepository } from './dummy'
 import { createSupabaseRepository } from './supabase'
 import type { ChairmanRepository } from './types'
 
-export type { ChairmanRepository, DashboardSnapshot, DecisionAuditEntry } from './types'
+export type {
+  ChairmanRepository,
+  DashboardSnapshot,
+  DecisionAuditEntry,
+  UserSettings,
+} from './types'
 export { loadDashboard } from './types'
 
 /**

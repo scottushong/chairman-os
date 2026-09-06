@@ -2,20 +2,16 @@
 
 import { useMemo, useState, useSyncExternalStore } from 'react'
 
+import { saveHiddenBusinesses, savePinnedBusinesses } from '@/app/actions/settings'
 import { AddBusinessModal } from '@/components/dashboard/add-business-modal'
 import { BusinessCard, type BusinessMetrics } from '@/components/dashboard/business-card'
 import { FinanceTrend } from '@/components/dashboard/finance-trend'
 import { KpiStrip } from '@/components/dashboard/kpi-strip'
 import { Icon } from '@/components/ui/icon'
+import { effectivePinned } from '@/lib/business-pins'
 import { businessProgress, hasFinanceData, latestPeriodOf, valueOf } from '@/lib/finance'
+import type { UserSettings } from '@/lib/repository'
 import type { Business, FinanceKpi, Project } from '@/types'
-import {
-  getServerSnapshot,
-  getSnapshot,
-  parseHidden,
-  setHidden,
-  subscribe,
-} from '@/lib/hidden-businesses'
 import {
   addBusiness,
   getServerSnapshot as addedServerSnapshot,
@@ -23,21 +19,15 @@ import {
   parseAdded,
   subscribe as subscribeAdded,
 } from '@/lib/added-businesses'
-import {
-  getServerSnapshot as pinnedServerSnapshot,
-  getSnapshot as pinnedSnapshot,
-  parsePinned,
-  setPinned,
-  subscribe as subscribePinned,
-} from '@/lib/pinned-businesses'
 
 /**
  * Business 카드(CH-001~005)와 그룹 KPI(CH-006~010)를 한 상태 위에 올린다.
  * 카드를 숨기면 KPI 합계에서도 빠져야 하므로 표시 목록을 여기서 한 번만 들고 있는다.
  * 핀(CH-004)은 순서만 바꾼다 — 합계는 '표시 중'만 보므로 핀에 영향받지 않는다.
  *
- * 원천 데이터는 서버 컴포넌트가 repository에서 읽어 props로 내려준다.
- * 이 파일이 시드를 직접 import 하면 live 모드에서도 시드가 그려진다.
+ * 숨김·핀은 서버(user_settings)에 있다. 서버 응답을 기다렸다 그리면 클릭이 굼떠 보이므로
+ * 화면은 먼저 바꾸고 저장은 뒤따르게 하되, 실패하면 되돌린다 —
+ * 저장 안 된 상태를 저장된 것처럼 보여 주면 새로고침에서 그대로 튄다.
  */
 
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -46,6 +36,7 @@ interface DashboardBoardProps {
   businesses: Business[]
   financeKpis: FinanceKpi[]
   projects: Project[]
+  settings: UserSettings
 }
 
 /**
@@ -60,13 +51,23 @@ function letterMap(all: Business[]): Map<string, string> {
   )
 }
 
-export function DashboardBoard({ businesses, financeKpis, projects }: DashboardBoardProps) {
-  const raw = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
-  const hidden = useMemo(() => parseHidden(raw), [raw])
+export function DashboardBoard({
+  businesses,
+  financeKpis,
+  projects,
+  settings,
+}: DashboardBoardProps) {
+  const [hidden, setHidden] = useState<string[]>(settings.hidden_businesses)
+  const [pinned, setPinned] = useState<string[]>(() =>
+    effectivePinned(businesses, settings.pinned_businesses),
+  )
+  const [error, setError] = useState<string | null>(null)
 
-  const pinnedRaw = useSyncExternalStore(subscribePinned, pinnedSnapshot, pinnedServerSnapshot)
-  const pinned = useMemo(() => parsePinned(pinnedRaw, businesses), [pinnedRaw, businesses])
-
+  /**
+   * CH-002로 추가한 회사는 아직 브라우저에만 있다.
+   * businesses INSERT는 0002에서 Chairman만 할 수 있어 서버로 옮길 수는 있지만,
+   * 이번 단계 범위가 아니라 그대로 둔다(DEFERRED D-08).
+   */
   const addedRaw = useSyncExternalStore(subscribeAdded, addedSnapshot, addedServerSnapshot)
   const added = useMemo(() => parseAdded(addedRaw), [addedRaw])
 
@@ -104,20 +105,35 @@ export function DashboardBoard({ businesses, financeKpis, projects }: DashboardB
     )
   }, [ordered, financeKpis, projects])
 
+  /** 낙관적으로 먼저 바꾸고, 저장이 실패하면 이전 값으로 되돌린다. */
+  function persist(
+    next: string[],
+    previous: string[],
+    apply: (value: string[]) => void,
+    save: (ids: string[]) => Promise<{ error?: string }>,
+  ) {
+    setError(null)
+    apply(next)
+    void save(next).then((result) => {
+      if (result.error) {
+        apply(previous)
+        setError(result.error)
+      }
+    })
+  }
+
   function toggle(businessId: string) {
-    setHidden(
-      hidden.includes(businessId)
-        ? hidden.filter((id) => id !== businessId)
-        : [...hidden, businessId],
-    )
+    const next = hidden.includes(businessId)
+      ? hidden.filter((id) => id !== businessId)
+      : [...hidden, businessId]
+    persist(next, hidden, setHidden, saveHiddenBusinesses)
   }
 
   function togglePin(businessId: string) {
-    setPinned(
-      pinned.includes(businessId)
-        ? pinned.filter((id) => id !== businessId)
-        : [...pinned, businessId],
-    )
+    const next = pinned.includes(businessId)
+      ? pinned.filter((id) => id !== businessId)
+      : [...pinned, businessId]
+    persist(next, pinned, setPinned, savePinnedBusinesses)
   }
 
   const shown = ordered.filter((b) => !hidden.includes(b.business_id))
@@ -133,6 +149,11 @@ export function DashboardBoard({ businesses, financeKpis, projects }: DashboardB
           <span className="text-[11px] text-ink-muted tnum">
             {shown.length} / {ordered.length}개 표시 중
           </span>
+          {error ? (
+            <span role="alert" className="text-[11px] text-critical">
+              {error}
+            </span>
+          ) : null}
         </div>
 
         {/* 카드는 남는 폭을 균등하게 나눠 갖고, 추가 버튼만 좁게 끝에 붙인다.
