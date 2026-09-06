@@ -310,7 +310,8 @@ create policy alerts_ack on alerts
 
 create policy night_outputs_read on ai_night_outputs
   for select using (has_business(business_id) and can_read_restricted());
--- 야간 Job은 사람이 아니라 Agent가 쓴다. 서버(service_role)만 INSERT한다.
+-- 야간 Job은 사람이 아니라 Agent가 쓴다. 이 프로젝트에 service_role은 없으므로
+-- Agent도 로그인해서 RLS 안에서 돈다 — user_profiles.role = 'AIAgent' 인 계정만 INSERT한다.
 create policy night_outputs_write on ai_night_outputs
   for insert with check (auth_role() = 'AIAgent');
 
@@ -370,7 +371,8 @@ comment on view finance_kpis_masked is
 -- ---------------------------------------------------------------------
 -- 14. Production DB 직접 접근 금지 (원칙 6)
 --     앱은 PostgREST(anon/authenticated)로만 붙고, 사람이 직접 붙는 계정은 만들지 않는다.
---     service_role 키는 서버 런타임에만 두고 브라우저로 내려보내지 않는다.
+--     RLS를 우회하는 경로 자체를 두지 않는다 — service_role 키는 이 프로젝트에서 쓰지 않고,
+--     야간 AI Job도 AIAgent 역할로 로그인해 위 정책들을 그대로 통과한다(CLAUDE.md 데이터 원칙).
 --     아래는 기본값 확인용이다. Supabase 프로젝트 생성 직후 한 번 점검한다.
 --
 --       revoke all on schema public from anon;

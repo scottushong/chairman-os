@@ -1,32 +1,34 @@
 'use client'
 
-import { useMemo, useSyncExternalStore } from 'react'
+import { useMemo, useState, useTransition } from 'react'
 
+import { decide } from '@/app/actions/decisions'
 import { Icon } from '@/components/ui/icon'
-import { businessName, decisions } from '@/data'
 import {
   DECISION_ACTION,
   DECISION_ACTION_LABEL_KO,
-  appendLog,
   countOn,
-  getServerSnapshot,
-  getSnapshot,
   latestByDecision,
-  parseLog,
-  subscribe,
   type DecisionAction,
+  type DecisionAuditRecord,
 } from '@/lib/decision-log'
 import { dDay, dayKey, formatDDay } from '@/lib/format'
-import { WORK_PRIORITY_LABEL_KO, type Decision, type WorkPriority } from '@/types'
+import { businessName } from '@/lib/lookup'
+import {
+  WORK_PRIORITY_LABEL_KO,
+  type Business,
+  type Decision,
+  type WorkPriority,
+} from '@/types'
 
 /**
  * CH-015 Today Decisions + CH-016 Approve/Reject.
- * '오늘 결정할 것'만 남기는 패널이다. 처리한 건은 목록에서 빠지고 로그로 내려간다 —
+ * '오늘 결정할 것'만 남기는 패널이다. 처리한 건은 목록에서 빠지고 기록으로 내려간다 —
  * 아침에 열었을 때 남은 줄 수가 곧 남은 일이라는 게 이 화면의 약속이다.
+ *
+ * 처리 기록은 서버(audit_log)에 있다. 이 컴포넌트는 그걸 props로 받기만 하고,
+ * 버튼은 Server Action을 부른다.
  */
-
-/** Chairman이 스스로 결정하는 사람이라, 지금 단계의 actor는 하나로 고정한다. */
-const ACTOR = 'user_001'
 
 /** 중요도 색. 보통 이하는 색을 주지 않는다 — 색은 위험에만 쓴다(요구사항서 2번). */
 const IMPACT_TONE: Record<WorkPriority, string> = {
@@ -38,23 +40,45 @@ const IMPACT_TONE: Record<WorkPriority, string> = {
 
 const IMPACT_RANK: Record<WorkPriority, number> = { Critical: 4, High: 3, Medium: 2, Low: 1 }
 
-export function DecisionPanel() {
-  const raw = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
-  const log = useMemo(() => parseLog(raw), [raw])
-  const handled = useMemo(() => latestByDecision(log), [log])
+interface DecisionPanelProps {
+  decisions: Decision[]
+  businesses: Business[]
+  /** audit_log에서 읽어 온 처리 이력. '오늘 처리 N건'과 목록 제외가 여기서 나온다. */
+  audit: DecisionAuditRecord[]
+}
+
+export function DecisionPanel({ decisions, businesses, audit }: DecisionPanelProps) {
+  const handled = useMemo(() => latestByDecision(audit), [audit])
+  const [pending, startTransition] = useTransition()
+  /** 서버가 다시 그리기 전까지 눌린 줄을 미리 내린다. 안 그러면 한 박자 늦게 사라진다. */
+  const [acted, setActed] = useState<string[]>([])
+  const [error, setError] = useState<string | null>(null)
 
   const today = dayKey()
 
   // 중요도 → 마감일 순. 같은 중요도면 발등에 떨어진 것이 위로 온다.
   const open = decisions
-    .filter((d) => d.status === 'Open' && !handled.has(d.decision_id))
+    .filter(
+      (d) =>
+        d.status === 'Open' && !handled.has(d.decision_id) && !acted.includes(d.decision_id),
+    )
     .sort(
       (a, b) =>
         IMPACT_RANK[b.impact] - IMPACT_RANK[a.impact] || a.deadline.localeCompare(b.deadline),
     )
 
-  function act(decisionId: string, action: DecisionAction) {
-    appendLog({ decision_id: decisionId, action, at: new Date().toISOString(), actor: ACTOR })
+  function act(decision: Decision, action: DecisionAction) {
+    setError(null)
+    setActed((prev) => [...prev, decision.decision_id])
+
+    startTransition(async () => {
+      const result = await decide(decision.decision_id, decision.business_id, action)
+      if (result.error) {
+        // 실패했으면 줄을 되돌린다. 처리된 것처럼 사라진 채로 두면 그 건이 잊힌다.
+        setActed((prev) => prev.filter((id) => id !== decision.decision_id))
+        setError(result.error)
+      }
+    })
   }
 
   return (
@@ -66,9 +90,16 @@ export function DecisionPanel() {
         </h2>
         <span className="text-[9px] text-ink-muted tnum">CH-015~016</span>
       </div>
-      <p className="mt-0.5 text-[11px] text-ink-muted tnum">
-        오늘 처리 {countOn(log, today)}건
-      </p>
+      <p className="mt-0.5 text-[11px] text-ink-muted tnum">오늘 처리 {countOn(audit, today)}건</p>
+
+      {error ? (
+        <p
+          role="alert"
+          className="mt-1.5 rounded-md border border-critical/40 bg-critical/10 px-2 py-1 text-[11px] leading-snug text-critical"
+        >
+          {error}
+        </p>
+      ) : null}
 
       {open.length === 0 ? (
         <p className="flex flex-1 items-center justify-center text-[12px] text-ink-muted">
@@ -77,7 +108,13 @@ export function DecisionPanel() {
       ) : (
         <ul className="-mx-1.5 mt-2 flex-1 space-y-1 overflow-y-auto">
           {open.map((d) => (
-            <DecisionItem key={d.decision_id} decision={d} onAct={act} />
+            <DecisionItem
+              key={d.decision_id}
+              decision={d}
+              businesses={businesses}
+              busy={pending}
+              onAct={act}
+            />
           ))}
         </ul>
       )}
@@ -87,10 +124,14 @@ export function DecisionPanel() {
 
 function DecisionItem({
   decision,
+  businesses,
+  busy,
   onAct,
 }: {
   decision: Decision
-  onAct: (decisionId: string, action: DecisionAction) => void
+  businesses: Business[]
+  busy: boolean
+  onAct: (decision: Decision, action: DecisionAction) => void
 }) {
   // 마감이 지난 건은 D+로 뜬다. 이건 색을 줘야 하는 상태다.
   const overdue = dDay(decision.deadline) < 0
@@ -104,7 +145,7 @@ function DecisionItem({
           {WORK_PRIORITY_LABEL_KO[decision.impact]}
         </span>
         <span className="truncate text-[11px] text-ink-muted">
-          {businessName(decision.business_id)}
+          {businessName(businesses, decision.business_id)}
         </span>
         <span
           className={`ml-auto shrink-0 text-[11px] font-semibold tnum ${
@@ -142,8 +183,9 @@ function DecisionItem({
           <button
             key={action}
             type="button"
-            onClick={() => onAct(decision.decision_id, action)}
-            className={`flex-1 rounded border py-1 text-[10px] transition-colors ${
+            disabled={busy}
+            onClick={() => onAct(decision, action)}
+            className={`flex-1 rounded border py-1 text-[10px] transition-colors disabled:opacity-40 ${
               action === 'Approved'
                 ? 'border-accent/60 text-ink-dim hover:bg-accent hover:text-ink'
                 : 'border-line text-ink-muted hover:border-line hover:bg-raised hover:text-ink-dim'

@@ -39,13 +39,16 @@ Production에서 Vault를 열 때는 별도 스키마(`vault.`)와 별도 마이
 - `documents.storage_path` — 파일 위치 자체가 단서다
 - `*.owner_user_id` — 인사정보
 
-## 확인이 필요한 것
+## 결정됨 — Vault 문서의 파일 실체 (2026-09-06, Chairman)
 
-`documents.security_class = 'Vault'`인 문서의 **파일 실체**를 어디에 둘지 아직 정하지 않았다.
-현재 스키마는 메타만 갖고 `storage_path`를 남겨 두었다.
+**(B) 사내 스토리지에 두고 Chairman OS는 링크만 보관한다.**
 
-- (A) Supabase Storage의 별도 비공개 버킷 + 서명 URL, 서버에서만 발급
-- (B) 사내 스토리지에 두고 Chairman OS는 링크만 보관
-- (C) Vault 문서는 아예 Chairman OS에 올리지 않는다
+`documents.security_class = 'Vault'`인 행은 메타와 `storage_path`(사내 스토리지 링크)만 갖는다.
+파일 바이트는 Supabase에 올라가지 않으므로, Supabase 쪽이 뚫려도 Vault 문서 자체는 나가지 않는다.
 
-→ Phase 1-B 시작 전에 결정 필요.
+- `storage_path`는 사내 스토리지 URL이다. Supabase Storage 키가 아니다.
+- 링크를 아는 것과 파일을 여는 것은 다른 권한이다 — 열람 판정은 사내 스토리지가 자기 인증으로 한 번 더 한다.
+- Chairman OS는 서명 URL을 발급하지 않는다. 발급하는 순간 이 프로젝트가 Vault 접근 경로가 된다.
+- `documents_read` 정책(0002_rls.sql 10번)은 그대로다. 링크 자체도 등급 판정을 통과해야 보인다.
+
+검토했던 나머지 선택지: (A) Supabase Storage 비공개 버킷 + 서명 URL, (C) Chairman OS에 아예 올리지 않음.

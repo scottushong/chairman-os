@@ -1,10 +1,6 @@
 import type { Metadata } from 'next'
 import localFont from 'next/font/local'
 
-import { Header } from '@/components/layout/header'
-import { Sidebar } from '@/components/layout/sidebar'
-import { SystemBar } from '@/components/layout/system-bar'
-
 import './globals.css'
 
 /** Pretendard Variable. 자체 호스팅이라 외부 요청 없이 로드된다. */
@@ -20,20 +16,15 @@ export const metadata: Metadata = {
   description: '그룹 통합 관제 + Business 전용 OS 연동 + AI Overnight Workforce',
 }
 
+/**
+ * 루트에는 문서 껍데기만 둔다.
+ * 사이드바·헤더가 붙은 관제 셸은 (dashboard) 그룹의 레이아웃이 갖고,
+ * /login은 그 셸 없이 뜬다.
+ */
 export default function RootLayout({ children }: LayoutProps<'/'>) {
   return (
     <html lang="ko" className={`${pretendard.variable} h-full antialiased`}>
-      <body className="h-full font-sans">
-        {/* 셸은 화면에 고정하고 본문만 스크롤한다. 관제 화면에서 헤더가 밀리면 안 된다. */}
-        <div className="flex h-full">
-          <Sidebar />
-          <div className="flex min-w-0 flex-1 flex-col">
-            <Header />
-            <main className="flex-1 overflow-y-auto">{children}</main>
-            <SystemBar />
-          </div>
-        </div>
-      </body>
+      <body className="h-full font-sans">{children}</body>
     </html>
   )
 }

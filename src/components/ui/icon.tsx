@@ -41,6 +41,7 @@ export type IconName =
   | 'pin'
   | 'arrow-up'
   | 'arrow-down'
+  | 'log-out'
 
 const PATHS: Record<IconName, string> = {
   home: 'M3 10.5 12 3l9 7.5M5.5 9.5V20h13V9.5',
@@ -79,6 +80,7 @@ const PATHS: Record<IconName, string> = {
   pin: 'M9 3.5h6l-.8 5.2 3.3 3.3H6.5l3.3-3.3L9 3.5ZM12 12v8.5',
   'arrow-up': 'M12 19V5M6.5 10.5 12 5l5.5 5.5',
   'arrow-down': 'M12 5v14M6.5 13.5 12 19l5.5-5.5',
+  'log-out': 'M14.5 20.5H4.5v-17h10M10 12h10.5M17 8.5 20.5 12 17 15.5',
   message: 'M20.5 12.5c0 4-3.8 7-8.5 7-1.2 0-2.4-.2-3.4-.6L4 20.5l1.3-3.4A6.7 6.7 0 0 1 3.5 12.5c0-4 3.8-7 8.5-7s8.5 3 8.5 7Z',
 }
 

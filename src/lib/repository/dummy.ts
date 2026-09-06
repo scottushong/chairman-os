@@ -11,8 +11,21 @@ import {
   tasks,
   topGoals,
 } from '@/data'
+import { AUDIT_ACTION, type DecisionAuditRecord } from '@/lib/decision-log'
 
-import type { ChairmanRepository, DecisionAuditEntry } from './types'
+import type { ChairmanRepository, DecisionAuditEntry, UserSettings } from './types'
+
+/**
+ * dummy 모드의 감사 기록. 서버 프로세스가 살아 있는 동안만 남는다.
+ *
+ * 이걸 두는 이유는 화면을 돌려 보기 위해서지, 감사 요건을 만족하기 위해서가 아니다.
+ * CH-051의 '삭제 불가'는 서버를 한 번 재시작하면 그냥 사라지는 배열로는 만족되지 않는다.
+ * 진짜 기록은 live 모드에서 Supabase audit_log에만 남는다(DEFERRED D-05).
+ */
+const memoryAudit: DecisionAuditRecord[] = []
+
+/** 개인 설정도 마찬가지다. 서버가 살아 있는 동안만 남는다. */
+const memorySettings: UserSettings = { hidden_businesses: [], pinned_businesses: null }
 
 /**
  * JSON 시드 어댑터.
@@ -57,16 +70,33 @@ export const dummyRepository: ChairmanRepository = {
     return [...nextMilestones]
   },
 
+  async listDecisionAudit() {
+    return [...memoryAudit]
+  },
+
+  async getUserSettings() {
+    return { ...memorySettings }
+  },
+
+  async saveUserSettings(patch: Partial<UserSettings>) {
+    Object.assign(memorySettings, patch)
+  },
+
   /**
-   * dummy 모드에는 감사 기록을 남길 서버가 없다.
-   * 지금은 브라우저 localStorage(lib/decision-log.ts)가 그 자리를 대신하고 있고,
-   * 그건 CH-051 '삭제 불가'를 만족하지 못한다(DEFERRED D-05).
-   * 조용히 성공한 척하면 그 사실이 가려지므로 여기서는 아무것도 하지 않는다는 걸 남긴다.
+   * 프로세스 메모리에만 쌓는다. 서버를 재시작하면 사라진다.
+   * 조용히 '저장됐다'고 넘어가면 그 사실이 가려지므로 개발 중에는 매번 경고를 남긴다.
    */
   async recordDecisionAction(entry: DecisionAuditEntry) {
+    memoryAudit.push({
+      decision_id: entry.decision_id,
+      action: AUDIT_ACTION[entry.action],
+      occurred_at: new Date().toISOString(),
+      actor_user_id: entry.actor_user_id ?? null,
+    })
     if (process.env.NODE_ENV !== 'production') {
       console.warn(
-        `[dummy] audit_log 미기록: ${entry.action} ${entry.decision_id}. live 모드에서만 서버에 남는다.`,
+        `[dummy] ${entry.action} ${entry.decision_id} — 메모리에만 남는다. ` +
+          '영구 기록은 live 모드의 Supabase audit_log뿐이다(CH-051).',
       )
     }
   },

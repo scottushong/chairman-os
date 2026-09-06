@@ -11,11 +11,83 @@
 | D-02 대기 시작 시각 | **A** — `blocked_since` 추가. 시드 1회 수정 승인. | 완료 (`tasks.json`, `types/domain.ts`, `waiting-on-me.tsx`, `data/README.md`) |
 | D-03 시안 vs 시드 숫자 | **A** — 시드 유지, 시안은 레이아웃 참고. | 코드 변경 없음 |
 | D-04 회사 진행률 | **C** — 라벨을 "프로젝트 진행률"로. | 완료 (`business-card.tsx`) |
-| D-05 저장 위치 | **A** — Phase 1에서 DB + Audit Log 착수. | 진행 중 (Phase 1-A) |
+| D-05 저장 위치 | **A** — Phase 1에서 DB + Audit Log 착수. | 대부분 완료 (Phase 1-B). 결정 로그 → `audit_log`, 숨김·핀 → `user_settings`. 기업 추가만 남았다 → D-08 |
 | D-06 제목 중복 | 그대로 확정. | 완료 |
 | D-07 차트 축 | **A** — 이중 축(좌 매출 / 우 손익 3종). | 완료 (`line-chart.tsx`, `finance-trend.tsx`) |
+| D-08 기업 추가 저장 위치 | 미결 | 아래 참고 |
+| D-09 담당자 이름 표시 | **B** — user_profiles 조인, 없으면 '미지정'. | 완료 (`repository/supabase.ts`). 실계정이 생기면 (A)로 이어진다 |
 
 아래 원문은 결정 근거로 남겨 둔다.
+
+---
+
+## 문서 반영 필요
+
+코드·DB에는 들어갔는데 명세 문서에는 아직 없는 것들. 문서를 고치기 전까지 명세와 구현이 다르다.
+
+| 문서 | 무엇을 | 왜 |
+|---|---|---|
+| 02_기능명세 02_데이터필드 | **Task에 `blocked_since` 추가** (ISO date, 필수, 보안등급 [일반]) | DEFERRED D-02 결정 A. "이 업무가 지금 상태로 들어간 날"이다. CH-017 대기일수를 이 값에서 잰다. 시트 Tasks에는 `deadline`만 있어 대기일수를 낼 수 없었다. 이미 반영된 곳: `src/types/domain.ts`, `src/data/tasks.json`, `supabase/migrations/0001_init.sql` (tasks.blocked_since), `src/components/dashboard/waiting-on-me.tsx` |
+| 02_기능명세 CH-008 Acceptance | "정의된 Formula와 일치" → "시트에 기록된 EBITDA를 그대로 표시" | DEFERRED D-01 결정 A |
+
+
+---
+
+## D-09. live 모드에서 담당자 칸에 uuid가 그대로 보인다
+
+**무엇이** Phase 1-B에서 live로 붙이고 나니 아래 세 곳이 36자 uuid를 그대로 뿌린다.
+
+| 화면 | 지금 보이는 값 |
+|---|---|
+| CH-017 Waiting on Me · 담당 | `3d720a36-f18a-5182-85f4-a4b2da972b2b` |
+| CH-012 Monthly Priority · 담당 | `6989f700-c2de-5e70-8a56-40847a6fc94d` |
+| CH-014 Next Milestone · 담당 | `bc7f441e-0861-550f-986d-6f237144fc8d` |
+
+**왜 이렇게 됐나** dummy일 때는 시드의 `owner`가 `user_001` 문자열이라 그게 그대로 떴다.
+DB의 `owner_user_id`는 uuid 컬럼이라, `scripts/gen-seed-sql.ts`가 `user_001`을
+sha1로 접어 uuid 모양으로 만들어 넣었다(`userUuid`). 그 uuid들은 **auth.users에 없는 값**이고
+따라서 `user_profiles`에도 대응 행이 없다 — 즉 **이름을 꺼내 올 곳이 DB에 존재하지 않는다.**
+어댑터(`repository/supabase.ts`)는 uuid를 그대로 `owner`에 넣고, 화면은 받은 문자열을 그린다.
+
+`user_001`도 사람 이름은 아니었지만, 36자 uuid는 회장 화면에서 칸을 밀어내고 아무 정보도 주지 않는다.
+
+**결정 (2026-09-06, Chairman): B.** 조인은 붙이고, 프로필이 없으면 '미지정'으로 떨어뜨린다.
+
+- (A) 실제 임직원 계정을 만들고 `user_profiles`를 채운 뒤, 어댑터가 `owner_user_id → display_name`을
+  조인해서 내린다. 근본 해결이지만 계정 생성이 선행돼야 한다.
+- **(B) 선택.** 조인은 붙이되, 프로필이 없는 uuid는 '미지정'으로 떨어뜨린다.
+  지금 시드로도 화면이 깨끗해지고, 계정이 생기는 순간 코드 수정 없이 (A)가 된다 —
+  조인이 이미 붙어 있어 `user_profiles`에 행이 생기면 그때부터 이름이 뜬다.
+- (C) 시드 uuid ↔ 표시명 매핑표를 앱에 하나 두고 그걸로 옮긴다.
+  화면은 바로 좋아지지만 DB 밖에 두 번째 진실이 생긴다. 권하지 않는다.
+
+**남은 일** 시드 담당자는 실계정이 아니라 계속 '미지정'으로 뜬다. 실제 이름이 필요해지면
+임직원 계정을 만들고 시드의 `owner_user_id`를 그 uuid로 갈아야 한다(= A로 이어짐).
+
+**주의** `user_profiles`는 `auth.users(id)`를 FK로 물고 있어(0002), 실재하지 않는 시드 uuid로는
+프로필 행을 만들 수 없다. (A)를 고르면 시드의 `owner_user_id`도 같이 갈아야 한다.
+
+---
+
+## D-08. 기업 추가(CH-002)만 아직 브라우저에 남아 있다
+
+**무엇이** Phase 1-B에서 결정 로그는 `audit_log`로, 숨김·핀은 `user_settings`로 옮겼다.
+CH-002로 추가한 회사(`src/lib/added-businesses.ts`)만 localStorage에 그대로 있다.
+
+**왜 남겼나** 성격이 다르다. 숨김·핀은 '내 화면' 설정이라 옮기는 데 개인 설정 표 하나면 됐다.
+회사를 추가하는 건 조직 데이터를 만드는 일이라 세 가지가 같이 걸린다.
+
+  1. `businesses` INSERT 권한 — 0002에서 Chairman만 갖는다. 지금은 맞지만 역할이 늘면 정책을 다시 봐야 한다.
+  2. CH-051 감사 기록 — 회사 생성은 `create` 로 남아야 한다.
+  3. `business_id` 발급 규칙 — 지금은 `biz_new_{timestamp}` 다. 서버가 발급하면 규칙을 정해야 한다.
+
+지금 상태의 실제 증상: **추가한 회사는 그 브라우저에서만 보인다.** 다른 기기·다른 사람에게는 없다.
+모달이 그 사실을 화면에 적어 두고 있다.
+
+**골라야 할 것**
+- (A) `businesses` INSERT + `audit_log('create')` 를 Server Action으로 붙인다. 권장.
+- (B) Chairman이 Supabase Dashboard에서 직접 넣고, 화면의 추가 버튼은 뗀다.
+- (C) 그대로 둔다(데모용으로만 본다).
 
 ---
 

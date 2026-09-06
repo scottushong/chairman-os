@@ -1,3 +1,4 @@
+import type { DecisionAuditRecord, DecisionAction } from '@/lib/decision-log'
 import type {
   AiNightOutput,
   Alert,
@@ -39,15 +40,43 @@ export interface ChairmanRepository {
   listCriticalRisks(): Promise<CriticalRisk[]>
   listNextMilestones(): Promise<NextMilestone[]>
 
-  /** CH-016. 결정 처리를 감사 기록으로 남긴다. 성공 여부만 돌려준다. */
+  /** CH-016/CH-051. 이미 처리된 결정들. '오늘 몇 건 털었나'와 처리 이력이 여기서 나온다. */
+  listDecisionAudit(): Promise<DecisionAuditRecord[]>
+
+  /** CH-016. 결정 처리를 감사 기록으로 남기고 결정 상태를 옮긴다. */
   recordDecisionAction(entry: DecisionAuditEntry): Promise<void>
+
+  /** CH-003/004/056. 지금 로그인한 사람의 개인 설정. 남의 것은 어떤 역할도 못 읽는다(0002). */
+  getUserSettings(): Promise<UserSettings>
+  saveUserSettings(patch: Partial<UserSettings>): Promise<void>
 }
 
-/** audit_log 한 줄. 0001_init의 audit_log 컬럼과 1:1이다. */
+/**
+ * 개인 화면 설정(user_settings). 업무 데이터가 아니라 '이 사람의 화면'이다.
+ *
+ * pinned_businesses가 null을 갖는 이유는 0005_user_settings_pins.sql에 적어 두었다 —
+ * '아직 정한 적 없음'과 '전부 해제했다'는 다른 상태고, 둘을 빈 배열 하나로 뭉치면
+ * 마지막 핀을 뗄 때 기본 핀이 되살아난다.
+ */
+export interface UserSettings {
+  /** CH-003. 대시보드에서 숨긴 회사. 데이터 삭제가 아니라 표시 플래그다. */
+  hidden_businesses: string[]
+  /** CH-004. null이면 businesses.pinned를 기본값으로 쓴다. */
+  pinned_businesses: string[] | null
+}
+
+/**
+ * 결정 한 건을 처리한다는 요청.
+ *
+ * action은 화면의 어휘('Approved')다. DB의 두 벌 어휘(decisions.status='Approved',
+ * audit_log.action='approve')로 옮기는 일은 어댑터가 한다 — 그게 DB 모양을 아는 유일한 자리다.
+ */
 export interface DecisionAuditEntry {
   decision_id: string
-  action: 'approve' | 'reject' | 'modify' | 'delegate'
+  action: DecisionAction
   actor_user_id?: string
+  /** 그 시점의 역할. 나중에 역할이 바뀌어도 기록은 남는다(0001 audit_log.actor_role). */
+  actor_role?: string
   business_id?: string
   note?: string
 }
@@ -64,6 +93,8 @@ export interface DashboardSnapshot {
   decisions: Decision[]
   alerts: Alert[]
   aiNightOutputs: AiNightOutput[]
+  decisionAudit: DecisionAuditRecord[]
+  userSettings: UserSettings
   topGoals: TopGoal[]
   monthlyPriorities: MonthlyPriority[]
   criticalRisks: CriticalRisk[]
@@ -79,6 +110,8 @@ export async function loadDashboard(repo: ChairmanRepository): Promise<Dashboard
     decisions,
     alerts,
     aiNightOutputs,
+    decisionAudit,
+    userSettings,
     topGoals,
     monthlyPriorities,
     criticalRisks,
@@ -91,6 +124,8 @@ export async function loadDashboard(repo: ChairmanRepository): Promise<Dashboard
     repo.listDecisions(),
     repo.listAlerts(),
     repo.listAiNightOutputs(),
+    repo.listDecisionAudit(),
+    repo.getUserSettings(),
     repo.listTopGoals(),
     repo.listMonthlyPriorities(),
     repo.listCriticalRisks(),
@@ -105,6 +140,8 @@ export async function loadDashboard(repo: ChairmanRepository): Promise<Dashboard
     decisions,
     alerts,
     aiNightOutputs,
+    decisionAudit,
+    userSettings,
     topGoals,
     monthlyPriorities,
     criticalRisks,

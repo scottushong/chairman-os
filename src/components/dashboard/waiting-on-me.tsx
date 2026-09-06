@@ -1,7 +1,7 @@
 import { Icon } from '@/components/ui/icon'
-import { businessName, businessOfProject, tasks } from '@/data'
 import { dDay, formatDDay } from '@/lib/format'
-import { TASK_STATUS_LABEL_KO, type Task } from '@/types'
+import { businessName, businessOfProject } from '@/lib/lookup'
+import { TASK_STATUS_LABEL_KO, type Business, type Project, type Task } from '@/types'
 
 /**
  * CH-017 Waiting on Me.
@@ -20,7 +20,14 @@ function waitingDays(task: Task, today = new Date()): number {
   return Math.max(0, -dDay(task.blocked_since, today))
 }
 
-export function WaitingOnMe() {
+interface WaitingOnMeProps {
+  tasks: Task[]
+  /** Task → 회사를 잇는 다리. Task는 회사를 직접 들고 있지 않다. */
+  projects: Project[]
+  businesses: Business[]
+}
+
+export function WaitingOnMe({ tasks, projects, businesses }: WaitingOnMeProps) {
   const mine = tasks
     .filter((t) => t.chairman_needed && t.status !== 'Done')
     .sort((a, b) => waitingDays(b) - waitingDays(a) || a.deadline.localeCompare(b.deadline))
@@ -28,7 +35,7 @@ export function WaitingOnMe() {
   // 회사별로 묶되 순서는 '가장 오래 기다린 건이 있는 회사'가 위로 온다.
   const groups: { businessId: string; items: Task[] }[] = []
   mine.forEach((t) => {
-    const businessId = businessOfProject(t.project_id)
+    const businessId = businessOfProject(projects, t.project_id)
     const found = groups.find((g) => g.businessId === businessId)
     if (found) found.items.push(t)
     else groups.push({ businessId, items: [t] })
@@ -63,7 +70,7 @@ export function WaitingOnMe() {
           {groups.map((g) => (
             <div key={g.businessId}>
               <p className="px-1.5 text-[10px] font-semibold text-ink-muted">
-                {businessName(g.businessId)}
+                {businessName(businesses, g.businessId)}
                 <span className="ml-1 font-normal tnum">{g.items.length}</span>
               </p>
               <ul className="mt-0.5 space-y-0.5">
