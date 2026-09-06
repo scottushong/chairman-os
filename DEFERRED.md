@@ -11,9 +11,10 @@
 | D-02 대기 시작 시각 | **A** — `blocked_since` 추가. 시드 1회 수정 승인. | 완료 (`tasks.json`, `types/domain.ts`, `waiting-on-me.tsx`, `data/README.md`) |
 | D-03 시안 vs 시드 숫자 | **A** — 시드 유지, 시안은 레이아웃 참고. | 코드 변경 없음 |
 | D-04 회사 진행률 | **C** — 라벨을 "프로젝트 진행률"로. | 완료 (`business-card.tsx`) |
-| D-05 저장 위치 | **A** — Phase 1에서 DB + Audit Log 착수. | 진행 중 (Phase 1-A) |
+| D-05 저장 위치 | **A** — Phase 1에서 DB + Audit Log 착수. | 대부분 완료 (Phase 1-B). 결정 로그 → `audit_log`, 숨김·핀 → `user_settings`. 기업 추가만 남았다 → D-08 |
 | D-06 제목 중복 | 그대로 확정. | 완료 |
 | D-07 차트 축 | **A** — 이중 축(좌 매출 / 우 손익 3종). | 완료 (`line-chart.tsx`, `finance-trend.tsx`) |
+| D-08 기업 추가 저장 위치 | 미결 | 아래 참고 |
 
 아래 원문은 결정 근거로 남겨 둔다.
 
@@ -28,6 +29,28 @@
 | 02_기능명세 02_데이터필드 | **Task에 `blocked_since` 추가** (ISO date, 필수, 보안등급 [일반]) | DEFERRED D-02 결정 A. "이 업무가 지금 상태로 들어간 날"이다. CH-017 대기일수를 이 값에서 잰다. 시트 Tasks에는 `deadline`만 있어 대기일수를 낼 수 없었다. 이미 반영된 곳: `src/types/domain.ts`, `src/data/tasks.json`, `supabase/migrations/0001_init.sql` (tasks.blocked_since), `src/components/dashboard/waiting-on-me.tsx` |
 | 02_기능명세 CH-008 Acceptance | "정의된 Formula와 일치" → "시트에 기록된 EBITDA를 그대로 표시" | DEFERRED D-01 결정 A |
 
+
+---
+
+## D-08. 기업 추가(CH-002)만 아직 브라우저에 남아 있다
+
+**무엇이** Phase 1-B에서 결정 로그는 `audit_log`로, 숨김·핀은 `user_settings`로 옮겼다.
+CH-002로 추가한 회사(`src/lib/added-businesses.ts`)만 localStorage에 그대로 있다.
+
+**왜 남겼나** 성격이 다르다. 숨김·핀은 '내 화면' 설정이라 옮기는 데 개인 설정 표 하나면 됐다.
+회사를 추가하는 건 조직 데이터를 만드는 일이라 세 가지가 같이 걸린다.
+
+  1. `businesses` INSERT 권한 — 0002에서 Chairman만 갖는다. 지금은 맞지만 역할이 늘면 정책을 다시 봐야 한다.
+  2. CH-051 감사 기록 — 회사 생성은 `create` 로 남아야 한다.
+  3. `business_id` 발급 규칙 — 지금은 `biz_new_{timestamp}` 다. 서버가 발급하면 규칙을 정해야 한다.
+
+지금 상태의 실제 증상: **추가한 회사는 그 브라우저에서만 보인다.** 다른 기기·다른 사람에게는 없다.
+모달이 그 사실을 화면에 적어 두고 있다.
+
+**골라야 할 것**
+- (A) `businesses` INSERT + `audit_log('create')` 를 Server Action으로 붙인다. 권장.
+- (B) Chairman이 Supabase Dashboard에서 직접 넣고, 화면의 추가 버튼은 뗀다.
+- (C) 그대로 둔다(데모용으로만 본다).
 
 ---
 
