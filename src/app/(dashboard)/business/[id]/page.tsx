@@ -6,6 +6,8 @@ import { FinanceTrend } from '@/components/dashboard/finance-trend'
 import { KpiStrip } from '@/components/dashboard/kpi-strip'
 import { PageHeader } from '@/components/layout/page-header'
 import { Icon } from '@/components/ui/icon'
+import { currentUser } from '@/lib/auth/session'
+import { canEditStrategy } from '@/lib/auth/roles'
 import { dDay, formatDDay, formatPct } from '@/lib/format'
 import { getRepository } from '@/lib/repository'
 import {
@@ -29,7 +31,7 @@ import {
  *
  * 화면 순서는 '얼마인가 → 어디로 가는가 → 지금 무엇이 도는가'다.
  *   위    회사 KPI 8개 + 12개월 추이   (CH-023)
- *   중간  Mission / 목표 / Gap / Bottleneck (CH-024)
+ *   중간  Mission / 목표 / Gap / Bottleneck (CH-024) — 승인권자는 칸별로 고칠 수 있다(D-13)
  *   아래  이 회사의 프로젝트 · 업무 · 결정 · 알림
  *
  * 없는 회사와 볼 수 없는 회사를 화면에서 구분하지 않는다. businesses_read(0002)가
@@ -40,7 +42,7 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
   const { id } = await props.params
 
   const repo = await getRepository()
-  const [businesses, financeKpis, projects, tasks, decisions, alerts, strategies] =
+  const [businesses, financeKpis, projects, tasks, decisions, alerts, strategies, user] =
     await Promise.all([
       repo.listBusinesses(),
       repo.listFinanceKpis(),
@@ -49,6 +51,7 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
       repo.listDecisions(),
       repo.listAlerts(),
       repo.listBusinessStrategy(),
+      currentUser(),
     ])
 
   const business = businesses.find((b) => b.business_id === id)
@@ -95,7 +98,12 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
           title="재무 추이"
           scopeNote={`${business.name} 단독`}
         />
-        <CoordinatesPanel strategy={strategy} />
+        {/* 연필을 보여 줄지만 정한다. 실제 판정은 0008의 business_strategy_write다(D-13). */}
+        <CoordinatesPanel
+          strategy={strategy}
+          businessId={id}
+          canEdit={canEditStrategy(user)}
+        />
       </div>
 
       <div className="mt-3.5 grid grid-cols-12 gap-3.5 pb-6">

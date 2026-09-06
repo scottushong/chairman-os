@@ -17,6 +17,7 @@ import type {
   Task,
   TaskStatus,
   TopGoal,
+  WorkPriority,
 } from '@/types'
 
 /**
@@ -72,6 +73,16 @@ export interface ChairmanRepository {
 
   /** CH-042. 사내 스토리지 링크 한 줄을 등록한다. 파일은 올리지 않는다. */
   createDocument(input: NewDocument, actor: AuditActor): Promise<DocumentRecord>
+
+  /** CH-024. 전략 좌표의 칸을 고친다. 0008의 business_strategy_write가 승인권자만 통과시킨다. */
+  updateBusinessStrategy(
+    businessId: string,
+    patch: StrategyPatch,
+    actor: AuditActor,
+  ): Promise<void>
+
+  /** CH-041 기안. 결재를 하나 올린다. 0002의 decisions_create가 회사 범위와 모듈 쓰기를 같이 본다. */
+  createDecision(input: NewDecision, actor: AuditActor): Promise<Decision>
 
   /** CH-003/004/056. 지금 로그인한 사람의 개인 설정. 남의 것은 어떤 역할도 못 읽는다(0002). */
   getUserSettings(): Promise<UserSettings>
@@ -163,6 +174,40 @@ export interface NewDocument {
 export interface TaskPatch {
   status?: TaskStatus
   chairman_needed?: boolean
+}
+
+/**
+ * CH-024로 고칠 수 있는 칸들 (DEFERRED D-13 결정 A).
+ *
+ * business_id가 없다. 그건 이 행이 어느 회사인가지 고쳐 쓰는 문장이 아니다 —
+ * 좌표를 다른 회사로 옮기는 동작은 존재하지 않는다.
+ *
+ * 전부 선택이라 한 칸만 담아 보낼 수 있다. 화면이 칸 하나씩 저장하기 때문이고(인라인 편집),
+ * 그래야 audit_log의 before/after가 '무엇이 바뀌었나'만 담는다.
+ */
+export type StrategyPatch = Partial<Omit<BusinessStrategy, 'business_id'>>
+
+/**
+ * CH-041로 올릴 결재 한 건 (DEFERRED D-10 선택지 A).
+ *
+ * decision_id가 없다. 0010의 시퀀스 default가 dec_005 형태로 발급한다 —
+ * documents와 같은 이유다. 앱이 max+1을 계산하면 동시에 둘이 올릴 때 번호가 겹친다.
+ *
+ * status도 없다. 올린 결재는 항상 Open이다. 다른 값으로 시작하는 기안은
+ * '올리자마자 이미 처리된 결재'라 감사 기록에 구멍을 낸다.
+ *
+ * ai_recommendation / ai_confidence도 없다. 그 둘은 야간 AI Job이 채우는 칸이고
+ * 사람이 기안하면서 스스로 'AI가 이걸 추천했다'고 쓰는 자리가 아니다.
+ */
+export interface NewDecision {
+  business_id: string
+  title: string
+  /** 02_데이터필드에서 필수다. 결재는 '무엇을 고를 것인가'라서 선택안이 없으면 결재가 아니다. */
+  options: string[]
+  impact: WorkPriority
+  deadline: string
+  /** 사내 스토리지 링크. 없으면 넣지 않는다(0006). */
+  attachment_url?: string
 }
 
 /**

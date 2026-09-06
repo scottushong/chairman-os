@@ -14,8 +14,9 @@ import {
 } from '@/data'
 import { AUDIT_ACTION, type DecisionAuditRecord } from '@/lib/decision-log'
 import { dayKey } from '@/lib/format'
+import { emptyStrategy } from '@/lib/strategy-fields'
 import type { SearchHit } from '@/lib/search'
-import type { Business, DocumentRecord, Task } from '@/types'
+import type { Business, BusinessStrategy, Decision, DocumentRecord, Task } from '@/types'
 
 import {
   DUPLICATE_BUSINESS_ID,
@@ -23,7 +24,9 @@ import {
   type ChairmanRepository,
   type DecisionAuditEntry,
   type NewBusiness,
+  type NewDecision,
   type NewDocument,
+  type StrategyPatch,
   type TaskPatch,
   type UserSettings,
 } from './types'
@@ -52,6 +55,16 @@ const memoryTaskPatches = new Map<string, TaskPatch & { blocked_since?: string }
  */
 const memoryDocuments: DocumentRecord[] = []
 
+/**
+ * CH-024로 고친 좌표. businessCoordinates(시드)는 읽기 전용이라 바뀐 칸만 따로 들고 있다가
+ * listBusinessStrategy에서 덮는다. memoryTaskPatches와 같은 방식이고, 같은 한계다 —
+ * 서버를 재시작하면 사라진다.
+ */
+const memoryStrategyPatches = new Map<string, StrategyPatch>()
+
+/** CH-041로 올린 기안. 여기도 서버가 살아 있는 동안만이다. */
+const memoryDecisions: Decision[] = []
+
 /** 개인 설정도 마찬가지다. 서버가 살아 있는 동안만 남는다. */
 const memorySettings: UserSettings = { hidden_businesses: [], pinned_businesses: null }
 
@@ -76,7 +89,7 @@ export const dummyRepository: ChairmanRepository = {
     return tasks.map((t) => ({ ...t, ...memoryTaskPatches.get(t.task_id) }))
   },
   async listDecisions() {
-    return [...decisions]
+    return [...decisions, ...memoryDecisions]
   },
   async listAlerts() {
     return [...alerts]
@@ -142,7 +155,7 @@ export const dummyRepository: ChairmanRepository = {
             business_id: project?.business_id ?? null,
           }
         }),
-      ...decisions
+      ...[...decisions, ...memoryDecisions]
         .filter((d) => hit(d.title, d.ai_recommendation))
         .slice(0, limitPerKind)
         .map((d): SearchHit => ({
@@ -178,9 +191,21 @@ export const dummyRepository: ChairmanRepository = {
     return [...nextMilestones]
   },
 
-  /** CH-024. live에서는 0008 business_strategy가 같은 값을 갖는다. */
-  async listBusinessStrategy() {
-    return [...businessCoordinates]
+  /**
+   * CH-024. live에서는 0008 business_strategy가 같은 값을 갖는다.
+   * 시드에 없는 회사(CH-002로 방금 추가한 곳)도 좌표를 쓴 적이 있으면 여기서 같이 나온다 —
+   * live의 upsert와 같은 동작이어야 화면이 두 모드에서 다르게 굴지 않는다.
+   */
+  async listBusinessStrategy(): Promise<BusinessStrategy[]> {
+    const seeded = businessCoordinates.map((c) => ({
+      ...c,
+      ...memoryStrategyPatches.get(c.business_id),
+    }))
+    const seededIds = new Set(seeded.map((c) => c.business_id))
+    const added = [...memoryStrategyPatches.entries()]
+      .filter(([id]) => !seededIds.has(id))
+      .map(([id, patch]) => ({ ...emptyStrategy(id), ...patch }))
+    return [...seeded, ...added]
   },
 
   async listDecisionAudit() {
@@ -254,6 +279,49 @@ export const dummyRepository: ChairmanRepository = {
     if (process.env.NODE_ENV !== 'production') {
       console.warn(
         `[dummy] create ${created.document_id} by ${actor.role} — 메모리에만 남는다. ` +
+          '영구 기록은 live 모드의 Supabase audit_log뿐이다(CH-051).',
+      )
+    }
+    return created
+  },
+
+  /**
+   * CH-024. live에서는 0008의 business_strategy_write가 승인권자만 통과시키지만
+   * dummy에는 역할도 RLS도 없다. 여기서 역할을 흉내 내면 dummy에서만 도는 두 번째 판정이 생긴다.
+   */
+  async updateBusinessStrategy(businessId: string, patch: StrategyPatch, actor: AuditActor) {
+    memoryStrategyPatches.set(businessId, {
+      ...(memoryStrategyPatches.get(businessId) ?? {}),
+      ...patch,
+    })
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        `[dummy] update strategy ${businessId} by ${actor.role} — 메모리에만 남는다. ` +
+          '영구 기록은 live 모드의 Supabase audit_log뿐이다(CH-051).',
+      )
+    }
+  },
+
+  /** CH-041 기안. id는 live에서 0010의 시퀀스가 준다. 여기서는 같은 모양(dec_005)을 흉내 낸다. */
+  async createDecision(input: NewDecision, actor: AuditActor): Promise<Decision> {
+    const created: Decision = {
+      decision_id: `dec_${String(decisions.length + memoryDecisions.length + 1).padStart(3, '0')}`,
+      business_id: input.business_id,
+      title: input.title,
+      options: input.options,
+      // 야간 AI Job이 채우는 칸이다. 사람이 올린 기안에는 아직 없다.
+      ai_recommendation: '',
+      impact: input.impact,
+      deadline: input.deadline,
+      status: 'Open',
+      attachment_url: input.attachment_url,
+    }
+    memoryDecisions.push(created)
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        `[dummy] create ${created.decision_id} by ${actor.role} — 메모리에만 남는다. ` +
           '영구 기록은 live 모드의 Supabase audit_log뿐이다(CH-051).',
       )
     }

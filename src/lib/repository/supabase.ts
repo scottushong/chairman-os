@@ -33,7 +33,9 @@ import {
   type ChairmanRepository,
   type DecisionAuditEntry,
   type NewBusiness,
+  type NewDecision,
   type NewDocument,
+  type StrategyPatch,
   type TaskPatch,
   type UserSettings,
 } from './types'
@@ -168,6 +170,27 @@ interface DecisionRow {
   status: DecisionStatus
   ai_confidence: number | string | null
   attachment_url: string | null
+}
+
+/**
+ * decisions 한 행을 화면의 Decision으로. 목록(listDecisions)과 방금 올린 기안(createDecision)이
+ * 같은 함수를 쓴다 — 두 자리에서 따로 옮기면 한쪽만 고쳐지는 날이 온다.
+ */
+function toDecision(r: DecisionRow): Decision {
+  return {
+    decision_id: r.decision_id,
+    business_id: r.business_id,
+    title: r.title,
+    options: r.options,
+    ai_recommendation: r.ai_recommendation ?? '',
+    impact: r.impact,
+    deadline: r.deadline,
+    status: r.status,
+    // null과 undefined를 구분한다. 화면은 '값이 없으면 그 줄을 뺀다'로 그리므로
+    // 0으로 채우면 신뢰도 0%인 추천처럼 보인다.
+    ai_confidence: r.ai_confidence === null ? undefined : num(r.ai_confidence),
+    attachment_url: r.attachment_url ?? undefined,
+  }
 }
 
 interface AlertRow {
@@ -417,20 +440,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         .order('deadline')
         .returns<DecisionRow[]>()
       const rows = unwrap('decisions', data, error)
-      return rows.map((r) => ({
-        decision_id: r.decision_id,
-        business_id: r.business_id,
-        title: r.title,
-        options: r.options,
-        ai_recommendation: r.ai_recommendation ?? '',
-        impact: r.impact,
-        deadline: r.deadline,
-        status: r.status,
-        // null과 undefined를 구분한다. 화면은 '값이 없으면 그 줄을 뺀다'로 그리므로
-        // 0으로 채우면 신뢰도 0%인 추천처럼 보인다.
-        ai_confidence: r.ai_confidence === null ? undefined : num(r.ai_confidence),
-        attachment_url: r.attachment_url ?? undefined,
-      }))
+      return rows.map(toDecision)
     },
 
     async listAlerts(): Promise<Alert[]> {
@@ -1002,6 +1012,133 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         uploaded_by: ownerName(await ownerNames(), actor.user_id),
         created_at: data.created_at,
       }
+    },
+
+    /**
+     * CH-024 전략 좌표 편집 (DEFERRED D-13 결정 A).
+     *
+     * upsert다. update가 아닌 이유는 CH-002로 방금 만든 회사에 좌표 행이 없기 때문이다 —
+     * update로 두면 그 회사는 첫 문장을 영영 못 쓴다. 화면의 '아직 등록되지 않았습니다'가
+     * 막다른 길이 되어서는 안 된다.
+     *
+     * 순서는 이 파일의 다른 쓰기와 같다. 기록이 먼저다.
+     * before를 얻으려면 한 번 읽어야 하는데, 그 읽기가 '행이 없다'도 같이 알려 준다 —
+     * 그때 before는 빈 객체가 아니라 null이다. '빈 문장이었다'와 '행이 없었다'는 다르다.
+     *
+     * 권한은 보지 않는다. 0008의 business_strategy_write가
+     * can_approve() and has_business()로 Chairman·BusinessCEO만 통과시킨다.
+     */
+    async updateBusinessStrategy(
+      businessId: string,
+      patch: StrategyPatch,
+      actor: AuditActor,
+    ): Promise<void> {
+      const fields = Object.keys(patch) as (keyof StrategyPatch)[]
+      if (fields.length === 0) return
+
+      const { data: before, error: readError } = await sb
+        .from('business_strategy')
+        .select('*')
+        .eq('business_id', businessId)
+        .maybeSingle<BusinessStrategyRow>()
+
+      if (readError) {
+        throw new Error(
+          `Supabase business_strategy ${readError.code ?? '?'}: ${readError.message}`,
+        )
+      }
+
+      const { error: auditError } = await sb.from('audit_log').insert({
+        action: 'update',
+        entity_table: 'business_strategy',
+        entity_id: businessId,
+        business_id: businessId,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        // 바뀌는 칸만. 열한 칸을 통째로 남기면 무엇이 달라졌는지 읽는 사람이 다시 비교해야 한다.
+        before: before
+          ? Object.fromEntries(fields.map((f) => [f, before[f] ?? null]))
+          : null,
+        after: patch,
+      })
+      if (auditError) {
+        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      }
+
+      // 없는 행이면 나머지 열 칸은 0008의 default ''로 채워진다. 그게 '아직 안 썼다'의 표현이다.
+      const { error: writeError } = await sb
+        .from('business_strategy')
+        .upsert({ business_id: businessId, ...patch }, { onConflict: 'business_id' })
+
+      if (writeError) {
+        throw new Error(
+          `Supabase business_strategy ${writeError.code ?? '?'}: ${writeError.message} ` +
+            '(감사 기록은 남았고 좌표는 바뀌지 않았다. 0008의 business_strategy_write 정책을 본다.)',
+        )
+      }
+    },
+
+    /**
+     * CH-041 기안 (DEFERRED D-10 선택지 A).
+     *
+     * decision_id를 보내지 않는다. 0010의 시퀀스 default가 발급하고 방금 만든 행을
+     * 그대로 돌려받는다(.select). 그래서 createDocument와 같은 이유로 이 자리만
+     * INSERT가 감사 기록보다 먼저다 — 기록의 entity_id를 DB가 정하기 때문이다.
+     *
+     * 그 대가로 '결재는 올라갔는데 기록이 안 남는' 창이 생긴다. 그때는 호출자에게 그대로 말하고
+     * 결재는 목록에 남긴다. 조용히 지우면 그게 감사 대상 행위가 되어 버린다.
+     *
+     * 권한은 보지 않는다. 0002의 decisions_create가
+     * has_business(business_id) and can_module('/chairman/decisions', true)를 본다.
+     */
+    async createDecision(input: NewDecision, actor: AuditActor): Promise<Decision> {
+      const { data, error } = await sb
+        .from('decisions')
+        .insert({
+          business_id: input.business_id,
+          title: input.title,
+          options: input.options,
+          impact: input.impact,
+          deadline: input.deadline,
+          // 올린 결재는 항상 Open이다. 이 값을 화면이 정하게 두지 않는다.
+          status: 'Open',
+          attachment_url: input.attachment_url ?? null,
+        })
+        .select(
+          'decision_id,business_id,title,options,ai_recommendation,ai_confidence,impact,deadline,status,attachment_url',
+        )
+        .single<DecisionRow>()
+
+      if (error || !data) {
+        throw new Error(
+          `Supabase decisions ${error?.code ?? '?'}: ${error?.message ?? '행이 돌아오지 않았다'}`,
+        )
+      }
+
+      const { error: auditError } = await sb.from('audit_log').insert({
+        action: 'create',
+        entity_table: 'decisions',
+        entity_id: data.decision_id,
+        business_id: input.business_id,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        // 첨부 링크까지 남긴다. 무엇을 근거로 올린 결재인지가 이 기록의 요점이다.
+        after: {
+          title: data.title,
+          options: data.options,
+          impact: data.impact,
+          deadline: data.deadline,
+          attachment_url: data.attachment_url,
+        },
+      })
+      if (auditError) {
+        throw new Error(
+          `Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message} ` +
+            `(결재 ${data.decision_id}는 올라갔고 감사 기록만 남지 않았다.)`,
+        )
+      }
+
+      return toDecision(data)
     },
 
     /**

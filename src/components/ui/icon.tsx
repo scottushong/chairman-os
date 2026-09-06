@@ -41,6 +41,10 @@ export type IconName =
   | 'pin'
   | 'arrow-up'
   | 'arrow-down'
+  | 'pencil'
+  | 'clock'
+  | 'user-plus'
+  | 'user-minus'
   | 'log-out'
 
 const PATHS: Record<IconName, string> = {
@@ -81,6 +85,10 @@ const PATHS: Record<IconName, string> = {
   'arrow-up': 'M12 19V5M6.5 10.5 12 5l5.5 5.5',
   'arrow-down': 'M12 5v14M6.5 13.5 12 19l5.5-5.5',
   'log-out': 'M14.5 20.5H4.5v-17h10M10 12h10.5M17 8.5 20.5 12 17 15.5',
+  pencil: 'M4 20h4L19 9l-4-4L4 16v4ZM14.5 5.5l4 4',
+  clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18ZM12 7v5.5l3.5 2',
+  'user-plus': 'M10 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM3.5 20v-1.5A4.5 4.5 0 0 1 8 14h4a4.5 4.5 0 0 1 4.5 4.5V20M18.5 8.5v5M16 11h5',
+  'user-minus': 'M10 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM3.5 20v-1.5A4.5 4.5 0 0 1 8 14h4a4.5 4.5 0 0 1 4.5 4.5V20M16 11h5',
   message: 'M20.5 12.5c0 4-3.8 7-8.5 7-1.2 0-2.4-.2-3.4-.6L4 20.5l1.3-3.4A6.7 6.7 0 0 1 3.5 12.5c0-4 3.8-7 8.5-7s8.5 3 8.5 7Z',
 }
 

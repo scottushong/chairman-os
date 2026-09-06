@@ -12,7 +12,9 @@ export type {
   DashboardSnapshot,
   DecisionAuditEntry,
   NewBusiness,
+  NewDecision,
   NewDocument,
+  StrategyPatch,
   TaskPatch,
   UserSettings,
 } from './types'
