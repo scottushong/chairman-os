@@ -29,7 +29,7 @@ import type { ChairmanRepository, DecisionAuditEntry, UserSettings } from './typ
  *
  * DB와 화면은 두 군데에서 말이 다르다. 그 차이를 전부 이 파일 안에서 흡수한다.
  *   1) 그룹 행: DB는 business_id = NULL, 앱은 'group' 문자열.
- *   2) 담당자: DB는 owner_user_id(uuid), 앱은 owner(문자열).
+ *   2) 담당자: DB는 owner_user_id(uuid), 앱은 owner(사람이 읽는 이름).
  * 이 매핑이 컴포넌트로 새 나가면 화면이 DB 모양을 알게 되고, 그때부터 갈아 끼울 수 없다.
  *
  * 클라이언트는 밖에서 주입받는다. 서버 컴포넌트면 쿠키 세션이 실린 것이 들어오고,
@@ -179,7 +179,53 @@ function unwrap<T>(table: string, data: T[] | null, error: PostgrestError | null
   return data ?? []
 }
 
+/** 이름을 못 찾은 담당자. 화면에 36자 uuid를 그대로 뿌리지 않는다(DEFERRED D-09 결정 B). */
+const UNKNOWN_OWNER = '미지정'
+
+interface ProfileNameRow {
+  user_id: string
+  display_name: string
+}
+
+/**
+ * owner_user_id(uuid) → 표시 이름.
+ *
+ * 이름의 유일한 출처는 user_profiles다. 앱 안에 uuid↔이름 표를 따로 두면
+ * DB 밖에 두 번째 진실이 생긴다(DEFERRED D-09 선택지 C를 권하지 않은 이유).
+ *
+ * 찾지 못하면 '미지정'이다. 그런 경우가 두 가지 있고 둘 다 정상 동작이다.
+ *   1) 시드 담당자 — gen-seed-sql.ts가 'user_001'을 접어 만든 uuid라 auth.users에 없다.
+ *      user_profiles는 auth.users(id)를 FK로 물고 있어 그 행을 만들 수도 없다.
+ *   2) 남의 프로필 — 0002의 user_profiles_self_read가 Chairman이 아니면 본인 것만 내준다.
+ *      즉 팀장이 보면 남의 이름은 '미지정'으로 보인다. 그게 권한 설계대로다.
+ *
+ * 한 요청 안에서 여러 표가 같은 이름표를 쓰므로 약속을 캐시해 왕복을 한 번으로 줄인다.
+ */
+function createOwnerNames(sb: SupabaseClient): () => Promise<Map<string, string>> {
+  let pending: Promise<Map<string, string>> | null = null
+
+  return () => {
+    pending ??= (async () => {
+      const { data, error } = await sb
+        .from('user_profiles')
+        .select('user_id,display_name')
+        .returns<ProfileNameRow[]>()
+      const rows = unwrap('user_profiles', data, error)
+      return new Map(rows.map((r) => [r.user_id, r.display_name]))
+    })()
+    return pending
+  }
+}
+
+function ownerName(names: Map<string, string>, userId: string | null): string {
+  if (!userId) return UNKNOWN_OWNER
+  return names.get(userId) ?? UNKNOWN_OWNER
+}
+
 export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository {
+  // 이 어댑터는 요청 하나마다 새로 만들어진다. 이름표 캐시의 수명도 딱 그만큼이다.
+  const ownerNames = createOwnerNames(sb)
+
   return {
     mode: 'live',
 
@@ -221,13 +267,16 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     },
 
     async listProjects(): Promise<Project[]> {
-      const { data, error } = await sb.from('projects').select('*').returns<ProjectRow[]>()
+      const [{ data, error }, names] = await Promise.all([
+        sb.from('projects').select('*').returns<ProjectRow[]>(),
+        ownerNames(),
+      ])
       const rows = unwrap('projects', data, error)
       return rows.map((r) => ({
         project_id: r.project_id,
         business_id: r.business_id,
         name: r.name,
-        owner: r.owner_user_id ?? '',
+        owner: ownerName(names, r.owner_user_id),
         priority: r.priority,
         status: r.status,
         progress_pct: r.progress_pct,
@@ -236,13 +285,16 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     },
 
     async listTasks(): Promise<Task[]> {
-      const { data, error } = await sb.from('tasks').select('*').returns<TaskRow[]>()
+      const [{ data, error }, names] = await Promise.all([
+        sb.from('tasks').select('*').returns<TaskRow[]>(),
+        ownerNames(),
+      ])
       const rows = unwrap('tasks', data, error)
       return rows.map((r) => ({
         task_id: r.task_id,
         project_id: r.project_id,
         title: r.title,
-        owner: r.owner_user_id ?? '',
+        owner: ownerName(names, r.owner_user_id),
         priority: r.priority,
         status: r.status,
         blocked_since: r.blocked_since,
@@ -317,17 +369,17 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     },
 
     async listMonthlyPriorities(): Promise<MonthlyPriority[]> {
-      const { data, error } = await sb
-        .from('monthly_priorities')
-        .select('*')
-        .returns<PriorityRow[]>()
+      const [{ data, error }, names] = await Promise.all([
+        sb.from('monthly_priorities').select('*').returns<PriorityRow[]>(),
+        ownerNames(),
+      ])
       const rows = unwrap('monthly_priorities', data, error)
       return rows.map((r) => ({
         priority_id: r.priority_id,
         business_id: toScope(r.business_id),
         title: r.title,
         detail: r.detail,
-        owner: r.owner_user_id ?? '',
+        owner: ownerName(names, r.owner_user_id),
         weight: r.weight,
       }))
     },
@@ -346,17 +398,16 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     },
 
     async listNextMilestones(): Promise<NextMilestone[]> {
-      const { data, error } = await sb
-        .from('milestones')
-        .select('*')
-        .order('deadline')
-        .returns<MilestoneRow[]>()
+      const [{ data, error }, names] = await Promise.all([
+        sb.from('milestones').select('*').order('deadline').returns<MilestoneRow[]>(),
+        ownerNames(),
+      ])
       const rows = unwrap('milestones', data, error)
       return rows.map((r) => ({
         milestone_id: r.milestone_id,
         business_id: toScope(r.business_id),
         title: r.title,
-        owner: r.owner_user_id ?? '',
+        owner: ownerName(names, r.owner_user_id),
         deadline: r.deadline,
       }))
     },
