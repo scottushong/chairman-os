@@ -1,9 +1,12 @@
 import Link from 'next/link'
 
 import { ApprovalDetail } from '@/components/approvals/approval-detail'
+import { DraftDecision } from '@/components/approvals/draft-decision'
 import { PageHeader } from '@/components/layout/page-header'
 import { FilterChips, type FilterOption } from '@/components/ui/filter-chips'
 import { Icon } from '@/components/ui/icon'
+import { canDraftDecision } from '@/lib/auth/roles'
+import { currentUser } from '@/lib/auth/session'
 import { countOn, type DecisionAuditRecord } from '@/lib/decision-log'
 import { dayKey, dDay, formatDDay } from '@/lib/format'
 import { businessName } from '@/lib/lookup'
@@ -26,6 +29,9 @@ import {
  * 한 건 처리하고 목록으로 돌아갔다 다시 들어오면 스무 건에서 열 번 넘게 화면이 뒤집힌다.
  *
  * 어느 건이 열려 있는지는 URL(?id=)에 있다. 링크로 특정 결재를 지목할 수 있어야 한다.
+ *
+ * 기안도 여기 있다(DEFERRED D-10 선택지 A). 결재를 올리는 일과 처리하는 일이 같은 화면인 이유는
+ * 첨부가 올릴 때 거는 값이기 때문이다 — 상세 패널에 붙이면 '결재 내용을 결재자가 고친다'가 된다.
  */
 
 const BASE = '/approvals'
@@ -50,10 +56,11 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
   const selectedId = firstParam(params.id)
 
   const repo = await getRepository()
-  const [decisions, businesses, audit] = await Promise.all([
+  const [decisions, businesses, audit, user] = await Promise.all([
     repo.listDecisions(),
     repo.listBusinesses(),
     repo.listDecisionAudit(),
+    currentUser(),
   ])
 
   const isOpen = (d: Decision) => d.status === 'Open'
@@ -121,6 +128,14 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
           오늘 처리 <span className="font-semibold text-ink">{countOn(audit, dayKey())}</span>건
         </span>
       </PageHeader>
+
+      {/* 기안(DEFERRED D-10 선택지 A). 올릴 수 있는 회사가 없으면 폼 자체를 내지 않는다 —
+          회사 선택지가 빈 폼은 저장을 눌러야 이유를 알 수 있다. */}
+      {canDraftDecision(user) && businesses.length > 0 ? (
+        <div className="mt-3">
+          <DraftDecision businesses={businesses} />
+        </div>
+      ) : null}
 
       <div className="mt-4 space-y-2 rounded-xl border border-line-soft bg-panel/60 px-3.5 py-3">
         <FilterChips label="탭" options={tabOptions} />
