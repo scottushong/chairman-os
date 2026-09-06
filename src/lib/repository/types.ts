@@ -1,3 +1,4 @@
+import type { DecisionAuditRecord, DecisionAction } from '@/lib/decision-log'
 import type {
   AiNightOutput,
   Alert,
@@ -39,15 +40,25 @@ export interface ChairmanRepository {
   listCriticalRisks(): Promise<CriticalRisk[]>
   listNextMilestones(): Promise<NextMilestone[]>
 
-  /** CH-016. 결정 처리를 감사 기록으로 남긴다. 성공 여부만 돌려준다. */
+  /** CH-016/CH-051. 이미 처리된 결정들. '오늘 몇 건 털었나'와 처리 이력이 여기서 나온다. */
+  listDecisionAudit(): Promise<DecisionAuditRecord[]>
+
+  /** CH-016. 결정 처리를 감사 기록으로 남기고 결정 상태를 옮긴다. */
   recordDecisionAction(entry: DecisionAuditEntry): Promise<void>
 }
 
-/** audit_log 한 줄. 0001_init의 audit_log 컬럼과 1:1이다. */
+/**
+ * 결정 한 건을 처리한다는 요청.
+ *
+ * action은 화면의 어휘('Approved')다. DB의 두 벌 어휘(decisions.status='Approved',
+ * audit_log.action='approve')로 옮기는 일은 어댑터가 한다 — 그게 DB 모양을 아는 유일한 자리다.
+ */
 export interface DecisionAuditEntry {
   decision_id: string
-  action: 'approve' | 'reject' | 'modify' | 'delegate'
+  action: DecisionAction
   actor_user_id?: string
+  /** 그 시점의 역할. 나중에 역할이 바뀌어도 기록은 남는다(0001 audit_log.actor_role). */
+  actor_role?: string
   business_id?: string
   note?: string
 }
@@ -64,6 +75,7 @@ export interface DashboardSnapshot {
   decisions: Decision[]
   alerts: Alert[]
   aiNightOutputs: AiNightOutput[]
+  decisionAudit: DecisionAuditRecord[]
   topGoals: TopGoal[]
   monthlyPriorities: MonthlyPriority[]
   criticalRisks: CriticalRisk[]
@@ -79,6 +91,7 @@ export async function loadDashboard(repo: ChairmanRepository): Promise<Dashboard
     decisions,
     alerts,
     aiNightOutputs,
+    decisionAudit,
     topGoals,
     monthlyPriorities,
     criticalRisks,
@@ -91,6 +104,7 @@ export async function loadDashboard(repo: ChairmanRepository): Promise<Dashboard
     repo.listDecisions(),
     repo.listAlerts(),
     repo.listAiNightOutputs(),
+    repo.listDecisionAudit(),
     repo.listTopGoals(),
     repo.listMonthlyPriorities(),
     repo.listCriticalRisks(),
@@ -105,6 +119,7 @@ export async function loadDashboard(repo: ChairmanRepository): Promise<Dashboard
     decisions,
     alerts,
     aiNightOutputs,
+    decisionAudit,
     topGoals,
     monthlyPriorities,
     criticalRisks,

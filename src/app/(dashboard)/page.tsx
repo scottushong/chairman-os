@@ -89,7 +89,11 @@ export default async function DashboardPage() {
       <div className="mt-5 grid grid-cols-12 gap-3.5 pb-6">
         {/* 결정 → 대기 → 알림 → 야간 AI. 아침에 훑는 순서 그대로 왼쪽에서 오른쪽으로 놓는다. */}
         <div className="col-span-12 h-[268px] lg:col-span-6 xl:col-span-3">
-          <DecisionPanel decisions={data.decisions} businesses={data.businesses} />
+          <DecisionPanel
+            decisions={data.decisions}
+            businesses={data.businesses}
+            audit={data.decisionAudit}
+          />
         </div>
 
         <div className="col-span-12 h-[268px] lg:col-span-6 xl:col-span-3">

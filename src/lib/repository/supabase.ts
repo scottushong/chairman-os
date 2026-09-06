@@ -1,5 +1,7 @@
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js'
 
+import { AUDIT_ACTION, DECISION_STATUS, type DecisionAuditRecord } from '@/lib/decision-log'
+
 import type {
   AiNightOutput,
   Alert,
@@ -147,6 +149,13 @@ interface AlertRow {
   severity: Severity
   source: 'Rule' | 'AI'
   status: Alert['status']
+}
+
+interface DecisionAuditRow {
+  entity_id: string | null
+  action: 'approve' | 'reject' | 'modify' | 'delegate'
+  occurred_at: string
+  actor_user_id: string | null
 }
 
 interface NightOutputRow {
@@ -348,20 +357,71 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     },
 
     /**
+     * CH-051. 이미 처리한 결정들. decisions 표가 아니라 audit_log에서 읽는다 —
+     * '누가 언제 무엇을 했는가'의 답은 상태 칸이 아니라 기록에 있다.
+     *
+     * audit_log_read 정책(0002)이 Chairman 아니면 본인 것만 내준다.
+     * 그래서 다른 역할로 보면 '오늘 처리 N건'이 자기 몫만 세어진다. 그게 맞다.
+     */
+    async listDecisionAudit(): Promise<DecisionAuditRecord[]> {
+      const { data, error } = await sb
+        .from('audit_log')
+        .select('entity_id,action,occurred_at,actor_user_id')
+        .eq('entity_table', 'decisions')
+        .in('action', ['approve', 'reject', 'modify', 'delegate'])
+        .order('occurred_at', { ascending: false })
+        .returns<DecisionAuditRow[]>()
+      const rows = unwrap('audit_log', data, error)
+      return rows
+        .filter((r): r is DecisionAuditRow & { entity_id: string } => r.entity_id !== null)
+        .map((r) => ({
+          decision_id: r.entity_id,
+          action: r.action,
+          occurred_at: r.occurred_at,
+          actor_user_id: r.actor_user_id,
+        }))
+    },
+
+    /**
      * CH-016 → CH-051.
      * decisions.status를 바꾸는 것과 audit_log를 남기는 건 다른 일이다.
      * 기록이 먼저다 — 상태만 바뀌고 기록이 없는 순간이 생기면 그게 감사 구멍이다.
+     *
+     * 그래서 순서가 뒤집힌 실패(기록은 남고 상태는 안 바뀜)가 가능하다. 그쪽을 택했다.
+     * audit_log는 append only라 그 줄을 지울 수도 없고, 지워서도 안 된다 —
+     * '승인을 시도했다'는 사실 자체가 기록 대상이다. 대신 호출자에게 그 상태를 그대로 말한다.
      */
     async recordDecisionAction(entry: DecisionAuditEntry) {
-      const { error } = await sb.from('audit_log').insert({
-        action: entry.action,
+      const action = AUDIT_ACTION[entry.action]
+
+      const { error: auditError } = await sb.from('audit_log').insert({
+        action,
         entity_table: 'decisions',
         entity_id: entry.decision_id,
         business_id: entry.business_id ?? null,
         actor_user_id: entry.actor_user_id ?? null,
+        actor_role: entry.actor_role ?? null,
         note: entry.note ?? null,
       })
-      if (error) throw new Error(`Supabase audit_log ${error.code ?? '?'}: ${error.message}`)
+      if (auditError) {
+        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      }
+
+      const { error: updateError } = await sb
+        .from('decisions')
+        .update({
+          status: DECISION_STATUS[action],
+          decided_at: new Date().toISOString(),
+          decided_by: entry.actor_user_id ?? null,
+        })
+        .eq('decision_id', entry.decision_id)
+
+      if (updateError) {
+        throw new Error(
+          `Supabase decisions ${updateError.code ?? '?'}: ${updateError.message} ` +
+            '(감사 기록은 남았고 결정 상태만 바뀌지 않았다. 0002의 decisions_decide 정책을 본다.)',
+        )
+      }
     },
   }
 }
