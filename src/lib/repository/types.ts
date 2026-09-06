@@ -3,6 +3,7 @@ import type {
   AiNightOutput,
   Alert,
   Business,
+  BusinessStatus,
   CriticalRisk,
   Decision,
   FinanceKpi,
@@ -46,6 +47,9 @@ export interface ChairmanRepository {
   /** CH-016. 결정 처리를 감사 기록으로 남기고 결정 상태를 옮긴다. */
   recordDecisionAction(entry: DecisionAuditEntry): Promise<void>
 
+  /** CH-002. 회사를 하나 만든다. 0002에서 Chairman만 통과한다(DEFERRED D-08). */
+  createBusiness(input: NewBusiness, actor: AuditActor): Promise<Business>
+
   /** CH-003/004/056. 지금 로그인한 사람의 개인 설정. 남의 것은 어떤 역할도 못 읽는다(0002). */
   getUserSettings(): Promise<UserSettings>
   saveUserSettings(patch: Partial<UserSettings>): Promise<void>
@@ -63,6 +67,44 @@ export interface UserSettings {
   hidden_businesses: string[]
   /** CH-004. null이면 businesses.pinned를 기본값으로 쓴다. */
   pinned_businesses: string[] | null
+}
+
+/**
+ * CH-002에서 이미 쓰고 있는 id로 회사를 만들려 했을 때 어댑터가 던지는 말.
+ *
+ * 문자열 한 개를 상수로 두는 이유는 Server Action이 이 실패만 다르게 말해야 하기 때문이다 —
+ * 다른 실패는 '잠시 후 다시'지만 이건 사용자가 id를 고쳐야 풀린다.
+ * 오류 코드로 구분할 수 없다. 중복이 두 자리(사전 검사 / INSERT 경합)에서 서로 다른 코드로 온다.
+ */
+export const DUPLICATE_BUSINESS_ID = 'DUPLICATE_BUSINESS_ID'
+
+/**
+ * 무엇을 한 사람인가. audit_log의 actor_user_id / actor_role로 들어간다(CH-051).
+ *
+ * 어댑터가 세션에서 직접 꺼내지 않고 인자로 받는다. 역할(Chairman/TeamLead…)은
+ * auth.users가 아니라 user_profiles에 있고, 그건 이미 currentUser()가 한 번 읽은 값이다.
+ * 어댑터가 또 읽으면 같은 요청 안에서 같은 질문을 두 번 하게 된다.
+ */
+export interface AuditActor {
+  user_id: string
+  role: string
+}
+
+/**
+ * CH-002로 만들 회사 한 곳.
+ *
+ * business_id는 화면이 정한다(lib/business-id.ts). 서버가 만들어 주지 않는 이유는
+ * 규칙이 'biz_ + 사람이 고른 영문 slug'라서다 — 사람이 고른 값을 서버가 되돌려 주면
+ * 저장 버튼을 누른 뒤에야 자기 회사 id를 알게 된다.
+ *
+ * owner_user_id는 받지 않는다. 그 칸은 회사의 CEO이지 '이 회사를 만든 사람'이 아니다.
+ * 화면에 담당자를 고르는 자리가 생기기 전까지는 비워 두는 편이 정확하다.
+ */
+export interface NewBusiness {
+  business_id: string
+  name: string
+  industry: string
+  status: BusinessStatus
 }
 
 /**

@@ -12,8 +12,16 @@ import {
   topGoals,
 } from '@/data'
 import { AUDIT_ACTION, type DecisionAuditRecord } from '@/lib/decision-log'
+import type { Business } from '@/types'
 
-import type { ChairmanRepository, DecisionAuditEntry, UserSettings } from './types'
+import {
+  DUPLICATE_BUSINESS_ID,
+  type AuditActor,
+  type ChairmanRepository,
+  type DecisionAuditEntry,
+  type NewBusiness,
+  type UserSettings,
+} from './types'
 
 /**
  * dummy 모드의 감사 기록. 서버 프로세스가 살아 있는 동안만 남는다.
@@ -23,6 +31,9 @@ import type { ChairmanRepository, DecisionAuditEntry, UserSettings } from './typ
  * 진짜 기록은 live 모드에서 Supabase audit_log에만 남는다(DEFERRED D-05).
  */
 const memoryAudit: DecisionAuditRecord[] = []
+
+/** CH-002로 추가한 회사도 마찬가지다. 서버가 살아 있는 동안만 남는다. */
+const memoryBusinesses: Business[] = []
 
 /** 개인 설정도 마찬가지다. 서버가 살아 있는 동안만 남는다. */
 const memorySettings: UserSettings = { hidden_businesses: [], pinned_businesses: null }
@@ -36,7 +47,7 @@ export const dummyRepository: ChairmanRepository = {
   mode: 'dummy',
 
   async listBusinesses() {
-    return [...businesses]
+    return [...businesses, ...memoryBusinesses]
   },
   async listFinanceKpis() {
     return [...financeKpis]
@@ -72,6 +83,39 @@ export const dummyRepository: ChairmanRepository = {
 
   async listDecisionAudit() {
     return [...memoryAudit]
+  },
+
+  /**
+   * CH-002. live 모드에서는 Chairman만 통과하는 일이지만(0002 businesses_write),
+   * dummy에는 역할도 RLS도 없다. 여기서 역할을 흉내 내면 dummy에서만 통과/거부되는
+   * 두 번째 권한 판정이 생긴다 — 판정은 DB 한 곳에서만 한다.
+   */
+  async createBusiness(input: NewBusiness, actor: AuditActor): Promise<Business> {
+    const taken = [...businesses, ...memoryBusinesses].some(
+      (b) => b.business_id === input.business_id,
+    )
+    if (taken) throw new Error(DUPLICATE_BUSINESS_ID)
+
+    const created: Business = {
+      business_id: input.business_id,
+      name: input.name,
+      status: input.status,
+      industry: input.industry,
+      owner_user_id: '',
+      visible: true,
+      sort_order:
+        Math.max(0, ...[...businesses, ...memoryBusinesses].map((b) => b.sort_order)) + 1,
+      pinned: false,
+    }
+    memoryBusinesses.push(created)
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        `[dummy] create ${created.business_id} by ${actor.role} — 메모리에만 남는다. ` +
+          '영구 기록은 live 모드의 Supabase audit_log뿐이다(CH-051).',
+      )
+    }
+    return created
   },
 
   async getUserSettings() {

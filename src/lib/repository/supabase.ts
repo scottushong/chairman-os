@@ -22,7 +22,14 @@ import type {
   WorkPriority,
 } from '@/types'
 
-import type { ChairmanRepository, DecisionAuditEntry, UserSettings } from './types'
+import {
+  DUPLICATE_BUSINESS_ID,
+  type AuditActor,
+  type ChairmanRepository,
+  type DecisionAuditEntry,
+  type NewBusiness,
+  type UserSettings,
+} from './types'
 
 /**
  * Supabase 어댑터.
@@ -477,6 +484,92 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
           `Supabase decisions ${updateError.code ?? '?'}: ${updateError.message} ` +
             '(감사 기록은 남았고 결정 상태만 바뀌지 않았다. 0002의 decisions_decide 정책을 본다.)',
         )
+      }
+    },
+
+    /**
+     * CH-002 회사 추가 (DEFERRED D-08 선택지 A).
+     *
+     * 0002의 businesses_write가 Chairman만 통과시킨다. 여기서 역할을 다시 보지 않는다 —
+     * 판정을 애플리케이션으로 옮기면 우회 경로가 하나 더 생긴다.
+     *
+     * 순서는 recordDecisionAction과 같다. 기록이 먼저다.
+     * 반대로 두면 '회사는 생겼는데 만든 기록이 없는' 순간이 존재하고, 그게 감사 구멍이다.
+     * 이 순서에서는 반대 방향 실패(기록만 남고 회사는 안 생김)가 가능하다. 그쪽을 택했다 —
+     * audit_log는 append only라 그 줄을 지울 수 없고, '만들려고 했다'도 기록 대상이다(CH-051).
+     * 대신 호출자에게 그 상태를 그대로 말한다.
+     *
+     * 중복 검사는 이 두 줄보다 먼저다. 이미 있는 id로 실패하는 건 감사할 사건이 아니라
+     * 입력 오류라서, 그것까지 기록에 남기면 기록이 잡음으로 찬다.
+     */
+    async createBusiness(input: NewBusiness, actor: AuditActor): Promise<Business> {
+      const { data: clash, error: lookupError } = await sb
+        .from('businesses')
+        .select('business_id')
+        .eq('business_id', input.business_id)
+        .maybeSingle<{ business_id: string }>()
+
+      if (lookupError) {
+        throw new Error(`Supabase businesses ${lookupError.code ?? '?'}: ${lookupError.message}`)
+      }
+      if (clash) throw new Error(DUPLICATE_BUSINESS_ID)
+
+      // 새 회사는 카드 줄 맨 뒤에 선다. 0으로 두면 시드 1~5보다 앞에 끼어든다.
+      const { data: last, error: orderError } = await sb
+        .from('businesses')
+        .select('sort_order')
+        .order('sort_order', { ascending: false })
+        .limit(1)
+        .maybeSingle<{ sort_order: number }>()
+      if (orderError) {
+        throw new Error(`Supabase businesses ${orderError.code ?? '?'}: ${orderError.message}`)
+      }
+      const sortOrder = (last?.sort_order ?? 0) + 1
+
+      const row = {
+        business_id: input.business_id,
+        name: input.name,
+        status: input.status,
+        industry: input.industry,
+        owner_user_id: null,
+        visible: true,
+        sort_order: sortOrder,
+        pinned: false,
+      }
+
+      const { error: auditError } = await sb.from('audit_log').insert({
+        action: 'create',
+        entity_table: 'businesses',
+        entity_id: input.business_id,
+        business_id: input.business_id,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        // 무엇을 만들었는지가 after에 통째로 남는다. before는 없다 — 만들기 전에는 행이 없었다.
+        after: row,
+      })
+      if (auditError) {
+        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      }
+
+      const { error: insertError } = await sb.from('businesses').insert(row)
+      if (insertError) {
+        // 23505 = 중복 키. 위 검사와 INSERT 사이에 누가 같은 id를 넣었다는 뜻이다.
+        if (insertError.code === '23505') throw new Error(DUPLICATE_BUSINESS_ID)
+        throw new Error(
+          `Supabase businesses ${insertError.code ?? '?'}: ${insertError.message} ` +
+            '(감사 기록은 남았고 회사는 만들어지지 않았다. 0002의 businesses_write 정책을 본다.)',
+        )
+      }
+
+      return {
+        business_id: row.business_id,
+        name: row.name,
+        status: row.status,
+        industry: row.industry,
+        owner_user_id: '',
+        visible: row.visible,
+        sort_order: row.sort_order,
+        pinned: row.pinned,
       }
     },
 

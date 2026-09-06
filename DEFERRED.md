@@ -14,7 +14,7 @@
 | D-05 저장 위치 | **A** — Phase 1에서 DB + Audit Log 착수. | 대부분 완료 (Phase 1-B). 결정 로그 → `audit_log`, 숨김·핀 → `user_settings`. 기업 추가만 남았다 → D-08 |
 | D-06 제목 중복 | 그대로 확정. | 완료 |
 | D-07 차트 축 | **A** — 이중 축(좌 매출 / 우 손익 3종). | 완료 (`line-chart.tsx`, `finance-trend.tsx`) |
-| D-08 기업 추가 저장 위치 | 미결 | 아래 참고 |
+| D-08 기업 추가 저장 위치 | **A** — `businesses` INSERT + `audit_log('create')`를 Server Action으로. | 완료 (Phase 1-C 블록 1). `app/actions/businesses.ts`, `lib/business-id.ts`, `repository/*`. `lib/added-businesses.ts` 삭제 |
 | D-09 담당자 이름 표시 | **B** — user_profiles 조인, 없으면 '미지정'. | 완료 (`repository/supabase.ts`). 실계정이 생기면 (A)로 이어진다 |
 
 아래 원문은 결정 근거로 남겨 둔다.
@@ -85,9 +85,24 @@ CH-002로 추가한 회사(`src/lib/added-businesses.ts`)만 localStorage에 그
 모달이 그 사실을 화면에 적어 두고 있다.
 
 **골라야 할 것**
-- (A) `businesses` INSERT + `audit_log('create')` 를 Server Action으로 붙인다. 권장.
+- **(A) 선택.** `businesses` INSERT + `audit_log('create')` 를 Server Action으로 붙인다.
 - (B) Chairman이 Supabase Dashboard에서 직접 넣고, 화면의 추가 버튼은 뗀다.
 - (C) 그대로 둔다(데모용으로만 본다).
+
+**결정 (2026-09-06, Phase 1-C 블록 1): A.** 세 가지를 이렇게 정했다.
+
+1. **권한** — 앱에서 역할을 보지 않는다. Chairman 세션으로 INSERT를 시도하고, 아니면
+   0002의 `businesses_write`가 거부한다. 판정을 앱으로 옮기면 우회 경로가 하나 더 생긴다.
+2. **감사 기록** — `audit_log`에 `create`를 먼저 남기고 그다음 INSERT한다. `recordDecisionAction`과
+   같은 순서다. 반대로 두면 '회사는 생겼는데 만든 기록이 없는' 순간이 존재한다.
+   중복 id 검사는 두 줄보다 앞에 둔다 — 입력 오류까지 기록에 남기면 기록이 잡음으로 찬다.
+3. **id 발급 규칙** — `biz_` + 사람이 고른 영문 slug(`^[a-z][a-z0-9_]{1,29}$`). 시드의
+   `biz_dy`/`biz_vana`를 그대로 잇는다. 한글 이름에서 로마자를 기계로 만들지 않는다 —
+   '보람'이 boram인지 poram인지를 코드가 정하게 되기 때문이다. 이름에 영문이 있으면 초안만 채워 준다.
+   규칙은 `lib/business-id.ts` 한 곳에 있고 모달과 Server Action이 같은 함수를 쓴다.
+
+**남은 것** `owner_user_id`는 비워 둔다(화면에 '미지정'). 그 칸은 회사의 CEO이지 '만든 사람'이 아니라,
+담당자를 고르는 UI가 생기기 전까지는 비우는 편이 정확하다.
 
 ---
 

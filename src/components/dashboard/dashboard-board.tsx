@@ -1,9 +1,13 @@
 'use client'
 
-import { useMemo, useState, useSyncExternalStore } from 'react'
+import { useMemo, useState } from 'react'
 
+import { createBusiness } from '@/app/actions/businesses'
 import { saveHiddenBusinesses, savePinnedBusinesses } from '@/app/actions/settings'
-import { AddBusinessModal } from '@/components/dashboard/add-business-modal'
+import {
+  AddBusinessModal,
+  type AddBusinessInput,
+} from '@/components/dashboard/add-business-modal'
 import { BusinessCard, type BusinessMetrics } from '@/components/dashboard/business-card'
 import { FinanceTrend } from '@/components/dashboard/finance-trend'
 import { KpiStrip } from '@/components/dashboard/kpi-strip'
@@ -12,13 +16,6 @@ import { effectivePinned } from '@/lib/business-pins'
 import { businessProgress, hasFinanceData, latestPeriodOf, valueOf } from '@/lib/finance'
 import type { UserSettings } from '@/lib/repository'
 import type { Business, FinanceKpi, Project } from '@/types'
-import {
-  addBusiness,
-  getServerSnapshot as addedServerSnapshot,
-  getSnapshot as addedSnapshot,
-  parseAdded,
-  subscribe as subscribeAdded,
-} from '@/lib/added-businesses'
 
 /**
  * Business 카드(CH-001~005)와 그룹 KPI(CH-006~010)를 한 상태 위에 올린다.
@@ -63,27 +60,21 @@ export function DashboardBoard({
   )
   const [error, setError] = useState<string | null>(null)
 
-  /**
-   * CH-002로 추가한 회사는 아직 브라우저에만 있다.
-   * businesses INSERT는 0002에서 Chairman만 할 수 있어 서버로 옮길 수는 있지만,
-   * 이번 단계 범위가 아니라 그대로 둔다(DEFERRED D-08).
-   */
-  const addedRaw = useSyncExternalStore(subscribeAdded, addedSnapshot, addedServerSnapshot)
-  const added = useMemo(() => parseAdded(addedRaw), [addedRaw])
-
   const [adding, setAdding] = useState(false)
 
-  const letters = useMemo(() => letterMap([...businesses, ...added]), [businesses, added])
+  const letters = useMemo(() => letterMap(businesses), [businesses])
 
   /** 핀 우선, 그다음 sort_order. 드래그 순서(CH-005)는 아직 sort_order를 그대로 쓴다. */
   const ordered = useMemo(
     () =>
-      [...businesses.filter((b) => b.visible), ...added.filter((b) => b.visible)].sort(
-        (a, b) =>
-          Number(pinned.includes(b.business_id)) - Number(pinned.includes(a.business_id)) ||
-          a.sort_order - b.sort_order,
-      ),
-    [businesses, pinned, added],
+      businesses
+        .filter((b) => b.visible)
+        .sort(
+          (a, b) =>
+            Number(pinned.includes(b.business_id)) - Number(pinned.includes(a.business_id)) ||
+            a.sort_order - b.sort_order,
+        ),
+    [businesses, pinned],
   )
 
   /**
@@ -134,6 +125,16 @@ export function DashboardBoard({
       ? pinned.filter((id) => id !== businessId)
       : [...pinned, businessId]
     persist(next, pinned, setPinned, savePinnedBusinesses)
+  }
+
+  /**
+   * CH-002. 서버가 만들고 나면 revalidatePath('/')로 대시보드가 다시 그려지므로
+   * 여기서 카드 목록을 직접 건드리지 않는다. 낙관적으로 먼저 그리면
+   * 권한 거부로 실패했을 때 카드가 한 번 떴다가 사라진다.
+   */
+  async function create(input: AddBusinessInput): Promise<string | null> {
+    const result = await createBusiness(input)
+    return result.error ?? null
   }
 
   const shown = ordered.filter((b) => !hidden.includes(b.business_id))
@@ -208,9 +209,7 @@ export function DashboardBoard({
 
       <FinanceTrend kpis={financeKpis} businessIds={shown.map((b) => b.business_id)} />
 
-      {adding ? (
-        <AddBusinessModal onClose={() => setAdding(false)} onCreate={addBusiness} />
-      ) : null}
+      {adding ? <AddBusinessModal onClose={() => setAdding(false)} onCreate={create} /> : null}
     </div>
   )
 }

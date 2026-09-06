@@ -7,12 +7,14 @@ import { createSupabaseRepository } from './supabase'
 import type { ChairmanRepository } from './types'
 
 export type {
+  AuditActor,
   ChairmanRepository,
   DashboardSnapshot,
   DecisionAuditEntry,
+  NewBusiness,
   UserSettings,
 } from './types'
-export { loadDashboard } from './types'
+export { DUPLICATE_BUSINESS_ID, loadDashboard } from './types'
 
 /**
  * 어느 어댑터를 쓸지 정하는 유일한 자리. 서버에서만 부른다.
