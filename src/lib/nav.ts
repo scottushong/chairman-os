@@ -150,6 +150,9 @@ export const NAV: readonly NavGroup[] = [
   },
   {
     items: [
+      // CH-049. 설정의 하위 화면 중 이것만 먼저 섰다 — 두 번째 사람을 넣는 경로가
+      // 없으면 0004_bootstrap_chairman의 "앱에서 초대한다"가 계속 빈말이 된다.
+      { label: '사용자 · 권한', href: '/settings/users', icon: 'users', ready: true },
       {
         label: '설정',
         href: '/settings',
@@ -157,7 +160,7 @@ export const NAV: readonly NavGroup[] = [
         expandable: true,
         ready: false,
         waitingFor:
-          'CH-056 대시보드 개인화가 붙는 자리입니다. 사용자·권한 관리(CH-049)는 /settings/users로 먼저 서 있습니다.',
+          'CH-056 대시보드 개인화(위젯·회사·KPI 표시/숨김/위치 저장)가 붙는 자리입니다. 사용자·권한 관리(CH-049)는 바로 위 메뉴로 먼저 서 있습니다.',
       },
     ],
   },

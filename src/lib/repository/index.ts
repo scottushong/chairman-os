@@ -14,11 +14,12 @@ export type {
   NewBusiness,
   NewDecision,
   NewDocument,
+  RevokeTarget,
   StrategyPatch,
   TaskPatch,
   UserSettings,
 } from './types'
-export { DUPLICATE_BUSINESS_ID, loadDashboard } from './types'
+export { DUPLICATE_BUSINESS_ID, DUPLICATE_INVITATION, loadDashboard } from './types'
 
 /**
  * 어느 어댑터를 쓸지 정하는 유일한 자리. 서버에서만 부른다.

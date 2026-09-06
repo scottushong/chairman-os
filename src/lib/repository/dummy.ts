@@ -16,16 +16,27 @@ import { AUDIT_ACTION, type DecisionAuditRecord } from '@/lib/decision-log'
 import { dayKey } from '@/lib/format'
 import { emptyStrategy } from '@/lib/strategy-fields'
 import type { SearchHit } from '@/lib/search'
-import type { Business, BusinessStrategy, Decision, DocumentRecord, Task } from '@/types'
+import type {
+  Business,
+  BusinessStrategy,
+  Decision,
+  DocumentRecord,
+  NewInvitation,
+  Task,
+  UserAccount,
+  UserInvitation,
+} from '@/types'
 
 import {
   DUPLICATE_BUSINESS_ID,
+  DUPLICATE_INVITATION,
   type AuditActor,
   type ChairmanRepository,
   type DecisionAuditEntry,
   type NewBusiness,
   type NewDecision,
   type NewDocument,
+  type RevokeTarget,
   type StrategyPatch,
   type TaskPatch,
   type UserSettings,
@@ -64,6 +75,15 @@ const memoryStrategyPatches = new Map<string, StrategyPatch>()
 
 /** CH-041로 올린 기안. 여기도 서버가 살아 있는 동안만이다. */
 const memoryDecisions: Decision[] = []
+
+/**
+ * CH-049로 만든 초대장. 여기도 서버가 살아 있는 동안만이다.
+ *
+ * 계정 목록(listUserAccounts)은 늘 비어 있다. dummy에는 auth.users도 user_profiles도
+ * 없어서 흉내 낼 사람이 없다 — 시드로 가짜 계정을 만들어 두면 '누가 이 시스템을 쓰나'의
+ * 답이 두 곳(가짜 시드 / 진짜 DB)으로 갈라진다. 화면은 그때 빈 목록을 그리고 이유를 말한다.
+ */
+const memoryInvitations: UserInvitation[] = []
 
 /** 개인 설정도 마찬가지다. 서버가 살아 있는 동안만 남는다. */
 const memorySettings: UserSettings = { hidden_businesses: [], pinned_businesses: null }
@@ -326,6 +346,66 @@ export const dummyRepository: ChairmanRepository = {
       )
     }
     return created
+  },
+
+  /**
+   * CH-049. dummy에는 사용자 표가 없다. 빈 배열이 정답이다 —
+   * 가짜 계정을 넣어 두면 화면이 dummy에서만 사람 목록을 보여 주고,
+   * 그걸 보고 '권한이 이렇게 되어 있구나'로 읽는 사고가 난다.
+   */
+  async listUserAccounts(): Promise<UserAccount[]> {
+    return []
+  },
+
+  async listUserInvitations(): Promise<UserInvitation[]> {
+    return [...memoryInvitations]
+  },
+
+  /** CH-049. live에서는 0011의 user_invitations_admin이 Chairman만 통과시킨다. */
+  async inviteUser(input: NewInvitation, actor: AuditActor): Promise<UserInvitation> {
+    const email = input.email.trim().toLowerCase()
+    const pending = memoryInvitations.some(
+      (i) => i.email === email && !i.accepted_at && !i.revoked_at,
+    )
+    if (pending) throw new Error(DUPLICATE_INVITATION)
+
+    const created: UserInvitation = {
+      invitation_id: `inv_${String(memoryInvitations.length + 1).padStart(3, '0')}`,
+      email,
+      role: input.role,
+      max_security_class: input.max_security_class,
+      business_ids: input.business_ids,
+      display_name: input.display_name,
+      title_ko: input.title_ko,
+      invited_at: new Date().toISOString(),
+      // live에서는 0011의 트리거가 계정 생성 시점에 채운다. dummy에는 그 순간이 없다.
+      accepted_at: null,
+      revoked_at: null,
+    }
+    memoryInvitations.push(created)
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        `[dummy] invite ${email} by ${actor.role} — 메모리에만 남는다. ` +
+          '영구 기록은 live 모드의 Supabase audit_log뿐이다(CH-051).',
+      )
+    }
+    return created
+  },
+
+  /** CH-049. dummy에는 계정이 없으므로 초대 취소만 실제로 뭔가 한다. */
+  async revokeUser(target: RevokeTarget, actor: AuditActor): Promise<void> {
+    if (target.kind === 'invitation') {
+      const found = memoryInvitations.find((i) => i.invitation_id === target.invitation_id)
+      if (found && !found.accepted_at) found.revoked_at = new Date().toISOString()
+    }
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        `[dummy] revoke ${target.kind} by ${actor.role} — 메모리에만 남는다. ` +
+          '영구 기록은 live 모드의 Supabase audit_log뿐이다(CH-051).',
+      )
+    }
   },
 
   async getUserSettings() {

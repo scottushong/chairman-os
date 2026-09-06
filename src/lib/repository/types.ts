@@ -14,9 +14,12 @@ import type {
   MonthlyPriority,
   NextMilestone,
   Project,
+  NewInvitation,
   Task,
   TaskStatus,
   TopGoal,
+  UserAccount,
+  UserInvitation,
   WorkPriority,
 } from '@/types'
 
@@ -84,6 +87,16 @@ export interface ChairmanRepository {
   /** CH-041 기안. 결재를 하나 올린다. 0002의 decisions_create가 회사 범위와 모듈 쓰기를 같이 본다. */
   createDecision(input: NewDecision, actor: AuditActor): Promise<Decision>
 
+  /**
+   * CH-049 RBAC. 설정 화면이 쓰는 셋.
+   * 전부 Chairman만 통과한다 — 0002의 user_profiles_admin_write / 0011의 user_invitations_admin.
+   */
+  listUserAccounts(): Promise<UserAccount[]>
+  listUserInvitations(): Promise<UserInvitation[]>
+  inviteUser(input: NewInvitation, actor: AuditActor): Promise<UserInvitation>
+  /** 이미 들어온 사람은 user_profiles.revoked_at, 아직 안 온 사람은 초대를 취소한다. */
+  revokeUser(target: RevokeTarget, actor: AuditActor): Promise<void>
+
   /** CH-003/004/056. 지금 로그인한 사람의 개인 설정. 남의 것은 어떤 역할도 못 읽는다(0002). */
   getUserSettings(): Promise<UserSettings>
   saveUserSettings(patch: Partial<UserSettings>): Promise<void>
@@ -111,6 +124,14 @@ export interface UserSettings {
  * 오류 코드로 구분할 수 없다. 중복이 두 자리(사전 검사 / INSERT 경합)에서 서로 다른 코드로 온다.
  */
 export const DUPLICATE_BUSINESS_ID = 'DUPLICATE_BUSINESS_ID'
+
+/**
+ * CH-049에서 이미 살아 있는 초대가 있는 이메일로 또 초대하려 했을 때.
+ *
+ * 0011의 user_invitations_pending 부분 유니크가 막는다. 이것도 사용자가 고쳐야 풀리는
+ * 입력 오류라 다른 실패와 다르게 말해야 한다 — DUPLICATE_BUSINESS_ID와 같은 이유다.
+ */
+export const DUPLICATE_INVITATION = 'DUPLICATE_INVITATION'
 
 /**
  * 무엇을 한 사람인가. audit_log의 actor_user_id / actor_role로 들어간다(CH-051).
@@ -209,6 +230,21 @@ export interface NewDecision {
   /** 사내 스토리지 링크. 없으면 넣지 않는다(0006). */
   attachment_url?: string
 }
+
+/**
+ * 누구의 권한을 회수하는가 (05_Architecture 원칙 8).
+ *
+ * 두 경우가 다르다. 이미 들어온 사람은 user_profiles.revoked_at 한 줄로 전 테이블이 닫히고,
+ * 아직 계정이 없는 사람은 자를 권한이 없다 — 취소할 것은 초대장뿐이다.
+ * 한 함수에 합친 이유는 화면에서 둘이 같은 버튼(권한 회수)이기 때문이다.
+ *
+ * user_business_access는 지우지 않는다. revoked_at이 채워지면 0002의 is_active()가
+ * 거짓이 되어 has_business()가 어차피 false다. 지우면 되돌릴 때 누가 어느 회사를
+ * 보고 있었는지가 사라진다.
+ */
+export type RevokeTarget =
+  | { kind: 'account'; user_id: string }
+  | { kind: 'invitation'; invitation_id: string }
 
 /**
  * 결정 한 건을 처리한다는 요청.

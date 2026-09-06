@@ -15,6 +15,10 @@ import type {
   DecisionStatus,
   DocumentRecord,
   FinanceKpi,
+  NewInvitation,
+  Role,
+  UserAccount,
+  UserInvitation,
   FinanceMetric,
   MonthlyPriority,
   NextMilestone,
@@ -29,12 +33,14 @@ import type {
 
 import {
   DUPLICATE_BUSINESS_ID,
+  DUPLICATE_INVITATION,
   type AuditActor,
   type ChairmanRepository,
   type DecisionAuditEntry,
   type NewBusiness,
   type NewDecision,
   type NewDocument,
+  type RevokeTarget,
   type StrategyPatch,
   type TaskPatch,
   type UserSettings,
@@ -190,6 +196,50 @@ function toDecision(r: DecisionRow): Decision {
     // 0으로 채우면 신뢰도 0%인 추천처럼 보인다.
     ai_confidence: r.ai_confidence === null ? undefined : num(r.ai_confidence),
     attachment_url: r.attachment_url ?? undefined,
+  }
+}
+
+interface UserProfileRow {
+  user_id: string
+  role: Role
+  display_name: string
+  title_ko: string | null
+  max_security_class: SecurityClass
+  revoked_at: string | null
+  created_at: string
+}
+
+interface AccessRow {
+  user_id: string
+  business_id: string
+}
+
+interface UserInvitationRow {
+  invitation_id: string
+  email: string
+  role: Role
+  max_security_class: SecurityClass
+  business_ids: string[] | null
+  display_name: string
+  title_ko: string | null
+  invited_at: string
+  accepted_at: string | null
+  revoked_at: string | null
+}
+
+/** 0011 한 행을 화면의 UserInvitation으로. 목록과 방금 만든 초대가 같은 함수를 쓴다. */
+function toInvitation(r: UserInvitationRow): UserInvitation {
+  return {
+    invitation_id: r.invitation_id,
+    email: r.email,
+    role: r.role,
+    max_security_class: r.max_security_class,
+    business_ids: r.business_ids ?? [],
+    display_name: r.display_name,
+    title_ko: r.title_ko ?? '',
+    invited_at: r.invited_at,
+    accepted_at: r.accepted_at,
+    revoked_at: r.revoked_at,
   }
 }
 
@@ -1139,6 +1189,179 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       }
 
       return toDecision(data)
+    },
+
+    /**
+     * CH-049. 들어와 있는 사람들.
+     *
+     * 이메일이 없다. auth.users는 PostgREST로 나오지 않고, service_role이 없어
+     * admin API로도 못 읽는다(CLAUDE.md). 화면은 이름·직함·역할로 사람을 가린다.
+     *
+     * revoked_at이 채워진 사람도 같이 내려보낸다. 회수는 삭제가 아니라 상태라서
+     * '누가 잘렸는지'가 화면에 남아 있어야 한다 — 안 보이면 되돌릴 방법도 없다.
+     * 그래서 여기서만 revoked_at 필터를 걸지 않는다(session.ts와 다른 점).
+     */
+    async listUserAccounts(): Promise<UserAccount[]> {
+      const [{ data, error }, access] = await Promise.all([
+        sb
+          .from('user_profiles')
+          .select('user_id,role,display_name,title_ko,max_security_class,revoked_at,created_at')
+          .order('created_at')
+          .returns<UserProfileRow[]>(),
+        sb
+          .from('user_business_access')
+          .select('user_id,business_id')
+          .returns<AccessRow[]>(),
+      ])
+
+      const rows = unwrap('user_profiles', data, error)
+      // 접근 표를 못 읽는 건 치명적이지 않다. 회사 칸이 비어 보일 뿐이라 조용히 빈 배열로 둔다.
+      const byUser = new Map<string, string[]>()
+      for (const a of access.data ?? []) {
+        byUser.set(a.user_id, [...(byUser.get(a.user_id) ?? []), a.business_id])
+      }
+
+      return rows.map((r) => ({
+        user_id: r.user_id,
+        role: r.role,
+        display_name: r.display_name,
+        title_ko: r.title_ko ?? '',
+        max_security_class: r.max_security_class,
+        revoked_at: r.revoked_at,
+        business_ids: byUser.get(r.user_id) ?? [],
+        created_at: r.created_at,
+      }))
+    },
+
+    /** CH-049. 0011의 초대장들. 수락·취소된 것도 같이 내려보낸다 — 그것도 기록이다. */
+    async listUserInvitations(): Promise<UserInvitation[]> {
+      const { data, error } = await sb
+        .from('user_invitations')
+        .select(
+          'invitation_id,email,role,max_security_class,business_ids,display_name,title_ko,invited_at,accepted_at,revoked_at',
+        )
+        .order('invited_at', { ascending: false })
+        .returns<UserInvitationRow[]>()
+
+      const rows = unwrap('user_invitations', data, error)
+      return rows.map(toInvitation)
+    },
+
+    /**
+     * CH-049 초대.
+     *
+     * 계정을 만들지 않는다 — 그건 service_role의 일이고 이 프로젝트에는 없다(0011 머리 주석).
+     * 여기서 만드는 것은 "이 이메일로 계정이 생기면 이 역할을 준다"는 약속 한 줄이고,
+     * 0011의 on_auth_user_created 트리거가 그때 이행한다.
+     *
+     * 순서는 이 파일의 다른 쓰기와 같다. 기록이 먼저다.
+     * 권한을 나눠 주는 결정은 CH-051이 명시적으로 기록 대상으로 꼽은 것이라
+     * '주려고 했다'까지 남는 편이 맞다.
+     */
+    async inviteUser(input: NewInvitation, actor: AuditActor): Promise<UserInvitation> {
+      const email = input.email.trim().toLowerCase()
+
+      const { error: auditError } = await sb.from('audit_log').insert({
+        // create가 아니라 permission_change다. 0001의 audit_action에 이 값이 따로 있는 이유가
+        // 여기다 — CH-051이 '권한변경'을 기록 대상으로 따로 꼽았고, 나중에 감사할 때
+        // '권한이 언제 움직였나'를 한 값으로 걸러 낼 수 있어야 한다.
+        action: 'permission_change',
+        entity_table: 'user_invitations',
+        entity_id: email,
+        business_id: null,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        // 무엇을 주기로 했는지가 통째로 남는다. 나중에 '왜 이 사람이 이걸 보나'의 답이 여기 있다.
+        after: {
+          email,
+          role: input.role,
+          max_security_class: input.max_security_class,
+          business_ids: input.business_ids,
+          display_name: input.display_name,
+        },
+      })
+      if (auditError) {
+        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      }
+
+      const { data, error } = await sb
+        .from('user_invitations')
+        .insert({
+          email,
+          role: input.role,
+          max_security_class: input.max_security_class,
+          business_ids: input.business_ids,
+          display_name: input.display_name,
+          title_ko: input.title_ko || null,
+          invited_by: actor.user_id,
+        })
+        .select(
+          'invitation_id,email,role,max_security_class,business_ids,display_name,title_ko,invited_at,accepted_at,revoked_at',
+        )
+        .single<UserInvitationRow>()
+
+      if (error || !data) {
+        // 23505 = 0011의 user_invitations_pending 부분 유니크. 살아 있는 초대가 이미 있다.
+        if (error?.code === '23505') throw new Error(DUPLICATE_INVITATION)
+        throw new Error(
+          `Supabase user_invitations ${error?.code ?? '?'}: ${error?.message ?? '행이 돌아오지 않았다'} ` +
+            '(감사 기록은 남았고 초대는 만들어지지 않았다. 0011의 user_invitations_admin 정책을 본다.)',
+        )
+      }
+
+      return toInvitation(data)
+    },
+
+    /**
+     * CH-049 권한 회수 (05_Architecture 원칙 8).
+     *
+     * 이미 들어온 사람은 user_profiles.revoked_at 한 줄이면 끝난다. 0002의 auth_profile()과
+     * is_active()가 그 값을 보고 전 테이블을 동시에 닫는다 — 그게 원칙 8이 한 줄인 이유다.
+     * user_business_access는 지우지 않는다. 지우면 되돌릴 때 무엇을 되돌릴지 알 수 없다.
+     *
+     * 아직 계정이 없는 사람은 자를 권한이 없다. 취소할 것은 초대장뿐이고,
+     * 취소하면 0011의 부분 유니크에서 빠져 같은 이메일로 다시 초대할 수 있게 된다.
+     */
+    async revokeUser(target: RevokeTarget, actor: AuditActor): Promise<void> {
+      const now = new Date().toISOString()
+      const table = target.kind === 'account' ? 'user_profiles' : 'user_invitations'
+
+      const { error: auditError } = await sb.from('audit_log').insert({
+        // 초대와 같은 값이다. 주는 것과 거두는 것은 같은 종류의 사건이라
+        // 한 값으로 걸러 낼 수 있어야 감사가 된다.
+        action: 'permission_change',
+        entity_table: table,
+        entity_id: target.kind === 'account' ? target.user_id : target.invitation_id,
+        business_id: null,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        before: { revoked_at: null },
+        after: { revoked_at: now },
+      })
+      if (auditError) {
+        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      }
+
+      const { error } =
+        target.kind === 'account'
+          ? await sb
+              .from('user_profiles')
+              .update({ revoked_at: now })
+              .eq('user_id', target.user_id)
+              .is('revoked_at', null)
+          : await sb
+              .from('user_invitations')
+              .update({ revoked_at: now })
+              .eq('invitation_id', target.invitation_id)
+              .is('accepted_at', null)
+              .is('revoked_at', null)
+
+      if (error) {
+        throw new Error(
+          `Supabase ${table} ${error.code ?? '?'}: ${error.message} ` +
+            '(감사 기록은 남았고 회수는 되지 않았다.)',
+        )
+      }
     },
 
     /**
