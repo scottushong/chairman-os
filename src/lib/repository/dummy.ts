@@ -12,6 +12,7 @@ import {
   tasks,
   topGoals,
 } from '@/data'
+import type { EntityAuditRecord } from '@/lib/audit-log'
 import { AUDIT_ACTION, type DecisionAuditRecord } from '@/lib/decision-log'
 import { dayKey } from '@/lib/format'
 import { emptyStrategy } from '@/lib/strategy-fields'
@@ -31,6 +32,7 @@ import {
   DUPLICATE_BUSINESS_ID,
   DUPLICATE_INVITATION,
   type AuditActor,
+  type AuditEntityTable,
   type ChairmanRepository,
   type DecisionAuditEntry,
   type NewBusiness,
@@ -50,6 +52,15 @@ import {
  * 진짜 기록은 live 모드에서 Supabase audit_log에만 남는다(DEFERRED D-05).
  */
 const memoryAudit: DecisionAuditRecord[] = []
+
+/**
+ * DEFERRED D-12. 단건 화면이 읽는 이력.
+ *
+ * live의 audit_log를 흉내 낸 것이라 여기도 append only다 — 지우는 경로를 두지 않는다.
+ * 다만 서버가 살아 있는 동안만이다. 영구 기록은 live 모드의 Supabase뿐이다(CH-051).
+ */
+type StoredAudit = EntityAuditRecord & { entity_table: AuditEntityTable; entity_id: string }
+const memoryEntityAudit: StoredAudit[] = []
 
 /** CH-002로 추가한 회사도 마찬가지다. 서버가 살아 있는 동안만 남는다. */
 const memoryBusinesses: Business[] = []
@@ -233,6 +244,34 @@ export const dummyRepository: ChairmanRepository = {
   },
 
   /**
+   * DEFERRED D-12. live의 audit_log 역조회와 같은 모양으로 답한다.
+   *
+   * 시드가 없어서 이 서버가 뜬 뒤 실제로 고친 것만 나온다. 가짜 이력을 심지 않는다 —
+   * 없는 기록을 채워 두면 dummy에서만 이력이 있고 live 첫 화면은 비어, 어느 쪽이
+   * 맞는지 화면만 보고는 알 수 없게 된다.
+   */
+  async listEntityAudit(
+    entityTable: AuditEntityTable,
+    entityId: string,
+  ): Promise<EntityAuditRecord[]> {
+    // 저장할 때만 어느 행인지 같이 들고 있다가, 내줄 때는 계약(EntityAuditRecord)만 남긴다.
+    return memoryEntityAudit
+      .filter((r) => r.entity_table === entityTable && r.entity_id === entityId)
+      .sort((a, b) => b.id - a.id)
+      .map((r) => ({
+        id: r.id,
+        occurred_at: r.occurred_at,
+        action: r.action,
+        actor_user_id: r.actor_user_id,
+        actor_name: r.actor_name,
+        actor_role: r.actor_role,
+        before: r.before,
+        after: r.after,
+        note: r.note,
+      }))
+  },
+
+  /**
    * CH-002. live 모드에서는 Chairman만 통과하는 일이지만(0002 businesses_write),
    * dummy에는 역할도 RLS도 없다. 여기서 역할을 흉내 내면 dummy에서만 통과/거부되는
    * 두 번째 권한 판정이 생긴다 — 판정은 DB 한 곳에서만 한다.
@@ -268,10 +307,38 @@ export const dummyRepository: ChairmanRepository = {
   /** CH-040. live에서는 0002의 tasks_write가 거를 일이지만, dummy에는 RLS가 없다. */
   async updateTask(taskId: string, patch: TaskPatch, actor: AuditActor): Promise<void> {
     const current = memoryTaskPatches.get(taskId) ?? {}
+    const seeded = tasks.find((t) => t.task_id === taskId)
+    /** 바뀌기 직전의 값. 시드 위에 지금까지의 메모리 패치를 얹은 것이 '현재'다. */
+    const before = { ...seeded, ...current }
+
     const next = { ...current, ...patch }
     // 상태가 바뀌면 대기일수 기준선도 같이 옮긴다. live 어댑터와 같은 규칙이어야 한다.
     if (patch.status !== undefined) next.blocked_since = dayKey()
     memoryTaskPatches.set(taskId, next)
+
+    // live 어댑터와 같은 diff를 남긴다 — 바뀌는 칸만이다(supabase.ts updateTask).
+    const after: Record<string, unknown> = {}
+    if (patch.status !== undefined) {
+      after.status = patch.status
+      after.blocked_since = next.blocked_since
+    }
+    if (patch.chairman_needed !== undefined) after.chairman_needed = patch.chairman_needed
+
+    memoryEntityAudit.push({
+      id: memoryEntityAudit.length + 1,
+      entity_table: 'tasks',
+      entity_id: taskId,
+      occurred_at: new Date().toISOString(),
+      action: 'update',
+      actor_user_id: actor.user_id,
+      actor_name: actor.user_id,
+      actor_role: actor.role,
+      before: Object.fromEntries(
+        Object.keys(after).map((k) => [k, before[k as keyof typeof before] ?? null]),
+      ),
+      after,
+      note: null,
+    })
 
     if (process.env.NODE_ENV !== 'production') {
       console.warn(

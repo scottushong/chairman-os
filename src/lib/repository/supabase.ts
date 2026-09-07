@@ -1,5 +1,6 @@
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js'
 
+import type { AuditAction, EntityAuditRecord } from '@/lib/audit-log'
 import { AUDIT_ACTION, DECISION_STATUS, type DecisionAuditRecord } from '@/lib/decision-log'
 import { dayKey } from '@/lib/format'
 import { needsSubstringSearch, type SearchHit } from '@/lib/search'
@@ -35,6 +36,7 @@ import {
   DUPLICATE_BUSINESS_ID,
   DUPLICATE_INVITATION,
   type AuditActor,
+  type AuditEntityTable,
   type ChairmanRepository,
   type DecisionAuditEntry,
   type NewBusiness,
@@ -289,6 +291,18 @@ interface DecisionAuditRow {
   action: 'approve' | 'reject' | 'modify' | 'delegate'
   occurred_at: string
   actor_user_id: string | null
+}
+
+/** DEFERRED D-12. audit_log 한 줄을 그대로 받는다 — 이력 화면은 diff까지 읽는다. */
+interface EntityAuditRow {
+  id: number
+  occurred_at: string
+  action: AuditAction
+  actor_user_id: string | null
+  actor_role: string | null
+  before: Record<string, unknown> | null
+  after: Record<string, unknown> | null
+  note: string | null
 }
 
 interface NightOutputRow {
@@ -803,6 +817,45 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
           actor_user_id: r.actor_user_id,
           actor_name: ownerName(names, r.actor_user_id),
         }))
+    },
+
+    /**
+     * DEFERRED D-12. 행 하나의 이력.
+     *
+     * action을 좁히지 않는다. 업무에는 생성·변경만 있지만 나중에 다른 행동이 붙어도
+     * 이력에서 조용히 빠지면 안 된다 — 빠진 줄은 '없었던 일'로 읽힌다.
+     *
+     * 개수를 자르지 않는 이유도 같다. 감사 이력은 최근 몇 건이 아니라 전부다.
+     * 한 행의 기록이 화면을 넘칠 만큼 쌓이면 그때 페이지를 나눌 일이지,
+     * 지금 잘라 두면 잘렸다는 사실 자체가 화면에 안 나타난다.
+     */
+    async listEntityAudit(
+      entityTable: AuditEntityTable,
+      entityId: string,
+    ): Promise<EntityAuditRecord[]> {
+      const [{ data, error }, names] = await Promise.all([
+        sb
+          .from('audit_log')
+          .select('id,occurred_at,action,actor_user_id,actor_role,before,after,note')
+          .eq('entity_table', entityTable)
+          .eq('entity_id', entityId)
+          .order('occurred_at', { ascending: false })
+          .order('id', { ascending: false })
+          .returns<EntityAuditRow[]>(),
+        ownerNames(),
+      ])
+      const rows = unwrap('audit_log', data, error)
+      return rows.map((r) => ({
+        id: r.id,
+        occurred_at: r.occurred_at,
+        action: r.action,
+        actor_user_id: r.actor_user_id,
+        actor_name: ownerName(names, r.actor_user_id),
+        actor_role: r.actor_role,
+        before: r.before,
+        after: r.after,
+        note: r.note,
+      }))
     },
 
     /**

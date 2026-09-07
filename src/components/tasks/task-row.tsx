@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useState, useTransition } from 'react'
 
 import { setChairmanNeeded, setTaskStatus } from '@/app/actions/tasks'
@@ -94,7 +95,14 @@ export function TaskRow({
   return (
     <tr className={`border-t border-line-soft transition-opacity ${pending ? 'opacity-50' : ''}`}>
       <td className="px-3 py-2">
-        <p className="text-[12.5px] leading-snug font-semibold">{task.title}</p>
+        {/* 제목이 단건 화면으로 가는 자리다(DEFERRED D-12). 줄 전체를 링크로 만들지 않는다 —
+            같은 줄에 상태 select와 토글 버튼이 있어 누르는 자리가 겹친다. */}
+        <Link
+          href={`/tasks/${encodeURIComponent(task.task_id)}`}
+          className="text-[12.5px] leading-snug font-semibold transition-colors hover:text-accent"
+        >
+          {task.title}
+        </Link>
         <p className="mt-0.5 truncate text-[10.5px] text-ink-muted">
           {businessName} · {projectName}
         </p>

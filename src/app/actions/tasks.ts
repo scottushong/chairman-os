@@ -43,6 +43,9 @@ async function apply(taskId: unknown, patch: TaskPatch): Promise<TaskActionState
   // 상태 탭의 개수와 대시보드 Waiting on Me가 같이 움직인다. 둘 다 서버가 다시 그려야 보인다.
   revalidatePath('/tasks')
   revalidatePath('/')
+  // 단건 화면은 자기 자신과 위층 프로젝트가 같이 바뀐다 — 이력 한 줄이 늘고 상태별 개수가 움직인다.
+  revalidatePath('/tasks/[id]', 'page')
+  revalidatePath('/projects/[id]', 'page')
   return {}
 }
 

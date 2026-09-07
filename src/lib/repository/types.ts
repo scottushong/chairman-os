@@ -1,3 +1,4 @@
+import type { EntityAuditRecord } from '@/lib/audit-log'
 import type { DecisionAuditRecord, DecisionAction } from '@/lib/decision-log'
 import type { SearchHit } from '@/lib/search'
 import type {
@@ -64,6 +65,17 @@ export interface ChairmanRepository {
 
   /** CH-016/CH-051. 이미 처리된 결정들. '오늘 몇 건 털었나'와 처리 이력이 여기서 나온다. */
   listDecisionAudit(): Promise<DecisionAuditRecord[]>
+
+  /**
+   * CH-017/CH-020. 행 하나에 무슨 일이 있었나 (DEFERRED D-12).
+   *
+   * listDecisionAudit과 합치지 않는다. 저쪽은 '결정 네 가지 행동'만 전건 훑어서
+   * 대시보드가 개수를 세는 용도고, 이쪽은 행 하나를 지목해 그 줄만 시간 역순으로 읽는다.
+   * 전건을 읽어 화면에서 거르면 업무가 늘어난 만큼 매 요청이 무거워진다.
+   *
+   * 권한은 여기서 보지 않는다. 0002의 audit_log read 정책이 회사 범위를 이미 건다.
+   */
+  listEntityAudit(entityTable: AuditEntityTable, entityId: string): Promise<EntityAuditRecord[]>
 
   /** CH-016. 결정 처리를 감사 기록으로 남기고 결정 상태를 옮긴다. */
   recordDecisionAction(entry: DecisionAuditEntry): Promise<void>
@@ -140,6 +152,15 @@ export const DUPLICATE_INVITATION = 'DUPLICATE_INVITATION'
  * auth.users가 아니라 user_profiles에 있고, 그건 이미 currentUser()가 한 번 읽은 값이다.
  * 어댑터가 또 읽으면 같은 요청 안에서 같은 질문을 두 번 하게 된다.
  */
+/**
+ * 이력을 되짚을 수 있는 테이블.
+ *
+ * 문자열을 그대로 받지 않는 이유는 이 값이 PostgREST 필터로 그대로 들어가기 때문이다.
+ * 지금은 호출부가 전부 리터럴이라 위험이 없지만, 목록을 좁혀 두면 나중에 URL에서 온 값을
+ * 그대로 흘려보내는 실수를 타입이 먼저 잡는다.
+ */
+export type AuditEntityTable = 'tasks' | 'projects' | 'decisions' | 'documents' | 'businesses'
+
 export interface AuditActor {
   user_id: string
   role: string

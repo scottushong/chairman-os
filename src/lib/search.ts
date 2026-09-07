@@ -20,8 +20,8 @@ export const SEARCH_KIND_LABEL_KO: Record<SearchKind, string> = {
 /**
  * 검색 결과 한 줄.
  *
- * business_id를 들고 다니는 이유는 이동 대상이 대개 '그 회사로 좁힌 목록'이기 때문이다.
- * Task·Project 단건 화면이 아직 없어서, 그 줄이 실제로 보이는 가장 가까운 자리로 보낸다.
+ * business_id를 들고 다니는 이유는 이동 대상이 '그 회사로 좁힌 목록'인 종류가 남아 있어서다
+ * (문서). 기업·프로젝트·업무·결정은 단건을 지목할 수 있다.
  */
 export interface SearchHit {
   kind: SearchKind
@@ -45,10 +45,10 @@ export function hitHref(hit: SearchHit): string {
     case 'document':
       return scope ? `/documents?${scope}` : '/documents'
     case 'project':
-      // 프로젝트 단건 화면이 없다. 그 프로젝트가 카드로 떠 있는 회사 상세로 보낸다.
-      return hit.business_id ? `/business/${encodeURIComponent(hit.business_id)}` : '/'
+      // DEFERRED D-12 이후로 단건 화면이 있다. 회사 상세로 우회하지 않는다.
+      return `/projects/${encodeURIComponent(hit.id)}`
     case 'task':
-      return scope ? `/tasks?${scope}` : '/tasks'
+      return `/tasks/${encodeURIComponent(hit.id)}`
   }
 }
 

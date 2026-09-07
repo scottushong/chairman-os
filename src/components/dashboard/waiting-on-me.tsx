@@ -13,7 +13,7 @@ import { TASK_STATUS_LABEL_KO, type Business, type Project, type Task } from '@/
 
 /**
  * 대기일수 임계. 일주일 넘게 내 책상에 있으면 그건 이미 사고다.
- * 요구사항서 CH-017의 Acceptance는 '원 Task와 연결'이라 줄마다 Task로 가는 자리를 둔다.
+ * 요구사항서 CH-017의 Acceptance는 '원 Task와 연결'이라 줄마다 /tasks/[id]로 가는 자리를 둔다.
  */
 const STALE_DAYS = 7
 
@@ -84,7 +84,7 @@ export function WaitingOnMe({ tasks, projects, businesses }: WaitingOnMeProps) {
               </p>
               <ul className="mt-0.5 space-y-0.5">
                 {g.items.map((t) => (
-                  <WaitingItem key={t.task_id} task={t} businessId={g.businessId} />
+                  <WaitingItem key={t.task_id} task={t} />
                 ))}
               </ul>
             </div>
@@ -95,16 +95,16 @@ export function WaitingOnMe({ tasks, projects, businesses }: WaitingOnMeProps) {
   )
 }
 
-function WaitingItem({ task, businessId }: { task: Task; businessId: string }) {
+function WaitingItem({ task }: { task: Task }) {
   const days = waitingDays(task)
   const stale = days > STALE_DAYS
 
   return (
     <li>
-      {/* CH-017 Acceptance의 '원 Task와 연결'. Task 단건 화면은 아직 없어서, 그 줄이 있는
-          목록까지 보낸다 — 회사와 '회장 확인 대기'를 걸면 CH-040에서 이 업무가 화면에 남는다. */}
+      {/* CH-017 Acceptance의 '원 Task와 연결'. 업무 단건 화면으로 바로 간다
+          (DEFERRED D-12 선택지 A). 목록으로 보내던 시절이 UAT TC-010 P0 Fail의 원인이었다. */}
       <Link
-        href={`/tasks?business=${encodeURIComponent(businessId)}&needed=1`}
+        href={`/tasks/${encodeURIComponent(task.task_id)}`}
         className="block rounded-lg px-1.5 py-1 transition-colors hover:bg-raised/60">
         <div className="flex items-center gap-1.5">
           <p className="min-w-0 flex-1 truncate text-[12px] leading-snug font-semibold">

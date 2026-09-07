@@ -72,7 +72,8 @@ export const NAV: readonly NavGroup[] = [
         icon: 'folder',
         ready: false,
         waitingFor:
-          '프로젝트 목록·단건 화면입니다. DEFERRED D-12(Task·Project 단건 화면이 없다)와 같은 자리입니다.',
+          '프로젝트 목록입니다. 단건 화면(/projects/[id])은 D-12로 이미 섰습니다 — ' +
+          '업무 상세나 검색 결과에서 열립니다. 남은 것은 전사 프로젝트를 한 판에 보는 목록입니다.',
       },
       {
         label: '기업 관리 (A,B,C)',
