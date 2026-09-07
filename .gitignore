@@ -14,3 +14,6 @@ supabase/bootstrap/0004_ready.sql
 
 # supabase CLI 로컬 상태
 supabase/.temp/
+
+# 작업 중 찍은 화면 캡처 (커밋 대상 아님)
+.screenshots/
