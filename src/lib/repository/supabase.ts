@@ -321,6 +321,19 @@ function unwrap<T>(table: string, data: T[] | null, error: PostgrestError | null
   return data ?? []
 }
 
+/** Mutation success is one returned row, not merely a null PostgREST error. */
+function oneAffectedRow<T>(
+  table: string,
+  data: T[] | null,
+  error: PostgrestError | null,
+): T {
+  const rows = unwrap(table, data, error)
+  if (rows.length !== 1) {
+    throw new Error(`Supabase ${table}: mutation affected ${rows.length} rows.`)
+  }
+  return rows[0]
+}
+
 /** 이름을 못 찾은 담당자. 화면에 36자 uuid를 그대로 뿌리지 않는다(DEFERRED D-09 결정 B). */
 const UNKNOWN_OWNER = '미지정'
 
@@ -883,7 +896,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
       }
 
-      const { error: updateError } = await sb
+      const { data: updated, error: updateError } = await sb
         .from('decisions')
         .update({
           status: DECISION_STATUS[action],
@@ -891,11 +904,17 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
           decided_by: entry.actor_user_id ?? null,
         })
         .eq('decision_id', entry.decision_id)
+        .eq('status', 'Open')
+        .select('decision_id')
+        .returns<{ decision_id: string }[]>()
 
-      if (updateError) {
+      if (updateError || !updated || updated.length !== 1) {
         throw new Error(
-          `Supabase decisions ${updateError.code ?? '?'}: ${updateError.message} ` +
-            '(감사 기록은 남았고 결정 상태만 바뀌지 않았다. 0002의 decisions_decide 정책을 본다.)',
+          updateError
+            ? `Supabase decisions ${updateError.code ?? '?'}: ${updateError.message} ` +
+              '(감사 기록은 남았고 결정 상태만 바뀌지 않았다. 0002의 decisions_decide 정책을 본다.)'
+            : `Supabase decisions: mutation affected ${updated?.length ?? 0} rows ` +
+              '(감사 기록은 남았고 결정 상태만 바뀌지 않았다. 이미 처리됐거나 0002의 decisions_decide 정책을 본다.)',
         )
       }
     },
@@ -1034,11 +1053,19 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
       }
 
-      const { error: updateError } = await sb.from('tasks').update(after).eq('task_id', taskId)
-      if (updateError) {
+      const { data: updated, error: updateError } = await sb
+        .from('tasks')
+        .update(after)
+        .eq('task_id', taskId)
+        .select('task_id')
+        .returns<{ task_id: string }[]>()
+      if (updateError || !updated || updated.length !== 1) {
         throw new Error(
-          `Supabase tasks ${updateError.code ?? '?'}: ${updateError.message} ` +
-            '(감사 기록은 남았고 업무는 바뀌지 않았다. 0002의 tasks_write 정책을 본다.)',
+          updateError
+            ? `Supabase tasks ${updateError.code ?? '?'}: ${updateError.message} ` +
+              '(감사 기록은 남았고 업무는 바뀌지 않았다. 0002의 tasks_write 정책을 본다.)'
+            : `Supabase tasks: mutation affected ${updated?.length ?? 0} rows ` +
+              '(감사 기록은 남았고 업무는 바뀌지 않았다. 0002의 tasks_write 정책을 본다.)',
         )
       }
     },
@@ -1395,25 +1422,25 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
       }
 
-      const { error } =
-        target.kind === 'account'
-          ? await sb
-              .from('user_profiles')
-              .update({ revoked_at: now })
-              .eq('user_id', target.user_id)
-              .is('revoked_at', null)
-          : await sb
-              .from('user_invitations')
-              .update({ revoked_at: now })
-              .eq('invitation_id', target.invitation_id)
-              .is('accepted_at', null)
-              .is('revoked_at', null)
-
-      if (error) {
-        throw new Error(
-          `Supabase ${table} ${error.code ?? '?'}: ${error.message} ` +
-            '(감사 기록은 남았고 회수는 되지 않았다.)',
-        )
+      if (target.kind === 'account') {
+        const { data, error } = await sb
+          .from('user_profiles')
+          .update({ revoked_at: now })
+          .eq('user_id', target.user_id)
+          .is('revoked_at', null)
+          .select('user_id')
+          .returns<{ user_id: string }[]>()
+        oneAffectedRow(table, data, error)
+      } else {
+        const { data, error } = await sb
+          .from('user_invitations')
+          .update({ revoked_at: now })
+          .eq('invitation_id', target.invitation_id)
+          .is('accepted_at', null)
+          .is('revoked_at', null)
+          .select('invitation_id')
+          .returns<{ invitation_id: string }[]>()
+        oneAffectedRow(table, data, error)
       }
     },
 

@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useMemo, useState, useTransition } from 'react'
+import { useState, useTransition } from 'react'
 
 import { decide } from '@/app/actions/decisions'
 import { Icon } from '@/components/ui/icon'
@@ -9,7 +9,6 @@ import {
   DECISION_ACTION,
   DECISION_ACTION_LABEL_KO,
   countOn,
-  latestByDecision,
   type DecisionAction,
   type DecisionAuditRecord,
 } from '@/lib/decision-log'
@@ -49,7 +48,6 @@ interface DecisionPanelProps {
 }
 
 export function DecisionPanel({ decisions, businesses, audit }: DecisionPanelProps) {
-  const handled = useMemo(() => latestByDecision(audit), [audit])
   const [pending, startTransition] = useTransition()
   /** 서버가 다시 그리기 전까지 눌린 줄을 미리 내린다. 안 그러면 한 박자 늦게 사라진다. */
   const [acted, setActed] = useState<string[]>([])
@@ -61,7 +59,7 @@ export function DecisionPanel({ decisions, businesses, audit }: DecisionPanelPro
   const open = decisions
     .filter(
       (d) =>
-        d.status === 'Open' && !handled.has(d.decision_id) && !acted.includes(d.decision_id),
+        d.status === 'Open' && !acted.includes(d.decision_id),
     )
     .sort(
       (a, b) =>

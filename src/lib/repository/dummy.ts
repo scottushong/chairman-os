@@ -13,7 +13,7 @@ import {
   topGoals,
 } from '@/data'
 import type { EntityAuditRecord } from '@/lib/audit-log'
-import { AUDIT_ACTION, type DecisionAuditRecord } from '@/lib/decision-log'
+import { AUDIT_ACTION, DECISION_STATUS, type DecisionAuditRecord } from '@/lib/decision-log'
 import { dayKey } from '@/lib/format'
 import { emptyStrategy } from '@/lib/strategy-fields'
 import type { SearchHit } from '@/lib/search'
@@ -21,6 +21,7 @@ import type {
   Business,
   BusinessStrategy,
   Decision,
+  DecisionStatus,
   DocumentRecord,
   NewInvitation,
   Task,
@@ -52,6 +53,7 @@ import {
  * 진짜 기록은 live 모드에서 Supabase audit_log에만 남는다(DEFERRED D-05).
  */
 const memoryAudit: DecisionAuditRecord[] = []
+const memoryDecisionStatuses = new Map<string, DecisionStatus>()
 
 /**
  * DEFERRED D-12. 단건 화면이 읽는 이력.
@@ -120,7 +122,10 @@ export const dummyRepository: ChairmanRepository = {
     return tasks.map((t) => ({ ...t, ...memoryTaskPatches.get(t.task_id) }))
   },
   async listDecisions() {
-    return [...decisions, ...memoryDecisions]
+    return [...decisions, ...memoryDecisions].map((decision) => ({
+      ...decision,
+      status: memoryDecisionStatuses.get(decision.decision_id) ?? decision.status,
+    }))
   },
   async listAlerts() {
     return [...alerts]
@@ -306,8 +311,10 @@ export const dummyRepository: ChairmanRepository = {
 
   /** CH-040. live에서는 0002의 tasks_write가 거를 일이지만, dummy에는 RLS가 없다. */
   async updateTask(taskId: string, patch: TaskPatch, actor: AuditActor): Promise<void> {
-    const current = memoryTaskPatches.get(taskId) ?? {}
     const seeded = tasks.find((t) => t.task_id === taskId)
+    if (!seeded) throw new Error('Dummy tasks: mutation affected 0 rows.')
+
+    const current = memoryTaskPatches.get(taskId) ?? {}
     /** 바뀌기 직전의 값. 시드 위에 지금까지의 메모리 패치를 얹은 것이 '현재'다. */
     const before = { ...seeded, ...current }
 
@@ -464,7 +471,12 @@ export const dummyRepository: ChairmanRepository = {
   async revokeUser(target: RevokeTarget, actor: AuditActor): Promise<void> {
     if (target.kind === 'invitation') {
       const found = memoryInvitations.find((i) => i.invitation_id === target.invitation_id)
-      if (found && !found.accepted_at) found.revoked_at = new Date().toISOString()
+      if (!found || found.accepted_at || found.revoked_at) {
+        throw new Error('Dummy user_invitations: mutation affected 0 rows.')
+      }
+      found.revoked_at = new Date().toISOString()
+    } else {
+      throw new Error('Dummy user_profiles: mutation affected 0 rows.')
     }
 
     if (process.env.NODE_ENV !== 'production') {
@@ -488,6 +500,13 @@ export const dummyRepository: ChairmanRepository = {
    * 조용히 '저장됐다'고 넘어가면 그 사실이 가려지므로 개발 중에는 매번 경고를 남긴다.
    */
   async recordDecisionAction(entry: DecisionAuditEntry) {
+    const decision = [...decisions, ...memoryDecisions].find(
+      (item) => item.decision_id === entry.decision_id,
+    )
+    const status = decision
+      ? memoryDecisionStatuses.get(decision.decision_id) ?? decision.status
+      : undefined
+
     memoryAudit.push({
       decision_id: entry.decision_id,
       action: AUDIT_ACTION[entry.action],
@@ -496,6 +515,12 @@ export const dummyRepository: ChairmanRepository = {
       // dummy에는 user_profiles가 없다. live 어댑터가 프로필을 못 찾았을 때와 같은 말을 쓴다.
       actor_name: '미지정',
     })
+
+    if (!decision || status !== 'Open') {
+      throw new Error('Dummy decisions: mutation affected 0 rows.')
+    }
+    memoryDecisionStatuses.set(entry.decision_id, DECISION_STATUS[AUDIT_ACTION[entry.action]])
+
     if (process.env.NODE_ENV !== 'production') {
       console.warn(
         `[dummy] ${entry.action} ${entry.decision_id} — 메모리에만 남는다. ` +
