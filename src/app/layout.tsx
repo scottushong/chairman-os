@@ -1,13 +1,21 @@
 import type { Metadata } from 'next'
-import localFont from 'next/font/local'
+import { Noto_Serif_KR } from 'next/font/google'
 
 import './globals.css'
 
-/** Pretendard Variable. 자체 호스팅이라 외부 요청 없이 로드된다. */
-const pretendard = localFont({
-  src: './fonts/PretendardVariable.woff2',
-  variable: '--font-pretendard',
-  weight: '45 920',
+/**
+ * Noto Serif KR. next/font/google가 빌드 때 받아서 자체 호스팅하므로
+ * 실행 중에는 외부 요청이 없다(Pretendard 때와 같은 성질을 유지한다).
+ *
+ * 400·500 두 굵기만 받는다. 관제 화면에 필요한 대비는 본문/강조 두 단이면 충분하고,
+ * 한글 명조는 굵기 하나가 곧 파일 하나라 더 받으면 그만큼 무거워진다.
+ * subsets에 'korean'이 없는 것은 정상이다 — Google이 한글을 unicode-range로 잘게 쪼개
+ * 내려 주고 next/font가 그 조각을 전부 받아 둔다. latin만 preload 대상으로 잡는다.
+ */
+const notoSerifKR = Noto_Serif_KR({
+  subsets: ['latin'],
+  weight: ['400', '500'],
+  variable: '--font-noto-serif-kr',
   display: 'swap',
 })
 
@@ -23,7 +31,7 @@ export const metadata: Metadata = {
  */
 export default function RootLayout({ children }: LayoutProps<'/'>) {
   return (
-    <html lang="ko" className={`${pretendard.variable} h-full antialiased`}>
+    <html lang="ko" className={`${notoSerifKR.variable} h-full antialiased`}>
       <body className="h-full font-sans">{children}</body>
     </html>
   )

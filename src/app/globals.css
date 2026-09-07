@@ -1,43 +1,52 @@
 @import "tailwindcss";
 
 /**
- * Chairman OS 디자인 토큰.
+ * Chairman OS 디자인 토큰 — 웜 차콜.
  * 다크 고정이다. 관제 화면이라 라이트 분기를 두지 않는다.
  * 원칙: 정상 데이터는 조용히, 위험/승인대기만 색으로 올라온다(요구사항서 2번).
+ *
+ * 2026-09-07 교체: 청회색 → 웜 차콜, Pretendard → Noto Serif KR.
+ * 토큰 이름은 하나도 바꾸지 않았다 — 컴포넌트가 191곳에서 이 이름을 쓰고 있어서,
+ * 이름을 건드리면 '토큰만 교체'가 아니라 전면 수정이 된다.
  */
 @theme {
-  /* 바탕. app > panel > raised 순으로 한 단계씩 밝아진다. */
-  --color-app: #0a0d14;
-  --color-nav: #0c1017;
-  --color-panel: #111722;
-  --color-raised: #18202e;
-  --color-line: #1f2937;
-  --color-line-soft: #161e2b;
+  /* 바탕. app > nav > panel > raised 순으로 한 단계씩 밝아진다. */
+  --color-app: #161412;
+  --color-nav: #1c1916;
+  --color-panel: #1f1c19;
+  --color-raised: #2a2622;
+  --color-line: #3a342d;
+  --color-line-soft: #2e2925;
 
   /* 글자. muted 아래로는 읽히지 않으니 더 내리지 않는다. */
-  --color-ink: #e8edf5;
-  --color-ink-dim: #9aa7bd;
-  --color-ink-muted: #64748b;
+  --color-ink: #ede8e0;
+  --color-ink-dim: #c4bbae;
+  --color-ink-muted: #a39a8d;
 
-  /* 강조. accent는 선택/활성, gold는 Chairman 표식 전용. */
-  --color-accent: #2563eb;
-  --color-accent-soft: #1e3a8a;
-  --color-gold: #f5c451;
+  /* 강조. 웜 팔레트에서는 선택/활성과 Chairman 표식이 같은 황동색을 쓴다. */
+  --color-accent: #e0a23a;
+  /* accent-soft는 accent를 바탕 쪽으로 눌러 둔 것. 선택된 줄의 배경에 쓴다. */
+  --color-accent-soft: #4a3416;
+  --color-gold: #e0a23a;
 
   /* 상태. severity 3단계와 증감 부호에 이 색만 쓴다. */
-  --color-critical: #ef4444;
-  --color-warning: #f59e0b;
-  --color-ok: #22c55e;
-  --color-info: #38bdf8;
+  --color-critical: #e8735a;
+  --color-warning: #d97b4a;
+  --color-ok: #7fb069;
+  --color-info: #d0a878;
 
-  /* 회사별 식별색. 카드 이니셜 배지와 스파크라인이 공유한다. */
-  --color-biz-dy: #3b82f6;
-  --color-biz-vana: #22c55e;
-  --color-biz-sticky: #a855f7;
-  --color-biz-hof: #f97316;
-  --color-biz-boram: #14b8a6;
+  /* 증감 부호. ok/critical과 같은 값이지만 읽는 자리가 달라 이름을 따로 둔다. */
+  --color-positive: #7fb069;
+  --color-negative: #e8735a;
 
-  --font-sans: var(--font-pretendard), system-ui, sans-serif;
+  /* 회사별 식별색. 웜 배경에서 튀어서 채도를 10%p 낮췄다. */
+  --color-biz-dy: #4584ec;
+  --color-biz-vana: #2eb961;
+  --color-biz-sticky: #a85eee;
+  --color-biz-hof: #ed7522;
+  --color-biz-boram: #1eae9e;
+
+  --font-sans: var(--font-noto-serif-kr), "Noto Serif KR", serif;
 }
 
 html {
@@ -49,10 +58,63 @@ body {
   color: var(--color-ink);
 }
 
-/* 숫자는 자리수가 흔들리면 KPI 비교가 안 된다. 표/카드에서 고정폭으로 읽는다. */
+/**
+ * 숫자는 자리수가 흔들리면 KPI 비교가 안 된다.
+ * 명조로 바뀌면서 폭 차이가 더 눈에 띄어 전역으로 올렸다 — KPI 스트립 8개가 세로로 맞아야 한다.
+ */
+body {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* 남겨 둔다 — 이미 붙어 있는 자리를 떼면 diff가 넓어지고, 전역과 같은 값이라 무해하다. */
 .tnum {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "tnum";
+}
+
+/**
+ * 뱃지·톤 박스 글자.
+ * `bg-<tone>/N` 과 `text-<tone>` 이 한 요소에 같이 붙는 자리에만 글자를 한 단 밝힌다.
+ * 그 자리는 전부 뱃지이거나 톤 박스다(긴급·높음·활성·회수 뱃지, 로그인 실패 문장 등).
+ *
+ * 왜 토큰이 아니라 여기서 하나 — 같은 --color-critical이 본문 숫자(-4.7억)에도 쓰인다.
+ * 토큰을 밝히면 본문 빨강까지 같이 뜬다. 배경이 톤을 15% 얹어 밝아진 만큼 글자도
+ * 올려야 대비가 유지되는데, 그 보정이 필요한 곳은 이 조합뿐이다.
+ *
+ * 안 하면 raised 위 뱃지가 4.02:1 / 3.93:1로 AA(4.5:1)를 못 넘는다. 붙이면 5.99~8.93:1이 된다.
+ * 클래스 두 개(0-2-0)라 유틸리티(0-1-0)를 소스 순서와 무관하게 이긴다.
+ * hover:bg-…는 클래스 이름이 달라 여기 걸리지 않는다 — 의도한 것이다.
+ */
+:is(.bg-critical\/5, .bg-critical\/10, .bg-critical\/15, .bg-critical\/20).text-critical {
+  color: #f0a58f;
+}
+
+:is(.bg-warning\/5, .bg-warning\/10, .bg-warning\/15, .bg-warning\/20).text-warning {
+  color: #e9c27a;
+}
+
+:is(.bg-ok\/5, .bg-ok\/10, .bg-ok\/15, .bg-ok\/20).text-ok {
+  color: #a9cf95;
+}
+
+/**
+ * 톤 배경 위의 글자.
+ * 구 팔레트의 accent는 남색(#2563eb)이라 흰 글자가 5.17:1로 읽혔다.
+ * 웜 차콜의 accent는 황동(#e0a23a)이고, 그 위의 흰 글자는 2.23:1이다 — AA를 크게 못 넘는다.
+ * 황동·주황 계열은 밝은 색이라 글자를 어둡게 깔아야 읽힌다(#161412 기준 8.22:1).
+ *
+ * 걸리는 자리: 사이드바 활성 메뉴, 헤더 알림 개수 뱃지, 로그인 버튼,
+ * 기안·기업추가·문서등록·좌표저장의 주 버튼(전부 bg-accent + text-ink/white).
+ * 색이 없는 bg-accent(진행률 막대 등)는 글자가 없어 이 규칙에 걸리지 않는다.
+ */
+:is(.bg-accent, .bg-gold, .bg-warning, .bg-ok, .bg-critical):is(.text-white, .text-ink, .text-ink-dim) {
+  color: #161412;
+}
+
+/* hover:로 톤이 깔리는 버튼(결재 위임·거절 등)은 클래스 이름이 달라 위 규칙에 안 걸린다. */
+:is(.hover\:bg-accent, .hover\:bg-critical):is(.hover\:text-ink, .hover\:text-white):hover {
+  color: #161412;
 }
 
 /* 관제 화면은 스크롤바가 늘 보인다. 바탕에 묻히게 깎아 둔다. */
