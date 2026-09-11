@@ -5,7 +5,7 @@ import { useState, useTransition } from 'react'
 
 import { setChairmanNeeded, setTaskStatus } from '@/app/actions/tasks'
 import { Icon } from '@/components/ui/icon'
-import { dDay, formatDDay } from '@/lib/format'
+import { dDay, formatDDay, isOverdue } from '@/lib/format'
 import {
   TASK_STATUS,
   TASK_STATUS_LABEL_KO,
@@ -63,7 +63,7 @@ export function TaskRow({
   const status = draftStatus ?? task.status
   const needed = draftNeeded ?? task.chairman_needed
   const days = waitingDays(task)
-  const overdue = dDay(task.deadline) < 0 && task.status !== 'Done'
+  const overdue = isOverdue(task.deadline) && task.status !== 'Done'
 
   function changeStatus(next: TaskStatus) {
     if (next === status) return

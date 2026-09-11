@@ -1,7 +1,7 @@
 import Link from 'next/link'
 
 import { Icon } from '@/components/ui/icon'
-import { dDay, formatDDay } from '@/lib/format'
+import { dDay, formatDDay, isOverdue, compareDeadlines } from '@/lib/format'
 import { businessName, businessOfProject } from '@/lib/lookup'
 import { TASK_STATUS_LABEL_KO, type Business, type Project, type Task } from '@/types'
 
@@ -32,7 +32,7 @@ interface WaitingOnMeProps {
 export function WaitingOnMe({ tasks, projects, businesses }: WaitingOnMeProps) {
   const mine = tasks
     .filter((t) => t.chairman_needed && t.status !== 'Done')
-    .sort((a, b) => waitingDays(b) - waitingDays(a) || a.deadline.localeCompare(b.deadline))
+    .sort((a, b) => waitingDays(b) - waitingDays(a) || compareDeadlines(a.deadline, b.deadline))
 
   // 회사별로 묶되 순서는 '가장 오래 기다린 건이 있는 회사'가 위로 온다.
   const groups: { businessId: string; items: Task[] }[] = []
@@ -121,7 +121,7 @@ function WaitingItem({ task }: { task: Task }) {
         <p className="mt-0.5 flex items-center gap-1.5 text-[10px] text-ink-muted tnum">
           <span className="rounded bg-raised px-1 py-px">{TASK_STATUS_LABEL_KO[task.status]}</span>
           {task.owner}
-          <span className={dDay(task.deadline) < 0 ? 'text-critical' : ''}>
+          <span className={isOverdue(task.deadline) ? 'text-critical' : ''}>
             {formatDDay(task.deadline)}
           </span>
         </p>

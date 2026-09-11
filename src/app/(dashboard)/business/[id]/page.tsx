@@ -8,7 +8,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { Icon } from '@/components/ui/icon'
 import { currentUser } from '@/lib/auth/session'
 import { canEditStrategy } from '@/lib/auth/roles'
-import { dDay, formatDDay, formatPct } from '@/lib/format'
+import { dDay, formatDDay, formatPct, isOverdue } from '@/lib/format'
 import { getRepository } from '@/lib/repository'
 import {
   DECISION_STATUS_LABEL_KO,
@@ -214,7 +214,7 @@ function Card({
 }
 
 function ProjectItem({ project }: { project: Project }) {
-  const overdue = dDay(project.deadline) < 0 && project.status !== 'Done'
+  const overdue = isOverdue(project.deadline) && project.status !== 'Done'
   return (
     <li className="rounded-lg px-1.5 py-1.5 transition-colors hover:bg-raised/60">
       <div className="flex items-center gap-1.5">

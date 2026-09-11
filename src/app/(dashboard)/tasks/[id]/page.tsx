@@ -5,7 +5,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { AuditTimeline } from '@/components/shared/audit-timeline'
 import { TaskControls } from '@/components/tasks/task-controls'
 import { Icon } from '@/components/ui/icon'
-import { dDay, formatDDay } from '@/lib/format'
+import { dDay, formatDDay, isOverdue } from '@/lib/format'
 import { businessName } from '@/lib/lookup'
 import { getRepository } from '@/lib/repository'
 import {
@@ -71,7 +71,7 @@ export default async function TaskDetailPage(props: PageProps<'/tasks/[id]'>) {
   const company = businessName(businesses, businessId)
 
   const days = waitingDays(task)
-  const overdue = dDay(task.deadline) < 0 && task.status !== 'Done'
+  const overdue = isOverdue(task.deadline) && task.status !== 'Done'
 
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-5">
@@ -122,7 +122,7 @@ export default async function TaskDetailPage(props: PageProps<'/tasks/[id]'>) {
 
               <Field label="마감">
                 <span className={overdue ? 'text-critical' : ''}>
-                  {task.deadline} · {formatDDay(task.deadline)}
+                  {task.deadline === null ? '—' : <>{task.deadline} · {formatDDay(task.deadline)}</>}
                 </span>
               </Field>
 

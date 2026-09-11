@@ -29,10 +29,23 @@ export function dDay(deadline: string, today = new Date()): number {
   return Math.round((end.getTime() - start.getTime()) / 86_400_000)
 }
 
-export function formatDDay(deadline: string, today = new Date()): string {
+export function formatDDay(deadline: string | null, today = new Date()): string {
+  if (deadline === null) return '—'
   const d = dDay(deadline, today)
   if (d === 0) return 'D-DAY'
   return d > 0 ? `D-${d}` : `D+${-d}`
+}
+
+/** Missing deadlines are not overdue and sort after dated items. */
+export function isOverdue(deadline: string | null, today = new Date()): boolean {
+  return deadline !== null && dDay(deadline, today) < 0
+}
+
+export function compareDeadlines(a: string | null, b: string | null): number {
+  if (a === b) return 0
+  if (a === null) return 1
+  if (b === null) return -1
+  return a.localeCompare(b)
 }
 
 /** 로컬 기준 'YYYY-MM-DD'. toISOString은 UTC로 밀려 자정 근처에서 하루가 어긋난다. */

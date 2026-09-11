@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/layout/page-header'
 import { AuditTimeline } from '@/components/shared/audit-timeline'
 import { Icon } from '@/components/ui/icon'
-import { dDay, formatDDay, formatPct } from '@/lib/format'
+import { dDay, formatDDay, formatPct, isOverdue, compareDeadlines } from '@/lib/format'
 import { businessName } from '@/lib/lookup'
 import { getRepository } from '@/lib/repository'
 import {
@@ -69,12 +69,12 @@ export default async function ProjectDetailPage(props: PageProps<'/projects/[id]
     (a, b) =>
       Number(a.status === 'Done') - Number(b.status === 'Done') ||
       a.blocked_since.localeCompare(b.blocked_since) ||
-      a.deadline.localeCompare(b.deadline),
+      compareDeadlines(a.deadline, b.deadline),
   )
 
   const done = own.filter((t) => t.status === 'Done').length
   const waiting = own.filter((t) => t.chairman_needed && t.status !== 'Done').length
-  const overdue = dDay(project.deadline) < 0 && project.status !== 'Done'
+  const overdue = isOverdue(project.deadline) && project.status !== 'Done'
 
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-5">
@@ -119,7 +119,7 @@ export default async function ProjectDetailPage(props: PageProps<'/projects/[id]
               </Field>
               <Field label="마감">
                 <span className={overdue ? 'text-critical' : ''}>
-                  {project.deadline} · {formatDDay(project.deadline)}
+                  {project.deadline === null ? '—' : <>{project.deadline} · {formatDDay(project.deadline)}</>}
                 </span>
               </Field>
             </dl>
@@ -180,7 +180,7 @@ export default async function ProjectDetailPage(props: PageProps<'/projects/[id]
                       </span>
                       <span
                         className={`w-12 shrink-0 text-right text-[11px] font-semibold tnum ${
-                          dDay(t.deadline) < 0 && t.status !== 'Done'
+                          isOverdue(t.deadline) && t.status !== 'Done'
                             ? 'text-critical'
                             : 'text-ink-dim'
                         }`}

@@ -1,3 +1,4 @@
+import { compareDeadlines } from '@/lib/format'
 import { PageHeader } from '@/components/layout/page-header'
 import { TaskTable, type TaskListItem } from '@/components/tasks/task-table'
 import { FilterChips, type FilterOption } from '@/components/ui/filter-chips'
@@ -107,7 +108,7 @@ export default async function TasksPage(props: PageProps<'/tasks'>) {
       (a, b) =>
         Number(a.status === 'Done') - Number(b.status === 'Done') ||
         a.blocked_since.localeCompare(b.blocked_since) ||
-        a.deadline.localeCompare(b.deadline),
+        compareDeadlines(a.deadline, b.deadline),
     )
     .map((task) => ({
       task,

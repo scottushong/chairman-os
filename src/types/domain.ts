@@ -67,7 +67,7 @@ export interface Project {
   priority: WorkPriority
   status: TaskStatus
   progress_pct: Percent
-  deadline: IsoDate
+  deadline: IsoDate | null
 }
 
 /** CH-040. chairman_needed가 true면 Waiting on Me(CH-017)로 올라온다. */
@@ -83,7 +83,7 @@ export interface Task {
    * Chairman 대기의 시작점이라 CH-017 대기일수를 여기서 잰다(DEFERRED D-02 결정 A).
    */
   blocked_since: IsoDate
-  deadline: IsoDate
+  deadline: IsoDate | null
   chairman_needed: boolean
 }
 

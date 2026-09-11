@@ -139,7 +139,7 @@ interface ProjectRow {
   priority: WorkPriority
   status: TaskStatus
   progress_pct: number
-  deadline: string
+  deadline: string | null
 }
 
 interface TaskRow {
@@ -150,7 +150,7 @@ interface TaskRow {
   priority: WorkPriority
   status: TaskStatus
   blocked_since: string
-  deadline: string
+  deadline: string | null
   chairman_needed: boolean
 }
 
@@ -287,6 +287,7 @@ interface UserSettingsRow {
 }
 
 interface DecisionAuditRow {
+  id: number
   entity_id: string | null
   action: 'approve' | 'reject' | 'modify' | 'delegate'
   occurred_at: string
@@ -306,6 +307,7 @@ interface EntityAuditRow {
 }
 
 interface NightOutputRow {
+  output_id: string
   business_id: string
   job_type: AiNightOutput['job_type']
   result_summary: string
@@ -319,6 +321,50 @@ interface NightOutputRow {
 function unwrap<T>(table: string, data: T[] | null, error: PostgrestError | null): T[] {
   if (error) throw new Error(`Supabase ${table} ${error.code ?? '?'}: ${error.message}`)
   return data ?? []
+}
+
+/**
+ * Complete RLS-visible lists. Each factory builds a fresh, uniquely ordered query
+ * with count: 'exact'. Advance by rows received, since the server cap may be lower
+ * than our batch size. Never treat a short page as proof that the list is complete.
+ * Counts and identities detect common concurrent changes and fail instead of
+ * returning a partial/duplicated list. HTTP pages do not share a DB snapshot.
+ */
+async function fetchAll<T>(
+  table: string,
+  keys: (keyof T)[],
+  page: (from: number, to: number) => PromiseLike<{
+    data: T[] | null
+    error: PostgrestError | null
+    count: number | null
+  }>,
+): Promise<{ data: T[]; error: null }> {
+  const data: T[] = []
+  const seen = new Set<string>()
+  let total: number | undefined
+  do {
+    const result = await page(data.length, data.length + 499)
+    const rows = unwrap(table, result.data, result.error)
+    if (
+      result.count === null || !Number.isSafeInteger(result.count) || result.count < 0 ||
+      (total !== undefined && result.count !== total)
+    ) {
+      throw new Error(`Supabase ${table}: missing or changed pagination count; retry the read.`)
+    }
+    total = result.count
+    for (const row of rows) {
+      const identity = JSON.stringify(keys.map((key) => row[key]))
+      if (seen.has(identity)) {
+        throw new Error(`Supabase ${table}: repeated row across pages; retry the read.`)
+      }
+      seen.add(identity)
+      data.push(row)
+    }
+    if (data.length > total || (rows.length === 0 && data.length < total)) {
+      throw new Error(`Supabase ${table}: incomplete pagination; retry the read.`)
+    }
+  } while (data.length < total)
+  return { data, error: null }
 }
 
 /** Mutation success is one returned row, not merely a null PostgREST error. */
@@ -361,10 +407,14 @@ function createOwnerNames(sb: SupabaseClient): () => Promise<Map<string, string>
 
   return () => {
     pending ??= (async () => {
-      const { data, error } = await sb
-        .from('user_profiles')
-        .select('user_id,display_name')
-        .returns<ProfileNameRow[]>()
+      const { data, error } = await fetchAll('user_profiles', ['user_id'], (from, to) =>
+        sb
+          .from('user_profiles')
+          .select('user_id,display_name', { count: 'exact' })
+          .order('user_id')
+          .range(from, to)
+          .returns<ProfileNameRow[]>(),
+      )
       const rows = unwrap('user_profiles', data, error)
       return new Map(rows.map((r) => [r.user_id, r.display_name]))
     })()
@@ -381,10 +431,14 @@ function createBusinessNames(sb: SupabaseClient): () => Promise<Map<string, stri
 
   return () => {
     pending ??= (async () => {
-      const { data, error } = await sb
-        .from('businesses')
-        .select('business_id,name')
-        .returns<{ business_id: string; name: string }[]>()
+      const { data, error } = await fetchAll('businesses', ['business_id'], (from, to) =>
+        sb
+          .from('businesses')
+          .select('business_id,name', { count: 'exact' })
+          .order('business_id')
+          .range(from, to)
+          .returns<{ business_id: string; name: string }[]>(),
+      )
       const rows = unwrap('businesses', data, error)
       return new Map(rows.map((r) => [r.business_id, r.name]))
     })()
@@ -424,12 +478,19 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     mode: 'live',
 
     async listBusinesses(): Promise<Business[]> {
-      const { data, error } = await sb
-        .from('businesses')
-        // 필요한 칸만 부른다. 0009가 붙인 search_tsv는 검색 색인이라 화면이 쓸 일이 없고,
-        // '*'로 부르면 회사 다섯 줄마다 그 벡터가 통째로 실려 온다.
-        .select('business_id,name,status,industry,owner_user_id,visible,sort_order,pinned')
-        .returns<BusinessRow[]>()
+      const { data, error } = await fetchAll('businesses', ['business_id'], (from, to) =>
+        sb
+          .from('businesses')
+          // 필요한 칸만 부른다. 0009가 붙인 search_tsv는 검색 색인이라 화면이 쓸 일이 없고,
+          // '*'로 부르면 회사 다섯 줄마다 그 벡터가 통째로 실려 온다.
+          .select(
+            'business_id,name,status,industry,owner_user_id,visible,sort_order,pinned',
+            { count: 'exact' },
+          )
+          .order('business_id')
+          .range(from, to)
+          .returns<BusinessRow[]>(),
+      )
       const rows = unwrap('businesses', data, error)
       return rows.map((r) => ({
         business_id: r.business_id,
@@ -444,12 +505,17 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     },
 
     async listFinanceKpis(): Promise<FinanceKpi[]> {
-      const { data, error } = await sb
-        .from('finance_kpis')
-        // 필요한 칸만 부른다. RLS로 가려진 컬럼을 넓게 부르면 실수가 늦게 드러난다.
-        .select('period,business_id,metric,value,target,currency')
-        .order('period')
-        .returns<FinanceKpiRow[]>()
+      const { data, error } = await fetchAll('finance_kpis', ['period', 'business_id', 'metric'], (from, to) =>
+        sb
+          .from('finance_kpis')
+          // 필요한 칸만 부른다. RLS로 가려진 컬럼을 넓게 부르면 실수가 늦게 드러난다.
+          .select('period,business_id,metric,value,target,currency', { count: 'exact' })
+          .order('period')
+          .order('business_id')
+          .order('metric')
+          .range(from, to)
+          .returns<FinanceKpiRow[]>(),
+      )
       const rows = unwrap('finance_kpis', data, error)
       return rows.map((r) => ({
         period: r.period,
@@ -463,12 +529,17 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
 
     async listProjects(): Promise<Project[]> {
       const [{ data, error }, names] = await Promise.all([
-        sb
-          .from('projects')
-          .select(
-            'project_id,business_id,name,owner_user_id,priority,status,progress_pct,deadline',
-          )
-          .returns<ProjectRow[]>(),
+        fetchAll('projects', ['project_id'], (from, to) =>
+          sb
+            .from('projects')
+            .select(
+              'project_id,business_id,name,owner_user_id,priority,status,progress_pct,deadline',
+              { count: 'exact' },
+            )
+            .order('project_id')
+            .range(from, to)
+            .returns<ProjectRow[]>(),
+        ),
         ownerNames(),
       ])
       const rows = unwrap('projects', data, error)
@@ -486,12 +557,17 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
 
     async listTasks(): Promise<Task[]> {
       const [{ data, error }, names] = await Promise.all([
-        sb
-          .from('tasks')
-          .select(
-            'task_id,project_id,title,owner_user_id,priority,status,blocked_since,deadline,chairman_needed',
-          )
-          .returns<TaskRow[]>(),
+        fetchAll('tasks', ['task_id'], (from, to) =>
+          sb
+            .from('tasks')
+            .select(
+              'task_id,project_id,title,owner_user_id,priority,status,blocked_since,deadline,chairman_needed',
+              { count: 'exact' },
+            )
+            .order('task_id')
+            .range(from, to)
+            .returns<TaskRow[]>(),
+        ),
         ownerNames(),
       ])
       const rows = unwrap('tasks', data, error)
@@ -509,19 +585,31 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     },
 
     async listDecisions(): Promise<Decision[]> {
-      const { data, error } = await sb
-        .from('decisions')
-        .select(
-          'decision_id,business_id,title,options,ai_recommendation,impact,deadline,status,ai_confidence,attachment_url',
-        )
-        .order('deadline')
-        .returns<DecisionRow[]>()
+      const { data, error } = await fetchAll('decisions', ['decision_id'], (from, to) =>
+        sb
+          .from('decisions')
+          .select(
+            'decision_id,business_id,title,options,ai_recommendation,impact,deadline,status,ai_confidence,attachment_url',
+            { count: 'exact' },
+          )
+          .order('deadline')
+          .order('decision_id')
+          .range(from, to)
+          .returns<DecisionRow[]>(),
+      )
       const rows = unwrap('decisions', data, error)
       return rows.map(toDecision)
     },
 
     async listAlerts(): Promise<Alert[]> {
-      const { data, error } = await sb.from('alerts').select('*').returns<AlertRow[]>()
+      const { data, error } = await fetchAll('alerts', ['alert_id'], (from, to) =>
+        sb
+          .from('alerts')
+          .select('*', { count: 'exact' })
+          .order('alert_id')
+          .range(from, to)
+          .returns<AlertRow[]>(),
+      )
       const rows = unwrap('alerts', data, error)
       return rows.map((r) => ({
         alert_id: r.alert_id,
@@ -535,11 +623,19 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     },
 
     async listAiNightOutputs(): Promise<AiNightOutput[]> {
-      const { data, error } = await sb
-        .from('ai_night_outputs')
-        .select('*')
-        .order('completed_at', { ascending: false })
-        .returns<NightOutputRow[]>()
+      // Chairman-facing summaries only; no Layer 1 operational/job payload tables.
+      const { data, error } = await fetchAll('ai_night_outputs', ['output_id'], (from, to) =>
+        sb
+          .from('ai_night_outputs')
+          .select(
+            'output_id,business_id,job_type,result_summary,status,artifact_link,confidence,completed_at',
+            { count: 'exact' },
+          )
+          .order('completed_at', { ascending: false })
+          .order('output_id')
+          .range(from, to)
+          .returns<NightOutputRow[]>(),
+      )
       const rows = unwrap('ai_night_outputs', data, error)
       return rows.map((r) => ({
         completed_at: r.completed_at,
@@ -561,13 +657,18 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
      */
     async listDocuments(): Promise<DocumentRecord[]> {
       const [{ data, error }, names] = await Promise.all([
-        sb
-          .from('documents')
-          .select(
-            'document_id,business_id,title,doc_type,security_class,storage_url,version,uploaded_by,created_at',
-          )
-          .order('created_at', { ascending: false })
-          .returns<DocumentRow[]>(),
+        fetchAll('documents', ['document_id'], (from, to) =>
+          sb
+            .from('documents')
+            .select(
+              'document_id,business_id,title,doc_type,security_class,storage_url,version,uploaded_by,created_at',
+              { count: 'exact' },
+            )
+            .order('created_at', { ascending: false })
+            .order('document_id')
+            .range(from, to)
+            .returns<DocumentRow[]>(),
+        ),
         ownerNames(),
       ])
       const rows = unwrap('documents', data, error)
@@ -585,7 +686,14 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     },
 
     async listTopGoals(): Promise<TopGoal[]> {
-      const { data, error } = await sb.from('goals').select('*').returns<GoalRow[]>()
+      const { data, error } = await fetchAll('goals', ['goal_id'], (from, to) =>
+        sb
+          .from('goals')
+          .select('*', { count: 'exact' })
+          .order('goal_id')
+          .range(from, to)
+          .returns<GoalRow[]>(),
+      )
       const rows = unwrap('goals', data, error)
       return rows.map((r) => ({
         goal_id: r.goal_id,
@@ -600,7 +708,14 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
 
     async listMonthlyPriorities(): Promise<MonthlyPriority[]> {
       const [{ data, error }, names] = await Promise.all([
-        sb.from('monthly_priorities').select('*').returns<PriorityRow[]>(),
+        fetchAll('monthly_priorities', ['priority_id'], (from, to) =>
+          sb
+            .from('monthly_priorities')
+            .select('*', { count: 'exact' })
+            .order('priority_id')
+            .range(from, to)
+            .returns<PriorityRow[]>(),
+        ),
         ownerNames(),
       ])
       const rows = unwrap('monthly_priorities', data, error)
@@ -615,7 +730,14 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     },
 
     async listCriticalRisks(): Promise<CriticalRisk[]> {
-      const { data, error } = await sb.from('critical_risks').select('*').returns<RiskRow[]>()
+      const { data, error } = await fetchAll('critical_risks', ['risk_id'], (from, to) =>
+        sb
+          .from('critical_risks')
+          .select('*', { count: 'exact' })
+          .order('risk_id')
+          .range(from, to)
+          .returns<RiskRow[]>(),
+      )
       const rows = unwrap('critical_risks', data, error)
       return rows.map((r) => ({
         risk_id: r.risk_id,
@@ -629,7 +751,15 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
 
     async listNextMilestones(): Promise<NextMilestone[]> {
       const [{ data, error }, names] = await Promise.all([
-        sb.from('milestones').select('*').order('deadline').returns<MilestoneRow[]>(),
+        fetchAll('milestones', ['milestone_id'], (from, to) =>
+          sb
+            .from('milestones')
+            .select('*', { count: 'exact' })
+            .order('deadline')
+            .order('milestone_id')
+            .range(from, to)
+            .returns<MilestoneRow[]>(),
+        ),
         ownerNames(),
       ])
       const rows = unwrap('milestones', data, error)
@@ -658,6 +788,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
      * 다섯 표를 병렬로 친다. 순서대로 기다리면 드롭다운이 다섯 번의 왕복만큼 늦게 뜬다.
      */
     async search(query: string, limitPerKind: number): Promise<SearchHit[]> {
+      // Product-bounded search suggestions, intentionally not a complete list.
       const q = query.trim()
       if (!q) return []
 
@@ -782,10 +913,14 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
      * 그룹 행이라는 개념 자체가 없어서 'group' 센티널로 옮길 값이 나오지 않는다.
      */
     async listBusinessStrategy(): Promise<BusinessStrategy[]> {
-      const { data, error } = await sb
-        .from('business_strategy')
-        .select('*')
-        .returns<BusinessStrategyRow[]>()
+      const { data, error } = await fetchAll('business_strategy', ['business_id'], (from, to) =>
+        sb
+          .from('business_strategy')
+          .select('*', { count: 'exact' })
+          .order('business_id')
+          .range(from, to)
+          .returns<BusinessStrategyRow[]>(),
+      )
       const rows = unwrap('business_strategy', data, error)
       return rows.map((r) => ({
         business_id: r.business_id,
@@ -811,13 +946,17 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
      */
     async listDecisionAudit(): Promise<DecisionAuditRecord[]> {
       const [{ data, error }, names] = await Promise.all([
-        sb
-          .from('audit_log')
-          .select('entity_id,action,occurred_at,actor_user_id')
-          .eq('entity_table', 'decisions')
-          .in('action', ['approve', 'reject', 'modify', 'delegate'])
-          .order('occurred_at', { ascending: false })
-          .returns<DecisionAuditRow[]>(),
+        fetchAll('audit_log', ['id'], (from, to) =>
+          sb
+            .from('audit_log')
+            .select('id,entity_id,action,occurred_at,actor_user_id', { count: 'exact' })
+            .eq('entity_table', 'decisions')
+            .in('action', ['approve', 'reject', 'modify', 'delegate'])
+            .order('occurred_at', { ascending: false })
+            .order('id')
+            .range(from, to)
+            .returns<DecisionAuditRow[]>(),
+        ),
         ownerNames(),
       ])
       const rows = unwrap('audit_log', data, error)
@@ -847,14 +986,17 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       entityId: string,
     ): Promise<EntityAuditRecord[]> {
       const [{ data, error }, names] = await Promise.all([
-        sb
-          .from('audit_log')
-          .select('id,occurred_at,action,actor_user_id,actor_role,before,after,note')
-          .eq('entity_table', entityTable)
-          .eq('entity_id', entityId)
-          .order('occurred_at', { ascending: false })
-          .order('id', { ascending: false })
-          .returns<EntityAuditRow[]>(),
+        fetchAll('audit_log', ['id'], (from, to) =>
+          sb
+            .from('audit_log')
+            .select('id,occurred_at,action,actor_user_id,actor_role,before,after,note', { count: 'exact' })
+            .eq('entity_table', entityTable)
+            .eq('entity_id', entityId)
+            .order('occurred_at', { ascending: false })
+            .order('id', { ascending: false })
+            .range(from, to)
+            .returns<EntityAuditRow[]>(),
+        ),
         ownerNames(),
       ])
       const rows = unwrap('audit_log', data, error)
@@ -1283,19 +1425,31 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
      */
     async listUserAccounts(): Promise<UserAccount[]> {
       const [{ data, error }, access] = await Promise.all([
-        sb
-          .from('user_profiles')
-          .select('user_id,role,display_name,title_ko,max_security_class,revoked_at,created_at')
-          .order('created_at')
-          .returns<UserProfileRow[]>(),
-        sb
-          .from('user_business_access')
-          .select('user_id,business_id')
-          .returns<AccessRow[]>(),
+        fetchAll('user_profiles', ['user_id'], (from, to) =>
+          sb
+            .from('user_profiles')
+            .select(
+              'user_id,role,display_name,title_ko,max_security_class,revoked_at,created_at',
+              { count: 'exact' },
+            )
+            .order('created_at')
+            .order('user_id')
+            .range(from, to)
+            .returns<UserProfileRow[]>(),
+        ),
+        fetchAll('user_business_access', ['user_id', 'business_id'], (from, to) =>
+          sb
+            .from('user_business_access')
+            .select('user_id,business_id', { count: 'exact' })
+            .order('user_id')
+            .order('business_id')
+            .range(from, to)
+            .returns<AccessRow[]>(),
+        ),
       ])
 
       const rows = unwrap('user_profiles', data, error)
-      // 접근 표를 못 읽는 건 치명적이지 않다. 회사 칸이 비어 보일 뿐이라 조용히 빈 배열로 둔다.
+      // A failed access-list page must not masquerade as an empty company list.
       const byUser = new Map<string, string[]>()
       for (const a of access.data ?? []) {
         byUser.set(a.user_id, [...(byUser.get(a.user_id) ?? []), a.business_id])
@@ -1315,13 +1469,18 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
 
     /** CH-049. 0011의 초대장들. 수락·취소된 것도 같이 내려보낸다 — 그것도 기록이다. */
     async listUserInvitations(): Promise<UserInvitation[]> {
-      const { data, error } = await sb
-        .from('user_invitations')
-        .select(
-          'invitation_id,email,role,max_security_class,business_ids,display_name,title_ko,invited_at,accepted_at,revoked_at',
-        )
-        .order('invited_at', { ascending: false })
-        .returns<UserInvitationRow[]>()
+      const { data, error } = await fetchAll('user_invitations', ['invitation_id'], (from, to) =>
+        sb
+          .from('user_invitations')
+          .select(
+            'invitation_id,email,role,max_security_class,business_ids,display_name,title_ko,invited_at,accepted_at,revoked_at',
+            { count: 'exact' },
+          )
+          .order('invited_at', { ascending: false })
+          .order('invitation_id')
+          .range(from, to)
+          .returns<UserInvitationRow[]>(),
+      )
 
       const rows = unwrap('user_invitations', data, error)
       return rows.map(toInvitation)
