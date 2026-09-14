@@ -8,7 +8,11 @@
     "start": "next start",
     "lint": "eslint",
     "gen:seed": "tsx scripts/gen-seed-sql.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:local": "node scripts/local-db.mjs",
+    "env:check": "node scripts/check-environment.mjs",
+    "check:db-safety": "node scripts/check-db-safety.mjs",
+    "check:boundaries": "tsx scripts/check-data-boundaries.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.6",

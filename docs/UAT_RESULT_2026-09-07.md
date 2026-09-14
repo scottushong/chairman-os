@@ -214,6 +214,21 @@ API 문서 · 환경변수 문서 · 수정가이드가 없었다. Phase 2를 �
 
 ## 다음에 돌려야 할 것
 
+**D-17 후속 준비 (2026-09-15):** 격리 로컬 합성 계정/데이터와 RLS·pagination 검증 스크립트를
+추가했다([OPERATIONS 8절](./OPERATIONS.md#8-d-17--격리된-로컬-검증)). 작업 PC의 CLI/Docker 부재로
+실제 DB 검사는 미실행이다. 기존 UAT 결과는 소급 변경하지 않으며 TC-023·024도 아직 Pass가 아니다.
+아래 실제 계정 절차 대신 먼저 로컬 합성 계정으로 DB 정책 검사를 실행하고,
+외부 staging에서 인증·화면까지 포함한 UAT 및 복원 리허설을 별도로 기록한다.
+
+| D-17 저장소 검증 | 2026-09-15 결과 |
+|---|---|
+| typecheck / lint / build / diff 검사 | Pass. build는 Supabase 설정을 비운 dummy 모드; 글꼴 다운로드 제한 해제 후 성공 |
+| production·unknown·원격 대상 거부 / CLI 추가 인자 거부 / Docker 소켓 제한 | Pass (`check:db-safety`) |
+| config.toml | TOML 구문·로컬 설정 불변조건 Pass. Supabase CLI의 의미 검증은 미실행 |
+| P0-07 오프라인 회귀 | Pass: 1,203행, 낮은 행 제한, 중복·오류, null 정렬·업무/프로젝트 렌더링 |
+| 실제 clean migration / reset·seed / SQL RLS / authenticated HTTP | 미실행: Supabase CLI·Docker 설치 필요. 스크립트 준비가 실DB Pass를 의미하지 않음 |
+| 외부 staging / 스냅샷 복원 리허설 | 미실행. TC-023·024 상태 유지 |
+
 **두 번째 계정 하나만 만들면 Blocked 5건을 그날 실행할 수 있다.**
 절차는 `docs/OPERATIONS.md` 3번 — 앱에서 초대를 저장하고, Dashboard에서 같은 주소로
 계정을 만든다. **순서를 바꾸면 안 된다.**
