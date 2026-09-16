@@ -65,25 +65,16 @@ export function BusinessCard({
   const { revenue, ebitda, progress, hasFinance } = metrics
 
   return (
-    <article className="flex h-full flex-col rounded-xl border border-line-soft bg-panel p-3.5">
-      <div className="flex items-start gap-2">
+    // @container — 카드 폭은 줄에 올라간 회사 수가 정한다. 숫자 크기를 뷰포트가 아니라 카드 폭에 맞춘다.
+    <article className="@container flex h-full flex-col rounded-xl border border-line-soft bg-panel p-3">
+      {/* 이니셜과 버튼 셋을 한 줄에, 회사명은 그 아래 줄에 따로 둔다.
+          한 줄에 같이 두면 다섯 장이 한 줄에 설 때 명조 회사명이 두세 글자만 남는다. */}
+      <div className="flex items-center gap-0.5">
         <span
-          className={`flex size-8 shrink-0 items-center justify-center rounded-lg text-[13px] font-bold ${tone.badge}`}
+          className={`mr-auto flex size-7 shrink-0 items-center justify-center rounded-lg text-[12px] font-bold ${tone.badge}`}
         >
           {letter}
         </span>
-        <div className="min-w-0 flex-1">
-          <h3 className="truncate text-[14px] leading-tight font-semibold">{business.name}</h3>
-          {/* 상태는 업종 옆에 붙인다. 줄을 하나 더 만들면 카드 다섯 장의 키가 어긋난다. */}
-          <p className="flex items-center gap-1.5 text-[11px] text-ink-muted">
-            <span className="truncate">{business.industry}</span>
-            {business.status !== 'Active' ? (
-              <span className="shrink-0 rounded bg-raised px-1 py-px text-[9px] text-ink-dim">
-                {STATUS_LABEL_KO[business.status]}
-              </span>
-            ) : null}
-          </p>
-        </div>
 
         {/* CH-004. 핀은 정렬만 바꾼다 — 그룹 KPI 합계에는 영향이 없다. */}
         <button
@@ -96,7 +87,7 @@ export function BusinessCard({
             pinned ? 'text-gold' : 'text-ink-muted hover:text-ink'
           }`}
         >
-          <Icon name="pin" className="size-4" filled={pinned} />
+          <Icon name="pin" className="size-3.5" filled={pinned} />
         </button>
 
         {/* CH-003. 데이터 삭제가 아니라 표시 여부만 바꾼다는 걸 말로 붙여 둔다. */}
@@ -107,18 +98,35 @@ export function BusinessCard({
           aria-label={`${business.name} 숨기기`}
           className="rounded-md p-1 text-ink-muted transition-colors hover:bg-raised hover:text-ink"
         >
-          <Icon name="eye" className="size-4" />
+          <Icon name="eye" className="size-3.5" />
         </button>
         <button
           type="button"
           aria-label={`${business.name} 메뉴`}
           className="rounded-md p-1 text-ink-muted transition-colors hover:bg-raised hover:text-ink"
         >
-          <Icon name="more" className="size-4" />
+          <Icon name="more" className="size-3.5" />
         </button>
       </div>
 
-      <dl className="mt-3.5 grid grid-cols-3 gap-2">
+      {/* 회사명은 자르지 않고 두 줄까지 접는다. 두 줄 높이를 늘 잡아 둬야 다섯 장의 숫자 줄이 맞는다. */}
+      <h3
+        title={business.name}
+        className="mt-2 line-clamp-2 min-h-[2.5em] text-[13px] leading-[1.25] font-semibold break-keep"
+      >
+        {business.name}
+      </h3>
+      {/* 상태는 업종 옆에 붙인다. 줄을 하나 더 만들면 카드 다섯 장의 키가 어긋난다. */}
+      <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-ink-muted">
+        <span className="truncate">{business.industry}</span>
+        {business.status !== 'Active' ? (
+          <span className="shrink-0 rounded bg-raised px-1 py-px text-[9px] text-ink-dim">
+            {STATUS_LABEL_KO[business.status]}
+          </span>
+        ) : null}
+      </p>
+
+      <dl className="mt-3 grid grid-cols-3 gap-1.5">
         <Metric label="매출 (월)" value={hasFinance ? formatEok(revenue) : '—'} />
         {/* 적자는 빨강. 카드 다섯 장을 훑을 때 부호를 놓치면 안 된다. */}
         <Metric
@@ -140,7 +148,7 @@ export function BusinessCard({
       {/* CH-023~024. 카드가 숫자 셋만 올리는 건 나머지를 이 화면으로 내렸기 때문이다. */}
       <Link
         href={`/business/${encodeURIComponent(business.business_id)}`}
-        className="mt-3.5 block w-full rounded-lg border border-line py-1.5 text-center text-[12px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+        className="mt-3 block w-full rounded-lg border border-line py-1.5 text-center text-[12px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
       >
         상세 보기
       </Link>
@@ -162,7 +170,9 @@ function Metric({
       {/* 두 줄까지 접힐 수 있어 높이를 고정한다. 아니면 세 칸의 숫자 밑줄이 서로 어긋난다. */}
       <dt className="min-h-[24px] text-[10px] leading-tight text-ink-muted">{label}</dt>
       <dd
-        className={`mt-0.5 text-[15px] font-semibold ${negative ? 'text-critical' : 'text-ink'}`}
+        className={`mt-0.5 text-[13px] font-semibold whitespace-nowrap @[200px]:text-[15px] ${
+          negative ? 'text-critical' : 'text-ink'
+        }`}
       >
         {value}
       </dd>

@@ -1,4 +1,5 @@
 import { connection } from 'next/server'
+import { cache } from 'react'
 
 import { supabaseConfig } from '@/lib/supabase/config'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
@@ -23,7 +24,11 @@ interface ProfileRow {
   title_ko: string | null
 }
 
-export async function currentUser(): Promise<SessionUser | null> {
+/**
+ * 요청 하나 안에서는 한 번만 묻는다. 레이아웃(헤더 이름)과 대시보드(인사말)가 같은 답을 봐야 하고,
+ * 따로 물으면 Auth 왕복이 두 번 생긴다.
+ */
+export const currentUser = cache(async function currentUser(): Promise<SessionUser | null> {
   // 키가 없으면 아래에서 쿠키를 읽지 않고 돌아가, 이걸 부르는 화면이 빌드 때 정적으로
   // 프리렌더된다. 그러면 /settings/users의 notFound()가 빌드를 깨뜨린다(Vercel에 env 없이 빌드).
   // 키 유무와 상관없이 늘 요청 시점에 판정하게 한다.
@@ -54,4 +59,4 @@ export async function currentUser(): Promise<SessionUser | null> {
     role: data.role,
     title_ko: data.title_ko ?? '',
   }
-}
+})

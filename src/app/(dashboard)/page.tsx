@@ -6,6 +6,7 @@ import { DecisionPanel } from '@/components/dashboard/decision-panel'
 import { StrategicCoordinates } from '@/components/dashboard/strategic-coordinates'
 import { WaitingOnMe } from '@/components/dashboard/waiting-on-me'
 import { Icon } from '@/components/ui/icon'
+import { currentUser } from '@/lib/auth/session'
 import { getRepository, loadDashboard } from '@/lib/repository'
 
 /**
@@ -23,7 +24,7 @@ const TABS = ['전체 요약', '중요 지표', '예산 vs 실적', '리스크',
 
 export default async function DashboardPage() {
   const repo = await getRepository()
-  const data = await loadDashboard(repo)
+  const [data, user] = await Promise.all([loadDashboard(repo), currentUser()])
 
   const today = new Intl.DateTimeFormat('ko-KR', {
     year: 'numeric',
@@ -37,7 +38,8 @@ export default async function DashboardPage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-[22px] font-bold tracking-tight">
-            안녕하세요, Chairman님
+            {/* 이름은 user_profiles.display_name. 세션이 없는 dummy 개발에서만 역할명으로 부른다. */}
+            안녕하세요, {user?.name ?? 'Chairman'}님
             <Icon name="crown" className="size-5 text-gold" filled />
           </h1>
           {/* 표시 개수는 카드 줄 머리에서 말한다. 여기서 또 세면 숨김 후 두 숫자가 어긋난다. */}

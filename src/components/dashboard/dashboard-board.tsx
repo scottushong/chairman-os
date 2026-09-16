@@ -158,10 +158,11 @@ export function DashboardBoard({
         </div>
 
         {/* 카드는 남는 폭을 균등하게 나눠 갖고, 추가 버튼만 좁게 끝에 붙인다.
-            grid로 잡으면 추가 버튼이 카드 한 장 폭을 통째로 먹어 회사명이 잘린다. */}
-        <div className="flex flex-wrap items-stretch gap-2.5">
+            lg 이상에서는 줄을 넘기지 않는다 — 다섯 장 중 한 장만 아랫줄로 떨어지면 그 회사만 커 보인다.
+            그 아래 폭에서는 숫자가 안 읽히므로 접는다. */}
+        <div className="flex flex-wrap items-stretch gap-2 lg:flex-nowrap">
           {shown.map((b) => (
-            <div key={b.business_id} className="min-w-[212px] flex-1">
+            <div key={b.business_id} className="min-w-[180px] flex-1 lg:min-w-0 lg:basis-0">
               <BusinessCard
                 business={b}
                 metrics={metrics.get(b.business_id) ?? empty}
@@ -177,10 +178,10 @@ export function DashboardBoard({
           <button
             type="button"
             onClick={() => setAdding(true)}
-            className="flex w-[92px] shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-line text-ink-muted transition-colors hover:border-accent hover:text-ink"
+            className="flex w-[64px] shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-line text-ink-muted transition-colors hover:border-accent hover:text-ink"
           >
             <Icon name="plus" className="size-5" />
-            <span className="text-[12px]">기업 추가</span>
+            <span className="text-center text-[11px] leading-tight break-keep">기업 추가</span>
           </button>
         </div>
 
