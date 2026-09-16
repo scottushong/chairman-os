@@ -66,9 +66,12 @@ npm run build         # 빌드 (타입 검사 포함)
 
 ### 적용
 
-개발·검증은 8절의 `npm run db:local`만 사용한다. 이 PC에는 Docker가 없어 원격 link + db push로 운영한다. Staging은 별도 Supabase 프로젝트로 분리한다.
-외부 staging/production 마이그레이션은 대상 프로젝트 ID, 백업, 승인된 변경 목록을
-확인하는 별도의 릴리스 절차가 필요하다(9절). `.env.local`이 CLI에 자동 로드된다고 가정하지 않는다.
+이 PC에는 Docker가 없다. 마이그레이션은 원격 프로젝트에 `supabase link` 한 뒤 `supabase db push`로 적용한다.
+Staging은 production과 별도의 Supabase 프로젝트로 분리하고, 새 마이그레이션은 staging에 먼저 push해 확인한다.
+push 전에 지금 link된 프로젝트 ID가 의도한 대상(staging/production)인지 대조한다.
+대상 프로젝트 ID, 백업, 승인된 변경 목록 확인은 9절 릴리스 절차를 따른다.
+로컬 DB(8절 `npm run db:local`)는 Docker가 있는 환경에서만 선택적으로 쓴다.
+`.env.local`이 CLI에 자동 로드된다고 가정하지 않는다.
 
 ### 새 마이그레이션을 쓸 때
 
@@ -224,14 +227,17 @@ select tgname from pg_trigger where tgrelid = 'auth.users'::regclass;
 | ECOUNT / MES 연동 | Phase 2 (CH-052~054) |
 | 야간 AI Job 실행 | Phase 2 (CH-045~048) |
 
-## 8. D-17 — 격리된 로컬 검증
+## 8. D-17 — 격리된 로컬 검증 (선택)
+
+이 절의 로컬 DB는 **Docker가 있는 환경에서만 선택적으로** 쓴다. 이 PC에는 Docker가 없으므로
+마이그레이션 적용과 DB 검증은 2절의 원격 link + db push(staging 먼저)로 한다.
 
 ### 상태와 환경 식별
 
 | 구분 | 상태 |
 |---|---|
 | DONE | 환경 가드, 전용 CLI 구성, 합성 시드, SQL/HTTP 검증 스크립트, 복구 절차 |
-| READY LOCALLY | CLI와 Docker 설치 후 start → reset → verify 실행 가능하도록 준비. 이 작업 PC에서는 두 실행 파일이 없어 실제 DB 실행은 미검증 |
+| READY LOCALLY (선택) | Docker가 있는 환경에서 start → reset → verify 실행 가능하도록 준비. 이 작업 PC에는 Docker가 없어 로컬 DB 실행은 하지 않는다 |
 | REQUIRES EXTERNAL SETUP | 별도 Supabase staging 프로젝트, 별도 앱 환경·계정·시크릿, 백업/PITR, 실제 복구 리허설 및 담당자 승인 |
 
 `NEXT_PUBLIC_DATA_MODE=dummy/live`는 데이터 어댑터 선택이며 환경 식별자가 아니다.
@@ -304,8 +310,10 @@ CLI 버전이 이 로컬 JWT 정보를 제공하지 않으면 검사는 실패�
 3. DB 스냅샷 또는 PITR 복원 지점, 보존 기간, RPO/RTO, 복원 권한과 책임자를 확인한다.
    별도 격리 대상에 실제 복원을 해 보고 소요 시간·데이터 정합성을 기록한다. 백업 존재만으로 복원 가능 판정을 하지 않는다.
 4. 새 마이그레이션의 잠금·데이터 손실·RLS·구버전 앱 호환성을 검토한다.
-   로컬 clean reset뿐 아니라 **기존 staging 데이터에서 새 마이그레이션으로 업그레이드**도 검증한다.
-5. typecheck/lint/build/diff 검사, 로컬 RLS·repository 검사, staging UAT가 모두 통과해야 한다.
+   **기존 staging 데이터에서 새 마이그레이션으로 업그레이드**(staging에 db push)를 검증한다.
+   Docker가 있는 환경이면 로컬 clean reset도 추가로 돌릴 수 있다(선택).
+5. typecheck/lint/build/diff 검사, staging에서의 RLS·repository 검사, staging UAT가 모두 통과해야 한다.
+   로컬 RLS·repository 검사(8절)는 Docker가 있는 환경에서만 선택적으로 추가한다.
    코드 롤백으로 충분한지, 전방 수정이나 DB 복원이 필요한지 변경별로 기록한다.
 6. 승인된 SHA만 릴리스하고 관찰·중단 기준과 담당자를 지정한다. 이 저장소 작업은 배포 승인이 아니다.
 
