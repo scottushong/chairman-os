@@ -66,7 +66,7 @@ npm run build         # 빌드 (타입 검사 포함)
 
 ### 적용
 
-개발·검증은 8절의 `npm run db:local`만 사용한다. 원격 프로젝트에 link하지 않는다.
+개발·검증은 8절의 `npm run db:local`만 사용한다. 이 PC에는 Docker가 없어 원격 link + db push로 운영한다. Staging은 별도 Supabase 프로젝트로 분리한다.
 외부 staging/production 마이그레이션은 대상 프로젝트 ID, 백업, 승인된 변경 목록을
 확인하는 별도의 릴리스 절차가 필요하다(9절). `.env.local`이 CLI에 자동 로드된다고 가정하지 않는다.
 
