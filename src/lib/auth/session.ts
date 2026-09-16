@@ -1,3 +1,5 @@
+import { connection } from 'next/server'
+
 import { supabaseConfig } from '@/lib/supabase/config'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 import type { Role, SessionUser } from '@/types'
@@ -22,6 +24,10 @@ interface ProfileRow {
 }
 
 export async function currentUser(): Promise<SessionUser | null> {
+  // 키가 없으면 아래에서 쿠키를 읽지 않고 돌아가, 이걸 부르는 화면이 빌드 때 정적으로
+  // 프리렌더된다. 그러면 /settings/users의 notFound()가 빌드를 깨뜨린다(Vercel에 env 없이 빌드).
+  // 키 유무와 상관없이 늘 요청 시점에 판정하게 한다.
+  await connection()
   if (!supabaseConfig()) return null
 
   const sb = await createSupabaseServerClient()
