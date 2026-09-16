@@ -87,7 +87,19 @@ async function countTables(sb: SupabaseClient): Promise<TableReport[]> {
       // head: true 를 쓰면 안 된다. PostgREST가 HEAD에는 본문 없이 204로 답하는 탓에
       // 없는 테이블도 오류 없이 통과해 "다 있다"는 거짓 초록불이 나온다.
       try {
-        const { count, error } = await sb.from(table).select('*', { count: 'exact' }).limit(0)
+        const { count, error, status } = await sb.from(table).select('*', { count: 'exact' }).limit(0)
+
+        // status 0 — HTTP 응답 자체가 없었다(DNS·네트워크·URL). supabase-js는 이걸 throw하지 않고
+        // error로 돌려준다('TypeError: fetch failed'). 아래 분기로 흘리면 "테이블은 있다, 연결됐다"로 읽힌다.
+        if (status === 0) {
+          return {
+            table,
+            exists: false,
+            rows: null,
+            reachable: false,
+            error: error ? error.message : 'no HTTP response',
+          }
+        }
 
         if (error) {
           if (MISSING_TABLE_CODES.has(error.code ?? '')) {
@@ -148,8 +160,10 @@ export async function GET() {
   const user = await currentUser()
   const sessionTables = user ? await countTables(await createSupabaseServerClient()) : null
 
-  const missing = anonTables.filter((t) => !t.exists).map((t) => t.table)
-  const errored = anonTables.filter((t) => t.exists && t.error).map((t) => t.table)
+  // 닿지 않은 표는 '없다'도 '있다'도 아니다. missing·errored에 섞지 않고 unreachable로 따로 둔다.
+  const unreachable = anonTables.filter((t) => !t.reachable).map((t) => t.table)
+  const missing = anonTables.filter((t) => t.reachable && !t.exists).map((t) => t.table)
+  const errored = anonTables.filter((t) => t.reachable && t.exists && t.error).map((t) => t.table)
 
   // 하나라도 PostgREST가 답했으면 연결 자체는 된 것이다.
   // "테이블이 없다"는 답도 답이다 — 연결 실패와 스키마 미적용을 같은 빨간불로 묶으면 원인을 못 찾는다.
@@ -160,7 +174,12 @@ export async function GET() {
 
   // 익명에게 한 행이라도 보이면 그 자체가 사고다. 스키마가 멀쩡해도 초록불을 주지 않는다.
   const rlsClosed = anonVisible === 0
-  const ok = connected && missing.length === 0 && errored.length === 0 && rlsClosed
+  const ok =
+    connected &&
+    unreachable.length === 0 &&
+    missing.length === 0 &&
+    errored.length === 0 &&
+    rlsClosed
 
   return NextResponse.json(
     {
@@ -170,6 +189,7 @@ export async function GET() {
       data_mode: DATA_MODE,
       tables_expected: TABLES.length,
       tables_present: anonTables.filter((t) => t.exists).length,
+      unreachable,
       missing,
       errored,
 
