@@ -13,7 +13,7 @@ import { FinanceTrend } from '@/components/dashboard/finance-trend'
 import { KpiStrip } from '@/components/dashboard/kpi-strip'
 import { Icon } from '@/components/ui/icon'
 import { effectivePinned } from '@/lib/business-pins'
-import { businessProgress, hasFinanceData, latestPeriodOf, valueOf } from '@/lib/finance'
+import { businessProgress, groupFigure, hasFinanceData, latestPeriodOf, valueOf } from '@/lib/finance'
 import type { UserSettings } from '@/lib/repository'
 import type { Business, FinanceKpi, Project } from '@/types'
 
@@ -91,6 +91,8 @@ export function DashboardBoard({
           ebitda: valueOf(financeKpis, b.business_id, 'EBITDA', period),
           progress: businessProgress(projects, b.business_id),
           hasFinance: hasFinanceData(financeKpis, b.business_id),
+          revenueBasis: groupFigure(financeKpis, 'Revenue', period, [b.business_id])?.basis ?? null,
+          ebitdaBasis: groupFigure(financeKpis, 'EBITDA', period, [b.business_id])?.basis ?? null,
         },
       ]),
     )
@@ -140,7 +142,7 @@ export function DashboardBoard({
   const shown = ordered.filter((b) => !hidden.includes(b.business_id))
   const hiddenList = ordered.filter((b) => hidden.includes(b.business_id))
 
-  const empty: BusinessMetrics = { revenue: 0, ebitda: 0, progress: 0, hasFinance: false }
+  const empty: BusinessMetrics = { revenue: 0, ebitda: 0, progress: 0, hasFinance: false, revenueBasis: null, ebitdaBasis: null }
 
   return (
     <div className="space-y-5">

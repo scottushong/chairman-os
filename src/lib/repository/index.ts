@@ -12,6 +12,7 @@ export type {
   ChairmanRepository,
   DashboardSnapshot,
   DecisionAuditEntry,
+  KeymanInput,
   NewBusiness,
   NewDecision,
   NewDocument,

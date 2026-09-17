@@ -52,6 +52,16 @@ const TABLES = [
   'business_strategy',
   // 0011_user_invitations.sql (CH-049)
   'user_invitations',
+  // 0015_finance_ledger.sql (Phase 2-A). finance_kpis는 이제 뷰지만 위 목록에 그대로 둔다 —
+  // 같은 이름으로 읽히는지가 대시보드가 사는지다. 시트 원본은 finance_kpis_sheet(읽기 전용)에 있다.
+  'finance_kpis_sheet',
+  'accounts',
+  'journal_lines',
+  'closings',
+  'fx_rates',
+  'cost_indices',
+  'market_multiples',
+  'business_keymen',
 ] as const
 
 /**
@@ -65,7 +75,12 @@ const TABLES = [
 const SEEDED_ROWS = 524
 
 /** 시드가 손대지 않는 표. 위 검산에서 뺀다(0003 파일 머리의 '넣지 않는 테이블'). */
-const NOT_SEEDED = new Set(['documents', 'audit_log', 'user_settings'])
+const NOT_SEEDED = new Set([
+  'documents', 'audit_log', 'user_settings',
+  // 0015. 원장은 ECOUNT 동기화가 채운다. 시트 480행은 finance_kpis(뷰)로 이미 한 번 셌다 — 두 번 세지 않는다.
+  'finance_kpis_sheet', 'accounts', 'journal_lines', 'closings', 'fx_rates', 'cost_indices',
+  'market_multiples', 'business_keymen',
+])
 
 /** PostgREST가 "그런 테이블 없다"고 말하는 두 가지 방식. 나머지 오류와 구분해야 한다. */
 const MISSING_TABLE_CODES = new Set(['PGRST205', '42P01'])

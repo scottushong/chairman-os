@@ -45,3 +45,9 @@
 그 외의 값 변경은 시트를 먼저 고친 뒤 여기로 내린다.
 
 Phase 2에서 실데이터가 붙으면 이 폴더는 통째로 Route Handler 뒤로 들어간다.
+
+## Phase 2-A부터: finance-kpi.json은 화면으로 바로 나가지 않는다
+
+`finance-kpi.json`에는 출처 칸이 없다. 그래서 `src/data/index.ts`는 `sheetFinanceKpis`(출처 없는 시트 모양)로만 내보내고,
+dummy 화면의 재무 숫자는 `lib/ecount/mock.ts`가 이 시트로 만든 mock ECOUNT 원장을 다시 접어서 낸다.
+480칸이 원 단위까지 같은지는 `npm run check:finance`가 잰다. 시트를 고치면 그 검사부터 돌린다.

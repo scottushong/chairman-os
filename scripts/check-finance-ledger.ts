@@ -1,0 +1,138 @@
+/**
+ * Phase 2-A 재무 원장 검증 (오프라인, DB 없음): npm run check:finance
+ *
+ * 무엇을 재나
+ *   1) 시트가 이긴다 — mock 원장을 lib/ledger 공식으로 접으면 06_Dummy_Data 480칸이 원 단위까지 같다.
+ *      VANA 2026-08 EBITDA = 2.8억, 꼬리표는 잠정(마감 전).
+ *   2) 재무제표가 닫힌다 — 모든 회사·그룹·달에서 자산 = 부채 + 자본, 기초 현금 + 현금 증감 = 기말 현금.
+ *   3) 꼬리표 규칙 — (source, closed) → 확정/잠정/수기/추정, 합은 가장 약한 쪽.
+ *   4) 경계 — ECOUNT 표기 변환, 분류 없는 계정은 멈춤, 키가 없으면 mock, 키 형식이 틀리면 mock으로 떨어지지 않음.
+ *   5) 잠정-확정 차이가 결산조정 계정에서 나온다.
+ *
+ * 0015의 SQL 뷰(finance_kpis)가 같은 공식을 쓰는지는 이 스크립트가 못 잰다(DB가 없다).
+ * 그건 OPERATIONS의 D-17 로컬 검증 또는 PGlite로 0001~0015를 올려 같은 480칸을 비교한다.
+ */
+import assert from 'node:assert/strict'
+
+import { sheetFinanceKpis } from '../src/data'
+import { ecountSetup } from '../src/lib/ecount/config'
+import { mapAccounts, mapSlipLines, UnmappedAccountError } from '../src/lib/ecount/map'
+import { loadMockLedger } from '../src/lib/ecount/mock-ledger'
+import { closingDiff, kpiCards, runway } from '../src/lib/ledger/analysis'
+import { basisOf, sumFigures, weakest } from '../src/lib/ledger/basis'
+import { kpisFromLedger } from '../src/lib/ledger/cells'
+import { ledgerScope } from '../src/lib/ledger/scope'
+import { balanceSheet, cashFlowStatement } from '../src/lib/ledger/statements'
+
+const BUSINESSES = ['biz_dy', 'biz_vana', 'biz_sticky', 'biz_hof', 'biz_boram']
+
+async function sheetWins() {
+  const ledger = await loadMockLedger()
+  const kpis = kpisFromLedger(ledger, BUSINESSES)
+  const key = (k: { period: string; business_id: string; metric: string }) => `${k.period}|${k.business_id}|${k.metric}`
+  const got = new Map(kpis.map((k) => [key(k), k]))
+  const bad = sheetFinanceKpis.filter((s) => got.get(key(s))?.value !== s.value)
+  assert.equal(bad.length, 0, `시트와 다른 칸: ${bad.slice(0, 3).map(key).join(', ')}`)
+  assert.equal(sheetFinanceKpis.length, 480)
+
+  const vana = got.get('2026-08|biz_vana|EBITDA')!
+  assert.equal(vana.value, 280_000_000, 'VANA EBITDA는 시트값 2.8억')
+  assert.equal(basisOf(vana), 'provisional', '2026-08은 마감 전 — 잠정')
+  assert.equal(basisOf(got.get('2026-07|biz_vana|EBITDA')!), 'confirmed', '2026-07은 마감 — 확정')
+}
+
+async function statementsClose() {
+  const ledger = await loadMockLedger()
+  for (const ids of [...BUSINESSES.map((b) => [b]), BUSINESSES]) {
+    const scope = ledgerScope(ledger, ids)
+    for (const period of scope.periods) {
+      const bs = balanceSheet(scope, period)
+      const assets = bs.find((r) => r.key === 'total-assets')!.current!.value
+      const le = bs.find((r) => r.key === 'total-le')!.current!.value
+      assert.ok(Math.abs(assets - le) < 1, `${ids.join('+')} ${period} 자산 ≠ 부채+자본`)
+
+      const cf = cashFlowStatement(scope, period)
+      if (cf[0].key === 'cf-unavailable') continue
+      assert.ok(!cf.some((r) => r.key === 'cf-check'), `${ids.join('+')} ${period} 현금흐름 검산 불일치`)
+    }
+  }
+
+  const group = ledgerScope(ledger, BUSINESSES)
+  const cards = kpiCards(group, '2026-08')
+  const revenue = cards.find((c) => c.metric === 'Revenue')!
+  assert.equal(Math.round(revenue.month!.value / 1e7) / 10, 66.3, '그룹 매출 66.3억(DEFERRED D-01 표)')
+  assert.equal(revenue.ytd!.basis, 'provisional', 'YTD에 잠정 달이 섞이면 잠정')
+  assert.ok(revenue.ttm && revenue.yoyPct, 'TTM·전년비는 24개월 원장에서 선다')
+  assert.equal(runway(group, '2026-08').status, 'burning')
+}
+
+function basisRules() {
+  assert.equal(basisOf({ source: 'ecount', closed: true }), 'confirmed')
+  assert.equal(basisOf({ source: 'ecount', closed: false }), 'provisional')
+  assert.equal(basisOf({ source: 'manual', closed: true }), 'manual', '수기는 마감돼도 수기')
+  assert.equal(basisOf({ source: 'estimate', closed: true }), 'estimate')
+  assert.equal(weakest(['confirmed', 'estimate', 'provisional']), 'estimate')
+  assert.equal(sumFigures([]), null, '원천이 없으면 0이 아니라 null')
+}
+
+async function boundaries() {
+  const ctx = { mode: 'mock' as const, business_id: 'biz_dy', fetched_at: '2026-09-16T00:00:00Z', last_closed_period: '2026-07' }
+  const lines = mapSlipLines(
+    [
+      { IO_DATE: '20260731', SLIP_NO: 'A', SER_NO: '1', ACCT_CODE: '1010', DR_AMT: '1,000', CR_AMT: '0', REMARKS: '' },
+      { IO_DATE: '20260801', SLIP_NO: 'B', SER_NO: '1', ACCT_CODE: '1010', DR_AMT: '-50', CR_AMT: '', REMARKS: '' },
+    ],
+    ctx,
+  )
+  assert.deepEqual(
+    lines.map((l) => [l.entry_date, l.amount, l.side, l.closed]),
+    [['2026-07-31', 1000, 'debit', true], ['2026-08-01', 50, 'credit', false]],
+    '쉼표 금액, 역분개, 마감 달 판정',
+  )
+  assert.throws(
+    () => mapSlipLines([{ IO_DATE: '20260801', SLIP_NO: 'C', SER_NO: '1', ACCT_CODE: '1010', DR_AMT: '1', CR_AMT: '1', REMARKS: '' }], ctx),
+    /차변과 대변이 같이/,
+  )
+  assert.throws(() => mapAccounts([{ ACCT_CODE: '7777', ACCT_NAME: '모르는 계정' }], ctx), UnmappedAccountError)
+  assert.throws(
+    () => mapAccounts([{ ACCT_CODE: '1010', ACCT_NAME: '현금' }], { ...ctx, mode: 'real' }),
+    UnmappedAccountError,
+    'real 계정과목표가 비어 있으면 멈춘다',
+  )
+
+  assert.equal(ecountSetup({} as NodeJS.ProcessEnv).source.mode, 'mock')
+  assert.throws(() => ecountSetup({ ECOUNT_COMPANIES: '{oops' } as unknown as NodeJS.ProcessEnv), /JSON이 아니다/)
+  assert.throws(
+    () => ecountSetup({ ECOUNT_COMPANIES: '[{"business_id":"biz_dy"}]' } as unknown as NodeJS.ProcessEnv),
+    /com_code/,
+  )
+  assert.equal(
+    ecountSetup({
+      ECOUNT_COMPANIES: '[{"business_id":"biz_dy","com_code":"1","user_id":"u","api_cert_key":"k"}]',
+    } as unknown as NodeJS.ProcessEnv).source.mode,
+    'real',
+  )
+}
+
+async function provisionalGap() {
+  const ledger = await loadMockLedger()
+  const diff = closingDiff(ledger, ledgerScope(ledger, ['biz_dy']))!
+  assert.equal(diff.period, '2026-07')
+  assert.deepEqual(diff.accounts.map((a) => a.account_code).sort(), ['2010', '4530', '8010'])
+  assert.equal(diff.metrics.find((m) => m.metric === 'Revenue')!.diff.value, 0, '결산조정은 매출에 손대지 않았다')
+  assert.ok(diff.metrics.find((m) => m.metric === 'EBITDA')!.diff.value < 0, '비용 계상 → EBITDA 감소')
+}
+
+async function main() {
+  await sheetWins()
+  await statementsClose()
+  basisRules()
+  await boundaries()
+  await provisionalGap()
+  console.log('PASS: sheet 480 cells = ledger, statements close, basis rules, ECOUNT mapping/config boundaries, provisional→confirmed gap')
+}
+
+main().catch((e) => {
+  console.error(e)
+  process.exit(1)
+})

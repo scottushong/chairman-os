@@ -1,6 +1,7 @@
+import { BasisTag } from '@/components/finance/figure'
 import { Icon } from '@/components/ui/icon'
 import { LineChart, type ChartSeries } from '@/components/ui/line-chart'
-import { deltaPct, groupSeries, periodsOf } from '@/lib/finance'
+import { deltaPct, groupFigure, groupSeries, periodsOf, recentKpis } from '@/lib/finance'
 import { formatDeltaPct, formatEok } from '@/lib/format'
 import type { FinanceKpi, FinanceMetric } from '@/types'
 
@@ -59,12 +60,19 @@ interface FinanceTrendProps {
   scopeNote?: string
 }
 
-export function FinanceTrend({ kpis, businessIds, title, scopeNote }: FinanceTrendProps) {
+export function FinanceTrend({ kpis: all, businessIds, title, scopeNote }: FinanceTrendProps) {
+  const kpis = recentKpis(all, 12)
   const periods = periodsOf(kpis)
 
   const rows = LINES.map((line) => {
     const data = groupSeries(kpis, line.metric, businessIds)
-    return { ...line, data, current: data[data.length - 1] ?? 0, delta: deltaPct(data) }
+    return {
+      ...line,
+      data,
+      current: data[data.length - 1] ?? 0,
+      delta: deltaPct(data),
+      figure: groupFigure(kpis, line.metric, periods[periods.length - 1] ?? '', businessIds),
+    }
   })
 
   const series: ChartSeries[] = rows.map((r) => ({
@@ -108,6 +116,11 @@ export function FinanceTrend({ kpis, businessIds, title, scopeNote }: FinanceTre
               }`}
             >
               {formatEok(r.current)}
+              {r.figure ? (
+                <span className="ml-1.5 align-middle">
+                  <BasisTag basis={r.figure.basis} />
+                </span>
+              ) : null}
             </p>
             {/* 네 지표 모두 오르는 게 좋은 축이라 부호와 색이 같이 간다. */}
             {r.delta === null ? (

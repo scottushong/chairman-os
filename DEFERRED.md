@@ -47,6 +47,15 @@
 |---|---|---|---|
 | D-18 | 업무의 담당자·제목·마감을 Chairman OS에서 못 고친다 | 하 — 의도된 경계다. 고치려면 Layer 1과의 역할 분담을 다시 정해야 한다 | 열림 |
 
+## 새로 생긴 것 (Phase 2-A 재무 메인스트림, 2026-09-17)
+
+| 항목 | 무엇이 | 급한가 | 상태 |
+|---|---|---|---|
+| D-19 | ECOUNT 공개 OAPI에 전표·계정과목·마감 **조회** API가 없다. 동기화 계정 역할(Integration)을 기본안으로 세웠다 | **상** — 키가 와도 원장이 안 들어온다 | 열림 (회장 확인 필요) |
+| D-20 | 동기화 1시간 주기가 Vercel Hobby에서 불가능하다 (Cron 하루 1개) | 중 | 열림 — 지금은 야간 브리핑 Cron 안에서 하루 1회 |
+| D-21 | 환율·원가 지수의 실제 원천이 없다 | 중 — 원가 구조의 '지수 전년비'가 mock(추정)이다 | 열림 |
+| D-01 | EBITDA Formula | — | **Phase 2 약속 이행** — 0015 뷰가 원장에서 계산한다. 시트 모순은 '시트 정합 조정' 계정으로 드러난다 |
+
 아래 원문은 결정 근거로 남겨 둔다.
 
 ---
@@ -57,6 +66,10 @@
 
 | 문서 | 무엇을 | 왜 |
 |---|---|---|
+| 02_데이터필드 KPI | **KPI는 원장에서 계산된다. `source`·`closed`·`fetched_at` 추가**, 사람이 넣는 KPI 없음 | Phase 2-A. 출처 없는 숫자는 화면에 못 올린다. 반영: `0015_finance_ledger.sql`(finance_kpis 뷰), `src/types/finance.ts` |
+| 02_데이터필드 (신규) | **Account / JournalLine / Closing / FxRate / CostIndex / MarketMultiple** | Phase 2-A 원천 6종. 반영: `0015`, `src/types/finance.ts` |
+| 04_권한 | **역할 `Integration` 추가** (원장 5표 쓰기만) | DEFERRED D-19 기본안. 반영: `0015` 9절, `supabase/bootstrap/0006_integration.sql` |
+| 05_Strategic Coordinates | **CH-024에 현재 이슈(칸)·키맨(표: 이름·관계·최근접촉) 추가** | Phase 2-A. 반영: `0015` 7절, `src/lib/strategy-fields.ts`, `components/business/keymen-panel.tsx` |
 | 02_기능명세 02_데이터필드 | **Task에 `blocked_since` 추가** (ISO date, 필수, 보안등급 [일반]) | DEFERRED D-02 결정 A. "이 업무가 지금 상태로 들어간 날"이다. CH-017 대기일수를 이 값에서 잰다. 시트 Tasks에는 `deadline`만 있어 대기일수를 낼 수 없었다. 이미 반영된 곳: `src/types/domain.ts`, `src/data/tasks.json`, `supabase/migrations/0001_init.sql` (tasks.blocked_since), `src/components/dashboard/waiting-on-me.tsx` |
 | 02_기능명세 CH-008 Acceptance | "정의된 Formula와 일치" → "시트에 기록된 EBITDA를 그대로 표시" | DEFERRED D-01 결정 A |
 | 02_데이터필드 Decision | **`attachment_url` 추가** (text, 선택, 보안등급 [제한]) | CH-041 상세 패널의 '첨부'. 사내 스토리지 링크만 둔다 — 파일 실체는 Chairman OS에 없다(CLAUDE.md 데이터 원칙). 반영: `supabase/migrations/0006_decision_attachment.sql`, `src/types/domain.ts` |
@@ -542,3 +555,63 @@ Chairman OS는 Layer 2(그룹 관제)다. 업무의 내용을 쓰는 곳은 각 
 - (B) 담당자만 연다. `TaskPatch`에 `owner_user_id`를 더하고 승인권자에게만 허용한다.
       한 칸이지만 '여기서도 업무를 편집한다'는 선례가 된다.
 - (C) 편집 화면을 통째로 연다. Layer 1이 무엇을 하는 곳인지 다시 정의해야 한다.
+
+---
+
+## D-19. ECOUNT에서 원장을 읽어 올 길이 없다 (CH-052)
+
+**무엇이** Phase 2-A는 "ECOUNT OpenAPI 문서 형식대로, 키 오면 real로"였다. 2026-09-17 조사 결과
+(공식 매뉴얼은 로그인 후에만 열려 테스트 서버 실호출과 ECOUNT 제품 페이지의 '제공 API' 표로 확인):
+
+- 되는 것 — `OAPI/V2/Zone`, `OAPI/V2/OAPILogin`(세션은 `?SESSION_ID=`), 응답 겉봉 모양.
+- **없는 것** — 회계 항목은 '매출/매입 **입력**' 하나다. 전표·계정과목·계정별원장·시산표·월마감을 **읽는** API가 목록에 없다.
+  조회 API는 품목·발주서·재고현황·창고별재고뿐이다.
+
+그래서 `lib/ecount/client.ts`의 real 모드는 로그인까지 확인한 뒤 원장 세 함수에서 `unsupported`를 보고한다.
+인터페이스(`EcountLedgerSource`)와 행 모양(`EcountSlipLineRow` 등)은 ECOUNT 표기 관례를 따른 **제안**이고,
+실제 경로가 정해지면 `map.ts`·`client.ts`만 고친다. 화면·원장 표·뷰는 그대로다.
+
+**같이 정할 것 둘**
+1. **동기화 계정의 역할.** 0015에 새 역할 `Integration`을 두었다(기본안). 원장 5표만 쓰고, 원장에 넣는 행은
+   `source='ecount'`만, 마감된 달은 못 고친다. AIAgent 재사용은 0013의 "Agent는 ai_night_outputs만 쓴다"를 깨므로 택하지 않았다.
+   권한 매트릭스(04_권한)에 10번째 역할이 생기는 결정이라 회장 확인이 필요하다.
+2. **계정과목표.** 계열사별 계정코드 → 대분류·구분·현금흐름 분류를 `lib/ecount/account-map.ts`의 `REAL_CHART`에 채운다.
+   분류 없는 계정이 오면 그 회사 동기화가 멈춘다(원가 구조가 조용히 틀리는 것보다 낫다).
+   그룹 합산은 지금 계정코드 단순 합이다 — 회사마다 코드 체계가 다르면 그룹 표준 코드 층이 필요하다. 내부거래 제거도 없다.
+
+**골라야 할 것**
+- (A) 로그인 매뉴얼(또는 ECOUNT 영업)에서 회계 조회 API 존재·추가 계약 여부를 확인한다. 있으면 `client.ts` 세 함수만 채운다. 먼저 이것을 권한다.
+- (B) ECOUNT 화면의 엑셀 내보내기(계정별원장·시산표)를 올리는 경로를 만든다. 같은 `map.ts`를 지나 `source='ecount'`로 들어간다.
+  자동은 아니지만 월 1회 마감 주기와는 맞는다. 업로드한 사람이 audit_log에 남는다.
+- (C) 원장은 ECOUNT에 두고 Chairman OS는 월 마감 숫자만 재무 담당이 입력한다. `source='manual'`(수기 꼬리표)이 되고,
+  '수기 입력 금지' 원칙을 결산에 한해 푸는 결정이 된다. 권하지 않는다.
+
+---
+
+## D-20. 동기화 1시간 주기가 Hobby에서 안 된다
+
+**무엇이** 요구는 `/api/cron/ecount-sync` 1시간 주기다. Vercel Hobby는 Cron이 하루 1회·1개다.
+지시대로 야간 브리핑 Cron(23:00 KST)이 동기화를 먼저 돌리도록 합쳤다. 결과는 브리핑 응답의 `ecount_sync`에 있다.
+
+**지금 상태로 괜찮은 이유** 원장 조회 경로 자체가 아직 없다(D-19). 경로가 생겨도 결산은 월 1회고,
+회장이 아침에 보는 숫자는 전날 밤 기준이면 된다.
+
+**골라야 할 것**
+- (A) 하루 1회로 둔다. 권한다 — D-19가 풀릴 때 다시 본다.
+- (B) Vercel Pro로 올리고 `vercel.json`에 `/api/cron/ecount-sync` 매시를 추가한다.
+- (C) 외부 스케줄러(GitHub Actions 등)가 `Authorization: Bearer $CRON_SECRET`로 GET을 부른다. 비밀이 저장소 밖 한 곳 더 생긴다.
+
+---
+
+## D-21. 환율·원가 지수의 원천이 없다
+
+**무엇이** `fx_rates` / `cost_indices` 표는 섰지만 채우는 원천이 없다. dummy 화면은 `lib/market/mock.ts`의 값이고
+꼬리표가 **추정**이다. live에서는 비어 있어 원가 구조의 '관련 지수 전년비'가 '—'로 선다.
+
+**원천 후보** 환율 — 한국은행 ECOS(매매기준율). 전기요금 — 한전 산업용 요금표. CPI — 통계청. 원재료 — 업종별로 다르다(회사가 정해야 한다). 운임 — KCCI/SCFI.
+
+**골라야 할 것**
+- (A) 원천이 붙기 전까지 재무 담당(Chairman/GroupCFO)이 월 1회 손으로 넣는다(0015 정책이 허용, 꼬리표 **수기**). 권한다.
+- (B) ECOS 등 공개 API를 붙이는 동기화를 만든다. 그때 `data_source`에 'feed' 같은 값을 더할지 정한다 —
+  외부 공식 발표치를 'ecount'로도 'manual'로도 부르는 건 사실과 다르다.
+- (C) 원재료 지수는 회사별 주 원료 단가로 대신한다(ECOUNT 구매 단가). D-19와 묶인다.

@@ -1,8 +1,9 @@
 import Link from 'next/link'
 
+import { BasisTag } from '@/components/finance/figure'
 import { Icon } from '@/components/ui/icon'
 import { formatEok, formatPct } from '@/lib/format'
-import { STATUS_LABEL_KO, type Business } from '@/types'
+import { STATUS_LABEL_KO, type Business, type FigureBasis } from '@/types'
 
 /**
  * CH-001 Business Card.
@@ -40,6 +41,9 @@ export interface BusinessMetrics {
   progress: number
   /** 재무 원천이 아예 없는 회사인가. 0억으로 쓰면 적자 0원처럼 읽힌다. */
   hasFinance: boolean
+  /** 매출·EBITDA의 출처 꼬리표(Phase 2-A). 원천이 없으면 null */
+  revenueBasis: FigureBasis | null
+  ebitdaBasis: FigureBasis | null
 }
 
 interface BusinessCardProps {
@@ -62,7 +66,7 @@ export function BusinessCard({
   onTogglePinned,
 }: BusinessCardProps) {
   const tone = TONE[business.business_id] ?? FALLBACK_TONE
-  const { revenue, ebitda, progress, hasFinance } = metrics
+  const { revenue, ebitda, progress, hasFinance, revenueBasis, ebitdaBasis } = metrics
 
   return (
     // @container — 카드 폭은 줄에 올라간 회사 수가 정한다. 숫자 크기를 뷰포트가 아니라 카드 폭에 맞춘다.
@@ -127,12 +131,13 @@ export function BusinessCard({
       </p>
 
       <dl className="mt-3 grid grid-cols-3 gap-1.5">
-        <Metric label="매출 (월)" value={hasFinance ? formatEok(revenue) : '—'} />
+        <Metric label="매출 (월)" value={hasFinance ? formatEok(revenue) : '—'} basis={revenueBasis} />
         {/* 적자는 빨강. 카드 다섯 장을 훑을 때 부호를 놓치면 안 된다. */}
         <Metric
           label="EBITDA"
           value={hasFinance ? formatEok(ebitda) : '—'}
           negative={hasFinance && ebitda < 0}
+          basis={ebitdaBasis}
         />
         {/* DEFERRED D-04 결정 C. 목표 대비가 아니라 프로젝트 진행률 평균이라 이름을 그대로 쓴다. */}
         <Metric label="프로젝트 진행률" value={formatPct(progress)} />
@@ -160,10 +165,12 @@ function Metric({
   label,
   value,
   negative = false,
+  basis = null,
 }: {
   label: string
   value: string
   negative?: boolean
+  basis?: FigureBasis | null
 }) {
   return (
     <div className="min-w-0">
@@ -175,6 +182,11 @@ function Metric({
         }`}
       >
         {value}
+        {basis ? (
+          <span className="ml-1 align-middle">
+            <BasisTag basis={basis} compact />
+          </span>
+        ) : null}
       </dd>
     </div>
   )

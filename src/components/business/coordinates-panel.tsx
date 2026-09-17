@@ -144,10 +144,12 @@ export function CoordinatesPanel({
         ))}
       </div>
 
-      {/* 이 둘만 테두리를 준다. 나머지는 배경, 이건 지금 손대야 하는 것이다. */}
-      <div className="mt-2.5 grid gap-2.5 md:grid-cols-2">
+      {/* 이 셋만 테두리를 준다. 나머지는 배경, 이건 지금 손대야 하는 것이다.
+          현재 이슈(0015)가 맨 앞이다 — Gap·Bottleneck이 구조라면 이건 이번 주의 불이다. */}
+      <div className="mt-2.5 grid gap-2.5 md:grid-cols-3">
         {(
           [
+            { f: 'current_issue', icon: 'bell', tone: 'border-critical/40 bg-critical/5' },
             { f: 'gap', icon: 'arrow-up', tone: 'border-warning/40 bg-warning/5' },
             { f: 'bottleneck', icon: 'shield', tone: 'border-critical/40 bg-critical/5' },
           ] as const

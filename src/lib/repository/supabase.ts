@@ -10,6 +10,7 @@ import type {
   Alert,
   Business,
   BusinessStatus,
+  BusinessKeyman,
   BusinessStrategy,
   ChairmanManifesto,
   ChairmanProject,
@@ -18,6 +19,13 @@ import type {
   DecisionStatus,
   DocumentRecord,
   FinanceKpi,
+  FinanceLedger,
+  Account,
+  Closing,
+  CostIndex,
+  FxRate,
+  JournalLine,
+  DataSource,
   NewInvitation,
   Role,
   UserAccount,
@@ -42,6 +50,7 @@ import {
   type ChairmanProjectInput,
   type ChairmanRepository,
   type DecisionAuditEntry,
+  type KeymanInput,
   type NewBusiness,
   type NewDecision,
   type NewDocument,
@@ -96,7 +105,20 @@ interface FinanceKpiRow {
   value: number | string
   target: number | string | null
   currency: 'KRW' | 'USD'
+  source: DataSource
+  closed: boolean
+  fetched_at: string
 }
+
+/** 0015 원장 표들. numeric은 문자열로 올 수 있어 num()을 거친다. */
+type AccountRow = Account
+type JournalLineRow = Omit<JournalLine, 'amount'> & { id: number; amount: number | string }
+type ClosingRow = Omit<Closing, 'amount' | 'provisional_amount'> & {
+  amount: number | string
+  provisional_amount: number | string | null
+}
+type FxRateRow = Omit<FxRate, 'rate'> & { rate: number | string }
+type CostIndexRow = Omit<CostIndex, 'value'> & { value: number | string }
 
 interface GoalRow {
   goal_id: string
@@ -270,6 +292,8 @@ interface BusinessStrategyRow {
   current_priority: string
   bottleneck: string
   chairman_comment: string
+  /** 0015. 그 전 DB에는 칸이 없다 */
+  current_issue?: string
 }
 
 interface DocumentRow {
@@ -387,6 +411,9 @@ function oneAffectedRow<T>(
   }
   return rows[0]
 }
+
+/** 0015 business_keymen에서 부르는 칸. 세 함수가 같은 모양을 돌려줘야 한다. */
+const KEYMAN_COLUMNS = 'keyman_id,business_id,name,relation,last_contact_on,note'
 
 /** 이름을 못 찾은 담당자. 화면에 36자 uuid를 그대로 뿌리지 않는다(DEFERRED D-09 결정 B). */
 const UNKNOWN_OWNER = '미지정'
@@ -517,7 +544,9 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         sb
           .from('finance_kpis')
           // 필요한 칸만 부른다. RLS로 가려진 컬럼을 넓게 부르면 실수가 늦게 드러난다.
-          .select('period,business_id,metric,value,target,currency', { count: 'exact' })
+          .select('period,business_id,metric,value,target,currency,source,closed,fetched_at', {
+            count: 'exact',
+          })
           .order('period')
           .order('business_id')
           .order('metric')
@@ -532,7 +561,202 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         value: num(r.value),
         target: r.target === null ? undefined : num(r.target),
         currency: r.currency,
+        source: r.source,
+        closed: r.closed,
+        fetched_at: r.fetched_at,
       }))
+    },
+
+    /**
+     * Phase 2-A. 다섯 표를 동시에 읽는다. 전표가 많아도 fetchAll이 500행씩 끊어 끝까지 읽는다.
+     * 여기서 계산하지 않는다 — 재무제표는 lib/ledger가 만든다. 어댑터가 합계를 내기 시작하면
+     * dummy와 live가 서로 다른 공식을 갖게 된다.
+     */
+    async loadFinanceLedger(): Promise<FinanceLedger> {
+      const [accounts, journal, closings, fxRates, costIndices] = await Promise.all([
+        fetchAll<AccountRow>('accounts', ['business_id', 'account_code'], (from, to) =>
+          sb
+            .from('accounts')
+            .select('business_id,account_code,name,category,section,cash_flow,source,fetched_at,closed', {
+              count: 'exact',
+            })
+            .order('business_id')
+            .order('account_code')
+            .range(from, to)
+            .returns<AccountRow[]>(),
+        ),
+        fetchAll<JournalLineRow>('journal_lines', ['id'], (from, to) =>
+          sb
+            .from('journal_lines')
+            .select(
+              'id,business_id,entry_date,account_code,amount,side,slip_no,line_no,memo,source,fetched_at,closed',
+              { count: 'exact' },
+            )
+            .order('id')
+            .range(from, to)
+            .returns<JournalLineRow[]>(),
+        ),
+        fetchAll<ClosingRow>('closings', ['business_id', 'period', 'account_code'], (from, to) =>
+          sb
+            .from('closings')
+            .select(
+              'business_id,period,account_code,amount,closed_on,provisional_amount,source,fetched_at,closed',
+              { count: 'exact' },
+            )
+            .order('business_id')
+            .order('period')
+            .order('account_code')
+            .range(from, to)
+            .returns<ClosingRow[]>(),
+        ),
+        fetchAll<FxRateRow>('fx_rates', ['rate_date', 'base', 'quote'], (from, to) =>
+          sb
+            .from('fx_rates')
+            .select('rate_date,base,quote,rate,source_name,source,fetched_at,closed', { count: 'exact' })
+            .order('rate_date')
+            .order('base')
+            .order('quote')
+            .range(from, to)
+            .returns<FxRateRow[]>(),
+        ),
+        fetchAll<CostIndexRow>('cost_indices', ['index_code', 'index_date'], (from, to) =>
+          sb
+            .from('cost_indices')
+            .select('index_code,index_date,value,unit,source_name,source,fetched_at,closed', {
+              count: 'exact',
+            })
+            .order('index_code')
+            .order('index_date')
+            .range(from, to)
+            .returns<CostIndexRow[]>(),
+        ),
+      ])
+      return {
+        accounts: accounts.data,
+        // id는 페이지 경계 검사용이다. 화면 모양(JournalLine)에는 없다.
+        journal: journal.data.map((r) => ({
+          business_id: r.business_id,
+          entry_date: r.entry_date,
+          account_code: r.account_code,
+          amount: num(r.amount),
+          side: r.side,
+          slip_no: r.slip_no,
+          line_no: r.line_no,
+          memo: r.memo,
+          source: r.source,
+          fetched_at: r.fetched_at,
+          closed: r.closed,
+        })),
+        closings: closings.data.map((r) => ({
+          ...r,
+          amount: num(r.amount),
+          provisional_amount: r.provisional_amount === null ? null : num(r.provisional_amount),
+        })),
+        fxRates: fxRates.data.map((r) => ({ ...r, rate: num(r.rate) })),
+        costIndices: costIndices.data.map((r) => ({ ...r, value: num(r.value) })),
+      }
+    },
+
+    /** CH-024 확장(0015). [제한] 열람 역할이 아니면 0015의 business_keymen_read가 빈 배열을 준다. */
+    async listKeymen(): Promise<BusinessKeyman[]> {
+      const { data } = await fetchAll<BusinessKeyman>('business_keymen', ['keyman_id'], (from, to) =>
+        sb
+          .from('business_keymen')
+          .select(KEYMAN_COLUMNS, { count: 'exact' })
+          .order('business_id')
+          .order('name')
+          .order('keyman_id')
+          .range(from, to)
+          .returns<BusinessKeyman[]>(),
+      )
+      return data
+    },
+
+    /**
+     * saveChairmanProject와 같은 순서다 — 기록이 먼저, 바뀐 칸만.
+     * 권한은 보지 않는다. 0015의 business_keymen_write가 can_approve()와 회사 범위를 본다.
+     */
+    async saveKeyman(input: KeymanInput, actor: AuditActor): Promise<BusinessKeyman> {
+      const { keyman_id, ...fields } = input
+      let before: BusinessKeyman | null = null
+      if (keyman_id) {
+        const { data, error } = await sb
+          .from('business_keymen')
+          .select(KEYMAN_COLUMNS)
+          .eq('keyman_id', keyman_id)
+          .maybeSingle<BusinessKeyman>()
+        if (error) throw new Error(`Supabase business_keymen ${error.code ?? '?'}: ${error.message}`)
+        if (!data) throw new Error('business_keymen: 고칠 키맨이 없다(또는 읽을 권한이 없다).')
+        before = data
+      }
+
+      const id = keyman_id ?? crypto.randomUUID()
+      const keys = (Object.keys(fields) as (keyof typeof fields)[]).filter(
+        (k) => !before || before[k] !== fields[k],
+      )
+      if (before && keys.length === 0) return before
+
+      const { error: auditError } = await sb.from('audit_log').insert({
+        action: before ? 'update' : 'create',
+        entity_table: 'business_keymen',
+        entity_id: id,
+        business_id: fields.business_id,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        before: before ? Object.fromEntries(keys.map((k) => [k, before![k]])) : null,
+        after: Object.fromEntries(keys.map((k) => [k, fields[k]])),
+      })
+      if (auditError) {
+        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      }
+
+      const query = before
+        ? sb.from('business_keymen').update(fields).eq('keyman_id', id)
+        : sb.from('business_keymen').insert({ keyman_id: id, ...fields })
+      const { data, error } = await query.select(KEYMAN_COLUMNS).single<BusinessKeyman>()
+      if (error) {
+        throw new Error(
+          `Supabase business_keymen ${error.code ?? '?'}: ${error.message} ` +
+            '(감사 기록은 남았고 키맨은 바뀌지 않았다. 0015의 business_keymen_write 정책을 본다.)',
+        )
+      }
+      return data
+    },
+
+    async removeKeyman(keymanId: string, actor: AuditActor): Promise<void> {
+      const { data: before, error: readError } = await sb
+        .from('business_keymen')
+        .select(KEYMAN_COLUMNS)
+        .eq('keyman_id', keymanId)
+        .maybeSingle<BusinessKeyman>()
+      if (readError) {
+        throw new Error(`Supabase business_keymen ${readError.code ?? '?'}: ${readError.message}`)
+      }
+      if (!before) throw new Error('business_keymen: 지울 키맨이 없다(또는 읽을 권한이 없다).')
+
+      // audit_action에 delete가 없다(delete_request는 '지워 달라는 요청'이다).
+      // 행이 사라지는 변경이라 update로 남기고 after를 null로 둔다 — 지운 행 전체가 before에 있다.
+      const { error: auditError } = await sb.from('audit_log').insert({
+        action: 'update',
+        entity_table: 'business_keymen',
+        entity_id: keymanId,
+        business_id: before.business_id,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        before,
+        after: null,
+        note: '키맨 삭제',
+      })
+      if (auditError) {
+        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      }
+
+      const { data, error } = await sb
+        .from('business_keymen')
+        .delete()
+        .eq('keyman_id', keymanId)
+        .select('keyman_id')
+      oneAffectedRow('business_keymen', data, error)
     },
 
     async listProjects(): Promise<Project[]> {
@@ -948,6 +1172,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         current_priority: r.current_priority,
         bottleneck: r.bottleneck,
         chairman_comment: r.chairman_comment,
+        // 0015 이전 DB에는 칸이 없다. 빈 문자열이 '아직 안 썼다'의 표현이다(0008).
+        current_issue: r.current_issue ?? '',
       }))
     },
 

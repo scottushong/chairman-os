@@ -1,4 +1,6 @@
-import type { BusinessId, FinanceKpi, FinanceMetric, PeriodKey, Project } from '@/types'
+import { sumFigures } from '@/lib/ledger/basis'
+import { kpiFigure } from '@/lib/ledger/cells'
+import type { BusinessId, Figure, FinanceKpi, FinanceMetric, PeriodKey, Project } from '@/types'
 
 /**
  * 집계는 전부 여기 한 곳에서만 한다.
@@ -86,4 +88,35 @@ export function businessProgress(projects: Project[], businessId: BusinessId): n
 /** 재무 행이 하나도 없는 회사(CH-002로 방금 추가된 회사)는 숫자를 0으로 쓰면 안 된다. */
 export function hasFinanceData(kpis: FinanceKpi[], businessId: BusinessId): boolean {
   return kpis.some((k) => k.business_id === businessId)
+}
+
+/**
+ * 그룹 합계의 출처 꼬리표까지 같이 (Phase 2-A). groupValue와 같은 칸을 더하되 Figure로 낸다 —
+ * 대시보드 숫자도 출처 없이 서지 못한다. 원천 칸이 하나도 없으면 null이다.
+ */
+export function groupFigure(
+  kpis: FinanceKpi[],
+  metric: FinanceMetric,
+  period: PeriodKey,
+  businessIds?: BusinessId[],
+): Figure | null {
+  return sumFigures(
+    kpis
+      .filter(
+        (k) =>
+          k.metric === metric &&
+          k.period === period &&
+          (!businessIds || businessIds.includes(k.business_id)),
+      )
+      .map(kpiFigure),
+  )
+}
+
+/**
+ * 최근 n개월만. 0015부터 원장이 24개월을 들고 온다(전년동월비·TTM용).
+ * 대시보드 스파크라인과 추이 차트는 여전히 12개월을 그린다 — 두 배로 늘어나면 눈금이 붙는다.
+ */
+export function recentKpis(kpis: FinanceKpi[], months: number): FinanceKpi[] {
+  const keep = new Set(periodsOf(kpis).slice(-months))
+  return kpis.filter((k) => keep.has(k.period))
 }

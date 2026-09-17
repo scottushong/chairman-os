@@ -1,7 +1,7 @@
 import type { BusinessStrategy } from '@/types'
 
 /**
- * CH-024 전략 좌표의 열한 칸을 한 곳에서 정의한다 (DEFERRED D-13 결정 A).
+ * CH-024 전략 좌표의 열두 칸(0015에서 현재 이슈 추가)을 한 곳에서 정의한다 (DEFERRED D-13 결정 A).
  *
  * 화면(어떤 라벨로 그리나)과 Server Action(어떤 이름을 DB로 보내도 되나)이 같은 목록을 봐야 한다.
  * 목록이 둘로 갈라지면 화면에만 있는 칸이 저장에서 조용히 버려지거나,
@@ -49,6 +49,12 @@ export const STRATEGY_FIELDS: readonly StrategyFieldMeta[] = [
     placeholder: '현재와 목표의 차이. 숫자가 아니라 판단을 쓴다',
   },
   {
+    field: 'current_issue',
+    label: '현재 이슈',
+    multiline: true,
+    placeholder: '이번 주에 걸려 있는 불. 해소되면 지운다',
+  },
+  {
     field: 'bottleneck',
     label: 'Bottleneck',
     multiline: true,
@@ -93,5 +99,6 @@ export function emptyStrategy(businessId: string): BusinessStrategy {
     current_priority: '',
     bottleneck: '',
     chairman_comment: '',
+    current_issue: '',
   }
 }

@@ -5,7 +5,6 @@ import {
   businesses,
   criticalRisks,
   decisions,
-  financeKpis,
   monthlyPriorities,
   nextMilestones,
   projects,
@@ -14,11 +13,14 @@ import {
 } from '@/data'
 import type { EntityAuditRecord } from '@/lib/audit-log'
 import { AUDIT_ACTION, DECISION_STATUS, type DecisionAuditRecord } from '@/lib/decision-log'
+import { loadMockLedger } from '@/lib/ecount/mock-ledger'
 import { dayKey } from '@/lib/format'
+import { kpisFromLedger } from '@/lib/ledger/cells'
 import { emptyStrategy } from '@/lib/strategy-fields'
 import type { SearchHit } from '@/lib/search'
 import type {
   Business,
+  BusinessKeyman,
   BusinessStrategy,
   ChairmanManifesto,
   ChairmanProject,
@@ -39,6 +41,7 @@ import {
   type ChairmanProjectInput,
   type ChairmanRepository,
   type DecisionAuditEntry,
+  type KeymanInput,
   type NewBusiness,
   type NewDecision,
   type NewDocument,
@@ -73,6 +76,12 @@ const memoryEntityAudit: StoredAudit[] = []
  */
 const memoryChairmanProjects: ChairmanProject[] = []
 const memoryManifesto: ChairmanManifesto = { body: '', updated_at: null }
+
+/**
+ * CH-024 키맨(0015). 시드가 없다 — 실제 사람 이름이 git에 들어가면 안 된다(0014 회장 루틴과 같은 이유).
+ * dummy에서는 화면에서 넣은 사람이 서버가 살아 있는 동안만 남는다.
+ */
+const memoryKeymen: BusinessKeyman[] = []
 
 /** CH-002로 추가한 회사도 마찬가지다. 서버가 살아 있는 동안만 남는다. */
 const memoryBusinesses: Business[] = []
@@ -122,8 +131,54 @@ export const dummyRepository: ChairmanRepository = {
   async listBusinesses() {
     return [...businesses, ...memoryBusinesses]
   },
+  /**
+   * live의 0015 finance_kpis 뷰를 흉내 낸다. 시트 JSON을 그대로 돌려주지 않고 mock 원장에서 계산한다 —
+   * 그래야 출처 꼬리표(확정/잠정)가 붙고, 시트와 원장이 같은 숫자를 낸다는 검증
+   * (scripts/check-finance-ledger.ts)이 dummy 화면에도 그대로 적용된다.
+   */
   async listFinanceKpis() {
-    return [...financeKpis]
+    const ledger = await loadMockLedger()
+    return kpisFromLedger(ledger, [...new Set(ledger.accounts.map((a) => a.business_id))])
+  },
+
+  async loadFinanceLedger() {
+    const ledger = await loadMockLedger()
+    // 복사본을 준다. 화면이 sort() 한 번만 잘못 불러도 캐시된 원장이 영구히 바뀐다.
+    return {
+      accounts: [...ledger.accounts],
+      journal: [...ledger.journal],
+      closings: [...ledger.closings],
+      fxRates: [...ledger.fxRates],
+      costIndices: [...ledger.costIndices],
+    }
+  },
+
+  async listKeymen() {
+    return memoryKeymen.map((k) => ({ ...k }))
+  },
+
+  /** live에서는 0015의 business_keymen_write가 승인권자만 통과시킨다. dummy는 판정을 흉내 내지 않는다. */
+  async saveKeyman(input: KeymanInput, actor: AuditActor) {
+    const { keyman_id, ...fields } = input
+    const existing = keyman_id ? memoryKeymen.find((k) => k.keyman_id === keyman_id) : undefined
+    if (keyman_id && !existing) throw new Error('business_keymen: 고칠 키맨이 없다.')
+    const saved: BusinessKeyman = existing
+      ? Object.assign(existing, fields)
+      : { keyman_id: crypto.randomUUID(), ...fields }
+    if (!existing) memoryKeymen.push(saved)
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[dummy] save keyman by ${actor.role} — 메모리에만 남는다.`)
+    }
+    return { ...saved }
+  },
+
+  async removeKeyman(keymanId: string, actor: AuditActor) {
+    const i = memoryKeymen.findIndex((k) => k.keyman_id === keymanId)
+    if (i < 0) throw new Error('business_keymen: 지울 키맨이 없다.')
+    memoryKeymen.splice(i, 1)
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[dummy] remove keyman by ${actor.role} — 메모리에만 남는다.`)
+    }
   },
   async listProjects() {
     return [...projects]
@@ -244,6 +299,8 @@ export const dummyRepository: ChairmanRepository = {
    */
   async listBusinessStrategy(): Promise<BusinessStrategy[]> {
     const seeded = businessCoordinates.map((c) => ({
+      // 시드 JSON에는 0015의 current_issue가 없다. 빈 칸에서 출발한다.
+      ...emptyStrategy(c.business_id),
       ...c,
       ...memoryStrategyPatches.get(c.business_id),
     }))

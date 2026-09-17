@@ -83,11 +83,11 @@ export const NAV: readonly NavGroup[] = [
     title: '기능 시스템',
     items: [
       {
+        // Phase 2-A. 그룹 재무와 회사별 재무(/finance/[business_id]). ECOUNT 키 전에는 mock 원장 위에서 돈다.
         label: '재무 / 회계',
         href: '/finance',
         icon: 'coin',
-        ready: false,
-        waitingFor: 'CH-052 ECOUNT 연동이 선행되어야 합니다.',
+        ready: true,
       },
       {
         label: '인사 / 조직',

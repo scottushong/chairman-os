@@ -6,6 +6,7 @@ import type {
   Alert,
   Business,
   BusinessStatus,
+  BusinessKeyman,
   BusinessStrategy,
   ChairmanManifesto,
   ChairmanProject,
@@ -13,6 +14,7 @@ import type {
   Decision,
   DocumentRecord,
   FinanceKpi,
+  FinanceLedger,
   SecurityClass,
   MonthlyPriority,
   NextMilestone,
@@ -41,7 +43,16 @@ export interface ChairmanRepository {
   readonly mode: 'dummy' | 'live'
 
   listBusinesses(): Promise<Business[]>
+  /** CH-006~010. live에서는 0015의 finance_kpis 뷰다 — 원장에서 계산되고 출처 세 칸이 붙어 나온다. */
   listFinanceKpis(): Promise<FinanceKpi[]>
+
+  /**
+   * Phase 2-A 재무 화면. 계정·전표·결산·환율·지수를 한 번에 읽는다.
+   * 화면이 다섯 번 따로 부르지 않게 한 벌로 묶었다. 재무제표·원가 구조·Runway는 전부 이 한 벌에서
+   * lib/ledger가 계산한다 — 어댑터는 읽기만 한다.
+   * 권한은 여기서 보지 않는다. 0015의 원장 read 정책이 회사 범위와 [제한] 열람 역할을 같이 본다.
+   */
+  loadFinanceLedger(): Promise<FinanceLedger>
   listProjects(): Promise<Project[]>
   listTasks(): Promise<Task[]>
   listDecisions(): Promise<Decision[]>
@@ -91,6 +102,13 @@ export interface ChairmanRepository {
   /** CH-042. 사내 스토리지 링크 한 줄을 등록한다. 파일은 올리지 않는다. */
   createDocument(input: NewDocument, actor: AuditActor): Promise<DocumentRecord>
 
+  /** CH-024 확장(0015). 키맨. 읽기는 [제한] 열람 역할만, 쓰기는 승인권자만이다. */
+  listKeymen(): Promise<BusinessKeyman[]>
+  /** keyman_id가 있으면 고치고 없으면 만든다. audit_log(create|update)에 바뀐 칸만 남는다. */
+  saveKeyman(input: KeymanInput, actor: AuditActor): Promise<BusinessKeyman>
+  /** 지운다. audit_log(update)에 지운 행 전체를 before로 남긴다 — 지운 사람이 누군지는 기록에 있어야 한다. */
+  removeKeyman(keymanId: string, actor: AuditActor): Promise<void>
+
   /** CH-024. 전략 좌표의 칸을 고친다. 0008의 business_strategy_write가 승인권자만 통과시킨다. */
   updateBusinessStrategy(
     businessId: string,
@@ -127,6 +145,9 @@ export interface ChairmanRepository {
   getUserSettings(): Promise<UserSettings>
   saveUserSettings(patch: Partial<UserSettings>): Promise<void>
 }
+
+/** CH-024 키맨 폼이 보내는 한 행. keyman_id가 없으면 새 사람이다. */
+export type KeymanInput = Omit<BusinessKeyman, 'keyman_id'> & { keyman_id?: string }
 
 /** /settings/chairman 폼이 보내는 한 행. project_id가 없으면 새 프로젝트다. */
 export type ChairmanProjectInput = Omit<ChairmanProject, 'project_id'> & { project_id?: string }

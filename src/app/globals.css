@@ -122,3 +122,9 @@ body {
   scrollbar-width: thin;
   scrollbar-color: var(--color-line) transparent;
 }
+
+/* Phase 2-A 재무제표. KPI 카드의 숫자를 누르면 그 줄로 내려오고(#total-revenue 등) 잠깐 불이 들어온다. */
+.fin-row:target {
+  background: var(--color-accent-soft);
+  outline: 1px solid var(--color-accent);
+}

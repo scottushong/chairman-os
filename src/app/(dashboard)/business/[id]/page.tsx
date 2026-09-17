@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { CoordinatesPanel } from '@/components/business/coordinates-panel'
+import { KeymenPanel } from '@/components/business/keymen-panel'
 import { FinanceTrend } from '@/components/dashboard/finance-trend'
 import { KpiStrip } from '@/components/dashboard/kpi-strip'
 import { PageHeader } from '@/components/layout/page-header'
@@ -31,7 +32,8 @@ import {
  *
  * 화면 순서는 '얼마인가 → 어디로 가는가 → 지금 무엇이 도는가'다.
  *   위    회사 KPI 8개 + 12개월 추이   (CH-023)
- *   중간  Mission / 목표 / Gap / Bottleneck (CH-024) — 승인권자는 칸별로 고칠 수 있다(D-13)
+ *   중간  Mission / 목표 / 현재 이슈 / Gap / Bottleneck (CH-024) — 승인권자는 칸별로 고칠 수 있다(D-13)
+ *         키맨(0015) — 이름·관계·최근 접촉일
  *   아래  이 회사의 프로젝트 · 업무 · 결정 · 알림
  *
  * 없는 회사와 볼 수 없는 회사를 화면에서 구분하지 않는다. businesses_read(0002)가
@@ -42,7 +44,7 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
   const { id } = await props.params
 
   const repo = await getRepository()
-  const [businesses, financeKpis, projects, tasks, decisions, alerts, strategies, user] =
+  const [businesses, financeKpis, projects, tasks, decisions, alerts, strategies, keymen, user] =
     await Promise.all([
       repo.listBusinesses(),
       repo.listFinanceKpis(),
@@ -51,6 +53,7 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
       repo.listDecisions(),
       repo.listAlerts(),
       repo.listBusinessStrategy(),
+      repo.listKeymen(),
       currentUser(),
     ])
 
@@ -77,6 +80,12 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
         description={`${business.industry} · ${STATUS_LABEL_KO[business.status]} · ${business.business_id}`}
       >
         <Link
+          href={`/finance/${encodeURIComponent(id)}`}
+          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+        >
+          재무제표
+        </Link>
+        <Link
           href="/"
           className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
@@ -102,6 +111,12 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
         <CoordinatesPanel
           strategy={strategy}
           businessId={id}
+          canEdit={canEditStrategy(user)}
+        />
+        {/* 0015. 쓰기 판정은 business_keymen_write(can_approve)라 좌표와 같은 안내 함수를 쓴다. */}
+        <KeymenPanel
+          businessId={id}
+          keymen={keymen.filter((k) => k.business_id === id)}
           canEdit={canEditStrategy(user)}
         />
       </div>

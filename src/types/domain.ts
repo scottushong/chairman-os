@@ -1,4 +1,5 @@
 import type { ProjectNote } from './chairman'
+import type { Provenance } from './finance'
 import type { BusinessStatus, Severity, TaskStatus, WorkPriority, SecurityClass } from './enums'
 import type {
   AlertId,
@@ -48,8 +49,12 @@ export const FINANCE_METRIC = [
 ] as const
 export type FinanceMetric = (typeof FINANCE_METRIC)[number]
 
-/** 기간 × 회사 × 지표의 한 칸. 합계는 항상 이 원천에서 계산한다. */
-export interface FinanceKpi {
+/**
+ * 06_Dummy_Data Finance_KPI 시트의 한 칸 모양. src/data/finance-kpi.json이 이 모양이다.
+ * 출처 칸이 없다 — 시트는 출처를 말하지 않는다. 그래서 화면으로 바로 나가지 못하고
+ * FinanceKpi(아래)로 옮겨질 때 출처를 받는다.
+ */
+export interface SheetFinanceKpi {
   period: PeriodKey
   business_id: BusinessId
   metric: FinanceMetric
@@ -58,6 +63,15 @@ export interface FinanceKpi {
   /** 선택. 목표 대비 비교용(02_데이터필드 KPI.target). */
   target?: number
 }
+
+/**
+ * 기간 × 회사 × 지표의 한 칸. 합계는 항상 이 원천에서 계산한다.
+ *
+ * Phase 2-A부터 사람이 넣는 표가 아니라 0015의 finance_kpis 뷰가 계산한 값이다.
+ * 결산이 있으면 결산(확정)에서, 없으면 전표(잠정)에서, 둘 다 없으면 옛 시트 행(수기)에서 나온다.
+ * source / closed / fetched_at이 필수인 이유 — 출처 없는 숫자는 화면에 못 올린다.
+ */
+export interface FinanceKpi extends SheetFinanceKpi, Provenance {}
 
 /** CH-020. */
 export interface Project {

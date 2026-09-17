@@ -1,6 +1,7 @@
+import { BasisTag } from '@/components/finance/figure'
 import { Icon } from '@/components/ui/icon'
 import { Sparkline } from '@/components/ui/sparkline'
-import { deltaPct, groupSeries, latestPeriodOf } from '@/lib/finance'
+import { deltaPct, groupFigure, groupSeries, latestPeriodOf, recentKpis } from '@/lib/finance'
 import { formatDeltaPct, formatEok } from '@/lib/format'
 import type { FinanceKpi, FinanceMetric } from '@/types'
 
@@ -45,7 +46,8 @@ interface KpiStripProps {
   scopeNote?: string
 }
 
-export function KpiStrip({ kpis, businessIds, title, scopeNote }: KpiStripProps) {
+export function KpiStrip({ kpis: all, businessIds, title, scopeNote }: KpiStripProps) {
+  const kpis = recentKpis(all, 12)
   // 표시 월은 데이터가 정한다. 상수로 박아 두면 다음 달 실적이 들어와도 화면이 안 움직인다.
   const period = latestPeriodOf(kpis)
 
@@ -81,6 +83,8 @@ function KpiTile({
   const series = groupSeries(kpis, kpi.metric, businessIds)
   const current = series[series.length - 1] ?? 0
   const delta = deltaPct(series)
+  // 출처 꼬리표(Phase 2-A). 당월 합계에 들어간 칸들 중 가장 약한 꼬리표다.
+  const figure = groupFigure(kpis, kpi.metric, latestPeriodOf(kpis), businessIds)
 
   // 색은 '방향 × 그 방향이 좋은지'로 정한다. 화살표를 같이 달아 색만으로 읽히지 않게 한다.
   const good = delta === null ? null : delta > 0 === kpi.upIsGood
@@ -100,6 +104,11 @@ function KpiTile({
         ].join(' ')}
       >
         {formatEok(current)}
+        {figure ? (
+          <span className="ml-1.5 align-middle">
+            <BasisTag basis={figure.basis} />
+          </span>
+        ) : null}
       </p>
 
       <div className={`mt-0.5 flex items-center gap-0.5 text-[11px] ${deltaTone}`}>

@@ -78,3 +78,12 @@ export function formatDateTime(iso: string, today = new Date()): string {
     hour12: false,
   }).format(date)
 }
+
+/**
+ * 재무제표 칸의 금액. 백만원 단위 정수, 천 단위 구분.
+ * 계정 행은 억으로 줄이면 0.0억이 줄줄이 선다 — 계정별 원본을 읽는 자리는 한 자리 더 내려 쓴다.
+ */
+export function formatMillion(value: number): string {
+  // -0을 0으로. 반올림으로 사라진 음수가 '-0'으로 남으면 부호만 남은 숫자를 읽게 된다.
+  return (Math.round(value / 1_000_000) || 0).toLocaleString('ko-KR')
+}

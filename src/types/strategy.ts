@@ -68,4 +68,21 @@ export interface BusinessStrategy {
   current_priority: string
   bottleneck: string
   chairman_comment: string
+  /** 0015. 지금 이 회사에 걸려 있는 이슈 한 문장. Bottleneck이 '구조적으로 막는 것'이면 이건 '이번 주의 불'이다. */
+  current_issue: string
+}
+
+/**
+ * CH-024 확장(0015 business_keymen). 이 회사를 움직이는 사람.
+ * 칸이 아니라 표다 — 한 회사에 여럿이다. 이름·관계는 [제한] 등급이라 재무 열람 역할만 읽는다.
+ */
+export interface BusinessKeyman {
+  keyman_id: string
+  business_id: BusinessId
+  name: string
+  /** 예: 대표 / 주거래처 구매팀장 */
+  relation: string
+  /** 최근 접촉일. 기록이 없으면 null — '오래 연락 안 함'과 '기록 안 함'은 다르다 */
+  last_contact_on: IsoDate | null
+  note: string
 }

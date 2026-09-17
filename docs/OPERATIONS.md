@@ -58,7 +58,7 @@ npm run build         # 빌드 (타입 검사 포함)
 
 ### 파일
 
-`supabase/migrations/` 에 `0001` ~ `0013`. 번호순으로 적용된다.
+`supabase/migrations/` 에 `0001` ~ `0015`. 번호순으로 적용된다.
 
 `0004`가 없는 것은 실수가 아니다. `supabase/bootstrap/0004_bootstrap_chairman.sql`이
 그 번호를 이미 쓰고 있다. 그 파일은 `migrations/` 밖에 있어 `db push`가 집지 않는다 —
@@ -117,6 +117,25 @@ push 전에 지금 link된 프로젝트 ID가 의도한 대상(staging/productio
 Agent는 부트스트랩 시점의 회사만 본다. 회사를 추가하면 그 파일의 2절만 다시 돌린다.
 돌지 않은 밤은 `/ai`에 그 날짜가 없고, 돌았는데 실패한 회사는 `status='Failed'` 행으로 남는다.
 Job의 끝은 늘 `audit_log(action='night_job_completed')` 한 줄이다 — 없으면 Job이 로그인조차 못 한 것이다.
+
+### 0015 재무 원장 — 코드보다 먼저 적용한다 (Phase 2-A)
+
+**0015를 적용하기 전에 Phase 2-A 코드를 live로 배포하지 않는다.** 대시보드가 `finance_kpis`에서
+`source / closed / fetched_at`을 읽는데, 그 칸은 0015가 만드는 뷰에만 있다. 순서가 뒤집히면 대시보드 전체가
+PostgREST 오류로 멈춘다(`column finance_kpis.source does not exist`).
+
+적용 직후의 모습: 원장이 비어 있으므로 `finance_kpis`는 옛 시트 480행을 **수기** 꼬리표로 내보낸다.
+대시보드 숫자는 그대로고 꼬리표만 붙는다. `/finance`는 '이 범위에 원장이 없습니다'를 보여 준다 — 정상이다.
+mock 원장은 live DB에 들어가지 않는다(동기화가 mock일 때 쓰지 않는다).
+
+### ECOUNT 동기화 계정 (한 번)
+
+`supabase/bootstrap/0006_integration.sql` 머리 주석의 절차를 따른다. 0005와 같은 모양이고 역할만 `Integration`이다.
+그 이메일/비밀번호를 Vercel `ECOUNT_SYNC_EMAIL` / `ECOUNT_SYNC_PASSWORD`에, 회사별 키를 `ECOUNT_COMPANIES`에 넣는다.
+
+동기화는 매일 23:00 KST 야간 브리핑 Cron 안에서 브리핑보다 먼저 돈다(`/api/cron/night-brief` 응답의 `ecount_sync`).
+단독 입구 `/api/cron/ecount-sync`는 Chairman 세션 POST 또는 CRON_SECRET GET으로 부른다.
+끝은 늘 `audit_log(action='ecount_sync_completed')` 한 줄이다. 회사별 결과(done / failed / unsupported)가 `after`에 있다.
 
 ---
 

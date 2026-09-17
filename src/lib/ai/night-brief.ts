@@ -1,17 +1,18 @@
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { orderProjects, projectClock } from '@/lib/chairman-project'
 import { formatEok } from '@/lib/format'
+import { financeBriefContext } from '@/lib/ledger/brief-context'
 import { createSupabaseRepository } from '@/lib/repository/supabase'
-import { requireSupabaseConfig } from '@/lib/supabase/config'
-import type { AiBriefItem, Business, IsoDate, NightJobType } from '@/types'
+import { signInServiceAccount } from '@/lib/supabase/service-account'
+import type { AiBriefItem, Business, FinanceLedger, IsoDate, NightJobType } from '@/types'
 
 import type { AiAdapter, AiBrief, ChairmanContext, CompanyContext } from './adapter'
 
 /**
  * 야간 브리핑 Job (Phase 3-A, CH-019 / CH-045~048).
  *
- *   AI Agent로 로그인 → 회사별 KPI·결정·알림·업무 읽기(RLS 통과)
+ *   AI Agent로 로그인 → 회사별 KPI·결정·알림·업무·원장(0015) 읽기(RLS 통과)
  *   → 회사별 summarizeCompany → generateDailyBrief로 압축 (회장 루틴 0014을 기준으로 함께 넘긴다)
  *   → ai_night_outputs INSERT (회사별 N건 + 그룹 1건) → audit_log(night_job_completed)
  *
@@ -58,32 +59,9 @@ function errorText(e: unknown): string {
   return (e instanceof Error ? e.message : String(e)).slice(0, 500)
 }
 
-/** Agent 전용 클라이언트. 쿠키를 쓰지 않고 세션을 저장하지 않는다 — 요청 하나 동안만 산다. */
-async function signInAgent(): Promise<{ sb: SupabaseClient; userId: string }> {
-  const email = process.env.AI_AGENT_EMAIL
-  const password = process.env.AI_AGENT_PASSWORD
-  if (!email || !password) throw new Error('AI_AGENT_EMAIL / AI_AGENT_PASSWORD 가 없다.')
-
-  const { url, publishableKey } = requireSupabaseConfig()
-  const sb = createClient(url, publishableKey, {
-    auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-  })
-  const { data, error } = await sb.auth.signInWithPassword({ email, password })
-  if (error || !data.user) throw new Error(`AI Agent 로그인 실패: ${error?.message ?? 'user 없음'}`)
-
-  // 로그인은 됐는데 AIAgent가 아니면 멈춘다. 회장 계정 비밀번호가 잘못 들어간 경우를 여기서 잡는다.
-  const { data: profile, error: pErr } = await sb
-    .from('user_profiles')
-    .select('role')
-    .eq('user_id', data.user.id)
-    .is('revoked_at', null)
-    .maybeSingle<{ role: string }>()
-  if (pErr || profile?.role !== 'AIAgent') {
-    await sb.auth.signOut()
-    throw new Error(`AI_AGENT 계정의 역할이 AIAgent가 아니다(${profile?.role ?? pErr?.message ?? '프로필 없음'}).`)
-  }
-
-  return { sb, userId: data.user.id }
+/** Agent 전용 클라이언트. 역할 확인까지 한다(lib/supabase/service-account.ts). */
+function signInAgent() {
+  return signInServiceAccount({ emailEnv: 'AI_AGENT_EMAIL', passwordEnv: 'AI_AGENT_PASSWORD', role: 'AIAgent' })
 }
 
 export async function runNightBrief(opts: {
@@ -194,7 +172,10 @@ export async function runNightBrief(opts: {
       const order = new Map(businesses.map((b, i) => [b.business_id, i]))
       briefs.sort((a, b) => (order.get(a.business_id) ?? 0) - (order.get(b.business_id) ?? 0))
       const chairman = await readChairmanContext(repo, run_date)
-      const brief = await opts.adapter.generateDailyBrief({ date: run_date, companies: briefs, failed, chairman })
+      const finance = snapshot?.ledger
+        ? financeBriefContext(snapshot.ledger, businesses.map((b) => b.business_id))
+        : null
+      const brief = await opts.adapter.generateDailyBrief({ date: run_date, companies: briefs, failed, chairman, finance })
       await write({ business_id: null, job_type: 'Daily Brief', status: 'Done', brief })
     } catch (e) {
       const msg = errorText(e)
@@ -283,7 +264,15 @@ async function readAll(repo: ReturnType<typeof createSupabaseRepository>) {
     repo.listDecisions(),
     repo.listAlerts(),
   ])
-  return { businesses, financeKpis, projects, tasks, decisions, alerts }
+  // 원장은 따로 읽는다. 0015가 아직 적용되지 않았거나 읽기가 실패해도 나머지 브리핑은 돈다 —
+  // 재무 해석이 빠진 브리핑이 브리핑이 없는 것보다 낫다. 대신 null로 넘겨 모델이 지어내지 않게 한다.
+  let ledger: FinanceLedger | null = null
+  try {
+    ledger = await repo.loadFinanceLedger()
+  } catch (e) {
+    console.error('[night-brief] ledger', errorText(e))
+  }
+  return { businesses, financeKpis, projects, tasks, decisions, alerts, ledger }
 }
 
 /** 모델에 넘길 한 회사치. 끝난 것은 뺀다 — 회장이 아침에 볼 것은 열려 있는 것이다. */
@@ -332,5 +321,6 @@ function companyContext(
     projects: projects
       .filter((p) => p.status !== 'Done')
       .map((p) => ({ project_id: p.project_id, name: p.name, status: p.status, progress_pct: p.progress_pct, deadline: p.deadline })),
+    finance: s.ledger ? financeBriefContext(s.ledger, [id]) : null,
   }
 }

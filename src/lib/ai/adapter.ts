@@ -1,3 +1,4 @@
+import type { FinanceBriefContext } from '@/lib/ledger/brief-context'
 import type { AiBriefItem, BusinessStatus, IsoDate, ProjectNote } from '@/types'
 
 /**
@@ -37,6 +38,11 @@ export interface CompanyContext {
     chairman_needed: boolean
   }[]
   projects: { project_id: string; name: string; status: string; progress_pct: number; deadline: string | null }[]
+  /**
+   * Phase 2-A 원장에서 만든 재무 해석(원가 드라이버 · 잠정-확정 차이 · Runway).
+   * 원장을 못 읽었으면(0015 적용 전, 권한 부족) null — 모델은 그때 재무 해석을 지어내지 않는다.
+   */
+  finance: FinanceBriefContext | null
 }
 
 /**
@@ -67,6 +73,8 @@ export interface DailyBriefInput {
   failed: { business_id: string; name: string }[]
   /** 읽지 못했으면 null. 그때 모델은 project_notes를 비운다. */
   chairman: ChairmanContext | null
+  /** 그룹 단순 합산의 재무 해석. 회사 요약을 묶을 때 그룹 Runway·공통 원가 드라이버의 근거다. 없으면 null */
+  finance: FinanceBriefContext | null
 }
 
 export interface AiAdapter {

@@ -12,7 +12,8 @@
     "db:local": "node scripts/local-db.mjs",
     "env:check": "node scripts/check-environment.mjs",
     "check:db-safety": "node scripts/check-db-safety.mjs",
-    "check:boundaries": "tsx scripts/check-data-boundaries.ts"
+    "check:boundaries": "tsx scripts/check-data-boundaries.ts",
+    "check:finance": "tsx scripts/check-finance-ledger.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",

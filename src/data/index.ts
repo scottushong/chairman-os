@@ -6,12 +6,12 @@ import type {
   BusinessStrategy,
   CriticalRisk,
   Decision,
-  FinanceKpi,
   MesRecord,
   MonthlyPriority,
   NextMilestone,
   Project,
   RndRecord,
+  SheetFinanceKpi,
   Task,
   TopGoal,
 } from '@/types'
@@ -34,7 +34,8 @@ import tasksJson from './tasks.json'
  */
 
 export const businesses = businessesJson as Business[]
-export const financeKpis = financeKpiJson as FinanceKpi[]
+/** 시트 원본. 출처 칸이 없어 화면으로 바로 나가지 않는다 — lib/ecount/mock.ts가 이걸로 전표를 만든다. */
+export const sheetFinanceKpis = financeKpiJson as SheetFinanceKpi[]
 export const projects = projectsJson as Project[]
 export const tasks = tasksJson as Task[]
 export const decisions = decisionsJson as Decision[]
