@@ -20,6 +20,7 @@
 --   2. 전표 입력        journal_entries(헤더), 차대 일치·마감 달·비활성 계정 검사, post_journal_entry()
 --                       꼬리표: 자체 장부 전표도 원장이다 — 마감 전 잠정, 마감 후 확정
 --   3. 월 마감          close_period() — 결산 스냅샷(closed) + 전표 라인 closed, 해제 없음
+--   4. 정정 전표        post_correction() — 당월에 역분개 + 정정분개, 원 전표 참조(corrects_id)
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -182,8 +183,16 @@ create table journal_entries (
   evidence_url text check (evidence_url is null or evidence_url ~* '^https?://'),  -- [제한] 증빙 링크. 파일은 사내 스토리지(CLAUDE.md)
   created_by   uuid not null default auth.uid(),                                   -- [제한]
   created_at   timestamptz not null default now(),
-  primary key (business_id, slip_no)
+  -- 정정 전표(4절). 원 전표를 가리키고, 역분개(reversal)인지 정정분개(restatement)인지 적는다.
+  corrects_id     text,                                                            -- [일반] 원 전표번호
+  correction_kind text check (correction_kind in ('reversal', 'restatement')),     -- [일반]
+  primary key (business_id, slip_no),
+  foreign key (business_id, corrects_id) references journal_entries (business_id, slip_no) on delete restrict,
+  constraint journal_entries_correction_pair check ((corrects_id is null) = (correction_kind is null))
 );
+-- 한 전표는 한 번만 역분개된다. 다시 고칠 것이 있으면 정정분개를 정정한다.
+create unique index journal_entries_one_reversal on journal_entries (business_id, corrects_id)
+  where correction_kind = 'reversal';
 comment on table journal_entries is
   '0016. 자체 장부 전표의 헤더. 라인은 journal_lines(source=manual). 고치지 않는다 — 정정 전표로 바로잡는다.';
 
@@ -222,9 +231,14 @@ begin
     raise exception using errcode = 'P0001', message = 'closed_period',
       detail = format('%s는 마감됐다(또는 그 뒤 달이 마감됐다). 당월에 정정 전표로 입력한다.', v_period);
   end if;
+  -- 역분개는 원 전표를 그대로 뒤집는다. 그 사이 계정이 비활성화됐어도 되돌릴 수 있어야 한다.
   if not exists (
     select 1 from accounts a
-     where a.business_id = new.business_id and a.account_code = new.account_code and a.active
+     where a.business_id = new.business_id and a.account_code = new.account_code
+       and (a.active or exists (
+         select 1 from journal_entries e
+          where e.business_id = new.business_id and e.slip_no = new.slip_no and e.correction_kind = 'reversal'
+       ))
   ) then
     raise exception using errcode = 'P0001', message = 'inactive_account',
       detail = format('계정 %s는 비활성이거나 없다.', new.account_code);
@@ -266,16 +280,17 @@ create constraint trigger journal_entries_balanced after insert on journal_entri
   for each row execute function journal_slip_balanced();
 
 /**
- * 전표 한 장을 넣는다. 감사 기록 + 헤더 + 라인이 한 트랜잭션이다.
+ * 헤더 + 라인. 감사 기록은 부르는 쪽(post_journal_entry / post_correction)이 남긴다.
  * p_lines: [{"account_code":"1030","side":"debit","amount":1000000,"memo":"선택"}, ...]
- * 전표번호를 돌려준다.
  */
-create or replace function post_journal_entry(
-  p_business_id  text,
-  p_entry_date   date,
-  p_memo         text,
-  p_evidence_url text,
-  p_lines        jsonb
+create or replace function journal_entry_insert(
+  p_business_id     text,
+  p_entry_date      date,
+  p_memo            text,
+  p_evidence_url    text,
+  p_lines           jsonb,
+  p_corrects_id     text,
+  p_correction_kind text
 ) returns text
 language plpgsql security invoker set search_path = public as $fn$
 declare
@@ -288,13 +303,9 @@ begin
   end if;
   v_slip := 'M' || to_char(p_entry_date, 'YYMM') || '-' || lpad(nextval('journal_slip_seq')::text, 6, '0');
 
-  insert into audit_log (action, entity_table, entity_id, business_id, actor_user_id, actor_role, after, note)
-  values ('create', 'journal_entries', v_slip, p_business_id, auth.uid(), auth_role()::text,
-          jsonb_build_object('entry_date', p_entry_date, 'memo', p_memo, 'evidence_url', p_evidence_url, 'lines', p_lines),
-          '전표 입력');
-
-  insert into journal_entries (business_id, slip_no, entry_date, memo, evidence_url)
-  values (p_business_id, v_slip, p_entry_date, trim(p_memo), nullif(trim(coalesce(p_evidence_url, '')), ''));
+  insert into journal_entries (business_id, slip_no, entry_date, memo, evidence_url, corrects_id, correction_kind)
+  values (p_business_id, v_slip, p_entry_date, trim(p_memo), nullif(trim(coalesce(p_evidence_url, '')), ''),
+          p_corrects_id, p_correction_kind);
 
   for v_line in select value from jsonb_array_elements(p_lines) loop
     v_no := v_no + 1;
@@ -303,6 +314,29 @@ begin
             (v_line->>'side')::dr_cr, v_slip, v_no, coalesce(nullif(trim(v_line->>'memo'), ''), trim(p_memo)),
             'manual', now());
   end loop;
+  return v_slip;
+end;
+$fn$;
+
+/**
+ * 전표 한 장을 넣는다. 감사 기록 + 헤더 + 라인이 한 트랜잭션이다. 전표번호를 돌려준다.
+ */
+create or replace function post_journal_entry(
+  p_business_id  text,
+  p_entry_date   date,
+  p_memo         text,
+  p_evidence_url text,
+  p_lines        jsonb
+) returns text
+language plpgsql security invoker set search_path = public as $fn$
+declare
+  v_slip text;
+begin
+  v_slip := journal_entry_insert(p_business_id, p_entry_date, p_memo, p_evidence_url, p_lines, null, null);
+  insert into audit_log (action, entity_table, entity_id, business_id, actor_user_id, actor_role, after, note)
+  values ('create', 'journal_entries', v_slip, p_business_id, auth.uid(), auth_role()::text,
+          jsonb_build_object('entry_date', p_entry_date, 'memo', p_memo, 'evidence_url', p_evidence_url, 'lines', p_lines),
+          '전표 입력');
   return v_slip;
 end;
 $fn$;
@@ -599,5 +633,85 @@ begin
    where business_id = p_business_id and to_char(entry_date, 'YYYY-MM') = p_period and not closed;
 
   return v_n;
+end;
+$fn$;
+
+-- ---------------------------------------------------------------------
+-- 4. 정정 전표
+--
+--   마감된 달의 전표는 고치지 않는다. 대신 당월(열린 달)에 두 장을 넣는다.
+--     역분개   원 전표의 라인을 차대만 뒤집어 그대로 — 원 전표의 효과를 0으로 만든다
+--     정정분개 바로잡은 내용. 라인을 비우면 넣지 않는다(원 전표를 취소만 하는 경우)
+--   두 장 다 corrects_id로 원 전표를 가리킨다. 원 전표 자체는 그대로 남는다 — 무엇을 왜 바꿨는지가 장부에 선다.
+--
+--   post_correction()이 지키는 것
+--     - 원 전표가 자체 장부 전표여야 한다(ECOUNT 전표는 원천에서 고친다)   correction_target_missing
+--     - 역분개를 다시 정정하지 않는다                                      cannot_correct_reversal
+--     - 한 전표는 한 번만 정정한다(두 번째는 정정분개를 정정한다)         already_corrected
+--     - 정정 일자는 원 전표 일자보다 앞설 수 없다                          correction_before_original
+--     - 정정 일자의 달이 열려 있어야 한다                                  closed_period (2절 트리거)
+--   원 전표가 열린 달에 있어도 같은 길로 고친다 — 전표는 어느 달에서도 고치지 않는다.
+-- ---------------------------------------------------------------------
+
+/** 역분개 + 정정분개 + 감사 기록. {"reversal": 전표번호, "restatement": 전표번호 | null}을 돌려준다. */
+create or replace function post_correction(
+  p_business_id  text,
+  p_corrects_id  text,
+  p_entry_date   date,
+  p_memo         text,
+  p_evidence_url text,
+  p_lines        jsonb
+) returns jsonb
+language plpgsql security invoker set search_path = public as $fn$
+declare
+  v_orig        journal_entries;
+  v_reversal    text;
+  v_restatement text;
+  v_flipped     jsonb;
+begin
+  select * into v_orig from journal_entries where business_id = p_business_id and slip_no = p_corrects_id;
+  if not found then
+    raise exception using errcode = 'P0001', message = 'correction_target_missing',
+      detail = format('자체 장부 전표 %s가 없다(또는 읽을 권한이 없다).', p_corrects_id);
+  end if;
+  if v_orig.correction_kind = 'reversal' then
+    raise exception using errcode = 'P0001', message = 'cannot_correct_reversal';
+  end if;
+  if exists (
+    select 1 from journal_entries
+     where business_id = p_business_id and corrects_id = p_corrects_id and correction_kind = 'reversal'
+  ) then
+    raise exception using errcode = 'P0001', message = 'already_corrected',
+      detail = format('%s는 이미 정정됐다. 정정분개를 정정한다.', p_corrects_id);
+  end if;
+  if p_entry_date < v_orig.entry_date then
+    raise exception using errcode = 'P0001', message = 'correction_before_original';
+  end if;
+
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'account_code', account_code,
+           'side', case when side = 'debit' then 'credit' else 'debit' end,
+           'amount', amount,
+           'memo', memo)
+         order by line_no), '[]'::jsonb)
+    into v_flipped
+    from journal_lines
+   where business_id = p_business_id and slip_no = p_corrects_id;
+
+  insert into audit_log (action, entity_table, entity_id, business_id, actor_user_id, actor_role, before, after, note)
+  values ('create', 'journal_entries', p_corrects_id, p_business_id, auth.uid(), auth_role()::text,
+          jsonb_build_object('entry_date', v_orig.entry_date, 'memo', v_orig.memo, 'lines', v_flipped),
+          jsonb_build_object('entry_date', p_entry_date, 'memo', p_memo, 'evidence_url', p_evidence_url, 'lines', p_lines),
+          format('정정 전표 — 원 전표 %s', p_corrects_id));
+
+  v_reversal := journal_entry_insert(
+    p_business_id, p_entry_date, '[역분개] ' || v_orig.memo, v_orig.evidence_url, v_flipped, p_corrects_id, 'reversal');
+
+  if jsonb_typeof(p_lines) = 'array' and jsonb_array_length(p_lines) > 0 then
+    v_restatement := journal_entry_insert(
+      p_business_id, p_entry_date, p_memo, p_evidence_url, p_lines, p_corrects_id, 'restatement');
+  end if;
+
+  return jsonb_build_object('reversal', v_reversal, 'restatement', v_restatement);
 end;
 $fn$;

@@ -5,7 +5,18 @@ import { revalidatePath } from 'next/cache'
 import { currentUser } from '@/lib/auth/session'
 import { parseAccountCode, parseAccountFields } from '@/lib/ledger/accounts'
 import { CLOSE_PROBLEM_KO, type CloseProblem } from '@/lib/ledger/closing'
-import { CLOSED_PERIOD_MESSAGE, entryProblem, type DraftLine, type NewJournalEntry } from '@/lib/ledger/journal'
+import { periodOfDate } from '@/lib/ledger/basis'
+import {
+  CLOSED_PERIOD_MESSAGE,
+  CORRECTION_PROBLEM_KO,
+  correctionProblem,
+  entryProblem,
+  isPeriodLocked,
+  type CorrectionProblem,
+  type DraftLine,
+  type NewCorrection,
+  type NewJournalEntry,
+} from '@/lib/ledger/journal'
 import { DUPLICATE_ACCOUNT_CODE, getRepository } from '@/lib/repository'
 import type { Account } from '@/types'
 
@@ -156,6 +167,8 @@ export interface JournalState {
 /** DB·dummy가 거부한 전표를 사람 말로. 낱말은 0016의 raise exception message다. */
 function journalFailure(e: unknown): string {
   const message = e instanceof Error ? e.message : ''
+  const word = (Object.keys(CORRECTION_PROBLEM_KO) as CorrectionProblem[]).find((w) => message.includes(w))
+  if (word) return CORRECTION_PROBLEM_KO[word]
   if (/closed_period/.test(message)) return CLOSED_PERIOD_MESSAGE
   if (/unbalanced_slip/.test(message)) return '차변 합과 대변 합이 같지 않아 저장하지 않았습니다.'
   if (/inactive_account/.test(message)) return '비활성이거나 없는 계정이 들어 있습니다. 계정과목을 확인하세요.'
@@ -244,5 +257,61 @@ export async function closePeriod(input: { businessId: unknown; period: unknown 
     if (word) return { error: CLOSE_PROBLEM_KO[word] }
     if (/42501|PGRST301|row-level security/.test(message)) return { error: CLOSE_PROBLEM_KO.close_forbidden }
     return { error: '마감하지 못했습니다. 잠시 후 다시 시도하세요.' }
+  }
+}
+
+export interface CorrectionState {
+  error?: string
+  reversal?: string
+  restatement?: string | null
+}
+
+/**
+ * 블록 4 — 정정 전표. 원 전표를 당월에 역분개하고, 라인이 있으면 정정분개를 넣는다.
+ * 라인을 전부 비우면 역분개만 한다(원 전표 취소).
+ */
+export async function postCorrection(input: {
+  businessId: unknown
+  correctsId: unknown
+  entryDate: unknown
+  memo: unknown
+  evidenceUrl: unknown
+  lines: unknown
+}): Promise<CorrectionState> {
+  const lines = parseLines(input.lines)
+  if (!lines) return { error: '라인을 읽을 수 없습니다.' }
+  const correction: NewCorrection = {
+    business_id: text(input.businessId),
+    corrects_id: text(input.correctsId),
+    entry_date: text(input.entryDate),
+    memo: text(input.memo),
+    evidence_url: text(input.evidenceUrl) || null,
+    lines,
+  }
+  if (!correction.business_id || !correction.corrects_id) return { error: '정정할 전표를 알 수 없습니다.' }
+
+  const user = await currentUser()
+  if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  try {
+    const repo = await getRepository()
+    const ledger = await repo.loadFinanceLedger()
+    const problem = correctionProblem(ledger, correction.business_id, correction.corrects_id, correction.entry_date)
+    if (problem) return { error: CORRECTION_PROBLEM_KO[problem] }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(correction.entry_date)) return { error: '정정 일자가 올바르지 않습니다.' }
+    if (isPeriodLocked(ledger, correction.business_id, periodOfDate(correction.entry_date))) {
+      return { error: '정정 일자가 마감된 달입니다. 열린 달(당월)의 날짜를 고르세요.' }
+    }
+    if (lines.length > 0) {
+      const restatement = entryProblem(correction, ledger)
+      if (restatement) return { error: restatement }
+    }
+    const result = await repo.postCorrection(correction, { user_id: user.user_id, role: user.role })
+    revalidateBooks(correction.business_id)
+    revalidatePath('/')
+    revalidatePath('/finance')
+    return result
+  } catch (e) {
+    console.error('[postCorrection]', e)
+    return { error: journalFailure(e) }
   }
 }

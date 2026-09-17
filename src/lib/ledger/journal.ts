@@ -116,6 +116,56 @@ export function entryProblem(
   return null
 }
 
+/** 정정 전표 한 벌(블록 4). lines가 비면 역분개만 한다 — 원 전표를 취소하는 경우. */
+export interface NewCorrection {
+  business_id: BusinessId
+  /** 원 전표번호 */
+  corrects_id: string
+  entry_date: IsoDate
+  memo: string
+  evidence_url: string | null
+  lines: DraftLine[]
+}
+
+export interface CorrectionResult {
+  reversal: string
+  restatement: string | null
+}
+
+/** 0016 post_correction()이 던지는 낱말 → 사람 말. dummy도 같은 낱말로 던진다. */
+export const CORRECTION_PROBLEM_KO = {
+  correction_target_missing: '정정할 자체 장부 전표를 찾지 못했습니다. (ECOUNT 전표는 원천에서 고칩니다)',
+  cannot_correct_reversal: '역분개 전표는 정정하지 않습니다. 원 전표나 정정분개를 정정하세요.',
+  already_corrected: '이미 정정된 전표입니다. 정정분개를 정정하세요.',
+  correction_before_original: '정정 일자는 원 전표 일자보다 앞설 수 없습니다.',
+} as const
+export type CorrectionProblem = keyof typeof CORRECTION_PROBLEM_KO
+
+/** 원 전표를 정정할 수 있나(권한 제외). 안 되면 낱말, 되면 null. 정정분개 자체의 규칙은 entryProblem이 본다. */
+export function correctionProblem(
+  ledger: FinanceLedger,
+  businessId: BusinessId,
+  correctsId: string,
+  entryDate: IsoDate,
+): CorrectionProblem | null {
+  const orig = ledger.entries.find((e) => e.business_id === businessId && e.slip_no === correctsId)
+  if (!orig) return 'correction_target_missing'
+  if (orig.correction_kind === 'reversal') return 'cannot_correct_reversal'
+  if (ledger.entries.some((e) => e.business_id === businessId && e.corrects_id === correctsId && e.correction_kind === 'reversal')) {
+    return 'already_corrected'
+  }
+  if (entryDate < orig.entry_date) return 'correction_before_original'
+  return null
+}
+
+/** 원 전표의 라인을 차대만 뒤집는다. 0016 post_correction()의 역분개와 같다. */
+export function reversalLines(ledger: FinanceLedger, businessId: BusinessId, slipNo: string): DraftLine[] {
+  return ledger.journal
+    .filter((j) => j.business_id === businessId && j.slip_no === slipNo)
+    .sort((a, b) => a.line_no - b.line_no)
+    .map((j) => ({ account_code: j.account_code, side: j.side === 'debit' ? 'credit' : 'debit', amount: j.amount, memo: j.memo }))
+}
+
 /** 화면 한 줄 — 전표 한 장. ECOUNT·mock 전표는 헤더가 없어 첫 라인의 적요를 쓴다. */
 export interface SlipView {
   slip_no: string
@@ -129,6 +179,10 @@ export interface SlipView {
   lines: JournalLine[]
   debit: number
   credit: number
+  /** 이 전표가 정정 전표면 무엇을 고쳤나 */
+  correction: { kind: 'reversal' | 'restatement'; corrects_id: string } | null
+  /** 이 전표를 고친 전표들(역분개·정정분개). 비어 있으면 정정된 적 없음 */
+  corrected_by: string[]
 }
 
 /** 한 회사 한 달의 전표. 날짜 → 전표번호 순. */
@@ -159,6 +213,11 @@ export function slipsOf(ledger: FinanceLedger, businessId: BusinessId, period: P
         lines: sorted,
         debit,
         credit,
+        correction: h?.corrects_id && h.correction_kind ? { kind: h.correction_kind, corrects_id: h.corrects_id } : null,
+        corrected_by: ledger.entries
+          .filter((e) => e.business_id === businessId && e.corrects_id === slip_no)
+          .map((e) => e.slip_no)
+          .sort(),
       }
     })
     .sort((a, b) => a.entry_date.localeCompare(b.entry_date) || a.slip_no.localeCompare(b.slip_no))

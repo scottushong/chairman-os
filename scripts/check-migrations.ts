@@ -366,6 +366,71 @@ async function books(db: Db, as: As) {
   await assert.rejects(as(UID.chairman, close('biz_close', '2020-02')), /earlier_period_open/, '앞 달부터 순서대로')
   assert.equal(await as(UID.chairman, close('biz_close', '2020-01')), 2, '첫 달은 마감된다')
   await assert.rejects(as(UID.chairman, close('biz_close', '2019-12')), /nothing_to_close|already_closed/, '전표 없는 달')
+
+  // 블록 4 — 정정 전표. 8월에 넣은 전표를 8월 마감 뒤 9월에 고친다.
+  const slipOf = `(select slip_no from journal_entries where business_id = 'biz_vana' and correction_kind is null order by created_at limit 1)`
+  const correct = (date: string, lines: object[]) =>
+    `select post_correction('biz_vana', ${slipOf}, '${date}', '[정정] 금액 수정', null, '${JSON.stringify(lines)}'::jsonb)`
+  const corrected = `${closed} ${correct('2026-09-05', sale(1_200_000))};`
+  assert.equal(
+    await as(UID.chairman, `select count(*)::int from journal_entries where business_id = 'biz_vana' and corrects_id is not null`, corrected),
+    2,
+    '역분개 + 정정분개 두 장',
+  )
+  assert.equal(
+    await as(
+      UID.chairman,
+      `select count(*)::int from journal_lines j join journal_entries e using (business_id, slip_no)
+        where e.correction_kind = 'reversal' and ((j.account_code = '1010' and j.side = 'credit') or (j.account_code = '4010' and j.side = 'debit'))`,
+      corrected,
+    ),
+    2,
+    '역분개는 원 전표의 차대를 뒤집는다',
+  )
+  assert.equal(
+    await as(UID.chairman, `select (-sum(case when side = 'debit' then amount else -amount end))::float8 from journal_lines where business_id = 'biz_vana' and account_code = '4010' and entry_date >= '2026-09-01'`, corrected),
+    200_000,
+    '9월 순효과 = 정정분개 − 원 전표',
+  )
+  assert.equal(
+    await as(UID.chairman, `select count(*)::int from closings where business_id = 'biz_vana' and period = '2026-08'`, corrected),
+    await as(UID.chairman, `select count(*)::int from closings where business_id = 'biz_vana' and period = '2026-08'`, closed),
+    '마감된 8월은 그대로',
+  )
+  assert.equal(
+    await as(UID.chairman, `select count(*)::int from audit_log where note like '정정 전표%'`, corrected),
+    1,
+    '정정은 audit_log에 남는다',
+  )
+  await assert.rejects(as(UID.chairman, correct('2026-09-06', sale(1000)), corrected), /already_corrected/, '한 전표는 한 번만 정정')
+  await assert.rejects(
+    as(UID.chairman, `select post_correction('biz_vana', (select slip_no from journal_entries where correction_kind = 'reversal' limit 1), '2026-09-06', 'x', null, '[]'::jsonb)`, corrected),
+    /cannot_correct_reversal/,
+    '역분개는 정정하지 않는다',
+  )
+  await assert.rejects(as(UID.chairman, correct('2026-08-25', sale(1000)), closed), /closed_period/, '정정은 열린 달에')
+  await assert.rejects(as(UID.chairman, correct('2026-08-19', sale(1000)), posted), /correction_before_original/, '원 전표보다 앞선 날 불가')
+  await assert.rejects(as(UID.chairman, correct('2026-09-05', [{ account_code: '1010', side: 'debit', amount: 5 }]), closed), /unbalanced_slip/, '정정분개도 차대 일치')
+  assert.equal(
+    await as(UID.chairman, `select count(*)::int from journal_entries where corrects_id is not null`, `${closed} ${correct('2026-09-05', [])};`),
+    1,
+    '라인을 비우면 역분개만(취소)',
+  )
+  await assert.rejects(
+    as(UID.chairman, `select post_correction('biz_vana', 'NOPE', '2026-09-05', 'x', null, '[]'::jsonb)`),
+    /correction_target_missing/,
+    'ECOUNT·없는 전표는 정정 대상이 아니다',
+  )
+
+  // 준비(setup)도 그 역할로 돈다 — Member는 전표를 못 넣으니, Chairman이 넣은 전표를 커밋해 두고 Member가 겨눈다.
+  // Member는 VANA 전표를 읽지 못해 대상조차 찾지 못한다(없는 것과 못 보는 것을 구분하지 않는다). 이 검사가 마지막이다.
+  await db.exec(`begin; select set_config('request.jwt.claim.sub', '${UID.chairman}', true); set local role authenticated; ${posted} commit;`)
+  await assert.rejects(
+    as(UID.member, `select post_correction('biz_vana', (select slip_no from journal_entries limit 1), '2026-09-05', 'x', null, '[]'::jsonb)`),
+    /correction_target_missing/,
+    'Member는 정정 대상을 보지도 못한다',
+  )
+  assert.equal(await as(UID.chairman, `select count(*)::int from journal_entries`), 1, '(검사 준비) Chairman에게는 보인다')
 }
 
 async function main() {

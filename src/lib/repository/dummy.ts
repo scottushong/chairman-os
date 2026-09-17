@@ -150,6 +150,7 @@ export const dummyRepository: ChairmanRepository = {
   applyStandardChart: books.applyStandardChart,
   postJournalEntry: books.postJournalEntry,
   closePeriod: books.closePeriod,
+  postCorrection: books.postCorrection,
 
   async listKeymen() {
     return memoryKeymen.map((k) => ({ ...k }))

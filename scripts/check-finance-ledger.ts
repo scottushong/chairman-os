@@ -208,6 +208,28 @@ async function books() {
     closedLedger.journal.filter((j) => j.business_id === 'biz_vana' && j.entry_date.startsWith('2026-08')).every((j) => j.closed),
     '그 달 전표 라인이 전부 closed',
   )
+
+  // 블록 4 — 정정 전표. 마감된 8월 전표를 9월에 1,000,000 → 1,200,000으로 고친다.
+  const fix = (entry_date: string, lines: ReturnType<typeof sale>['lines']) => ({
+    business_id: 'biz_vana', corrects_id: slip, entry_date, memo: '[정정] 금액', evidence_url: null, lines,
+  })
+  await assert.rejects(repo.postCorrection(fix('2026-08-25', sale('x', [1, 1]).lines), actor), /closed_period/, '정정은 열린 달에')
+  await assert.rejects(repo.postCorrection(fix('2026-08-19', sale('x', [1, 1]).lines), actor), /closed_period|correction_before_original/)
+  const result = await repo.postCorrection(fix('2026-09-05', sale('x', [1_200_000, 1_200_000]).lines), actor)
+  assert.ok(result.reversal && result.restatement)
+  const corrected = await repo.loadFinanceLedger()
+  const reversal = corrected.journal.filter((j) => j.slip_no === result.reversal)
+  assert.deepEqual(reversal.map((j) => [j.account_code, j.side, j.amount]), [['1030', 'credit', 1_000_000], ['4010', 'debit', 1_000_000]], '역분개는 차대를 뒤집는다')
+  const sep = (await repo.listFinanceKpis()).find((k) => k.business_id === 'biz_vana' && k.period === '2026-09' && k.metric === 'Revenue')!
+  assert.equal(sep.value, 200_000, '9월 매출 = 정정분개 − 역분개')
+  assert.equal(sep.basis, 'provisional')
+  const augAfter = (await repo.listFinanceKpis()).filter((k) => k.business_id === 'biz_vana' && k.period === '2026-08')
+  assert.deepEqual(augAfter.map((k) => [k.metric, k.value, k.basis]), kpisAfter.map((k) => [k.metric, k.value, k.basis]), '마감된 8월은 그대로')
+  await assert.rejects(repo.postCorrection(fix('2026-09-06', sale('x', [1, 1]).lines), actor), /already_corrected/)
+  await assert.rejects(
+    repo.postCorrection({ ...fix('2026-09-06', []), corrects_id: result.reversal }, actor),
+    /cannot_correct_reversal/,
+  )
 }
 
 async function main() {

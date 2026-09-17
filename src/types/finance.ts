@@ -264,6 +264,10 @@ export interface JournalEntry {
   evidence_url: string | null
   created_by: string
   created_at: IsoDateTime
+  /** 정정 전표면 원 전표번호(0016 4절). 원 전표·보통 전표는 null */
+  corrects_id: string | null
+  /** reversal = 원 전표를 뒤집은 역분개, restatement = 바로잡은 정정분개 */
+  correction_kind: 'reversal' | 'restatement' | null
 }
 
 /** 재무 화면 한 판이 읽는 원천 전부. 화면이 원천을 따로따로 부르면 live에서 왕복이 여섯 번 생긴다. */

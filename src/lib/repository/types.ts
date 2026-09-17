@@ -1,6 +1,6 @@
 import type { EntityAuditRecord } from '@/lib/audit-log'
 import type { AccountFields } from '@/lib/ledger/accounts'
-import type { NewJournalEntry } from '@/lib/ledger/journal'
+import type { CorrectionResult, NewCorrection, NewJournalEntry } from '@/lib/ledger/journal'
 import type { DecisionAuditRecord, DecisionAction } from '@/lib/decision-log'
 import type { SearchHit } from '@/lib/search'
 import type {
@@ -78,6 +78,12 @@ export interface ChairmanRepository {
    * 해제는 없다. 거부 사유는 lib/ledger/closing.ts CLOSE_PROBLEM_KO의 낱말로 온다.
    */
   closePeriod(businessId: string, period: string, actor: AuditActor): Promise<number>
+
+  /**
+   * 블록 4 — 정정 전표. 원 전표를 당월에 역분개하고, lines가 있으면 정정분개를 넣는다(0016 post_correction).
+   * 원 전표는 그대로 남는다. 거부 사유는 lib/ledger/journal.ts CORRECTION_PROBLEM_KO의 낱말로 온다.
+   */
+  postCorrection(input: NewCorrection, actor: AuditActor): Promise<CorrectionResult>
   listProjects(): Promise<Project[]>
   listTasks(): Promise<Task[]>
   listDecisions(): Promise<Decision[]>

@@ -45,6 +45,16 @@ export function SlipList({
                   <span className="font-semibold">{s.memo || '(적요 없음)'}</span>
                   <BasisTag basis={s.closed ? 'confirmed' : 'provisional'} />
                   <span className="rounded border border-line px-1 text-[9.5px] text-ink-muted">{s.own ? '자체' : 'ECOUNT'}</span>
+                  {s.correction ? (
+                    <span className="rounded border border-warning/40 px-1 text-[9.5px] text-warning">
+                      {s.correction.kind === 'reversal' ? '역분개' : '정정'} ← <span className="tnum">{s.correction.corrects_id}</span>
+                    </span>
+                  ) : null}
+                  {s.corrected_by.length > 0 ? (
+                    <span className="rounded border border-line px-1 text-[9.5px] text-ink-muted">
+                      정정됨 → <span className="tnum">{s.corrected_by.join(', ')}</span>
+                    </span>
+                  ) : null}
                   {s.evidence_url ? (
                     <a
                       href={s.evidence_url}

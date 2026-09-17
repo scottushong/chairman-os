@@ -1,9 +1,10 @@
 'use client'
 
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
-import { postJournalEntry } from '@/app/actions/books'
+import { postCorrection, postJournalEntry } from '@/app/actions/books'
 import { Icon } from '@/components/ui/icon'
 import { CLOSED_PERIOD_MESSAGE } from '@/lib/ledger/journal'
 import { JOURNAL_TEMPLATES, type JournalTemplate } from '@/lib/ledger/journal-templates'
@@ -17,6 +18,9 @@ import { ACCOUNT_SECTION, ACCOUNT_SECTION_LABEL_KO, type AccountSection } from '
  *
  * 마감된 달(또는 그 이전) 날짜를 고르면 저장 대신 '정정 전표로 입력' 안내가 선다.
  * 그 판정은 화면 안내다. 실제로 막는 것은 DB 트리거(closed_period)다.
+ *
+ * 정정 모드(블록 4, correcting): 원 전표의 라인이 채워진 채로 열린다. 저장하면 당월에
+ *   ① 원 전표를 뒤집은 역분개 ② 여기서 고친 정정분개 두 장이 들어간다. 라인을 전부 비우면 ①만(원 전표 취소).
  */
 
 export interface FormAccount {
@@ -47,11 +51,22 @@ function withCommas(value: string): string {
   return digits ? Number(digits).toLocaleString('ko-KR') : ''
 }
 
+export interface CorrectingSlip {
+  slip_no: string
+  entry_date: string
+  memo: string
+  evidence_url: string | null
+  lines: { account_code: string; side: 'debit' | 'credit'; amount: number }[]
+  /** 정정을 마치거나 그만두면 돌아갈 주소 */
+  doneHref: string
+}
+
 export function JournalForm({
   businessId,
   accounts,
   lockedThrough,
   defaultDate,
+  correcting,
 }: {
   businessId: string
   /** 사용 중인 계정만 */
@@ -59,12 +74,21 @@ export function JournalForm({
   /** 마지막 마감 달. 이 달과 그 이전은 입력할 수 없다 */
   lockedThrough: string | null
   defaultDate: string
+  correcting?: CorrectingSlip
 }) {
   const router = useRouter()
   const [date, setDate] = useState(defaultDate)
-  const [memo, setMemo] = useState('')
-  const [evidenceUrl, setEvidenceUrl] = useState('')
-  const [rows, setRows] = useState<Row[]>([EMPTY_ROW, EMPTY_ROW])
+  const [memo, setMemo] = useState(correcting ? `[정정] ${correcting.memo}` : '')
+  const [evidenceUrl, setEvidenceUrl] = useState(correcting?.evidence_url ?? '')
+  const [rows, setRows] = useState<Row[]>(
+    correcting
+      ? correcting.lines.map((l) => ({
+          account_code: l.account_code,
+          debit: l.side === 'debit' ? l.amount.toLocaleString('ko-KR') : '',
+          credit: l.side === 'credit' ? l.amount.toLocaleString('ko-KR') : '',
+        }))
+      : [EMPTY_ROW, EMPTY_ROW],
+  )
   const [templateAmount, setTemplateAmount] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -75,6 +99,8 @@ export function JournalForm({
   const credit = rows.reduce((s, r) => s + won(r.credit), 0)
   const filled = rows.filter((r) => r.account_code || r.debit || r.credit)
   const balanced = debit > 0 && debit === credit
+  /** 정정 모드에서 라인을 전부 비웠다 — 역분개만(원 전표 취소) */
+  const cancelOnly = correcting !== undefined && filled.length === 0
   const locked = lockedThrough !== null && date.slice(0, 7) <= lockedThrough
   const bothSides = filled.some((r) => won(r.debit) > 0 && won(r.credit) > 0)
 
@@ -105,17 +131,30 @@ export function JournalForm({
       return
     }
     setBusy(true)
-    const result = await postJournalEntry({
-      businessId,
-      entryDate: date,
-      memo,
-      evidenceUrl,
-      lines: filled.map((r) => ({
-        account_code: r.account_code,
-        side: won(r.debit) > 0 ? 'debit' : 'credit',
-        amount: String(won(r.debit) > 0 ? won(r.debit) : won(r.credit)),
-      })),
-    })
+    const lines = filled.map((r) => ({
+      account_code: r.account_code,
+      side: won(r.debit) > 0 ? 'debit' : 'credit',
+      amount: String(won(r.debit) > 0 ? won(r.debit) : won(r.credit)),
+    }))
+    if (correcting) {
+      const result = await postCorrection({
+        businessId,
+        correctsId: correcting.slip_no,
+        entryDate: date,
+        memo,
+        evidenceUrl,
+        lines,
+      })
+      setBusy(false)
+      if (result.error || !result.reversal) {
+        setError(result.error ?? '정정하지 못했습니다.')
+        return
+      }
+      router.push(correcting.doneHref)
+      router.refresh()
+      return
+    }
+    const result = await postJournalEntry({ businessId, entryDate: date, memo, evidenceUrl, lines })
     setBusy(false)
     if (result.error || !result.slipNo) {
       setError(result.error ?? '저장하지 못했습니다.')
@@ -139,14 +178,28 @@ export function JournalForm({
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="flex items-center gap-1.5 text-[13px] font-semibold">
           <Icon name="pencil" className="size-4 text-ink-dim" />
-          전표 입력
+          {correcting ? (
+            <>
+              정정 전표 — 원 전표 <span className="tnum">{correcting.slip_no}</span>
+              <span className="text-[11px] font-normal text-ink-muted tnum">({correcting.entry_date})</span>
+            </>
+          ) : (
+            '전표 입력'
+          )}
         </h2>
         <p className="text-[10.5px] text-ink-muted">
           {lockedThrough ? `${lockedThrough.replace('-', '년 ')}월까지 마감 — 그 이전 날짜는 입력할 수 없습니다` : '마감된 달 없음'}
         </p>
       </div>
 
-      <div className="mt-2.5 flex flex-wrap items-end gap-1.5">
+      {correcting ? (
+        <p className="mt-2 rounded-md border border-line-soft bg-raised/60 px-2.5 py-1.5 text-[11.5px] text-ink-dim">
+          원 전표는 고치지 않습니다. 저장하면 이 날짜에 ① 원 전표를 뒤집은 <b>역분개</b>와 ② 아래 내용의{' '}
+          <b>정정분개</b>가 들어갑니다. 라인을 모두 비우면 역분개만 넣어 원 전표를 취소합니다.
+        </p>
+      ) : null}
+
+      <div className={`mt-2.5 flex flex-wrap items-end gap-1.5 ${correcting ? 'hidden' : ''}`}>
         <label className="text-[10.5px] text-ink-muted">
           템플릿 금액
           <input
@@ -291,15 +344,22 @@ export function JournalForm({
         <button
           type="button"
           onClick={submit}
-          disabled={busy || !balanced || locked}
+          disabled={busy || locked || !(balanced || cancelOnly)}
           className="rounded bg-accent px-3 py-1.5 text-[12px] font-semibold text-ink disabled:opacity-40"
         >
-          {busy ? '저장 중…' : '전표 저장'}
+          {busy ? '저장 중…' : correcting ? (cancelOnly ? '역분개만 저장 (취소)' : '정정 전표 저장') : '전표 저장'}
         </button>
+        {correcting ? (
+          <Link href={correcting.doneHref} className="rounded px-2 py-1.5 text-[11.5px] text-ink-muted hover:text-ink">
+            정정 그만두기
+          </Link>
+        ) : null}
         {locked ? (
           <span role="alert" className="text-[11.5px] text-critical">
             {CLOSED_PERIOD_MESSAGE}
           </span>
+        ) : cancelOnly ? (
+          <span className="text-[11.5px] text-ink-dim">라인 없음 — 원 전표를 역분개로 취소합니다.</span>
         ) : debit === 0 && credit === 0 ? (
           <span className="text-[11.5px] text-ink-muted">금액을 입력하세요.</span>
         ) : balanced ? (

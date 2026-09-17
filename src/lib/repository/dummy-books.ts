@@ -3,7 +3,18 @@ import { loadMockLedger } from '@/lib/ecount/mock-ledger'
 import { STANDARD_CHART, STANDARD_CHART_BUSINESSES, type StandardAccount } from '@/lib/ledger/standard-chart'
 import { periodOfDate } from '@/lib/ledger/basis'
 import { closeProblem, closingRows } from '@/lib/ledger/closing'
-import { CLOSED_PERIOD_MESSAGE, entryProblem, slipNumber, todayKst, type NewJournalEntry } from '@/lib/ledger/journal'
+import {
+  CLOSED_PERIOD_MESSAGE,
+  correctionProblem,
+  entryProblem,
+  isPeriodLocked,
+  reversalLines,
+  slipNumber,
+  todayKst,
+  type CorrectionResult,
+  type NewCorrection,
+  type NewJournalEntry,
+} from '@/lib/ledger/journal'
 import type { Account, Closing, FinanceLedger, JournalEntry, JournalLine } from '@/types'
 
 import { DUPLICATE_ACCOUNT_CODE, type AccountPatch, type AuditActor, type NewAccount } from './types'
@@ -138,7 +149,17 @@ export async function postJournalEntry(input: NewJournalEntry, actor: AuditActor
   const problem = entryProblem(input, ledger)
   if (problem === CLOSED_PERIOD_MESSAGE) throw new Error('closed_period')
   if (problem) throw new Error(`invalid_entry: ${problem}`)
+  const slip_no = insertEntry(input, actor, null)
+  note(actor, `post journal ${input.business_id}:${slip_no}`)
+  return slip_no
+}
 
+/** 0016 journal_entry_insert()와 같다 — 헤더 + 라인. 검사는 부르는 쪽이 끝냈다. */
+function insertEntry(
+  input: NewJournalEntry,
+  actor: AuditActor,
+  correction: { corrects_id: string; kind: 'reversal' | 'restatement' } | null,
+): string {
   const slip_no = slipNumber(input.entry_date, ++slipSeq)
   const now = new Date().toISOString()
   entries.push({
@@ -149,6 +170,8 @@ export async function postJournalEntry(input: NewJournalEntry, actor: AuditActor
     evidence_url: input.evidence_url?.trim() || null,
     created_by: actor.user_id,
     created_at: now,
+    corrects_id: correction?.corrects_id ?? null,
+    correction_kind: correction?.kind ?? null,
   })
   input.lines.forEach((l, i) =>
     lines.push({
@@ -165,8 +188,38 @@ export async function postJournalEntry(input: NewJournalEntry, actor: AuditActor
       closed: false,
     }),
   )
-  note(actor, `post journal ${input.business_id}:${slip_no}`)
   return slip_no
+}
+
+/**
+ * 0016 post_correction()을 흉내 낸다. 역분개는 검사를 다시 하지 않는다 — 원 전표를 뒤집은 것이라
+ * 차대는 이미 맞고, 계정이 그 사이 비활성화됐어도 되돌릴 수 있어야 한다(DB 트리거와 같은 예외).
+ */
+export async function postCorrection(input: NewCorrection, actor: AuditActor): Promise<CorrectionResult> {
+  const ledger = await dummyLedger()
+  const problem = correctionProblem(ledger, input.business_id, input.corrects_id, input.entry_date)
+  if (problem) throw new Error(problem)
+  // 역분개 날짜의 달이 열려 있어야 한다. 정정분개 라인이 없어도(취소) 같다.
+  if (isPeriodLocked(ledger, input.business_id, periodOfDate(input.entry_date))) throw new Error('closed_period')
+  const restatement = input.lines.length > 0 ? entryProblem(input, ledger) : null
+  if (restatement) throw new Error(`invalid_entry: ${restatement}`)
+
+  const orig = ledger.entries.find((e) => e.business_id === input.business_id && e.slip_no === input.corrects_id)!
+  const reversal = insertEntry(
+    {
+      business_id: input.business_id,
+      entry_date: input.entry_date,
+      memo: `[역분개] ${orig.memo}`,
+      evidence_url: orig.evidence_url,
+      lines: reversalLines(ledger, input.business_id, input.corrects_id),
+    },
+    actor,
+    { corrects_id: input.corrects_id, kind: 'reversal' },
+  )
+  const restated =
+    input.lines.length > 0 ? insertEntry(input, actor, { corrects_id: input.corrects_id, kind: 'restatement' }) : null
+  note(actor, `correct ${input.business_id}:${input.corrects_id} → ${reversal}${restated ? ` + ${restated}` : ''}`)
+  return { reversal, restatement: restated }
 }
 
 /** 0016 close_period()를 흉내 낸다. 검사 순서와 거부 낱말이 같다(lib/ledger/closing.ts). */

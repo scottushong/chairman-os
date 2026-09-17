@@ -44,7 +44,7 @@ import type {
   WorkPriority,
 } from '@/types'
 
-import type { NewJournalEntry } from '@/lib/ledger/journal'
+import type { CorrectionResult, NewCorrection, NewJournalEntry } from '@/lib/ledger/journal'
 import { STANDARD_CHART } from '@/lib/ledger/standard-chart'
 
 import {
@@ -425,7 +425,7 @@ function oneAffectedRow<T>(
 const KEYMAN_COLUMNS = 'keyman_id,business_id,name,relation,last_contact_on,note'
 
 /** 0015 accounts + 0016 active. 읽기와 쓰기가 같은 모양을 돌려줘야 한다. */
-const JOURNAL_ENTRY_COLUMNS = 'business_id,slip_no,entry_date,memo,evidence_url,created_by,created_at'
+const JOURNAL_ENTRY_COLUMNS = 'business_id,slip_no,entry_date,memo,evidence_url,created_by,created_at,corrects_id,correction_kind'
 
 const ACCOUNT_COLUMNS = 'business_id,account_code,name,category,section,cash_flow,source,fetched_at,closed,active'
 
@@ -826,6 +826,27 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       }
       if (typeof data !== 'string') throw new Error('post_journal_entry: 전표번호가 오지 않았다.')
       return data
+    },
+
+    /** 블록 4. 감사 기록·역분개·정정분개가 0016 post_correction() 한 트랜잭션이다. */
+    async postCorrection(input: NewCorrection, actor: AuditActor): Promise<CorrectionResult> {
+      void actor // 행위자는 DB가 auth.uid()로 적는다.
+      const { data, error } = await sb.rpc('post_correction', {
+        p_business_id: input.business_id,
+        p_corrects_id: input.corrects_id,
+        p_entry_date: input.entry_date,
+        p_memo: input.memo,
+        p_evidence_url: input.evidence_url,
+        p_lines: input.lines,
+      })
+      if (error) {
+        throw new Error(
+          `Supabase post_correction ${error.code ?? '?'}: ${error.message}${error.details ? ` — ${error.details}` : ''}`,
+        )
+      }
+      const r = (data ?? {}) as { reversal?: unknown; restatement?: unknown }
+      if (typeof r.reversal !== 'string') throw new Error('post_correction: 역분개 전표번호가 오지 않았다.')
+      return { reversal: r.reversal, restatement: typeof r.restatement === 'string' ? r.restatement : null }
     },
 
     /** 블록 3. 감사 기록·결산·라인 closed가 0016 close_period() 한 트랜잭션이다. */
