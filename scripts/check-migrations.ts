@@ -222,13 +222,13 @@ async function rls(db: Db) {
   assert.equal(await as(UID.chairman, journal('ecount', 'T-3')), 'denied')
   assert.equal(await as(UID.chairman, 'select count(*)::int from finance_kpis_masked'), total)
 
-  await books(as)
+  await books(db, as)
 }
 
 type As = (uid: string, sql: string, setup?: string) => Promise<'denied' | number>
 
 /** 0016 자체 장부. 역할별로 되는 것/막히는 것. */
-async function books(as: As) {
+async function books(db: Db, as: As) {
   // 블록 1 — 계정과목: 만들기·고치기는 장부 담당, 코드는 불변, 지우지 않는다
   const account = (biz: string, code: string) =>
     `insert into accounts (business_id, account_code, name, category, section, source, fetched_at)
@@ -287,7 +287,12 @@ async function books(as: As) {
     '헤더 없는 자체 장부 라인은 없다',
   )
   const posted = post('biz_vana', '2026-08-20', sale(1_000_000)).replace('select count(*)::int from', 'select 1 from') + ';'
-  assert.equal(await as(UID.chairman, `update journal_lines set amount = 1 where source = 'manual'`, posted), 0, '전표는 고치지 않는다')
+  await assert.rejects(
+    as(UID.chairman, `update journal_lines set amount = 1 where source = 'manual'`, posted),
+    /journal_line_immutable/,
+    '전표는 고치지 않는다',
+  )
+  assert.equal(await as(UID.ceo, `update journal_lines set amount = 1 where source = 'manual'`, posted), 0, 'BusinessCEO에게는 update 정책이 없다')
   assert.equal(await as(UID.chairman, `delete from journal_entries`, posted), 0, '전표는 지우지 않는다')
   assert.equal(
     await as(UID.chairman, `select count(*)::int from audit_log where entity_table = 'journal_entries' and action = 'create'`, posted),
@@ -303,6 +308,64 @@ async function books(as: As) {
     1,
     '자체 장부 전표가 섞인 마감 전 달은 잠정(source=manual)',
   )
+
+  // 블록 3 — 월 마감. VANA 2026-08(mock 전표 + 자체 장부 전표)을 닫는다.
+  const close = (biz: string, period: string) => `select close_period('${biz}', '${period}')`
+  const closed = `${posted} ${close('biz_vana', '2026-08')};`
+  const revenue = `select value::float8 from finance_kpis where business_id = 'biz_vana' and period = '2026-08' and metric = 'Revenue'`
+  assert.ok(Number(await as(UID.chairman, close('biz_vana', '2026-08'), posted)) > 0, 'Chairman은 마감한다 — 결산 칸 수')
+  assert.ok(Number(await as(UID.cfo, close('biz_vana', '2026-08'))) > 0, 'GroupCFO는 마감한다')
+  await assert.rejects(as(UID.ceo, close('biz_vana', '2026-08')), /close_forbidden/, 'BusinessCEO는 마감하지 못한다')
+  await assert.rejects(as(UID.member, close('biz_vana', '2026-08')), /close_forbidden/, 'Member는 마감하지 못한다')
+  await assert.rejects(as(UID.chairman, close('biz_vana', '2026-07')), /already_closed/, '이미 마감된 달')
+  await assert.rejects(as(UID.chairman, close('biz_vana', '2999-01')), /period_not_ended/, '끝나지 않은 달')
+  assert.equal(
+    await as(UID.chairman, `select count(*)::int from finance_kpis where business_id = 'biz_vana' and period = '2026-08' and basis = 'confirmed'`, closed),
+    8,
+    '마감 뒤 8개 지표가 전부 확정',
+  )
+  assert.equal(await as(UID.chairman, revenue, closed), await as(UID.chairman, revenue, posted), '마감은 숫자를 바꾸지 않는다 — 꼬리표만')
+  assert.equal(
+    await as(UID.chairman, `select count(*)::int from journal_lines where business_id = 'biz_vana' and entry_date >= '2026-08-01' and not closed`, closed),
+    0,
+    '그 달 전표 라인이 전부 closed',
+  )
+  assert.equal(
+    await as(UID.chairman, `select count(*)::int from closings where business_id = 'biz_vana' and period = '2026-08' and provisional_amount is distinct from amount`, closed),
+    0,
+    '잠정치를 보존한다',
+  )
+  assert.equal(
+    await as(UID.chairman, `select count(*)::int from audit_log where entity_table = 'closings' and entity_id = 'biz_vana:2026-08'`, closed),
+    1,
+    '마감은 audit_log에 남는다',
+  )
+  await assert.rejects(as(UID.chairman, post('biz_vana', '2026-08-25', sale(1000)), closed), /closed_period/, '마감 뒤 그 달 입력은 거부')
+  await assert.rejects(
+    as(UID.chairman, `update journal_lines set amount = 5 where business_id = 'biz_vana' and entry_date = '2026-08-20' and source = 'manual'`, posted),
+    /journal_line_immutable/,
+    '마감 담당도 금액은 못 고친다',
+  )
+  await assert.rejects(
+    as(UID.chairman, `update journal_lines set closed = true where business_id = 'biz_vana' and entry_date = '2026-08-20'`, posted),
+    /journal_line_immutable/,
+    '결산 없이 마감 표시만 켤 수 없다',
+  )
+  assert.equal(await as(UID.chairman, `delete from closings where business_id = 'biz_vana'`, closed), 0, '마감 해제 없음')
+  assert.equal(await as(UID.chairman, `update closings set amount = 0 where business_id = 'biz_vana'`, closed), 0, '결산은 고치지 않는다')
+
+  // 순서대로 마감한다 — 마감이 한 번도 없는 회사에서 앞 달을 건너뛰지 못한다.
+  await db.exec(`
+    insert into businesses (business_id, name, status, industry) values ('biz_close', '마감 순서 검사', 'Active', 'x');
+    insert into accounts (business_id, account_code, name, category, section, source, fetched_at)
+    values ('biz_close', '1010', '현금', 'asset', 'cash', 'ecount', now()), ('biz_close', '4010', '매출', 'revenue', 'revenue', 'ecount', now());
+    insert into journal_lines (business_id, entry_date, account_code, amount, side, slip_no, line_no, source, fetched_at) values
+      ('biz_close', '2020-01-10', '1010', 100, 'debit', 'A', 1, 'ecount', now()), ('biz_close', '2020-01-10', '4010', 100, 'credit', 'A', 2, 'ecount', now()),
+      ('biz_close', '2020-02-10', '1010', 100, 'debit', 'B', 1, 'ecount', now()), ('biz_close', '2020-02-10', '4010', 100, 'credit', 'B', 2, 'ecount', now());
+  `)
+  await assert.rejects(as(UID.chairman, close('biz_close', '2020-02')), /earlier_period_open/, '앞 달부터 순서대로')
+  assert.equal(await as(UID.chairman, close('biz_close', '2020-01')), 2, '첫 달은 마감된다')
+  await assert.rejects(as(UID.chairman, close('biz_close', '2019-12')), /nothing_to_close|already_closed/, '전표 없는 달')
 }
 
 async function main() {

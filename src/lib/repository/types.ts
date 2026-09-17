@@ -72,6 +72,12 @@ export interface ChairmanRepository {
    * live는 0016의 post_journal_entry(). 차대·마감 달·비활성 계정은 DB가 거부한다.
    */
   postJournalEntry(input: NewJournalEntry, actor: AuditActor): Promise<string>
+
+  /**
+   * 블록 3 — 한 회사 한 달을 마감한다(0016 close_period). 찍은 결산 칸 수를 돌려준다.
+   * 해제는 없다. 거부 사유는 lib/ledger/closing.ts CLOSE_PROBLEM_KO의 낱말로 온다.
+   */
+  closePeriod(businessId: string, period: string, actor: AuditActor): Promise<number>
   listProjects(): Promise<Project[]>
   listTasks(): Promise<Task[]>
   listDecisions(): Promise<Decision[]>

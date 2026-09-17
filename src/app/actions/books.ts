@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 
 import { currentUser } from '@/lib/auth/session'
 import { parseAccountCode, parseAccountFields } from '@/lib/ledger/accounts'
+import { CLOSE_PROBLEM_KO, type CloseProblem } from '@/lib/ledger/closing'
 import { CLOSED_PERIOD_MESSAGE, entryProblem, type DraftLine, type NewJournalEntry } from '@/lib/ledger/journal'
 import { DUPLICATE_ACCOUNT_CODE, getRepository } from '@/lib/repository'
 import type { Account } from '@/types'
@@ -213,5 +214,35 @@ export async function postJournalEntry(input: {
   } catch (e) {
     console.error('[postJournalEntry]', e)
     return { error: journalFailure(e) }
+  }
+}
+
+export interface CloseState {
+  error?: string
+  /** 찍은 결산 칸 수 */
+  cells?: number
+}
+
+export async function closePeriod(input: { businessId: unknown; period: unknown }): Promise<CloseState> {
+  const business_id = text(input.businessId)
+  const period = text(input.period)
+  if (!business_id || !period) return { error: '마감할 회사와 달을 알 수 없습니다.' }
+
+  const user = await currentUser()
+  if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  try {
+    const repo = await getRepository()
+    const cells = await repo.closePeriod(business_id, period, { user_id: user.user_id, role: user.role })
+    revalidateBooks(business_id)
+    revalidatePath('/')
+    revalidatePath('/finance')
+    return { cells }
+  } catch (e) {
+    console.error('[closePeriod]', e)
+    const message = e instanceof Error ? e.message : ''
+    const word = (Object.keys(CLOSE_PROBLEM_KO) as CloseProblem[]).find((w) => message.includes(w))
+    if (word) return { error: CLOSE_PROBLEM_KO[word] }
+    if (/42501|PGRST301|row-level security/.test(message)) return { error: CLOSE_PROBLEM_KO.close_forbidden }
+    return { error: '마감하지 못했습니다. 잠시 후 다시 시도하세요.' }
   }
 }

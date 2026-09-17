@@ -828,6 +828,18 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       return data
     },
 
+    /** 블록 3. 감사 기록·결산·라인 closed가 0016 close_period() 한 트랜잭션이다. */
+    async closePeriod(businessId: string, period: string, actor: AuditActor): Promise<number> {
+      void actor // 행위자는 DB가 auth.uid()로 적는다.
+      const { data, error } = await sb.rpc('close_period', { p_business_id: businessId, p_period: period })
+      if (error) {
+        throw new Error(
+          `Supabase close_period ${error.code ?? '?'}: ${error.message}${error.details ? ` — ${error.details}` : ''}`,
+        )
+      }
+      return Number(data)
+    },
+
     /** CH-024 확장(0015). [제한] 열람 역할이 아니면 0015의 business_keymen_read가 빈 배열을 준다. */
     async listKeymen(): Promise<BusinessKeyman[]> {
       const { data } = await fetchAll<BusinessKeyman>('business_keymen', ['keyman_id'], (from, to) =>

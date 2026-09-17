@@ -19,6 +19,7 @@
 --   1. 계정과목 관리    accounts.active, 코드 불변, 표준 계정과목표 시드
 --   2. 전표 입력        journal_entries(헤더), 차대 일치·마감 달·비활성 계정 검사, post_journal_entry()
 --                       꼬리표: 자체 장부 전표도 원장이다 — 마감 전 잠정, 마감 후 확정
+--   3. 월 마감          close_period() — 결산 스냅샷(closed) + 전표 라인 closed, 해제 없음
 -- =====================================================================
 
 -- ---------------------------------------------------------------------
@@ -483,3 +484,120 @@ select s.period, s.business_id, s.metric, s.value, s.target, s.currency,
 
 comment on view finance_kpis is
   'CH-006~010. 원장에서 계산되는 지표. 결산(확정) > 전표(잠정) > 시트(수기). 꼬리표는 basis 칸이다(0016).';
+
+-- ---------------------------------------------------------------------
+-- 3. 월 마감
+--
+--   마감 = 그 달의 계정 × 월 칸(finance_ledger_cells, 전표 기준)을 closings에 찍고(closed=true),
+--          그 달 전표 라인에 closed=true를 찍는다. 감사 기록이 같은 트랜잭션에 남는다.
+--   provisional_amount = 마감 순간의 잠정치. 자체 장부는 마감 조정 전표가 마감 전에 들어오므로
+--   확정치와 같다 — 그래도 '마감 때 무엇이 보였나'를 남긴다(0015의 잠정→확정 차이 패널이 읽는다).
+--
+--   마감 해제는 없다. 잘못 마감했으면 당월에 정정 전표를 넣고 당월을 마감한다.
+--
+--   close_period()가 지키는 순서
+--     - 끝난 달만(오늘이 속한 달과 그 뒤는 못 한다)               period_not_ended
+--     - 이미 마감됐거나 그 뒤 달이 마감됐으면 못 한다               already_closed
+--     - 그보다 앞선 달에 마감 안 된 전표가 있으면 못 한다(순서대로) earlier_period_open
+--     - 전표도 직전 결산도 없어 찍을 칸이 없으면 못 한다            nothing_to_close
+--
+--   전표 라인은 마감 때 closed 한 칸만 바뀐다. 금액·계정·적요를 고치는 update는 트리거가 막는다 —
+--   마감 담당에게 update 정책을 열어 준 대신이다.
+-- ---------------------------------------------------------------------
+
+create policy closings_books_insert on closings
+  for insert with check (
+    can_close_books() and has_business(business_id) and source = 'manual' and closed
+  );
+
+create policy journal_lines_books_close on journal_lines
+  for update using (can_close_books() and has_business(business_id) and not closed)
+  with check (can_close_books() and has_business(business_id) and closed);
+
+create or replace function journal_lines_close_guard() returns trigger
+language plpgsql as $fn$
+begin
+  -- Integration은 0015 정책대로 열린 달을 ECOUNT와 다시 맞춘다. 이 트리거는 사람의 update만 좁힌다.
+  if is_integration() then
+    return new;
+  end if;
+  if (new.business_id, new.entry_date, new.account_code, new.amount, new.side, new.slip_no, new.line_no,
+      new.memo, new.source, new.fetched_at)
+     is distinct from
+     (old.business_id, old.entry_date, old.account_code, old.amount, old.side, old.slip_no, old.line_no,
+      old.memo, old.source, old.fetched_at) then
+    raise exception using errcode = 'P0001', message = 'journal_line_immutable',
+      detail = '전표 라인은 고치지 않는다. 정정 전표로 바로잡는다.';
+  end if;
+  if not new.closed or not exists (
+    select 1 from closings c
+     where c.business_id = new.business_id and c.period = to_char(new.entry_date, 'YYYY-MM') and c.closed
+  ) then
+    raise exception using errcode = 'P0001', message = 'journal_line_immutable',
+      detail = '마감 표시는 그 달의 확정 결산이 있을 때만 켠다.';
+  end if;
+  return new;
+end;
+$fn$;
+
+create trigger journal_lines_close_guard before update on journal_lines
+  for each row execute function journal_lines_close_guard();
+
+/** 한 회사 한 달을 마감한다. 찍은 결산 칸 수를 돌려준다. */
+create or replace function close_period(p_business_id text, p_period text) returns int
+language plpgsql security invoker set search_path = public as $fn$
+declare
+  v_today_period text := to_char(now() at time zone 'Asia/Seoul', 'YYYY-MM');
+  v_last         text;
+  v_open         text;
+  v_n            int;
+begin
+  if not (can_close_books() and has_business(p_business_id)) then
+    raise exception using errcode = '42501', message = 'close_forbidden',
+      detail = '월 마감은 Chairman · GroupCFO만 한다.';
+  end if;
+  if p_period is null or p_period !~ '^[0-9]{4}-(0[1-9]|1[0-2])$' then
+    raise exception using errcode = 'P0001', message = 'invalid_period';
+  end if;
+  if p_period >= v_today_period then
+    raise exception using errcode = 'P0001', message = 'period_not_ended',
+      detail = format('%s는 아직 끝나지 않았다.', p_period);
+  end if;
+
+  select max(period) into v_last from closings where business_id = p_business_id;
+  if v_last is not null and v_last >= p_period then
+    raise exception using errcode = 'P0001', message = 'already_closed',
+      detail = format('%s까지 마감됐다.', v_last);
+  end if;
+
+  select min(to_char(entry_date, 'YYYY-MM')) into v_open
+    from journal_lines
+   where business_id = p_business_id
+     and to_char(entry_date, 'YYYY-MM') < p_period
+     and (v_last is null or to_char(entry_date, 'YYYY-MM') > v_last);
+  if v_open is not null then
+    raise exception using errcode = 'P0001', message = 'earlier_period_open',
+      detail = format('%s부터 순서대로 마감한다.', v_open);
+  end if;
+
+  insert into audit_log (action, entity_table, entity_id, business_id, actor_user_id, actor_role, after, note)
+  values ('create', 'closings', p_business_id || ':' || p_period, p_business_id, auth.uid(), auth_role()::text,
+          jsonb_build_object('period', p_period), format('%s 월 마감', p_period));
+
+  insert into closings (business_id, period, account_code, amount, closed_on, provisional_amount, source, fetched_at, closed)
+  select business_id, period, account_code, amount, (now() at time zone 'Asia/Seoul')::date, amount, 'manual', now(), true
+    from finance_ledger_cells
+   where business_id = p_business_id and period = p_period;
+  get diagnostics v_n = row_count;
+  if v_n = 0 then
+    raise exception using errcode = 'P0001', message = 'nothing_to_close',
+      detail = format('%s에는 전표도 직전 결산도 없다.', p_period);
+  end if;
+
+  update journal_lines
+     set closed = true
+   where business_id = p_business_id and to_char(entry_date, 'YYYY-MM') = p_period and not closed;
+
+  return v_n;
+end;
+$fn$;

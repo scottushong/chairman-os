@@ -1,8 +1,10 @@
 import { MOCK_FETCHED_AT } from '@/lib/ecount/mock'
 import { loadMockLedger } from '@/lib/ecount/mock-ledger'
 import { STANDARD_CHART, STANDARD_CHART_BUSINESSES, type StandardAccount } from '@/lib/ledger/standard-chart'
-import { CLOSED_PERIOD_MESSAGE, entryProblem, slipNumber, type NewJournalEntry } from '@/lib/ledger/journal'
-import type { Account, FinanceLedger, JournalEntry, JournalLine } from '@/types'
+import { periodOfDate } from '@/lib/ledger/basis'
+import { closeProblem, closingRows } from '@/lib/ledger/closing'
+import { CLOSED_PERIOD_MESSAGE, entryProblem, slipNumber, todayKst, type NewJournalEntry } from '@/lib/ledger/journal'
+import type { Account, Closing, FinanceLedger, JournalEntry, JournalLine } from '@/types'
 
 import { DUPLICATE_ACCOUNT_CODE, type AccountPatch, type AuditActor, type NewAccount } from './types'
 
@@ -25,6 +27,10 @@ let accounts: Map<string, Account> | null = null
 const entries: JournalEntry[] = []
 const lines: JournalLine[] = []
 let slipSeq = 0
+
+/** 화면에서 한 마감. 결산 칸과, 마감된 회사·달(그 달 전표 라인은 읽을 때 closed로 보인다). */
+const closings: Closing[] = []
+const closedMonths = new Set<string>()
 
 function standardRow(businessId: string, s: StandardAccount, fetched_at: string): Account {
   return {
@@ -67,8 +73,10 @@ export async function dummyLedger(): Promise<FinanceLedger> {
   const store = await accountStore()
   return {
     accounts: [...store.values()].map((a) => ({ ...a })),
-    journal: [...ledger.journal, ...lines].map((j) => ({ ...j })),
-    closings: [...ledger.closings],
+    journal: [...ledger.journal, ...lines].map((j) =>
+      closedMonths.has(key(j.business_id, periodOfDate(j.entry_date))) ? { ...j, closed: true } : { ...j },
+    ),
+    closings: [...ledger.closings, ...closings],
     entries: entries.map((e) => ({ ...e })),
     fxRates: [...ledger.fxRates],
     costIndices: [...ledger.costIndices],
@@ -159,4 +167,17 @@ export async function postJournalEntry(input: NewJournalEntry, actor: AuditActor
   )
   note(actor, `post journal ${input.business_id}:${slip_no}`)
   return slip_no
+}
+
+/** 0016 close_period()를 흉내 낸다. 검사 순서와 거부 낱말이 같다(lib/ledger/closing.ts). */
+export async function closePeriod(businessId: string, period: string, actor: AuditActor): Promise<number> {
+  const ledger = await dummyLedger()
+  const today = todayKst()
+  const problem = closeProblem(ledger, businessId, period, today)
+  if (problem) throw new Error(problem)
+  const rows = closingRows(ledger, businessId, period, today, new Date().toISOString())
+  closings.push(...rows)
+  closedMonths.add(key(businessId, period))
+  note(actor, `close ${businessId}:${period} (${rows.length})`)
+  return rows.length
 }

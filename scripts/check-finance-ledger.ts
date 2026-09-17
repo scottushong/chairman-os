@@ -190,6 +190,24 @@ async function books() {
   await repo.updateAccount('biz_vana', '4010', { active: false }, actor)
   await assert.rejects(repo.postJournalEntry(sale('2026-08-21', [1000, 1000]), actor), /비활성/, '비활성 계정은 거부')
   await repo.updateAccount('biz_vana', '4010', { active: true }, actor)
+
+  // 블록 3 — 월 마감
+  const kpisBefore = (await repo.listFinanceKpis()).filter((k) => k.business_id === 'biz_vana' && k.period === '2026-08')
+  assert.ok(Number(await repo.closePeriod('biz_vana', '2026-08', actor)) > 0)
+  const kpisAfter = (await repo.listFinanceKpis()).filter((k) => k.business_id === 'biz_vana' && k.period === '2026-08')
+  assert.equal(kpisAfter.length, kpisBefore.length)
+  assert.ok(kpisAfter.every((k) => k.basis === 'confirmed' && k.closed), '마감 뒤 확정')
+  for (const k of kpisAfter) {
+    assert.equal(k.value, kpisBefore.find((b) => b.metric === k.metric)!.value, `마감은 ${k.metric} 숫자를 바꾸지 않는다`)
+  }
+  await assert.rejects(repo.closePeriod('biz_vana', '2026-08', actor), /already_closed/)
+  await assert.rejects(repo.closePeriod('biz_vana', '2999-01', actor), /period_not_ended/)
+  await assert.rejects(repo.postJournalEntry(sale('2026-08-25', [1000, 1000]), actor), /closed_period/, '마감 뒤 그 달 입력은 거부')
+  const closedLedger = await repo.loadFinanceLedger()
+  assert.ok(
+    closedLedger.journal.filter((j) => j.business_id === 'biz_vana' && j.entry_date.startsWith('2026-08')).every((j) => j.closed),
+    '그 달 전표 라인이 전부 closed',
+  )
 }
 
 async function main() {

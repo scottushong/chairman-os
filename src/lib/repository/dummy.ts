@@ -149,6 +149,7 @@ export const dummyRepository: ChairmanRepository = {
   updateAccount: books.updateAccount,
   applyStandardChart: books.applyStandardChart,
   postJournalEntry: books.postJournalEntry,
+  closePeriod: books.closePeriod,
 
   async listKeymen() {
     return memoryKeymen.map((k) => ({ ...k }))
