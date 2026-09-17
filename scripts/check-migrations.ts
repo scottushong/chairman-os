@@ -71,12 +71,13 @@ interface KpiRow {
   v: number
   source: string
   closed: boolean
+  basis: string
 }
 const kpiKey = (k: { period: string; business_id: string; metric: string }) => `${k.period}|${k.business_id}|${k.metric}`
 
 async function readKpis(db: Db): Promise<Map<string, KpiRow>> {
   const { rows } = await db.query<KpiRow>(
-    'select period, business_id, metric::text, value::float8 as v, source::text, closed from finance_kpis',
+    'select period, business_id, metric::text, value::float8 as v, source::text, closed, basis from finance_kpis',
   )
   return new Map(rows.map((r) => [kpiKey(r), r]))
 }
@@ -84,7 +85,7 @@ async function readKpis(db: Db): Promise<Map<string, KpiRow>> {
 async function sheetOnlyView(db: Db) {
   const kpis = await readKpis(db)
   assert.equal(kpis.size, sheetFinanceKpis.length, '원장이 비면 뷰 = 시트 480행')
-  assert.ok([...kpis.values()].every((k) => k.source === 'manual' && !k.closed), '시트 행은 수기 꼬리표')
+  assert.ok([...kpis.values()].every((k) => k.source === 'manual' && !k.closed && k.basis === 'manual'), '시트 행은 수기 꼬리표')
 }
 
 /** 0016 표준 계정과목표 시드 = lib/ledger/standard-chart.ts. 스타트업 네 곳만, DY는 없다. */
@@ -115,7 +116,7 @@ async function ledgerView(db: Db) {
   assert.equal(sql.size, ts.length, 'SQL 뷰와 TS 공식의 행 수')
   const bad = ts.filter((k) => {
     const s = sql.get(kpiKey(k))
-    return !s || s.v !== k.value || s.source !== k.source || s.closed !== k.closed
+    return !s || s.v !== k.value || s.source !== k.source || s.closed !== k.closed || s.basis !== k.basis
   })
   assert.equal(bad.length, 0, `SQL ≠ TS: ${bad.slice(0, 3).map(kpiKey).join(', ')}`)
   for (const s of sheetFinanceKpis) {
@@ -153,11 +154,18 @@ async function rls(db: Db) {
     insert into user_business_access values ('${UID.ceo}', 'biz_vana');
   `)
 
-  /** 역할 하나로 SQL 한 줄. 끝나면 되돌린다. 거부는 'denied', 나머지는 영향 행 수/첫 칸. */
-  async function as(uid: string, sql: string): Promise<'denied' | number> {
+  /**
+   * 역할 하나로 SQL 한 줄. 끝나면 되돌린다. 거부는 'denied', 나머지는 영향 행 수/첫 칸.
+   * 되돌리면 deferred 제약(0016 차대 검사)이 커밋까지 가지 않는다 — 그래서 되돌리기 전에 immediate로 돌린다.
+   * setup은 같은 트랜잭션에서 먼저 도는 문장들이다(예: 전표를 넣은 뒤 뷰를 읽는다).
+   */
+  async function as(uid: string, sql: string, setup = ''): Promise<'denied' | number> {
     await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
     try {
+      if (setup) await db.exec(setup)
       const res = await db.query<Record<string, number>>(sql)
+      // 미뤄 둔 검사를 지금 돌린다. 문장 안(함수 안)의 중간 상태가 아니라 끝난 상태를 잰다 — 커밋과 같다.
+      await db.exec('set constraints all immediate')
       return res.rows.length ? Number(Object.values(res.rows[0])[0]) : (res.affectedRows ?? 0)
     } catch (e) {
       if (/row-level security/.test(e instanceof Error ? e.message : '')) return 'denied'
@@ -175,7 +183,8 @@ async function rls(db: Db) {
 
   // Integration — 원장 5표, source=ecount, 열린 달만
   assert.equal(await as(UID.integration, journal('ecount', 'T-1')), 1)
-  assert.equal(await as(UID.integration, journal('manual', 'T-2')), 'denied', '원장에 수기 전표 금지')
+  // 0016부터 manual 라인은 헤더 검사(트리거)가 RLS보다 먼저 막는다. 어느 쪽이든 들어가지 않는다.
+  await assert.rejects(as(UID.integration, journal('manual', 'T-2')), /missing_entry_header/, '원장에 수기 전표 금지')
   assert.equal(await as(UID.integration, `update journal_lines set memo = 'x' where closed`), 0, '마감 달 전표 고정')
   assert.ok(Number(await as(UID.integration, `delete from journal_lines where not closed`)) > 0, '열린 달은 다시 맞춘다')
   assert.equal(await as(UID.integration, `update closings set amount = 0 where closed`), 0, '확정 결산 고정')
@@ -216,7 +225,7 @@ async function rls(db: Db) {
   await books(as)
 }
 
-type As = (uid: string, sql: string) => Promise<'denied' | number>
+type As = (uid: string, sql: string, setup?: string) => Promise<'denied' | number>
 
 /** 0016 자체 장부. 역할별로 되는 것/막히는 것. */
 async function books(as: As) {
@@ -242,6 +251,58 @@ async function books(as: As) {
   )
   assert.equal(await as(UID.chairman, `delete from accounts where business_id = 'biz_dy' and account_code = '8010'`), 0, '계정은 지우지 않는다')
   assert.equal(await as(UID.member, `update accounts set name = 'x' where business_id = 'biz_dy'`), 0, 'Member는 못 고친다')
+
+  // 블록 2 — 전표 입력. mock 원장은 2026-07까지 마감, 2026-08은 전표만(잠정).
+  const post = (biz: string, date: string, lines: object[]) =>
+    `select count(*)::int from (select post_journal_entry('${biz}', '${date}', '테스트 전표', 'https://drive.example/x', '${JSON.stringify(lines)}'::jsonb)) x`
+  const sale = (amount: number) => [
+    { account_code: '1010', side: 'debit', amount },
+    { account_code: '4010', side: 'credit', amount },
+  ]
+  assert.equal(await as(UID.ceo, post('biz_vana', '2026-08-20', sale(1_000_000))), 1, 'BusinessCEO는 자기 회사 전표를 넣는다')
+  assert.equal(await as(UID.cfo, post('biz_dy', '2026-08-20', sale(1_000_000))), 1, 'GroupCFO는 전표를 넣는다')
+  assert.equal(await as(UID.ceo, post('biz_dy', '2026-08-20', sale(1_000_000))), 'denied', 'BusinessCEO는 남의 회사 전표를 못 넣는다')
+  assert.equal(await as(UID.member, post('biz_dy', '2026-08-20', sale(1_000_000))), 'denied', 'Member는 전표를 못 넣는다')
+  assert.equal(await as(UID.agent, post('biz_dy', '2026-08-20', sale(1_000_000))), 'denied', 'AIAgent는 전표를 못 넣는다')
+  await assert.rejects(
+    as(UID.chairman, post('biz_vana', '2026-08-20', [{ account_code: '1010', side: 'debit', amount: 1000 }, { account_code: '4010', side: 'credit', amount: 999 }])),
+    /unbalanced_slip/,
+    '차대가 맞지 않으면 저장 불가',
+  )
+  await assert.rejects(
+    as(UID.chairman, post('biz_vana', '2026-08-20', [{ account_code: '1010', side: 'debit', amount: 1000 }])),
+    /unbalanced_slip/,
+    '한 줄 전표는 저장 불가',
+  )
+  await assert.rejects(as(UID.chairman, post('biz_vana', '2026-07-15', sale(1000))), /closed_period/, '마감된 달은 정정 전표만')
+  await assert.rejects(as(UID.chairman, post('biz_vana', '2026-06-15', sale(1000))), /closed_period/, '마감된 달보다 앞선 달도 막는다')
+  await assert.rejects(
+    as(UID.chairman, post('biz_vana', '2026-08-20', sale(1000)), `update accounts set active = false where business_id = 'biz_vana' and account_code = '4010';`),
+    /inactive_account/,
+    '비활성 계정에는 전표를 못 넣는다',
+  )
+  await assert.rejects(
+    as(UID.chairman, `insert into journal_lines (business_id, entry_date, account_code, amount, side, slip_no, line_no, source, fetched_at) values ('biz_vana', '2026-08-20', '1010', 1, 'debit', 'NOHEAD', 1, 'manual', now())`),
+    /missing_entry_header/,
+    '헤더 없는 자체 장부 라인은 없다',
+  )
+  const posted = post('biz_vana', '2026-08-20', sale(1_000_000)).replace('select count(*)::int from', 'select 1 from') + ';'
+  assert.equal(await as(UID.chairman, `update journal_lines set amount = 1 where source = 'manual'`, posted), 0, '전표는 고치지 않는다')
+  assert.equal(await as(UID.chairman, `delete from journal_entries`, posted), 0, '전표는 지우지 않는다')
+  assert.equal(
+    await as(UID.chairman, `select count(*)::int from audit_log where entity_table = 'journal_entries' and action = 'create'`, posted),
+    1,
+    '전표 입력은 audit_log에 남는다',
+  )
+  assert.equal(
+    await as(
+      UID.chairman,
+      `select count(*)::int from finance_kpis where business_id = 'biz_vana' and period = '2026-08' and metric = 'Revenue' and basis = 'provisional' and source = 'manual'`,
+      posted,
+    ),
+    1,
+    '자체 장부 전표가 섞인 마감 전 달은 잠정(source=manual)',
+  )
 }
 
 async function main() {

@@ -11,7 +11,7 @@ import type {
 } from '@/types'
 import { COST_CATEGORIES, COST_INDEX_LABEL_KO } from '@/types'
 
-import { addMonths, combine2, figureOf, mapFigure, periodOfDate, sumFigures } from './basis'
+import { addMonths, combine2, figureOf, ledgerFigureOf, mapFigure, periodOfDate, sumFigures } from './basis'
 import { metricsOf } from './cells'
 import type { LedgerScope } from './scope'
 import { cashFlowTotals } from './statements'
@@ -225,9 +225,9 @@ export function closingDiff(ledger: FinanceLedger, scope: LedgerScope): ClosingD
     }
     return new Map([...parts].map(([code, figs]) => [code, { account_code: code, amount: sumFigures(figs)! }]))
   }
-  const confirmedCells = cellsFrom((c) => figureOf(c.amount, c))
+  const confirmedCells = cellsFrom((c) => ledgerFigureOf(c.amount, c))
   // 마감 전 값은 같은 원천의 '마감되지 않은' 상태다. 꼬리표를 손으로 붙이지 않고 provenance에서 낸다.
-  const provisionalCells = cellsFrom((c) => figureOf(c.provisional_amount!, { ...c, closed: false }))
+  const provisionalCells = cellsFrom((c) => ledgerFigureOf(c.provisional_amount!, { ...c, closed: false }))
 
   const accounts: Map<string, Account> = scope.accounts
   const confirmed = metricsOf(confirmedCells, accounts)

@@ -26,6 +26,7 @@ export function loadMockLedger(): Promise<FinanceLedger> {
       accounts: parts.flatMap((p) => p.accounts),
       journal: parts.flatMap((p) => p.journal),
       closings: parts.flatMap((p) => p.closings),
+      entries: [],
       ...mockMarket(periods),
     }
   })()

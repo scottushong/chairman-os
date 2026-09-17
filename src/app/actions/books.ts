@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 
 import { currentUser } from '@/lib/auth/session'
 import { parseAccountCode, parseAccountFields } from '@/lib/ledger/accounts'
+import { CLOSED_PERIOD_MESSAGE, entryProblem, type DraftLine, type NewJournalEntry } from '@/lib/ledger/journal'
 import { DUPLICATE_ACCOUNT_CODE, getRepository } from '@/lib/repository'
 import type { Account } from '@/types'
 
@@ -143,5 +144,74 @@ export async function applyStandardChart(businessId: unknown): Promise<AccountSt
   } catch (e) {
     console.error('[applyStandardChart]', e)
     return { error: failure(e, '표준 계정과목표를 적용하지 못했습니다. 잠시 후 다시 시도하세요.') }
+  }
+}
+
+export interface JournalState {
+  error?: string
+  slipNo?: string
+}
+
+/** DB·dummy가 거부한 전표를 사람 말로. 낱말은 0016의 raise exception message다. */
+function journalFailure(e: unknown): string {
+  const message = e instanceof Error ? e.message : ''
+  if (/closed_period/.test(message)) return CLOSED_PERIOD_MESSAGE
+  if (/unbalanced_slip/.test(message)) return '차변 합과 대변 합이 같지 않아 저장하지 않았습니다.'
+  if (/inactive_account/.test(message)) return '비활성이거나 없는 계정이 들어 있습니다. 계정과목을 확인하세요.'
+  const invalid = /invalid_entry: (.+)$/.exec(message)
+  if (invalid) return invalid[1]
+  if (/42501|PGRST301|row-level security/.test(message)) {
+    return '이 회사의 전표를 입력할 권한이 없습니다. (Chairman · Group CFO · 해당 회사 Business CEO)'
+  }
+  return '전표를 저장하지 못했습니다. 잠시 후 다시 시도하세요.'
+}
+
+/** 폼에서 온 라인. 금액은 문자열(쉼표 포함)일 수 있다. */
+function parseLines(value: unknown): DraftLine[] | null {
+  if (!Array.isArray(value)) return null
+  return value.map((raw) => {
+    const r = (raw ?? {}) as Record<string, unknown>
+    const amount = Number(String(r.amount ?? '').replaceAll(',', '').trim())
+    return {
+      account_code: text(r.account_code),
+      side: r.side === 'credit' ? 'credit' : 'debit',
+      amount: Number.isFinite(amount) ? amount : NaN,
+    }
+  })
+}
+
+export async function postJournalEntry(input: {
+  businessId: unknown
+  entryDate: unknown
+  memo: unknown
+  evidenceUrl: unknown
+  lines: unknown
+}): Promise<JournalState> {
+  const lines = parseLines(input.lines)
+  if (!lines) return { error: '라인을 읽을 수 없습니다.' }
+  const entry: NewJournalEntry = {
+    business_id: text(input.businessId),
+    entry_date: text(input.entryDate),
+    memo: text(input.memo),
+    evidence_url: text(input.evidenceUrl) || null,
+    lines,
+  }
+  if (!entry.business_id) return { error: '어느 회사의 전표인지 알 수 없습니다.' }
+
+  const user = await currentUser()
+  if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  try {
+    const repo = await getRepository()
+    // 저장 전에 같은 규칙으로 한 번 본다 — 사람 말로 먼저 알려 주려고. 판정은 DB가 한 번 더 한다.
+    const problem = entryProblem(entry, await repo.loadFinanceLedger())
+    if (problem) return { error: problem }
+    const slipNo = await repo.postJournalEntry(entry, { user_id: user.user_id, role: user.role })
+    revalidateBooks(entry.business_id)
+    revalidatePath('/')
+    revalidatePath('/finance')
+    return { slipNo }
+  } catch (e) {
+    console.error('[postJournalEntry]', e)
+    return { error: journalFailure(e) }
   }
 }

@@ -24,6 +24,7 @@ import type {
   Closing,
   CostIndex,
   FxRate,
+  JournalEntry,
   JournalLine,
   DataSource,
   NewInvitation,
@@ -31,6 +32,7 @@ import type {
   UserAccount,
   UserInvitation,
   FinanceMetric,
+  FigureBasis,
   MonthlyPriority,
   NextMilestone,
   Project,
@@ -42,6 +44,7 @@ import type {
   WorkPriority,
 } from '@/types'
 
+import type { NewJournalEntry } from '@/lib/ledger/journal'
 import { STANDARD_CHART } from '@/lib/ledger/standard-chart'
 
 import {
@@ -113,6 +116,7 @@ interface FinanceKpiRow {
   source: DataSource
   closed: boolean
   fetched_at: string
+  basis: FigureBasis
 }
 
 /** 0015 원장 표들. numeric은 문자열로 올 수 있어 num()을 거친다. */
@@ -421,6 +425,8 @@ function oneAffectedRow<T>(
 const KEYMAN_COLUMNS = 'keyman_id,business_id,name,relation,last_contact_on,note'
 
 /** 0015 accounts + 0016 active. 읽기와 쓰기가 같은 모양을 돌려줘야 한다. */
+const JOURNAL_ENTRY_COLUMNS = 'business_id,slip_no,entry_date,memo,evidence_url,created_by,created_at'
+
 const ACCOUNT_COLUMNS = 'business_id,account_code,name,category,section,cash_flow,source,fetched_at,closed,active'
 
 /** DB 오류를 그대로 싣되, 사용자가 고칠 수 있는 오류(코드 중복)는 표식으로 바꾼다. */
@@ -583,7 +589,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         sb
           .from('finance_kpis')
           // 필요한 칸만 부른다. RLS로 가려진 컬럼을 넓게 부르면 실수가 늦게 드러난다.
-          .select('period,business_id,metric,value,target,currency,source,closed,fetched_at', {
+          .select('period,business_id,metric,value,target,currency,source,closed,fetched_at,basis', {
             count: 'exact',
           })
           .order('period')
@@ -603,6 +609,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         source: r.source,
         closed: r.closed,
         fetched_at: r.fetched_at,
+        basis: r.basis,
       }))
     },
 
@@ -612,7 +619,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
      * dummy와 live가 서로 다른 공식을 갖게 된다.
      */
     async loadFinanceLedger(): Promise<FinanceLedger> {
-      const [accounts, journal, closings, fxRates, costIndices] = await Promise.all([
+      const [accounts, journal, closings, entries, fxRates, costIndices] = await Promise.all([
         fetchAll<AccountRow>('accounts', ['business_id', 'account_code'], (from, to) =>
           sb
             .from('accounts')
@@ -645,6 +652,15 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
             .order('account_code')
             .range(from, to)
             .returns<ClosingRow[]>(),
+        ),
+        fetchAll<JournalEntry>('journal_entries', ['business_id', 'slip_no'], (from, to) =>
+          sb
+            .from('journal_entries')
+            .select(JOURNAL_ENTRY_COLUMNS, { count: 'exact' })
+            .order('business_id')
+            .order('slip_no')
+            .range(from, to)
+            .returns<JournalEntry[]>(),
         ),
         fetchAll<FxRateRow>('fx_rates', ['rate_date', 'base', 'quote'], (from, to) =>
           sb
@@ -689,6 +705,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
           amount: num(r.amount),
           provisional_amount: r.provisional_amount === null ? null : num(r.provisional_amount),
         })),
+        entries: entries.data,
         fxRates: fxRates.data.map((r) => ({ ...r, rate: num(r.rate) })),
         costIndices: costIndices.data.map((r) => ({ ...r, value: num(r.value) })),
       }
@@ -786,6 +803,29 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         .select('account_code')
       if (error) throw accountError(error)
       return data?.length ?? 0
+    },
+
+    /**
+     * 블록 2. 감사 기록·헤더·라인이 0016 post_journal_entry() 한 번(한 트랜잭션)이다 —
+     * 여기서 audit()를 따로 부르면 전표가 거부돼도 '입력했다'가 남고, 반대로 두 HTTP 사이에서 끊기면 반쪽 전표가 남는다.
+     * DB의 거부 사유(closed_period / unbalanced_slip / inactive_account)는 message에 그대로 싣는다.
+     */
+    async postJournalEntry(input: NewJournalEntry, actor: AuditActor): Promise<string> {
+      void actor // 행위자는 DB가 auth.uid() / auth_role()로 적는다. 세션이 곧 행위자다.
+      const { data, error } = await sb.rpc('post_journal_entry', {
+        p_business_id: input.business_id,
+        p_entry_date: input.entry_date,
+        p_memo: input.memo,
+        p_evidence_url: input.evidence_url,
+        p_lines: input.lines,
+      })
+      if (error) {
+        throw new Error(
+          `Supabase post_journal_entry ${error.code ?? '?'}: ${error.message}${error.details ? ` — ${error.details}` : ''}`,
+        )
+      }
+      if (typeof data !== 'string') throw new Error('post_journal_entry: 전표번호가 오지 않았다.')
+      return data
     },
 
     /** CH-024 확장(0015). [제한] 열람 역할이 아니면 0015의 business_keymen_read가 빈 배열을 준다. */

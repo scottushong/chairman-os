@@ -251,11 +251,28 @@ export interface MarketMultiple extends Provenance {
   approved_at: IsoDateTime | null
 }
 
+/**
+ * 자체 장부 전표의 헤더 (0016 journal_entries). 라인은 JournalLine(source='manual')이고 slip_no로 묶인다.
+ * ECOUNT·mock 라인에는 헤더가 없다. 전표는 고치지 않는다 — 정정 전표로 바로잡는다.
+ */
+export interface JournalEntry {
+  business_id: BusinessId
+  slip_no: string
+  entry_date: IsoDate
+  memo: string
+  /** 증빙 링크. 파일 실체는 사내 스토리지(CLAUDE.md) */
+  evidence_url: string | null
+  created_by: string
+  created_at: IsoDateTime
+}
+
 /** 재무 화면 한 판이 읽는 원천 전부. 화면이 원천을 따로따로 부르면 live에서 왕복이 여섯 번 생긴다. */
 export interface FinanceLedger {
   accounts: Account[]
   journal: JournalLine[]
   closings: Closing[]
+  /** 자체 장부 전표 헤더(0016). 라인은 journal에 있다 */
+  entries: JournalEntry[]
   fxRates: FxRate[]
   costIndices: CostIndex[]
 }

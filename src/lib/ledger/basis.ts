@@ -6,12 +6,22 @@ import type { Figure, FigureBasis, PeriodKey, Provenance } from '@/types'
  * 꼬리표를 사람이 붙이지 않는다. 원천 행의 (source, closed)가 정한다. 화면이 '확정'이라고 쓰고 싶으면
  * 원천이 마감돼 있어야 한다 — 이 파일 밖에서 FigureBasis 리터럴을 만들면 그게 곧 규칙 위반이다.
  *
- * 0015의 finance_kpis 뷰가 같은 규칙을 SQL로 한 번 더 쓴다(파일 머리 '꼬리표' 절).
+ * 0015·0016의 finance_kpis 뷰가 같은 규칙을 SQL로 한 번 더 쓴다(0016 '2-1. 꼬리표 규칙' 절).
  * 둘이 어긋나면 대시보드와 재무 화면이 같은 달을 다르게 부른다. 한쪽을 고치면 다른 쪽도 고친다.
  */
 
+/** 원장이 아닌 원천(환율·지수·시트 행). 사람이 친 숫자(manual)는 마감돼도 수기다. */
 export function basisOf(p: Pick<Provenance, 'source' | 'closed'>): FigureBasis {
   if (p.source === 'manual') return 'manual'
+  if (p.source === 'estimate') return 'estimate'
+  return p.closed ? 'confirmed' : 'provisional'
+}
+
+/**
+ * 원장(전표·결산) 행 (0016). 자체 장부(manual)도 ECOUNT도 복식부기 원장이다 — 마감이 꼬리표를 정한다.
+ * 0016의 figure_rank()와 같은 규칙이다.
+ */
+export function ledgerBasisOf(p: Pick<Provenance, 'source' | 'closed'>): FigureBasis {
   if (p.source === 'estimate') return 'estimate'
   return p.closed ? 'confirmed' : 'provisional'
 }
@@ -26,6 +36,11 @@ export function weakest(bases: FigureBasis[]): FigureBasis {
 /** 원천 행 하나를 Figure로. 부호 뒤집기 같은 변환은 부르는 쪽이 value에 한다. */
 export function figureOf(value: number, p: Provenance): Figure {
   return { value, basis: basisOf(p), fetched_at: p.fetched_at }
+}
+
+/** 원장 행 하나를 Figure로(전표·결산). */
+export function ledgerFigureOf(value: number, p: Provenance): Figure {
+  return { value, basis: ledgerBasisOf(p), fetched_at: p.fetched_at }
 }
 
 /**

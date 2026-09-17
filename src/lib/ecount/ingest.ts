@@ -66,7 +66,7 @@ export async function ingestCompany(
 
   // 마감 시점의 잠정치 = 결산을 빼고 전표만으로 만든 그 달의 칸(lib/ledger/cells.ts 규칙 ②).
   const journalOnly = buildCells(
-    { accounts, journal, closings: [], fxRates: [], costIndices: [] },
+    { accounts, journal, closings: [], entries: [], fxRates: [], costIndices: [] },
     company.business_id,
   )
   const closings = mapClosings(

@@ -1,5 +1,6 @@
 import type { EntityAuditRecord } from '@/lib/audit-log'
 import type { AccountFields } from '@/lib/ledger/accounts'
+import type { NewJournalEntry } from '@/lib/ledger/journal'
 import type { DecisionAuditRecord, DecisionAction } from '@/lib/decision-log'
 import type { SearchHit } from '@/lib/search'
 import type {
@@ -65,6 +66,12 @@ export interface ChairmanRepository {
   updateAccount(businessId: string, accountCode: string, patch: AccountPatch, actor: AuditActor): Promise<Account>
   /** 표준 계정과목표(lib/ledger/standard-chart.ts)에서 이 회사에 없는 코드만 넣는다. 넣은 수를 돌려준다. */
   applyStandardChart(businessId: string, actor: AuditActor): Promise<number>
+
+  /**
+   * 블록 2 — 전표 한 장(헤더 + 라인 + 감사 기록)을 한 트랜잭션으로 넣는다. 전표번호를 돌려준다.
+   * live는 0016의 post_journal_entry(). 차대·마감 달·비활성 계정은 DB가 거부한다.
+   */
+  postJournalEntry(input: NewJournalEntry, actor: AuditActor): Promise<string>
   listProjects(): Promise<Project[]>
   listTasks(): Promise<Task[]>
   listDecisions(): Promise<Decision[]>

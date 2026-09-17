@@ -1,5 +1,5 @@
 import type { ProjectNote } from './chairman'
-import type { Provenance } from './finance'
+import type { FigureBasis, Provenance } from './finance'
 import type { BusinessStatus, Severity, TaskStatus, WorkPriority, SecurityClass } from './enums'
 import type {
   AlertId,
@@ -71,7 +71,13 @@ export interface SheetFinanceKpi {
  * 결산이 있으면 결산(확정)에서, 없으면 전표(잠정)에서, 둘 다 없으면 옛 시트 행(수기)에서 나온다.
  * source / closed / fetched_at이 필수인 이유 — 출처 없는 숫자는 화면에 못 올린다.
  */
-export interface FinanceKpi extends SheetFinanceKpi, Provenance {}
+export interface FinanceKpi extends SheetFinanceKpi, Provenance {
+  /**
+   * 꼬리표(0016 finance_kpis.basis). source·closed만으로는 '자체 장부 잠정'과 '시트 수기'를 가를 수 없어
+   * 뷰가 판정을 끝낸 값을 싣는다. 화면은 이 칸만 본다(lib/ledger/cells.ts kpiFigure).
+   */
+  basis: FigureBasis
+}
 
 /** CH-020. */
 export interface Project {

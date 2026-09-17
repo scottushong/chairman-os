@@ -10,7 +10,7 @@ import type {
 } from '@/types'
 import { PL_SECTIONS } from '@/types'
 
-import { addMonths, basisOf, figureOf, periodOfDate, sumFigures } from './basis'
+import { addMonths, ledgerFigureOf, periodOfDate, sumFigures } from './basis'
 
 /**
  * 원천(전표·결산) → 계정 × 월의 한 칸 → 8개 지표.
@@ -31,6 +31,8 @@ export interface AccountCell {
   account_code: string
   /** 차변 − 대변. 손익은 월 발생액, 상태표는 월말 잔액. */
   amount: Figure
+  /** 자체 장부(source='manual') 행이 섞였나. finance_kpis.source를 정직하게 내려고 든다(0016 has_manual). */
+  manual?: boolean
 }
 
 export interface PeriodCells {
@@ -70,13 +72,15 @@ export function buildCells(ledger: FinanceLedger, businessId: BusinessId): Map<P
 
   // 전표를 월 × 계정으로 한 번만 접는다.
   const activity = new Map<PeriodKey, Map<string, Figure[]>>()
+  const manualActivity = new Map<PeriodKey, Set<string>>()
   for (const j of journal) {
     const p = periodOfDate(j.entry_date)
     const byAccount = activity.get(p) ?? new Map<string, Figure[]>()
     const list = byAccount.get(j.account_code) ?? []
-    list.push(figureOf(j.side === 'debit' ? j.amount : -j.amount, j))
+    list.push(ledgerFigureOf(j.side === 'debit' ? j.amount : -j.amount, j))
     byAccount.set(j.account_code, list)
     activity.set(p, byAccount)
+    if (j.source === 'manual') manualActivity.set(p, (manualActivity.get(p) ?? new Set<string>()).add(j.account_code))
   }
 
   const out = new Map<PeriodKey, PeriodCells>()
@@ -84,7 +88,11 @@ export function buildCells(ledger: FinanceLedger, businessId: BusinessId): Map<P
     if (closedPeriods.has(period)) {
       const cells = new Map<string, AccountCell>()
       for (const c of closings.filter((x) => x.period === period)) {
-        cells.set(c.account_code, { account_code: c.account_code, amount: figureOf(c.amount, c) })
+        cells.set(c.account_code, {
+          account_code: c.account_code,
+          amount: ledgerFigureOf(c.amount, c),
+          manual: c.source === 'manual',
+        })
       }
       out.set(period, { business_id: businessId, period, from: 'closing', cells })
       continue
@@ -97,22 +105,28 @@ export function buildCells(ledger: FinanceLedger, businessId: BusinessId): Map<P
     for (const [code, figs] of activity.get(period) ?? []) {
       const a = accounts.get(code)
       if (a && PL_SECTION.has(a.section)) {
-        cells.set(code, { account_code: code, amount: sumFigures(figs)! })
+        cells.set(code, { account_code: code, amount: sumFigures(figs)!, manual: manualActivity.get(period)?.has(code) ?? false })
       }
     }
 
     for (const a of accounts.values()) {
       if (!isBalanceSheet(a)) continue
       const parts: Figure[] = []
+      let manual = false
       if (priorClose) {
         const opening = out.get(priorClose)?.cells.get(a.account_code)
-        if (opening) parts.push(opening.amount)
+        if (opening) {
+          parts.push(opening.amount)
+          manual ||= opening.manual ?? false
+        }
       }
       for (let p = priorClose ? addMonths(priorClose, 1) : periods[0]; p <= period; p = addMonths(p, 1)) {
-        parts.push(...(activity.get(p)?.get(a.account_code) ?? []))
+        const lines = activity.get(p)?.get(a.account_code) ?? []
+        parts.push(...lines)
+        if (lines.length) manual ||= manualActivity.get(p)?.has(a.account_code) ?? false
       }
       const sum = sumFigures(parts)
-      if (sum) cells.set(a.account_code, { account_code: a.account_code, amount: sum })
+      if (sum) cells.set(a.account_code, { account_code: a.account_code, amount: sum, manual })
     }
 
     out.set(period, { business_id: businessId, period, from: 'journal', cells })
@@ -146,6 +160,27 @@ export function sectionSum(
  *
  * 전부 원천이 없는 지표는 결과에서 빠진다. 0으로 채우지 않는다.
  */
+/** 지표마다 어느 구분을 더하나. metricsOf와 0015/0016 뷰의 filter 절이 같은 표를 쓴다. */
+const METRIC_SECTIONS: Record<FinanceMetric, AccountSection[]> = {
+  Revenue: ['revenue'],
+  Cost: ['cogs'],
+  EBITDA: ['revenue', 'cogs', 'sga'],
+  OperatingProfit: ['revenue', 'cogs', 'sga', 'd_and_a'],
+  NetIncome: ['revenue', 'cogs', 'sga', 'd_and_a', 'non_operating', 'tax'],
+  Cash: ['cash'],
+  AR: ['receivable'],
+  AP: ['payable'],
+}
+
+/** 그 지표에 자체 장부 칸이 섞였나(0016 뷰의 *_manual). */
+function metricHasManual(cells: Map<string, AccountCell>, accounts: Map<string, Account>, metric: FinanceMetric): boolean {
+  const want = new Set(METRIC_SECTIONS[metric])
+  return [...cells.values()].some((c) => {
+    const a = accounts.get(c.account_code)
+    return c.manual === true && a !== undefined && want.has(a.section)
+  })
+}
+
 export function metricsOf(
   cells: Map<string, AccountCell>,
   accounts: Map<string, Account>,
@@ -153,15 +188,16 @@ export function metricsOf(
   const neg = (f: Figure | null) => (f ? { ...f, value: -f.value } : null)
   const s = (...sections: AccountSection[]) => sectionSum(cells, accounts, sections)
 
+  const m = METRIC_SECTIONS
   const out: Partial<Record<FinanceMetric, Figure | null>> = {
-    Revenue: neg(s('revenue')),
-    Cost: s('cogs'),
-    EBITDA: neg(s('revenue', 'cogs', 'sga')),
-    OperatingProfit: neg(s('revenue', 'cogs', 'sga', 'd_and_a')),
-    NetIncome: neg(s('revenue', 'cogs', 'sga', 'd_and_a', 'non_operating', 'tax')),
-    Cash: s('cash'),
-    AR: s('receivable'),
-    AP: neg(s('payable')),
+    Revenue: neg(s(...m.Revenue)),
+    Cost: s(...m.Cost),
+    EBITDA: neg(s(...m.EBITDA)),
+    OperatingProfit: neg(s(...m.OperatingProfit)),
+    NetIncome: neg(s(...m.NetIncome)),
+    Cash: s(...m.Cash),
+    AR: s(...m.AR),
+    AP: neg(s(...m.AP)),
   }
   return Object.fromEntries(Object.entries(out).filter(([, v]) => v !== null)) as Partial<
     Record<FinanceMetric, Figure>
@@ -176,7 +212,7 @@ export function accountMap(ledger: FinanceLedger, businessId: BusinessId): Map<s
 
 /**
  * dummy 모드의 finance_kpis. live에서는 0015의 뷰가 같은 일을 한다.
- * 출처 세 칸은 Figure에서 되돌린다 — basis가 이미 판정이 끝난 값이라 source/closed로 역산한다.
+ * 꼬리표는 basis 칸이 그대로 싣는다(0016). source는 자체 장부 칸이 섞였는지로 정직하게 낸다.
  */
 export function kpisFromLedger(ledger: FinanceLedger, businessIds: BusinessId[]): FinanceKpi[] {
   const rows: FinanceKpi[] = []
@@ -190,9 +226,15 @@ export function kpisFromLedger(ledger: FinanceLedger, businessIds: BusinessId[])
           metric: metric as FinanceMetric,
           value: f.value,
           currency: 'KRW',
-          source: f.basis === 'manual' ? 'manual' : f.basis === 'estimate' ? 'estimate' : 'ecount',
+          source:
+            f.basis === 'estimate'
+              ? 'estimate'
+              : metricHasManual(pc.cells, accounts, metric as FinanceMetric)
+                ? 'manual'
+                : 'ecount',
           closed: f.basis === 'confirmed',
           fetched_at: f.fetched_at ?? '',
+          basis: f.basis,
         })
       }
     }
@@ -202,5 +244,5 @@ export function kpisFromLedger(ledger: FinanceLedger, businessIds: BusinessId[])
 
 /** FinanceKpi 한 칸을 화면용 Figure로. 대시보드 KPI 스트립이 쓴다. */
 export function kpiFigure(k: FinanceKpi): Figure {
-  return { value: k.value, basis: basisOf(k), fetched_at: k.fetched_at || null }
+  return { value: k.value, basis: k.basis, fetched_at: k.fetched_at || null }
 }

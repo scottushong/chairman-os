@@ -34,7 +34,7 @@ const tables: Record<string, Row[]> = {
   user_business_access: records((i) => ({ user_id: '0000', business_id: id(i) })),
   finance_kpis: records((i) => ({ period: '2026-09', business_id: id(i), metric: 'EBITDA',
     value: '280000000', target: null, currency: 'KRW', source: 'ecount', closed: false,
-    fetched_at: '2026-09-16T14:00:00Z' })),
+    fetched_at: '2026-09-16T14:00:00Z', basis: 'provisional' })),
   // 0015 원장. id·키가 뒤섞여 들어와도 fetchAll이 끝까지 읽는지 본다.
   accounts: records((i) => ({ business_id: '0000', account_code: id(i), name: `Account ${i}`,
     category: 'other', section: 'sga', cash_flow: null, source: 'ecount',
@@ -42,6 +42,8 @@ const tables: Record<string, Row[]> = {
   journal_lines: records((i) => ({ id: i, business_id: '0000', entry_date: '2026-08-25',
     account_code: id(i), amount: '1000.00', side: i % 2 ? 'debit' : 'credit', slip_no: `S-${i}`,
     line_no: 1, memo: '', source: 'ecount', fetched_at: '2026-09-16T14:00:00Z', closed: false })),
+  journal_entries: records((i) => ({ business_id: '0000', slip_no: `M2608-${id(i)}`, entry_date: '2026-08-25',
+    memo: `Entry ${i}`, evidence_url: null, created_by: id(i), created_at: '2026-09-16T14:00:00Z' })),
   closings: records((i) => ({ business_id: '0000', period: '2026-07', account_code: id(i),
     amount: '-500.50', closed_on: '2026-08-10', provisional_amount: i % 3 ? null : '-400',
     source: 'ecount', fetched_at: '2026-09-16T14:00:00Z', closed: true })),
@@ -146,7 +148,7 @@ async function checkPagination() {
   const finance = await repo.listFinanceKpis()
   assert.equal(finance.length, SIZE)
   assert.ok(finance.every((r) => r.value === 280000000))
-  assert.ok(finance.every((r) => r.source === 'ecount' && r.closed === false), 'Provenance must survive the read')
+  assert.ok(finance.every((r) => r.source === 'ecount' && r.closed === false && r.basis === 'provisional'), 'Provenance must survive the read')
   const ledger = await repo.loadFinanceLedger()
   for (const [key, rows] of Object.entries(ledger)) assert.equal(rows.length, SIZE, `ledger.${key} must paginate`)
   assert.ok(ledger.journal.every((j) => j.amount === 1000 && !('id' in j)), 'numeric strings become numbers')

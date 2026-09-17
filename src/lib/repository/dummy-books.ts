@@ -1,7 +1,8 @@
 import { MOCK_FETCHED_AT } from '@/lib/ecount/mock'
 import { loadMockLedger } from '@/lib/ecount/mock-ledger'
 import { STANDARD_CHART, STANDARD_CHART_BUSINESSES, type StandardAccount } from '@/lib/ledger/standard-chart'
-import type { Account, FinanceLedger } from '@/types'
+import { CLOSED_PERIOD_MESSAGE, entryProblem, slipNumber, type NewJournalEntry } from '@/lib/ledger/journal'
+import type { Account, FinanceLedger, JournalEntry, JournalLine } from '@/types'
 
 import { DUPLICATE_ACCOUNT_CODE, type AccountPatch, type AuditActor, type NewAccount } from './types'
 
@@ -19,6 +20,11 @@ const key = (businessId: string, code: string) => `${businessId}|${code}`
 
 /** mock 계정 위에 얹은 계정들. 키는 business|code. mock 계정을 고치면 여기 복사본이 선다. */
 let accounts: Map<string, Account> | null = null
+
+/** 화면에서 넣은 전표. mock 전표 뒤에 붙는다. */
+const entries: JournalEntry[] = []
+const lines: JournalLine[] = []
+let slipSeq = 0
 
 function standardRow(businessId: string, s: StandardAccount, fetched_at: string): Account {
   return {
@@ -61,8 +67,9 @@ export async function dummyLedger(): Promise<FinanceLedger> {
   const store = await accountStore()
   return {
     accounts: [...store.values()].map((a) => ({ ...a })),
-    journal: [...ledger.journal],
+    journal: [...ledger.journal, ...lines].map((j) => ({ ...j })),
     closings: [...ledger.closings],
+    entries: entries.map((e) => ({ ...e })),
     fxRates: [...ledger.fxRates],
     costIndices: [...ledger.costIndices],
   }
@@ -112,4 +119,44 @@ export async function applyStandardChart(businessId: string, actor: AuditActor):
   }
   note(actor, `apply standard chart ${businessId} (${n})`)
   return n
+}
+
+/**
+ * 0016 post_journal_entry()를 흉내 낸다. DB가 거부할 전표는 여기서도 거부한다 —
+ * 규칙은 lib/ledger/journal.ts entryProblem 한 곳이다. 마감 달은 DB와 같은 낱말(closed_period)로 던진다.
+ */
+export async function postJournalEntry(input: NewJournalEntry, actor: AuditActor): Promise<string> {
+  const ledger = await dummyLedger()
+  const problem = entryProblem(input, ledger)
+  if (problem === CLOSED_PERIOD_MESSAGE) throw new Error('closed_period')
+  if (problem) throw new Error(`invalid_entry: ${problem}`)
+
+  const slip_no = slipNumber(input.entry_date, ++slipSeq)
+  const now = new Date().toISOString()
+  entries.push({
+    business_id: input.business_id,
+    slip_no,
+    entry_date: input.entry_date,
+    memo: input.memo.trim(),
+    evidence_url: input.evidence_url?.trim() || null,
+    created_by: actor.user_id,
+    created_at: now,
+  })
+  input.lines.forEach((l, i) =>
+    lines.push({
+      business_id: input.business_id,
+      entry_date: input.entry_date,
+      account_code: l.account_code,
+      amount: l.amount,
+      side: l.side,
+      slip_no,
+      line_no: i + 1,
+      memo: l.memo?.trim() || input.memo.trim(),
+      source: 'manual',
+      fetched_at: now,
+      closed: false,
+    }),
+  )
+  note(actor, `post journal ${input.business_id}:${slip_no}`)
+  return slip_no
 }

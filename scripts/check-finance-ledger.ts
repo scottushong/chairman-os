@@ -20,12 +20,13 @@ import { MOCK_CHART } from '../src/lib/ecount/account-map'
 import { mapAccounts, mapSlipLines, UnmappedAccountError } from '../src/lib/ecount/map'
 import { loadMockLedger } from '../src/lib/ecount/mock-ledger'
 import { closingDiff, kpiCards, runway } from '../src/lib/ledger/analysis'
-import { basisOf, sumFigures, weakest } from '../src/lib/ledger/basis'
+import { basisOf, ledgerBasisOf, sumFigures, weakest } from '../src/lib/ledger/basis'
 import { kpisFromLedger } from '../src/lib/ledger/cells'
 import { ledgerScope } from '../src/lib/ledger/scope'
 import { STANDARD_CHART } from '../src/lib/ledger/standard-chart'
 import { SECTION_CATEGORIES } from '../src/lib/ledger/accounts'
 import { balanceSheet, cashFlowStatement } from '../src/lib/ledger/statements'
+import { dummyRepository } from '../src/lib/repository/dummy'
 
 const BUSINESSES = ['biz_dy', 'biz_vana', 'biz_sticky', 'biz_hof', 'biz_boram']
 
@@ -40,8 +41,8 @@ async function sheetWins() {
 
   const vana = got.get('2026-08|biz_vana|EBITDA')!
   assert.equal(vana.value, 280_000_000, 'VANA EBITDA는 시트값 2.8억')
-  assert.equal(basisOf(vana), 'provisional', '2026-08은 마감 전 — 잠정')
-  assert.equal(basisOf(got.get('2026-07|biz_vana|EBITDA')!), 'confirmed', '2026-07은 마감 — 확정')
+  assert.equal(vana.basis, 'provisional', '2026-08은 마감 전 — 잠정')
+  assert.equal(got.get('2026-07|biz_vana|EBITDA')!.basis, 'confirmed', '2026-07은 마감 — 확정')
 }
 
 async function statementsClose() {
@@ -74,6 +75,11 @@ function basisRules() {
   assert.equal(basisOf({ source: 'ecount', closed: false }), 'provisional')
   assert.equal(basisOf({ source: 'manual', closed: true }), 'manual', '수기는 마감돼도 수기')
   assert.equal(basisOf({ source: 'estimate', closed: true }), 'estimate')
+  // 0016 — 원장 표에서는 자체 장부(manual)도 마감이 꼬리표를 정한다
+  assert.equal(ledgerBasisOf({ source: 'manual', closed: false }), 'provisional', '자체 장부 전표는 마감 전 잠정')
+  assert.equal(ledgerBasisOf({ source: 'manual', closed: true }), 'confirmed', '자체 장부 결산은 확정')
+  assert.equal(ledgerBasisOf({ source: 'ecount', closed: true }), 'confirmed')
+  assert.equal(ledgerBasisOf({ source: 'estimate', closed: true }), 'estimate')
   assert.equal(weakest(['confirmed', 'estimate', 'provisional']), 'estimate')
   assert.equal(sumFigures([]), null, '원천이 없으면 0이 아니라 null')
 }
@@ -147,6 +153,45 @@ async function provisionalGap() {
   assert.ok(diff.metrics.find((m) => m.metric === 'EBITDA')!.diff.value < 0, '비용 계상 → EBITDA 감소')
 }
 
+/**
+ * 자체 장부 흐름(Phase 2-B) — dummy 어댑터가 0016과 같은 규칙으로 도는가.
+ * DB 쪽 같은 규칙은 check:migrations가 PGlite에서 잰다. 여기는 화면이 실제로 부르는 dummy 경로다.
+ */
+async function books() {
+  const repo = dummyRepository
+  const actor = { user_id: 'check', role: 'Chairman' }
+  const vanaAug = async () => (await repo.listFinanceKpis()).find((k) => k.business_id === 'biz_vana' && k.period === '2026-08' && k.metric === 'Revenue')!
+  const before = await vanaAug()
+  assert.equal(before.basis, 'provisional')
+  assert.equal(before.source, 'ecount', 'mock 전표만 있으면 source=ecount')
+
+  const sale = (entry_date: string, amounts: [number, number]) => ({
+    business_id: 'biz_vana',
+    entry_date,
+    memo: '검증 매출',
+    evidence_url: null,
+    lines: [
+      { account_code: '1030', side: 'debit' as const, amount: amounts[0] },
+      { account_code: '4010', side: 'credit' as const, amount: amounts[1] },
+    ],
+  })
+  const slip = await repo.postJournalEntry(sale('2026-08-20', [1_000_000, 1_000_000]), actor)
+  assert.match(slip, /^M2608-\d{6}$/)
+  const after = await vanaAug()
+  assert.equal(after.value - before.value, 1_000_000, '자체 장부 매출이 VANA 8월 매출에 더해진다')
+  assert.equal(after.basis, 'provisional', '마감 전 — 잠정')
+  assert.equal(after.source, 'manual', '자체 장부가 섞였다')
+  const ledger = await repo.loadFinanceLedger()
+  assert.equal(ledger.entries.filter((e) => e.slip_no === slip).length, 1, '헤더가 남는다')
+  assert.equal(ledger.journal.filter((j) => j.slip_no === slip && j.source === 'manual').length, 2, '라인 두 줄')
+
+  await assert.rejects(repo.postJournalEntry(sale('2026-07-15', [1000, 1000]), actor), /closed_period/, '마감된 달은 거부')
+  await assert.rejects(repo.postJournalEntry(sale('2026-08-20', [1000, 999]), actor), /차변 합/, '차대 불일치는 거부')
+  await repo.updateAccount('biz_vana', '4010', { active: false }, actor)
+  await assert.rejects(repo.postJournalEntry(sale('2026-08-21', [1000, 1000]), actor), /비활성/, '비활성 계정은 거부')
+  await repo.updateAccount('biz_vana', '4010', { active: true }, actor)
+}
+
 async function main() {
   await sheetWins()
   await statementsClose()
@@ -154,7 +199,8 @@ async function main() {
   await boundaries()
   standardChart()
   await provisionalGap()
-  console.log('PASS: sheet 480 cells = ledger, statements close, basis rules, ECOUNT mapping/config boundaries, standard chart, provisional→confirmed gap')
+  await books()
+  console.log('PASS: sheet 480 cells = ledger, statements close, basis rules, ECOUNT mapping/config boundaries, standard chart, provisional→confirmed gap, dummy books')
 }
 
 main().catch((e) => {
