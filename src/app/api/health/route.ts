@@ -77,7 +77,7 @@ const SEEDED_ROWS = 524
 /** 시드가 손대지 않는 표. 위 검산에서 뺀다(0003 파일 머리의 '넣지 않는 테이블'). */
 const NOT_SEEDED = new Set([
   'documents', 'audit_log', 'user_settings',
-  // 0015. 원장은 ECOUNT 동기화가 채운다. 시트 480행은 finance_kpis(뷰)로 이미 한 번 셌다 — 두 번 세지 않는다.
+  // 0015/0016. 원장은 자체 장부 입력(DY는 ECOUNT 엑셀 업로드)이 채운다. 시트 480행은 finance_kpis(뷰)로 이미 한 번 셌다 — 두 번 세지 않는다.
   'finance_kpis_sheet', 'accounts', 'journal_lines', 'closings', 'fx_rates', 'cost_indices',
   'market_multiples', 'business_keymen',
 ])

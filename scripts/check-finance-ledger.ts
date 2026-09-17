@@ -6,7 +6,7 @@
  *      VANA 2026-08 EBITDA = 2.8억, 꼬리표는 잠정(마감 전).
  *   2) 재무제표가 닫힌다 — 모든 회사·그룹·달에서 자산 = 부채 + 자본, 기초 현금 + 현금 증감 = 기말 현금.
  *   3) 꼬리표 규칙 — (source, closed) → 확정/잠정/수기/추정, 합은 가장 약한 쪽.
- *   4) 경계 — ECOUNT 표기 변환, 분류 없는 계정은 멈춤, 키가 없으면 mock, 키 형식이 틀리면 mock으로 떨어지지 않음.
+ *   4) 경계 — ECOUNT 표기 변환(업로드가 지날 길), 분류 없는 계정은 멈춤.
  *   5) 잠정-확정 차이가 결산조정 계정에서 나온다.
  *
  * 0015의 SQL 뷰(finance_kpis)가 같은 공식을 쓰는지는 이 스크립트가 못 잰다(DB가 없다).
@@ -15,7 +15,6 @@
 import assert from 'node:assert/strict'
 
 import { sheetFinanceKpis } from '../src/data'
-import { ecountSetup } from '../src/lib/ecount/config'
 import { MOCK_CHART } from '../src/lib/ecount/account-map'
 import { mapAccounts, mapSlipLines, UnmappedAccountError } from '../src/lib/ecount/map'
 import { loadMockLedger } from '../src/lib/ecount/mock-ledger'
@@ -107,19 +106,6 @@ async function boundaries() {
     () => mapAccounts([{ ACCT_CODE: '1010', ACCT_NAME: '현금' }], { ...ctx, chart: {} }),
     UnmappedAccountError,
     '회사 계정과목표(DB)에 없는 계정이면 멈춘다',
-  )
-
-  assert.equal(ecountSetup({} as NodeJS.ProcessEnv).source.mode, 'mock')
-  assert.throws(() => ecountSetup({ ECOUNT_COMPANIES: '{oops' } as unknown as NodeJS.ProcessEnv), /JSON이 아니다/)
-  assert.throws(
-    () => ecountSetup({ ECOUNT_COMPANIES: '[{"business_id":"biz_dy"}]' } as unknown as NodeJS.ProcessEnv),
-    /com_code/,
-  )
-  assert.equal(
-    ecountSetup({
-      ECOUNT_COMPANIES: '[{"business_id":"biz_dy","com_code":"1","user_id":"u","api_cert_key":"k"}]',
-    } as unknown as NodeJS.ProcessEnv).source.mode,
-    'real',
   )
 }
 
@@ -240,7 +226,7 @@ async function main() {
   standardChart()
   await provisionalGap()
   await books()
-  console.log('PASS: sheet 480 cells = ledger, statements close, basis rules, ECOUNT mapping/config boundaries, standard chart, provisional→confirmed gap, dummy books')
+  console.log('PASS: sheet 480 cells = ledger, statements close, basis rules, ECOUNT mapping boundaries, standard chart, provisional→confirmed gap, dummy books')
 }
 
 main().catch((e) => {

@@ -47,12 +47,19 @@
 |---|---|---|---|
 | D-18 | 업무의 담당자·제목·마감을 Chairman OS에서 못 고친다 | 하 — 의도된 경계다. 고치려면 Layer 1과의 역할 분담을 다시 정해야 한다 | 열림 |
 
+## 결정 (2026-09-17, Chairman — Phase 2-B)
+
+| 항목 | 결정 | 반영 |
+|---|---|---|
+| D-19 ECOUNT 원장 조회 | **자체 장부.** ECOUNT API 연동은 하지 않는다. 회계 원천은 Chairman OS 안의 전표 입력 → 월 마감이다. ECOUNT는 DY 엑셀 업로드로만 들어온다(선택지 B를 DY에 한정). | **해소** — `0016_books.sql`, `/finance/[id]/accounts` · `/journal`, `lib/ledger/journal.ts` · `closing.ts` · `standard-chart.ts`. `lib/ecount/client.ts` · `config.ts` · `sync.ts`, `/api/cron/ecount-sync` 삭제. `REAL_CHART` → DB `accounts`. DY 업로드는 실제 파일을 받으면 별도 블록 |
+| D-20 동기화 주기 | 동기화 자체가 없어져 **해당 없음**. | **해소** — 야간 브리핑 Cron에서 동기화 호출 제거 |
+
 ## 새로 생긴 것 (Phase 2-A 재무 메인스트림, 2026-09-17)
 
 | 항목 | 무엇이 | 급한가 | 상태 |
 |---|---|---|---|
-| D-19 | ECOUNT 공개 OAPI에 전표·계정과목·마감 **조회** API가 없다. 동기화 계정 역할(Integration)을 기본안으로 세웠다 | **상** — 키가 와도 원장이 안 들어온다 | 열림 (회장 확인 필요) |
-| D-20 | 동기화 1시간 주기가 Vercel Hobby에서 불가능하다 (Cron 하루 1개) | 중 | 열림 — 지금은 야간 브리핑 Cron 안에서 하루 1회 |
+| D-19 | ECOUNT 공개 OAPI에 전표·계정과목·마감 **조회** API가 없다. 동기화 계정 역할(Integration)을 기본안으로 세웠다 | **상** — 키가 와도 원장이 안 들어온다 | **해소** (2026-09-17, 자체 장부 — 위 Phase 2-B 결정) |
+| D-20 | 동기화 1시간 주기가 Vercel Hobby에서 불가능하다 (Cron 하루 1개) | 중 | **해소** (동기화 폐기로 해당 없음) |
 | D-21 | 환율·원가 지수의 실제 원천이 없다 | 중 — 원가 구조의 '지수 전년비'가 mock(추정)이다 | 열림 |
 | D-01 | EBITDA Formula | — | **Phase 2 약속 이행** — 0015 뷰가 원장에서 계산한다. 시트 모순은 '시트 정합 조정' 계정으로 드러난다 |
 
@@ -68,6 +75,10 @@
 |---|---|---|
 | 02_데이터필드 KPI | **KPI는 원장에서 계산된다. `source`·`closed`·`fetched_at` 추가**, 사람이 넣는 KPI 없음 | Phase 2-A. 출처 없는 숫자는 화면에 못 올린다. 반영: `0015_finance_ledger.sql`(finance_kpis 뷰), `src/types/finance.ts` |
 | 02_데이터필드 (신규) | **Account / JournalLine / Closing / FxRate / CostIndex / MarketMultiple** | Phase 2-A 원천 6종. 반영: `0015`, `src/types/finance.ts` |
+| 02_데이터필드 (신규) | **JournalEntry**(전표 헤더: 일자·적요·증빙링크·`corrects_id`·`correction_kind`), **Account.active** | Phase 2-B 자체 장부. 반영: `0016_books.sql`, `src/types/finance.ts` |
+| 02_데이터필드 KPI | **`basis`(확정/잠정/수기/추정) 추가.** 원장 표의 `source='manual'`은 자체 장부 — 마감 여부로 잠정/확정 | `source`·`closed`만으로는 '자체 장부 잠정'과 '시트 수기'를 가를 수 없다. 반영: `0016` 2-1절, `lib/ledger/basis.ts` `ledgerBasisOf` |
+| 04_권한 | **전표 입력 = Chairman · GroupCFO · BusinessCEO(자기 회사). 월 마감 = Chairman · GroupCFO.** 마감 해제 없음 | Phase 2-B. 반영: `0016` `can_keep_books()` · `can_close_books()` |
+| 02_기능명세 CH-052 | **ECOUNT API 연동 → 자체 장부 + DY 엑셀 업로드** | D-19 결정. 반영: `CLAUDE.md` 데이터 원칙 |
 | 04_권한 | **역할 `Integration` 추가** (원장 5표 쓰기만) | DEFERRED D-19 기본안. 반영: `0015` 9절, `supabase/bootstrap/0006_integration.sql` |
 | 05_Strategic Coordinates | **CH-024에 현재 이슈(칸)·키맨(표: 이름·관계·최근접촉) 추가** | Phase 2-A. 반영: `0015` 7절, `src/lib/strategy-fields.ts`, `components/business/keymen-panel.tsx` |
 | 02_기능명세 02_데이터필드 | **Task에 `blocked_since` 추가** (ISO date, 필수, 보안등급 [일반]) | DEFERRED D-02 결정 A. "이 업무가 지금 상태로 들어간 날"이다. CH-017 대기일수를 이 값에서 잰다. 시트 Tasks에는 `deadline`만 있어 대기일수를 낼 수 없었다. 이미 반영된 곳: `src/types/domain.ts`, `src/data/tasks.json`, `supabase/migrations/0001_init.sql` (tasks.blocked_since), `src/components/dashboard/waiting-on-me.tsx` |
@@ -560,6 +571,12 @@ Chairman OS는 Layer 2(그룹 관제)다. 업무의 내용을 쓰는 곳은 각 
 
 ## D-19. ECOUNT에서 원장을 읽어 올 길이 없다 (CH-052)
 
+> **해소 (2026-09-17, Chairman — Phase 2-B).** 자체 장부로 간다. 전표 입력 → 월 마감 → 확정이 Chairman OS 안에서 돈다
+> (`0016_books.sql`). ECOUNT API는 연동하지 않는다 — `client.ts` · `config.ts` · `sync.ts`와 `/api/cron/ecount-sync`를 지웠다.
+> ECOUNT는 DY 엑셀 업로드로만 들어온다(아래 선택지 B를 DY에 한정). `map.ts` · `ingest.ts` · `mock.ts`는 업로드가 다시 쓰려고 남겼다.
+> 계정과목표는 `REAL_CHART`(코드) 대신 DB `accounts`가 갖는다 — 스타트업 4곳은 표준 계정과목표, DY는 ECOUNT 코드 그대로.
+> `Integration` 역할은 남겼지만 지금 쓰는 곳이 없다. 업로드 블록에서 쓸지 정한다.
+
 **무엇이** Phase 2-A는 "ECOUNT OpenAPI 문서 형식대로, 키 오면 real로"였다. 2026-09-17 조사 결과
 (공식 매뉴얼은 로그인 후에만 열려 테스트 서버 실호출과 ECOUNT 제품 페이지의 '제공 API' 표로 확인):
 
@@ -589,6 +606,8 @@ Chairman OS는 Layer 2(그룹 관제)다. 업무의 내용을 쓰는 곳은 각 
 ---
 
 ## D-20. 동기화 1시간 주기가 Hobby에서 안 된다
+
+> **해소 (2026-09-17).** D-19 결정으로 ECOUNT 동기화가 없어졌다. 야간 브리핑 Cron에서 동기화 호출을 뺐다.
 
 **무엇이** 요구는 `/api/cron/ecount-sync` 1시간 주기다. Vercel Hobby는 Cron이 하루 1회·1개다.
 지시대로 야간 브리핑 Cron(23:00 KST)이 동기화를 먼저 돌리도록 합쳤다. 결과는 브리핑 응답의 `ecount_sync`에 있다.

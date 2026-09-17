@@ -13,7 +13,7 @@ import type {
 } from './types'
 
 /**
- * ECOUNT mock 원장 (Phase 2-A). 키가 오기 전까지 재무 화면 전체가 이 위에서 돈다.
+ * ECOUNT 모양 mock 원장 (Phase 2-A). dummy 재무 화면 전체가 이 위에서 돈다. live DB에는 들어가지 않는다.
  *
  * ── 무엇을 지키나 ────────────────────────────────────────────────────────────
  * **06_Dummy_Data 시트값이 이긴다(CLAUDE.md).** 이 mock의 전표를 0015의 공식(lib/ledger/cells.ts)으로
@@ -240,7 +240,7 @@ function toRow(l: Line, serNo: number): EcountSlipLineRow {
   }
 }
 
-/** mock은 네트워크를 타지 않는다. 대신 real과 같은 ECOUNT 모양(문자열 금액, YYYYMMDD)으로 준다. */
+/** mock은 파일도 네트워크도 타지 않는다. 대신 업로드가 낼 ECOUNT 모양(문자열 금액, YYYYMMDD)으로 준다. */
 export const mockLedgerSource: EcountLedgerSource = {
   mode: 'mock',
 
@@ -290,10 +290,4 @@ export const mockLedgerSource: EcountLedgerSource = {
 }
 
 /** mock이 원장을 들고 있는 회사. 이 목록 밖(CH-002로 방금 만든 회사)은 원장이 비어 있다. */
-export const MOCK_COMPANIES: EcountCompany[] = Object.keys(COST_MIX).map((business_id) => ({
-  business_id,
-  com_code: `MOCK_${business_id}`,
-  user_id: 'mock',
-  api_cert_key: 'mock',
-  test: true,
-}))
+export const MOCK_COMPANIES: EcountCompany[] = Object.keys(COST_MIX).map((business_id) => ({ business_id }))

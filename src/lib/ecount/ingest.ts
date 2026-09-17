@@ -1,5 +1,4 @@
 import { buildCells } from '@/lib/ledger/cells'
-import { addMonths } from '@/lib/ledger/basis'
 import type { Account, Closing, IsoDateTime, JournalLine, PeriodKey } from '@/types'
 
 import type { AccountChart } from './account-map'
@@ -7,11 +6,11 @@ import { mapAccounts, mapClosings, mapSlipLines, toYyyymmdd, type MapContext } f
 import type { EcountCompany, EcountLedgerSource } from './types'
 
 /**
- * 회사 하나의 원장을 ECOUNT에서 가져와 Chairman OS 모양으로 바꾼다. DB에는 쓰지 않는다.
+ * 회사 하나의 원장을 ECOUNT 모양에서 Chairman OS 모양으로 바꾼다. DB에는 쓰지 않는다.
  *
- * 쓰기를 떼어 둔 이유: dummy 모드는 이 결과를 메모리에서 그대로 쓰고(repository/dummy.ts),
- * live 동기화는 같은 결과를 DB에 넣는다(sync.ts). 가져오는 길이 하나여야 dummy 화면이 보여 주는 숫자와
- * 동기화가 넣을 숫자가 같은 변환을 거친다.
+ * 쓰기를 떼어 둔 이유: dummy 모드는 이 결과를 메모리에서 그대로 쓰고(repository/dummy-books.ts),
+ * DY 엑셀 업로드(다음 블록)는 같은 결과를 DB에 넣는다. 가져오는 길이 하나여야 dummy 화면이 보여 주는 숫자와
+ * 업로드가 넣을 숫자가 같은 변환을 거친다.
  */
 
 export interface IngestWindow {
@@ -78,7 +77,3 @@ export async function ingestCompany(
   return { business_id: company.business_id, accounts, journal, closings, last_closed_period: lastClosed }
 }
 
-/** 동기화 창. 전년동월비·TTM이 서려면 24개월이 필요하다. */
-export function defaultWindow(today: PeriodKey): IngestWindow {
-  return { from: addMonths(today, -24), to: today }
-}

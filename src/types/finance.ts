@@ -14,11 +14,10 @@ export const DATA_SOURCE = ['ecount', 'manual', 'estimate'] as const
 export type DataSource = (typeof DATA_SOURCE)[number]
 
 /**
- * 화면 꼬리표. 원천의 (source, closed)에서 기계적으로 나온다.
- *   ecount + closed      확정
- *   ecount + not closed  잠정
- *   manual               수기
- *   estimate             추정
+ * 화면 꼬리표. 원천의 (source, closed)에서 기계적으로 나온다(lib/ledger/basis.ts).
+ *   원장(전표·결산)   closed → 확정 / not closed → 잠정. ECOUNT든 자체 장부(manual)든 같다(0016)
+ *   그 밖(시트·환율·지수)  ecount+closed 확정 · ecount 잠정 · manual 수기
+ *   estimate          추정
  *
  * 순서가 뜻이 있다 — 뒤로 갈수록 약하다. 여러 숫자를 더한 값은 그중 가장 약한 꼬리표를 받는다.
  * 확정 11개월에 잠정 1개월을 더한 YTD는 확정이 아니다.

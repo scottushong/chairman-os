@@ -58,7 +58,7 @@ npm run build         # 빌드 (타입 검사 포함)
 
 ### 파일
 
-`supabase/migrations/` 에 `0001` ~ `0015`. 번호순으로 적용된다.
+`supabase/migrations/` 에 `0001` ~ `0016`. 번호순으로 적용된다.
 
 `0004`가 없는 것은 실수가 아니다. `supabase/bootstrap/0004_bootstrap_chairman.sql`이
 그 번호를 이미 쓰고 있다. 그 파일은 `migrations/` 밖에 있어 `db push`가 집지 않는다 —
@@ -128,14 +128,29 @@ PostgREST 오류로 멈춘다(`column finance_kpis.source does not exist`).
 대시보드 숫자는 그대로고 꼬리표만 붙는다. `/finance`는 '이 범위에 원장이 없습니다'를 보여 준다 — 정상이다.
 mock 원장은 live DB에 들어가지 않는다(동기화가 mock일 때 쓰지 않는다).
 
-### ECOUNT 동기화 계정 (한 번)
+### 0016 자체 장부 — 코드보다 먼저 적용한다 (Phase 2-B)
 
-`supabase/bootstrap/0006_integration.sql` 머리 주석의 절차를 따른다. 0005와 같은 모양이고 역할만 `Integration`이다.
-그 이메일/비밀번호를 Vercel `INTEGRATION_EMAIL` / `INTEGRATION_PASSWORD`에, 회사별 키를 `ECOUNT_COMPANIES`에 넣는다.
+**0016을 적용하기 전에 Phase 2-B 코드를 live로 배포하지 않는다.** 대시보드가 `finance_kpis.basis`를,
+재무 화면이 `journal_entries`를 읽는다. 순서가 뒤집히면 대시보드가 PostgREST 오류로 멈춘다
+(`column finance_kpis.basis does not exist`). 적용 전 `npm run check:migrations`를 통과시킨다.
 
-동기화는 매일 23:00 KST 야간 브리핑 Cron 안에서 브리핑보다 먼저 돈다(`/api/cron/night-brief` 응답의 `ecount_sync`).
-단독 입구 `/api/cron/ecount-sync`는 Chairman 세션 POST 또는 CRON_SECRET GET으로 부른다.
-끝은 늘 `audit_log(action='ecount_sync_completed')` 한 줄이다. 회사별 결과(done / failed / unsupported)가 `after`에 있다.
+0016이 하는 일: 계정과목 관리(`accounts.active`, 코드 불변, 스타트업 4곳 표준 계정과목표 시드),
+전표 입력(`journal_entries`, `post_journal_entry`), 월 마감(`close_period`), 정정 전표(`post_correction`),
+꼬리표 규칙 변경(원장 표의 manual도 잠정/확정, `finance_kpis.basis`).
+
+적용 직후의 모습: 전표와 결산이 비어 있으므로 대시보드 숫자는 그대로(시트 수기)다. 계정과목만 스타트업 4곳에 생긴다.
+**어느 회사·달에든 전표가 한 줄이라도 들어가면 그 회사·달은 시트 행 대신 원장 숫자로 바뀐다.**
+시험 입력은 운영 DB에서 하지 않는다 — dummy 모드(`NEXT_PUBLIC_DATA_MODE=dummy`, Supabase 키 비움)에서 한다.
+마감은 되돌릴 수 없다.
+
+**권한:** 계정과목·전표 = Chairman · GroupCFO · 자기 회사 BusinessCEO. 월 마감 = Chairman · GroupCFO.
+모든 쓰기는 `audit_log`에 남는다 — 전표·마감·정정은 DB 함수 안에서 같은 트랜잭션으로 남긴다.
+
+### Integration 계정 (예약)
+
+ECOUNT API 동기화(Phase 2-A)는 2-B에서 걷어냈다(`lib/ecount/client.ts` · `config.ts` · `sync.ts`, `/api/cron/ecount-sync` 삭제).
+`Integration` 역할과 `supabase/bootstrap/0006_integration.sql`은 남겨 두었다. 지금 `INTEGRATION_EMAIL` / `INTEGRATION_PASSWORD`를
+읽는 코드는 없다. DY ECOUNT 엑셀 업로드 블록에서 이 계정을 쓸지(사람 세션으로 올릴지) 정한다.
 
 ---
 

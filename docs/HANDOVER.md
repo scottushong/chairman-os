@@ -122,6 +122,8 @@ if (!task) notFound()      // 없는 업무도 404, 권한 밖 업무도 404
 | `has_business(target)` | 그 회사를 볼 수 있나 — **Business Isolation은 이 함수 하나로만 판정한다** |
 | `can_module(target, write)` | 그 모듈을 읽/쓸 수 있나 |
 | `can_approve()` | 결재할 수 있나 |
+| `can_keep_books(target)` | 그 회사의 계정과목·전표를 쓸 수 있나 — Chairman · GroupCFO · 자기 회사 BusinessCEO (0016) |
+| `can_close_books()` | 월 마감을 할 수 있나 — Chairman · GroupCFO (0016) |
 | `max_class()` / `class_rank()` | 볼 수 있는 최고 보안등급 |
 
 ### 역할 9개
@@ -156,12 +158,15 @@ if (!task) notFound()      // 없는 업무도 404, 권한 밖 업무도 404
 짧지만 전부 지켜야 하는 것들이다.
 
 1. **VANA EBITDA는 시트값 +2.8억 유지.** 계산해서 덮어쓰지 않는다.
-   실 Formula는 Phase 2 ECOUNT 연동 때 → D-01.
+   원장이 없는 회사·달은 `finance_kpis` 뷰가 시트 행을 수기 꼬리표로 내보낸다(0015 ③) → D-01.
 2. **`06_Dummy_Data` = 숫자 원천, `03_UX_UI` PNG = 레이아웃 참고.
    숫자가 충돌하면 항상 시트가 이긴다** → D-03.
 3. **야간 AI Job은 AI Agent 역할로 인증해 RLS 안에서 돈다. service_role은 없다.**
 4. **Vault 문서의 파일 실체는 사내 스토리지에 두고 Chairman OS는 링크만 보관한다**
    (`supabase/vault_columns.md` 선택지 B). Vault 등급일수록 실체가 이 DB에 없어야 한다.
+5. **회계 원천은 자체 장부다. ECOUNT는 DY 엑셀 업로드로만 들어온다** (Phase 2-B, D-19 해소).
+   전표 입력(`/finance/[id]/journal`) → 월 마감(`close_period`) → 확정. 차대가 맞지 않는 전표는 DB가 받지 않는다.
+   꼬리표: 원장 표(전표·결산)는 ECOUNT든 자체 장부든 마감 전 **잠정**, 마감 후 **확정**. 시트 행만 **수기**다.
 
 ---
 
@@ -189,6 +194,12 @@ DB에서 코드로 옮겨 간다. 필요하면 **초대 전용 Edge Function 하
 ### 🚫 `0003_seed.sql`을 손으로 고치지 않는다
 
 생성 파일이다. `src/data/*.json`을 고치고 `npm run gen:seed`로 다시 만든 뒤 둘을 같이 커밋한다.
+
+### 🚫 마감된 달의 장부를 고치지 않는다 (마감 해제 경로도 만들지 않는다)
+
+`closings`에는 update/delete 정책이 없고, 전표 라인은 사람이 `closed` 한 칸만 바꿀 수 있다(0016 `journal_lines_close_guard`).
+잘못 마감했으면 **당월에 정정 전표**를 넣고 당월을 마감한다. 원 전표는 그대로 남아 무엇을 왜 고쳤는지가 장부에 선다.
+'마감 취소' 버튼을 만들고 싶어지면, 확정 숫자가 조용히 바뀌는 길을 여는 것이다.
 
 ### 🚫 이미 적용된 마이그레이션을 고치지 않는다
 
@@ -257,7 +268,10 @@ fallback을 넣으면 화면에 시드 숫자가 뜨는데 DUMMY DATA 뱃지는 
 - **되는 것** — 로그인·권한, 대시보드 전부(CH-001~019), 회사 상세·전략 좌표,
   업무 목록·단건, 프로젝트 단건, 전자결재(기안·처리·첨부), 문서관리, 통합검색,
   사용자 초대·권한 회수, 감사 기록.
-- **안 되는 것** — ECOUNT/MES 연동, 야간 AI Job 실행, 외부 Staging 및 실제 복구 리허설.
+- **Phase 2-B (2026-09-17)** — 자체 장부: 계정과목 관리(표준 계정과목표), 전표 입력(템플릿·차대 검사),
+  월 마감(잠정 → 확정), 정정 전표(역분개 + 정정분개). `0016_books.sql`. dummy 모드에서 끝까지 확인했다.
+- **안 되는 것** — DY ECOUNT 엑셀 업로드(실제 파일을 받으면 별도 블록), MES 연동, 외부 Staging 및 실제 복구 리허설.
+  ECOUNT API 연동은 **하지 않기로** 했다(D-19).
   앞의 둘은 Phase 2 범위다. D-17 로컬 격리 workflow·합성 시드·검증 스크립트와 복구 절차는
   준비됐지만 CLI/Docker 실행은 미검증이다. [OPERATIONS 8~9절](./OPERATIONS.md#8-d-17--격리된-로컬-검증)을 따른다.
 - **못 잰 것** — 두 번째 계정이 없어서 못 돌린 테스트 5건.

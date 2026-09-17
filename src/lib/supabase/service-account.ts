@@ -3,7 +3,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { requireSupabaseConfig } from './config'
 
 /**
- * 사람이 아닌 계정(야간 AI Agent · ECOUNT 동기화)으로 로그인한 클라이언트.
+ * 사람이 아닌 계정(야간 AI Agent)으로 로그인한 클라이언트.
  *
  * service_role 대신 이 길을 쓴다(CLAUDE.md). 계정도 RLS 안에서 돌고, 무엇을 읽고 쓸지는
  * 그 계정의 user_profiles.role이 정한다.

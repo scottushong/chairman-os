@@ -6,7 +6,7 @@ import type { Figure } from '@/types'
 import { FigureText } from './figure'
 
 /**
- * 재무제표 한 장. 계정별 원본(ECOUNT 계정코드)이 먼저, 합계가 그 아래.
+ * 재무제표 한 장. 계정별 원본(회사 계정코드)이 먼저, 합계가 그 아래.
  *
  * 행의 id가 KPI 카드의 링크 목적지다(lib/ledger/statements.ts METRIC_ANCHOR).
  * :target으로 그 줄에 불이 들어온다(globals.css .fin-row).

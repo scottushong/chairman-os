@@ -49,7 +49,7 @@ export function FinanceView({
       <section className="mt-4 rounded-xl border border-line-soft bg-panel px-4 py-10 text-center">
         <p className="text-[13px] text-ink-dim">이 범위에 원장이 없습니다.</p>
         <p className="mt-1 text-[11.5px] text-ink-muted">
-          ECOUNT 동기화가 이 회사의 계정·전표·결산을 가져오면 여기에 섭니다. 출처 없는 숫자는 올리지 않습니다.
+          전표를 입력하거나(전표 화면) DY는 ECOUNT 엑셀을 올리면 여기에 섭니다. 출처 없는 숫자는 올리지 않습니다.
         </p>
       </section>
     )
@@ -132,7 +132,7 @@ export function FinanceView({
               {STATEMENT_LABEL_KO[t]}
             </Link>
           ))}
-          <span className="ml-auto text-[10.5px] text-ink-muted">단위: 백만원 · 계정코드는 ECOUNT 원본</span>
+          <span className="ml-auto text-[10.5px] text-ink-muted">단위: 백만원 · 계정코드는 회사 계정과목표 원본</span>
         </nav>
         <div className="mt-2">
           <StatementTable kind={tab} rows={rows} period={period} />

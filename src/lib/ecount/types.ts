@@ -1,64 +1,16 @@
 /**
- * ECOUNT OAPI V2의 모양 (Phase 2-A).
+ * ECOUNT 원장 행의 모양 (Phase 2-A → 2-B).
  *
- * 무엇이 확인된 사실이고 무엇이 아닌가 — 이 구분이 이 파일의 요점이다.
- * (2026-09-17 조사. 공식 매뉴얼 oapi.ecount.com/ECERP/OAPI/OAPIView는 로그인 후에만 열린다.
- *  아래 '확인'은 테스트 서버 실호출과 공개 자료 기준이다.)
- *
- *   확인   Zone   POST https://sboapi.ecount.com/OAPI/V2/Zone          { COM_CODE }
- *   확인   Login  POST https://{sboapi|oapi}{ZONE}.ecount.com/OAPI/V2/OAPILogin
- *                 { COM_CODE, USER_ID, ZONE, API_CERT_KEY, LAN_TYPE }
- *                 테스트 키는 sboapi, 운영 키는 oapi 호스트다.
- *   확인   이후 호출은 ?SESSION_ID=… 쿼리로 세션을 싣는다.
- *   확인   Status가 문자열("500")일 때도 숫자(200)일 때도 있다.
- *   확인   로그인 실패도 Status 200으로 온다. 실패는 Data.Code / Data.Message에만 있다.
- *   확인   숫자 칸은 문자열로 온다.
- *
- *   미확인 성공 응답의 Data.ZONE, Data.Datas.SESSION_ID 칸 이름(2차 자료만 있다).
- *   미확인 호출 한도. 자료마다 다르다(시간당 6,000 / List 10분 1회 등). 그래서 동기화는 하루 1회로 둔다.
- *
- *   **없음** 공개된 '제공 API' 표의 회계 항목은 '매출/매입 입력' 하나다(쓰기).
- *          전표·계정과목·원장·시산표·월마감을 **읽는** API가 목록에 없다 → DEFERRED D-19.
- *
- * 그래서 아래 원장 행(EcountAccountRow / EcountSlipLineRow / EcountClosingRow)은
- * ECOUNT의 필드 표기 관례(대문자 약어, 문자열 금액, YYYYMMDD)를 따른 **제안 모양**이다.
- * 실제 조회 경로(API 추가 확인 또는 엑셀 내보내기)가 정해지면 map.ts 한 곳만 고친다.
+ * 2-B에서 ECOUNT OpenAPI 연동을 걷어냈다. 공개 OAPI에 전표·계정과목·마감 **조회**가 없었다(DEFERRED D-19 해소).
+ * 회계 원천은 자체 장부고, ECOUNT는 DY 엑셀 업로드로만 들어온다. 이 파일에 남은 것은 두 가지다.
+ *   - 원장 행 모양(대문자 약어, 문자열 금액, YYYYMMDD) — 업로드 파서가 엑셀을 이 모양으로 바꾸면
+ *     map.ts → ingest.ts를 그대로 지난다. dummy mock 원장(mock.ts)도 같은 모양을 낸다.
+ *   - EcountLedgerSource — 원장을 내주는 입구. 지금은 mock 하나, 업로드가 두 번째가 된다.
  */
 
-/** 모든 응답의 겉봉. */
-export interface EcountEnvelope<T> {
-  Status: string | number
-  Data?: T
-  Error?: { Code: number | string; Message: string; MessageDetail?: string } | null
-  Errors?: { Code: string; Message: string; ProgramId?: string; Name?: string }[] | null
-  Timestamp?: string | null
-  RequestKey?: string | null
-}
-
-export interface EcountZoneData {
-  /** 미확인 — 성공 응답의 칸 이름 */
-  ZONE?: string
-  /** 확인 — 없는 회사코드면 true */
-  EMPTY_ZONE?: boolean
-}
-
-export interface EcountLoginData {
-  /** '00'이 아니면 실패로 본다. 확인된 실패 값: '10'(회사코드/아이디/키 불일치) */
-  Code: string
-  Message?: string
-  Datas?: { SESSION_ID?: string }
-}
-
-/** 회사 하나의 연결 정보. ECOUNT는 회사코드(COM_CODE) 단위라 계열사마다 따로다. */
+/** 원장을 가진 회사 하나. 업로드도 회사 단위다. */
 export interface EcountCompany {
   business_id: string
-  com_code: string
-  user_id: string
-  api_cert_key: string
-  /** 비우면 Zone API로 찾는다 */
-  zone?: string
-  /** true면 sboapi(테스트 서버) */
-  test?: boolean
 }
 
 /** [제안] 계정과목 한 줄. 분류(대분류·구분·현금흐름)는 ECOUNT가 주지 않는다 — account-map.ts가 붙인다. */
@@ -94,20 +46,20 @@ export interface EcountClosingRow {
 }
 
 /**
- * 원장을 읽어 오는 입구. mock과 real이 같은 모양을 낸다.
+ * 원장을 읽어 오는 입구. mock과 업로드가 같은 모양을 낸다.
  *
  * 기간 인자는 ECOUNT 표기(YYYYMMDD / YYYYMM)로 받는다. 우리 쪽 표기('YYYY-MM')로 바꾸는 일은
  * map.ts의 몫이다 — 두 표기가 이 경계를 넘어 섞이면 어느 쪽 날짜인지 코드가 알 수 없다.
  */
 export interface EcountLedgerSource {
-  readonly mode: 'mock' | 'real'
+  readonly mode: 'mock' | 'upload'
   listAccounts(company: EcountCompany): Promise<EcountAccountRow[]>
   listSlipLines(company: EcountCompany, fromDate: string, toDate: string): Promise<EcountSlipLineRow[]>
   /** from ~ to (YYYYMM) 사이의 마감 칸 전부 */
   listClosings(company: EcountCompany, fromYymm: string, toYymm: string): Promise<EcountClosingRow[]>
 }
 
-/** 응답 겉봉이 실패를 말하거나, 성공 모양이 아닐 때. */
+/** 원천 행이 약속한 모양이 아닐 때(날짜·금액 형식, 차대 동시 기재). */
 export class EcountApiError extends Error {
   constructor(
     message: string,
@@ -116,6 +68,3 @@ export class EcountApiError extends Error {
     super(message)
   }
 }
-
-/** 공개 OAPI에 해당 조회 API가 없어서 real 모드가 할 수 없는 일(DEFERRED D-19). */
-export class EcountUnsupportedError extends Error {}
