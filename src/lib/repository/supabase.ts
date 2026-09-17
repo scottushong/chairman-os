@@ -308,13 +308,17 @@ interface EntityAuditRow {
 
 interface NightOutputRow {
   output_id: string
-  business_id: string
+  business_id: string | null
   job_type: AiNightOutput['job_type']
   result_summary: string
   status: AiNightOutput['status']
   artifact_link: string | null
   confidence: number | string | null
   completed_at: string
+  items: AiNightOutput['items'] | null
+  run_id: string | null
+  run_date: string | null
+  model: string | null
 }
 
 /** PostgREST 오류는 삼키지 않는다. RLS 거부(401/403)와 스키마 오류(42P01)를 구분해야 고칠 수 있다. */
@@ -628,7 +632,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         sb
           .from('ai_night_outputs')
           .select(
-            'output_id,business_id,job_type,result_summary,status,artifact_link,confidence,completed_at',
+            'output_id,business_id,job_type,result_summary,status,artifact_link,confidence,completed_at,items,run_id,run_date,model',
             { count: 'exact' },
           )
           .order('completed_at', { ascending: false })
@@ -638,6 +642,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       )
       const rows = unwrap('ai_night_outputs', data, error)
       return rows.map((r) => ({
+        output_id: r.output_id,
         completed_at: r.completed_at,
         business_id: r.business_id,
         job_type: r.job_type,
@@ -645,6 +650,10 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         status: r.status,
         artifact_link: r.artifact_link ?? '',
         confidence: r.confidence === null ? 0 : num(r.confidence),
+        items: r.items ?? [],
+        run_id: r.run_id,
+        run_date: r.run_date,
+        model: r.model,
       }))
     },
 

@@ -19,3 +19,4 @@ supabase/.branches/
 
 # 작업 중 찍은 화면 캡처 (커밋 대상 아님)
 .screenshots/
+supabase/bootstrap/0005_ready.sql

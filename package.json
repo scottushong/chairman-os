@@ -15,6 +15,7 @@
     "check:boundaries": "tsx scripts/check-data-boundaries.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.126.0",
     "@supabase/ssr": "^0.12.6",
     "@supabase/supabase-js": "^2.115.0",
     "next": "16.3.4",

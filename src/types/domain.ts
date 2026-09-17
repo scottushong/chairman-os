@@ -217,16 +217,35 @@ export const NIGHT_JOB_TYPE = [
   'Risk',
   'Task Generation',
   'Decision Memo',
+  // Phase 3-A 야간 브리핑(0013). 회사별 요약과 그걸 압축한 그룹 브리핑.
+  'Company Brief',
+  'Daily Brief',
 ] as const
 export type NightJobType = (typeof NIGHT_JOB_TYPE)[number]
 
 /** CH-019 AI Did Last Night. 요약만이 아니라 artifact_link가 있어야 한다. */
+/** 브리핑 한 줄의 근거 항목. 모델이 채우고 src/lib/ai/schema.ts가 모양을 검사한다. */
+export interface AiBriefItem {
+  title: string
+  detail: string
+  severity: 'info' | 'warning' | 'critical'
+}
+
 export interface AiNightOutput {
+  /** 시드(JSON)에는 없다. DB 행에만 있다. */
+  output_id?: string
   completed_at: IsoDateTime
-  business_id: BusinessId
+  /** null = 그룹 행(Daily Brief). 0013. */
+  business_id: BusinessId | null
   job_type: NightJobType
   result_summary: string
   status: 'Done' | 'Running' | 'Failed'
   artifact_link: string
   confidence: Confidence
+  /** 이하 0013. 시드 행과 Phase 3-A 이전 행에는 없다. */
+  items?: AiBriefItem[]
+  run_id?: string | null
+  /** 브리핑 기준일(KST, YYYY-MM-DD) */
+  run_date?: IsoDate | null
+  model?: string | null
 }

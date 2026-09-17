@@ -58,7 +58,7 @@ npm run build         # 빌드 (타입 검사 포함)
 
 ### 파일
 
-`supabase/migrations/` 에 `0001` ~ `0012`. 번호순으로 적용된다.
+`supabase/migrations/` 에 `0001` ~ `0013`. 번호순으로 적용된다.
 
 `0004`가 없는 것은 실수가 아니다. `supabase/bootstrap/0004_bootstrap_chairman.sql`이
 그 번호를 이미 쓰고 있다. 그 파일은 `migrations/` 밖에 있어 `db push`가 집지 않는다 —
@@ -104,6 +104,19 @@ push 전에 지금 link된 프로젝트 ID가 의도한 대상(staging/productio
 첫 행을 넣을 방법이 자체가 없다.
 
 > 치환한 사본(`0004_ready.sql`)은 `.gitignore`에 있다. 커밋하지 않는다.
+
+### AI Agent 계정 (야간 브리핑, 한 번)
+
+`supabase/bootstrap/0005_ai_agent.sql` 머리 주석의 절차를 따른다. 선행 조건은 `0013_ai_agent.sql` 적용이다.
+
+1. Dashboard → Authentication → Users → **Add user** (Auto Confirm User 켠다). 비밀번호는 길고 무작위로.
+2. UID로 `:agent_uid`를 치환한 사본(`0005_ready.sql`, `.gitignore`)을 SQL Editor에서 실행
+3. 파일 끝 5절 확인: `vault_docs = 0`, `kpis > 0`, `alert_ack = 0`, `settings_write = denied`, `output_write = ok`
+4. 그 이메일/비밀번호를 Vercel `AI_AGENT_EMAIL` / `AI_AGENT_PASSWORD`에 넣는다
+
+Agent는 부트스트랩 시점의 회사만 본다. 회사를 추가하면 그 파일의 2절만 다시 돌린다.
+돌지 않은 밤은 `/ai`에 그 날짜가 없고, 돌았는데 실패한 회사는 `status='Failed'` 행으로 남는다.
+Job의 끝은 늘 `audit_log(action='night_job_completed')` 한 줄이다 — 없으면 Job이 로그인조차 못 한 것이다.
 
 ---
 
@@ -225,7 +238,7 @@ select tgname from pg_trigger where tgrelid = 'auth.users'::regclass;
 | 업무 담당자·제목·마감 편집 | **D-18** (의도된 경계) |
 | 전사 프로젝트 목록 화면 | Phase 2 |
 | ECOUNT / MES 연동 | Phase 2 (CH-052~054) |
-| 야간 AI Job 실행 | Phase 2 (CH-045~048) |
+| 야간 AI Job — 조사·발굴 등 6단계 파이프라인 | Phase 3 이후 (CH-045~048). 야간 브리핑만 Phase 3-A로 섰다(2절 AI Agent 계정) |
 
 ## 8. D-17 — 격리된 로컬 검증 (선택)
 

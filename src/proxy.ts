@@ -55,8 +55,9 @@ export const config = {
   /**
    * 정적 자산과 헬스체크는 지나가게 둔다.
    * /api/health는 '로그인하지 않은 상태'가 정답인 엔드포인트라(route.ts 주석) 여기서 손대면 안 된다.
+   * /api/cron/*은 Vercel Cron이 쿠키 없이 부른다. 인증은 route가 CRON_SECRET / Chairman 세션으로 직접 한다.
    */
   matcher: [
-    '/((?!_next/static|_next/image|api/health|favicon.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)$).*)',
+    '/((?!_next/static|_next/image|api/health|api/cron|favicon.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)$).*)',
   ],
 }

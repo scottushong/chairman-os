@@ -49,15 +49,8 @@ export const NAV: readonly NavGroup[] = [
       // CH-041 전자결재. 라벨은 시안 그대로 두고 대상만 실제 화면으로 잇는다 —
       // 그 화면이 곧 대시보드 '내 결정 사항' 패널의 전체 화면 버전이다.
       { label: '내 결정 사항', href: '/approvals', icon: 'check-circle', ready: true },
-      {
-        label: 'AI 인사이트',
-        href: '/ai',
-        icon: 'sparkles',
-        badge: 'NEW',
-        ready: false,
-        waitingFor:
-          'CH-044 자연어 질의와 CH-045~048 야간 Job의 전체 화면입니다. 지금은 대시보드의 "AI가 밤새 한 일" 패널(CH-019)만 서 있습니다.',
-      },
+      // Phase 3-A. 야간 브리핑 전문. CH-044 자연어 질의는 아직 없다 — 붙으면 같은 화면에 들어온다.
+      { label: 'AI 인사이트', href: '/ai', icon: 'sparkles', badge: 'NEW', ready: true },
       {
         label: '캘린더',
         href: '/calendar',
