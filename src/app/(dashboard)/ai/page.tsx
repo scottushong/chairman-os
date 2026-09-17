@@ -1,9 +1,12 @@
 import Link from 'next/link'
 
 import { RunNightBrief } from '@/components/ai/run-night-brief'
+import { Manifesto } from '@/components/chairman/manifesto'
+import { ProjectCounters } from '@/components/chairman/project-counters'
 import { PageHeader } from '@/components/layout/page-header'
 import { Icon } from '@/components/ui/icon'
 import { currentUser } from '@/lib/auth/session'
+import { kstToday, orderProjects } from '@/lib/chairman-project'
 import {
   CONFIDENCE_FLOOR,
   formatRunTime,
@@ -13,10 +16,18 @@ import {
 } from '@/lib/night-brief-view'
 import { firstParam } from '@/lib/query'
 import { getRepository } from '@/lib/repository'
-import type { AiBriefItem, AiNightOutput, Business } from '@/types'
+import type { AiBriefItem, AiNightOutput, Business, ProjectNote } from '@/types'
 
 /**
- * /ai — 야간 브리핑 전문 (Phase 3-A 블록 4, CH-019의 전체 화면).
+ * /ai — 회장의 아침 루틴 (Phase 3-B). 위에서 아래로 읽는 순서 그대로 놓는다.
+ *
+ *   a. 장기 프로젝트 카운터   D-day·경과율은 today(KST)로 계산한다. 저장값이 아니다.
+ *   b. 선언문 전문            접지 않는다. 줄바꿈·문단 그대로.
+ *   c. 야간 AI 브리핑         아래 Phase 3-A 설명 그대로.
+ *
+ * a·b는 0014 RLS가 Chairman(과 AIAgent)에게만 내준다. 다른 역할에게는 빈 값이라 c만 보인다.
+ *
+ * 야간 브리핑 전문 (Phase 3-A 블록 4, CH-019의 전체 화면).
  *
  * 대시보드 패널은 '어젯밤' 한 번만 두 줄씩 보여 준다. 이 화면은 날짜를 골라 그날의 그룹 브리핑 전문과
  * 회사별 요약을 펼쳐 본다. 패널의 '결과물 열기'가 /ai?date=…#회사 로 여기에 떨어진다.
@@ -27,11 +38,17 @@ import type { AiBriefItem, AiNightOutput, Business } from '@/types'
 export default async function AiPage(props: PageProps<'/ai'>) {
   const params = await props.searchParams
   const repo = await getRepository()
-  const [outputs, businesses, user] = await Promise.all([
+  const [outputs, businesses, user, chairmanProjects, manifesto] = await Promise.all([
     repo.listAiNightOutputs(),
     repo.listBusinesses(),
     currentUser(),
+    repo.listChairmanProjects(),
+    repo.getChairmanManifesto(),
   ])
+  const today = kstToday()
+  // 카운터는 진행 중인 것만. 끝났거나 접은 프로젝트는 아침에 셀 날이 아니다.
+  const activeProjects = orderProjects(chairmanProjects).filter((p) => p.status === 'Active')
+  const isChairman = user?.role === 'Chairman'
 
   const runs = groupRuns(outputs, businesses)
   const dates = [...new Set(runs.map((r) => r.date))].sort().reverse()
@@ -43,19 +60,54 @@ export default async function AiPage(props: PageProps<'/ai'>) {
     <div className="mx-auto max-w-[1600px] px-6 py-5">
       <PageHeader
         icon="sparkles"
-        title="AI 인사이트"
-        code="CH-019 · CH-045~048"
-        description="야간 AI Agent가 매일 23:00(KST)에 계열사 상태를 읽고 쓴 브리핑입니다. Agent는 제한 등급까지만 읽습니다."
+        title="아침 루틴"
+        code="Phase 3-B · CH-019 · CH-045~048"
+        description="장기 프로젝트, 선언문, 그리고 야간 AI Agent가 매일 23:00(KST)에 쓴 브리핑입니다."
       >
-        {user?.role === 'Chairman' ? <RunNightBrief /> : null}
+        {isChairman ? (
+          <Link
+            href="/settings/chairman"
+            className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          >
+            루틴 편집
+          </Link>
+        ) : null}
+        {isChairman ? <RunNightBrief /> : null}
       </PageHeader>
+
+      {activeProjects.length > 0 ? (
+        <div className="mt-4">
+          <ProjectCounters projects={activeProjects} today={today} />
+        </div>
+      ) : null}
+
+      {manifesto.body ? (
+        <div className="mt-8 border-b border-line-soft pb-10">
+          <Manifesto body={manifesto.body} />
+        </div>
+      ) : null}
+
+      {isChairman && activeProjects.length === 0 && !manifesto.body ? (
+        <p className="mt-4 rounded-xl border border-dashed border-line bg-panel/60 p-4 text-[12px] text-ink-muted">
+          아직 장기 프로젝트와 선언문이 없습니다.{' '}
+          <Link href="/settings/chairman" className="text-accent underline-offset-2 hover:underline">
+            회장 루틴 설정
+          </Link>
+          에서 넣으면 이 화면 맨 위에 올라옵니다.
+        </p>
+      ) : null}
+
+      <h2 className="mt-8 flex items-center gap-1.5 text-[13px] font-semibold">
+        <Icon name="sparkles" className="size-4 text-ink-dim" />
+        AI 브리핑
+      </h2>
 
       {dates.length === 0 ? (
         <p className="mt-6 rounded-xl border border-line-soft bg-panel p-6 text-[12.5px] text-ink-muted">
           아직 브리핑이 없습니다. 첫 Cron은 오늘 23:00(KST)에 돕니다.
         </p>
       ) : (
-        <div className="mt-4 grid grid-cols-12 gap-3.5 pb-6">
+        <div className="mt-2.5 grid grid-cols-12 gap-3.5 pb-6">
           <nav aria-label="브리핑 날짜" className="col-span-12 lg:col-span-2">
             <ul className="flex gap-1 overflow-x-auto lg:flex-col">
               {dates.map((d) => (
@@ -132,6 +184,7 @@ function RunSection({
             {run.group.result_summary}
           </p>
           <Items items={run.group.items} />
+          <ProjectNotes notes={run.group.project_notes} />
         </article>
       ) : null}
 
@@ -225,5 +278,24 @@ function Items({ items }: { items?: AiBriefItem[] }) {
         </li>
       ))}
     </ul>
+  )
+}
+
+/** 그룹 브리핑 끝의 '장기 프로젝트별 이번 주 행동'(daily-brief.md). 0014 이전 실행에는 없다. */
+function ProjectNotes({ notes }: { notes?: ProjectNote[] }) {
+  if (!notes?.length) return null
+  return (
+    <div className="mt-4 border-t border-line-soft pt-3">
+      <p className="text-[11px] font-semibold text-ink-dim">장기 프로젝트 · 이번 주 행동</p>
+      <ul className="mt-1.5 space-y-1">
+        {notes.map((n, i) => (
+          <li key={i} className="text-[12.5px] leading-relaxed">
+            <span className="font-semibold text-ink">{n.project_title}</span>
+            <span className="text-ink-muted"> — </span>
+            <span className="text-ink-dim">{n.action}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }

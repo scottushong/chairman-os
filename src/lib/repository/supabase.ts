@@ -11,6 +11,8 @@ import type {
   Business,
   BusinessStatus,
   BusinessStrategy,
+  ChairmanManifesto,
+  ChairmanProject,
   CriticalRisk,
   Decision,
   DecisionStatus,
@@ -37,6 +39,7 @@ import {
   DUPLICATE_INVITATION,
   type AuditActor,
   type AuditEntityTable,
+  type ChairmanProjectInput,
   type ChairmanRepository,
   type DecisionAuditEntry,
   type NewBusiness,
@@ -319,6 +322,7 @@ interface NightOutputRow {
   run_id: string | null
   run_date: string | null
   model: string | null
+  project_notes: AiNightOutput['project_notes'] | null
 }
 
 /** PostgREST 오류는 삼키지 않는다. RLS 거부(401/403)와 스키마 오류(42P01)를 구분해야 고칠 수 있다. */
@@ -632,7 +636,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         sb
           .from('ai_night_outputs')
           .select(
-            'output_id,business_id,job_type,result_summary,status,artifact_link,confidence,completed_at,items,run_id,run_date,model',
+            'output_id,business_id,job_type,result_summary,status,artifact_link,confidence,completed_at,items,run_id,run_date,model,project_notes',
             { count: 'exact' },
           )
           .order('completed_at', { ascending: false })
@@ -654,6 +658,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         run_id: r.run_id,
         run_date: r.run_date,
         model: r.model,
+        project_notes: r.project_notes ?? [],
       }))
     },
 
@@ -1619,6 +1624,121 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
      *
      * 행이 없으면 기본값이다. 첫 로그인에 행을 만들어 두지 않아도 화면은 떠야 한다.
      */
+    /** Phase 3-B. 0014의 chairman_projects_read가 Chairman·AIAgent만 통과시킨다. 나머지는 0행이다. */
+    async listChairmanProjects(): Promise<ChairmanProject[]> {
+      const { data, error } = await sb
+        .from('chairman_projects')
+        .select('project_id,title,start_date,target_date,note,this_month_action,status')
+        .order('target_date')
+        .returns<ChairmanProject[]>()
+      if (error) throw new Error(`Supabase chairman_projects ${error.code ?? '?'}: ${error.message}`)
+      return data ?? []
+    },
+
+    async getChairmanManifesto(): Promise<ChairmanManifesto> {
+      const { data, error } = await sb
+        .from('chairman_manifesto')
+        .select('body,updated_at')
+        .eq('id', 1)
+        .maybeSingle<{ body: string; updated_at: string }>()
+      if (error) throw new Error(`Supabase chairman_manifesto ${error.code ?? '?'}: ${error.message}`)
+      return { body: data?.body ?? '', updated_at: data?.updated_at ?? null }
+    },
+
+    /**
+     * 이 파일의 다른 쓰기와 같이 기록이 먼저다. 새 프로젝트의 id는 여기서 만든다 —
+     * DB default에 맡기면 audit_log에 entity_id를 적을 수 없다.
+     * before/after는 바뀐 칸만 담는다(updateBusinessStrategy와 같은 이유).
+     */
+    async saveChairmanProject(input: ChairmanProjectInput, actor: AuditActor): Promise<ChairmanProject> {
+      const { project_id, ...fields } = input
+      let before: ChairmanProject | null = null
+      if (project_id) {
+        const { data, error } = await sb
+          .from('chairman_projects')
+          .select('project_id,title,start_date,target_date,note,this_month_action,status')
+          .eq('project_id', project_id)
+          .maybeSingle<ChairmanProject>()
+        if (error) throw new Error(`Supabase chairman_projects ${error.code ?? '?'}: ${error.message}`)
+        if (!data) throw new Error('chairman_projects: 고칠 프로젝트가 없다(또는 읽을 권한이 없다).')
+        before = data
+      }
+
+      const id = project_id ?? crypto.randomUUID()
+      const keys = (Object.keys(fields) as (keyof typeof fields)[]).filter(
+        (k) => !before || before[k] !== fields[k],
+      )
+      if (before && keys.length === 0) return before
+
+      const { error: auditError } = await sb.from('audit_log').insert({
+        action: before ? 'update' : 'create',
+        entity_table: 'chairman_projects',
+        entity_id: id,
+        business_id: null,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        before: before ? Object.fromEntries(keys.map((k) => [k, before![k]])) : null,
+        after: Object.fromEntries(keys.map((k) => [k, fields[k]])),
+      })
+      if (auditError) {
+        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      }
+
+      const query = before
+        ? sb.from('chairman_projects').update(fields).eq('project_id', id)
+        : sb.from('chairman_projects').insert({ project_id: id, ...fields })
+      const { data, error } = await query
+        .select('project_id,title,start_date,target_date,note,this_month_action,status')
+        .single<ChairmanProject>()
+      if (error) {
+        throw new Error(
+          `Supabase chairman_projects ${error.code ?? '?'}: ${error.message} ` +
+            '(감사 기록은 남았고 프로젝트는 바뀌지 않았다. 0014의 chairman_projects 정책을 본다.)',
+        )
+      }
+      return data
+    },
+
+    /**
+     * 선언문은 한 행(id = 1)이라 upsert다. 첫 저장에는 before가 null이다 —
+     * '빈 선언문이었다'와 '행이 없었다'는 다르다.
+     */
+    async saveChairmanManifesto(body: string, actor: AuditActor): Promise<void> {
+      const { data: before, error: readError } = await sb
+        .from('chairman_manifesto')
+        .select('body')
+        .eq('id', 1)
+        .maybeSingle<{ body: string }>()
+      if (readError) {
+        throw new Error(`Supabase chairman_manifesto ${readError.code ?? '?'}: ${readError.message}`)
+      }
+      if (before && before.body === body) return
+
+      const { error: auditError } = await sb.from('audit_log').insert({
+        action: 'update',
+        entity_table: 'chairman_manifesto',
+        entity_id: '1',
+        business_id: null,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        before: before ? { body: before.body } : null,
+        after: { body },
+      })
+      if (auditError) {
+        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      }
+
+      const { error: writeError } = await sb
+        .from('chairman_manifesto')
+        .upsert({ id: 1, body, updated_at: new Date().toISOString() }, { onConflict: 'id' })
+      if (writeError) {
+        throw new Error(
+          `Supabase chairman_manifesto ${writeError.code ?? '?'}: ${writeError.message} ` +
+            '(감사 기록은 남았고 선언문은 바뀌지 않았다. 0014의 chairman_manifesto 정책을 본다.)',
+        )
+      }
+    },
+
     async getUserSettings(): Promise<UserSettings> {
       const { data, error } = await sb
         .from('user_settings')

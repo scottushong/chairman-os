@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import Anthropic from '@anthropic-ai/sdk'
 
 import type { AiAdapter, AiBrief, CompanyContext, DailyBriefInput } from './adapter'
-import { BRIEF_JSON_SCHEMA, BriefShapeError, parseBrief } from './brief-schema'
+import { BRIEF_JSON_SCHEMA, BriefShapeError, DAILY_BRIEF_JSON_SCHEMA, parseBrief } from './brief-schema'
 
 /**
  * AiAdapter의 Anthropic 구현.
@@ -42,6 +42,9 @@ export function createAnthropicAdapter(): AiAdapter {
 
   async function ask(promptName: 'company-summary' | 'daily-brief', payload: unknown): Promise<AiBrief> {
     const system = await loadPrompt(promptName)
+    // 그룹 브리핑만 project_notes를 더 받는다(Phase 3-B).
+    const daily = promptName === 'daily-brief'
+    const schema = daily ? DAILY_BRIEF_JSON_SCHEMA : BRIEF_JSON_SCHEMA
     const params = {
       model,
       max_tokens: 4000,
@@ -53,7 +56,7 @@ export function createAnthropicAdapter(): AiAdapter {
     try {
       response = await client.messages.create({
         ...params,
-        output_config: { format: { type: 'json_schema', schema: BRIEF_JSON_SCHEMA } },
+        output_config: { format: { type: 'json_schema', schema } },
       })
     } catch (e) {
       // 구조 강제를 모르는 모델일 때만 한 번 물러선다. 다른 400(프롬프트·키 문제)은 그대로 올린다.
@@ -62,7 +65,7 @@ export function createAnthropicAdapter(): AiAdapter {
       }
       response = await client.messages.create({
         ...params,
-        system: `${system}\n\n반드시 다음 JSON 스키마에 맞는 JSON 객체 하나만 출력한다. 코드블록 표시 없이.\n${JSON.stringify(BRIEF_JSON_SCHEMA)}`,
+        system: `${system}\n\n반드시 다음 JSON 스키마에 맞는 JSON 객체 하나만 출력한다. 코드블록 표시 없이.\n${JSON.stringify(schema)}`,
       })
     }
 
@@ -83,7 +86,7 @@ export function createAnthropicAdapter(): AiAdapter {
     } catch {
       throw new BriefShapeError(`JSON이 아니다: ${text.slice(0, 120)}`)
     }
-    return parseBrief(json)
+    return parseBrief(json, { projectNotes: daily })
   }
 
   return {

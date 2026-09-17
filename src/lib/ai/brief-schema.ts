@@ -1,4 +1,4 @@
-import type { AiBriefItem } from '@/types'
+import type { AiBriefItem, ProjectNote } from '@/types'
 
 import type { AiBrief } from './adapter'
 
@@ -39,9 +39,34 @@ export const BRIEF_JSON_SCHEMA = {
   additionalProperties: false,
 } as const
 
+/**
+ * 그룹 브리핑용. 회사 요약 스키마에 project_notes 하나를 더한다(Phase 3-B).
+ * 회사 요약에는 장기 프로젝트가 입력으로 가지 않으니 이 칸을 요구하지 않는다.
+ */
+export const DAILY_BRIEF_JSON_SCHEMA = {
+  ...BRIEF_JSON_SCHEMA,
+  properties: {
+    ...BRIEF_JSON_SCHEMA.properties,
+    project_notes: {
+      type: 'array',
+      description: '장기 프로젝트마다 하나. 이번 주 행동 한 문장, 없으면 "이번 주는 없음"',
+      items: {
+        type: 'object',
+        properties: {
+          project_title: { type: 'string' },
+          action: { type: 'string' },
+        },
+        required: ['project_title', 'action'],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: [...BRIEF_JSON_SCHEMA.required, 'project_notes'],
+} as const
+
 export class BriefShapeError extends Error {}
 
-export function parseBrief(raw: unknown): AiBrief {
+export function parseBrief(raw: unknown, opts: { projectNotes?: boolean } = {}): AiBrief {
   if (typeof raw !== 'object' || raw === null) throw new BriefShapeError('객체가 아니다')
   const o = raw as Record<string, unknown>
 
@@ -64,5 +89,16 @@ export function parseBrief(raw: unknown): AiBrief {
     return { title: r.title.trim(), detail: r.detail.trim(), severity }
   })
 
-  return { summary, confidence, items }
+  if (!opts.projectNotes) return { summary, confidence, items }
+
+  if (!Array.isArray(o.project_notes)) throw new BriefShapeError('project_notes가 배열이 아니다')
+  const project_notes: ProjectNote[] = o.project_notes.map((n, i) => {
+    const r = (typeof n === 'object' && n !== null ? n : {}) as Record<string, unknown>
+    if (typeof r.project_title !== 'string' || typeof r.action !== 'string' || !r.action.trim()) {
+      throw new BriefShapeError(`project_notes[${i}] 모양이 맞지 않다`)
+    }
+    return { project_title: r.project_title.trim(), action: r.action.trim() }
+  })
+
+  return { summary, confidence, items, project_notes }
 }

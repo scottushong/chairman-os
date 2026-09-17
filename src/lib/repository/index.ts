@@ -8,6 +8,7 @@ import type { ChairmanRepository } from './types'
 
 export type {
   AuditActor,
+  ChairmanProjectInput,
   ChairmanRepository,
   DashboardSnapshot,
   DecisionAuditEntry,

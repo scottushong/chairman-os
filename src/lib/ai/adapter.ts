@@ -1,4 +1,4 @@
-import type { AiBriefItem, BusinessStatus, IsoDate } from '@/types'
+import type { AiBriefItem, BusinessStatus, IsoDate, ProjectNote } from '@/types'
 
 /**
  * AI Adapter — 야간 Job과 모델 사이의 유일한 계약(Port).
@@ -16,6 +16,8 @@ export interface AiBrief {
   /** 0~1. 모델이 스스로 매긴 값이다 — 0.7 미만은 화면이 흐리게 그린다(ai-night-panel). */
   confidence: number
   items: AiBriefItem[]
+  /** 그룹 브리핑에만 있다(daily-brief.md). 장기 프로젝트마다 이번 주 행동 하나. */
+  project_notes?: ProjectNote[]
 }
 
 /** 회사 하나의 하루치 상태. 금액은 lib/format.ts로 억 단위 문자열까지 만들어 넘긴다. */
@@ -37,11 +39,34 @@ export interface CompanyContext {
   projects: { project_id: string; name: string; status: string; progress_pct: number; deadline: string | null }[]
 }
 
+/**
+ * 회장 루틴(0014). 그룹 브리핑이 우선순위를 매기는 기준이다 — 요약·인용 대상이 아니다.
+ * D-day·경과율은 저장값이 없어 Job이 run_date 기준으로 계산해 넣는다.
+ */
+export interface ChairmanContext {
+  projects: {
+    title: string
+    start_date: IsoDate
+    target_date: IsoDate
+    /** 'D-780' */
+    d_day: string
+    elapsed_days: number
+    total_days: number
+    progress_pct: number
+    note: string
+    this_month_action: string
+  }[]
+  /** 선언문 전문. 아직 안 썼으면 null */
+  manifesto: string | null
+}
+
 export interface DailyBriefInput {
   date: IsoDate
   companies: { business_id: string; name: string; brief: AiBrief }[]
   /** 요약에 실패한 회사. 그룹 브리핑이 '다섯 곳 다 괜찮다'고 말하지 않게 같이 넘긴다. */
   failed: { business_id: string; name: string }[]
+  /** 읽지 못했으면 null. 그때 모델은 project_notes를 비운다. */
+  chairman: ChairmanContext | null
 }
 
 export interface AiAdapter {

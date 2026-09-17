@@ -1,17 +1,18 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
+import { orderProjects, projectClock } from '@/lib/chairman-project'
 import { formatEok } from '@/lib/format'
 import { createSupabaseRepository } from '@/lib/repository/supabase'
 import { requireSupabaseConfig } from '@/lib/supabase/config'
 import type { AiBriefItem, Business, IsoDate, NightJobType } from '@/types'
 
-import type { AiAdapter, AiBrief, CompanyContext } from './adapter'
+import type { AiAdapter, AiBrief, ChairmanContext, CompanyContext } from './adapter'
 
 /**
  * 야간 브리핑 Job (Phase 3-A, CH-019 / CH-045~048).
  *
  *   AI Agent로 로그인 → 회사별 KPI·결정·알림·업무 읽기(RLS 통과)
- *   → 회사별 summarizeCompany → generateDailyBrief로 압축
+ *   → 회사별 summarizeCompany → generateDailyBrief로 압축 (회장 루틴 0014을 기준으로 함께 넘긴다)
  *   → ai_night_outputs INSERT (회사별 N건 + 그룹 1건) → audit_log(night_job_completed)
  *
  * 세 가지를 지킨다.
@@ -132,6 +133,7 @@ export async function runNightBrief(opts: {
       artifact_link: artifact(key),
       confidence: row.brief?.confidence ?? null,
       items: row.brief?.items ?? ([] as AiBriefItem[]),
+      project_notes: row.brief?.project_notes ?? [],
       agent_name: 'AI Night Agent',
       completed_at: new Date().toISOString(),
       run_id,
@@ -191,7 +193,8 @@ export async function runNightBrief(opts: {
       if (briefs.length === 0) throw new Error('요약에 성공한 회사가 없다.')
       const order = new Map(businesses.map((b, i) => [b.business_id, i]))
       briefs.sort((a, b) => (order.get(a.business_id) ?? 0) - (order.get(b.business_id) ?? 0))
-      const brief = await opts.adapter.generateDailyBrief({ date: run_date, companies: briefs, failed })
+      const chairman = await readChairmanContext(repo, run_date)
+      const brief = await opts.adapter.generateDailyBrief({ date: run_date, companies: briefs, failed, chairman })
       await write({ business_id: null, job_type: 'Daily Brief', status: 'Done', brief })
     } catch (e) {
       const msg = errorText(e)
@@ -233,6 +236,42 @@ export async function runNightBrief(opts: {
   }
 
   return report
+}
+
+/**
+ * 회장 루틴(0014). 0014 RLS가 AIAgent에게 읽기를 준다.
+ * 못 읽어도 그룹 브리핑은 쓴다 — 기준이 빠진 브리핑이 브리핑이 없는 것보다 낫다. 대신 null로 넘겨
+ * 모델이 project_notes를 지어내지 않게 한다. 진행 중인 프로젝트만 넘긴다.
+ */
+async function readChairmanContext(
+  repo: ReturnType<typeof createSupabaseRepository>,
+  date: IsoDate,
+): Promise<ChairmanContext | null> {
+  try {
+    const [projects, manifesto] = await Promise.all([repo.listChairmanProjects(), repo.getChairmanManifesto()])
+    return {
+      projects: orderProjects(projects)
+        .filter((p) => p.status === 'Active')
+        .map((p) => {
+          const c = projectClock(p, date)
+          return {
+            title: p.title,
+            start_date: p.start_date,
+            target_date: p.target_date,
+            d_day: c.label,
+            elapsed_days: c.elapsed,
+            total_days: c.total,
+            progress_pct: c.pct,
+            note: p.note,
+            this_month_action: p.this_month_action,
+          }
+        }),
+      manifesto: manifesto.body || null,
+    }
+  } catch (e) {
+    console.error('[night-brief] chairman context', errorText(e))
+    return null
+  }
 }
 
 async function readAll(repo: ReturnType<typeof createSupabaseRepository>) {

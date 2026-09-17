@@ -1,3 +1,4 @@
+import type { ProjectNote } from './chairman'
 import type { BusinessStatus, Severity, TaskStatus, WorkPriority, SecurityClass } from './enums'
 import type {
   AlertId,
@@ -248,4 +249,6 @@ export interface AiNightOutput {
   /** 브리핑 기준일(KST, YYYY-MM-DD) */
   run_date?: IsoDate | null
   model?: string | null
+  /** 0014. 그룹 행에만 있다. 장기 프로젝트별 이번 주 행동 하나. */
+  project_notes?: ProjectNote[]
 }

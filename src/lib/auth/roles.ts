@@ -38,3 +38,8 @@ export function canDraftDecision(user: SessionUser | null): boolean {
 export function canManageUsers(user: SessionUser | null): boolean {
   return user?.role === 'Chairman'
 }
+
+/** Phase 3-B 회장 루틴. 0014의 chairman_* 쓰기 정책이 Chairman만 통과시킨다. */
+export function canEditChairmanRoutine(user: SessionUser | null): boolean {
+  return user?.role === 'Chairman'
+}

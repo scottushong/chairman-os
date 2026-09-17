@@ -1,5 +1,6 @@
 import { AiNightPanel } from '@/components/dashboard/ai-night-panel'
 import { AlertPanel } from '@/components/dashboard/alert-panel'
+import { ChairmanDdayCard } from '@/components/dashboard/chairman-dday-card'
 import { CriticalBanner } from '@/components/dashboard/critical-banner'
 import { DashboardBoard } from '@/components/dashboard/dashboard-board'
 import { DecisionPanel } from '@/components/dashboard/decision-panel'
@@ -24,7 +25,11 @@ const TABS = ['전체 요약', '중요 지표', '예산 vs 실적', '리스크',
 
 export default async function DashboardPage() {
   const repo = await getRepository()
-  const [data, user] = await Promise.all([loadDashboard(repo), currentUser()])
+  const [data, user, chairmanProjects] = await Promise.all([
+    loadDashboard(repo),
+    currentUser(),
+    repo.listChairmanProjects(),
+  ])
 
   const today = new Intl.DateTimeFormat('ko-KR', {
     year: 'numeric',
@@ -36,14 +41,18 @@ export default async function DashboardPage() {
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-[22px] font-bold tracking-tight">
-            {/* 이름은 user_profiles.display_name. 세션이 없는 dummy 개발에서만 역할명으로 부른다. */}
-            안녕하세요, {user?.name ?? 'Chairman'}님
-            <Icon name="crown" className="size-5 text-gold" filled />
-          </h1>
-          {/* 표시 개수는 카드 줄 머리에서 말한다. 여기서 또 세면 숨김 후 두 숫자가 어긋난다. */}
-          <p className="mt-1 text-[12px] text-ink-muted">오늘도 성공적인 하루 되세요.</p>
+        <div className="flex flex-wrap items-end gap-x-5 gap-y-2">
+          <div>
+            <h1 className="flex items-center gap-2 text-[22px] font-bold tracking-tight">
+              {/* 이름은 user_profiles.display_name. 세션이 없는 dummy 개발에서만 역할명으로 부른다. */}
+              안녕하세요, {user?.name ?? 'Chairman'}님
+              <Icon name="crown" className="size-5 text-gold" filled />
+            </h1>
+            {/* 표시 개수는 카드 줄 머리에서 말한다. 여기서 또 세면 숨김 후 두 숫자가 어긋난다. */}
+            <p className="mt-1 text-[12px] text-ink-muted">오늘도 성공적인 하루 되세요.</p>
+          </div>
+          {/* Phase 3-B. 회장이 대시보드를 열 때마다 남은 날을 먼저 본다. 누르면 /ai 아침 루틴. */}
+          <ChairmanDdayCard projects={chairmanProjects} />
         </div>
         <div className="flex items-center gap-3">
           <span className="text-[12px] text-ink-dim tnum">{today}</span>

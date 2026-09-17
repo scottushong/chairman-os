@@ -20,6 +20,8 @@ import type { SearchHit } from '@/lib/search'
 import type {
   Business,
   BusinessStrategy,
+  ChairmanManifesto,
+  ChairmanProject,
   Decision,
   DecisionStatus,
   DocumentRecord,
@@ -34,6 +36,7 @@ import {
   DUPLICATE_INVITATION,
   type AuditActor,
   type AuditEntityTable,
+  type ChairmanProjectInput,
   type ChairmanRepository,
   type DecisionAuditEntry,
   type NewBusiness,
@@ -63,6 +66,13 @@ const memoryDecisionStatuses = new Map<string, DecisionStatus>()
  */
 type StoredAudit = EntityAuditRecord & { entity_table: AuditEntityTable; entity_id: string }
 const memoryEntityAudit: StoredAudit[] = []
+
+/**
+ * Phase 3-B 회장 루틴. 시드가 없다 — 회장 개인의 문장이라 git에 넣지 않는다(0014).
+ * dummy에서는 화면에서 넣은 값이 서버가 살아 있는 동안만 남는다.
+ */
+const memoryChairmanProjects: ChairmanProject[] = []
+const memoryManifesto: ChairmanManifesto = { body: '', updated_at: null }
 
 /** CH-002로 추가한 회사도 마찬가지다. 서버가 살아 있는 동안만 남는다. */
 const memoryBusinesses: Business[] = []
@@ -484,6 +494,39 @@ export const dummyRepository: ChairmanRepository = {
         `[dummy] revoke ${target.kind} by ${actor.role} — 메모리에만 남는다. ` +
           '영구 기록은 live 모드의 Supabase audit_log뿐이다(CH-051).',
       )
+    }
+  },
+
+  async listChairmanProjects() {
+    return memoryChairmanProjects.map((p) => ({ ...p }))
+  },
+
+  async getChairmanManifesto() {
+    return { ...memoryManifesto }
+  },
+
+  async saveChairmanProject(input: ChairmanProjectInput, actor: AuditActor) {
+    const { project_id, ...fields } = input
+    const existing = project_id
+      ? memoryChairmanProjects.find((p) => p.project_id === project_id)
+      : undefined
+    if (project_id && !existing) throw new Error('chairman_projects: 고칠 프로젝트가 없다.')
+    const saved: ChairmanProject = existing
+      ? Object.assign(existing, fields)
+      : { project_id: crypto.randomUUID(), ...fields }
+    if (!existing) memoryChairmanProjects.push(saved)
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[dummy] save chairman project by ${actor.role} — 메모리에만 남는다.`)
+    }
+    return { ...saved }
+  },
+
+  async saveChairmanManifesto(body: string, actor: AuditActor) {
+    memoryManifesto.body = body
+    memoryManifesto.updated_at = new Date().toISOString()
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[dummy] save manifesto by ${actor.role} — 메모리에만 남는다.`)
     }
   },
 

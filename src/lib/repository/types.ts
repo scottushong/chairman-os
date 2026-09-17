@@ -7,6 +7,8 @@ import type {
   Business,
   BusinessStatus,
   BusinessStrategy,
+  ChairmanManifesto,
+  ChairmanProject,
   CriticalRisk,
   Decision,
   DocumentRecord,
@@ -109,10 +111,25 @@ export interface ChairmanRepository {
   /** 이미 들어온 사람은 user_profiles.revoked_at, 아직 안 온 사람은 초대를 취소한다. */
   revokeUser(target: RevokeTarget, actor: AuditActor): Promise<void>
 
+  /**
+   * Phase 3-B 회장 루틴(0014). Chairman은 읽고 쓰고, AIAgent는 읽기만, 나머지는 빈 결과다.
+   * 권한은 여기서 보지 않는다 — 0014의 RLS가 판정한다.
+   */
+  listChairmanProjects(): Promise<ChairmanProject[]>
+  /** 행이 아직 없으면 body '' / updated_at null. */
+  getChairmanManifesto(): Promise<ChairmanManifesto>
+  /** project_id가 있으면 고치고 없으면 만든다. audit_log(create|update)를 같이 남긴다. */
+  saveChairmanProject(input: ChairmanProjectInput, actor: AuditActor): Promise<ChairmanProject>
+  /** 전문을 통째로 바꾼다. audit_log(update)에 before/after 전문이 남는다. */
+  saveChairmanManifesto(body: string, actor: AuditActor): Promise<void>
+
   /** CH-003/004/056. 지금 로그인한 사람의 개인 설정. 남의 것은 어떤 역할도 못 읽는다(0002). */
   getUserSettings(): Promise<UserSettings>
   saveUserSettings(patch: Partial<UserSettings>): Promise<void>
 }
+
+/** /settings/chairman 폼이 보내는 한 행. project_id가 없으면 새 프로젝트다. */
+export type ChairmanProjectInput = Omit<ChairmanProject, 'project_id'> & { project_id?: string }
 
 /**
  * 개인 화면 설정(user_settings). 업무 데이터가 아니라 '이 사람의 화면'이다.

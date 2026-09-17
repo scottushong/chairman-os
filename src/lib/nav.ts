@@ -50,7 +50,7 @@ export const NAV: readonly NavGroup[] = [
       // 그 화면이 곧 대시보드 '내 결정 사항' 패널의 전체 화면 버전이다.
       { label: '내 결정 사항', href: '/approvals', icon: 'check-circle', ready: true },
       // Phase 3-A. 야간 브리핑 전문. CH-044 자연어 질의는 아직 없다 — 붙으면 같은 화면에 들어온다.
-      { label: 'AI 인사이트', href: '/ai', icon: 'sparkles', badge: 'NEW', ready: true },
+      { label: '아침 루틴', href: '/ai', icon: 'sparkles', badge: 'NEW', ready: true },
       {
         label: '캘린더',
         href: '/calendar',
@@ -147,6 +147,8 @@ export const NAV: readonly NavGroup[] = [
       // CH-049. 설정의 하위 화면 중 이것만 먼저 섰다 — 두 번째 사람을 넣는 경로가
       // 없으면 0004_bootstrap_chairman의 "앱에서 초대한다"가 계속 빈말이 된다.
       { label: '사용자 · 권한', href: '/settings/users', icon: 'users', ready: true },
+      // Phase 3-B. 장기 프로젝트·선언문 입력. Chairman이 아니면 404다(화면이 안내, 0014 RLS가 판정).
+      { label: '회장 루틴', href: '/settings/chairman', icon: 'crown', ready: true },
       {
         label: '설정',
         href: '/settings',
