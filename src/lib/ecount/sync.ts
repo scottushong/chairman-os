@@ -188,8 +188,8 @@ export async function runEcountSync(opts: {
   let userId: string
   try {
     ;({ sb, userId } = await signInServiceAccount({
-      emailEnv: 'ECOUNT_SYNC_EMAIL',
-      passwordEnv: 'ECOUNT_SYNC_PASSWORD',
+      emailEnv: 'INTEGRATION_EMAIL',
+      passwordEnv: 'INTEGRATION_PASSWORD',
       role: 'Integration',
     }))
   } catch (e) {

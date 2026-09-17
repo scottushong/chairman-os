@@ -131,7 +131,7 @@ mock 원장은 live DB에 들어가지 않는다(동기화가 mock일 때 쓰지
 ### ECOUNT 동기화 계정 (한 번)
 
 `supabase/bootstrap/0006_integration.sql` 머리 주석의 절차를 따른다. 0005와 같은 모양이고 역할만 `Integration`이다.
-그 이메일/비밀번호를 Vercel `ECOUNT_SYNC_EMAIL` / `ECOUNT_SYNC_PASSWORD`에, 회사별 키를 `ECOUNT_COMPANIES`에 넣는다.
+그 이메일/비밀번호를 Vercel `INTEGRATION_EMAIL` / `INTEGRATION_PASSWORD`에, 회사별 키를 `ECOUNT_COMPANIES`에 넣는다.
 
 동기화는 매일 23:00 KST 야간 브리핑 Cron 안에서 브리핑보다 먼저 돈다(`/api/cron/night-brief` 응답의 `ecount_sync`).
 단독 입구 `/api/cron/ecount-sync`는 Chairman 세션 POST 또는 CRON_SECRET GET으로 부른다.
@@ -260,6 +260,11 @@ select tgname from pg_trigger where tgrelid = 'auth.users'::regclass;
 | 야간 AI Job — 조사·발굴 등 6단계 파이프라인 | Phase 3 이후 (CH-045~048). 야간 브리핑만 Phase 3-A로 섰다(2절 AI Agent 계정) |
 
 ## 8. D-17 — 격리된 로컬 검증 (선택)
+
+> **Docker 없이 먼저 돌리는 것:** `npm run check:migrations`. PGlite(메모리 안 Postgres)에 0001부터 마지막 마이그레이션까지
+> 적용하고, `finance_kpis` 뷰가 TS 원장 공식과 모든 행에서 같은지, 역할별 RLS가 막을 것을 막는지 잰다.
+> 원격에 연결하지 않는다. Supabase의 기본 GRANT·PostgREST·Auth는 못 재므로 아래 절차나 staging을 대신하지 않는다.
+> 새 마이그레이션은 `db push` 전에 이것부터 통과시킨다.
 
 이 절의 로컬 DB는 **Docker가 있는 환경에서만 선택적으로** 쓴다. 이 PC에는 Docker가 없으므로
 마이그레이션 적용과 DB 검증은 2절의 원격 link + db push(staging 먼저)로 한다.

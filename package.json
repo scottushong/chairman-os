@@ -13,7 +13,8 @@
     "env:check": "node scripts/check-environment.mjs",
     "check:db-safety": "node scripts/check-db-safety.mjs",
     "check:boundaries": "tsx scripts/check-data-boundaries.ts",
-    "check:finance": "tsx scripts/check-finance-ledger.ts"
+    "check:finance": "tsx scripts/check-finance-ledger.ts",
+    "check:migrations": "tsx scripts/check-migrations.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",
@@ -24,6 +25,7 @@
     "react-dom": "19.2.8"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

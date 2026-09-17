@@ -13,7 +13,7 @@
 --
 -- 실행 절차 (0005와 같다)
 --   1) Dashboard → Authentication → Users → "Add user". 예: ecount-sync@<사내 도메인>. Auto Confirm User.
---      이메일/비밀번호가 Vercel의 ECOUNT_SYNC_EMAIL / ECOUNT_SYNC_PASSWORD 다.
+--      이메일/비밀번호가 Vercel의 INTEGRATION_EMAIL / INTEGRATION_PASSWORD 다.
 --   2) UID로 :sync_uid 를 전부 치환한 사본(0006_ready.sql, .gitignore)을 만든다.
 --      psql이면: psql ... -v sync_uid="'…'::uuid" -f supabase/bootstrap/0006_integration.sql
 --   3) SQL Editor에서 사본 전체 실행. 맨 아래 4절 기대값을 확인한다.
