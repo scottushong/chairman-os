@@ -5,10 +5,9 @@ import type { AccountCategory, AccountSection, CashFlowClass } from '@/types'
  *
  * ECOUNT가 주는 것은 코드와 이름뿐이다. '원가 구조에서 어느 막대인가(대분류)', '손익의 어느 단계인가(구분)',
  * '현금흐름표의 어느 활동인가'는 회사의 계정과목표를 보고 사람이 정한다.
- * 그 결정이 여기 한 곳에 있다. 동기화(sync.ts)는 여기 없는 계정을 만나면 그 회사를 **멈춘다** —
- * 분류를 모르는 계정을 '기타'로 넣으면 원가 구조가 조용히 틀린다.
- *
- * REAL_CHART는 비어 있다. 계열사별 계정과목표를 받으면 채운다(DEFERRED D-19).
+ * mock은 아래 MOCK_CHART가 그 결정이다. 실제 회사의 분류는 코드가 아니라 DB의 accounts 표에 있다
+ * (0016, /finance/[id]/accounts 화면에서 관리). 변환(map.ts)은 분류표를 인자로 받고,
+ * 거기 없는 계정을 만나면 그 회사를 **멈춘다** — 분류를 모르는 계정을 '기타'로 넣으면 원가 구조가 조용히 틀린다.
  */
 
 export interface AccountClassification {
@@ -23,7 +22,7 @@ export interface AccountClassification {
  * mock 계정과목표. 다섯 회사가 같은 코드를 쓴다 — 실제 회사들은 그렇지 않을 수 있다.
  * 코드는 한국 표준 계정 체계의 앞자리 관례(1 자산 / 2 부채 / 3 자본 / 4 매출·원가 / 8 판관비 / 9 영업외)를 따랐다.
  */
-export const MOCK_CHART: Record<string, AccountClassification> = {
+export const MOCK_CHART: AccountChart = {
   '1010': { name: '현금및현금성자산', category: 'asset', section: 'cash', cash_flow: null },
   '1080': { name: '외상매출금', category: 'asset', section: 'receivable', cash_flow: 'operating' },
   '1400': { name: '유형자산', category: 'asset', section: 'other_asset', cash_flow: 'investing' },
@@ -49,13 +48,14 @@ export const MOCK_CHART: Record<string, AccountClassification> = {
   '9980': { name: '법인세비용', category: 'other', section: 'tax', cash_flow: null },
 }
 
-/** 계열사별 실제 계정과목표. business_id → 계정코드 → 분류. 받기 전까지 비어 있다. */
-export const REAL_CHART: Record<string, Record<string, AccountClassification>> = {}
+/** 계정코드 → 분류. 한 회사의 계정과목표다. */
+export type AccountChart = Record<string, AccountClassification>
 
-export function classifyAccount(
-  mode: 'mock' | 'real',
-  businessId: string,
-  code: string,
-): AccountClassification | null {
-  return (mode === 'mock' ? MOCK_CHART : REAL_CHART[businessId])?.[code] ?? null
+/** DB에서 읽은 계정들을 분류표로. 비활성 계정도 넣는다 — 과거 전표는 그 계정을 계속 문다. */
+export function chartOf(
+  accounts: readonly { account_code: string; name: string; category: AccountCategory; section: AccountSection; cash_flow: CashFlowClass | null }[],
+): AccountChart {
+  return Object.fromEntries(
+    accounts.map((x) => [x.account_code, { name: x.name, category: x.category, section: x.section, cash_flow: x.cash_flow }]),
+  )
 }

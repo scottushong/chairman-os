@@ -2,6 +2,7 @@ import { buildCells } from '@/lib/ledger/cells'
 import { addMonths } from '@/lib/ledger/basis'
 import type { Account, Closing, IsoDateTime, JournalLine, PeriodKey } from '@/types'
 
+import type { AccountChart } from './account-map'
 import { mapAccounts, mapClosings, mapSlipLines, toYyyymmdd, type MapContext } from './map'
 import type { EcountCompany, EcountLedgerSource } from './types'
 
@@ -31,6 +32,8 @@ export async function ingestCompany(
   company: EcountCompany,
   window: IngestWindow,
   fetchedAt: IsoDateTime,
+  /** 이 회사의 계정과목표. 분류는 ECOUNT가 주지 않는다(account-map.ts) */
+  chart: AccountChart,
 ): Promise<IngestedLedger> {
   const fromYymm = window.from.replace('-', '')
   const toYymm = window.to.replace('-', '')
@@ -46,7 +49,7 @@ export async function ingestCompany(
       .at(-1) ?? null
 
   const ctx: MapContext = {
-    mode: source.mode,
+    chart,
     business_id: company.business_id,
     fetched_at: fetchedAt,
     last_closed_period: lastClosed,

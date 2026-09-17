@@ -1,6 +1,6 @@
 import type { Account, Closing, IsoDateTime, JournalLine, PeriodKey } from '@/types'
 
-import { classifyAccount } from './account-map'
+import type { AccountChart } from './account-map'
 import type { EcountAccountRow, EcountClosingRow, EcountSlipLineRow } from './types'
 import { EcountApiError } from './types'
 
@@ -35,7 +35,8 @@ function amount(value: string, field: string): number {
 }
 
 export interface MapContext {
-  mode: 'mock' | 'real'
+  /** 이 회사의 계정과목표. mock은 MOCK_CHART, 실제 회사는 DB accounts(account-map.ts chartOf) */
+  chart: AccountChart
   business_id: string
   fetched_at: IsoDateTime
   /** 이 달까지는 월 마감이 끝났다. 그 달의 전표 라인은 closed=true로 들어간다. 없으면 null */
@@ -53,7 +54,7 @@ export function mapAccounts(rows: EcountAccountRow[], ctx: MapContext): Account[
   const missing: string[] = []
   const out: Account[] = []
   for (const r of rows) {
-    const c = classifyAccount(ctx.mode, ctx.business_id, r.ACCT_CODE)
+    const c = ctx.chart[r.ACCT_CODE]
     if (!c) {
       missing.push(r.ACCT_CODE)
       continue
@@ -69,6 +70,7 @@ export function mapAccounts(rows: EcountAccountRow[], ctx: MapContext): Account[
       source: 'ecount',
       fetched_at: ctx.fetched_at,
       closed: true,
+      active: true,
     })
   }
   if (missing.length) throw new UnmappedAccountError(missing)

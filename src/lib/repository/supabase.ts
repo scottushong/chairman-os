@@ -42,15 +42,20 @@ import type {
   WorkPriority,
 } from '@/types'
 
+import { STANDARD_CHART } from '@/lib/ledger/standard-chart'
+
 import {
+  DUPLICATE_ACCOUNT_CODE,
   DUPLICATE_BUSINESS_ID,
   DUPLICATE_INVITATION,
+  type AccountPatch,
   type AuditActor,
   type AuditEntityTable,
   type ChairmanProjectInput,
   type ChairmanRepository,
   type DecisionAuditEntry,
   type KeymanInput,
+  type NewAccount,
   type NewBusiness,
   type NewDecision,
   type NewDocument,
@@ -415,6 +420,15 @@ function oneAffectedRow<T>(
 /** 0015 business_keymen에서 부르는 칸. 세 함수가 같은 모양을 돌려줘야 한다. */
 const KEYMAN_COLUMNS = 'keyman_id,business_id,name,relation,last_contact_on,note'
 
+/** 0015 accounts + 0016 active. 읽기와 쓰기가 같은 모양을 돌려줘야 한다. */
+const ACCOUNT_COLUMNS = 'business_id,account_code,name,category,section,cash_flow,source,fetched_at,closed,active'
+
+/** DB 오류를 그대로 싣되, 사용자가 고칠 수 있는 오류(코드 중복)는 표식으로 바꾼다. */
+function accountError(error: PostgrestError): Error {
+  if (error.code === '23505') return new Error(DUPLICATE_ACCOUNT_CODE)
+  return new Error(`Supabase accounts ${error.code ?? '?'}: ${error.message}`)
+}
+
 /** 이름을 못 찾은 담당자. 화면에 36자 uuid를 그대로 뿌리지 않는다(DEFERRED D-09 결정 B). */
 const UNKNOWN_OWNER = '미지정'
 
@@ -509,6 +523,31 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
   const ownerNames = createOwnerNames(sb)
   const businessNames = createBusinessNames(sb)
 
+  /** 장부 쓰기(0016)의 감사 한 줄. 실패하면 던진다 — 기록 없이 장부를 바꾸지 않는다. */
+  async function audit(entry: {
+    action: AuditAction
+    entity_table: string
+    entity_id: string
+    business_id: string
+    actor: AuditActor
+    before?: unknown
+    after?: unknown
+    note?: string | null
+  }) {
+    const { error } = await sb.from('audit_log').insert({
+      action: entry.action,
+      entity_table: entry.entity_table,
+      entity_id: entry.entity_id,
+      business_id: entry.business_id,
+      actor_user_id: entry.actor.user_id,
+      actor_role: entry.actor.role,
+      before: entry.before ?? null,
+      after: entry.after ?? null,
+      note: entry.note ?? null,
+    })
+    if (error) throw new Error(`Supabase audit_log ${error.code ?? '?'}: ${error.message}`)
+  }
+
   return {
     mode: 'live',
 
@@ -577,9 +616,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         fetchAll<AccountRow>('accounts', ['business_id', 'account_code'], (from, to) =>
           sb
             .from('accounts')
-            .select('business_id,account_code,name,category,section,cash_flow,source,fetched_at,closed', {
-              count: 'exact',
-            })
+            .select(ACCOUNT_COLUMNS, { count: 'exact' })
             .order('business_id')
             .order('account_code')
             .range(from, to)
@@ -655,6 +692,100 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         fxRates: fxRates.data.map((r) => ({ ...r, rate: num(r.rate) })),
         costIndices: costIndices.data.map((r) => ({ ...r, value: num(r.value) })),
       }
+    },
+
+    /**
+     * 블록 1. 기록이 먼저, 행이 나중(HANDOVER ③). 행 쓰기가 막혀도 '만들려고 했다'가 남는다.
+     * source='manual' — 화면에서 사람이 만든 계정이다. 0016 accounts_books_insert가 이 값만 받는다.
+     */
+    async createAccount(input: NewAccount, actor: AuditActor): Promise<Account> {
+      const row = { ...input, source: 'manual' as const, fetched_at: new Date().toISOString(), closed: false, active: true }
+      await audit({
+        action: 'create',
+        entity_table: 'accounts',
+        entity_id: `${input.business_id}:${input.account_code}`,
+        business_id: input.business_id,
+        actor,
+        after: input,
+      })
+      const { data, error } = await sb.from('accounts').insert(row).select(ACCOUNT_COLUMNS).single<Account>()
+      if (error) throw accountError(error)
+      return data
+    },
+
+    async updateAccount(businessId: string, accountCode: string, patch: AccountPatch, actor: AuditActor): Promise<Account> {
+      const { data: before, error: readError } = await sb
+        .from('accounts')
+        .select(ACCOUNT_COLUMNS)
+        .eq('business_id', businessId)
+        .eq('account_code', accountCode)
+        .maybeSingle<Account>()
+      if (readError) throw accountError(readError)
+      if (!before) throw new Error('accounts: 고칠 계정이 없다(또는 읽을 권한이 없다).')
+
+      const keys = (Object.keys(patch) as (keyof AccountPatch)[]).filter(
+        (k) => patch[k] !== undefined && before[k] !== patch[k],
+      )
+      if (keys.length === 0) return before
+      await audit({
+        action: 'update',
+        entity_table: 'accounts',
+        entity_id: `${businessId}:${accountCode}`,
+        business_id: businessId,
+        actor,
+        before: Object.fromEntries(keys.map((k) => [k, before[k]])),
+        after: Object.fromEntries(keys.map((k) => [k, patch[k]])),
+        note: keys.includes('active') && keys.length === 1 ? (patch.active ? '계정 다시 사용' : '계정 비활성화') : null,
+      })
+      const { data, error } = await sb
+        .from('accounts')
+        .update(Object.fromEntries(keys.map((k) => [k, patch[k]])))
+        .eq('business_id', businessId)
+        .eq('account_code', accountCode)
+        .select(ACCOUNT_COLUMNS)
+      if (error) throw accountError(error)
+      return oneAffectedRow('accounts', data as Account[] | null, null)
+    },
+
+    async applyStandardChart(businessId: string, actor: AuditActor): Promise<number> {
+      const { data: existing, error: readError } = await sb
+        .from('accounts')
+        .select('account_code')
+        .eq('business_id', businessId)
+        .returns<{ account_code: string }[]>()
+      if (readError) throw accountError(readError)
+      const have = new Set((existing ?? []).map((r) => r.account_code))
+      const missing = STANDARD_CHART.filter((s) => !have.has(s.code))
+      if (missing.length === 0) return 0
+
+      await audit({
+        action: 'create',
+        entity_table: 'accounts',
+        entity_id: `${businessId}:standard-chart`,
+        business_id: businessId,
+        actor,
+        after: { codes: missing.map((s) => s.code) },
+        note: `표준 계정과목표 적용 — ${missing.length}개`,
+      })
+      const fetched_at = new Date().toISOString()
+      const { data, error } = await sb
+        .from('accounts')
+        .upsert(
+          missing.map((s) => ({
+            business_id: businessId,
+            account_code: s.code,
+            name: s.name,
+            category: s.category,
+            section: s.section,
+            cash_flow: s.cash_flow,
+            source: 'manual',
+            fetched_at,
+          })),
+          { onConflict: 'business_id,account_code', ignoreDuplicates: true },
+        )
+        .select('account_code')
+      if (error) throw accountError(error)
+      return data?.length ?? 0
     },
 
     /** CH-024 확장(0015). [제한] 열람 역할이 아니면 0015의 business_keymen_read가 빈 배열을 준다. */

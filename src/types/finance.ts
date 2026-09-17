@@ -161,6 +161,11 @@ export interface Account extends Provenance {
   category: AccountCategory
   section: AccountSection
   cash_flow: CashFlowClass | null
+  /**
+   * 사용 중인가(0016). 계정은 지우지 않는다 — 전표와 결산이 코드를 문다.
+   * 비활성 계정에는 새 전표를 넣을 수 없고, 이미 있는 숫자는 재무제표에 그대로 선다.
+   */
+  active: boolean
 }
 
 /**

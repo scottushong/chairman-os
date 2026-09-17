@@ -1,6 +1,7 @@
 import { mockMarket } from '@/lib/market/mock'
 import type { FinanceLedger } from '@/types'
 
+import { MOCK_CHART } from './account-map'
 import { ingestCompany } from './ingest'
 import { MOCK_COMPANIES, MOCK_FETCHED_AT, mockLedgerSource } from './mock'
 
@@ -18,7 +19,7 @@ let cached: Promise<FinanceLedger> | null = null
 export function loadMockLedger(): Promise<FinanceLedger> {
   cached ??= (async () => {
     const parts = await Promise.all(
-      MOCK_COMPANIES.map((c) => ingestCompany(mockLedgerSource, c, MOCK_WINDOW, MOCK_FETCHED_AT)),
+      MOCK_COMPANIES.map((c) => ingestCompany(mockLedgerSource, c, MOCK_WINDOW, MOCK_FETCHED_AT, MOCK_CHART)),
     )
     const periods = [...new Set(parts.flatMap((p) => p.journal.map((j) => j.entry_date.slice(0, 7))))].sort()
     return {

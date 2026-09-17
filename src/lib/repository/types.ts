@@ -1,7 +1,9 @@
 import type { EntityAuditRecord } from '@/lib/audit-log'
+import type { AccountFields } from '@/lib/ledger/accounts'
 import type { DecisionAuditRecord, DecisionAction } from '@/lib/decision-log'
 import type { SearchHit } from '@/lib/search'
 import type {
+  Account,
   AiNightOutput,
   Alert,
   Business,
@@ -53,6 +55,16 @@ export interface ChairmanRepository {
    * 권한은 여기서 보지 않는다. 0015의 원장 read 정책이 회사 범위와 [제한] 열람 역할을 같이 본다.
    */
   loadFinanceLedger(): Promise<FinanceLedger>
+
+  /**
+   * Phase 2-B 블록 1 — 계정과목 (0016). 권한은 여기서 보지 않는다 — can_keep_books()가 본다.
+   * 코드는 만들 때 한 번 정해지고 바뀌지 않는다. 그래서 update의 patch에는 코드가 없다.
+   * 계정은 지우지 않는다 — 전표·결산이 코드를 문다. active=false로 비활성화한다.
+   */
+  createAccount(input: NewAccount, actor: AuditActor): Promise<Account>
+  updateAccount(businessId: string, accountCode: string, patch: AccountPatch, actor: AuditActor): Promise<Account>
+  /** 표준 계정과목표(lib/ledger/standard-chart.ts)에서 이 회사에 없는 코드만 넣는다. 넣은 수를 돌려준다. */
+  applyStandardChart(businessId: string, actor: AuditActor): Promise<number>
   listProjects(): Promise<Project[]>
   listTasks(): Promise<Task[]>
   listDecisions(): Promise<Decision[]>
@@ -147,6 +159,12 @@ export interface ChairmanRepository {
 }
 
 /** CH-024 키맨 폼이 보내는 한 행. keyman_id가 없으면 새 사람이다. */
+export type NewAccount = { business_id: string; account_code: string } & AccountFields
+export type AccountPatch = Partial<AccountFields & { active: boolean }>
+
+/** 같은 회사에 같은 계정코드가 이미 있을 때. 사용자가 코드를 고쳐야 풀린다(DUPLICATE_BUSINESS_ID와 같은 이유). */
+export const DUPLICATE_ACCOUNT_CODE = 'DUPLICATE_ACCOUNT_CODE'
+
 export type KeymanInput = Omit<BusinessKeyman, 'keyman_id'> & { keyman_id?: string }
 
 /** /settings/chairman 폼이 보내는 한 행. project_id가 없으면 새 프로젝트다. */

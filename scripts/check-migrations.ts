@@ -23,6 +23,7 @@ import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm'
 import { sheetFinanceKpis } from '../src/data'
 import { loadMockLedger } from '../src/lib/ecount/mock-ledger'
 import { kpisFromLedger } from '../src/lib/ledger/cells'
+import { STANDARD_CHART, STANDARD_CHART_BUSINESSES } from '../src/lib/ledger/standard-chart'
 
 const MIGRATIONS = join(__dirname, '..', 'supabase', 'migrations')
 const BUSINESSES = ['biz_dy', 'biz_vana', 'biz_sticky', 'biz_hof', 'biz_boram']
@@ -86,6 +87,23 @@ async function sheetOnlyView(db: Db) {
   assert.ok([...kpis.values()].every((k) => k.source === 'manual' && !k.closed), '시트 행은 수기 꼬리표')
 }
 
+/** 0016 표준 계정과목표 시드 = lib/ledger/standard-chart.ts. 스타트업 네 곳만, DY는 없다. */
+async function standardChartSeed(db: Db) {
+  const { rows } = await db.query<{ business_id: string; account_code: string; name: string; category: string; section: string; cash_flow: string | null; source: string; active: boolean }>(
+    'select business_id, account_code, name, category::text, section::text, cash_flow::text, source::text, active from accounts order by business_id, account_code',
+  )
+  const want = STANDARD_CHART_BUSINESSES.flatMap((b) =>
+    STANDARD_CHART.map((s) => [b, s.code, s.name, s.category, s.section, s.cash_flow, 'manual', true]),
+  ).sort((x, y) => `${x[0]}|${x[1]}`.localeCompare(`${y[0]}|${y[1]}`))
+  assert.deepEqual(
+    rows.map((r) => [r.business_id, r.account_code, r.name, r.category, r.section, r.cash_flow, r.source, r.active]),
+    want,
+    '0016 시드 ≠ standard-chart.ts',
+  )
+  // 원장 비교(ledgerView)는 mock 계정과목표로 한다. 전표가 아직 없어서 지워도 FK가 걸리지 않는다.
+  await db.exec(`delete from accounts where source = 'manual'`)
+}
+
 async function ledgerView(db: Db) {
   const ledger = await loadMockLedger()
   await bulk(db, 'accounts', ledger.accounts, ['business_id', 'account_code', 'name', 'category', 'section', 'cash_flow', 'source', 'fetched_at', 'closed'])
@@ -109,6 +127,7 @@ const UID = {
   integration: '00000000-0000-0000-0000-00000000000a',
   agent: '00000000-0000-0000-0000-00000000000b',
   cfo: '00000000-0000-0000-0000-00000000000c',
+  ceo: '00000000-0000-0000-0000-00000000000f',
   member: '00000000-0000-0000-0000-00000000000d',
   chairman: '00000000-0000-0000-0000-00000000000e',
 }
@@ -120,16 +139,18 @@ async function rls(db: Db) {
     grant usage, select on all sequences in schema public to authenticated;
     insert into auth.users values
       ('${UID.integration}', 'i@x'), ('${UID.agent}', 'a@x'), ('${UID.cfo}', 'c@x'),
-      ('${UID.member}', 'm@x'), ('${UID.chairman}', 'ch@x');
+      ('${UID.member}', 'm@x'), ('${UID.chairman}', 'ch@x'), ('${UID.ceo}', 'ceo@x');
     insert into user_profiles (user_id, role, display_name, max_security_class) values
       ('${UID.integration}', 'Integration', 'sync', 'Restricted'),
       ('${UID.agent}', 'AIAgent', 'ai', 'Restricted'),
       ('${UID.cfo}', 'GroupCFO', 'cfo', 'Restricted'),
       ('${UID.member}', 'Member', 'm', 'Normal'),
-      ('${UID.chairman}', 'Chairman', 'ch', 'Vault');
+      ('${UID.chairman}', 'Chairman', 'ch', 'Vault'),
+      ('${UID.ceo}', 'BusinessCEO', 'ceo', 'Restricted');
     insert into user_business_access select '${UID.integration}', business_id from businesses;
     insert into user_business_access select '${UID.agent}', business_id from businesses;
     insert into user_business_access values ('${UID.member}', 'biz_dy');
+    insert into user_business_access values ('${UID.ceo}', 'biz_vana');
   `)
 
   /** 역할 하나로 SQL 한 줄. 끝나면 되돌린다. 거부는 'denied', 나머지는 영향 행 수/첫 칸. */
@@ -191,17 +212,48 @@ async function rls(db: Db) {
   assert.equal(await as(UID.chairman, `insert into business_keymen (business_id, name) values ('biz_dy', 'x')`), 1)
   assert.equal(await as(UID.chairman, journal('ecount', 'T-3')), 'denied')
   assert.equal(await as(UID.chairman, 'select count(*)::int from finance_kpis_masked'), total)
+
+  await books(as)
+}
+
+type As = (uid: string, sql: string) => Promise<'denied' | number>
+
+/** 0016 자체 장부. 역할별로 되는 것/막히는 것. */
+async function books(as: As) {
+  // 블록 1 — 계정과목: 만들기·고치기는 장부 담당, 코드는 불변, 지우지 않는다
+  const account = (biz: string, code: string) =>
+    `insert into accounts (business_id, account_code, name, category, section, source, fetched_at)
+     values ('${biz}', '${code}', '테스트', 'other', 'sga', 'manual', now())`
+  assert.equal(await as(UID.cfo, account('biz_dy', '8888')), 1, 'GroupCFO는 계정을 만든다')
+  assert.equal(await as(UID.ceo, account('biz_vana', '8888')), 1, 'BusinessCEO는 자기 회사 계정을 만든다')
+  assert.equal(await as(UID.ceo, account('biz_dy', '8888')), 'denied', 'BusinessCEO는 남의 회사 계정을 못 만든다')
+  assert.equal(await as(UID.member, account('biz_dy', '8888')), 'denied', 'Member는 계정을 못 만든다')
+  assert.equal(await as(UID.agent, account('biz_dy', '8888')), 'denied', 'AIAgent는 계정을 못 만든다')
+  assert.equal(
+    await as(UID.chairman, `insert into accounts (business_id, account_code, name, category, section, source, fetched_at) values ('biz_dy', '8889', 'x', 'other', 'sga', 'ecount', now())`),
+    'denied',
+    '사람이 만드는 계정은 manual',
+  )
+  assert.equal(await as(UID.chairman, `update accounts set name = '급여', active = false where business_id = 'biz_dy' and account_code = '8010'`), 1, '이름·활성은 고친다')
+  await assert.rejects(
+    as(UID.chairman, `update accounts set account_code = '8011' where business_id = 'biz_dy' and account_code = '8010'`),
+    /account_code_immutable/,
+    '코드는 못 바꾼다',
+  )
+  assert.equal(await as(UID.chairman, `delete from accounts where business_id = 'biz_dy' and account_code = '8010'`), 0, '계정은 지우지 않는다')
+  assert.equal(await as(UID.member, `update accounts set name = 'x' where business_id = 'biz_dy'`), 0, 'Member는 못 고친다')
 }
 
 async function main() {
   const db = new PGlite({ extensions: { pg_trgm } })
   const files = await applyAll(db)
+  await standardChartSeed(db)
   await sheetOnlyView(db)
   await ledgerView(db)
   await rls(db)
   await db.close()
   console.log(
-    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), sheet-only view, SQL view = TS ledger, RLS by role`,
+    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books`,
   )
 }
 

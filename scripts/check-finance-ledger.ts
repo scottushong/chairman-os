@@ -16,12 +16,15 @@ import assert from 'node:assert/strict'
 
 import { sheetFinanceKpis } from '../src/data'
 import { ecountSetup } from '../src/lib/ecount/config'
+import { MOCK_CHART } from '../src/lib/ecount/account-map'
 import { mapAccounts, mapSlipLines, UnmappedAccountError } from '../src/lib/ecount/map'
 import { loadMockLedger } from '../src/lib/ecount/mock-ledger'
 import { closingDiff, kpiCards, runway } from '../src/lib/ledger/analysis'
 import { basisOf, sumFigures, weakest } from '../src/lib/ledger/basis'
 import { kpisFromLedger } from '../src/lib/ledger/cells'
 import { ledgerScope } from '../src/lib/ledger/scope'
+import { STANDARD_CHART } from '../src/lib/ledger/standard-chart'
+import { SECTION_CATEGORIES } from '../src/lib/ledger/accounts'
 import { balanceSheet, cashFlowStatement } from '../src/lib/ledger/statements'
 
 const BUSINESSES = ['biz_dy', 'biz_vana', 'biz_sticky', 'biz_hof', 'biz_boram']
@@ -76,7 +79,7 @@ function basisRules() {
 }
 
 async function boundaries() {
-  const ctx = { mode: 'mock' as const, business_id: 'biz_dy', fetched_at: '2026-09-16T00:00:00Z', last_closed_period: '2026-07' }
+  const ctx = { chart: MOCK_CHART, business_id: 'biz_dy', fetched_at: '2026-09-16T00:00:00Z', last_closed_period: '2026-07' }
   const lines = mapSlipLines(
     [
       { IO_DATE: '20260731', SLIP_NO: 'A', SER_NO: '1', ACCT_CODE: '1010', DR_AMT: '1,000', CR_AMT: '0', REMARKS: '' },
@@ -95,9 +98,9 @@ async function boundaries() {
   )
   assert.throws(() => mapAccounts([{ ACCT_CODE: '7777', ACCT_NAME: '모르는 계정' }], ctx), UnmappedAccountError)
   assert.throws(
-    () => mapAccounts([{ ACCT_CODE: '1010', ACCT_NAME: '현금' }], { ...ctx, mode: 'real' }),
+    () => mapAccounts([{ ACCT_CODE: '1010', ACCT_NAME: '현금' }], { ...ctx, chart: {} }),
     UnmappedAccountError,
-    'real 계정과목표가 비어 있으면 멈춘다',
+    '회사 계정과목표(DB)에 없는 계정이면 멈춘다',
   )
 
   assert.equal(ecountSetup({} as NodeJS.ProcessEnv).source.mode, 'mock')
@@ -114,6 +117,27 @@ async function boundaries() {
   )
 }
 
+/** 표준 계정과목표(블록 1). mock 전표가 표준표 위에서 그대로 읽혀야 하고, 표 자체가 DB check를 통과해야 한다. */
+function standardChart() {
+  const codes = new Set<string>()
+  for (const s of STANDARD_CHART) {
+    assert.ok(!codes.has(s.code), `표준표 코드 중복: ${s.code}`)
+    codes.add(s.code)
+    assert.ok(SECTION_CATEGORIES[s.section].includes(s.category), `${s.code} 구분·대분류 불일치`)
+  }
+  const std = new Map(STANDARD_CHART.map((s) => [s.code, s]))
+  // 8990 / 8299는 D-01 시트 모순을 드러내는 mock 전용 계정이다. 실제 장부에는 없다.
+  for (const [code, m] of Object.entries(MOCK_CHART).filter(([c]) => c !== '8990' && c !== '8299')) {
+    const s = std.get(code)
+    assert.ok(s, `MOCK_CHART ${code}가 표준표에 없다`)
+    assert.deepEqual(
+      [s.name, s.category, s.section, s.cash_flow],
+      [m.name, m.category, m.section, m.cash_flow],
+      `MOCK_CHART ${code}와 표준표가 다르다`,
+    )
+  }
+}
+
 async function provisionalGap() {
   const ledger = await loadMockLedger()
   const diff = closingDiff(ledger, ledgerScope(ledger, ['biz_dy']))!
@@ -128,8 +152,9 @@ async function main() {
   await statementsClose()
   basisRules()
   await boundaries()
+  standardChart()
   await provisionalGap()
-  console.log('PASS: sheet 480 cells = ledger, statements close, basis rules, ECOUNT mapping/config boundaries, provisional→confirmed gap')
+  console.log('PASS: sheet 480 cells = ledger, statements close, basis rules, ECOUNT mapping/config boundaries, standard chart, provisional→confirmed gap')
 }
 
 main().catch((e) => {

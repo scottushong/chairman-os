@@ -1,9 +1,10 @@
 import { connection } from 'next/server'
 import { cache } from 'react'
 
+import { DATA_MODE } from '@/lib/env'
 import { supabaseConfig } from '@/lib/supabase/config'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import type { Role, SessionUser } from '@/types'
+import { ROLE, type Role, type SessionUser } from '@/types'
 
 /**
  * 지금 요청을 보낸 사람이 누구인가. 서버에서만 부른다.
@@ -33,7 +34,7 @@ export const currentUser = cache(async function currentUser(): Promise<SessionUs
   // 프리렌더된다. 그러면 /settings/users의 notFound()가 빌드를 깨뜨린다(Vercel에 env 없이 빌드).
   // 키 유무와 상관없이 늘 요청 시점에 판정하게 한다.
   await connection()
-  if (!supabaseConfig()) return null
+  if (!supabaseConfig()) return dummyUser()
 
   const sb = await createSupabaseServerClient()
 
@@ -60,3 +61,16 @@ export const currentUser = cache(async function currentUser(): Promise<SessionUs
     title_ko: data.title_ko ?? '',
   }
 })
+
+/**
+ * 순수 dummy 개발(Supabase 키 없음 + NEXT_PUBLIC_DATA_MODE=dummy)의 가상 사용자.
+ *
+ * 키가 없으면 로그인이라는 개념이 없고(proxy.ts), 그러면 dummy 화면에서 쓰기 흐름(장부 입력 등)을
+ * 한 번도 눌러 볼 수 없다. 이 사용자는 메모리 어댑터에만 닿는다 — getRepository()가 live에서 키 없이는
+ * 던지므로 실데이터에는 닿을 길이 없다. 역할은 DUMMY_ROLE(서버 전용)로 바꿔 화면 안내를 역할별로 본다.
+ */
+function dummyUser(): SessionUser | null {
+  if (DATA_MODE !== 'dummy') return null
+  const role = ROLE.find((r) => r === process.env.DUMMY_ROLE) ?? 'Chairman'
+  return { user_id: '00000000-0000-0000-0000-00000000d0d0', name: 'DUMMY', role, title_ko: role }
+}

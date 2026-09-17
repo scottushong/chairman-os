@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
+import { BooksNav } from '@/components/finance/books-nav'
 import { FinanceView } from '@/components/finance/finance-view'
 import { PageHeader } from '@/components/layout/page-header'
 import { firstParam, oneOf } from '@/lib/query'
@@ -30,6 +31,7 @@ export default async function BusinessFinancePage(props: PageProps<'/finance/[bu
         code="CH-023 · CH-052"
         description={`${business.industry} · ${STATUS_LABEL_KO[business.status]} · ${business.business_id}`}
       >
+        <BooksNav businessId={business_id} current="statements" />
         <Link
           href="/finance"
           className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"

@@ -43,3 +43,20 @@ export function canManageUsers(user: SessionUser | null): boolean {
 export function canEditChairmanRoutine(user: SessionUser | null): boolean {
   return user?.role === 'Chairman'
 }
+
+/**
+ * Phase 2-B 자체 장부. 0016의 can_keep_books()와 같은 역할 목록이어야 한다.
+ * BusinessCEO는 자기 회사만인데, 회사 범위는 화면이 흉내 내지 않는다(canDraftDecision과 같은 이유) —
+ * 남의 회사에서 저장을 누르면 DB가 거부하고 그 문장을 보여 준다.
+ */
+const BOOKKEEPER: readonly Role[] = ['Chairman', 'GroupCFO', 'BusinessCEO']
+
+/** 계정과목·전표를 쓸 수 있는가(안내). */
+export function canKeepBooks(user: SessionUser | null): boolean {
+  return user !== null && BOOKKEEPER.includes(user.role)
+}
+
+/** 월 마감을 할 수 있는가(안내). 0016 can_close_books()와 같다. */
+export function canCloseBooks(user: SessionUser | null): boolean {
+  return user?.role === 'Chairman' || user?.role === 'GroupCFO'
+}

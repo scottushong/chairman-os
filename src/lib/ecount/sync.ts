@@ -4,6 +4,7 @@ import { kstDate } from '@/lib/ai/night-brief'
 import { signInServiceAccount } from '@/lib/supabase/service-account'
 import type { Closing, JournalLine, PeriodKey } from '@/types'
 
+import { chartOf, MOCK_CHART } from './account-map'
 import { ecountSetup } from './config'
 import { defaultWindow, ingestCompany, type IngestedLedger } from './ingest'
 import { EcountUnsupportedError } from './types'
@@ -169,7 +170,7 @@ export async function runEcountSync(opts: {
   if (setup.source.mode === 'mock') {
     for (const c of setup.companies) {
       try {
-        const l = await ingestCompany(setup.source, c, window, fetchedAt)
+        const l = await ingestCompany(setup.source, c, window, fetchedAt, MOCK_CHART)
         report.companies.push({
           business_id: c.business_id, status: 'dry-run',
           accounts: l.accounts.length, journal: l.journal.length, closings: l.closings.length,
@@ -201,7 +202,13 @@ export async function runEcountSync(opts: {
   try {
     for (const c of setup.companies) {
       try {
-        const l = await ingestCompany(setup.source, c, window, fetchedAt)
+        // 분류는 DB의 계정과목표가 정한다(0016). 거기 없는 ECOUNT 계정이 오면 map.ts가 이 회사를 멈춘다.
+        const { data: known, error: chartError } = await sb
+          .from('accounts')
+          .select('account_code,name,category,section,cash_flow')
+          .eq('business_id', c.business_id)
+        if (chartError) throw new Error(`accounts ${chartError.code ?? '?'}: ${chartError.message}`)
+        const l = await ingestCompany(setup.source, c, window, fetchedAt, chartOf(known ?? []))
         const written = await writeCompany(sb, l, window)
         report.wrote = true
         report.companies.push({

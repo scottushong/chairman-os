@@ -13,9 +13,11 @@ import {
 } from '@/data'
 import type { EntityAuditRecord } from '@/lib/audit-log'
 import { AUDIT_ACTION, DECISION_STATUS, type DecisionAuditRecord } from '@/lib/decision-log'
-import { loadMockLedger } from '@/lib/ecount/mock-ledger'
 import { dayKey } from '@/lib/format'
 import { kpisFromLedger } from '@/lib/ledger/cells'
+
+import * as books from './dummy-books'
+import { dummyLedger } from './dummy-books'
 import { emptyStrategy } from '@/lib/strategy-fields'
 import type { SearchHit } from '@/lib/search'
 import type {
@@ -137,21 +139,15 @@ export const dummyRepository: ChairmanRepository = {
    * (scripts/check-finance-ledger.ts)이 dummy 화면에도 그대로 적용된다.
    */
   async listFinanceKpis() {
-    const ledger = await loadMockLedger()
+    const ledger = await dummyLedger()
     return kpisFromLedger(ledger, [...new Set(ledger.accounts.map((a) => a.business_id))])
   },
 
-  async loadFinanceLedger() {
-    const ledger = await loadMockLedger()
-    // 복사본을 준다. 화면이 sort() 한 번만 잘못 불러도 캐시된 원장이 영구히 바뀐다.
-    return {
-      accounts: [...ledger.accounts],
-      journal: [...ledger.journal],
-      closings: [...ledger.closings],
-      fxRates: [...ledger.fxRates],
-      costIndices: [...ledger.costIndices],
-    }
-  },
+  /** mock 원장 + 화면에서 한 장부 쓰기(dummy-books.ts). */
+  loadFinanceLedger: dummyLedger,
+  createAccount: books.createAccount,
+  updateAccount: books.updateAccount,
+  applyStandardChart: books.applyStandardChart,
 
   async listKeymen() {
     return memoryKeymen.map((k) => ({ ...k }))
