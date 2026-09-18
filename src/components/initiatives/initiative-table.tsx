@@ -11,18 +11,26 @@ import {
  *
  * 색은 둘뿐이다. 지난 다음 행동은 빨강, 14일 넘게 손 안 댄 건은 흐리게.
  * 나머지를 칠하면 어디가 급한지 안 보인다(요구사항서 2번).
+ *
+ * 흐리게는 행 전체가 아니라 제목·유형/회사·다음 행동 텍스트에만 건다. 정체와 지연은
+ * 강하게 겹친다 — 14일 넘게 손 안 댄 건일수록 다음 행동일도 지났을 확률이 높다.
+ * 행 전체를 opacity로 죽이면 그 안의 빨간 D-day 배지까지 55%로 꺼져, 정작
+ * 가장 급한 줄에서 위험 신호가 가장 약해지는 역효과가 난다. D-day 배지와
+ * 정체 일수 자체는 늘 100% 밝기로 둔다.
  */
 export function InitiativeTable({
-  initiatives, businesses, today,
+  initiatives, businesses, today, hasAny,
 }: {
   initiatives: Initiative[]
   businesses: Business[]
   today: IsoDate
+  /** 필터 없이도 이니셔티브가 하나도 없는가. 빈 화면이 '조건에 안 맞음'인지 '아직 없음'인지 갈라야 한다. */
+  hasAny: boolean
 }) {
   if (initiatives.length === 0) {
     return (
       <p className="mt-4 rounded-xl border border-dashed border-line bg-panel/60 p-6 text-center text-[12px] text-ink-muted">
-        이 조건에 맞는 건이 없습니다.
+        {hasAny ? '이 조건에 맞는 건이 없습니다.' : '아직 등록된 이니셔티브가 없습니다. 위에서 새 건을 만들어 보세요.'}
       </p>
     )
   }
@@ -46,18 +54,16 @@ export function InitiativeTable({
                 <li key={i.initiative_id}>
                   <Link
                     href={`/initiatives/${i.initiative_id}`}
-                    className={`flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3 text-[13px] transition-colors hover:bg-raised ${
-                      stale ? 'opacity-55' : ''
-                    }`}
+                    className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3 text-[13px] transition-colors hover:bg-raised"
                   >
-                    <span className="font-semibold text-ink">{i.title}</span>
-                    <span className="text-[11px] text-ink-muted">
+                    <span className={`font-semibold text-ink ${stale ? 'opacity-55' : ''}`}>{i.title}</span>
+                    <span className={`text-[11px] text-ink-muted ${stale ? 'opacity-55' : ''}`}>
                       {INITIATIVE_KIND_LABEL_KO[i.kind]}
                       {i.business_id ? ` · ${nameOf.get(i.business_id) ?? i.business_id}` : ''}
                     </span>
                     {i.next_action ? (
                       <span className="ml-auto flex items-baseline gap-2">
-                        <span className="text-ink-dim">{i.next_action}</span>
+                        <span className={`text-ink-dim ${stale ? 'opacity-55' : ''}`}>{i.next_action}</span>
                         {clock ? (
                           <span className={`tnum font-semibold ${clock.overdue ? 'text-critical' : 'text-ink'}`}>
                             {clock.label}
@@ -65,7 +71,9 @@ export function InitiativeTable({
                         ) : null}
                       </span>
                     ) : (
-                      <span className="ml-auto text-[11px] text-ink-muted">다음 행동 없음</span>
+                      <span className={`ml-auto text-[11px] text-ink-muted ${stale ? 'opacity-55' : ''}`}>
+                        다음 행동 없음
+                      </span>
                     )}
                     {stale ? (
                       <span className="text-[11px] text-ink-muted tnum">{stalenessDays(i, today)}일째</span>
