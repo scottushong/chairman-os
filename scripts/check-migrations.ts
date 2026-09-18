@@ -247,6 +247,48 @@ async function rls(db: Db) {
     await as(UID.cfo, `select count(*) from initiative_notes`),
     0, '회장 메모는 GroupCFO에게 보이지 않는다',
   )
+  // AIAgent는 읽기는 된다 — 야간 브리핑(Task 10)이 이 값을 본다. 쓰기 거부만 재고 읽기를
+  // 안 재면, 읽기까지 막아버린 정책도 이 스위트를 통과한다.
+  assert.equal(
+    typeof (await as(UID.agent, 'select count(*) from initiatives')),
+    'number', 'AIAgent는 이니셔티브를 읽는다',
+  )
+  // Integration — 결합 효과. permissive 정책만으로도 이미 막히지만(GroupCFO/Chairman이 아니므로),
+  // 이 표에 다른 쓰기 경로가 안 생겼는지 재는 회귀 검사로 남겨 둔다.
+  assert.equal(
+    await as(UID.integration, `insert into initiatives (title, kind) values ('통합 딜', 'Deal')`),
+    'denied', 'Integration은 이니셔티브를 못 만든다',
+  )
+
+  // 구조 단언 — restrictive 방어선이 실제로 있는지.
+  // AIAgent와 Integration 둘 다 permissive 정책(can_write_initiatives) 하나만으로 이미 막힌다 —
+  // Chairman/GroupCFO가 아니기 때문이다. 그래서 위의 행동 검사(insert가 'denied')는 permissive가
+  // 막았는지 restrictive가 막았는지 구분하지 못한다. restrictive 루프는 나중에 permissive 정책이
+  // 느슨해져도 남는 방어선이라는 게 존재 이유이므로, 있어야 할 자리에 실제로 있는지,
+  // RESTRICTIVE로 만들어졌는지(만들어놓고 실수로 permissive가 되지 않았는지)를 카탈로그에서 직접 잰다.
+  const { rows: restrictivePolicies } = await db.query<{ tablename: string; policyname: string; permissive: string }>(
+    `select tablename, policyname, permissive from pg_policies
+       where schemaname = 'public' and (policyname like 'ai_agent_no_%' or policyname like 'integration_no_%')`,
+  )
+  const policyKind = new Map(restrictivePolicies.map((r) => [`${r.tablename}.${r.policyname}`, r.permissive]))
+  const aiAgentBlockedTables = ['initiatives', 'initiative_keymen', 'initiative_docs', 'events']
+  const integrationBlockedTables = ['initiatives', 'initiative_keymen', 'initiative_docs', 'events', 'initiative_notes']
+  for (const t of aiAgentBlockedTables) {
+    for (const op of ['insert', 'update', 'delete']) {
+      assert.equal(
+        policyKind.get(`${t}.ai_agent_no_${op}`), 'RESTRICTIVE',
+        `${t}에 ai_agent_no_${op}가 restrictive로 있어야 한다`,
+      )
+    }
+  }
+  for (const t of integrationBlockedTables) {
+    for (const op of ['insert', 'update', 'delete']) {
+      assert.equal(
+        policyKind.get(`${t}.integration_no_${op}`), 'RESTRICTIVE',
+        `${t}에 integration_no_${op}가 restrictive로 있어야 한다`,
+      )
+    }
+  }
 
   await books(db, as)
 }
