@@ -10,7 +10,6 @@ import { AuditTimeline } from '@/components/shared/audit-timeline'
 import { currentUser } from '@/lib/auth/session'
 import { kstToday } from '@/lib/chairman-project'
 import { getRepository } from '@/lib/repository'
-import type { AuditEntityTable } from '@/lib/repository/types'
 import { INITIATIVE_KIND_LABEL_KO, INITIATIVE_STAGE_LABEL_KO, INITIATIVE_STATUS_LABEL_KO } from '@/types'
 
 /**
@@ -28,14 +27,6 @@ import { INITIATIVE_KIND_LABEL_KO, INITIATIVE_STAGE_LABEL_KO, INITIATIVE_STATUS_
  * getInitiativeNote는 메모가 없을 때도, RLS가 가렸을 때도 똑같이 null을 준다.
  * 값으로 분기하면 GroupCFO에게 빈 '메모 없음' 섹션이 보이는데, 그건 거짓말이거나
  * (회장이 써 놨는데 안 보이는 것) 정보 누출이다(써 놨다는 사실 자체가 드러남).
- *
- * DEVIATION(Task 7): repo.listEntityAudit의 AuditEntityTable(src/lib/repository/types.ts)이
- * 'tasks'|'projects'|'decisions'|'documents'|'businesses'까지만 열어 두고 'initiatives'가
- * 빠져 있다 — Task 3이 스키마·어댑터에는 이미 entity_table: 'initiatives'로 감사를 남기면서
- * (supabase.ts 2250행) 이 읽기용 타입만 갱신을 놓친 것으로 보인다. repository 파일은 이 Task의
- * 수정 범위 밖이라 타입을 고치는 대신 호출부에서만 이중 단언으로 우회했다 — 런타임에는
- * 문자열 하나일 뿐이라 동작에 영향이 없다. 다음에 repository를 만지는 Task가 한 줄
- * (`| 'initiatives'`)을 더하는 편이 이 우회보다 낫다.
  */
 export default async function InitiativePage(props: PageProps<'/initiatives/[id]'>) {
   const { id } = await props.params
@@ -48,7 +39,7 @@ export default async function InitiativePage(props: PageProps<'/initiatives/[id]
     repo.listInitiativeDocs(),
     repo.listEvents(),
     repo.listBusinesses(),
-    repo.listEntityAudit('initiatives' as unknown as AuditEntityTable, id),
+    repo.listEntityAudit('initiatives', id),
     currentUser(),
   ])
   if (!initiative) notFound()

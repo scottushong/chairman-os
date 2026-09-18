@@ -275,8 +275,25 @@ export const DUPLICATE_INVITATION = 'DUPLICATE_INVITATION'
  * 문자열을 그대로 받지 않는 이유는 이 값이 PostgREST 필터로 그대로 들어가기 때문이다.
  * 지금은 호출부가 전부 리터럴이라 위험이 없지만, 목록을 좁혀 두면 나중에 URL에서 온 값을
  * 그대로 흘려보내는 실수를 타입이 먼저 잡는다.
+ *
+ * 이 목록은 'audit_log에 남는 테이블 전부'가 아니라 '단건 화면이 실제로 되짚어 읽는 테이블'이다
+ * (아래 각주 참고). accounts/business_keymen/business_strategy/user_invitations/
+ * chairman_projects/chairman_manifesto/initiative_keymen/initiative_docs/initiative_notes/events는
+ * 전부 supabase.ts 어댑터가 entity_table로 남기지만, 그 행 하나만 지목해 이력을 보여 주는
+ * 단건 화면이 없다 — keymen/문서/이벤트는 이니셔티브·회사 상세 화면에 인라인으로 얹혀 있고,
+ * '이 키맨 한 명의 변경 이력'을 따로 보여 주는 자리가 없다. 그래서 여기 없다고 놓친 게
+ * 아니라 아직 읽는 화면이 없어서 없는 것이다 — 그런 화면이 생기면 그때 한 줄 추가한다
+ * (Phase 4-A Task 7 리뷰).
  */
-export type AuditEntityTable = 'tasks' | 'projects' | 'decisions' | 'documents' | 'businesses'
+export type AuditEntityTable =
+  | 'tasks'
+  | 'projects'
+  | 'decisions'
+  | 'documents'
+  | 'businesses'
+  // Phase 4-A. /initiatives/[id]가 이 건 자체의 변경 이력을 되짚는다(supabase.ts가 이미
+  // entity_table: 'initiatives'로 남기고 있었다 — 이 타입만 갱신을 놓쳤었다).
+  | 'initiatives'
 
 export interface AuditActor {
   user_id: string
