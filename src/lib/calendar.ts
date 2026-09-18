@@ -7,7 +7,8 @@ import type { IsoDate } from '@/types'
 
 const DAY = 86_400_000
 
-function shift(date: IsoDate, by: number): IsoDate {
+/** 날짜 문자열에 날짜 수를 더한다(음수면 뺀다). 이 파일 밖에서 날짜 산술을 새로 만들지 않도록 내보낸다. */
+export function shift(date: IsoDate, by: number): IsoDate {
   return new Date(Date.parse(`${date}T00:00:00Z`) + by * DAY).toISOString().slice(0, 10) as IsoDate
 }
 

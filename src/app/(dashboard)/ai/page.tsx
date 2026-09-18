@@ -3,10 +3,13 @@ import Link from 'next/link'
 import { RunNightBrief } from '@/components/ai/run-night-brief'
 import { Manifesto } from '@/components/chairman/manifesto'
 import { ProjectCounters } from '@/components/chairman/project-counters'
+import { TodayAndWeek } from '@/components/chairman/today-and-week'
 import { PageHeader } from '@/components/layout/page-header'
 import { Icon } from '@/components/ui/icon'
 import { currentUser } from '@/lib/auth/session'
+import { occursOn, shift } from '@/lib/calendar'
 import { kstToday, orderProjects } from '@/lib/chairman-project'
+import { initiativeClock, isStale } from '@/lib/initiative'
 import {
   CONFIDENCE_FLOOR,
   formatRunTime,
@@ -38,17 +41,32 @@ import type { AiBriefItem, AiNightOutput, Business, ProjectNote } from '@/types'
 export default async function AiPage(props: PageProps<'/ai'>) {
   const params = await props.searchParams
   const repo = await getRepository()
-  const [outputs, businesses, user, chairmanProjects, manifesto] = await Promise.all([
-    repo.listAiNightOutputs(),
-    repo.listBusinesses(),
-    currentUser(),
-    repo.listChairmanProjects(),
-    repo.getChairmanManifesto(),
-  ])
   const today = kstToday()
+  const weekLater = shift(today, 7)
+  const [outputs, businesses, user, chairmanProjects, manifesto, initiatives, calendarItems] =
+    await Promise.all([
+      repo.listAiNightOutputs(),
+      repo.listBusinesses(),
+      currentUser(),
+      repo.listChairmanProjects(),
+      repo.getChairmanManifesto(),
+      repo.listInitiatives(),
+      repo.listCalendarItems(today, weekLater),
+    ])
   // 카운터는 진행 중인 것만. 끝났거나 접은 프로젝트는 아침에 셀 날이 아니다.
   const activeProjects = orderProjects(chairmanProjects).filter((p) => p.status === 'Active')
   const isChairman = user?.role === 'Chairman'
+
+  // Task 9. "오늘·이번 주" — occursOn으로 오늘에 걸치는 항목만(여러 날 이벤트는 구간 포함이면 오늘로 친다).
+  const todayItems = calendarItems.filter((it) => occursOn(it, today))
+  // 7일 내(지난 것 포함) 다음 행동이 있는 Active 건. 정렬은 컴포넌트가 next_action_date로 한다.
+  const upcomingInitiatives = initiatives.filter((i) => {
+    if (i.status !== 'Active') return false
+    const clock = initiativeClock(i, today)
+    return clock !== null && clock.days <= 7
+  })
+  // 14일 이상 손 안 댄 Active 건.
+  const staleInitiatives = initiatives.filter((i) => isStale(i, today))
 
   const runs = groupRuns(outputs, businesses)
   const dates = [...new Set(runs.map((r) => r.date))].sort().reverse()
@@ -96,6 +114,13 @@ export default async function AiPage(props: PageProps<'/ai'>) {
           에서 넣으면 이 화면 맨 위에 올라옵니다.
         </p>
       ) : null}
+
+      <TodayAndWeek
+        todayItems={todayItems}
+        upcoming={upcomingInitiatives}
+        stale={staleInitiatives}
+        today={today}
+      />
 
       <h2 className="mt-8 flex items-center gap-1.5 text-[13px] font-semibold">
         <Icon name="sparkles" className="size-4 text-ink-dim" />

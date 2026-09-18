@@ -4,10 +4,12 @@ import { ChairmanDdayCard } from '@/components/dashboard/chairman-dday-card'
 import { CriticalBanner } from '@/components/dashboard/critical-banner'
 import { DashboardBoard } from '@/components/dashboard/dashboard-board'
 import { DecisionPanel } from '@/components/dashboard/decision-panel'
+import { InitiativeStat } from '@/components/dashboard/initiative-stat'
 import { StrategicCoordinates } from '@/components/dashboard/strategic-coordinates'
 import { WaitingOnMe } from '@/components/dashboard/waiting-on-me'
 import { Icon } from '@/components/ui/icon'
 import { currentUser } from '@/lib/auth/session'
+import { kstToday } from '@/lib/chairman-project'
 import { getRepository, loadDashboard } from '@/lib/repository'
 
 /**
@@ -25,10 +27,11 @@ const TABS = ['전체 요약', '중요 지표', '예산 vs 실적', '리스크',
 
 export default async function DashboardPage() {
   const repo = await getRepository()
-  const [data, user, chairmanProjects] = await Promise.all([
+  const [data, user, chairmanProjects, initiatives] = await Promise.all([
     loadDashboard(repo),
     currentUser(),
     repo.listChairmanProjects(),
+    repo.listInitiatives(),
   ])
 
   const today = new Intl.DateTimeFormat('ko-KR', {
@@ -37,6 +40,7 @@ export default async function DashboardPage() {
     day: 'numeric',
     weekday: 'short',
   }).format(new Date())
+  const todayIso = kstToday()
 
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-5">
@@ -53,6 +57,8 @@ export default async function DashboardPage() {
           </div>
           {/* Phase 3-B. 회장이 대시보드를 열 때마다 남은 날을 먼저 본다. 누르면 /ai 아침 루틴. */}
           <ChairmanDdayCard projects={chairmanProjects} />
+          {/* Task 9. ChairmanDdayCard는 '가장 가까운 장기 프로젝트 한 건', 이건 '이니셔티브 센 수' — 형제로 둔다. */}
+          <InitiativeStat initiatives={initiatives} today={todayIso} />
         </div>
         <div className="flex items-center gap-3">
           <span className="text-[12px] text-ink-dim tnum">{today}</span>
