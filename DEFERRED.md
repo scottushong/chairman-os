@@ -69,6 +69,19 @@
 |---|---|---|---|
 | D-22 | 운영 DB가 Tokyo에 있고 staging만 Seoul이다. 리전을 맞추려면 프로젝트를 새로 만들어야 한다 | 중 — **지금이 가장 싸다.** 실데이터가 쌓일수록 비싸진다 | 열림 |
 
+## 새로 생긴 것 (Phase 4-A, 2026-09-18)
+
+계획 문서([`2026-09-18-phase-4a-initiatives.md`](docs/superpowers/plans/2026-09-18-phase-4a-initiatives.md))의
+"확정이 필요한 것"이 원 스펙과 저장소 규약이 어긋나던 지점 넷이다. Task 1의 SQL 한 곳에서만 갈리므로
+여기서 한 번에 정하고 넘어갔다 — 전부 **저장소 규약 쪽(기본값)**을 택했다.
+
+| 항목 | 결정 | 반영 |
+|---|---|---|
+| D-23 열거값 표기 | 스펙은 `stage`/`kind`/`channel`을 한글로 저장하라고 했지만, **영문 값 + `*_LABEL_KO` 맵**으로 갔다 — 저장소의 다른 모든 열거값(`TASK_STATUS` 등)과 같은 규약이다. 한글을 DB에 넣으면 라벨을 고칠 때마다 마이그레이션이 필요하고 URL 필터(`?stage=기획`)가 인코딩된다 | `0017_initiatives.sql`, `src/types/initiative.ts` |
+| D-24 status 값 | 스펙은 소문자 `active`/`done`/`dropped`, 저장소는 `chairman_projects.status`처럼 **`Active`/`Done`/`Dropped`**로 갔다 — 이니셔티브는 장기 프로젝트의 사촌이라 `orderProjects`의 rank 맵을 그대로 쓴다 | `0017` 2절, `src/lib/initiative.ts`의 `orderInitiatives` |
+| D-25 키맨 칸 이름 | 스펙은 `initiative_keymen.role`, 저장소는 `business_keymen.relation`을 따라 **`relation`**으로 갔다 — "키맨 패널을 회사·이니셔티브가 한 화면에서 공유한다"는 스펙 자체의 요구 때문에 칸 이름이 다르면 패널이 두 벌 되거나 매핑 층이 하나 는다 | `0017` 4절, `src/components/business/keymen-panel.tsx` (channel을 선택적으로 받도록 일반화) |
+| D-26 회장 메모 권한 | 스펙은 `chairman_note`를 Chairman·GroupCFO가 같이 읽게 했지만, **`initiative_notes` 표로 별도 분리하고 Chairman 전용 RLS**로 갔다 — 0014가 `chairman_manifesto`를 "GroupCFO도 못 읽는다, 회사 데이터가 아니라 회장 개인의 기록이다"로 정한 것과 같은 성격이고, Postgres RLS는 행 단위라 한 표 안에서 칸 하나만 가릴 수 없다 | `0017` 3·5절, `initiative_notes_all` 정책 (`can_read_initiatives()`/`can_write_initiatives()`는 나머지 4표에만 적용) |
+
 아래 원문은 결정 근거로 남겨 둔다.
 
 ---
@@ -92,6 +105,8 @@
 | 02_데이터필드 Decision | **`attachment_url` 추가** (text, 선택, 보안등급 [제한]) | CH-041 상세 패널의 '첨부'. 사내 스토리지 링크만 둔다 — 파일 실체는 Chairman OS에 없다(CLAUDE.md 데이터 원칙). 반영: `supabase/migrations/0006_decision_attachment.sql`, `src/types/domain.ts` |
 | 02_데이터필드 Document | **`storage_path` → `storage_url`**, **`uploaded_by` 추가** (uuid, [제한]) | 이름이 사실을 말해야 한다 — 이 칸에 들어가는 건 버킷 경로가 아니라 링크다. `uploaded_by`는 '링크를 등록한 사람'이고 `owner_user_id`('문서의 주인')와 다르다. 반영: `0007_documents_link.sql` |
 | 05_Strategic Coordinates | **CH-024 좌표를 표로 정의** (`business_strategy`, 회사당 1행 11칸) | CH-011~014와 축이 다르다 — 저쪽은 측정되는 목표(progress_pct/deadline)고 이쪽은 사람이 쓴 방향과 판단이다. 그룹 행은 두지 않는다. 반영: `0008_business_strategy.sql`, `src/types/strategy.ts`(`BusinessStrategy`), `src/data/strategy.json`(`business_coordinates`) |
+| 02_데이터필드 (신규) | **Initiative / InitiativeKeyman / InitiativeDoc / Event** | Phase 4-A. 회사에 안 걸리는 일을 담을 자리가 명세에 없다. 반영: `0017_initiatives.sql`, `src/types/initiative.ts` |
+| 04_권한 | **이니셔티브 4표 = Chairman · GroupCFO 읽기·쓰기 / AIAgent 읽기. 회장 메모는 Chairman 전용** | Phase 4-A. 반영: `0017` 5절, `can_read_initiatives()` · `can_write_initiatives()` |
 
 
 ---

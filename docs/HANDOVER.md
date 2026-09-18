@@ -167,6 +167,17 @@ if (!task) notFound()      // 없는 업무도 404, 권한 밖 업무도 404
 5. **회계 원천은 자체 장부다. ECOUNT는 DY 엑셀 업로드로만 들어온다** (Phase 2-B, D-19 해소).
    전표 입력(`/finance/[id]/journal`) → 월 마감(`close_period`) → 확정. 차대가 맞지 않는 전표는 DB가 받지 않는다.
    꼬리표: 원장 표(전표·결산)는 ECOUNT든 자체 장부든 마감 전 **잠정**, 마감 후 **확정**. 시트 행만 **수기**다.
+6. **이니셔티브(0017)는 `projects`도 `chairman_projects`도 아니다.** `projects`는 회사에 속하고
+   진행률(`progress_pct`)을 사람이 올린다. `chairman_projects`(0014)는 회장의 몇 년짜리 한 줄
+   목표다. 이니셔티브는 회사 다섯 곳 **밖에서** 회장이 직접 굴리는 딜·신사업·투자유치·법인
+   설립이다 — `business_id`가 없을 수 있고, '진행'이 진행률이 아니라 단계(`stage`: 기획→접촉→
+   협상→실행→완료/중단)로 움직이며, `next_action`/`next_action_date` 세 칸이 표의 존재 이유다
+   (다음에 뭘 하기로 했는지가 없으면 목록일 뿐이다). 세 표를 하나로 합치면 이 세 성격이 뒤섞인다.
+   읽고 쓰는 사람은 **Chairman·GroupCFO 둘뿐**이고 AIAgent는 읽기만 한다(나머지 역할은 존재
+   자체를 모른다) — 회사 데이터가 아니라서 BusinessCEO에게 자기 회사 딜을 보여 주면
+   '회장이 그 회사를 어떻게 하려는지'가 같이 드러난다. 회장 메모(`initiative_notes`)는 그
+   둘 중에서도 **Chairman 전용**이다 — Postgres RLS는 행 단위라 한 표 안에서 칸 하나만 GroupCFO
+   에게 가릴 방법이 없다(`chairman_manifesto`와 같은 이유, 0014) → DEFERRED D-23~D-26.
 
 ---
 

@@ -82,6 +82,32 @@ const tables: Record<string, Row[]> = {
   user_invitations: records((i) => ({ invitation_id: id(i), email: `${i}@example.invalid`,
     role: 'Chairman', max_security_class: 'Vault', business_ids: null, display_name: '',
     title_ko: null, invited_at: '2026-09-01', accepted_at: null, revoked_at: null })),
+  // Phase 4-A (0017). listInitiatives() is a single unranged select (chairman_projects'
+  // pattern — "dozens, not thousands") and is covered separately in checkInitiatives(),
+  // not through checkPagination()'s row-cap-busting fixture(). Kept here anyway so both
+  // checks share one fixture table.
+  initiatives: records((i) => ({ initiative_id: `ini_${id(i)}`, title: `Initiative ${i}`,
+    kind: 'Deal', business_id: i % 2 ? id(i) : null, stage: 'Execution', goal: '',
+    target_date: i % 3 ? '2026-12-31' : null, next_action: `Action ${i}`,
+    next_action_date: i % 2 ? '2026-09-30' : null, next_action_owner: '', blocker: '',
+    status: 'Active', updated_at: '2026-09-16T00:00:00Z' })),
+  initiative_keymen: records((i) => ({ keyman_id: id(i), initiative_id: `ini_${id(i)}`,
+    name: `Keyman ${i}`, relation: '', channel: 'KakaoTalk',
+    last_contact_on: i % 2 ? '2026-09-01' : null, note: '' })),
+  initiative_docs: records((i) => ({ doc_id: id(i), initiative_id: `ini_${id(i)}`,
+    title: `Doc ${i}`, url: 'https://example.invalid' })),
+  events: records((i) => ({ event_id: id(i), title: `Event ${i}`, starts_on: '2026-09-01',
+    ends_on: i % 2 ? '2026-09-03' : null, kind: 'Trip',
+    initiative_id: i % 2 ? `ini_${id(i)}` : null, business_id: i % 3 ? id(i) : null,
+    location: '', note: '' })),
+  // calendar_items is a view over four sources; source_id is only unique per kind
+  // (an event_id and an initiative_id can coincide). Every 4 rows share one source_id
+  // across the four kinds — this is the exact shape listCalendarItems must not drop rows from.
+  calendar_items: records((i) => ({
+    kind: (['event', 'next_action', 'milestone', 'decision'] as const)[i % 4],
+    source_id: id(Math.floor(i / 4)), title: `Calendar ${i}`, on_date: '2026-09-15',
+    ends_on: i % 5 === 0 ? '2026-09-17' : null, business_id: i % 3 === 0 ? id(i) : null,
+    initiative_id: i % 2 === 0 ? `ini_${id(i)}` : null, href: '/calendar' })),
 }
 
 function fixture(cap: number, fault?: Fault, source = tables) {
@@ -182,7 +208,94 @@ async function checkPagination() {
   for (const fault of ['error', 'count', 'duplicate', 'empty', 'missing-count'] as const) {
     await assert.rejects(fixture(137, fault).repo.listAlerts(), /Supabase alerts/, fault)
   }
-  console.log('PASS: all list reads, >1000 rows, lowered server cap, tied sort keys, unique rows, exact/empty pages, errors, bounded search')
+
+  // Phase 4-A (0017). listInitiativeKeymen/listInitiativeDocs/listEvents all use the same
+  // fetchAll+range helper as the tables above, so they get the same >1000-row/dedup coverage.
+  const keymen = await repo.listInitiativeKeymen()
+  assert.equal(keymen.length, SIZE)
+  assert.ok(keymen.some((k) => k.last_contact_on === null), 'nullable last_contact_on must survive as null')
+  assert.ok(keymen.every((k) => k.last_contact_on !== undefined && k.last_contact_on !== ''))
+
+  const docs2 = await repo.listInitiativeDocs()
+  assert.equal(docs2.length, SIZE)
+
+  const events = await repo.listEvents()
+  assert.equal(events.length, SIZE)
+  assert.ok(events.some((e) => e.ends_on === null), 'nullable ends_on must survive as null')
+  assert.ok(events.some((e) => e.business_id === null), 'nullable business_id must survive as null')
+  assert.ok(events.some((e) => e.initiative_id === null), 'nullable initiative_id must survive as null')
+  assert.ok(events.every((e) =>
+    e.ends_on !== undefined && e.business_id !== undefined && e.initiative_id !== undefined))
+
+  // calendar_items dedupes on the composite key (kind, source_id) — a view row's identity is
+  // both together, because an event_id and an initiative_id can be the same string. If the
+  // client ever narrows the identity to source_id alone, rows with a colliding source_id
+  // under a different kind would be treated as duplicates and dropped. Nothing else catches this.
+  const calendarItems = await repo.listCalendarItems('2020-01-01', '2030-01-01')
+  assert.equal(calendarItems.length, SIZE, 'no row may be dropped when source_id repeats across kinds')
+  assert.equal(new Set(calendarItems.map((c) => `${c.kind}:${c.source_id}`)).size, SIZE,
+    'every (kind, source_id) pair is its own identity')
+  const kindsBySource = new Map<string, Set<string>>()
+  for (const c of calendarItems) {
+    if (!kindsBySource.has(c.source_id)) kindsBySource.set(c.source_id, new Set())
+    kindsBySource.get(c.source_id)!.add(c.kind)
+  }
+  assert.ok([...kindsBySource.values()].some((kinds) => kinds.size > 1),
+    'fixture must actually exercise a source_id shared across different kinds')
+  assert.ok(calendarItems.some((c) => c.ends_on === null))
+  assert.ok(calendarItems.some((c) => c.business_id === null))
+  assert.ok(calendarItems.some((c) => c.initiative_id === null))
+
+  console.log('PASS: all list reads, >1000 rows, lowered server cap, tied sort keys, unique rows, exact/empty pages, errors, bounded search, initiative keymen/docs/events, calendar_items composite-key dedup')
+}
+
+/**
+ * Phase 4-A (0017). listInitiatives() is a single `.select()` with no `.range()` — the same
+ * "chairman's own list is dozens, not thousands" pattern as listChairmanProjects (0014), which
+ * this suite has never covered for the same reason. It cannot go through checkPagination()'s
+ * fixture(): that mock asserts every request carries an explicit limit/offset (the whole point
+ * of this file), and a request with neither would be rejected before ever reaching the
+ * assertions below. So this uses its own minimal single-page mock instead, to check what
+ * actually matters for an unranged read: nullable fields still round-trip as null, and nothing
+ * silently drops rows while the table sits below whatever cap the real server would apply.
+ */
+async function checkInitiatives() {
+  const source = tables.initiatives
+  const client = createClient('https://offline.invalid', 'offline-anon-key', {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { fetch: async (input) => {
+      const url = new URL(String(input))
+      const table = url.pathname.split('/').at(-1)!
+      assert.equal(table, 'initiatives', `checkInitiatives only mocks initiatives, got ${table}`)
+      assert.equal(url.searchParams.get('limit'), null, 'listInitiatives must stay unranged (no .range()) — update this check if that changes')
+      const orders = url.searchParams.get('order')?.split(',') ?? []
+      const all = [...source].sort((a, b) => {
+        for (const order of orders) {
+          const [key] = order.split('.')
+          const x = a[key], y = b[key]
+          const cmp = x === y ? 0 : x === null ? 1 : y === null ? -1 : x < y ? -1 : 1
+          if (cmp) return cmp
+        }
+        return 0
+      })
+      return new Response(JSON.stringify(all), { status: 200, headers: { 'content-type': 'application/json' } })
+    } },
+  })
+  const repo = createSupabaseRepository(client)
+  const initiatives = await repo.listInitiatives()
+  assert.equal(initiatives.length, SIZE, 'a single unranged select must still return every row below the fixture size')
+  assert.ok(initiatives.some((i) => i.target_date === null), 'nullable target_date must survive as null')
+  assert.ok(initiatives.some((i) => i.next_action_date === null), 'nullable next_action_date must survive as null')
+  assert.ok(initiatives.some((i) => i.business_id === null), 'nullable business_id must survive as null')
+  assert.ok(initiatives.every((i) =>
+    i.target_date !== undefined && i.next_action_date !== undefined && i.business_id !== undefined &&
+    i.target_date !== '' && i.next_action_date !== '' && i.business_id !== ''),
+    'nullable fields must never become undefined or empty string')
+  // next_action_date nulls last (INITIATIVE_COLUMNS order clause) — nulls must not sort first.
+  const firstNullIndex = initiatives.findIndex((i) => i.next_action_date === null)
+  const lastDatedIndex = initiatives.reduce((last, i, idx) => (i.next_action_date !== null ? idx : last), -1)
+  assert.ok(firstNullIndex > lastDatedIndex, 'every dated row must sort before every null row')
+  console.log('PASS: listInitiatives (unranged) nullable round-trip and null-last ordering')
 }
 
 // Run the real page JSX offline with only its repository and interactive controls stubbed.
@@ -246,6 +359,7 @@ async function checkNullDeadlines() {
 
 async function main() {
   await checkPagination()
+  await checkInitiatives()
   await checkNullDeadlines()
 }
 main().catch((error: unknown) => { console.error(error); process.exitCode = 1 })
