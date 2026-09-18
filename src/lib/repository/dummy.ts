@@ -622,6 +622,13 @@ export const dummyRepository: ChairmanRepository = {
       ? memoryInitiatives.find((i) => i.initiative_id === initiative_id)
       : undefined
     if (initiative_id && !existing) throw new Error('initiatives: 고칠 건이 없다.')
+
+    // live(supabase.ts)와 같은 가드다. 바뀐 칸이 없으면 아무것도 안 한다 — 그냥 두면
+    // updated_at이 실제 변경 없이 찍혀 staleness 계산이 방금 손댄 것처럼 리셋된다.
+    if (existing && (Object.keys(fields) as (keyof typeof fields)[]).every((k) => existing[k] === fields[k])) {
+      return { ...existing }
+    }
+
     const now = new Date().toISOString()
     const saved: Initiative = existing
       ? Object.assign(existing, fields, { updated_at: now })
@@ -803,7 +810,15 @@ export const dummyRepository: ChairmanRepository = {
         href: '/approvals',
       })
     }
-    return items.sort((a, b) => a.on_date.localeCompare(b.on_date) || a.title.localeCompare(b.title, 'ko'))
+    // live(supabase.ts)의 listCalendarItems와 같은 순서다 — on_date, kind, source_id.
+    // 월 그리드가 3개에서 접어 '+N'을 붙이므로, 정렬이 다르면 dummy와 live에서 보이는
+    // 세 줄 자체가 달라진다.
+    return items.sort(
+      (a, b) =>
+        a.on_date.localeCompare(b.on_date) ||
+        a.kind.localeCompare(b.kind) ||
+        a.source_id.localeCompare(b.source_id),
+    )
   },
 
   async getUserSettings() {

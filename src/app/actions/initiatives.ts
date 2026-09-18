@@ -62,15 +62,24 @@ export type InitiativeField =
  * (initiative_docs), saveEventAction/removeEventAction(events)가 전부 같이 쓴다 —
  * 넷 중 하나라도 빠지면 그 표에서 난 권한 거부가 '잠시 후 다시 시도'로 잘못 안내된다.
  */
-function failure(e: unknown): ActionState {
+function failure(e: unknown, action: 'write' | 'delete' = 'write'): ActionState {
   console.error('[initiatives]', e)
-  return {
-    error:
-      e instanceof Error &&
-      /initiatives_write|initiative_docs_write|events_write|initiative_notes_all|42501|PGRST301/.test(e.message)
-        ? '이 건을 고칠 권한이 없습니다. (회장 / 그룹 CFO만 가능합니다)'
-        : '저장하지 못했습니다. 잠시 후 다시 시도하세요.',
+  const message = e instanceof Error ? e.message : ''
+  const deniedByPolicy =
+    /initiatives_write|initiative_docs_write|events_write|initiative_notes_all|42501|PGRST301/.test(message)
+  // RLS가 delete를 막을 때는 정책 이름이 안 실린다 — PostgREST가 오류 없이 빈 결과만 주고,
+  // oneAffectedRow(supabase.ts)가 그걸 이 메시지로 바꾼다(dummy.ts도 같은 문구를 던진다).
+  // 정책 이름이 하나도 안 걸려서 아래로 빠지면 못 고칠 실패를 '잠시 후 다시 시도'로 잘못 안내한다.
+  const deniedByZeroRows = /mutation affected 0 rows\./.test(message)
+  if (deniedByPolicy || deniedByZeroRows) {
+    return {
+      error:
+        action === 'delete'
+          ? '지울 권한이 없습니다. (회장 / 그룹 CFO만 가능합니다)'
+          : '이 건을 고칠 권한이 없습니다. (회장 / 그룹 CFO만 가능합니다)',
+    }
   }
+  return { error: '저장하지 못했습니다. 잠시 후 다시 시도하세요.' }
 }
 
 export async function saveInitiativeField(
@@ -131,6 +140,7 @@ export async function saveInitiativeField(
   revalidatePath('/initiatives')
   revalidatePath(`/initiatives/${id}`)
   revalidatePath('/calendar')
+  revalidatePath('/ai')
   revalidatePath('/')
   return {}
 }
@@ -162,6 +172,7 @@ export async function createInitiative(
       { user_id: user.user_id, role: user.role },
     )
     revalidatePath('/initiatives')
+    revalidatePath('/ai')
     revalidatePath('/')
     return { initiativeId: saved.initiative_id }
   } catch (e) {
@@ -241,7 +252,7 @@ export async function removeInitiativeDocAction(docId: unknown, initiativeId: un
     const repo = await getRepository()
     await repo.removeInitiativeDoc(id, { user_id: user.user_id, role: user.role })
   } catch (e) {
-    return failure(e)
+    return failure(e, 'delete')
   }
 
   const iid = typeof initiativeId === 'string' ? initiativeId.trim() : ''
@@ -285,6 +296,7 @@ export async function saveEventAction(input: unknown): Promise<EventState> {
     )
     revalidatePath('/calendar')
     revalidatePath('/initiatives')
+    revalidatePath('/ai')
     if (saved.initiative_id) revalidatePath(`/initiatives/${saved.initiative_id}`)
     return { saved }
   } catch (e) {
@@ -309,11 +321,12 @@ export async function removeEventAction(eventId: unknown, initiativeId?: unknown
     const repo = await getRepository()
     await repo.removeEvent(id, { user_id: user.user_id, role: user.role })
   } catch (e) {
-    return failure(e)
+    return failure(e, 'delete')
   }
 
   revalidatePath('/calendar')
   revalidatePath('/initiatives')
+  revalidatePath('/ai')
   const iid = typeof initiativeId === 'string' ? initiativeId.trim() : ''
   if (iid) revalidatePath(`/initiatives/${iid}`)
   return {}

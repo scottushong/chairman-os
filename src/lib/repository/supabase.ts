@@ -2243,37 +2243,77 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       // staleness 계산이 방금 손댄 것처럼 리셋된다.
       if (before && Object.keys(changed).length === 0) return before
 
+      if (before) {
+        // 고치는 경우: 이 파일의 하드 룰대로 기록이 먼저다. entity_id(initiative_id)는
+        // 호출자가 이미 준 값이라 DB 응답을 기다릴 이유가 없다.
+        const { error: auditError } = await sb.from('audit_log').insert({
+          actor_user_id: actor.user_id,
+          actor_role: actor.role,
+          action: 'update',
+          entity_table: 'initiatives',
+          entity_id: initiative_id!,
+          business_id: fields.business_id,
+          before: Object.fromEntries(Object.keys(changed).map((k) => [k, before![k as keyof Initiative]])),
+          after: changed,
+        })
+        if (auditError) {
+          throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+        }
+
+        // 바뀐 칸만 쓴다(fields 전체가 아니다) — 감사에 남긴 것과 실제로 건드리는 칸을
+        // 일치시켜, 두 사람이 서로 다른 칸을 동시에 고칠 때의 lost-update 창을 좁힌다.
+        const { data, error } = await sb
+          .from('initiatives')
+          .update(changed)
+          .eq('initiative_id', initiative_id!)
+          .select(INITIATIVE_COLUMNS)
+          .single<Initiative>()
+        if (error) {
+          // 감사 기록은 남았고 건은 바뀌지 않았다. 그 편이 반대보다 낫다.
+          throw new Error(
+            `Supabase initiatives ${error.code ?? '?'}: ${error.message} ` +
+              '(0017 initiatives_write — Chairman·GroupCFO만 쓴다)',
+          )
+        }
+        return data
+      }
+
+      // 만드는 경우: entity_id(initiative_id)를 0017의 시퀀스 default가 정한다.
+      // createDocument/createDecision과 같은 이유로 순서를 뒤집는다 — 기록을 먼저 남기려면
+      // id를 앱이 정해야 하고, 그러면 동시에 두 사람이 만들 때 번호가 겹친다. 겹치는 id로 남은
+      // 감사 기록은 '기록이 없는 것'보다 나쁘다. saveChairmanProject처럼 앱이 uuid를 미리
+      // 만드는 방식은 여기 안 맞는다 — 0017이 사람이 읽는 ini_001 꼴을 audit_log와 주소창에
+      // 그대로 내보내려고 일부러 시퀀스로 발급하기 때문이다(0017_initiatives.sql).
+      // 그 대가로 'INSERT는 됐는데 기록이 안 남는' 창이 생긴다. 그때는 호출자에게 그대로
+      // 말하고, 건은 목록에 남는다 — 조용히 지우면 그게 감사 대상 행위가 되어 버린다.
+      const { data, error } = await sb
+        .from('initiatives')
+        .insert(fields)
+        .select(INITIATIVE_COLUMNS)
+        .single<Initiative>()
+      if (error || !data) {
+        throw new Error(
+          `Supabase initiatives ${error?.code ?? '?'}: ${error?.message ?? '행이 돌아오지 않았다'}`,
+        )
+      }
+
       const { error: auditError } = await sb.from('audit_log').insert({
         actor_user_id: actor.user_id,
         actor_role: actor.role,
-        action: before ? 'update' : 'create',
+        action: 'create',
         entity_table: 'initiatives',
-        entity_id: initiative_id ?? null,
+        entity_id: data.initiative_id,
         business_id: fields.business_id,
-        before: before
-          ? Object.fromEntries(Object.keys(changed).map((k) => [k, before![k as keyof Initiative]]))
-          : null,
+        before: null,
         after: changed,
       })
       if (auditError) {
-        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
-      }
-
-      // upsert 대신 update/insert 분기다 — 이 파일의 다른 다중행 저장(saveChairmanProject,
-      // saveKeyman)과 같은 이유다: upsert(조건부 모양의 객체)는 TS 오버로드가 갈라져 타입이
-      // 안 맞는다. 새로 만들 때 initiative_id를 안 보낸다 — 0017의 시퀀스 default가 ini_001
-      // 꼴로 발급한다.
-      const query = before
-        ? sb.from('initiatives').update(fields).eq('initiative_id', initiative_id!)
-        : sb.from('initiatives').insert(fields)
-      const { data, error } = await query.select(INITIATIVE_COLUMNS).single<Initiative>()
-      if (error) {
-        // 감사 기록은 남았고 건은 바뀌지 않았다. 그 편이 반대보다 낫다.
         throw new Error(
-          `Supabase initiatives ${error.code ?? '?'}: ${error.message} ` +
-            '(0017 initiatives_write — Chairman·GroupCFO만 쓴다)',
+          `Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message} ` +
+            `(건 ${data.initiative_id}는 만들어졌고 감사 기록만 남지 않았다.)`,
         )
       }
+
       return data
     },
 

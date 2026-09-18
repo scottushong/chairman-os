@@ -4,6 +4,7 @@ import { CreateInitiative } from '@/components/initiatives/create-initiative'
 import { InitiativeTable } from '@/components/initiatives/initiative-table'
 import { PageHeader } from '@/components/layout/page-header'
 import { FilterChips, type FilterOption } from '@/components/ui/filter-chips'
+import { currentUser } from '@/lib/auth/session'
 import { kstToday } from '@/lib/chairman-project'
 import { orderInitiatives } from '@/lib/initiative'
 import { firstParam, oneOf, withParams } from '@/lib/query'
@@ -30,8 +31,15 @@ const BASE = '/initiatives'
 export default async function InitiativesPage(props: PageProps<'/initiatives'>) {
   const params = await props.searchParams
   const repo = await getRepository()
-  const [initiatives, businesses] = await Promise.all([repo.listInitiatives(), repo.listBusinesses()])
+  const [initiatives, businesses, user] = await Promise.all([
+    repo.listInitiatives(),
+    repo.listBusinesses(),
+    currentUser(),
+  ])
   const today = kstToday()
+  // initiatives/[id]/page.tsx와 같은 판단이다 — canEdit은 안내일 뿐, 실제 저장은 항상
+  // 0017의 initiatives_write(Chairman·GroupCFO)가 다시 본다.
+  const canEdit = user?.role === 'Chairman' || user?.role === 'GroupCFO'
 
   const kind = oneOf(firstParam(params.kind), INITIATIVE_KIND)
   const status = oneOf(firstParam(params.status), INITIATIVE_STATUS) ?? 'Active'
@@ -76,7 +84,7 @@ export default async function InitiativesPage(props: PageProps<'/initiatives'>) 
   ]
 
   return (
-    <div>
+    <div className="mx-auto max-w-[1600px] px-6 py-5">
       <PageHeader
         icon="target"
         code="Phase 4-A"
@@ -88,7 +96,7 @@ export default async function InitiativesPage(props: PageProps<'/initiatives'>) 
         </Link>
       </PageHeader>
 
-      <CreateInitiative />
+      {canEdit ? <CreateInitiative /> : null}
 
       <div className="mt-4 space-y-2">
         <FilterChips label="상태" options={statusOptions} />
