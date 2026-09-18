@@ -59,6 +59,8 @@ export const NAV: readonly NavGroup[] = [
         waitingFor: '마감·마일스톤을 달력으로 펴는 화면입니다. Phase 2 범위입니다.',
       },
       { label: '업무 관리', href: '/tasks', icon: 'clipboard', ready: true },
+      // Phase 4-A. 회사 다섯 곳 밖에서 회장이 직접 굴리는 건(딜·신사업·투자유치 등).
+      { label: '이니셔티브', href: '/initiatives', icon: 'target', ready: true },
       {
         label: '프로젝트',
         href: '/projects',
