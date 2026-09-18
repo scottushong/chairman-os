@@ -51,13 +51,7 @@ export const NAV: readonly NavGroup[] = [
       { label: '내 결정 사항', href: '/approvals', icon: 'check-circle', ready: true },
       // Phase 3-A. 야간 브리핑 전문. CH-044 자연어 질의는 아직 없다 — 붙으면 같은 화면에 들어온다.
       { label: '아침 루틴', href: '/ai', icon: 'sparkles', badge: 'NEW', ready: true },
-      {
-        label: '캘린더',
-        href: '/calendar',
-        icon: 'calendar',
-        ready: false,
-        waitingFor: '마감·마일스톤을 달력으로 펴는 화면입니다. Phase 2 범위입니다.',
-      },
+      { label: '캘린더', href: '/calendar', icon: 'calendar', ready: true },
       { label: '업무 관리', href: '/tasks', icon: 'clipboard', ready: true },
       // Phase 4-A. 회사 다섯 곳 밖에서 회장이 직접 굴리는 건(딜·신사업·투자유치 등).
       { label: '이니셔티브', href: '/initiatives', icon: 'target', ready: true },
