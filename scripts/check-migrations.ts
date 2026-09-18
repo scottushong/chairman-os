@@ -222,6 +222,32 @@ async function rls(db: Db) {
   assert.equal(await as(UID.chairman, journal('ecount', 'T-3')), 'denied')
   assert.equal(await as(UID.chairman, 'select count(*)::int from finance_kpis_masked'), total)
 
+  // Phase 4-A 이니셔티브. 전사 역할만 읽고 쓴다. AIAgent는 읽기만, 나머지는 아무것도 없다.
+  assert.equal(
+    await as(UID.chairman, `insert into initiatives (title, kind) values ('테스트 딜', 'Deal')`),
+    1, 'Chairman은 이니셔티브를 만든다',
+  )
+  assert.equal(
+    await as(UID.cfo, `insert into initiatives (title, kind) values ('CFO 딜', 'Deal')`),
+    1, 'GroupCFO도 이니셔티브를 만든다',
+  )
+  assert.equal(
+    await as(UID.ceo, `insert into initiatives (title, kind) values ('사장 딜', 'Deal')`),
+    'denied', 'BusinessCEO는 이니셔티브를 못 만든다',
+  )
+  assert.equal(
+    await as(UID.member, `select count(*) from initiatives`),
+    0, 'Member에게 이니셔티브는 존재하지 않는다',
+  )
+  assert.equal(
+    await as(UID.agent, `insert into initiatives (title, kind) values ('AI 딜', 'Deal')`),
+    'denied', 'AIAgent는 읽기만 한다',
+  )
+  assert.equal(
+    await as(UID.cfo, `select count(*) from initiative_notes`),
+    0, '회장 메모는 GroupCFO에게 보이지 않는다',
+  )
+
   await books(db, as)
 }
 
