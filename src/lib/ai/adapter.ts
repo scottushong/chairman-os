@@ -62,6 +62,23 @@ export interface ChairmanContext {
     note: string
     this_month_action: string
   }[]
+  /**
+   * 진행 중인 이니셔티브. d_day와 stale_days는 오늘 기준으로 이미 계산된 값이다.
+   * 회장 메모(initiative_notes)는 넘기지 않는다 — AIAgent는 그것을 읽지 못한다(0017).
+   */
+  initiatives: {
+    initiative_id: string
+    title: string
+    kind: string
+    stage: string
+    business_id: string | null
+    next_action: string
+    next_action_date: IsoDate | null
+    /** 'D-3' / 'D+2'. next_action_date가 없으면 null */
+    d_day: string | null
+    stale_days: number
+    blocker: string
+  }[]
   /** 선언문 전문. 아직 안 썼으면 null */
   manifesto: string | null
 }

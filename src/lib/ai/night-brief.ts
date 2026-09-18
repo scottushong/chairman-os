@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { orderProjects, projectClock } from '@/lib/chairman-project'
 import { formatEok } from '@/lib/format'
+import { initiativeClock, orderInitiatives, stalenessDays } from '@/lib/initiative'
 import { financeBriefContext } from '@/lib/ledger/brief-context'
 import { createSupabaseRepository } from '@/lib/repository/supabase'
 import { signInServiceAccount } from '@/lib/supabase/service-account'
@@ -220,38 +221,70 @@ export async function runNightBrief(opts: {
 }
 
 /**
- * 회장 루틴(0014). 0014 RLS가 AIAgent에게 읽기를 준다.
+ * 회장 루틴(0014) + 이니셔티브(0017). 두 RLS 모두 AIAgent에게 읽기를 준다.
  * 못 읽어도 그룹 브리핑은 쓴다 — 기준이 빠진 브리핑이 브리핑이 없는 것보다 낫다. 대신 null로 넘겨
  * 모델이 project_notes를 지어내지 않게 한다. 진행 중인 프로젝트만 넘긴다.
+ *
+ * 이니셔티브 읽기는 따로 감싼다 — 원장(loadFinanceLedger)과 같은 이유다. 이니셔티브를 못 읽었다고
+ * 장기 프로젝트·선언문까지 통째로 null로 떨구면 project_notes가 사라진다. 이니셔티브만
+ * initiatives: []로 비우고 나머지는 그대로 간다.
  */
 async function readChairmanContext(
   repo: ReturnType<typeof createSupabaseRepository>,
   date: IsoDate,
 ): Promise<ChairmanContext | null> {
+  let projects: Awaited<ReturnType<typeof repo.listChairmanProjects>>
+  let manifesto: Awaited<ReturnType<typeof repo.getChairmanManifesto>>
   try {
-    const [projects, manifesto] = await Promise.all([repo.listChairmanProjects(), repo.getChairmanManifesto()])
-    return {
-      projects: orderProjects(projects)
-        .filter((p) => p.status === 'Active')
-        .map((p) => {
-          const c = projectClock(p, date)
-          return {
-            title: p.title,
-            start_date: p.start_date,
-            target_date: p.target_date,
-            d_day: c.label,
-            elapsed_days: c.elapsed,
-            total_days: c.total,
-            progress_pct: c.pct,
-            note: p.note,
-            this_month_action: p.this_month_action,
-          }
-        }),
-      manifesto: manifesto.body || null,
-    }
+    ;[projects, manifesto] = await Promise.all([repo.listChairmanProjects(), repo.getChairmanManifesto()])
   } catch (e) {
     console.error('[night-brief] chairman context', errorText(e))
     return null
+  }
+
+  let initiatives: Awaited<ReturnType<typeof repo.listInitiatives>> = []
+  try {
+    initiatives = await repo.listInitiatives()
+  } catch (e) {
+    console.error('[night-brief] initiatives', errorText(e))
+    initiatives = []
+  }
+
+  return {
+    projects: orderProjects(projects)
+      .filter((p) => p.status === 'Active')
+      .map((p) => {
+        const c = projectClock(p, date)
+        return {
+          title: p.title,
+          start_date: p.start_date,
+          target_date: p.target_date,
+          d_day: c.label,
+          elapsed_days: c.elapsed,
+          total_days: c.total,
+          progress_pct: c.pct,
+          note: p.note,
+          this_month_action: p.this_month_action,
+        }
+      }),
+    initiatives: orderInitiatives(initiatives)
+      .filter((i) => i.status === 'Active')
+      .map((i) => {
+        const clock = initiativeClock(i, date)
+        return {
+          initiative_id: i.initiative_id,
+          title: i.title,
+          kind: i.kind,
+          stage: i.stage,
+          business_id: i.business_id,
+          next_action: i.next_action,
+          next_action_date: i.next_action_date,
+          d_day: clock ? clock.label : null,
+          stale_days: stalenessDays(i, date),
+          blocker: i.blocker,
+        }
+      }),
+    manifesto: manifesto.body || null,
   }
 }
 
