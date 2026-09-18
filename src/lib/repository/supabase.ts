@@ -2238,6 +2238,11 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
           )
         : fields
 
+      // 바뀐 칸이 없으면 아무것도 안 한다 — saveKeyman 등과 같다. 그냥 두면 빈
+      // before/after로 audit_log만 늘고, updated_at 트리거가 실제 변경 없이 찍혀
+      // staleness 계산이 방금 손댄 것처럼 리셋된다.
+      if (before && Object.keys(changed).length === 0) return before
+
       const { error: auditError } = await sb.from('audit_log').insert({
         actor_user_id: actor.user_id,
         actor_role: actor.role,
@@ -2611,8 +2616,15 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       })
       if (auditError) throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
 
-      const { error } = await sb.from('events').delete().eq('event_id', eventId)
-      if (error) throw new Error(`Supabase events ${error.code ?? '?'}: ${error.message}`)
+      // 지워진 행 수를 반드시 센다. RLS는 DELETE를 막을 때 오류를 내지 않고 0행을 지운다 —
+      // 그냥 두면 audit_log에는 '지웠다'가 남고, 화면은 성공이라 하고, 행은 그대로 있다.
+      // 이 파일의 다른 삭제 함수(removeKeyman 등)가 전부 oneAffectedRow를 거치는 이유다.
+      const { data, error } = await sb
+        .from('events')
+        .delete()
+        .eq('event_id', eventId)
+        .select('event_id')
+      oneAffectedRow('events', data, error)
     },
 
     /**
