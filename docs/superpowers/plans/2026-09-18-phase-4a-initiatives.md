@@ -737,9 +737,17 @@ export function initiativeClock(
   }
 }
 
-/** 마지막으로 손댄 뒤 지난 날. updated_at은 timestamptz라 날짜만 잘라 쓴다. */
+/**
+ * 마지막으로 손댄 뒤 지난 날.
+ *
+ * updated_at은 UTC timestamptz다. 여기서 문자열을 그냥 slice(0,10)하면 UTC 날짜가 나오는데
+ * 비교 대상인 today는 KST 날짜다 — UTC 15:00~23:59(KST 자정~오전 9시)에 저장된 건이
+ * 하루 더 오래된 것으로 잡힌다. 하루 차이가 isStale의 14일 경계를 넘긴다.
+ * kstToday는 Date를 받아 Asia/Seoul 날짜로 찍어 주므로 그것을 그대로 쓴다 —
+ * +9시간을 손으로 더하는 네 번째 방식을 만들지 않는다.
+ */
 export function stalenessDays(i: Pick<Initiative, 'updated_at'>, today: IsoDate = kstToday()): number {
-  return days(i.updated_at.slice(0, 10) as IsoDate, today)
+  return days(kstToday(new Date(i.updated_at)), today)
 }
 
 /** 14일. 2주 넘게 아무도 손대지 않은 건은 굴러가고 있는 게 아니다. */
