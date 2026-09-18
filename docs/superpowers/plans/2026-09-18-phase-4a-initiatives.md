@@ -37,6 +37,7 @@ D-26을 "GroupCFO도 읽는다"로 정하면 `initiative_notes` 표를 만들지
 - **AIAgent·Integration 쓰기 차단은 표마다 쓰지 않는다.** 마이그레이션 끝의 `do $$ ... $$` 배열 루프에 표 이름을 더한다 (0015 330-348행 방식).
 - **감사 기록은 쓰기보다 먼저.** `supabase.ts`의 모든 mutator가 `before`를 읽고 `audit_log`를 넣은 **다음** 실제 쓰기를 한다. 스펙의 "전부 audit_log"는 여기서 지킨다 — DB에는 범용 감사 트리거가 없다.
 - **`audit_log`는 append-only.** update/delete 트리거가 막는다.
+- **삭제는 `action: 'update'` + `after: null`로 남긴다.** `audit_action` enum에 `'delete'`가 없다 — `'delete_request'`는 '지워 달라는 요청'이라 다른 뜻이다. `removeKeyman`(supabase.ts:941-952)이 이미 이 방식이고 주석으로 이유를 적어 두었다. **공유 enum을 고치지 않는다.**
 - **오늘은 KST다.** `kstToday()` (`src/lib/chairman-project.ts:17`). D-day·경과일은 저장하지 않고 늘 오늘로부터 계산한다.
 - **뷰는 `with (security_invoker = true)`.** 안 붙이면 뷰가 RLS를 우회한다.
 - **시드 없음.** 이니셔티브·이벤트는 회장 개인의 문장이다. git에 넣지 않는다 (0014의 no-seed 판단과 같다). dummy 어댑터의 메모리 배열도 빈 채로 시작한다.
@@ -1187,15 +1188,19 @@ EOF
       .maybeSingle<ChairmanEvent>()
     if (!before) throw new Error('events: 지울 일정이 없다.')
 
+    // audit_action에 delete가 없다(delete_request는 '지워 달라는 요청'이다).
+    // 행이 사라지는 변경이라 update로 남기고 after를 null로 둔다 — 지운 행 전체가 before에 있다.
+    // removeKeyman(supabase.ts:941-952)이 같은 방식이다.
     const { error: auditError } = await sb.from('audit_log').insert({
       actor_user_id: actor.user_id,
       actor_role: actor.role,
-      action: 'delete',
+      action: 'update',
       entity_table: 'events',
       entity_id: eventId,
       business_id: before.business_id,
       before,
       after: null,
+      note: '일정 삭제',
     })
     if (auditError) throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
 
