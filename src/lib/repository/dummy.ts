@@ -24,11 +24,17 @@ import type {
   Business,
   BusinessKeyman,
   BusinessStrategy,
+  CalendarItem,
+  ChairmanEvent,
   ChairmanManifesto,
   ChairmanProject,
   Decision,
   DecisionStatus,
   DocumentRecord,
+  Initiative,
+  InitiativeDoc,
+  InitiativeKeyman,
+  IsoDate,
   NewInvitation,
   Task,
   UserAccount,
@@ -43,6 +49,10 @@ import {
   type ChairmanProjectInput,
   type ChairmanRepository,
   type DecisionAuditEntry,
+  type EventInput,
+  type InitiativeDocInput,
+  type InitiativeInput,
+  type InitiativeKeymanInput,
   type KeymanInput,
   type NewBusiness,
   type NewDecision,
@@ -78,6 +88,17 @@ const memoryEntityAudit: StoredAudit[] = []
  */
 const memoryChairmanProjects: ChairmanProject[] = []
 const memoryManifesto: ChairmanManifesto = { body: '', updated_at: null }
+
+/**
+ * Phase 4-A 이니셔티브(0017). 시드가 없다 — 회장이 지금 누구와 무엇을 협상 중인지가
+ * git에 들어가면 안 된다(0014 회장 루틴과 같은 이유). 서버가 살아 있는 동안만 남는다.
+ */
+const memoryInitiatives: Initiative[] = []
+const memoryInitiativeNotes = new Map<string, string>()
+const memoryInitiativeKeymen: InitiativeKeyman[] = []
+const memoryInitiativeDocs: InitiativeDoc[] = []
+const memoryEvents: ChairmanEvent[] = []
+let initiativeSeq = 0
 
 /**
  * CH-024 키맨(0015). 시드가 없다 — 실제 사람 이름이 git에 들어가면 안 된다(0014 회장 루틴과 같은 이유).
@@ -584,6 +605,201 @@ export const dummyRepository: ChairmanRepository = {
     if (process.env.NODE_ENV !== 'production') {
       console.warn(`[dummy] save manifesto by ${actor.role} — 메모리에만 남는다.`)
     }
+  },
+
+  async listInitiatives() {
+    return memoryInitiatives.map((i) => ({ ...i }))
+  },
+
+  async getInitiative(initiativeId: string) {
+    const found = memoryInitiatives.find((i) => i.initiative_id === initiativeId)
+    return found ? { ...found } : null
+  },
+
+  async saveInitiative(input: InitiativeInput, actor: AuditActor) {
+    const { initiative_id, ...fields } = input
+    const existing = initiative_id
+      ? memoryInitiatives.find((i) => i.initiative_id === initiative_id)
+      : undefined
+    if (initiative_id && !existing) throw new Error('initiatives: 고칠 건이 없다.')
+    const now = new Date().toISOString()
+    const saved: Initiative = existing
+      ? Object.assign(existing, fields, { updated_at: now })
+      : {
+          initiative_id: `ini_${String(++initiativeSeq).padStart(3, '0')}`,
+          ...fields,
+          updated_at: now,
+        }
+    if (!existing) memoryInitiatives.push(saved)
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[dummy] save initiative by ${actor.role} — 메모리에만 남는다.`)
+    }
+    return { ...saved }
+  },
+
+  async getInitiativeNote(initiativeId: string) {
+    return memoryInitiativeNotes.get(initiativeId) ?? null
+  },
+
+  async saveInitiativeNote(initiativeId: string, note: string, actor: AuditActor) {
+    memoryInitiativeNotes.set(initiativeId, note)
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[dummy] save initiative note by ${actor.role} — 메모리에만 남는다.`)
+    }
+  },
+
+  async listInitiativeKeymen() {
+    return memoryInitiativeKeymen.map((k) => ({ ...k }))
+  },
+
+  async saveInitiativeKeyman(input: InitiativeKeymanInput, actor: AuditActor) {
+    const { keyman_id, ...fields } = input
+    const existing = keyman_id
+      ? memoryInitiativeKeymen.find((k) => k.keyman_id === keyman_id)
+      : undefined
+    if (keyman_id && !existing) throw new Error('initiative_keymen: 고칠 키맨이 없다.')
+    const saved: InitiativeKeyman = existing
+      ? Object.assign(existing, fields)
+      : { keyman_id: crypto.randomUUID(), ...fields }
+    if (!existing) memoryInitiativeKeymen.push(saved)
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[dummy] save initiative keyman by ${actor.role} — 메모리에만 남는다.`)
+    }
+    return { ...saved }
+  },
+
+  async removeInitiativeKeyman(keymanId: string, actor: AuditActor) {
+    const idx = memoryInitiativeKeymen.findIndex((k) => k.keyman_id === keymanId)
+    if (idx === -1) throw new Error('Dummy initiative_keymen: mutation affected 0 rows.')
+    memoryInitiativeKeymen.splice(idx, 1)
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[dummy] remove initiative keyman by ${actor.role} — 메모리에만 남는다.`)
+    }
+  },
+
+  async listInitiativeDocs() {
+    return memoryInitiativeDocs.map((d) => ({ ...d }))
+  },
+
+  async saveInitiativeDoc(input: InitiativeDocInput, actor: AuditActor) {
+    const { doc_id, ...fields } = input
+    const existing = doc_id
+      ? memoryInitiativeDocs.find((d) => d.doc_id === doc_id)
+      : undefined
+    if (doc_id && !existing) throw new Error('initiative_docs: 고칠 문서가 없다.')
+    const saved: InitiativeDoc = existing
+      ? Object.assign(existing, fields)
+      : { doc_id: crypto.randomUUID(), ...fields }
+    if (!existing) memoryInitiativeDocs.push(saved)
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[dummy] save initiative doc by ${actor.role} — 메모리에만 남는다.`)
+    }
+    return { ...saved }
+  },
+
+  async removeInitiativeDoc(docId: string, actor: AuditActor) {
+    const idx = memoryInitiativeDocs.findIndex((d) => d.doc_id === docId)
+    if (idx === -1) throw new Error('Dummy initiative_docs: mutation affected 0 rows.')
+    memoryInitiativeDocs.splice(idx, 1)
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[dummy] remove initiative doc by ${actor.role} — 메모리에만 남는다.`)
+    }
+  },
+
+  async listEvents() {
+    return memoryEvents.map((e) => ({ ...e }))
+  },
+
+  async saveEvent(input: EventInput, actor: AuditActor) {
+    const { event_id, ...fields } = input
+    const existing = event_id ? memoryEvents.find((e) => e.event_id === event_id) : undefined
+    if (event_id && !existing) throw new Error('events: 고칠 일정이 없다.')
+    const saved: ChairmanEvent = existing
+      ? Object.assign(existing, fields)
+      : { event_id: crypto.randomUUID(), ...fields }
+    if (!existing) memoryEvents.push(saved)
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[dummy] save event by ${actor.role} — 메모리에만 남는다.`)
+    }
+    return { ...saved }
+  },
+
+  async removeEvent(eventId: string, actor: AuditActor) {
+    const idx = memoryEvents.findIndex((e) => e.event_id === eventId)
+    if (idx === -1) throw new Error('Dummy events: mutation affected 0 rows.')
+    memoryEvents.splice(idx, 1)
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[dummy] remove event by ${actor.role} — 메모리에만 남는다.`)
+    }
+  },
+
+  /**
+   * 0017 calendar_items 뷰를 메모리 넷을 합쳐 흉내 낸다.
+   *
+   * nextMilestones(strategy.ts)에는 done_at이 없다 — 0017 milestones 표의 실제 DB 칸이지
+   * 이 파일이 이미 쓰는 시드 타입에는 완료 여부라는 개념 자체가 없다. 그래서 여기서는
+   * 완료를 거르지 않는다(listNextMilestones도 마찬가지다). business_id의 'group' 센티널은
+   * DB의 NULL과 같은 뜻이라 href·business_id 둘 다에서 null로 되돌린다.
+   */
+  async listCalendarItems(from: IsoDate, to: IsoDate) {
+    const within = (d: string | null) => d !== null && d >= from && d <= to
+    const items: CalendarItem[] = []
+
+    for (const e of memoryEvents) {
+      if (!within(e.starts_on)) continue
+      items.push({
+        kind: 'event',
+        source_id: e.event_id,
+        title: e.title,
+        on_date: e.starts_on,
+        ends_on: e.ends_on,
+        business_id: e.business_id,
+        initiative_id: e.initiative_id,
+        href: e.initiative_id ? `/initiatives/${e.initiative_id}` : '/calendar',
+      })
+    }
+    for (const i of memoryInitiatives) {
+      if (i.status !== 'Active' || !within(i.next_action_date) || !i.next_action.trim()) continue
+      items.push({
+        kind: 'next_action',
+        source_id: i.initiative_id,
+        title: `${i.title} — ${i.next_action}`,
+        on_date: i.next_action_date!,
+        ends_on: null,
+        business_id: i.business_id,
+        initiative_id: i.initiative_id,
+        href: `/initiatives/${i.initiative_id}`,
+      })
+    }
+    for (const m of nextMilestones) {
+      if (!within(m.deadline)) continue
+      const businessId = m.business_id === 'group' ? null : m.business_id
+      items.push({
+        kind: 'milestone',
+        source_id: m.milestone_id,
+        title: m.title,
+        on_date: m.deadline,
+        ends_on: null,
+        business_id: businessId,
+        initiative_id: null,
+        href: businessId ? `/business/${businessId}` : '/calendar',
+      })
+    }
+    for (const d of [...decisions, ...memoryDecisions]) {
+      const status = memoryDecisionStatuses.get(d.decision_id) ?? d.status
+      if (status !== 'Open' || !within(d.deadline)) continue
+      items.push({
+        kind: 'decision',
+        source_id: d.decision_id,
+        title: d.title,
+        on_date: d.deadline,
+        ends_on: null,
+        business_id: d.business_id,
+        initiative_id: null,
+        href: '/approvals',
+      })
+    }
+    return items.sort((a, b) => a.on_date.localeCompare(b.on_date) || a.title.localeCompare(b.title, 'ko'))
   },
 
   async getUserSettings() {

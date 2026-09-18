@@ -11,6 +11,8 @@ import type {
   BusinessStatus,
   BusinessKeyman,
   BusinessStrategy,
+  CalendarItem,
+  ChairmanEvent,
   ChairmanManifesto,
   ChairmanProject,
   CriticalRisk,
@@ -18,6 +20,10 @@ import type {
   DocumentRecord,
   FinanceKpi,
   FinanceLedger,
+  Initiative,
+  InitiativeDoc,
+  InitiativeKeyman,
+  IsoDate,
   SecurityClass,
   MonthlyPriority,
   NextMilestone,
@@ -172,6 +178,37 @@ export interface ChairmanRepository {
   /** 전문을 통째로 바꾼다. audit_log(update)에 before/after 전문이 남는다. */
   saveChairmanManifesto(body: string, actor: AuditActor): Promise<void>
 
+  /**
+   * Phase 4-A 이니셔티브(0017). Chairman·GroupCFO는 읽고 쓰고, AIAgent는 읽기만,
+   * 나머지 역할에게는 전부 빈 결과다. 권한은 여기서 보지 않는다 — 0017의 RLS가 판정한다.
+   *
+   * 목록은 필터 없이 통째로 준다. 회장의 건은 수십 건이지 수천 건이 아니다 —
+   * 필터를 계약에 넣으면 dummy와 live가 필터를 각자 구현하게 되고 둘이 갈라진다.
+   */
+  listInitiatives(): Promise<Initiative[]>
+  getInitiative(initiativeId: string): Promise<Initiative | null>
+  /** initiative_id가 있으면 고치고 없으면 만든다. audit_log(create|update)를 같이 남긴다. */
+  saveInitiative(input: InitiativeInput, actor: AuditActor): Promise<Initiative>
+
+  /** 회장 메모. Chairman이 아니면 늘 null이다 — 없는 것과 못 읽는 것을 구분하지 않는다. */
+  getInitiativeNote(initiativeId: string): Promise<string | null>
+  saveInitiativeNote(initiativeId: string, note: string, actor: AuditActor): Promise<void>
+
+  listInitiativeKeymen(): Promise<InitiativeKeyman[]>
+  saveInitiativeKeyman(input: InitiativeKeymanInput, actor: AuditActor): Promise<InitiativeKeyman>
+  removeInitiativeKeyman(keymanId: string, actor: AuditActor): Promise<void>
+
+  listInitiativeDocs(): Promise<InitiativeDoc[]>
+  saveInitiativeDoc(input: InitiativeDocInput, actor: AuditActor): Promise<InitiativeDoc>
+  removeInitiativeDoc(docId: string, actor: AuditActor): Promise<void>
+
+  listEvents(): Promise<ChairmanEvent[]>
+  saveEvent(input: EventInput, actor: AuditActor): Promise<ChairmanEvent>
+  removeEvent(eventId: string, actor: AuditActor): Promise<void>
+
+  /** 0017 calendar_items 뷰. from·to는 'YYYY-MM-DD' 포함 구간이다. */
+  listCalendarItems(from: IsoDate, to: IsoDate): Promise<CalendarItem[]>
+
   /** CH-003/004/056. 지금 로그인한 사람의 개인 설정. 남의 것은 어떤 역할도 못 읽는다(0002). */
   getUserSettings(): Promise<UserSettings>
   saveUserSettings(patch: Partial<UserSettings>): Promise<void>
@@ -188,6 +225,11 @@ export type KeymanInput = Omit<BusinessKeyman, 'keyman_id'> & { keyman_id?: stri
 
 /** /settings/chairman 폼이 보내는 한 행. project_id가 없으면 새 프로젝트다. */
 export type ChairmanProjectInput = Omit<ChairmanProject, 'project_id'> & { project_id?: string }
+
+export type InitiativeInput = Omit<Initiative, 'initiative_id' | 'updated_at'> & { initiative_id?: string }
+export type InitiativeKeymanInput = Omit<InitiativeKeyman, 'keyman_id'> & { keyman_id?: string }
+export type InitiativeDocInput = Omit<InitiativeDoc, 'doc_id'> & { doc_id?: string }
+export type EventInput = Omit<ChairmanEvent, 'event_id'> & { event_id?: string }
 
 /**
  * 개인 화면 설정(user_settings). 업무 데이터가 아니라 '이 사람의 화면'이다.
