@@ -58,6 +58,24 @@ export const AUDIT_FIELD_LABEL_KO: Record<string, string> = {
   owner_user_id: '담당자',
   title: '제목',
   name: '이름',
+  // Phase 4-A 이니셔티브(0017)가 남기는 칸들.
+  kind: '유형',
+  stage: '단계',
+  goal: '목표',
+  target_date: '목표일',
+  next_action: '다음 행동',
+  next_action_date: '다음 행동일',
+  next_action_owner: '담당자',
+  blocker: '막힌 것',
+  business_id: '연결된 회사',
+  relation: '관계',
+  channel: '채널',
+  last_contact_on: '최근 접촉일',
+  note: '메모',
+  url: '링크',
+  starts_on: '시작일',
+  ends_on: '종료일',
+  location: '장소',
 }
 
 /** audit_log에서 읽어 온 한 줄. 단건 화면의 '이력'이 이걸 그대로 그린다. */

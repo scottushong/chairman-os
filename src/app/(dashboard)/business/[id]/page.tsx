@@ -115,7 +115,7 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
         />
         {/* 0015. 쓰기 판정은 business_keymen_write(can_approve)라 좌표와 같은 안내 함수를 쓴다. */}
         <KeymenPanel
-          businessId={id}
+          scope={{ kind: 'business', businessId: id }}
           keymen={keymen.filter((k) => k.business_id === id)}
           canEdit={canEditStrategy(user)}
         />
