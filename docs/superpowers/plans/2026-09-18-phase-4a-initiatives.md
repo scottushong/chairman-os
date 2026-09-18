@@ -1311,7 +1311,8 @@ function failure(e: unknown): ActionState {
   console.error('[initiatives]', e)
   return {
     error:
-      e instanceof Error && /initiatives_write|initiative_notes_all|42501|PGRST301/.test(e.message)
+      e instanceof Error &&
+      /initiatives_write|initiative_docs_write|events_write|initiative_notes_all|42501|PGRST301/.test(e.message)
         ? '이 건을 고칠 권한이 없습니다. (회장 / 그룹 CFO만 가능합니다)'
         : '저장하지 못했습니다. 잠시 후 다시 시도하세요.',
   }
