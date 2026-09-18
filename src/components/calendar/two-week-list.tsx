@@ -1,5 +1,6 @@
 import Link from 'next/link'
 
+import { occursOn } from '@/lib/calendar'
 import { CALENDAR_ITEM_LABEL_KO, type CalendarItem, type IsoDate } from '@/types'
 
 const WEEKDAY_SHORT_KO = ['일', '월', '화', '수', '목', '금', '토']
@@ -43,11 +44,6 @@ export function TwoWeekList({ items, range }: { items: CalendarItem[]; range: { 
       )}
     </div>
   )
-}
-
-/** month-grid.tsx와 같은 판정 — 여러 날짜 이벤트를 걸치는 모든 날짜에 놓는다. Date 객체를 안 쓴다. */
-function occursOn(item: CalendarItem, day: IsoDate): boolean {
-  return item.on_date <= day && day <= (item.ends_on ?? item.on_date)
 }
 
 /** from~to(포함) 사이의 날짜를 하루씩 나열한다. 소제목을 뽑을 날짜 목록일 뿐, 겹침 판정과는 무관하다. */

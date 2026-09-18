@@ -1,5 +1,6 @@
 import Link from 'next/link'
 
+import { occursOn } from '@/lib/calendar'
 import { CALENDAR_ITEM_LABEL_KO, type CalendarItem, type CalendarItemKind, type IsoDate } from '@/types'
 
 const WEEKDAY_KO = ['월', '화', '수', '목', '금', '토', '일']
@@ -46,36 +47,54 @@ export function MonthGrid({
           const isToday = day === today
 
           return (
+            // opacity는 이 컨테이너가 아니라 안쪽의 무채색 요소(날짜 숫자·비위험 항목·+N)에만
+            // 건다. 컨테이너에 걸면 그 안의 text-critical(지난달 말미에 놓인 연체 항목일수록
+            // 흔하다)까지 40%로 죽어, 가장 위험한 칸에서 위험 신호가 가장 약해지는
+            // 역효과가 난다(initiative-table.tsx의 stale 처리와 같은 이유).
             <div
               key={day}
               className={[
                 'min-h-[92px] rounded-md border p-1.5 text-left',
                 isToday ? 'border-2 border-ink' : 'border-line-soft',
-                inMonth ? '' : 'opacity-40',
               ].join(' ')}
             >
-              <div className={['text-[11px] tnum', isToday ? 'font-bold text-ink' : 'text-ink-dim'].join(' ')}>
+              <div
+                className={[
+                  'text-[11px] tnum',
+                  isToday ? 'font-bold text-ink' : 'text-ink-dim',
+                  inMonth ? '' : 'opacity-40',
+                ].join(' ')}
+              >
                 {Number(day.slice(8, 10))}
               </div>
 
               <div className="mt-1 space-y-0.5">
-                {shown.map((it) => (
-                  <Link
-                    key={`${it.kind}-${it.source_id}-${day}`}
-                    href={it.href}
-                    title={CALENDAR_ITEM_LABEL_KO[it.kind]}
-                    className={[
-                      'flex items-center gap-1 truncate text-[10.5px] leading-tight hover:underline',
-                      isPastRisk(it, today) ? 'text-critical' : 'text-ink-dim',
-                    ].join(' ')}
-                  >
-                    <span aria-hidden className="shrink-0">
-                      {KIND_MARK[it.kind]}
-                    </span>
-                    <span className="truncate">{it.title}</span>
-                  </Link>
-                ))}
-                {overflow > 0 ? <div className="text-[10px] text-ink-muted">+{overflow}</div> : null}
+                {shown.map((it) => {
+                  const risk = isPastRisk(it, today)
+                  return (
+                    <Link
+                      key={`${it.kind}-${it.source_id}-${day}`}
+                      href={it.href}
+                      title={CALENDAR_ITEM_LABEL_KO[it.kind]}
+                      className={[
+                        'flex items-center gap-1 truncate text-[10.5px] leading-tight hover:underline',
+                        risk ? 'text-critical' : 'text-ink-dim',
+                        // 위험 항목은 월 밖이어도 흐리게 하지 않는다 — 연체는 조용히 넘어가면 안 된다.
+                        !risk && !inMonth ? 'opacity-40' : '',
+                      ].join(' ')}
+                    >
+                      <span aria-hidden className="shrink-0">
+                        {KIND_MARK[it.kind]}
+                      </span>
+                      <span className="truncate">{it.title}</span>
+                    </Link>
+                  )
+                })}
+                {overflow > 0 ? (
+                  <div className={['text-[10px] text-ink-muted', inMonth ? '' : 'opacity-40'].join(' ')}>
+                    +{overflow}
+                  </div>
+                ) : null}
               </div>
             </div>
           )
@@ -83,16 +102,6 @@ export function MonthGrid({
       </div>
     </div>
   )
-}
-
-/**
- * listCalendarItems(from, to)는 구간에 걸치는 항목을 준다 — 여러 날짜 이벤트는 시작일 하루가
- * 아니라 걸치는 모든 날짜 칸에 나타나야 한다. on_date === day로만 비교하면 9/25~10/02 출장이
- * 10/25 하루짜리로 찍히고 나머지 7일이 빈 것처럼 보인다. 문자열 비교로 충분하다
- * (ISO 날짜는 사전순이 곧 시간순이다) — Date 객체를 만들지 않는다.
- */
-function occursOn(item: CalendarItem, day: IsoDate): boolean {
-  return item.on_date <= day && day <= (item.ends_on ?? item.on_date)
 }
 
 /** 색이 오르는 유일한 경우: 지난(오늘보다 이전) next_action·decision. 지나간 이벤트는 위험이 아니다. */

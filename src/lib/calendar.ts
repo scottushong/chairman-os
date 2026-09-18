@@ -40,3 +40,16 @@ export function shiftMonth(month: string, by: number): string {
   const t = new Date(Date.UTC(y, m - 1 + by, 1))
   return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}`
 }
+
+/**
+ * listCalendarItems(from, to)는 구간에 걸치는 항목을 준다 — 여러 날짜 이벤트는 시작일 하루가
+ * 아니라 걸치는 모든 날짜에 나타나야 한다. on_date === day로만 비교하면 9/25~10/02 출장이
+ * 9/25 하루짜리로 찍히고 나머지 7일이 빈 것처럼 보인다. 문자열 비교로 충분하다
+ * (ISO 날짜는 사전순이 곧 시간순이다) — Date 객체를 만들지 않는다.
+ *
+ * 화면(month-grid.tsx·two-week-list.tsx)이 각자 복사해 쓰던 것을 이리로 옮겼다 —
+ * monthGrid·twoWeekRange 옆이 달력 도메인 규칙이 사는 자리다.
+ */
+export function occursOn(item: { on_date: IsoDate; ends_on: IsoDate | null }, day: IsoDate): boolean {
+  return item.on_date <= day && day <= (item.ends_on ?? item.on_date)
+}
