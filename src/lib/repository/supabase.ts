@@ -12,6 +12,8 @@ import type {
   BusinessStatus,
   BusinessKeyman,
   BusinessStrategy,
+  CalendarItem,
+  ChairmanEvent,
   ChairmanManifesto,
   ChairmanProject,
   CriticalRisk,
@@ -24,6 +26,10 @@ import type {
   Closing,
   CostIndex,
   FxRate,
+  Initiative,
+  InitiativeDoc,
+  InitiativeKeyman,
+  IsoDate,
   JournalEntry,
   JournalLine,
   DataSource,
@@ -57,6 +63,10 @@ import {
   type ChairmanProjectInput,
   type ChairmanRepository,
   type DecisionAuditEntry,
+  type EventInput,
+  type InitiativeDocInput,
+  type InitiativeInput,
+  type InitiativeKeymanInput,
   type KeymanInput,
   type NewAccount,
   type NewBusiness,
@@ -423,6 +433,20 @@ function oneAffectedRow<T>(
 
 /** 0015 business_keymen에서 부르는 칸. 세 함수가 같은 모양을 돌려줘야 한다. */
 const KEYMAN_COLUMNS = 'keyman_id,business_id,name,relation,last_contact_on,note'
+
+/** 0017 initiatives. 읽기·쓰기가 같은 모양을 돌려줘야 한다. */
+const INITIATIVE_COLUMNS =
+  'initiative_id,title,kind,business_id,stage,goal,target_date,' +
+  'next_action,next_action_date,next_action_owner,blocker,status,updated_at'
+
+/** 0017 initiative_keymen. business_keymen과 같은 모양 + channel. */
+const INITIATIVE_KEYMAN_COLUMNS = 'keyman_id,initiative_id,name,relation,channel,last_contact_on,note'
+
+/** 0017 initiative_docs. 링크만 — 파일은 없다. */
+const INITIATIVE_DOC_COLUMNS = 'doc_id,initiative_id,title,url'
+
+/** 0017 events. */
+const EVENT_COLUMNS = 'event_id,title,starts_on,ends_on,kind,initiative_id,business_id,location,note'
 
 /** 0015 accounts + 0016 active. 읽기와 쓰기가 같은 모양을 돌려줘야 한다. */
 const JOURNAL_ENTRY_COLUMNS = 'business_id,slip_no,entry_date,memo,evidence_url,created_by,created_at,corrects_id,correction_kind'
@@ -2167,6 +2191,461 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
             '(감사 기록은 남았고 선언문은 바뀌지 않았다. 0014의 chairman_manifesto 정책을 본다.)',
         )
       }
+    },
+
+    /**
+     * Phase 4-A 이니셔티브(0017). 목록은 필터 없이 통째로 준다 — 회장의 건은 수십 건이지
+     * 수천 건이 아니다. chairman_projects와 같은 이유로 페이지네이션 헬퍼를 쓰지 않는다.
+     */
+    async listInitiatives(): Promise<Initiative[]> {
+      const { data, error } = await sb
+        .from('initiatives')
+        .select(INITIATIVE_COLUMNS)
+        .order('next_action_date', { nullsFirst: false })
+        .returns<Initiative[]>()
+      if (error) throw new Error(`Supabase initiatives ${error.code ?? '?'}: ${error.message}`)
+      return data ?? []
+    },
+
+    async getInitiative(initiativeId: string): Promise<Initiative | null> {
+      const { data, error } = await sb
+        .from('initiatives')
+        .select(INITIATIVE_COLUMNS)
+        .eq('initiative_id', initiativeId)
+        .maybeSingle<Initiative>()
+      if (error) throw new Error(`Supabase initiatives ${error.code ?? '?'}: ${error.message}`)
+      return data ?? null
+    },
+
+    /**
+     * saveChairmanProject와 같은 순서다 — 기록이 먼저, 바뀐 칸만.
+     * 권한은 보지 않는다. 0017의 initiatives_write가 Chairman·GroupCFO만 통과시킨다.
+     */
+    async saveInitiative(input: InitiativeInput, actor: AuditActor): Promise<Initiative> {
+      const { initiative_id, ...fields } = input
+
+      // 고치는 경우에만 before가 있다. 만드는 경우 before는 null이고 action은 'create'다.
+      let before: Initiative | null = null
+      if (initiative_id) {
+        before = await this.getInitiative(initiative_id)
+        if (!before) throw new Error('initiatives: 고칠 건이 없다. (없거나 볼 권한이 없다)')
+      }
+
+      // 바뀐 칸만 남긴다. 전문을 통째로 넣으면 나중에 진짜 변경을 찾을 때 잡음이 된다.
+      const changed = before
+        ? Object.fromEntries(
+            Object.entries(fields).filter(([k, v]) => v !== before![k as keyof Initiative]),
+          )
+        : fields
+
+      const { error: auditError } = await sb.from('audit_log').insert({
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        action: before ? 'update' : 'create',
+        entity_table: 'initiatives',
+        entity_id: initiative_id ?? null,
+        business_id: fields.business_id,
+        before: before
+          ? Object.fromEntries(Object.keys(changed).map((k) => [k, before![k as keyof Initiative]]))
+          : null,
+        after: changed,
+      })
+      if (auditError) {
+        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      }
+
+      // upsert 대신 update/insert 분기다 — 이 파일의 다른 다중행 저장(saveChairmanProject,
+      // saveKeyman)과 같은 이유다: upsert(조건부 모양의 객체)는 TS 오버로드가 갈라져 타입이
+      // 안 맞는다. 새로 만들 때 initiative_id를 안 보낸다 — 0017의 시퀀스 default가 ini_001
+      // 꼴로 발급한다.
+      const query = before
+        ? sb.from('initiatives').update(fields).eq('initiative_id', initiative_id!)
+        : sb.from('initiatives').insert(fields)
+      const { data, error } = await query.select(INITIATIVE_COLUMNS).single<Initiative>()
+      if (error) {
+        // 감사 기록은 남았고 건은 바뀌지 않았다. 그 편이 반대보다 낫다.
+        throw new Error(
+          `Supabase initiatives ${error.code ?? '?'}: ${error.message} ` +
+            '(0017 initiatives_write — Chairman·GroupCFO만 쓴다)',
+        )
+      }
+      return data
+    },
+
+    /** Chairman이 아니면 RLS가 0행을 준다. 그때 null이다 — 없는 것과 못 읽는 것을 구분하지 않는다. */
+    async getInitiativeNote(initiativeId: string): Promise<string | null> {
+      const { data, error } = await sb
+        .from('initiative_notes')
+        .select('note')
+        .eq('initiative_id', initiativeId)
+        .maybeSingle<{ note: string }>()
+      if (error) throw new Error(`Supabase initiative_notes ${error.code ?? '?'}: ${error.message}`)
+      return data?.note ?? null
+    },
+
+    /**
+     * saveChairmanManifesto와 같은 모양이다 — 한 행 upsert. 다른 점은 initiative_id마다
+     * 행이 따로라는 것뿐이라, 첫 메모는 action이 'create'다(chairman_manifesto는 늘 id=1이라
+     * 'update'로 고정해도 됐지만 여기는 아니다).
+     */
+    async saveInitiativeNote(initiativeId: string, note: string, actor: AuditActor): Promise<void> {
+      const { data: before, error: readError } = await sb
+        .from('initiative_notes')
+        .select('note')
+        .eq('initiative_id', initiativeId)
+        .maybeSingle<{ note: string }>()
+      if (readError) {
+        throw new Error(`Supabase initiative_notes ${readError.code ?? '?'}: ${readError.message}`)
+      }
+      if (before && before.note === note) return
+
+      const { error: auditError } = await sb.from('audit_log').insert({
+        action: before ? 'update' : 'create',
+        entity_table: 'initiative_notes',
+        entity_id: initiativeId,
+        business_id: null,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        before: before ? { note: before.note } : null,
+        after: { note },
+      })
+      if (auditError) {
+        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      }
+
+      const { error: writeError } = await sb
+        .from('initiative_notes')
+        .upsert({ initiative_id: initiativeId, note }, { onConflict: 'initiative_id' })
+      if (writeError) {
+        throw new Error(
+          `Supabase initiative_notes ${writeError.code ?? '?'}: ${writeError.message} ` +
+            '(감사 기록은 남았고 메모는 바뀌지 않았다. 0017의 initiative_notes_all — Chairman만 쓴다.)',
+        )
+      }
+    },
+
+    /** 0017 initiative_keymen. business_keymen과 같은 모양이라 같은 페이지네이션 헬퍼를 쓴다. */
+    async listInitiativeKeymen(): Promise<InitiativeKeyman[]> {
+      const { data } = await fetchAll<InitiativeKeyman>('initiative_keymen', ['keyman_id'], (from, to) =>
+        sb
+          .from('initiative_keymen')
+          .select(INITIATIVE_KEYMAN_COLUMNS, { count: 'exact' })
+          .order('initiative_id')
+          .order('name')
+          .order('keyman_id')
+          .range(from, to)
+          .returns<InitiativeKeyman[]>(),
+      )
+      return data
+    },
+
+    /**
+     * saveKeyman과 같은 순서다 — 기록이 먼저, 바뀐 칸만. business_id가 없다 —
+     * 이니셔티브에 속한 사람이지 회사에 속한 사람이 아니라서 감사에도 null이다.
+     */
+    async saveInitiativeKeyman(input: InitiativeKeymanInput, actor: AuditActor): Promise<InitiativeKeyman> {
+      const { keyman_id, ...fields } = input
+      let before: InitiativeKeyman | null = null
+      if (keyman_id) {
+        const { data, error } = await sb
+          .from('initiative_keymen')
+          .select(INITIATIVE_KEYMAN_COLUMNS)
+          .eq('keyman_id', keyman_id)
+          .maybeSingle<InitiativeKeyman>()
+        if (error) throw new Error(`Supabase initiative_keymen ${error.code ?? '?'}: ${error.message}`)
+        if (!data) throw new Error('initiative_keymen: 고칠 키맨이 없다(또는 읽을 권한이 없다).')
+        before = data
+      }
+
+      const id = keyman_id ?? crypto.randomUUID()
+      const keys = (Object.keys(fields) as (keyof typeof fields)[]).filter(
+        (k) => !before || before[k] !== fields[k],
+      )
+      if (before && keys.length === 0) return before
+
+      const { error: auditError } = await sb.from('audit_log').insert({
+        action: before ? 'update' : 'create',
+        entity_table: 'initiative_keymen',
+        entity_id: id,
+        business_id: null,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        before: before ? Object.fromEntries(keys.map((k) => [k, before![k]])) : null,
+        after: Object.fromEntries(keys.map((k) => [k, fields[k]])),
+      })
+      if (auditError) {
+        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      }
+
+      const query = before
+        ? sb.from('initiative_keymen').update(fields).eq('keyman_id', id)
+        : sb.from('initiative_keymen').insert({ keyman_id: id, ...fields })
+      const { data, error } = await query.select(INITIATIVE_KEYMAN_COLUMNS).single<InitiativeKeyman>()
+      if (error) {
+        throw new Error(
+          `Supabase initiative_keymen ${error.code ?? '?'}: ${error.message} ` +
+            '(감사 기록은 남았고 키맨은 바뀌지 않았다. 0017의 initiative_keymen_write — Chairman·GroupCFO만 쓴다.)',
+        )
+      }
+      return data
+    },
+
+    async removeInitiativeKeyman(keymanId: string, actor: AuditActor): Promise<void> {
+      const { data: before, error: readError } = await sb
+        .from('initiative_keymen')
+        .select(INITIATIVE_KEYMAN_COLUMNS)
+        .eq('keyman_id', keymanId)
+        .maybeSingle<InitiativeKeyman>()
+      if (readError) {
+        throw new Error(`Supabase initiative_keymen ${readError.code ?? '?'}: ${readError.message}`)
+      }
+      if (!before) throw new Error('initiative_keymen: 지울 키맨이 없다(또는 읽을 권한이 없다).')
+
+      // audit_action에 delete가 없다(delete_request는 '지워 달라는 요청'이다).
+      // 행이 사라지는 변경이라 update로 남기고 after를 null로 둔다 — removeKeyman(supabase.ts)과 같은 방식이다.
+      const { error: auditError } = await sb.from('audit_log').insert({
+        action: 'update',
+        entity_table: 'initiative_keymen',
+        entity_id: keymanId,
+        business_id: null,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        before,
+        after: null,
+        note: '이니셔티브 키맨 삭제',
+      })
+      if (auditError) {
+        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      }
+
+      const { data, error } = await sb
+        .from('initiative_keymen')
+        .delete()
+        .eq('keyman_id', keymanId)
+        .select('keyman_id')
+      oneAffectedRow('initiative_keymen', data, error)
+    },
+
+    /** 0017 initiative_docs. listDocuments와 같은 이유로 페이지네이션 헬퍼를 쓴다. */
+    async listInitiativeDocs(): Promise<InitiativeDoc[]> {
+      const { data } = await fetchAll<InitiativeDoc>('initiative_docs', ['doc_id'], (from, to) =>
+        sb
+          .from('initiative_docs')
+          .select(INITIATIVE_DOC_COLUMNS, { count: 'exact' })
+          .order('initiative_id')
+          .order('created_at')
+          .order('doc_id')
+          .range(from, to)
+          .returns<InitiativeDoc[]>(),
+      )
+      return data
+    },
+
+    /** saveKeyman과 같은 순서다 — 기록이 먼저, 바뀐 칸만. 링크만 담는다(0017 데이터 원칙). */
+    async saveInitiativeDoc(input: InitiativeDocInput, actor: AuditActor): Promise<InitiativeDoc> {
+      const { doc_id, ...fields } = input
+      let before: InitiativeDoc | null = null
+      if (doc_id) {
+        const { data, error } = await sb
+          .from('initiative_docs')
+          .select(INITIATIVE_DOC_COLUMNS)
+          .eq('doc_id', doc_id)
+          .maybeSingle<InitiativeDoc>()
+        if (error) throw new Error(`Supabase initiative_docs ${error.code ?? '?'}: ${error.message}`)
+        if (!data) throw new Error('initiative_docs: 고칠 문서가 없다(또는 읽을 권한이 없다).')
+        before = data
+      }
+
+      const id = doc_id ?? crypto.randomUUID()
+      const keys = (Object.keys(fields) as (keyof typeof fields)[]).filter(
+        (k) => !before || before[k] !== fields[k],
+      )
+      if (before && keys.length === 0) return before
+
+      const { error: auditError } = await sb.from('audit_log').insert({
+        action: before ? 'update' : 'create',
+        entity_table: 'initiative_docs',
+        entity_id: id,
+        business_id: null,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        before: before ? Object.fromEntries(keys.map((k) => [k, before![k]])) : null,
+        after: Object.fromEntries(keys.map((k) => [k, fields[k]])),
+      })
+      if (auditError) {
+        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      }
+
+      const query = before
+        ? sb.from('initiative_docs').update(fields).eq('doc_id', id)
+        : sb.from('initiative_docs').insert({ doc_id: id, ...fields })
+      const { data, error } = await query.select(INITIATIVE_DOC_COLUMNS).single<InitiativeDoc>()
+      if (error) {
+        throw new Error(
+          `Supabase initiative_docs ${error.code ?? '?'}: ${error.message} ` +
+            '(감사 기록은 남았고 문서는 바뀌지 않았다. 0017의 initiative_docs_write — Chairman·GroupCFO만 쓴다.)',
+        )
+      }
+      return data
+    },
+
+    async removeInitiativeDoc(docId: string, actor: AuditActor): Promise<void> {
+      const { data: before, error: readError } = await sb
+        .from('initiative_docs')
+        .select(INITIATIVE_DOC_COLUMNS)
+        .eq('doc_id', docId)
+        .maybeSingle<InitiativeDoc>()
+      if (readError) {
+        throw new Error(`Supabase initiative_docs ${readError.code ?? '?'}: ${readError.message}`)
+      }
+      if (!before) throw new Error('initiative_docs: 지울 문서가 없다(또는 읽을 권한이 없다).')
+
+      // audit_action에 delete가 없다. removeKeyman(supabase.ts)과 같은 방식이다.
+      const { error: auditError } = await sb.from('audit_log').insert({
+        action: 'update',
+        entity_table: 'initiative_docs',
+        entity_id: docId,
+        business_id: null,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        before,
+        after: null,
+        note: '이니셔티브 문서 삭제',
+      })
+      if (auditError) {
+        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      }
+
+      const { data, error } = await sb
+        .from('initiative_docs')
+        .delete()
+        .eq('doc_id', docId)
+        .select('doc_id')
+      oneAffectedRow('initiative_docs', data, error)
+    },
+
+    /** 0017 events. 회장의 일정 전체 — chairman_projects와 달리 몇 년 치가 쌓일 수 있어 페이지네이션 헬퍼를 쓴다. */
+    async listEvents(): Promise<ChairmanEvent[]> {
+      const { data } = await fetchAll<ChairmanEvent>('events', ['event_id'], (from, to) =>
+        sb
+          .from('events')
+          .select(EVENT_COLUMNS, { count: 'exact' })
+          .order('starts_on')
+          .order('event_id')
+          .range(from, to)
+          .returns<ChairmanEvent[]>(),
+      )
+      return data
+    },
+
+    /** saveKeyman과 같은 순서다 — 기록이 먼저, 바뀐 칸만. */
+    async saveEvent(input: EventInput, actor: AuditActor): Promise<ChairmanEvent> {
+      const { event_id, ...fields } = input
+      let before: ChairmanEvent | null = null
+      if (event_id) {
+        const { data, error } = await sb
+          .from('events')
+          .select(EVENT_COLUMNS)
+          .eq('event_id', event_id)
+          .maybeSingle<ChairmanEvent>()
+        if (error) throw new Error(`Supabase events ${error.code ?? '?'}: ${error.message}`)
+        if (!data) throw new Error('events: 고칠 일정이 없다(또는 읽을 권한이 없다).')
+        before = data
+      }
+
+      const id = event_id ?? crypto.randomUUID()
+      const keys = (Object.keys(fields) as (keyof typeof fields)[]).filter(
+        (k) => !before || before[k] !== fields[k],
+      )
+      if (before && keys.length === 0) return before
+
+      const { error: auditError } = await sb.from('audit_log').insert({
+        action: before ? 'update' : 'create',
+        entity_table: 'events',
+        entity_id: id,
+        business_id: fields.business_id,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        before: before ? Object.fromEntries(keys.map((k) => [k, before![k]])) : null,
+        after: Object.fromEntries(keys.map((k) => [k, fields[k]])),
+      })
+      if (auditError) {
+        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      }
+
+      const query = before
+        ? sb.from('events').update(fields).eq('event_id', id)
+        : sb.from('events').insert({ event_id: id, ...fields })
+      const { data, error } = await query.select(EVENT_COLUMNS).single<ChairmanEvent>()
+      if (error) {
+        throw new Error(
+          `Supabase events ${error.code ?? '?'}: ${error.message} ` +
+            '(감사 기록은 남았고 일정은 바뀌지 않았다. 0017의 events_write — Chairman·GroupCFO만 쓴다.)',
+        )
+      }
+      return data
+    },
+
+    async removeEvent(eventId: string, actor: AuditActor): Promise<void> {
+      const { data: before, error: readError } = await sb
+        .from('events')
+        .select(EVENT_COLUMNS)
+        .eq('event_id', eventId)
+        .maybeSingle<ChairmanEvent>()
+      if (readError) throw new Error(`Supabase events ${readError.code ?? '?'}: ${readError.message}`)
+      if (!before) throw new Error('events: 지울 일정이 없다.')
+
+      // audit_action에 delete가 없다(delete_request는 '지워 달라는 요청'이다).
+      // 행이 사라지는 변경이라 update로 남기고 after를 null로 둔다 — 지운 행 전체가 before에 있다.
+      // removeKeyman(supabase.ts:930-963)이 같은 방식이다.
+      const { error: auditError } = await sb.from('audit_log').insert({
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        action: 'update',
+        entity_table: 'events',
+        entity_id: eventId,
+        business_id: before.business_id,
+        before,
+        after: null,
+        note: '일정 삭제',
+      })
+      if (auditError) throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+
+      const { error } = await sb.from('events').delete().eq('event_id', eventId)
+      if (error) throw new Error(`Supabase events ${error.code ?? '?'}: ${error.message}`)
+    },
+
+    /**
+     * 0017 calendar_items 뷰. from·to는 'YYYY-MM-DD' 포함 구간이다.
+     *
+     * 겹침으로 거른다 — on_date <= to AND (ends_on ?? on_date) >= from. on_date만 보면
+     * 9/25~10/02 출장이 10월 캘린더에서 사라진다(회장이 출장 중인 그 주가 통째로 빈다).
+     *
+     * 이 표는 다른 목록들과 달리 이 파일의 fetchAll 페이지네이션 헬퍼를 쓴다 — 브리핑의 단순
+     * select 예시와 다르게 정한 것이다. 이니셔티브·이벤트·마일스톤·결재 마감 네 원천을 합친 뷰라
+     * 한 달 범위라도 chairman_projects류의 '수십 건' 전제가 없다. 이 파일의 다른 모든 목록
+     * 질의(및 listInitiativeKeymen/listInitiativeDocs/listEvents 포함)가 fetchAll을 쓰는
+     * 관행과도 맞춘다.
+     */
+    async listCalendarItems(from: IsoDate, to: IsoDate): Promise<CalendarItem[]> {
+      const { data } = await fetchAll<CalendarItem>(
+        'calendar_items',
+        ['kind', 'source_id'],
+        (rangeFrom, rangeTo) =>
+          sb
+            .from('calendar_items')
+            .select('kind,source_id,title,on_date,ends_on,business_id,initiative_id,href', {
+              count: 'exact',
+            })
+            .lte('on_date', to)
+            .or(`ends_on.gte.${from},and(ends_on.is.null,on_date.gte.${from})`)
+            .order('on_date')
+            .order('kind')
+            .order('source_id')
+            .range(rangeFrom, rangeTo)
+            .returns<CalendarItem[]>(),
+      )
+      return data
     },
 
     async getUserSettings(): Promise<UserSettings> {

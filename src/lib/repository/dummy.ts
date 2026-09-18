@@ -742,11 +742,15 @@ export const dummyRepository: ChairmanRepository = {
    * DB의 NULL과 같은 뜻이라 href·business_id 둘 다에서 null로 되돌린다.
    */
   async listCalendarItems(from: IsoDate, to: IsoDate) {
-    const within = (d: string | null) => d !== null && d >= from && d <= to
+    // 겹침으로 거른다 — on_date <= to AND (ends_on ?? on_date) >= from. on_date만 보면
+    // 9/25~10/02 출장이 10월 캘린더에서 사라진다(supabase.ts의 listCalendarItems와 같은 판정).
+    // endsOn은 이벤트에만 있다 — 나머지 세 원천은 하루짜리라 생략하면 기존 판정과 같다.
+    const within = (d: string | null, endsOn: string | null = null) =>
+      d !== null && d <= to && (endsOn ?? d) >= from
     const items: CalendarItem[] = []
 
     for (const e of memoryEvents) {
-      if (!within(e.starts_on)) continue
+      if (!within(e.starts_on, e.ends_on)) continue
       items.push({
         kind: 'event',
         source_id: e.event_id,
