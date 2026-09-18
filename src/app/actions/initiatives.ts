@@ -54,11 +54,20 @@ export type InitiativeField =
   | (typeof DATE_FIELDS)[number]
   | 'kind' | 'stage' | 'status' | 'business_id'
 
+/**
+ * 0017_initiatives.sql의 쓰기 정책 이름 전부(initiative_keymen_write 제외 — 그건 keymen.ts의
+ * initiativeFailure()가 따로 본다): initiatives_write, initiative_docs_write, events_write,
+ * initiative_notes_all. 이 함수는 그 넷을 쓰는 saveInitiativeField/createInitiative(initiatives),
+ * saveInitiativeNoteAction(initiative_notes), saveInitiativeDocAction/removeInitiativeDocAction
+ * (initiative_docs), saveEventAction/removeEventAction(events)가 전부 같이 쓴다 —
+ * 넷 중 하나라도 빠지면 그 표에서 난 권한 거부가 '잠시 후 다시 시도'로 잘못 안내된다.
+ */
 function failure(e: unknown): ActionState {
   console.error('[initiatives]', e)
   return {
     error:
-      e instanceof Error && /initiatives_write|initiative_notes_all|42501|PGRST301/.test(e.message)
+      e instanceof Error &&
+      /initiatives_write|initiative_docs_write|events_write|initiative_notes_all|42501|PGRST301/.test(e.message)
         ? '이 건을 고칠 권한이 없습니다. (회장 / 그룹 CFO만 가능합니다)'
         : '저장하지 못했습니다. 잠시 후 다시 시도하세요.',
   }
@@ -283,7 +292,13 @@ export async function saveEventAction(input: unknown): Promise<EventState> {
   }
 }
 
-export async function removeEventAction(eventId: unknown): Promise<ActionState> {
+/**
+ * initiativeId는 선택이다 — 이벤트는 이니셔티브에도 회사에도 안 걸릴 수 있다.
+ * 걸려 있을 때는 saveEventAction과 대칭으로 그 상세 화면도 다시 그린다 — 지운 이벤트가
+ * 캘린더에서는 사라졌는데 이니셔티브 상세에는 그대로 남는 사고를 막는다.
+ * 화면(삭제 버튼)은 이 값을 렌더링 시점에 이미 알고 있으므로 호출부가 늘 넘길 수 있다.
+ */
+export async function removeEventAction(eventId: unknown, initiativeId?: unknown): Promise<ActionState> {
   const id = typeof eventId === 'string' ? eventId.trim() : ''
   if (!id) return { error: '지울 일정을 알 수 없습니다.' }
 
@@ -299,5 +314,7 @@ export async function removeEventAction(eventId: unknown): Promise<ActionState> 
 
   revalidatePath('/calendar')
   revalidatePath('/initiatives')
+  const iid = typeof initiativeId === 'string' ? initiativeId.trim() : ''
+  if (iid) revalidatePath(`/initiatives/${iid}`)
   return {}
 }
