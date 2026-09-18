@@ -1113,12 +1113,18 @@ EOF
     return data?.note ?? null
   },
 
+  /**
+   * 구간에 '걸치는' 것을 낸다. 시작일이 구간 안인 것만 내면 9/25~10/2 출장이
+   * 10월 달력에서 사라진다 — 회장은 그 주에 중국에 있는데 달력은 비어 있다.
+   * 조건은 on_date <= to AND (ends_on ?? on_date) >= from 이다.
+   * ends_on이 null인 하루짜리는 on_date로 떨어진다.
+   */
   async listCalendarItems(from: IsoDate, to: IsoDate): Promise<CalendarItem[]> {
     const { data, error } = await sb
       .from('calendar_items')
       .select('kind,source_id,title,on_date,ends_on,business_id,initiative_id,href')
-      .gte('on_date', from)
       .lte('on_date', to)
+      .or(`ends_on.gte.${from},and(ends_on.is.null,on_date.gte.${from})`)
       .order('on_date')
       .returns<CalendarItem[]>()
     if (error) throw new Error(`Supabase calendar_items ${error.code ?? '?'}: ${error.message}`)
