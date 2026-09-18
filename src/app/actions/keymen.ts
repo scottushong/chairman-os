@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 
 import { currentUser } from '@/lib/auth/session'
 import { getRepository } from '@/lib/repository'
-import type { BusinessKeyman } from '@/types'
+import { KEYMAN_CHANNEL, type BusinessKeyman, type InitiativeKeyman, type KeymanChannel } from '@/types'
 
 /**
  * CH-024 키맨 저장·삭제 (0015 business_keymen).
@@ -12,6 +12,11 @@ import type { BusinessKeyman } from '@/types'
  * 권한 판정은 여기서 하지 않는다. 로그인한 본인 세션으로 DB에 붙고
  * 0015의 business_keymen_write가 can_approve()와 회사 범위를 본다. 감사 기록은 어댑터가 남긴다.
  * 입력 검증만 한다 — 폼은 사람이 손으로 고칠 수 있는 입력이다.
+ *
+ * 이니셔티브 키맨(0017 initiative_keymen)은 아래에 별도 액션(saveInitiativeKeymanAction /
+ * removeInitiativeKeymanAction)으로 둔다. business_id 대신 initiative_id를 받고 channel이 있고
+ * revalidatePath 대상도 `/business/:id`가 아니라 `/initiatives/:id`다 — 한 함수가 둘을 같이 받으면
+ * 매번 어느 쪽인지 분기해야 하고 두 화면의 캐시 무효화가 뒤섞인다.
  */
 
 export interface KeymanState {
@@ -98,5 +103,97 @@ export async function removeKeyman(keymanId: unknown, businessId: unknown): Prom
   } catch (e) {
     console.error('[removeKeyman]', e)
     return { error: failure(e, '지우지 못했습니다. 잠시 후 다시 시도하세요.') }
+  }
+}
+
+/**
+ * 이니셔티브 키맨 (0017 initiative_keymen). business_keymen과 같은 꼴이지만
+ * business_id 대신 initiative_id, channel(연락 수단)이 더 있다 — 딜은 누구와 어느 창구로
+ * 말하고 있는지가 곧 진행 상황이라서다. 권한 판정은 여기서 하지 않는다 —
+ * 0017의 initiative_keymen_write(can_write_initiatives)가 Chairman/GroupCFO만 통과시킨다.
+ */
+export interface InitiativeKeymanState {
+  error?: string
+  keyman?: InitiativeKeyman
+}
+
+function initiativeFailure(e: unknown, fallback: string): string {
+  return e instanceof Error && /initiative_keymen|42501|PGRST301/.test(e.message)
+    ? '이 건의 키맨을 고칠 권한이 없습니다. (회장 / 그룹 CFO만 가능합니다)'
+    : fallback
+}
+
+export async function saveInitiativeKeymanAction(input: {
+  keymanId?: unknown
+  initiativeId: unknown
+  name: unknown
+  relation: unknown
+  channel: unknown
+  lastContactOn: unknown
+  note: unknown
+}): Promise<InitiativeKeymanState> {
+  const initiative_id = text(input.initiativeId)
+  const name = text(input.name)
+  const relation = text(input.relation)
+  const note = text(input.note)
+  const last = text(input.lastContactOn)
+  const keymanId = text(input.keymanId)
+
+  if (!initiative_id) return { error: '어느 건의 키맨인지 알 수 없습니다.' }
+  if (!name) return { error: '이름을 입력하세요.' }
+  if (name.length > NAME_MAX) return { error: `이름은 ${NAME_MAX}자까지입니다.` }
+  if (relation.length > TEXT_MAX || note.length > TEXT_MAX) {
+    return { error: `관계·메모는 ${TEXT_MAX}자까지입니다.` }
+  }
+  if (!KEYMAN_CHANNEL.includes(input.channel as KeymanChannel)) return { error: '연락 수단을 고르세요.' }
+  // 비우면 '기록 없음'. 날짜가 있으면 실재하는 날이어야 하고 미래일 수 없다 — 아직 안 만난 접촉은 기록이 아니다.
+  if (last && (!/^\d{4}-\d{2}-\d{2}$/.test(last) || Number.isNaN(Date.parse(`${last}T00:00:00Z`)))) {
+    return { error: '최근 접촉일 형식이 맞지 않습니다.' }
+  }
+  if (last && last > new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10)) {
+    return { error: '최근 접촉일이 오늘보다 뒤일 수 없습니다.' }
+  }
+
+  const user = await currentUser()
+  if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+
+  try {
+    const repo = await getRepository()
+    const keyman = await repo.saveInitiativeKeyman(
+      {
+        keyman_id: keymanId || undefined,
+        initiative_id,
+        name,
+        relation,
+        channel: input.channel as KeymanChannel,
+        last_contact_on: last || null,
+        note,
+      },
+      { user_id: user.user_id, role: user.role },
+    )
+    revalidatePath(`/initiatives/${initiative_id}`)
+    return { keyman }
+  } catch (e) {
+    console.error('[saveInitiativeKeymanAction]', e)
+    return { error: initiativeFailure(e, '저장하지 못했습니다. 잠시 후 다시 시도하세요.') }
+  }
+}
+
+export async function removeInitiativeKeymanAction(
+  keymanId: unknown,
+  initiativeId: unknown,
+): Promise<InitiativeKeymanState> {
+  const id = text(keymanId)
+  if (!id) return { error: '지울 키맨을 알 수 없습니다.' }
+  const user = await currentUser()
+  if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  try {
+    const repo = await getRepository()
+    await repo.removeInitiativeKeyman(id, { user_id: user.user_id, role: user.role })
+    revalidatePath(`/initiatives/${text(initiativeId)}`)
+    return {}
+  } catch (e) {
+    console.error('[removeInitiativeKeymanAction]', e)
+    return { error: initiativeFailure(e, '지우지 못했습니다. 잠시 후 다시 시도하세요.') }
   }
 }
