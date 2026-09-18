@@ -23,7 +23,9 @@
 ### 지금 상태
 
 **D-17 부분 준비:** 로컬 격리·합성 시드·검증 명령과 복구 절차는 저장소에 있다(8~9절).
-외부 staging, 실제 복원 리허설, 배포 시스템 연결은 아직 없다.
+**외부 staging 프로젝트가 생겼다**(2026-09-18, Seoul `itpenmxyracfhyormcep`). 0001~0016이 들어가 있고
+`npm run db:push:staging`으로 적용한다. 아직 남은 것은 staging 부트스트랩 계정, Vercel Preview 연결,
+staging UAT, **실제 복원 리허설**이다.
 TC-023·024를 Pass로 바꾸거나 production 배포를 승인한 상태는 아니다.
 
 ### 나가기 전에 반드시 통과해야 하는 것
@@ -52,6 +54,43 @@ npm run build         # 빌드 (타입 검사 포함)
 
 `SUPABASE_DB_PASSWORD`는 런타임에 필요 없다. 마이그레이션을 돌리는 자리에만 준다.
 
+### Vercel Preview를 staging Supabase에 붙인다
+
+Vercel 프로젝트를 새로 만들지 않는다. 같은 프로젝트의 **Preview 환경만** staging DB를 보게 한다.
+Production 배포는 건드리지 않는다.
+
+Settings → Environment Variables에서 아래를 넣고, 각 변수의 Environment는 **Preview만** 체크한다
+(Production 체크를 같이 켜면 운영이 staging DB를 보게 된다 — 이 실수가 이 절의 전부다).
+
+| 변수 | Preview 값 |
+|---|---|
+| `NEXT_PUBLIC_DATA_MODE` | `live` |
+| `CHAIRMAN_ENV` | `staging` |
+| `NEXT_PUBLIC_SUPABASE_URL` | `https://itpenmxyracfhyormcep.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | staging publishable key |
+| `AI_AGENT_EMAIL` · `AI_AGENT_PASSWORD` | staging 부트스트랩 ②에서 만든 계정 |
+| `INTEGRATION_EMAIL` · `INTEGRATION_PASSWORD` | staging 부트스트랩 ③에서 만든 계정 |
+| `ANTHROPIC_API_KEY` · `AI_MODEL` | staging 전용 키를 권한다 |
+| `CRON_SECRET` | production과 **다른** 값 |
+
+**`SUPABASE_DB_PASSWORD`는 Vercel에 넣지 않는다.** 앱 런타임이 쓰지 않는 값이고, 넣는 순간
+마이그레이션 자격이 배포 환경에 상주한다(0절).
+
+알아 둘 것:
+
+- `NEXT_PUBLIC_*`은 빌드 시점에 박히지만 Preview 배포는 Preview 값으로 **따로 빌드**되므로 자동으로 맞는다.
+  이미 만들어진 Preview 배포의 값을 바꿨다면 캐시 없이 Redeploy 한다.
+- Preview는 기본적으로 production 브랜치가 아닌 **모든 브랜치**에 붙는다. 특정 브랜치만 원하면
+  변수에 Branch를 지정한다.
+- **Vercel Cron은 Production 배포에서만 돈다.** Preview에서 야간 브리핑은 저절로 돌지 않는다.
+  staging에서 보려면 손으로 부른다:
+  `curl -H "Authorization: Bearer <staging CRON_SECRET>" https://<preview-url>/api/cron/night-brief`
+  Preview에 Deployment Protection이 켜져 있으면 bypass 토큰을 함께 보내거나 잠시 꺼야 한다.
+- 로그인은 이메일+비밀번호(`signInWithPassword`)다. OAuth·매직링크가 없으므로 staging 프로젝트의
+  Auth redirect URL 허용 목록은 건드릴 것이 없다.
+- 붙었는지 보는 법은 배포 후 확인 4단계와 같다. `/api/health`가 staging 숫자를 내고
+  화면에 DUMMY DATA 뱃지가 없으면 붙은 것이다.
+
 ---
 
 ## 2. 마이그레이션
@@ -64,11 +103,52 @@ npm run build         # 빌드 (타입 검사 포함)
 그 번호를 이미 쓰고 있다. 그 파일은 `migrations/` 밖에 있어 `db push`가 집지 않는다 —
 첫 회장 계정의 UID가 프로젝트마다 달라서 마이그레이션에 박아 넣을 값이 아니기 때문이다.
 
-### 적용
+### 두 프로젝트
+
+| 환경 | Supabase 프로젝트 ref | 리전 | 환경변수 파일 | 적용 방법 |
+|---|---|---|---|---|
+| staging | `itpenmxyracfhyormcep` | Seoul (ap-northeast-2) | `.env.staging.local` | `npm run db:push:staging` |
+| production | `nndvspgnljivkvihxlzj` | Tokyo (ap-northeast-1) | `.env.local` | 9절 릴리스 절차(손으로, 승인 후) |
+
+리전이 다른 것은 의도가 아니라 순서다 — production이 먼저 만들어졌다. 이전 계획은 DEFERRED D-22.
+
+### 적용 — staging
 
 이 PC에는 Docker가 없다. 마이그레이션은 원격 프로젝트에 `supabase link` 한 뒤 `supabase db push`로 적용한다.
-Staging은 production과 별도의 Supabase 프로젝트로 분리하고, 새 마이그레이션은 staging에 먼저 push해 확인한다.
-push 전에 지금 link된 프로젝트 ID가 의도한 대상(staging/production)인지 대조한다.
+**새 마이그레이션은 staging에 먼저 넣는다.** 명령 하나가 전부다:
+
+```bash
+npm run db:push:staging
+```
+
+Supabase CLI는 devDependency로 고정돼 있다(`supabase@2.117.0`). 따로 설치하지 않아도 되고,
+처음 한 번은 `npx supabase login`이 필요하다. 스크립트가 순서대로 하는 일:
+
+1. `.env.staging.local`을 읽는다. `.env.local`은 읽지 않는다.
+2. `npm run check:migrations`(PGlite, 네트워크 없음)를 먼저 통과시킨다.
+3. staging ref로 `supabase link`.
+4. **link된 ref를 파일에서 다시 읽어 staging인지 대조한다.** 아니면 거기서 멈춘다.
+5. `db push --dry-run` → `db push` → `migration list`.
+
+**거부되는 경우** (`scripts/db-safety.mjs`, `npm run check:db-safety`가 검사한다):
+
+- `.env.staging.local` 안에 production ref(`nndvspgnljivkvihxlzj`)가 한 글자라도 있으면 — 복사만 하고
+  교체를 안 한 파일이다.
+- `CHAIRMAN_ENV`·URL·anon key·DB 비밀번호가 **두 번** 정의돼 있으면 — 마지막 줄이 조용히 대상을 정한다.
+- `CHAIRMAN_ENV`가 `staging`이 아니거나 URL이 staging 프로젝트가 아니면.
+- link된 ref가 production이거나 staging이 아니면. 이 검사는 link **뒤에** 한 번 더 돈다.
+
+`db:push:staging`은 production에 쓸 수 없다. `npm run db:push:staging production` 같은 인자는 받지 않는다.
+
+### 적용 — production
+
+**staging에서 확인하기 전에는 production에 push하지 않는다.** 9절 순서를 따른다.
+production은 전용 명령을 두지 않았다 — 손으로 `supabase link --project-ref nndvspgnljivkvihxlzj` 한 뒤
+`supabase db push`다. 한 단계 불편한 것이 목적이다.
+
+push가 끝나면 작업 디렉터리의 link는 production에 남는다. **다음 staging 작업 전에 `db:push:staging`을
+다시 돌리면 link가 staging으로 돌아온다**(스크립트가 매번 link부터 한다).
+
 대상 프로젝트 ID, 백업, 승인된 변경 목록 확인은 9절 릴리스 절차를 따른다.
 로컬 DB(8절 `npm run db:local`)는 Docker가 있는 환경에서만 선택적으로 쓴다.
 `.env.local`이 CLI에 자동 로드된다고 가정하지 않는다.
@@ -151,6 +231,37 @@ mock 원장은 live DB에 들어가지 않는다(동기화가 mock일 때 쓰지
 ECOUNT API 동기화(Phase 2-A)는 2-B에서 걷어냈다(`lib/ecount/client.ts` · `config.ts` · `sync.ts`, `/api/cron/ecount-sync` 삭제).
 `Integration` 역할과 `supabase/bootstrap/0006_integration.sql`은 남겨 두었다. 지금 `INTEGRATION_EMAIL` / `INTEGRATION_PASSWORD`를
 읽는 코드는 없다. DY ECOUNT 엑셀 업로드 블록에서 이 계정을 쓸지(사람 세션으로 올릴지) 정한다.
+
+### staging 부트스트랩 3종 — 프로젝트를 새로 세울 때 한 번
+
+`db push`는 `migrations/`만 집는다. `bootstrap/`의 세 파일은 **staging에서도 손으로 한 번씩** 돌려야 한다.
+UID가 프로젝트마다 다르기 때문이다 — production의 UID를 staging에 쓸 수 없다.
+
+**모든 작업은 staging 프로젝트(`itpenmxyracfhyormcep`) Dashboard에서 한다.** production 탭과 섞이지 않게
+브라우저 창을 하나만 열어 두는 편이 낫다. 순서대로:
+
+| 순서 | 계정 | 파일 | 치환할 자리 | 선행 |
+|---|---|---|---|---|
+| ① | 회장 | `0004_bootstrap_chairman.sql` | `:chairman_uid` 3곳 | 0002 |
+| ② | AI Agent | `0005_ai_agent.sql` | `:agent_uid` | 0013 |
+| ③ | Integration | `0006_integration.sql` | `:sync_uid` | 0015 |
+
+선행 마이그레이션은 `npm run db:push:staging`으로 이미 다 들어가 있다. ①이 먼저다 —
+②③의 `user_profiles` 쓰기가 Chairman을 전제한다.
+
+각 줄의 절차는 같다. 파일 머리 주석이 정본이고, 요약하면:
+
+1. Authentication → Users → **Add user** (Auto Confirm User 켠다). 비밀번호는 길고 무작위로.
+   staging 계정은 **production과 다른 비밀번호**를 쓴다(9절 1번).
+2. 생긴 사용자의 UID를 복사한다.
+3. 그 파일의 자리표시자를 UID로 치환한 사본(`000N_ready.sql`)을 만들어 **staging** SQL Editor에서 전체 실행한다.
+   `*_ready.sql` 셋은 `.gitignore`에 있다 — 커밋하지 않는다.
+4. 파일 끝의 기대값 절을 확인한다(②는 `vault_docs = 0`, `kpis > 0`, `alert_ack = 0`,
+   `settings_write = denied`, `output_write = ok`).
+
+②③의 이메일·비밀번호는 staging 앱 환경(`.env.staging.local`, Vercel Preview)의
+`AI_AGENT_*` / `INTEGRATION_*`에 넣는다. production 값을 그대로 쓰지 않는다 —
+`npm run db:push:staging`이 같은 값을 발견하면 경고한다.
 
 ---
 
@@ -267,7 +378,8 @@ select tgname from pg_trigger where tgrelid = 'auth.users'::regclass;
 
 | 없는 것 | 항목 |
 |---|---|
-| 외부 Staging · 실제 복원 리허설 | **D-17 부분 준비** — 8~9절. 배포 전 선행 |
+| staging 부트스트랩 계정 · Preview 연결 · 실제 복원 리허설 | **D-17 부분 준비** — 8~9절. 배포 전 선행. staging 프로젝트와 스키마는 섰다(2절) |
+| 운영 DB Seoul 이전 | **D-22** — production은 Tokyo, staging은 Seoul |
 | 앱에서 보내는 초대 메일 | **D-15** (수동으로 확정) |
 | 업무 담당자·제목·마감 편집 | **D-18** (의도된 경계) |
 | 전사 프로젝트 목록 화면 | Phase 2 |
@@ -290,7 +402,8 @@ select tgname from pg_trigger where tgrelid = 'auth.users'::regclass;
 |---|---|
 | DONE | 환경 가드, 전용 CLI 구성, 합성 시드, SQL/HTTP 검증 스크립트, 복구 절차 |
 | READY LOCALLY (선택) | Docker가 있는 환경에서 start → reset → verify 실행 가능하도록 준비. 이 작업 PC에는 Docker가 없어 로컬 DB 실행은 하지 않는다 |
-| REQUIRES EXTERNAL SETUP | 별도 Supabase staging 프로젝트, 별도 앱 환경·계정·시크릿, 백업/PITR, 실제 복구 리허설 및 담당자 승인 |
+| DONE (2026-09-18) | 별도 Supabase staging 프로젝트(`itpenmxyracfhyormcep`, Seoul)와 0001~0016 적용, 가드 붙은 `db:push:staging` |
+| REQUIRES EXTERNAL SETUP | staging 부트스트랩 계정·시크릿, Vercel Preview 연결, 백업/PITR, 실제 복구 리허설 및 담당자 승인 |
 
 `NEXT_PUBLIC_DATA_MODE=dummy/live`는 데이터 어댑터 선택이며 환경 식별자가 아니다.
 앱 환경에는 `CHAIRMAN_ENV=local|test|staging|production`을 명시한다.
@@ -355,19 +468,52 @@ CLI 버전이 이 로컬 JWT 정보를 제공하지 않으면 검사는 실패�
 
 ## 9. 릴리스 및 복구 절차
 
-### 릴리스 전
+### 순서 — staging 먼저 → 확인 → production
 
-1. staging/production 프로젝트 식별자와 앱 환경을 각각 대조하고 별도 계정·시크릿 저장소로 분리한다.
+이 순서를 건너뛰는 지름길은 없다. production에 먼저 넣고 staging에서 확인하는 것은 확인이 아니다.
+
+```text
+  0. 준비        기록과 백업. 아직 아무것도 바꾸지 않는다
+  1. staging      npm run db:push:staging → 필요하면 부트스트랩 → Vercel Preview 배포
+  2. 확인         staging에서 검사와 UAT. 여기서 멈출 수 있어야 의미가 있다
+  3. production   승인 → DB → 앱. 되돌릴 길을 정해 둔 뒤에
+```
+
+**0. 준비 — 바꾸기 전에 적어 둔다**
+
+1. staging(`itpenmxyracfhyormcep`)/production(`nndvspgnljivkvihxlzj`) 식별자와 앱 환경을 각각 대조하고
+   별도 계정·시크릿 저장소로 분리한다. 같은 비밀번호를 두 환경에 쓰면 분리가 아니다.
 2. 현재 정상 앱의 Git SHA/릴리스 태그, 빌드 산출물, 환경변수 버전, DB 적용 마이그레이션 목록을 기록한다.
-3. DB 스냅샷 또는 PITR 복원 지점, 보존 기간, RPO/RTO, 복원 권한과 책임자를 확인한다.
+   마이그레이션 목록은 `supabase migration list --linked`가 낸다.
+3. production의 DB 스냅샷 또는 PITR 복원 지점, 보존 기간, RPO/RTO, 복원 권한과 책임자를 확인한다.
    별도 격리 대상에 실제 복원을 해 보고 소요 시간·데이터 정합성을 기록한다. 백업 존재만으로 복원 가능 판정을 하지 않는다.
 4. 새 마이그레이션의 잠금·데이터 손실·RLS·구버전 앱 호환성을 검토한다.
-   **기존 staging 데이터에서 새 마이그레이션으로 업그레이드**(staging에 db push)를 검증한다.
-   Docker가 있는 환경이면 로컬 clean reset도 추가로 돌릴 수 있다(선택).
-5. typecheck/lint/build/diff 검사, staging에서의 RLS·repository 검사, staging UAT가 모두 통과해야 한다.
+   코드 롤백으로 충분한지, 전방 수정이나 DB 복원이 필요한지 **변경별로** 기록한다.
+
+**1. staging에 먼저 넣는다**
+
+5. `npm run db:push:staging`. 이 명령이 `check:migrations`를 먼저 돌리고, link된 ref가 staging인지
+   대조한 뒤에야 push한다(2절). 새 표를 만들었다면 부트스트랩 3종 중 해당하는 것을 staging에서 돌린다.
+6. Preview 배포가 staging DB를 보게 한다(1절). **기존 staging 데이터 위에 올리는 업그레이드**를 본다 —
+   빈 DB에 처음부터 적용하는 것은 같은 시험이 아니다.
+   Docker가 있는 환경이면 로컬 clean reset도 추가로 돌릴 수 있다(선택, 8절).
+
+**2. staging에서 확인한다**
+
+7. typecheck/lint/build/diff, `npm run check:db-safety`·`check:boundaries`·`check:finance`가 통과해야 한다.
+8. staging Preview에서 배포 후 확인 4단계(1절)와 이번 변경에 해당하는 UAT를 돌린다.
+   `/api/health`의 익명 `rows: 0` · `rls_closed: true`, 회사 격리, 문서 등급, 권한 회수를 본다.
    로컬 RLS·repository 검사(8절)는 Docker가 있는 환경에서만 선택적으로 추가한다.
-   코드 롤백으로 충분한지, 전방 수정이나 DB 복원이 필요한지 변경별로 기록한다.
-6. 승인된 SHA만 릴리스하고 관찰·중단 기준과 담당자를 지정한다. 이 저장소 작업은 배포 승인이 아니다.
+9. **여기서 실패하면 production으로 넘어가지 않는다.** staging은 고쳐서 다시 5번부터 돌린다.
+   staging에서 본 적 없는 마이그레이션은 production에 넣지 않는다.
+
+**3. production**
+
+10. 승인된 SHA만 릴리스하고 관찰·중단 기준과 담당자를 지정한다. 이 저장소 작업은 배포 승인이 아니다.
+11. DB가 먼저다. 손으로 `supabase link --project-ref nndvspgnljivkvihxlzj` 후 `supabase db push`
+    (2절 — 전용 npm 스크립트를 두지 않았다). 0015·0016처럼 **스키마가 코드보다 먼저** 가야 하는 변경은 순서를 지킨다.
+12. 앱을 배포하고 배포 후 확인 4단계를 다시 돌린다. 끝났으면 작업 디렉터리의 link를
+    `npm run db:push:staging`으로 staging에 되돌려 둔다 — 다음 사람이 production에 link된 채로 시작하지 않게.
 
 ### 앱 릴리스 실패
 

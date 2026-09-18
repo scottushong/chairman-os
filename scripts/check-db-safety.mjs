@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { assertLocal, assertDockerEndpoint, childEnvironment, identifyEnvironment, LOCAL_URL } from './db-safety.mjs'
+import { assertLocal, assertDockerEndpoint, assertLinkedRef, assertStagingFile, childEnvironment, identifyEnvironment, remoteEnvironment, LOCAL_URL, PRODUCTION_REF, STAGING_REF, STAGING_URL } from './db-safety.mjs'
 
 const local = { CHAIRMAN_ENV: 'local', NEXT_PUBLIC_SUPABASE_URL: LOCAL_URL }
 assert.doesNotThrow(() => assertLocal(local))
@@ -28,6 +28,31 @@ for (const args of [['reset', '--linked'], ['reset', '--db-url', 'redacted'], ['
   assert.equal(result.status, 1)
   assert.match(result.stderr, /Usage:/)
 }
+const staging = `CHAIRMAN_ENV=staging\nNEXT_PUBLIC_SUPABASE_URL=${STAGING_URL}\nNEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_test\nSUPABASE_DB_PASSWORD=test\n`
+assert.equal(assertStagingFile(staging).CHAIRMAN_ENV, 'staging')
+// A file copied from production keeps working after the three lines are appended: the parse is
+// clean and only the last line wins. Both halves must be rejected on the text, before parsing.
+assert.throws(() => assertStagingFile(`NEXT_PUBLIC_SUPABASE_URL=https://${PRODUCTION_REF}.supabase.co\n${staging}`), /production project/)
+assert.throws(() => assertStagingFile(`# harmless comment naming ${PRODUCTION_REF}\n${staging}`), /production project/)
+assert.throws(() => assertStagingFile(`${staging}SUPABASE_DB_PASSWORD=other\n`), /defined 2 times/)
+assert.throws(() => assertStagingFile(`${staging}  CHAIRMAN_ENV=production\n`), /defined 2 times/)
+for (const kind of ['production', 'local', 'test', 'unknown', '']) {
+  assert.throws(() => assertStagingFile(staging.replace('CHAIRMAN_ENV=staging', `CHAIRMAN_ENV=${kind}`)), /Refused/)
+}
+for (const url of [`https://${PRODUCTION_REF}.supabase.co`, `${STAGING_URL}/`, `${STAGING_URL}@example.invalid`, LOCAL_URL, '']) {
+  assert.throws(() => assertStagingFile(staging.replace(STAGING_URL, url)), /Refused/)
+}
+assert.throws(() => assertStagingFile(staging.replace('SUPABASE_DB_PASSWORD=test', 'SUPABASE_DB_PASSWORD=')), /empty/)
+assert.doesNotThrow(() => assertLinkedRef(STAGING_REF))
+assert.throws(() => assertLinkedRef(PRODUCTION_REF), /linked to production/)
+for (const ref of ['', undefined, `${STAGING_REF}x`, STAGING_REF.toUpperCase()]) assert.throws(() => assertLinkedRef(ref), /Refused/)
+assert.deepEqual(remoteEnvironment({ PATH: 'test', SUPABASE_DB_PASSWORD: 'secret', SUPABASE_ACCESS_TOKEN: 'redacted', DOCKER_HOST: 'redacted' }),
+  { PATH: 'test', SUPABASE_DB_PASSWORD: 'secret' })
+for (const args of [[], ['production'], ['staging', '--include-all'], ['--linked'], ['Staging']]) {
+  const result = spawnSync(process.execPath, ['scripts/db-push.mjs', ...args], { encoding: 'utf8' })
+  assert.equal(result.status, 1)
+  assert.match(result.stderr, /Usage:/)
+}
 for (const file of ['seed.sql', 'verify.sql']) {
   const sql = readFileSync(new URL(`../supabase/tests/${file}`, import.meta.url), 'utf8')
   assert.ok(sql.includes("current_setting('chairman.validation_environment', true) is distinct from 'local'"))
@@ -37,4 +62,4 @@ const config = readFileSync(new URL('../supabase/config.toml', import.meta.url),
 assert.match(config, /project_id = "chairman-os-d17"/)
 assert.match(config, /max_rows = 137/)
 assert.match(config, /\[db.seed\][\s\S]*?enabled = false/)
-console.log('PASS: local target, production/unknown/remote rejection, Docker isolation, secret stripping, CLI argument rejection, SQL guards, config invariants')
+console.log('PASS: local target, production/unknown/remote rejection, Docker isolation, secret stripping, CLI argument rejection, SQL guards, config invariants, staging env file and link guards')
