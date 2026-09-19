@@ -31,11 +31,20 @@ interface Draft {
   startsOn: string
   endsOn: string
   location: string
+  // 이 모달은 그 셋을 고치지 않지만, 안 실어 보내면 saveEventAction이 null/''로 채워
+  // 이니셔티브·회사 연결과 메모가 조용히 끊긴다 — 폼에는 안 넣고 그대로 실어 나르기만 한다.
+  initiativeId: string | null
+  businessId: string | null
+  note: string
 }
 
 function emptyDraft(day: IsoDate): Draft {
   // 새 일정의 시작일은 누른 날짜다. 비워 두면 회장이 달력에서 날짜를 골라 놓고 또 고른다.
-  return { title: '', kind: 'Meeting', startsOn: day, endsOn: '', location: '' }
+  // 캘린더에서 새로 만드는 일정은 정말로 어디에도 안 걸린다 — null/null/''이 맞다.
+  return {
+    title: '', kind: 'Meeting', startsOn: day, endsOn: '', location: '',
+    initiativeId: null, businessId: null, note: '',
+  }
 }
 
 function draftOf(e: ChairmanEvent): Draft {
@@ -46,6 +55,9 @@ function draftOf(e: ChairmanEvent): Draft {
     startsOn: e.starts_on,
     endsOn: e.ends_on ?? '',
     location: e.location,
+    initiativeId: e.initiative_id,
+    businessId: e.business_id,
+    note: e.note,
   }
 }
 
@@ -98,6 +110,9 @@ export function DayModal({
       starts_on: draft.startsOn,
       ends_on: draft.endsOn,
       location: draft.location,
+      initiative_id: draft.initiativeId,
+      business_id: draft.businessId,
+      note: draft.note,
     })
     setBusy(false)
     if (result.error || !result.saved) {
@@ -146,7 +161,9 @@ export function DayModal({
           <h2 className="text-[14px] font-semibold tnum">
             {Number(m)}월 {Number(d)}일
             <span className="ml-2 text-[11px] font-normal text-ink-muted">
-              {items.length}건
+              {/* items(연 시점의 정적 prop)가 아니라 list/others — 목록과 같은 상태에서 세야
+                  추가·삭제 직후에도 헤더 건수와 아래 목록이 어긋나지 않는다. */}
+              {list.length + others.length}건
             </span>
           </h2>
           <button
