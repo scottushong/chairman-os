@@ -1,5 +1,5 @@
 import type { FinanceBriefContext } from '@/lib/ledger/brief-context'
-import type { AiBriefItem, BusinessStatus, IsoDate, ProjectNote } from '@/types'
+import type { AiBriefItem, BusinessStatus, ChairmanCondition, IsoDate, ProjectNote } from '@/types'
 
 /**
  * AI Adapter — 야간 Job과 모델 사이의 유일한 계약(Port).
@@ -81,6 +81,13 @@ export interface ChairmanContext {
   }[]
   /** 선언문 전문. 아직 안 썼으면 null */
   manifesto: string | null
+  /**
+   * 오늘의 체크인(0019). 체중·식사 메모는 싣지 않는다 — 브리핑이 컨디션 판정에 쓰는 건
+   * condition 하나뿐이고(daily-brief.md), sleep_hours는 참고용으로만 곁들인다. 넘기지 않은
+   * 값은 모델 프롬프트로 새어 나갈 수 없다 — 개인 건강 기록은 애초에 실어 보내지 않는 편이 낫다.
+   * 기록이 없으면(또는 못 읽으면) null — daily-brief.md는 이때 컨디션 문장을 쓰지 않는다.
+   */
+  checkin: { condition: ChairmanCondition; sleep_hours: number | null } | null
 }
 
 export interface DailyBriefInput {

@@ -221,13 +221,21 @@ export async function runNightBrief(opts: {
 }
 
 /**
- * 회장 루틴(0014) + 이니셔티브(0017). 두 RLS 모두 AIAgent에게 읽기를 준다.
- * 못 읽어도 그룹 브리핑은 쓴다 — 기준이 빠진 브리핑이 브리핑이 없는 것보다 낫다. 대신 null로 넘겨
- * 모델이 project_notes를 지어내지 않게 한다. 진행 중인 프로젝트만 넘긴다.
+ * 회장 루틴(0014) + 이니셔티브(0017) + 체크인(0019, P5-5d). 앞의 둘은 RLS가 AIAgent에게도
+ * 읽기를 준다. 못 읽어도 그룹 브리핑은 쓴다 — 기준이 빠진 브리핑이 브리핑이 없는 것보다 낫다.
+ * 대신 null로 넘겨 모델이 project_notes를 지어내지 않게 한다. 진행 중인 프로젝트만 넘긴다.
  *
  * 이니셔티브 읽기는 따로 감싼다 — 원장(loadFinanceLedger)과 같은 이유다. 이니셔티브를 못 읽었다고
  * 장기 프로젝트·선언문까지 통째로 null로 떨구면 project_notes가 사라진다. 이니셔티브만
  * initiatives: []로 비우고 나머지는 그대로 간다.
+ *
+ * 체크인(0019)은 0014/0017과 달리 AIAgent에게 읽기를 주지 않는다 — Chairman 전용 RLS다.
+ * 이 repo는 AIAgent 세션으로 만들어졌으므로(runNightBrief의 signInAgent) listRecentCheckins(1)은
+ * RLS에 걸러져 항상 빈 배열로 온다 — repository/types.ts가 문서화한 대로 '없는 것'과 '못 읽는 것'을
+ * 구분하지 않는 계약이다. 그 결과 지금은 checkin이 항상 null로 떨어진다. AIAgent에게 읽기를
+ * 주는 방식으로 이 문제를 풀지 않는다(0019 마이그레이션 주석 — 표를 직접 읽지 못하게 막은 것은
+ * 의도한 경계다). 실제로 값을 채우려면 이 Job이 Chairman 자격으로 그 한 줄만 따로 읽어 오는
+ * 별도의 인증 경로가 필요하고, 그건 이 함수의 책임 밖이다 — 언제·어떻게 만들지는 컨트롤러가 정한다.
  */
 async function readChairmanContext(
   repo: ReturnType<typeof createSupabaseRepository>,
@@ -248,6 +256,19 @@ async function readChairmanContext(
   } catch (e) {
     console.error('[night-brief] initiatives', errorText(e))
     initiatives = []
+  }
+
+  // 체크인(0019)도 이니셔티브와 같은 이유로 따로 감싼다 — 못 읽었다고 나머지 chairman 칸까지
+  // null로 떨구지 않는다. P5-5d: condition·sleep_hours만 골라 싣는다. 체중·식사 메모는 브리핑이
+  // 쓸 일이 없는 회장 개인의 건강 기록이라(0019 [Vault 성격]) 여기서부터 아예 담지 않는다 —
+  // 애초에 넘기지 않은 값은 모델 프롬프트로 새어 나갈 수 없다.
+  let checkin: ChairmanContext['checkin'] = null
+  try {
+    const [today] = await repo.listRecentCheckins(1)
+    checkin = today ? { condition: today.condition, sleep_hours: today.sleep_hours } : null
+  } catch (e) {
+    console.error('[night-brief] checkin', errorText(e))
+    checkin = null
   }
 
   return {
@@ -285,6 +306,7 @@ async function readChairmanContext(
         }
       }),
     manifesto: manifesto.body || null,
+    checkin,
   }
 }
 
