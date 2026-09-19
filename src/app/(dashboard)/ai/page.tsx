@@ -100,8 +100,12 @@ export default async function AiPage(props: PageProps<'/ai'>) {
       <div className="mt-4 grid gap-6 min-[1025px]:grid-cols-[minmax(0,380px)_minmax(0,1fr)] min-[1025px]:gap-8">
         {/* 왼쪽 — 바뀌지 않는 것. 스크롤해도 따라온다.
             max-h와 overflow를 같이 준다: 선언문 전문이 뷰포트보다 길면 sticky만으로는
-            칸이 통째로 스크롤을 타 고정이 풀린다. */}
-        <div className="min-[1025px]:sticky min-[1025px]:top-4 min-[1025px]:max-h-[calc(100vh-2rem)] min-[1025px]:self-start min-[1025px]:overflow-y-auto min-[1025px]:pr-2">
+            칸이 통째로 스크롤을 타 고정이 풀린다.
+            실제 스크롤 컨테이너는 창(100vh)이 아니라 대시보드 셸의 <main>이다 — Header(h-14=3.5rem)와
+            SystemBar(h-12=3rem)를 뺀 나머지만 <main>의 높이다. 3.5+3+2(여유)=8.5rem. Header나
+            SystemBar의 높이 클래스가 바뀌면 이 8.5rem도 같이 바꿔야 한다 — 안 바꾸면 sticky 칸이
+            <main>보다 커져서 스크롤 끝에서 고정이 풀리고 위로 밀려 올라간다. */}
+        <div className="min-[1025px]:sticky min-[1025px]:top-4 min-[1025px]:max-h-[calc(100vh-8.5rem)] min-[1025px]:self-start min-[1025px]:overflow-y-auto min-[1025px]:pr-2">
           {activeProjects.length > 0 ? <ProjectCounters projects={activeProjects} today={today} /> : null}
 
           {manifesto.body ? (
