@@ -47,7 +47,11 @@ export function createAnthropicAdapter(): AiAdapter {
     const schema = daily ? DAILY_BRIEF_JSON_SCHEMA : BRIEF_JSON_SCHEMA
     const params = {
       model,
-      max_tokens: 4000,
+      // 그룹 브리핑은 회사 5곳 요약 + 항목 7개 + 프로젝트별 한 줄을 한 응답에 담는다.
+      // 4000에서 실제로 잘렸다(2026-09-19 회장 첫 사용). 12000은 그 세 배 여유다 —
+      // 길이 자체는 daily-brief.md의 상한이 잡고, 이 숫자는 그 상한을 지킨 응답이
+      // 절대 잘리지 않도록 두는 천장이다.
+      max_tokens: 12_000,
       system,
       messages: [{ role: 'user' as const, content: JSON.stringify(payload) }],
     }
