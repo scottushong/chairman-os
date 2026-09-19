@@ -36,6 +36,26 @@ const SUPABASE_STUBS = `
     $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
   create role anon;
   create role authenticated;
+
+  -- Supabase Storage 최소 흉내 (0018). 실제 storage 스키마에는 훨씬 많은 칸이 있지만
+  -- 0018이 건드리는 것은 buckets의 public과 objects의 bucket_id뿐이다.
+  create schema storage;
+  create table storage.buckets (
+    id text primary key,
+    name text not null,
+    public boolean not null default false
+  );
+  create table storage.objects (
+    id uuid primary key default gen_random_uuid(),
+    bucket_id text references storage.buckets(id),
+    name text not null,
+    owner uuid,
+    created_at timestamptz not null default now()
+  );
+  alter table storage.objects enable row level security;
+  grant usage on schema storage to anon, authenticated;
+  grant select on storage.buckets to authenticated;
+  grant select, insert, update, delete on storage.objects to authenticated;
 `
 
 type Db = PGlite
@@ -289,6 +309,58 @@ async function rls(db: Db) {
       )
     }
   }
+
+  // ── 0018 initiative-logos 버킷 ─────────────────────────────────────
+  // 버킷이 비공개인가. as()는 첫 칸을 Number()로 바꾸는데 false가 0으로 둔갑하면
+  // 잘못된 값도 조용히 통과한다 — db.query로 boolean 그대로 잰다.
+  const bucketRow = await db.query<{ public: boolean }>(
+    `select public from storage.buckets where id = 'initiative-logos'`,
+  )
+  assert.equal(bucketRow.rows[0]?.public, false, '0018: initiative-logos 버킷이 비공개가 아니다')
+
+  // 읽을 로고 둘을 미리 심어 둔다. as()는 끝나면 항상 롤백하므로 안에서 넣은 행은
+  // 다음 as() 호출까지 안 남는다 — 그래서 db.exec로 소유자 권한(RLS 밖)에서 한 번만 넣는다.
+  await db.exec(`
+    insert into storage.objects (bucket_id, name) values
+      ('initiative-logos', 'ini_001/logo'), ('initiative-logos', 'ini_002/logo');
+  `)
+
+  assert.equal(
+    await as(UID.chairman, `select count(*)::int from storage.objects where bucket_id = 'initiative-logos'`),
+    2, '0018: Chairman이 로고를 못 읽는다',
+  )
+  assert.equal(
+    await as(UID.cfo, `select count(*)::int from storage.objects where bucket_id = 'initiative-logos'`),
+    2, '0018: GroupCFO가 로고를 못 읽는다',
+  )
+  assert.equal(
+    await as(UID.chairman, `insert into storage.objects (bucket_id, name) values ('initiative-logos', 'ini_003/logo')`),
+    1, '0018: Chairman이 로고를 못 올린다',
+  )
+  assert.equal(
+    await as(UID.cfo, `insert into storage.objects (bucket_id, name) values ('initiative-logos', 'ini_004/logo')`),
+    1, '0018: GroupCFO가 로고를 못 올린다',
+  )
+
+  // AIAgent — 0017의 다른 표와 다르다. 읽기도 없다 — can_write_initiatives() 기준이라서다.
+  assert.equal(
+    await as(UID.agent, `select count(*)::int from storage.objects where bucket_id = 'initiative-logos'`),
+    0, '0018: AIAgent에게 로고가 보인다 (can_write_initiatives여야 한다)',
+  )
+  assert.equal(
+    await as(UID.agent, `insert into storage.objects (bucket_id, name) values ('initiative-logos', 'ini_005/logo')`),
+    'denied', '0018: AIAgent가 로고를 올릴 수 있다',
+  )
+
+  // Member(회사 담당자) — 존재 자체를 몰라야 한다.
+  assert.equal(
+    await as(UID.member, `select count(*)::int from storage.objects where bucket_id = 'initiative-logos'`),
+    0, '0018: Member에게 로고가 보인다',
+  )
+  assert.equal(
+    await as(UID.member, `insert into storage.objects (bucket_id, name) values ('initiative-logos', 'ini_006/logo')`),
+    'denied', '0018: Member가 로고를 올릴 수 있다',
+  )
 
   await books(db, as)
 }
