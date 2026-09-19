@@ -1,6 +1,5 @@
 import { AiNightPanel } from '@/components/dashboard/ai-night-panel'
 import { AlertPanel } from '@/components/dashboard/alert-panel'
-import { ChairmanDdayCard } from '@/components/dashboard/chairman-dday-card'
 import { CriticalBanner } from '@/components/dashboard/critical-banner'
 import { DashboardBoard } from '@/components/dashboard/dashboard-board'
 import { DecisionPanel } from '@/components/dashboard/decision-panel'
@@ -55,9 +54,10 @@ export default async function DashboardPage() {
             {/* 표시 개수는 카드 줄 머리에서 말한다. 여기서 또 세면 숨김 후 두 숫자가 어긋난다. */}
             <p className="mt-1 text-[12px] text-ink-dim">오늘도 성공적인 하루 되세요.</p>
           </div>
-          {/* Phase 3-B. 회장이 대시보드를 열 때마다 남은 날을 먼저 본다. 누르면 /ai 아침 루틴. */}
-          <ChairmanDdayCard projects={chairmanProjects} />
-          {/* Task 9. ChairmanDdayCard는 '가장 가까운 장기 프로젝트 한 건', 이건 '이니셔티브 센 수' — 형제로 둔다. */}
+          {/* Task 9. P5-2 리뷰 1라운드로 ChairmanDdayCard(장기 프로젝트 D-day 알약)를 이 줄에서 뺐다 —
+              같은 프로젝트가 바로 아래 DdayHero에 히어로 크기로 다시 뜨는데, 인사말 두 줄 아래에
+              같은 숫자가 알약으로 또 있으면 회장이 맨 처음 여는 화면에 중복만 남는다.
+              InitiativeStat은 남긴다 — 이건 '이니셔티브 센 수'로 DdayHero와 다른 내용이다. */}
           <InitiativeStat initiatives={initiatives} today={todayIso} />
         </div>
         <div className="flex items-center gap-3">
