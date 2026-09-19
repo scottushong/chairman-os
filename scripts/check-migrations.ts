@@ -50,7 +50,8 @@ const SUPABASE_STUBS = `
     bucket_id text references storage.buckets(id),
     name text not null,
     owner uuid,
-    created_at timestamptz not null default now()
+    created_at timestamptz not null default now(),
+    unique (bucket_id, name)
   );
   alter table storage.objects enable row level security;
   grant usage on schema storage to anon, authenticated;
@@ -318,11 +319,17 @@ async function rls(db: Db) {
   )
   assert.equal(bucketRow.rows[0]?.public, false, '0018: initiative-logos 버킷이 비공개가 아니다')
 
-  // 읽을 로고 둘을 미리 심어 둔다. as()는 끝나면 항상 롤백하므로 안에서 넣은 행은
-  // 다음 as() 호출까지 안 남는다 — 그래서 db.exec로 소유자 권한(RLS 밖)에서 한 번만 넣는다.
+  // 로고 둘과, 0018이 정책을 만들지 않은 다른 버킷(vault-docs)에 객체 하나를 미리 심어 둔다.
+  // as()는 끝나면 항상 롤백하므로 안에서 넣은 행은 다음 as() 호출까지 안 남는다 —
+  // db.exec로 소유자 권한(RLS 밖)에서 한 번만 넣는다.
+  // vault-docs를 넣는 이유: storage.objects는 프로젝트의 모든 버킷을 한 표에 담는다.
+  // 아래 단언들이 전부 bucket_id = 'initiative-logos'로만 걸려 있으면, 정책에서
+  // bucket_id 조건이 통째로 빠져도(= 모든 버킷을 열어 버려도) 아무것도 못 잡는다.
   await db.exec(`
+    insert into storage.buckets (id, name, public) values ('vault-docs', 'vault-docs', false);
     insert into storage.objects (bucket_id, name) values
-      ('initiative-logos', 'ini_001/logo'), ('initiative-logos', 'ini_002/logo');
+      ('initiative-logos', 'ini_001/logo'), ('initiative-logos', 'ini_002/logo'),
+      ('vault-docs', 'contract_001.pdf');
   `)
 
   assert.equal(
@@ -341,6 +348,17 @@ async function rls(db: Db) {
     await as(UID.cfo, `insert into storage.objects (bucket_id, name) values ('initiative-logos', 'ini_004/logo')`),
     1, '0018: GroupCFO가 로고를 못 올린다',
   )
+  // 재업로드(덮어쓰기)와 정리(삭제) — 헤더 주석이 약속하는 "한 건에 객체 하나, 다시
+  // 올리면 덮어쓴다"는 update/delete 경로다. select·insert만 재면 for insert만 남겨도
+  // 이 스위트가 통과해 버린다.
+  assert.equal(
+    await as(UID.chairman, `update storage.objects set name = 'ini_001/logo-v2' where bucket_id = 'initiative-logos' and name = 'ini_001/logo'`),
+    1, '0018: Chairman이 로고를 재업로드(덮어쓰기)하지 못한다',
+  )
+  assert.equal(
+    await as(UID.chairman, `delete from storage.objects where bucket_id = 'initiative-logos' and name = 'ini_002/logo'`),
+    1, '0018: Chairman이 로고를 지우지 못한다',
+  )
 
   // AIAgent — 0017의 다른 표와 다르다. 읽기도 없다 — can_write_initiatives() 기준이라서다.
   assert.equal(
@@ -351,6 +369,12 @@ async function rls(db: Db) {
     await as(UID.agent, `insert into storage.objects (bucket_id, name) values ('initiative-logos', 'ini_005/logo')`),
     'denied', '0018: AIAgent가 로고를 올릴 수 있다',
   )
+  // delete는 insert와 달리 with check가 없다 — using이 보이는 행을 0건으로 거르는
+  // 것뿐이라 에러가 아니라 영향 행 수 0으로 나타난다. 'denied'로 재면 항상 실패한다.
+  assert.equal(
+    await as(UID.agent, `delete from storage.objects where bucket_id = 'initiative-logos' and name = 'ini_001/logo'`),
+    0, '0018: AIAgent가 로고를 지울 수 있다',
+  )
 
   // Member(회사 담당자) — 존재 자체를 몰라야 한다.
   assert.equal(
@@ -360,6 +384,41 @@ async function rls(db: Db) {
   assert.equal(
     await as(UID.member, `insert into storage.objects (bucket_id, name) values ('initiative-logos', 'ini_006/logo')`),
     'denied', '0018: Member가 로고를 올릴 수 있다',
+  )
+  assert.equal(
+    await as(UID.member, `delete from storage.objects where bucket_id = 'initiative-logos' and name = 'ini_001/logo'`),
+    0, '0018: Member가 로고를 지울 수 있다',
+  )
+
+  // BusinessCEO — 전사 역할이 아니다. 0017의 이니셔티브 표(238행)와 같은 이유로 아무것도 없다.
+  assert.equal(
+    await as(UID.ceo, `select count(*)::int from storage.objects where bucket_id = 'initiative-logos'`),
+    0, '0018: BusinessCEO에게 로고가 보인다',
+  )
+  assert.equal(
+    await as(UID.ceo, `insert into storage.objects (bucket_id, name) values ('initiative-logos', 'ini_007/logo')`),
+    'denied', '0018: BusinessCEO가 로고를 올릴 수 있다',
+  )
+
+  // bucket_id 범위 검사 — 위 단언은 전부 initiative-logos 안에서만 쟀다. Chairman·GroupCFO가
+  // 정책의 bucket_id 조건 없이 can_write_initiatives()만으로 통과하게 느슨해지면, 위 단언은
+  // 하나도 안 건드리고 그대로 통과하면서 storage.objects 전체(다른 버킷 포함)가 열린다.
+  // vault-docs를 직접 겨눠야 그 구멍을 잡는다.
+  assert.equal(
+    await as(UID.chairman, `select count(*)::int from storage.objects where bucket_id = 'vault-docs'`),
+    0, '0018: Chairman이 vault-docs를 본다 — 정책의 bucket_id 조건이 빠졌다',
+  )
+  assert.equal(
+    await as(UID.chairman, `insert into storage.objects (bucket_id, name) values ('vault-docs', 'contract_002.pdf')`),
+    'denied', '0018: Chairman이 vault-docs에 쓴다 — 정책의 bucket_id 조건이 빠졌다',
+  )
+  assert.equal(
+    await as(UID.cfo, `select count(*)::int from storage.objects where bucket_id = 'vault-docs'`),
+    0, '0018: GroupCFO가 vault-docs를 본다 — 정책의 bucket_id 조건이 빠졌다',
+  )
+  assert.equal(
+    await as(UID.cfo, `insert into storage.objects (bucket_id, name) values ('vault-docs', 'contract_003.pdf')`),
+    'denied', '0018: GroupCFO가 vault-docs에 쓴다 — 정책의 bucket_id 조건이 빠졌다',
   )
 
   await books(db, as)

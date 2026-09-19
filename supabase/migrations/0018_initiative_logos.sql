@@ -44,7 +44,13 @@ comment on column initiatives.logo_url is
 -- 2. 비공개 버킷
 --    이미 있으면 건드리지 않는다. public을 true로 되돌리지도 않는다 —
 --    누가 콘솔에서 공개로 바꿔 뒀다면 그건 사람이 내린 결정이고, 이 파일이
---    조용히 뒤집으면 왜 바뀌었는지 아무도 모른다. 대신 아래 do 블록이 소리를 낸다.
+--    조용히 뒤집으면 왜 바뀌었는지 아무도 모른다.
+--
+--    대신 그 상태로는 이 마이그레이션을 계속 적용하지 않는다. 경고만 찍고 넘어가면
+--    "비공개다"라는 이 파일 전체의 전제가 이미 깨진 채로 기능이 살아 커밋되고,
+--    증거는 아무도 안 읽는 CLI 스크롤백 한 줄뿐이다. 예외를 던져 적용을 멈추면
+--    사람이 콘솔에서 직접 확인하고 판단할 때까지 이 마이그레이션은 기다린다 —
+--    그 판단을 이 파일이 대신 뒤집지 않으면서도, 조용히 넘어가지도 않는다.
 -- ---------------------------------------------------------------------
 insert into storage.buckets (id, name, public)
 values ('initiative-logos', 'initiative-logos', false)
@@ -53,7 +59,8 @@ on conflict (id) do nothing;
 do $$
 begin
   if exists (select 1 from storage.buckets where id = 'initiative-logos' and public) then
-    raise warning 'initiative-logos 버킷이 공개로 설정되어 있다. 0018의 전제가 깨진다 — 콘솔에서 비공개로 되돌린다.';
+    raise exception 'initiative-logos 버킷이 공개로 설정되어 있다. 0018의 전제(비공개)가 깨진다 — '
+      '콘솔에서 버킷을 비공개로 되돌린 뒤 이 마이그레이션을 다시 적용한다.';
   end if;
 end $$;
 
@@ -72,12 +79,35 @@ end $$;
 --    그 경우 함수를 못 찾아 전체 거부로 조용히 새거나 예측 불가능하게 행동할 수 있다.
 --    PGlite는 search_path가 느슨해 이 문제를 안 잡아낸다 — check:migrations는 통과해도
 --    스테이징에서 깨질 수 있으므로 여기서 미리 못 박는다.
+--
+--    쓰기 쪽은 insert/update/delete 세 정책으로 나눠 잡는다 — for all로 두면 그 using이
+--    select도 같이 커버해서(permissive는 OR) initiative_logos_read가 아무것도 더하지
+--    않는 죽은 정책이 된다. Postgres의 create policy는 for 절에 명령을 하나만 받는다
+--    (for insert, update, delete처럼 콤마로 못 묶는다) — 그래서 이름을 셋으로 나눴다.
+--    나눠 둬야 이름들이 실제로 하는 일과 일치하고, 읽기 쪽 검사가 진짜로 어떤
+--    정책을 겨누는지 뜻이 선다.
+--
+--    바꿔 심을 때(로고 재업로드)를 대비해 같은 이름의 정책이 이미 있으면 지우고 새로
+--    만든다 — 콘솔에서 버킷을 먼저 만들면 대시보드가 자기 이름의 정책을 같이 만들어
+--    둘 수 있는데, 이 파일의 다른 곳은 전부 멱등(if not exists, on conflict)이라
+--    여기만 이름 충돌로 트랜잭션 전체가 죽으면 안 된다. 이름이 initiative_logos_로
+--    시작하는 정책은 이 파일이 만든 것이 유일하므로 지워도 안전하다.
 -- ---------------------------------------------------------------------
+drop policy if exists initiative_logos_read on storage.objects;
 create policy initiative_logos_read on storage.objects for select
   using (bucket_id = 'initiative-logos' and public.can_write_initiatives());
 
-create policy initiative_logos_write on storage.objects for all
+drop policy if exists initiative_logos_write_insert on storage.objects;
+create policy initiative_logos_write_insert on storage.objects for insert
+  with check (bucket_id = 'initiative-logos' and public.can_write_initiatives());
+
+drop policy if exists initiative_logos_write_update on storage.objects;
+create policy initiative_logos_write_update on storage.objects for update
   using (bucket_id = 'initiative-logos' and public.can_write_initiatives())
   with check (bucket_id = 'initiative-logos' and public.can_write_initiatives());
+
+drop policy if exists initiative_logos_write_delete on storage.objects;
+create policy initiative_logos_write_delete on storage.objects for delete
+  using (bucket_id = 'initiative-logos' and public.can_write_initiatives());
 
 commit;
