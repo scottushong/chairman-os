@@ -9,6 +9,7 @@ import { WaitingOnMe } from '@/components/dashboard/waiting-on-me'
 import { Icon } from '@/components/ui/icon'
 import { currentUser } from '@/lib/auth/session'
 import { kstToday } from '@/lib/chairman-project'
+import { orderInitiatives } from '@/lib/initiative'
 import { getRepository, loadDashboard } from '@/lib/repository'
 
 /**
@@ -40,6 +41,15 @@ export default async function DashboardPage() {
     weekday: 'short',
   }).format(new Date())
   const todayIso = kstToday()
+
+  // item B: 대시보드 좌측에 올리는 이니셔티브는 요약이지 전체 그리드가 아니다. 기준은
+  // '진행 중, 다음 행동이 급한 순'(orderInitiatives와 같은 정렬) 상위 6건 — 3열 그리드
+  // 두 줄이다. 목록 화면(/initiatives)의 전체 카드를 그대로 복제하지 않는다.
+  const activeInitiatives = initiatives.filter((i) => i.status === 'Active')
+  const initiativeSummary = orderInitiatives(activeInitiatives).slice(0, 6)
+  const initiativeLogoUrls = await repo.signInitiativeLogos(
+    [...new Set(initiativeSummary.map((i) => i.logo_url).filter((p): p is string => p !== null))],
+  )
 
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-5">
@@ -105,6 +115,10 @@ export default async function DashboardPage() {
           projects={data.projects}
           settings={data.userSettings}
           chairmanProjects={chairmanProjects}
+          initiativeSummary={initiativeSummary}
+          initiativeLogoUrls={initiativeLogoUrls}
+          initiativeCount={activeInitiatives.length}
+          today={todayIso}
         />
         <StrategicCoordinates
           topGoals={data.topGoals}

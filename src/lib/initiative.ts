@@ -50,6 +50,13 @@ export function stalenessDays(i: Pick<Initiative, 'updated_at'>, today: IsoDate 
 /** 14일. 2주 넘게 아무도 손대지 않은 건은 굴러가고 있는 게 아니다. */
 export const STALE_DAYS = 14
 
+/**
+ * goal 칸의 글자 상한(P5-3 Step 6, 500 → 2,000). actions/initiatives.ts의 검사와
+ * initiative-panel.tsx의 textarea maxLength가 이 상수 하나를 같이 본다 —
+ * 두 곳에 따로 적으면 화면이 통과시킨 글을 서버가 거절하는 조합이 생긴다.
+ */
+export const GOAL_MAX = 2_000
+
 export function isStale(i: Pick<Initiative, 'updated_at' | 'status'>, today: IsoDate = kstToday()): boolean {
   return i.status === 'Active' && stalenessDays(i, today) >= STALE_DAYS
 }

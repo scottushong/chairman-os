@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 
 import { currentUser } from '@/lib/auth/session'
+import { GOAL_MAX } from '@/lib/initiative'
 import { LOGO_MAX_BYTES, LOGO_MIME, type LogoMime } from '@/lib/initiative-logo'
 import { getRepository } from '@/lib/repository'
 import {
@@ -103,8 +104,11 @@ export async function saveInitiativeField(
   let patch: Partial<Initiative>
 
   if (TEXT_FIELDS.includes(field as (typeof TEXT_FIELDS)[number])) {
-    if (raw.length > MAX_TEXT) {
-      return { error: `${MAX_TEXT}자를 넘길 수 없습니다. (현재 ${raw.length}자)` }
+    // goal만 기획 문단이라 상한이 다르다(P5-3 Step 6). lib/initiative.ts의 GOAL_MAX
+    // 하나를 패널의 maxLength와 같이 본다 — 여기서 숫자를 새로 적지 않는다.
+    const max = field === 'goal' ? GOAL_MAX : MAX_TEXT
+    if (raw.length > max) {
+      return { error: `${max}자를 넘길 수 없습니다. (현재 ${raw.length}자)` }
     }
     if (field === 'title' && !raw) return { error: '제목은 비울 수 없습니다.' }
     patch = { [field as string]: raw }

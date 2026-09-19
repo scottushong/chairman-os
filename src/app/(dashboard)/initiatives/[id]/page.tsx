@@ -5,6 +5,7 @@ import { KeymenPanel } from '@/components/business/keymen-panel'
 import { EventPanel } from '@/components/initiatives/event-panel'
 import { InitiativeDocsPanel } from '@/components/initiatives/initiative-docs-panel'
 import { InitiativeNotePanel, InitiativePanel, InitiativeSidePanel } from '@/components/initiatives/initiative-panel'
+import { LogoUpload } from '@/components/initiatives/logo-upload'
 import { PageHeader } from '@/components/layout/page-header'
 import { AuditTimeline } from '@/components/shared/audit-timeline'
 import { currentUser } from '@/lib/auth/session'
@@ -48,6 +49,10 @@ export default async function InitiativePage(props: PageProps<'/initiatives/[id]
   const canEdit = user?.role === 'Chairman' || user?.role === 'GroupCFO'
   const isChairman = user?.role === 'Chairman'
 
+  // 로고 한 장짜리도 signInitiativeLogos로 서명한다 — 별도 단건 서명 API를 새로 만들지 않는다.
+  const logoUrls = initiative.logo_url ? await repo.signInitiativeLogos([initiative.logo_url]) : {}
+  const logoUrl = initiative.logo_url ? logoUrls[initiative.logo_url] : undefined
+
   const ownKeymen = keymen.filter((k) => k.initiative_id === id)
   const ownDocs = docs.filter((d) => d.initiative_id === id)
   const ownEvents = events.filter((e) => e.initiative_id === id)
@@ -70,6 +75,14 @@ export default async function InitiativePage(props: PageProps<'/initiatives/[id]
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
         <div className="space-y-3.5 pb-6">
+          <LogoUpload
+            initiativeId={id}
+            title={initiative.title}
+            path={initiative.logo_url}
+            url={logoUrl}
+            canEdit={canEdit}
+          />
+
           <InitiativePanel initiative={initiative} businesses={businesses} canEdit={canEdit} today={today} />
 
           {isChairman ? <InitiativeNotePanel initiativeId={id} note={note ?? ''} /> : null}

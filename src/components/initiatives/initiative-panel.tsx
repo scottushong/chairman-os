@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useTransition } from 'react'
 
 import { saveInitiativeField, saveInitiativeNoteAction, type InitiativeField } from '@/app/actions/initiatives'
 import { Icon } from '@/components/ui/icon'
-import { initiativeClock } from '@/lib/initiative'
+import { GOAL_MAX, initiativeClock } from '@/lib/initiative'
 import { businessName } from '@/lib/lookup'
 import {
   INITIATIVE_KIND,
@@ -46,13 +46,17 @@ interface FieldMeta {
   input: FieldInput
   placeholder?: string
   maxLength?: number
+  /** textarea 칸의 초기 줄 수. 없으면 FieldEditor 기본값(3). */
+  rows?: number
 }
 
 const MAX_LENGTH = 500
 
 const EDIT_FIELDS: readonly FieldMeta[] = [
   { field: 'title', label: '제목', input: 'text', placeholder: '이 건의 이름', maxLength: MAX_LENGTH },
-  { field: 'goal', label: '목표', input: 'textarea', placeholder: '성사되면 무엇을 얻는가', maxLength: MAX_LENGTH },
+  // goal은 기획 문단이라 6줄로 키우고 상한도 2,000자로 올린다(Step 5·6). GOAL_MAX는
+  // actions/initiatives.ts가 검사에 쓰는 것과 같은 상수다 — 여기서 숫자를 새로 적지 않는다.
+  { field: 'goal', label: '목표', input: 'textarea', placeholder: '성사되면 무엇을 얻는가', maxLength: GOAL_MAX, rows: 6 },
   { field: 'target_date', label: '목표일', input: 'date' },
   { field: 'next_action', label: '다음 행동', input: 'text', placeholder: '다음에 할 일', maxLength: MAX_LENGTH },
   { field: 'next_action_date', label: '다음 행동일', input: 'date' },
@@ -115,6 +119,7 @@ export function InitiativePanel({
           initial={valueOf(meta.field)}
           placeholder={meta.placeholder}
           maxLength={meta.maxLength}
+          rows={meta.rows}
           businesses={businesses}
           onCancel={() => setEditing(null)}
           onSave={(next) => save(meta.field, next)}
@@ -253,6 +258,7 @@ function FieldEditor({
   initial,
   placeholder,
   maxLength,
+  rows = 3,
   businesses,
   onCancel,
   onSave,
@@ -262,6 +268,8 @@ function FieldEditor({
   initial: string
   placeholder?: string
   maxLength?: number
+  /** textarea 칸의 초기 줄 수(Step 5). goal은 6, 나머지(blocker·회장 메모 등)는 기본 3. */
+  rows?: number
   businesses?: Business[]
   onCancel: () => void
   onSave: (next: string) => Promise<boolean>
@@ -274,6 +282,16 @@ function FieldEditor({
     ref.current?.focus()
     if (input === 'text' || input === 'textarea') ref.current?.select?.()
   }, [input])
+
+  // 자동 확장: height를 먼저 auto로 되돌린 다음 scrollHeight로 키운다. auto로 안 되돌리면
+  // 글을 지울 때 scrollHeight가 이전(더 큰) 높이를 그대로 들고 있어 칸이 안 줄어든다.
+  useEffect(() => {
+    if (input !== 'textarea') return
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [input, value])
 
   async function commit() {
     if (busy) return
@@ -312,10 +330,10 @@ function FieldEditor({
           onKeyDown={onKeyDown}
           placeholder={placeholder}
           aria-label={label}
-          rows={3}
+          rows={rows}
           maxLength={maxLength}
           disabled={busy}
-          className={`${shared} resize-y`}
+          className={`${shared} resize-none overflow-hidden`}
         />
       ) : input === 'date' ? (
         <input
@@ -574,6 +592,7 @@ export function InitiativeNotePanel({ initiativeId, note }: { initiativeId: stri
             label="회장 메모"
             initial={value}
             maxLength={5_000}
+            rows={6}
             onCancel={() => setEditing(false)}
             onSave={save}
           />

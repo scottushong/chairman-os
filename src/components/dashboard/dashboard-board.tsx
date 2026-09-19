@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useMemo, useState } from 'react'
 
 import { createBusiness } from '@/app/actions/businesses'
@@ -12,11 +13,12 @@ import { BusinessCard, type BusinessMetrics } from '@/components/dashboard/busin
 import { DdayHero } from '@/components/dashboard/dday-hero'
 import { FinanceTrend } from '@/components/dashboard/finance-trend'
 import { KpiStrip } from '@/components/dashboard/kpi-strip'
+import { InitiativeCards } from '@/components/initiatives/initiative-cards'
 import { Icon } from '@/components/ui/icon'
 import { effectivePinned } from '@/lib/business-pins'
 import { businessProgress, groupFigure, hasFinanceData, latestPeriodOf, valueOf } from '@/lib/finance'
 import type { UserSettings } from '@/lib/repository'
-import type { Business, ChairmanProject, FinanceKpi, Project } from '@/types'
+import type { Business, ChairmanProject, FinanceKpi, Initiative, IsoDate, Project } from '@/types'
 
 /**
  * Business 카드(CH-001~005)와 그룹 KPI(CH-006~010)를 한 상태 위에 올린다.
@@ -32,6 +34,11 @@ import type { Business, ChairmanProject, FinanceKpi, Project } from '@/types'
  * 클라이언트 상태(hidden/pinned)에서만 나온다. page.tsx(서버 컴포넌트)로 히어로를
  * 올리면 같은 필터링 로직을 두 곳에 둬야 하고, 그러면 언젠가 KPI 합계와 FinanceTrend
  * 합계가 서로 다른 회사를 세는 날이 온다 — 그래서 히어로째로 이 컴포넌트가 데리고 있는다.
+ *
+ * P5-3부터 이니셔티브 카드 요약(item B)도 여기서 그린다. 고르는 로직(진행 중 상위 6건)과
+ * 서명 URL 발급은 page.tsx가 미리 해서 내려준다 — 이 컴포넌트는 골라진 목록을 그릴 뿐이다.
+ * DecisionPanel·WaitingOnMe·AlertPanel은 page.tsx 아래쪽에 그대로 남아 있다(안 지운다) —
+ * '내 결정 사항'은 내비 항목이기도 해서다.
  */
 
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -43,6 +50,13 @@ interface DashboardBoardProps {
   settings: UserSettings
   /** DdayHero용. ChairmanDdayCard(인사말 알약)와 같은 원천을 히어로 크기로 다시 그린다. */
   chairmanProjects: ChairmanProject[]
+  /** item B. page.tsx가 이미 '진행 중 상위 6건'으로 고른 요약이다 — 여기서 다시 거르지 않는다. */
+  initiativeSummary: Initiative[]
+  /** signInitiativeLogos(paths)가 initiativeSummary 몫만 한 번에 서명한 맵. */
+  initiativeLogoUrls: Record<string, string>
+  /** 요약이 아닌 전체 '진행 중' 건수. 헤더 줄의 'N / M건'에 쓴다. */
+  initiativeCount: number
+  today: IsoDate
 }
 
 /**
@@ -63,6 +77,10 @@ export function DashboardBoard({
   projects,
   settings,
   chairmanProjects,
+  initiativeSummary,
+  initiativeLogoUrls,
+  initiativeCount,
+  today,
 }: DashboardBoardProps) {
   const [hidden, setHidden] = useState<string[]>(settings.hidden_businesses)
   const [pinned, setPinned] = useState<string[]>(() =>
@@ -223,6 +241,35 @@ export function DashboardBoard({
           </div>
         ) : null}
       </section>
+
+      {/* item B. 진행 중인 이니셔티브 요약 — 목록 화면(/initiatives)의 전체 그리드를
+          복제하지 않는다. 0건이면 섹션째로 숨긴다(InitiativeStat과 같은 판단: 빈 카드 줄은
+          인사말 아래 이미 있는 요약과 겹쳐 의미 없이 자리만 차지한다).
+          이 헤더 줄은 카드 밖(맨 배경) 위다 — text-ink-dim만 쓴다(item D, globals.css
+          '유리 없이 글자를 놓지 마라'). text-ink-muted는 여기서 3.36:1로 AA 미달이다. */}
+      {initiativeSummary.length > 0 ? (
+        <section aria-label="이니셔티브">
+          <div className="mb-2 flex items-baseline gap-2">
+            <h2 className="text-[13px] font-semibold">이니셔티브</h2>
+            <span className="text-[11px] text-ink-dim tnum">
+              진행 중 {initiativeCount}건 중 {initiativeSummary.length}건
+            </span>
+            <Link
+              href="/initiatives"
+              className="ml-auto text-[11.5px] text-accent underline-offset-2 hover:underline"
+            >
+              전체 보기
+            </Link>
+          </div>
+          <InitiativeCards
+            initiatives={initiativeSummary}
+            businesses={businesses}
+            logoUrls={initiativeLogoUrls}
+            today={today}
+            hasAny
+          />
+        </section>
+      ) : null}
 
       {/* 재배치(P5-2 Step 3): 회사 카드 줄 → KpiStrip. FinanceTrend는 위 히어로로 옮겼다. */}
       <KpiStrip kpis={financeKpis} businessIds={shown.map((b) => b.business_id)} />
