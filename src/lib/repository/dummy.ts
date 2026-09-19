@@ -731,8 +731,16 @@ export const dummyRepository: ChairmanRepository = {
     memoryLogos.set(path, `data:${file.contentType};base64,${base64}`)
     target.logo_url = path
     target.updated_at = new Date().toISOString()
-    if (actor.role !== 'Chairman' && actor.role !== 'GroupCFO') {
-      console.warn(`[dummy] save initiative logo by ${actor.role} — 실제로는 0018 정책이 막는다.`)
+    // 이 파일의 다른 mutator처럼 NODE_ENV로 가둔다(운영 로그에 안 남게). 그 안에서 역할까지
+    // 다시 본다 — dummy는 RLS가 없어 아무 역할이나 통과하는데, 0018에서는 Chairman·GroupCFO만
+    // 통과한다. 역할 구분 없이 같은 문구만 찍으면 '이 조합은 실제로는 거부된다'는 신호가
+    // 사라져 dummy로 권한을 검증하려는 사람(회장 확인 방식)이 속아 넘어간다.
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        actor.role !== 'Chairman' && actor.role !== 'GroupCFO'
+          ? `[dummy] save initiative logo by ${actor.role} — 실제로는 0018 정책이 막는다.`
+          : `[dummy] save initiative logo by ${actor.role} — 메모리에만 남는다.`,
+      )
     }
     return path
   },
@@ -743,8 +751,13 @@ export const dummyRepository: ChairmanRepository = {
     memoryLogos.delete(logoPath(initiativeId))
     target.logo_url = null
     target.updated_at = new Date().toISOString()
-    if (actor.role !== 'Chairman' && actor.role !== 'GroupCFO') {
-      console.warn(`[dummy] remove initiative logo by ${actor.role} — 메모리에만 남는다.`)
+    // saveInitiativeLogo와 같은 이유로 NODE_ENV와 역할 검사를 같이 둔다.
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        actor.role !== 'Chairman' && actor.role !== 'GroupCFO'
+          ? `[dummy] remove initiative logo by ${actor.role} — 실제로는 0018 정책이 막는다.`
+          : `[dummy] remove initiative logo by ${actor.role} — 메모리에만 남는다.`,
+      )
     }
   },
 

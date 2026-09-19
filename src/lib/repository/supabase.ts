@@ -2603,19 +2603,32 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         )
       }
 
-      if (before.logo_url !== path) {
-        const { error: auditError } = await sb.from('audit_log').insert({
-          actor_user_id: actor.user_id,
-          actor_role: actor.role,
-          action: 'update',
-          entity_table: 'initiatives',
-          entity_id: initiativeId,
-          business_id: before.business_id,
-          before: { logo_url: before.logo_url },
-          after: { logo_url: path },
-        })
-        if (auditError) throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      // 감사는 객체를, initiatives.logo_url은 포인터를 본다 — 둘은 같이 바뀌지 않는다.
+      // path는 늘 logoPath(initiativeId)라 첫 업로드 이후로는 절대 안 바뀐다. 감사를
+      // before.logo_url !== path로 같이 가두면 로고를 재업로드할 때마다(바이트는 바뀌었는데
+      // 경로는 그대로다) 감사 행이 하나도 안 남는다 — 이 버킷은 '회장이 지금 누구와 협상
+      // 중인가'를 드러내는 자리라, append-only 감사에서 "누가 언제 바꿔치기했나"가 조용히
+      // 사라지는 쪽이 훨씬 나쁘다. 그래서 감사는 업로드가 성공할 때마다 무조건 남긴다.
+      // note로 첫 등록과 교체를 구분한다 — 아니면 두 행이 겉보기에 똑같아 나중에 못 읽는다.
+      const { error: auditError } = await sb.from('audit_log').insert({
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        action: 'update',
+        entity_table: 'initiatives',
+        entity_id: initiativeId,
+        business_id: before.business_id,
+        before: { logo_url: before.logo_url },
+        after: { logo_url: path },
+        note: before.logo_url === null ? '로고 등록' : '로고 교체',
+      })
+      if (auditError) throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
 
+      // initiatives 칸 쓰기는 여기서만 조건부다. path가 안 바뀌었으면(재업로드) 그 칸에
+      // 실제로 쓸 값이 없다 — 그런데도 update를 부르면 updated_at 트리거가 찍혀, 다른 칸은
+      // 전혀 안 건드린 이 건이 방금 손댄 것처럼 보인다(stalenessDays가 updated_at을 읽는다).
+      // 감사(위)는 무조건 남기고 포인터(여기)는 실제로 바뀔 때만 쓴다 — 두 갈래는 서로 다른
+      // 것을 추적하고 있어서 같이 움직이지 않는다.
+      if (before.logo_url !== path) {
         const { error } = await sb
           .from('initiatives')
           .update({ logo_url: path })
