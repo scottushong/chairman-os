@@ -1,8 +1,9 @@
 import Link from 'next/link'
 
-import { MonthGrid } from '@/components/calendar/month-grid'
+import { MonthGridClient } from '@/components/calendar/month-grid-client'
 import { TwoWeekList } from '@/components/calendar/two-week-list'
 import { PageHeader } from '@/components/layout/page-header'
+import { currentUser } from '@/lib/auth/session'
 import { kstToday } from '@/lib/chairman-project'
 import { monthGrid, parseMonth, shiftMonth, twoWeekRange } from '@/lib/calendar'
 import { firstParam } from '@/lib/query'
@@ -23,6 +24,9 @@ import { getRepository } from '@/lib/repository'
  * FilterChips가 <Link>인 것과 같은 이유다.
  *
  * 주소창의 month 값은 믿지 않는다 — parseMonth가 'YYYY-MM' 형식이 아니면 걸러 오늘 달로 되돌린다.
+ *
+ * 날짜 칸을 누르면 그 날의 팝업이 뜬다(다듬기 2번). 칸이 <button>이라 격자 자체는
+ * 클라이언트 컴포넌트다 — 질의와 범위 계산은 그대로 서버에 남는다.
  */
 export default async function CalendarPage(props: PageProps<'/calendar'>) {
   const params = await props.searchParams
@@ -37,7 +41,14 @@ export default async function CalendarPage(props: PageProps<'/calendar'>) {
   const to = grid[5][6] > twoWeek.to ? grid[5][6] : twoWeek.to
 
   const repo = await getRepository()
-  const items = await repo.listCalendarItems(from, to)
+  // 이벤트 원본을 같이 읽는다. calendar_items 뷰에는 kind(Trip/Meeting/…)도 location도 없어
+  // 모달에서 고칠 수가 없다. 전건이라 한 번 더 읽어도 수십 행이다.
+  const [items, events, user] = await Promise.all([
+    repo.listCalendarItems(from, to),
+    repo.listEvents(),
+    currentUser(),
+  ])
+  const canEdit = user?.role === 'Chairman' || user?.role === 'GroupCFO'
 
   const [y, m] = month.split('-')
 
@@ -74,7 +85,14 @@ export default async function CalendarPage(props: PageProps<'/calendar'>) {
       </p>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <MonthGrid grid={grid} items={items} month={month} today={today} />
+        <MonthGridClient
+          grid={grid}
+          items={items}
+          events={events}
+          month={month}
+          today={today}
+          canEdit={canEdit}
+        />
 
         <aside className="rounded-xl border border-line-soft bg-panel p-4 xl:sticky xl:top-4 xl:self-start">
           <TwoWeekList items={items} range={twoWeek} />
