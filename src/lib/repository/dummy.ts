@@ -644,17 +644,6 @@ export const dummyRepository: ChairmanRepository = {
     return { ...saved }
   },
 
-  /** 최근 days일. checkin_date 문자열은 ISO(YYYY-MM-DD)라 문자열 비교로 날짜 비교가 된다. */
-  async listRecentCheckins(days: number) {
-    const cutoff = new Date(`${kstToday()}T00:00:00Z`)
-    cutoff.setUTCDate(cutoff.getUTCDate() - (days - 1))
-    const from = cutoff.toISOString().slice(0, 10)
-    return [...memoryCheckins.values()]
-      .filter((c) => c.checkin_date >= from)
-      .sort((a, b) => (a.checkin_date < b.checkin_date ? 1 : -1))
-      .map((c) => ({ ...c }))
-  },
-
   /** P5-5d 1라운드 수정. dummy는 역할별 RLS를 흉내 내지 않으니 오늘 값을 그대로 준다. */
   async getTodayCondition() {
     const found = memoryCheckins.get(kstToday())

@@ -182,20 +182,18 @@ export interface ChairmanRepository {
 
   /**
    * Phase 5 회장 체크인(0019). Chairman만 읽고 쓴다 — 0014/0017과 달리 AIAgent에게도
-   * 읽기를 주지 않는다(0019 마이그레이션 주석 참고). Chairman이 아니면 getCheckin은 null,
-   * listRecentCheckins는 빈 배열이다 — 없는 것과 못 읽는 것을 구분하지 않는다.
+   * 읽기를 주지 않는다(0019 마이그레이션 주석 참고). Chairman이 아니면 null이다 — 없는 것과
+   * 못 읽는 것을 구분하지 않는다.
    */
   getCheckin(date: IsoDate): Promise<ChairmanCheckin | null>
   /** checkin_date가 있으면 고치고(그날 값 갱신) 없으면 만든다. audit_log(create|update)를 같이 남긴다. */
   saveCheckin(input: ChairmanCheckinInput, actor: AuditActor): Promise<ChairmanCheckin>
-  /** 최근 days일 안의 행만, checkin_date 내림차순. 하루 한 행이라 빠진 날은 그냥 없는 행이다. */
-  listRecentCheckins(days: number): Promise<ChairmanCheckin[]>
   /**
    * P5-5d 1라운드 수정. 표를 직접 읽지 않고 0019 chairman_today_condition() RPC를 부른다 —
    * 오늘(KST) condition 정수 하나만, Chairman·AIAgent 세션 양쪽에서 통과한다(RLS가 아니라
    * 함수 안의 역할 판정이라서다). 다른 역할이거나 오늘 기록이 없으면 null — 없는 것과 못 읽는
    * 것을 여기서도 구분하지 않는다. 야간 브리핑(night-brief.ts)이 쓴다. 화면의 '오늘 체크인'
-   * 칸은 Chairman 세션으로 표를 그대로 읽는 listRecentCheckins를 그대로 쓴다.
+   * 칸은 Chairman 세션으로 표를 그대로 읽는 getCheckin을 쓴다(src/app/(morning)/ai/page.tsx).
    */
   getTodayCondition(): Promise<ChairmanCondition | null>
 

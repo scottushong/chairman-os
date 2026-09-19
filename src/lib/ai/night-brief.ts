@@ -231,9 +231,10 @@ export async function runNightBrief(opts: {
  *
  * 체크인(0019)은 0014/0017과 달리 AIAgent에게 표 자체를 읽는 권한을 주지 않는다 — Chairman
  * 전용 RLS다. 이 repo는 AIAgent 세션으로 만들어지고(runNightBrief의 signInAgent) 이 Job의
- * 기본 경로(cron, 23:00 KST)에는 애초에 빌려 올 회장 세션이 없으므로, listRecentCheckins처럼
- * 표를 직접 읽는 메서드는 여기서 못 쓴다(1라운드 수정 전에는 이 자리에서 그 메서드를 불러
- * 늘 빈 배열을 받고 있었다 — 배선은 됐지만 실제로는 한 번도 안 켜지는 죽은 코드였다). 대신
+ * 기본 경로(cron, 23:00 KST)에는 애초에 빌려 올 회장 세션이 없으므로, 화면(/ai)의 getCheckin처럼
+ * 표를 직접 읽는 메서드는 여기서 못 쓴다(1라운드 수정 전에는 이 자리에서 표를 직접 읽는
+ * listRecentCheckins를 불러 늘 빈 배열을 받고 있었다 — 배선은 됐지만 실제로는 한 번도 안
+ * 켜지는 죽은 코드였다. 2라운드에서 아무도 안 쓰는 그 메서드 자체를 지웠다). 대신
  * getTodayCondition()으로 0019 chairman_today_condition() RPC(security definer, 표 대신 하나의
  * keyhole)를 부른다 — 이 함수는 세션이 아니라 함수 안의 역할 판정으로 AIAgent를 통과시킨다.
  */

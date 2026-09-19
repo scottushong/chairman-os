@@ -1,7 +1,6 @@
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js'
 
 import type { AuditAction, EntityAuditRecord } from '@/lib/audit-log'
-import { kstToday } from '@/lib/chairman-project'
 import { AUDIT_ACTION, DECISION_STATUS, type DecisionAuditRecord } from '@/lib/decision-log'
 import { dayKey } from '@/lib/format'
 import { LOGO_BUCKET, logoPath } from '@/lib/initiative-logo'
@@ -2260,24 +2259,6 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         )
       }
       return data
-    },
-
-    /**
-     * 최근 days일. 행이 하루 한 개라 checkin_date >= (오늘 - days + 1)로 자른다.
-     * 목록 전부를 fetchAll로 페이지네이션할 이유가 없다 — chairman_projects와 같은 규모다.
-     */
-    async listRecentCheckins(days: number): Promise<ChairmanCheckin[]> {
-      const cutoff = new Date(`${kstToday()}T00:00:00Z`)
-      cutoff.setUTCDate(cutoff.getUTCDate() - (days - 1))
-      const from = cutoff.toISOString().slice(0, 10)
-      const { data, error } = await sb
-        .from('chairman_checkins')
-        .select('checkin_date,condition,sleep_hours,weight_kg,meal_note,updated_at')
-        .gte('checkin_date', from)
-        .order('checkin_date', { ascending: false })
-        .returns<ChairmanCheckin[]>()
-      if (error) throw new Error(`Supabase chairman_checkins ${error.code ?? '?'}: ${error.message}`)
-      return data ?? []
     },
 
     /**
