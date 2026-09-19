@@ -1,5 +1,6 @@
 import Link from 'next/link'
 
+import { GlassCard } from '@/components/ui/glass-card'
 import { Icon } from '@/components/ui/icon'
 import { linkedDecisionHref, linkedDecisionTitle } from '@/lib/alert-link'
 import { businessName } from '@/lib/lookup'
@@ -45,7 +46,7 @@ export function AlertPanel({ alerts, decisions, businesses }: AlertPanelProps) {
   const warningCount = open.filter((a) => a.severity === 'Warning').length
 
   return (
-    <section className="flex h-full flex-col rounded-xl border border-line-soft bg-panel p-3.5">
+    <GlassCard as="section" padding="p-3.5" className="flex h-full flex-col">
       <div className="flex items-baseline justify-between">
         <h2 className="flex items-center gap-1.5 text-[13px] font-semibold">
           <Icon
@@ -75,7 +76,7 @@ export function AlertPanel({ alerts, decisions, businesses }: AlertPanelProps) {
           ))}
         </ul>
       )}
-    </section>
+    </GlassCard>
   )
 }
 

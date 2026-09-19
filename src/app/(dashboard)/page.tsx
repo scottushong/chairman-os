@@ -89,9 +89,9 @@ export default async function DashboardPage() {
         ))}
       </div>
 
-      {/* CH-018 Acceptance는 'Critical rule 즉시 상단 노출'이다. 아래 4열 그리드의
-          AlertPanel은 KPI 8타일과 12개월 차트 뒤에 있어 스크롤해야 보인다 —
-          Critical이 있는 날에만 이 한 줄이 맨 위에 선다. */}
+      {/* CH-018 Acceptance는 'Critical rule 즉시 상단 노출'이다. 아래 결정·대기·알림 3장은
+          히어로·KPI 8타일·12개월 차트를 지나야 나와 스크롤해야 보인다 —
+          Critical이 있는 날에만 이 한 줄이 맨 위에 선다(P5-2에서 순서가 바뀌어도 그대로 유효). */}
       <CriticalBanner
         alerts={data.alerts}
         decisions={data.decisions}
@@ -104,6 +104,7 @@ export default async function DashboardPage() {
           financeKpis={data.financeKpis}
           projects={data.projects}
           settings={data.userSettings}
+          chairmanProjects={chairmanProjects}
         />
         <StrategicCoordinates
           topGoals={data.topGoals}
@@ -114,33 +115,37 @@ export default async function DashboardPage() {
         />
       </div>
 
-      <div className="mt-5 grid grid-cols-12 gap-3.5 pb-6">
-        {/* 결정 → 대기 → 알림 → 야간 AI. 아침에 훑는 순서 그대로 왼쪽에서 오른쪽으로 놓는다. */}
-        <div className="col-span-12 h-[268px] lg:col-span-6 xl:col-span-3">
-          <DecisionPanel
-            decisions={data.decisions}
-            businesses={data.businesses}
-            audit={data.decisionAudit}
-          />
+      {/* 재배치(P5-2 Step 3). 좌: 결정·대기·알림(오늘 훑는 순서 그대로) / 우 400px: 야간 AI 브리핑.
+          브리핑 카드에만 data-theme="dark"를 건다 — 안쪽(AiNightPanel)은 한 줄도 고치지 않는다.
+          토큰이 하위 트리에서 뒤집히는지 여기서 실물로 확인한다(P5-1 토큰 설계 검증, 항목 D). */}
+      <div className="mt-5 grid grid-cols-1 gap-3.5 pb-6 lg:grid-cols-[1fr_400px]">
+        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-3">
+          <div className="h-[268px]">
+            <DecisionPanel
+              decisions={data.decisions}
+              businesses={data.businesses}
+              audit={data.decisionAudit}
+            />
+          </div>
+
+          <div className="h-[268px]">
+            <WaitingOnMe
+              tasks={data.tasks}
+              projects={data.projects}
+              businesses={data.businesses}
+            />
+          </div>
+
+          <div className="h-[268px]">
+            <AlertPanel
+              alerts={data.alerts}
+              decisions={data.decisions}
+              businesses={data.businesses}
+            />
+          </div>
         </div>
 
-        <div className="col-span-12 h-[268px] lg:col-span-6 xl:col-span-3">
-          <WaitingOnMe
-            tasks={data.tasks}
-            projects={data.projects}
-            businesses={data.businesses}
-          />
-        </div>
-
-        <div className="col-span-12 h-[268px] lg:col-span-6 xl:col-span-3">
-          <AlertPanel
-            alerts={data.alerts}
-            decisions={data.decisions}
-            businesses={data.businesses}
-          />
-        </div>
-
-        <div className="col-span-12 h-[268px] lg:col-span-6 xl:col-span-3">
+        <div data-theme="dark" className="h-[268px]">
           <AiNightPanel outputs={data.aiNightOutputs} businesses={data.businesses} />
         </div>
       </div>

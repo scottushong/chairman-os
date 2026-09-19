@@ -1,5 +1,6 @@
 import Link from 'next/link'
 
+import { GlassCard } from '@/components/ui/glass-card'
 import { Icon } from '@/components/ui/icon'
 import { dDay, formatDDay, isOverdue, compareDeadlines } from '@/lib/format'
 import { businessName, businessOfProject } from '@/lib/lookup'
@@ -46,7 +47,7 @@ export function WaitingOnMe({ tasks, projects, businesses }: WaitingOnMeProps) {
   const stale = mine.filter((t) => waitingDays(t) > STALE_DAYS).length
 
   return (
-    <section className="flex h-full flex-col rounded-xl border border-line-soft bg-panel p-3.5">
+    <GlassCard as="section" padding="p-3.5" className="flex h-full flex-col">
       <div className="flex items-baseline justify-between">
         <h2 className="flex items-center gap-1.5 text-[13px] font-semibold">
           <Icon name="clipboard" className="size-4 text-ink-dim" />
@@ -91,7 +92,7 @@ export function WaitingOnMe({ tasks, projects, businesses }: WaitingOnMeProps) {
           ))}
         </div>
       )}
-    </section>
+    </GlassCard>
   )
 }
 

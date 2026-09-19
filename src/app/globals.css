@@ -368,6 +368,37 @@ body {
 }
 
 /**
+ * 라이트 — 회사 식별색 뱃지(business-card.tsx, P5-2 항목 A).
+ *
+ * P5-1 §2-F가 남긴 숙제: bg-biz-X/20 + text-biz-X 뱃지가 2.38~3.32:1로 AA 미달이다.
+ * 문제는 뱃지 "글자"뿐이다 — 막대(bg-biz-X)·트랙(bg-biz-X/15)은 글자가 없어 대비와 무관하고,
+ * --color-biz-* 토큰 값을 내리면 그 막대까지 같이 탁해진다(P5-1이 이미 경고한 트레이드오프).
+ * 그래서 토큰 값은 그대로 두고, 위 critical/warning/ok/gold와 같은 패턴으로 뱃지 글자만
+ * 골라내 같은 색상(hue)에서 명도만 낮춘다. 기준은 이 카드가 얹히는 글래스 패널의 최악
+ * 지점(우상단 그라데이션 #f0b58a 위 패널, 그 위에 톤을 20% 더한 값) — 다섯 색 전부 그 지점에서
+ * 4.5:1을 넘도록 역산했다(최종 대비비는 p5-2-report.md 참고).
+ */
+.bg-biz-dy\/20.text-biz-dy {
+  color: #1e407a;
+}
+
+.bg-biz-vana\/20.text-biz-vana {
+  color: #134f29;
+}
+
+.bg-biz-sticky\/20.text-biz-sticky {
+  color: #5a258c;
+}
+
+.bg-biz-hof\/20.text-biz-hof {
+  color: #6d3610;
+}
+
+.bg-biz-boram\/20.text-biz-boram {
+  color: #0d4c45;
+}
+
+/**
  * 라이트 — 골드를 글자로 쓸 때.
  *
  * --color-accent / --color-gold는 면과 테두리의 색이다(버튼 바탕, 진행률 막대, 활성 테두리).

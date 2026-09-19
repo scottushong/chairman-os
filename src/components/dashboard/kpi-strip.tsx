@@ -1,4 +1,5 @@
 import { BasisTag } from '@/components/finance/figure'
+import { GlassCard } from '@/components/ui/glass-card'
 import { Icon } from '@/components/ui/icon'
 import { Sparkline } from '@/components/ui/sparkline'
 import { deltaPct, groupFigure, groupSeries, latestPeriodOf, recentKpis } from '@/lib/finance'
@@ -91,7 +92,7 @@ function KpiTile({
   const deltaTone = good === null ? 'text-ink-muted' : good ? 'text-ok' : 'text-critical'
 
   return (
-    <article className="rounded-xl border border-line-soft bg-panel px-3.5 py-3">
+    <GlassCard as="article" padding="px-3.5 py-3">
       <div className="flex items-center justify-between">
         <span className="text-[11px] text-ink-dim">{kpi.label}</span>
         <span className="text-[9px] text-ink-muted tnum">{kpi.spec}</span>
@@ -124,6 +125,6 @@ function KpiTile({
       </div>
 
       <Sparkline data={series} className="mt-2 h-[28px] w-full" />
-    </article>
+    </GlassCard>
   )
 }

@@ -9,13 +9,14 @@ import {
   type AddBusinessInput,
 } from '@/components/dashboard/add-business-modal'
 import { BusinessCard, type BusinessMetrics } from '@/components/dashboard/business-card'
+import { DdayHero } from '@/components/dashboard/dday-hero'
 import { FinanceTrend } from '@/components/dashboard/finance-trend'
 import { KpiStrip } from '@/components/dashboard/kpi-strip'
 import { Icon } from '@/components/ui/icon'
 import { effectivePinned } from '@/lib/business-pins'
 import { businessProgress, groupFigure, hasFinanceData, latestPeriodOf, valueOf } from '@/lib/finance'
 import type { UserSettings } from '@/lib/repository'
-import type { Business, FinanceKpi, Project } from '@/types'
+import type { Business, ChairmanProject, FinanceKpi, Project } from '@/types'
 
 /**
  * Business 카드(CH-001~005)와 그룹 KPI(CH-006~010)를 한 상태 위에 올린다.
@@ -25,6 +26,12 @@ import type { Business, FinanceKpi, Project } from '@/types'
  * 숨김·핀은 서버(user_settings)에 있다. 서버 응답을 기다렸다 그리면 클릭이 굼떠 보이므로
  * 화면은 먼저 바꾸고 저장은 뒤따르게 하되, 실패하면 되돌린다 —
  * 저장 안 된 상태를 저장된 것처럼 보여 주면 새로고침에서 그대로 튄다.
+ *
+ * P5-2부터 히어로(DdayHero + FinanceTrend)도 여기서 그린다. FinanceTrend는 '표시 중인
+ * 회사'만 합산해야 하는데(CH-006~010 Acceptance) 그 목록(`shown`)이 이 컴포넌트의
+ * 클라이언트 상태(hidden/pinned)에서만 나온다. page.tsx(서버 컴포넌트)로 히어로를
+ * 올리면 같은 필터링 로직을 두 곳에 둬야 하고, 그러면 언젠가 KPI 합계와 FinanceTrend
+ * 합계가 서로 다른 회사를 세는 날이 온다 — 그래서 히어로째로 이 컴포넌트가 데리고 있는다.
  */
 
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -34,6 +41,8 @@ interface DashboardBoardProps {
   financeKpis: FinanceKpi[]
   projects: Project[]
   settings: UserSettings
+  /** DdayHero용. ChairmanDdayCard(인사말 알약)와 같은 원천을 히어로 크기로 다시 그린다. */
+  chairmanProjects: ChairmanProject[]
 }
 
 /**
@@ -53,6 +62,7 @@ export function DashboardBoard({
   financeKpis,
   projects,
   settings,
+  chairmanProjects,
 }: DashboardBoardProps) {
   const [hidden, setHidden] = useState<string[]>(settings.hidden_businesses)
   const [pinned, setPinned] = useState<string[]>(() =>
@@ -146,6 +156,12 @@ export function DashboardBoard({
 
   return (
     <div className="space-y-5">
+      {/* 히어로(P5-2 Step 2). 좌 400px D-day + 우 재무 추이. 좁은 화면에서는 세로로 쌓는다. */}
+      <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[400px_1fr]">
+        <DdayHero projects={chairmanProjects} />
+        <FinanceTrend kpis={financeKpis} businessIds={shown.map((b) => b.business_id)} />
+      </div>
+
       <section aria-label="내 비즈니스">
         <div className="mb-2 flex items-baseline gap-2">
           <h2 className="text-[13px] font-semibold">내 비즈니스 (A,B,C)</h2>
@@ -208,9 +224,8 @@ export function DashboardBoard({
         ) : null}
       </section>
 
+      {/* 재배치(P5-2 Step 3): 회사 카드 줄 → KpiStrip. FinanceTrend는 위 히어로로 옮겼다. */}
       <KpiStrip kpis={financeKpis} businessIds={shown.map((b) => b.business_id)} />
-
-      <FinanceTrend kpis={financeKpis} businessIds={shown.map((b) => b.business_id)} />
 
       {adding ? <AddBusinessModal onClose={() => setAdding(false)} onCreate={create} /> : null}
     </div>

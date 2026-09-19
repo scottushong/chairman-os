@@ -1,4 +1,5 @@
 import { BasisTag } from '@/components/finance/figure'
+import { GlassCard } from '@/components/ui/glass-card'
 import { Icon } from '@/components/ui/icon'
 import { LineChart, type ChartSeries } from '@/components/ui/line-chart'
 import { deltaPct, groupFigure, groupSeries, periodsOf, recentKpis } from '@/lib/finance'
@@ -84,7 +85,7 @@ export function FinanceTrend({ kpis: all, businessIds, title, scopeNote }: Finan
   }))
 
   return (
-    <section className="rounded-xl border border-line-soft bg-panel p-3.5">
+    <GlassCard as="section" padding="p-3.5" className="h-full">
       <div className="flex items-baseline justify-between">
         <h2 className="flex items-baseline gap-2 text-[13px] font-semibold">
           {title ?? '그룹 전체 재무 현황'}
@@ -154,6 +155,6 @@ export function FinanceTrend({ kpis: all, businessIds, title, scopeNote }: Finan
       <div className="mt-1.5">
         <LineChart series={series} labels={periods.map(shortPeriod)} formatY={axisLabel} />
       </div>
-    </section>
+    </GlassCard>
   )
 }

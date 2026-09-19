@@ -1,6 +1,7 @@
 import Link from 'next/link'
 
 import { BasisTag } from '@/components/finance/figure'
+import { GlassCard } from '@/components/ui/glass-card'
 import { Icon } from '@/components/ui/icon'
 import { formatEok, formatPct } from '@/lib/format'
 import { STATUS_LABEL_KO, type Business, type FigureBasis } from '@/types'
@@ -11,7 +12,16 @@ import { STATUS_LABEL_KO, type Business, type FigureBasis } from '@/types'
  * 첫 화면에서 모든 회사를 보되 모든 상세를 볼 필요는 없다는 UX 원칙(요구사항서 2번).
  */
 
-/** 회사 식별색. 배지·진행바·상세 링크가 같은 색을 공유해야 카드가 한 덩어리로 읽힌다. */
+/**
+ * 회사 식별색. 배지·진행바·상세 링크가 같은 색을 공유해야 카드가 한 덩어리로 읽힌다.
+ *
+ * P5-1 §2-F가 남긴 숙제(뱃지 bg-biz-X/20 + text-biz-X가 라이트에서 2.38~3.32:1로 AA 미달)를
+ * 여기서 고친다. 토큰 값은 건드리지 않는다 — 내리면 막대(bg-biz-X)·트랙(bg-biz-X/15)까지
+ * 같이 탁해진다. 대신 globals.css에 뱃지 "글자"만 골라내는 보정 규칙을 추가했다
+ * (.bg-biz-X\/20.text-biz-X 셀렉터, critical/warning/ok/gold와 같은 패턴). 그래서 아래
+ * TONE 값 자체는 그대로다 — 클래스 이름만 같아도 실제로 그려지는 글자 색은 CSS가 덮는다.
+ * 다섯 색의 최종 대비비는 p5-2-report.md 참고.
+ */
 const TONE: Record<string, { badge: string; bar: string; track: string }> = {
   biz_dy: { badge: 'bg-biz-dy/20 text-biz-dy', bar: 'bg-biz-dy', track: 'bg-biz-dy/15' },
   biz_vana: { badge: 'bg-biz-vana/20 text-biz-vana', bar: 'bg-biz-vana', track: 'bg-biz-vana/15' },
@@ -70,7 +80,7 @@ export function BusinessCard({
 
   return (
     // @container — 카드 폭은 줄에 올라간 회사 수가 정한다. 숫자 크기를 뷰포트가 아니라 카드 폭에 맞춘다.
-    <article className="@container flex h-full flex-col rounded-xl border border-line-soft bg-panel p-3">
+    <GlassCard as="article" padding="p-3" className="@container flex h-full flex-col">
       {/* 이니셜과 버튼 셋을 한 줄에, 회사명은 그 아래 줄에 따로 둔다.
           한 줄에 같이 두면 다섯 장이 한 줄에 설 때 명조 회사명이 두세 글자만 남는다. */}
       <div className="flex items-center gap-0.5">
@@ -157,7 +167,7 @@ export function BusinessCard({
       >
         상세 보기
       </Link>
-    </article>
+    </GlassCard>
   )
 }
 

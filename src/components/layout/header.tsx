@@ -1,6 +1,7 @@
 import { signOut } from '@/app/actions/auth'
 import { DataModeBadge } from '@/components/layout/data-mode-badge'
 import { GlobalSearch } from '@/components/layout/global-search'
+import { WorldClocks } from '@/components/layout/world-clocks'
 import { Icon } from '@/components/ui/icon'
 import { ROLE_LABEL_KO, type SessionUser } from '@/types'
 
@@ -21,6 +22,15 @@ export function Header({ user }: { user: SessionUser | null }) {
       <GlobalSearch />
 
       <div className="flex shrink-0 items-center gap-1">
+        {/* 날씨 칩은 자리만 잡아 둔다 — 데이터는 P5-5b가 붙인다(이 Task 범위 밖). */}
+        <span
+          aria-hidden="true"
+          title="날씨 (준비 중)"
+          className="flex w-[52px] items-center justify-center text-[11px] text-ink-muted"
+        >
+          —
+        </span>
+        <WorldClocks />
         <DataModeBadge />
         <NotificationButton count={12} tone="critical" />
         <NotificationButton count={5} tone="accent" />

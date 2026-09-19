@@ -1,5 +1,6 @@
 import Link from 'next/link'
 
+import { GlassCard } from '@/components/ui/glass-card'
 import { Icon } from '@/components/ui/icon'
 import {
   CONFIDENCE_FLOOR,
@@ -32,7 +33,7 @@ export function AiNightPanel({ outputs, businesses }: AiNightPanelProps) {
   )
 
   return (
-    <section className="flex h-full flex-col rounded-xl border border-line-soft bg-panel p-3.5">
+    <GlassCard as="section" padding="p-3.5" className="flex h-full flex-col">
       <div className="flex items-baseline justify-between">
         <h2 className="flex items-center gap-1.5 text-[13px] font-semibold">
           <Icon name="sparkles" className="size-4 text-gold" />
@@ -56,7 +57,7 @@ export function AiNightPanel({ outputs, businesses }: AiNightPanelProps) {
           />
         ))}
       </ul>
-    </section>
+    </GlassCard>
   )
 }
 
