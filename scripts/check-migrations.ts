@@ -369,8 +369,14 @@ async function rls(db: Db) {
     await as(UID.agent, `insert into storage.objects (bucket_id, name) values ('initiative-logos', 'ini_005/logo')`),
     'denied', '0018: AIAgent가 로고를 올릴 수 있다',
   )
-  // delete는 insert와 달리 with check가 없다 — using이 보이는 행을 0건으로 거르는
-  // 것뿐이라 에러가 아니라 영향 행 수 0으로 나타난다. 'denied'로 재면 항상 실패한다.
+  // update/delete는 insert와 달리 (update의 using, delete의 using) with check가 아니라
+  // 보이는 행을 거르는 필터다 — 매치되는 행이 없으면 에러가 아니라 영향 행 수 0으로
+  // 조용히 끝난다. 'denied'로 재면 항상 실패한다(check-migrations.ts:209의 기존
+  // 패턴과 같다 — Integration이 마감 달 전표를 update해도 0건인 것과 같은 이유).
+  assert.equal(
+    await as(UID.agent, `update storage.objects set name = 'x' where bucket_id = 'initiative-logos' and name = 'ini_001/logo'`),
+    0, '0018: AIAgent가 로고를 고칠 수 있다',
+  )
   assert.equal(
     await as(UID.agent, `delete from storage.objects where bucket_id = 'initiative-logos' and name = 'ini_001/logo'`),
     0, '0018: AIAgent가 로고를 지울 수 있다',
@@ -384,6 +390,10 @@ async function rls(db: Db) {
   assert.equal(
     await as(UID.member, `insert into storage.objects (bucket_id, name) values ('initiative-logos', 'ini_006/logo')`),
     'denied', '0018: Member가 로고를 올릴 수 있다',
+  )
+  assert.equal(
+    await as(UID.member, `update storage.objects set name = 'x' where bucket_id = 'initiative-logos' and name = 'ini_001/logo'`),
+    0, '0018: Member가 로고를 고칠 수 있다',
   )
   assert.equal(
     await as(UID.member, `delete from storage.objects where bucket_id = 'initiative-logos' and name = 'ini_001/logo'`),
@@ -419,6 +429,26 @@ async function rls(db: Db) {
   assert.equal(
     await as(UID.cfo, `insert into storage.objects (bucket_id, name) values ('vault-docs', 'contract_003.pdf')`),
     'denied', '0018: GroupCFO가 vault-docs에 쓴다 — 정책의 bucket_id 조건이 빠졌다',
+  )
+  // update/delete도 같은 구멍이 있을 수 있다 — select·insert만 vault-docs로 겨누면
+  // initiative_logos_write_update·_delete에서만 bucket_id 조건이 빠져도 못 잡는다.
+  // 기존 update/delete 성공 케이스(354·358행)는 전부 initiative-logos 안의 행만
+  // 건드려서 이 구멍을 안 지난다.
+  assert.equal(
+    await as(UID.chairman, `update storage.objects set name = 'x' where bucket_id = 'vault-docs'`),
+    0, '0018: Chairman이 vault-docs를 고친다 — write_update의 bucket_id 조건이 빠졌다',
+  )
+  assert.equal(
+    await as(UID.chairman, `delete from storage.objects where bucket_id = 'vault-docs'`),
+    0, '0018: Chairman이 vault-docs를 지운다 — write_delete의 bucket_id 조건이 빠졌다',
+  )
+  assert.equal(
+    await as(UID.cfo, `update storage.objects set name = 'x' where bucket_id = 'vault-docs'`),
+    0, '0018: GroupCFO가 vault-docs를 고친다 — write_update의 bucket_id 조건이 빠졌다',
+  )
+  assert.equal(
+    await as(UID.cfo, `delete from storage.objects where bucket_id = 'vault-docs'`),
+    0, '0018: GroupCFO가 vault-docs를 지운다 — write_delete의 bucket_id 조건이 빠졌다',
   )
 
   await books(db, as)
