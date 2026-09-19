@@ -4,8 +4,9 @@ import { initiativeClock, stalenessDays } from '@/lib/initiative'
 import { CALENDAR_ITEM_LABEL_KO, type CalendarItem, type Initiative, type IsoDate } from '@/types'
 
 /**
- * /ai 아침 루틴의 "오늘·이번 주" 블록 (Task 9). 선언문과 야간 브리핑 사이에 선다 —
- * 장기 프로젝트 카운터 → 선언문 → 여기 → 야간 브리핑이 아침에 읽는 순서다.
+ * /ai 아침 루틴의 "오늘·이번 주" 블록 (Task 9).
+ * P5-5c부터 오른쪽 칸('오늘 바뀐 것')의 맨 위, 야간 브리핑 바로 위에 유리 카드로 선다 —
+ * 왼쪽 칸(장기 프로젝트 카운터 → 선언문)이 고정된 채 이 둘을 읽는 것이 아침에 읽는 순서다.
  *
  * 세 묶음(오늘 일정 / 7일 내 다음 행동 / 14일 이상 멈춘 건) 모두 비면 블록 자체가 없다.
  * 역할을 여기서 보지 않는다 — Chairman이 아닌 역할에게는 RLS가 셋 다 빈 배열을 주므로
@@ -36,9 +37,11 @@ export function TodayAndWeek({
   )
 
   return (
+    /* P5-5c: 이 블록이 유리 카드 안으로 들어갔다. 바깥 여백(mt-8)과 아래 구분선(border-b pb-10)은
+       카드 밖에서 다음 블록과 갈라지던 표시라, 카드 안에서는 위아래에 빈 자리만 남긴다. */
     <section
       aria-label="오늘·이번 주"
-      className="mt-8 grid gap-4 border-b border-line-soft pb-10 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]"
+      className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(220px,1fr))]"
     >
       {todayItems.length > 0 ? (
         <div>
