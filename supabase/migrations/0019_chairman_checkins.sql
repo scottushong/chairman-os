@@ -10,19 +10,24 @@
 --   checkin_date를 기본키로 둔 것은 하루 한 번이면 충분하기 때문이다 — 몇 번을 고쳐도 그날의
 --   행은 하나다(chairman_manifesto가 id=1 한 행인 것과 같은 절제다).
 --
--- 권한 — 0014/0017의 다른 표와 다르다. AIAgent에게도 주지 않는다
---   Chairman   읽기 · 쓰기
---   그 외 전부  없음. GroupCFO도, **AIAgent도** 없다.
+-- 권한 — 0014/0017의 다른 표와 다르다. AIAgent에게도 표 자체는 주지 않는다
+--   Chairman   읽기 · 쓰기 (표 자체)
+--   그 외 전부  없음. GroupCFO도, **AIAgent도** 표에는 SELECT 문 한 줄도 못 던진다.
 --
 --   0014 chairman_manifesto/chairman_projects는 AIAgent에게 읽기를 준다 — 야간 브리핑이 선언문의
 --   원칙과 장기 프로젝트를 직접 읽어 우선순위를 매겨야 하기 때문이다. 0017 initiatives도 같은
 --   이유로 AIAgent가 읽는다. 이 표는 그 전례를 따르지 않는다 — 야간 브리핑이 컨디션 값을
---   못 쓰는 게 아니라(P5-5d에서 쓴다), **표를 직접 읽지 않고 받는다**는 뜻이다. night-brief.ts가
---   Chairman 세션으로 repo.listRecentCheckins(1)을 호출해 condition·sleep_hours만 골라
---   프롬프트 payload에 얹는다(체중·식사 메모는 싣지 않는다 — 모델에 넘길 개인 정보는 적을수록
---   좋다, 이유는 daily-brief.md에 적는다). AIAgent라는 역할 자체가 이 표에 SELECT 문 한 줄도
---   못 던진다 — 그 사람이 아니라 그 사람이 쓴 코드에게 상시로 열린 테이블 접근권을 주지 않겠다는
---   판단이다. 그래서 이 비대칭은 실수로 빠뜨린 게 아니라 의도한 경계다.
+--   못 쓰는 게 아니라(P5-5d에서 쓴다), **표를 직접 읽지 않고 keyhole 하나로 받는다**는 뜻이다.
+--
+--   (P5-5d 1라운드 수정 — 처음엔 "night-brief.ts가 Chairman 세션으로 listRecentCheckins(1)을
+--   부른다"고 적었는데 틀렸다. 야간 Job은 매일 23:00 KST에 사람 없이 cron으로 도는 게
+--   기본 경로다 — 빌려 올 회장 세션 자체가 없다. 그래서 세션을 바꾸는 대신 3절의
+--   chairman_today_condition()을 표의 유일한 문으로 둔다: 오늘 condition 정수 하나만,
+--   Chairman과 AIAgent에게만 내준다. sleep_hours·weight_kg·meal_note는 그 함수의 반환값에
+--   아예 없다 — 반환하지 않은 값은 모델 프롬프트로도 새어 나갈 수 없다.) AIAgent라는 역할
+--   자체는 여전히 표에 SELECT 문 한 줄도 못 던진다 — 그 사람이 아니라 그 사람이 쓴 코드에게
+--   상시로 열린 테이블 접근권을 주지 않겠다는 판단이다. 그래서 이 비대칭은 실수로 빠뜨린 게
+--   아니라 의도한 경계다.
 --
 -- 왜 이 표는 회사 데이터가 아닌가 — Vault 성격
 --   체중과 수면은 회장 개인의 건강 기록이다. GroupCFO가 어느 회사의 이번 달 실적을 몰라서는
@@ -85,5 +90,35 @@ begin
        using (not is_integration())', 'chairman_checkins');
 end
 $$;
+
+-- ---------------------------------------------------------------------
+-- 3. 야간 브리핑용 keyhole (P5-5d 1라운드 수정)
+--    표는 여전히 Chairman 전용이다. 이 함수는 그 예외를 표 전체가 아니라 값 하나로 좁힌다 —
+--    security definer로 표의 RLS를 우회하되, 0017 can_read_initiatives()와 같은 모양으로
+--    함수 몸통 안에서 스스로 같은 만큼만(누가/무엇을) 판정한다.
+--
+--    반환값은 오늘 condition 하나, 그 외는 전부 null이다 — 역할이 Chairman/AIAgent가 아니거나,
+--    맞는 역할이라도 오늘 행이 없으면 함수는 조용히 null을 준다(예외를 던지지 않는다). 표가
+--    처음부터 지켜 온 "없는 것과 못 읽는 것을 구분하지 않는다"는 계약을 함수도 그대로 물려받는다.
+--
+--    current_date를 안 쓰는 이유 — Postgres의 current_date는 서버 세션 시간대(보통 UTC) 기준이다.
+--    KST 00:00~09:00 사이에는 UTC로 아직 어제라서, current_date를 쓰면 23:00 KST에 도는 야간
+--    Job이 그 시간대에도 어제 체크인을 "오늘 것"으로 잘못 읽는다. 이 앱의 '오늘'은 늘 KST다
+--    (src/lib/chairman-project.ts kstToday(), 0016 v_today_period와 같은 계산) — SQL에서는
+--    그 계산을 (now() at time zone 'Asia/Seoul')::date로 그대로 옮긴다.
+-- ---------------------------------------------------------------------
+create or replace function chairman_today_condition() returns smallint
+language sql stable security definer set search_path = public as $fn$
+  select condition
+    from chairman_checkins
+   where checkin_date = (now() at time zone 'Asia/Seoul')::date
+     and is_active()
+     and auth_role() in ('Chairman', 'AIAgent');
+$fn$;
+
+comment on function chairman_today_condition() is
+  'P5-5d 1라운드 수정. chairman_checkins의 유일한 keyhole. 오늘(KST) condition 정수 하나만, Chairman과 AIAgent에게만 내준다 — 그 외 역할이거나 오늘 기록이 없으면 null. sleep_hours·weight_kg·meal_note는 반환값에 아예 없다.';
+
+grant execute on function chairman_today_condition() to authenticated;
 
 commit;

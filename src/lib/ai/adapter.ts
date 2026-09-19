@@ -82,12 +82,14 @@ export interface ChairmanContext {
   /** 선언문 전문. 아직 안 썼으면 null */
   manifesto: string | null
   /**
-   * 오늘의 체크인(0019). 체중·식사 메모는 싣지 않는다 — 브리핑이 컨디션 판정에 쓰는 건
-   * condition 하나뿐이고(daily-brief.md), sleep_hours는 참고용으로만 곁들인다. 넘기지 않은
-   * 값은 모델 프롬프트로 새어 나갈 수 없다 — 개인 건강 기록은 애초에 실어 보내지 않는 편이 낫다.
-   * 기록이 없으면(또는 못 읽으면) null — daily-brief.md는 이때 컨디션 문장을 쓰지 않는다.
+   * 오늘의 체크인(0019, P5-5d). condition 하나만 싣는다 — 프롬프트가 실제로 쓰는 값은
+   * "condition ≤ 2인가"뿐이고, sleep_hours·weight_kg·meal_note는 쓸 일이 없다(1라운드 수정:
+   * sleep_hours도 처음엔 넣었지만 뺐다 — ai_night_outputs는 GroupCFO·임원도 읽으므로, 모델이
+   * 안 쓰는 회장의 수면 시간을 굳이 문장으로 풀어낼 여지를 남기지 않는다). 넘기지 않은 값은
+   * 모델 프롬프트로 새어 나갈 수 없다. 기록이 없으면(또는 못 읽으면) null — daily-brief.md는
+   * 이때 컨디션 문장을 쓰지 않는다.
    */
-  checkin: { condition: ChairmanCondition; sleep_hours: number | null } | null
+  checkin: { condition: ChairmanCondition } | null
 }
 
 export interface DailyBriefInput {

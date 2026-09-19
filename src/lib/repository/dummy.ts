@@ -655,6 +655,12 @@ export const dummyRepository: ChairmanRepository = {
       .map((c) => ({ ...c }))
   },
 
+  /** P5-5d 1라운드 수정. dummy는 역할별 RLS를 흉내 내지 않으니 오늘 값을 그대로 준다. */
+  async getTodayCondition() {
+    const found = memoryCheckins.get(kstToday())
+    return found ? found.condition : null
+  },
+
   async listInitiatives() {
     return memoryInitiatives.map((i) => ({ ...i }))
   },

@@ -21,6 +21,7 @@ import { PGlite } from '@electric-sql/pglite'
 import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm'
 
 import { sheetFinanceKpis } from '../src/data'
+import { kstToday } from '../src/lib/chairman-project'
 import { loadMockLedger } from '../src/lib/ecount/mock-ledger'
 import { kpisFromLedger } from '../src/lib/ledger/cells'
 import { STANDARD_CHART, STANDARD_CHART_BUSINESSES } from '../src/lib/ledger/standard-chart'
@@ -191,6 +192,23 @@ async function rls(db: Db) {
     } catch (e) {
       if (/row-level security/.test(e instanceof Error ? e.message : '')) return 'denied'
       throw e
+    } finally {
+      await db.exec('rollback')
+    }
+  }
+
+  /**
+   * 0019 chairman_today_condition() 전용 — as()를 그대로 못 쓴다. 그 함수는 예외를 던지지
+   * 않고(권한이 없거나 오늘 행이 없으면 조용히 null) 늘 한 행 한 칸으로 돌아오는데, as()는
+   * 그 칸을 Number()로 바꾼다. Number(null) === 0이라 '거부됨'과 '진짜 0'을 구분 못 한다 —
+   * bucketRow 검사(아래, false가 0으로 둔갑하는 문제)와 같은 함정이라 여기도 db.query로
+   * 원래 타입(number | null) 그대로 읽는다.
+   */
+  async function condition(uid: string): Promise<number | null> {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
+    try {
+      const res = await db.query<{ chairman_today_condition: number | null }>('select chairman_today_condition()')
+      return res.rows[0]?.chairman_today_condition ?? null
     } finally {
       await db.exec('rollback')
     }
@@ -561,6 +579,28 @@ async function rls(db: Db) {
     await as(UID.integration, `insert into chairman_checkins (checkin_date, condition) values ('2026-09-08', 3)`),
     'denied', '0019: Integration이 체크인을 만들 수 있다',
   )
+
+  // ── 0019 fix: chairman_today_condition() keyhole (P5-5d 1라운드 수정) ──────
+  // 표는 그대로 Chairman 전용이다. 이 함수 하나만 예외다 — 오늘(KST) condition 정수 하나,
+  // Chairman·AIAgent에게만. 나머지는 오늘 행이 있어도 못 받는다.
+  const today = kstToday()
+  const yesterday = new Date(Date.parse(`${today}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10)
+
+  // 어제 것만 있을 때 — '가장 최근 행'으로 대신 답하면 안 된다. 오늘 행이 없으면 null이어야 한다.
+  await db.exec(`insert into chairman_checkins (checkin_date, condition) values ('${yesterday}', 2)`)
+  assert.equal(
+    await condition(UID.chairman),
+    null, '0019: chairman_today_condition()이 어제 체크인을 오늘 것처럼 돌려준다',
+  )
+
+  // 오늘 것을 넣는다. Chairman·AIAgent는 받고, 나머지는 오늘 행이 있어도 여전히 못 받는다.
+  await db.exec(`insert into chairman_checkins (checkin_date, condition) values ('${today}', 4)`)
+  assert.equal(await condition(UID.chairman), 4, '0019: Chairman이 chairman_today_condition()으로 오늘 condition을 못 받는다')
+  assert.equal(await condition(UID.agent), 4, '0019: AIAgent가 chairman_today_condition() keyhole로 오늘 condition을 못 받는다')
+  assert.equal(await condition(UID.cfo), null, '0019: GroupCFO가 chairman_today_condition()으로 오늘 condition을 받는다')
+  assert.equal(await condition(UID.member), null, '0019: Member가 chairman_today_condition()으로 오늘 condition을 받는다')
+  assert.equal(await condition(UID.ceo), null, '0019: BusinessCEO가 chairman_today_condition()으로 오늘 condition을 받는다')
+  assert.equal(await condition(UID.integration), null, '0019: Integration이 chairman_today_condition()으로 오늘 condition을 받는다')
 
   await books(db, as)
 }

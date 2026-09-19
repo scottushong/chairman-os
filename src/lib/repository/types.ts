@@ -13,6 +13,7 @@ import type {
   BusinessStrategy,
   CalendarItem,
   ChairmanCheckin,
+  ChairmanCondition,
   ChairmanEvent,
   ChairmanManifesto,
   ChairmanProject,
@@ -189,6 +190,14 @@ export interface ChairmanRepository {
   saveCheckin(input: ChairmanCheckinInput, actor: AuditActor): Promise<ChairmanCheckin>
   /** 최근 days일 안의 행만, checkin_date 내림차순. 하루 한 행이라 빠진 날은 그냥 없는 행이다. */
   listRecentCheckins(days: number): Promise<ChairmanCheckin[]>
+  /**
+   * P5-5d 1라운드 수정. 표를 직접 읽지 않고 0019 chairman_today_condition() RPC를 부른다 —
+   * 오늘(KST) condition 정수 하나만, Chairman·AIAgent 세션 양쪽에서 통과한다(RLS가 아니라
+   * 함수 안의 역할 판정이라서다). 다른 역할이거나 오늘 기록이 없으면 null — 없는 것과 못 읽는
+   * 것을 여기서도 구분하지 않는다. 야간 브리핑(night-brief.ts)이 쓴다. 화면의 '오늘 체크인'
+   * 칸은 Chairman 세션으로 표를 그대로 읽는 listRecentCheckins를 그대로 쓴다.
+   */
+  getTodayCondition(): Promise<ChairmanCondition | null>
 
   /**
    * Phase 4-A 이니셔티브(0017). Chairman·GroupCFO는 읽고 쓰고, AIAgent는 읽기만,
