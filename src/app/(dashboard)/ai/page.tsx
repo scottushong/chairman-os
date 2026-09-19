@@ -22,13 +22,17 @@ import { getRepository } from '@/lib/repository'
 import type { AiBriefItem, AiNightOutput, Business, ProjectNote } from '@/types'
 
 /**
- * /ai — 회장의 아침 루틴 (Phase 3-B). 위에서 아래로 읽는 순서 그대로 놓는다.
+ * /ai — 회장의 아침 루틴 (Phase 3-B, 다듬기 3번에서 2단으로).
  *
- *   a. 장기 프로젝트 카운터   D-day·경과율은 today(KST)로 계산한다. 저장값이 아니다.
- *   b. 선언문 전문            접지 않는다. 줄바꿈·문단 그대로.
- *   c. 야간 AI 브리핑         아래 Phase 3-A 설명 그대로.
+ * 좌우 2단이다. 왼쪽은 **바뀌지 않는 것**(장기 프로젝트 D-day, 선언문)이고
+ * 오른쪽은 **오늘 바뀐 것**(오늘·이번 주, 야간 브리핑)이다. 왼쪽은 스크롤해도 따라온다 —
+ * 오른쪽의 브리핑을 읽는 내내 D-day와 선언문이 눈에 남아 있어야 우선순위가 그 기준으로 매겨진다.
  *
- * a·b는 0014 RLS가 Chairman(과 AIAgent)에게만 내준다. 다른 역할에게는 빈 값이라 c만 보인다.
+ * 1024px 이하에서는 한 줄로 쌓인다(min-[1025px]). 그때의 순서는 예전과 같다:
+ * 카운터 → 선언문 → 오늘·이번 주 → 브리핑.
+ *
+ * 왼쪽(a·b)은 0014 RLS가 Chairman(과 AIAgent)에게만 내준다. 다른 역할에게는 빈 값이라
+ * 오른쪽(오늘·이번 주 + 브리핑)만 보인다.
  *
  * 야간 브리핑 전문 (Phase 3-A 블록 4, CH-019의 전체 화면).
  *
@@ -93,78 +97,85 @@ export default async function AiPage(props: PageProps<'/ai'>) {
         {isChairman ? <RunNightBrief /> : null}
       </PageHeader>
 
-      {activeProjects.length > 0 ? (
-        <div className="mt-4">
-          <ProjectCounters projects={activeProjects} today={today} />
+      <div className="mt-4 grid gap-6 min-[1025px]:grid-cols-[minmax(0,380px)_minmax(0,1fr)] min-[1025px]:gap-8">
+        {/* 왼쪽 — 바뀌지 않는 것. 스크롤해도 따라온다.
+            max-h와 overflow를 같이 준다: 선언문 전문이 뷰포트보다 길면 sticky만으로는
+            칸이 통째로 스크롤을 타 고정이 풀린다. */}
+        <div className="min-[1025px]:sticky min-[1025px]:top-4 min-[1025px]:max-h-[calc(100vh-2rem)] min-[1025px]:self-start min-[1025px]:overflow-y-auto min-[1025px]:pr-2">
+          {activeProjects.length > 0 ? <ProjectCounters projects={activeProjects} today={today} /> : null}
+
+          {manifesto.body ? (
+            <div className={activeProjects.length > 0 ? 'mt-6' : ''}>
+              <Manifesto body={manifesto.body} />
+            </div>
+          ) : null}
+
+          {isChairman && activeProjects.length === 0 && !manifesto.body ? (
+            <p className="rounded-xl border border-dashed border-line bg-panel/60 p-4 text-[12px] text-ink-muted">
+              아직 장기 프로젝트와 선언문이 없습니다.{' '}
+              <Link href="/settings/chairman" className="text-accent underline-offset-2 hover:underline">
+                회장 루틴 설정
+              </Link>
+              에서 넣으면 이 칸 맨 위에 올라옵니다.
+            </p>
+          ) : null}
         </div>
-      ) : null}
 
-      {manifesto.body ? (
-        <div className="mt-8 border-b border-line-soft pb-10">
-          <Manifesto body={manifesto.body} />
+        {/* 오른쪽 — 오늘 바뀐 것 */}
+        <div className="min-w-0">
+          <TodayAndWeek
+            todayItems={todayItems}
+            upcoming={upcomingInitiatives}
+            stale={staleInitiatives}
+            today={today}
+          />
+
+          <h2 className="mt-8 flex items-center gap-1.5 text-[13px] font-semibold">
+            <Icon name="sparkles" className="size-4 text-ink-dim" />
+            AI 브리핑
+          </h2>
+
+          {dates.length === 0 ? (
+            <p className="mt-6 rounded-xl border border-line-soft bg-panel p-6 text-[12.5px] text-ink-muted">
+              아직 브리핑이 없습니다. 첫 Cron은 오늘 23:00(KST)에 돕니다.
+            </p>
+          ) : (
+            <div className="mt-2.5 pb-6">
+              {/* 2단 안에서는 날짜 목록을 세로로 세울 폭이 없다. 가로 한 줄로 둔다. */}
+              <nav aria-label="브리핑 날짜" className="mb-3">
+                <ul className="flex gap-1 overflow-x-auto">
+                  {dates.map((d) => (
+                    <li key={d}>
+                      <Link
+                        href={`/ai?date=${d}`}
+                        aria-current={d === date ? 'page' : undefined}
+                        className={`block rounded-lg px-3 py-2 text-[12.5px] whitespace-nowrap tnum transition-colors ${
+                          d === date
+                            ? 'bg-panel font-semibold text-ink'
+                            : 'text-ink-muted hover:bg-panel/60 hover:text-ink-dim'
+                        }`}
+                      >
+                        {d}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
+
+              <div className="space-y-6">
+                {shown.map((run, i) => (
+                  <RunSection
+                    key={run.run_id ?? `legacy-${run.date}`}
+                    run={run}
+                    businesses={businesses}
+                    anchors={i === 0}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-      ) : null}
-
-      {isChairman && activeProjects.length === 0 && !manifesto.body ? (
-        <p className="mt-4 rounded-xl border border-dashed border-line bg-panel/60 p-4 text-[12px] text-ink-muted">
-          아직 장기 프로젝트와 선언문이 없습니다.{' '}
-          <Link href="/settings/chairman" className="text-accent underline-offset-2 hover:underline">
-            회장 루틴 설정
-          </Link>
-          에서 넣으면 이 화면 맨 위에 올라옵니다.
-        </p>
-      ) : null}
-
-      <TodayAndWeek
-        todayItems={todayItems}
-        upcoming={upcomingInitiatives}
-        stale={staleInitiatives}
-        today={today}
-      />
-
-      <h2 className="mt-8 flex items-center gap-1.5 text-[13px] font-semibold">
-        <Icon name="sparkles" className="size-4 text-ink-dim" />
-        AI 브리핑
-      </h2>
-
-      {dates.length === 0 ? (
-        <p className="mt-6 rounded-xl border border-line-soft bg-panel p-6 text-[12.5px] text-ink-muted">
-          아직 브리핑이 없습니다. 첫 Cron은 오늘 23:00(KST)에 돕니다.
-        </p>
-      ) : (
-        <div className="mt-2.5 grid grid-cols-12 gap-3.5 pb-6">
-          <nav aria-label="브리핑 날짜" className="col-span-12 lg:col-span-2">
-            <ul className="flex gap-1 overflow-x-auto lg:flex-col">
-              {dates.map((d) => (
-                <li key={d}>
-                  <Link
-                    href={`/ai?date=${d}`}
-                    aria-current={d === date ? 'page' : undefined}
-                    className={`block rounded-lg px-3 py-2 text-[12.5px] whitespace-nowrap tnum transition-colors ${
-                      d === date
-                        ? 'bg-panel font-semibold text-ink'
-                        : 'text-ink-muted hover:bg-panel/60 hover:text-ink-dim'
-                    }`}
-                  >
-                    {d}
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </nav>
-
-          <div className="col-span-12 space-y-6 lg:col-span-10">
-            {shown.map((run, i) => (
-              <RunSection
-                key={run.run_id ?? `legacy-${run.date}`}
-                run={run}
-                businesses={businesses}
-                anchors={i === 0}
-              />
-            ))}
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   )
 }
