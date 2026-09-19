@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 
+import { DataModeBadge } from '@/components/layout/data-mode-badge'
 import { GlassCard } from '@/components/ui/glass-card'
 import { Icon } from '@/components/ui/icon'
 
@@ -81,12 +82,19 @@ export function GreetingClock({ name, dateLabel }: { name: string | null; dateLa
 
   return (
     <GlassCard as="section" aria-label="인사와 시각" className="flex flex-col justify-between">
-      <div>
-        <h1 className="flex items-center gap-2 text-[17px] font-semibold text-ink">
-          좋은 아침입니다, {name ?? 'Chairman'}님
-          <Icon name="crown" className="size-4 text-gold" filled />
-        </h1>
-        <p className="mt-0.5 text-[12px] text-ink-dim tnum">{dateLabel}</p>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="flex items-center gap-2 text-[17px] font-semibold text-ink">
+            좋은 아침입니다, {name ?? 'Chairman'}님
+            <Icon name="crown" className="size-4 text-gold" filled />
+          </h1>
+          <p className="mt-0.5 text-[12px] text-ink-dim tnum">{dateLabel}</p>
+        </div>
+        {/* 더미 표식. (morning) 셸에는 헤더가 없어 이 칸이 그 표식을 다시 다는 자리다 —
+            화면을 여는 순간 눈이 먼저 닿는 곳이 인사말이고, 회장이 아침에 제일 먼저 보는 이 화면에서
+            시드 숫자를 실적으로 읽으면 그대로 잘못된 의사결정이 된다(data-mode-badge.tsx 주석).
+            레일 발은 폭 76px이라 이 칩이 들어가지 않는다. live 모드에서는 스스로 아무것도 그리지 않는다. */}
+        <DataModeBadge />
       </div>
 
       <p className="mt-4 flex items-baseline gap-1.5 text-ink">

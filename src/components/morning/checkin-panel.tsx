@@ -39,19 +39,26 @@ export function CheckinPanel({ date, initial }: { date: IsoDate; initial: Chairm
     setBusy(true)
     setError(null)
     setDone(false)
-    const result = await saveCheckin({
-      checkinDate: date,
-      condition,
-      sleepHours: sleep,
-      weightKg: weight,
-      mealNote: meal,
-    })
-    setBusy(false)
-    if (result.error) {
-      setError(result.error)
-      return
+    try {
+      const result = await saveCheckin({
+        checkinDate: date,
+        condition,
+        sleepHours: sleep,
+        weightKg: weight,
+        mealNote: meal,
+      })
+      if (result.error) {
+        setError(result.error)
+        return
+      }
+      setDone(true)
+    } catch {
+      // Server Action이 던지는 경우(전송 실패 등)를 받는다. 안 받으면 아래 finally가 돌지 않아
+      // fieldset이 disabled인 채로 남고, 회장이 아무 칸도 못 고치는 화면이 된다.
+      setError('저장하지 못했습니다. 연결을 확인하고 다시 시도하세요.')
+    } finally {
+      setBusy(false)
     }
-    setDone(true)
   }
 
   function touched() {

@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 
 import { signOut } from '@/app/actions/auth'
 import { Icon } from '@/components/ui/icon'
-import { NAV } from '@/lib/nav'
+import { readyItems } from '@/lib/nav'
 import { ROLE_LABEL_KO, type SessionUser } from '@/types'
 
 /**
@@ -20,12 +20,16 @@ import { ROLE_LABEL_KO, type SessionUser } from '@/types'
  * **아이콘 하나에 title과 aria-label을 둘 다 단다.** title은 눈으로 보는 사람이 hover로
  * 확인하는 이름이고, aria-label은 스크린 리더가 읽는 이름이다. 아이콘만 있는 내비게이션은
  * 둘 중 하나만 있으면 한쪽 사용자에게는 이름 없는 그림이 된다.
+ *
+ * 검색창(GlobalSearch)은 **일부러 뺐다.** 레일은 아침에 시선을 뺏지 않는 것이 목적이고,
+ * 검색은 대시보드로 한 번만 건너가면 있다. 빠뜨린 것이 아니다.
  */
 export function RailSidebar({ user }: { user: SessionUser | null }) {
   const pathname = usePathname()
 
-  // ready만 남긴다. 그러면 href가 곧 실제 주소라 navHref()를 거칠 일이 없다.
-  const items = NAV.flatMap((g) => g.items).filter((i) => i.ready)
+  // ready만 남긴다. 목록을 여기서 다시 접지 않는다 — /coming-soon이 쓰는 것과 같은 함수다.
+  // ready만 남으므로 href가 곧 실제 주소라 navHref()를 거칠 일도 없다.
+  const items = readyItems()
 
   return (
     // glass-nav = --color-nav 면 + backdrop-blur. 다크에서는 같은 이름이 흰색 4%로 뒤집힌다.

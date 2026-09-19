@@ -49,9 +49,15 @@ export function WeatherPanel({
     if (!coordinates) return
     // setState는 Server Action의 응답 콜백 안에서만 부른다(effect 본문이 아니다).
     let alive = true
-    void weatherAtCoordinates(coordinates).then((result) => {
-      if (alive) setAnswer({ for: coordinates, current: result })
-    })
+    void weatherAtCoordinates(coordinates)
+      .then((result) => {
+        if (alive) setAnswer({ for: coordinates, current: result })
+      })
+      .catch(() => {
+        // 거절도 답으로 친다. 안 받아 주면 answer가 영영 비고, busy가 그 값에서 나오므로
+        // 버튼이 '확인 중…'에 영구히 잠긴다 — 실패가 이 칸 안에서 끝난다는 약속이 깨진다.
+        if (alive) setAnswer({ for: coordinates, current: null })
+      })
     return () => {
       alive = false
     }
