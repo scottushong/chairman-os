@@ -293,7 +293,7 @@ async function rls(db: Db) {
   )
   const policyKind = new Map(restrictivePolicies.map((r) => [`${r.tablename}.${r.policyname}`, r.permissive]))
   const aiAgentBlockedTables = ['initiatives', 'initiative_keymen', 'initiative_docs', 'events']
-  const integrationBlockedTables = ['initiatives', 'initiative_keymen', 'initiative_docs', 'events', 'initiative_notes']
+  const integrationBlockedTables = ['initiatives', 'initiative_keymen', 'initiative_docs', 'events', 'initiative_notes', 'chairman_checkins']
   for (const t of aiAgentBlockedTables) {
     for (const op of ['insert', 'update', 'delete']) {
       assert.equal(
@@ -449,6 +449,117 @@ async function rls(db: Db) {
   assert.equal(
     await as(UID.cfo, `delete from storage.objects where bucket_id = 'vault-docs'`),
     0, '0018: GroupCFO가 vault-docs를 지운다 — write_delete의 bucket_id 조건이 빠졌다',
+  )
+
+  // ── 0019 chairman_checkins ──────────────────────────────────────────
+  // Chairman 전용. GroupCFO·AIAgent·Member·BusinessCEO·Integration 전부 읽기도 쓰기도 없다 —
+  // 0014 chairman_manifesto/0017 initiatives와 달리 AIAgent에게도 안 준다(마이그레이션 주석 참고).
+  // 읽을 행은 as()가 항상 롤백하므로 db.exec로 소유자 권한(RLS 밖)에서 미리 심어 둔다.
+  await db.exec(
+    `insert into chairman_checkins (checkin_date, condition, sleep_hours, weight_kg, meal_note)
+     values ('2026-09-01', 4, 7.5, 78.2, '아침 든든하게')`,
+  )
+
+  // Chairman — 읽고 쓴다.
+  assert.equal(
+    await as(UID.chairman, `select count(*)::int from chairman_checkins where checkin_date = '2026-09-01'`),
+    1, '0019: Chairman이 체크인을 못 읽는다',
+  )
+  assert.equal(
+    await as(
+      UID.chairman,
+      `insert into chairman_checkins (checkin_date, condition, meal_note) values ('2026-09-02', 3, '늦은 점심')`,
+    ),
+    1, '0019: Chairman이 체크인을 못 만든다',
+  )
+  assert.equal(
+    await as(UID.chairman, `update chairman_checkins set condition = 5 where checkin_date = '2026-09-01'`),
+    1, '0019: Chairman이 체크인을 못 고친다',
+  )
+  assert.equal(
+    await as(UID.chairman, `delete from chairman_checkins where checkin_date = '2026-09-01'`),
+    1, '0019: Chairman이 체크인을 못 지운다',
+  )
+
+  // condition은 DB에서도 1~5로 가둔다 — TS 리터럴 유니온만 믿지 않는다.
+  await assert.rejects(
+    as(UID.chairman, `insert into chairman_checkins (checkin_date, condition) values ('2026-09-03', 6)`),
+    /chairman_checkins_condition/,
+    '0019: condition이 6이어도 저장된다',
+  )
+  await assert.rejects(
+    as(UID.chairman, `insert into chairman_checkins (checkin_date, condition) values ('2026-09-03', 0)`),
+    /chairman_checkins_condition/,
+    '0019: condition이 0이어도 저장된다',
+  )
+
+  // GroupCFO — 0017과 달리 이 표는 전사 역할도 못 읽는다. 회사 데이터가 아니라 회장 개인
+  // 건강 기록이라서다.
+  assert.equal(
+    await as(UID.cfo, `select count(*)::int from chairman_checkins where checkin_date = '2026-09-01'`),
+    0, '0019: GroupCFO에게 체크인이 보인다',
+  )
+  assert.equal(
+    await as(UID.cfo, `insert into chairman_checkins (checkin_date, condition) values ('2026-09-04', 3)`),
+    'denied', '0019: GroupCFO가 체크인을 만들 수 있다',
+  )
+  assert.equal(
+    await as(UID.cfo, `update chairman_checkins set condition = 1 where checkin_date = '2026-09-01'`),
+    0, '0019: GroupCFO가 체크인을 고칠 수 있다',
+  )
+  assert.equal(
+    await as(UID.cfo, `delete from chairman_checkins where checkin_date = '2026-09-01'`),
+    0, '0019: GroupCFO가 체크인을 지울 수 있다',
+  )
+
+  // AIAgent — 0014/0017과 다른 자리다. 야간 브리핑은 앱이 읽어 넘겨 준 값만 쓴다(P5-5d) —
+  // 이 표를 직접 읽는 경로가 없어야 한다.
+  assert.equal(
+    await as(UID.agent, `select count(*)::int from chairman_checkins where checkin_date = '2026-09-01'`),
+    0, '0019: AIAgent에게 체크인이 보인다 (0014/0017과 달리 여기는 읽기도 없어야 한다)',
+  )
+  assert.equal(
+    await as(UID.agent, `insert into chairman_checkins (checkin_date, condition) values ('2026-09-05', 3)`),
+    'denied', '0019: AIAgent가 체크인을 만들 수 있다',
+  )
+  assert.equal(
+    await as(UID.agent, `update chairman_checkins set condition = 1 where checkin_date = '2026-09-01'`),
+    0, '0019: AIAgent가 체크인을 고칠 수 있다',
+  )
+  assert.equal(
+    await as(UID.agent, `delete from chairman_checkins where checkin_date = '2026-09-01'`),
+    0, '0019: AIAgent가 체크인을 지울 수 있다',
+  )
+
+  // Member — 존재 자체를 몰라야 한다.
+  assert.equal(
+    await as(UID.member, `select count(*)::int from chairman_checkins where checkin_date = '2026-09-01'`),
+    0, '0019: Member에게 체크인이 보인다',
+  )
+  assert.equal(
+    await as(UID.member, `insert into chairman_checkins (checkin_date, condition) values ('2026-09-06', 3)`),
+    'denied', '0019: Member가 체크인을 만들 수 있다',
+  )
+
+  // BusinessCEO — 전사 역할이 아니다.
+  assert.equal(
+    await as(UID.ceo, `select count(*)::int from chairman_checkins where checkin_date = '2026-09-01'`),
+    0, '0019: BusinessCEO에게 체크인이 보인다',
+  )
+  assert.equal(
+    await as(UID.ceo, `insert into chairman_checkins (checkin_date, condition) values ('2026-09-07', 3)`),
+    'denied', '0019: BusinessCEO가 체크인을 만들 수 있다',
+  )
+
+  // Integration — permissive 정책만으로 이미 막히지만, restrictive 방어선(위의
+  // integrationBlockedTables 구조 단언이 정책의 존재·RESTRICTIVE 여부를 잰다)까지 겹으로 확인한다.
+  assert.equal(
+    await as(UID.integration, `select count(*)::int from chairman_checkins where checkin_date = '2026-09-01'`),
+    0, '0019: Integration에게 체크인이 보인다',
+  )
+  assert.equal(
+    await as(UID.integration, `insert into chairman_checkins (checkin_date, condition) values ('2026-09-08', 3)`),
+    'denied', '0019: Integration이 체크인을 만들 수 있다',
   )
 
   await books(db, as)

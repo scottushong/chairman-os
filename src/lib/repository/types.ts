@@ -12,6 +12,7 @@ import type {
   BusinessKeyman,
   BusinessStrategy,
   CalendarItem,
+  ChairmanCheckin,
   ChairmanEvent,
   ChairmanManifesto,
   ChairmanProject,
@@ -179,6 +180,17 @@ export interface ChairmanRepository {
   saveChairmanManifesto(body: string, actor: AuditActor): Promise<void>
 
   /**
+   * Phase 5 회장 체크인(0019). Chairman만 읽고 쓴다 — 0014/0017과 달리 AIAgent에게도
+   * 읽기를 주지 않는다(0019 마이그레이션 주석 참고). Chairman이 아니면 getCheckin은 null,
+   * listRecentCheckins는 빈 배열이다 — 없는 것과 못 읽는 것을 구분하지 않는다.
+   */
+  getCheckin(date: IsoDate): Promise<ChairmanCheckin | null>
+  /** checkin_date가 있으면 고치고(그날 값 갱신) 없으면 만든다. audit_log(create|update)를 같이 남긴다. */
+  saveCheckin(input: ChairmanCheckinInput, actor: AuditActor): Promise<ChairmanCheckin>
+  /** 최근 days일 안의 행만, checkin_date 내림차순. 하루 한 행이라 빠진 날은 그냥 없는 행이다. */
+  listRecentCheckins(days: number): Promise<ChairmanCheckin[]>
+
+  /**
    * Phase 4-A 이니셔티브(0017). Chairman·GroupCFO는 읽고 쓰고, AIAgent는 읽기만,
    * 나머지 역할에게는 전부 빈 결과다. 권한은 여기서 보지 않는다 — 0017의 RLS가 판정한다.
    *
@@ -239,6 +251,9 @@ export type KeymanInput = Omit<BusinessKeyman, 'keyman_id'> & { keyman_id?: stri
 
 /** /settings/chairman 폼이 보내는 한 행. project_id가 없으면 새 프로젝트다. */
 export type ChairmanProjectInput = Omit<ChairmanProject, 'project_id'> & { project_id?: string }
+
+/** 체크인 패널이 보내는 한 행. checkin_date가 그날의 키다 — saveInitiativeNote와 같은 upsert 모양. */
+export type ChairmanCheckinInput = Omit<ChairmanCheckin, 'updated_at'>
 
 export type InitiativeInput = Omit<Initiative, 'initiative_id' | 'updated_at'> & { initiative_id?: string }
 export type InitiativeKeymanInput = Omit<InitiativeKeyman, 'keyman_id'> & { keyman_id?: string }

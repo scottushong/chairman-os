@@ -1,6 +1,7 @@
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js'
 
 import type { AuditAction, EntityAuditRecord } from '@/lib/audit-log'
+import { kstToday } from '@/lib/chairman-project'
 import { AUDIT_ACTION, DECISION_STATUS, type DecisionAuditRecord } from '@/lib/decision-log'
 import { dayKey } from '@/lib/format'
 import { LOGO_BUCKET, logoPath } from '@/lib/initiative-logo'
@@ -14,6 +15,7 @@ import type {
   BusinessKeyman,
   BusinessStrategy,
   CalendarItem,
+  ChairmanCheckin,
   ChairmanEvent,
   ChairmanManifesto,
   ChairmanProject,
@@ -61,6 +63,7 @@ import {
   type AccountPatch,
   type AuditActor,
   type AuditEntityTable,
+  type ChairmanCheckinInput,
   type ChairmanProjectInput,
   type ChairmanRepository,
   type DecisionAuditEntry,
@@ -2193,6 +2196,87 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
             '(감사 기록은 남았고 선언문은 바뀌지 않았다. 0014의 chairman_manifesto 정책을 본다.)',
         )
       }
+    },
+
+    /** Chairman이 아니면 RLS가 0행을 준다. 그때 null이다 — 0019 chairman_checkins_all이 Chairman만 통과시킨다. */
+    async getCheckin(date: IsoDate): Promise<ChairmanCheckin | null> {
+      const { data, error } = await sb
+        .from('chairman_checkins')
+        .select('checkin_date,condition,sleep_hours,weight_kg,meal_note,updated_at')
+        .eq('checkin_date', date)
+        .maybeSingle<ChairmanCheckin>()
+      if (error) throw new Error(`Supabase chairman_checkins ${error.code ?? '?'}: ${error.message}`)
+      return data ?? null
+    },
+
+    /**
+     * saveInitiativeNote와 같은 모양이다 — checkin_date가 키인 upsert. 기록이 먼저, 바뀐 칸만.
+     * 권한은 보지 않는다 — 0019 chairman_checkins_all이 Chairman만 통과시킨다.
+     */
+    async saveCheckin(input: ChairmanCheckinInput, actor: AuditActor): Promise<ChairmanCheckin> {
+      const { checkin_date, ...fields } = input
+      const { data: before, error: readError } = await sb
+        .from('chairman_checkins')
+        .select('checkin_date,condition,sleep_hours,weight_kg,meal_note,updated_at')
+        .eq('checkin_date', checkin_date)
+        .maybeSingle<ChairmanCheckin>()
+      if (readError) {
+        throw new Error(`Supabase chairman_checkins ${readError.code ?? '?'}: ${readError.message}`)
+      }
+
+      const changed = before
+        ? Object.fromEntries(
+            Object.entries(fields).filter(([k, v]) => v !== before[k as keyof typeof fields]),
+          )
+        : fields
+      if (before && Object.keys(changed).length === 0) return before
+
+      const { error: auditError } = await sb.from('audit_log').insert({
+        action: before ? 'update' : 'create',
+        entity_table: 'chairman_checkins',
+        entity_id: checkin_date,
+        business_id: null,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        before: before
+          ? Object.fromEntries(Object.keys(changed).map((k) => [k, before[k as keyof typeof before]]))
+          : null,
+        after: changed,
+      })
+      if (auditError) {
+        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      }
+
+      const { data, error } = await sb
+        .from('chairman_checkins')
+        .upsert({ checkin_date, ...fields }, { onConflict: 'checkin_date' })
+        .select('checkin_date,condition,sleep_hours,weight_kg,meal_note,updated_at')
+        .single<ChairmanCheckin>()
+      if (error) {
+        throw new Error(
+          `Supabase chairman_checkins ${error.code ?? '?'}: ${error.message} ` +
+            '(감사 기록은 남았고 체크인은 바뀌지 않았다. 0019의 chairman_checkins_all — Chairman만 쓴다.)',
+        )
+      }
+      return data
+    },
+
+    /**
+     * 최근 days일. 행이 하루 한 개라 checkin_date >= (오늘 - days + 1)로 자른다.
+     * 목록 전부를 fetchAll로 페이지네이션할 이유가 없다 — chairman_projects와 같은 규모다.
+     */
+    async listRecentCheckins(days: number): Promise<ChairmanCheckin[]> {
+      const cutoff = new Date(`${kstToday()}T00:00:00Z`)
+      cutoff.setUTCDate(cutoff.getUTCDate() - (days - 1))
+      const from = cutoff.toISOString().slice(0, 10)
+      const { data, error } = await sb
+        .from('chairman_checkins')
+        .select('checkin_date,condition,sleep_hours,weight_kg,meal_note,updated_at')
+        .gte('checkin_date', from)
+        .order('checkin_date', { ascending: false })
+        .returns<ChairmanCheckin[]>()
+      if (error) throw new Error(`Supabase chairman_checkins ${error.code ?? '?'}: ${error.message}`)
+      return data ?? []
     },
 
     /**

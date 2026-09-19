@@ -12,6 +12,7 @@ import {
   topGoals,
 } from '@/data'
 import type { EntityAuditRecord } from '@/lib/audit-log'
+import { kstToday } from '@/lib/chairman-project'
 import { AUDIT_ACTION, DECISION_STATUS, type DecisionAuditRecord } from '@/lib/decision-log'
 import { dayKey } from '@/lib/format'
 import { logoPath } from '@/lib/initiative-logo'
@@ -26,6 +27,7 @@ import type {
   BusinessKeyman,
   BusinessStrategy,
   CalendarItem,
+  ChairmanCheckin,
   ChairmanEvent,
   ChairmanManifesto,
   ChairmanProject,
@@ -47,6 +49,7 @@ import {
   DUPLICATE_INVITATION,
   type AuditActor,
   type AuditEntityTable,
+  type ChairmanCheckinInput,
   type ChairmanProjectInput,
   type ChairmanRepository,
   type DecisionAuditEntry,
@@ -90,6 +93,12 @@ const memoryEntityAudit: StoredAudit[] = []
  */
 const memoryChairmanProjects: ChairmanProject[] = []
 const memoryManifesto: ChairmanManifesto = { body: '', updated_at: null }
+
+/**
+ * Phase 5 체크인(0019). 시드가 없다 — 회장의 몸 상태가 git에 들어가면 안 된다
+ * (chairman_manifesto와 같은 이유). 키는 checkin_date다 — 하루 한 행.
+ */
+const memoryCheckins = new Map<IsoDate, ChairmanCheckin>()
 
 /**
  * Phase 4-A 이니셔티브(0017). 시드가 없다 — 회장이 지금 누구와 무엇을 협상 중인지가
@@ -615,6 +624,35 @@ export const dummyRepository: ChairmanRepository = {
     if (process.env.NODE_ENV !== 'production') {
       console.warn(`[dummy] save manifesto by ${actor.role} — 메모리에만 남는다.`)
     }
+  },
+
+  async getCheckin(date: IsoDate) {
+    const found = memoryCheckins.get(date)
+    return found ? { ...found } : null
+  },
+
+  /** saveInitiativeNote와 같은 upsert 모양이다 — checkin_date가 키고, 첫 저장은 'create'다. */
+  async saveCheckin(input: ChairmanCheckinInput, actor: AuditActor) {
+    const before = memoryCheckins.get(input.checkin_date)
+    const saved: ChairmanCheckin = { ...input, updated_at: new Date().toISOString() }
+    memoryCheckins.set(input.checkin_date, saved)
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        `[dummy] save checkin(${before ? 'update' : 'create'}) by ${actor.role} — 메모리에만 남는다.`,
+      )
+    }
+    return { ...saved }
+  },
+
+  /** 최근 days일. checkin_date 문자열은 ISO(YYYY-MM-DD)라 문자열 비교로 날짜 비교가 된다. */
+  async listRecentCheckins(days: number) {
+    const cutoff = new Date(`${kstToday()}T00:00:00Z`)
+    cutoff.setUTCDate(cutoff.getUTCDate() - (days - 1))
+    const from = cutoff.toISOString().slice(0, 10)
+    return [...memoryCheckins.values()]
+      .filter((c) => c.checkin_date >= from)
+      .sort((a, b) => (a.checkin_date < b.checkin_date ? 1 : -1))
+      .map((c) => ({ ...c }))
   },
 
   async listInitiatives() {
