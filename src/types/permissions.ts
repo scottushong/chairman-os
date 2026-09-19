@@ -45,4 +45,10 @@ export interface SessionUser {
   name: string
   role: Role
   title_ko: string
+  /**
+   * 영문 표기(0017이 만든 user_profiles.display_name_en).
+   * 없으면 null이다 — 코드가 음차하지 않는다는 것이 0017의 명시적 판단이라,
+   * 읽는 쪽은 '없으면 영문 줄을 아예 안 그린다'로 떨어진다. 한글을 로마자로 지어내지 않는다.
+   */
+  display_name_en: string | null
 }

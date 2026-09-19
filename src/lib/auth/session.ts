@@ -23,6 +23,8 @@ interface ProfileRow {
   role: Role
   display_name: string
   title_ko: string | null
+  /** 0017이 만든 칸. Chairman 행에는 이미 값이 들어 있다. 비어 있을 수 있다. */
+  display_name_en: string | null
 }
 
 /**
@@ -47,7 +49,8 @@ export const currentUser = cache(async function currentUser(): Promise<SessionUs
   // revoked_at이 찍힌 계정은 auth_profile()이 걸러 낸다. 여기서도 같은 조건을 쓴다(원칙 8).
   const { data } = await sb
     .from('user_profiles')
-    .select('user_id,role,display_name,title_ko')
+    // display_name_en은 0017이 만든 뒤로 읽는 쪽이 없었다. 사이드바 하단 프로필이 쓴다(Phase 5).
+    .select('user_id,role,display_name,title_ko,display_name_en')
     .eq('user_id', user.id)
     .is('revoked_at', null)
     .maybeSingle<ProfileRow>()
@@ -59,6 +62,7 @@ export const currentUser = cache(async function currentUser(): Promise<SessionUs
     name: data.display_name,
     role: data.role,
     title_ko: data.title_ko ?? '',
+    display_name_en: data.display_name_en ?? null,
   }
 })
 
@@ -72,5 +76,13 @@ export const currentUser = cache(async function currentUser(): Promise<SessionUs
 function dummyUser(): SessionUser | null {
   if (DATA_MODE !== 'dummy') return null
   const role = ROLE.find((r) => r === process.env.DUMMY_ROLE) ?? 'Chairman'
-  return { user_id: '00000000-0000-0000-0000-00000000d0d0', name: 'DUMMY', role, title_ko: role }
+  // display_name_en은 null이다. 지어내지 않는다 — 영문 표기는 본인이 쓰는 철자가 유일한 정답이고,
+  // dummy에 가짜 철자를 넣으면 '영문 줄이 없을 때 화면이 어떻게 보이는가'를 한 번도 못 보게 된다.
+  return {
+    user_id: '00000000-0000-0000-0000-00000000d0d0',
+    name: 'DUMMY',
+    role,
+    title_ko: role,
+    display_name_en: null,
+  }
 }

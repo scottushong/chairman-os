@@ -137,7 +137,7 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
         </div>
       ) : null}
 
-      <div className="mt-4 space-y-2 rounded-xl border border-line-soft bg-panel/60 px-3.5 py-3">
+      <div className="mt-4 space-y-2 rounded-xl border border-line-soft bg-panel px-3.5 py-3">
         <FilterChips label="탭" options={tabOptions} />
         <FilterChips label="회사" options={businessOptions} />
       </div>

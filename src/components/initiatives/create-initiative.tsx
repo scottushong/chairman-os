@@ -53,7 +53,7 @@ export function CreateInitiative() {
   }
 
   return (
-    <div className="mt-4 flex flex-wrap items-end gap-2 rounded-xl border border-line-soft bg-panel/60 p-3">
+    <div className="mt-4 flex flex-wrap items-end gap-2 rounded-xl border border-line-soft bg-panel p-3">
       <label className="text-[10.5px] text-ink-muted">
         제목
         <input

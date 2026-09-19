@@ -188,7 +188,7 @@ export function DashboardBoard({
         </div>
 
         {hiddenList.length > 0 ? (
-          <div className="mt-2.5 flex flex-wrap items-center gap-2 rounded-lg border border-line-soft bg-panel/60 px-3 py-2">
+          <div className="mt-2.5 flex flex-wrap items-center gap-2 rounded-lg border border-line-soft bg-panel px-3 py-2">
             <span className="flex items-center gap-1.5 text-[11px] text-ink-muted">
               <Icon name="eye-off" className="size-3.5" />
               숨김 {hiddenList.length}개 (데이터는 그대로 있습니다)

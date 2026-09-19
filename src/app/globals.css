@@ -1,60 +1,216 @@
 @import "tailwindcss";
 
 /**
- * Chairman OS 디자인 토큰 — 웜 차콜.
- * 다크 고정이다. 관제 화면이라 라이트 분기를 두지 않는다.
- * 원칙: 정상 데이터는 조용히, 위험/승인대기만 색으로 올라온다(요구사항서 2번).
+ * Chairman OS 디자인 토큰 — 라이트 웜 글래스(기본) + 다크 글래스(아침 루틴 전용).
  *
- * 2026-09-07 교체: 청회색 → 웜 차콜, Pretendard → Noto Serif KR.
- * 토큰 이름은 하나도 바꾸지 않았다 — 컴포넌트 42개 파일이 948곳에서 이 이름을 쓰고 있어서,
- * 이름을 건드리면 '토큰만 교체'가 아니라 전면 수정이 된다.
+ * 2026-09-19 Phase 5: 다크 고정이던 팔레트를 두 세트로 갈랐다.
+ *   라이트가 기본이다. 관제 화면 전부가 라이트 웜 글래스로 뜬다.
+ *   다크는 아침 루틴(/ai) 한 화면뿐이다 — [data-theme='dark'] 아래에서만 값이 덮인다.
+ *
+ * 토큰 이름은 이번에도 하나도 바꾸지 않았다. 컴포넌트 42개 파일이 948곳에서 이 이름을 쓰고 있어서,
+ * 이름을 건드리면 '토큰만 교체'가 아니라 전면 수정이 된다(2026-09-07 웜 차콜 교체 때와 같은 이유).
+ * 새 색이 필요한 자리는 기존 이름의 의미를 바꾸지 않고 이름을 더했다
+ * (--color-glass-shadow, --color-dday-*, --radius-glass, --blur-glass, --gradient-app).
+ *
+ * 이 방식이 되는 근거는 빌드 산출물로 확인했다. Tailwind v4는
+ *   .bg-panel { background-color: var(--color-panel) }
+ *   .text-ink { color: var(--color-ink) }
+ * 를 내보낸다 — 유틸리티가 변수를 그대로 참조하므로, 하위 트리에서 변수를 다시 정의하면
+ * 그 트리의 모든 유틸리티가 따라온다. 중간 변수를 두는 우회는 필요 없다.
+ *
+ * 원칙은 그대로다: 정상 데이터는 조용히, 위험/승인대기만 색으로 올라온다(요구사항서 2번).
+ * 골드는 강조(활성·Chairman 표식)이지 상태가 아니다.
  */
 @theme {
-  /* 바탕. app > nav > panel > raised 순으로 한 단계씩 밝아진다. */
-  --color-app: #161412;
-  --color-nav: #1c1916;
-  --color-panel: #1f1c19;
-  --color-raised: #2a2622;
-  --color-line: #3a342d;
-  --color-line-soft: #2e2925;
+  /**
+   * 면.
+   * 라이트는 전부 '흰색을 몇 % 얹었는가'다 — 뒤의 그라데이션이 비쳐야 글래스가 되기 때문에
+   * 불투명 색을 쓸 수 없다. app만 불투명하다(그라데이션의 베이스 색이자 모달 오버레이 바탕).
+   * nav가 panel보다 진한 것은 의도다. 셸(사이드바·헤더·시스템바)은 화면에 고정된 틀이고
+   * 카드가 그 위에 떠야 한다. 게다가 셸은 화면 전폭을 지나 그라데이션의 가장 진한 점
+   * (우상단 #f0b58a)을 늘 덮는다 — .45로 두면 헤더 우측 보조 글자가 4.37:1로 AA를 못 넘겼다.
+   * .58로 올려 4.73:1이 된다(아래 '대비 실측' 참고).
+   */
+  --color-app: #f6ede0;
+  --color-nav: rgba(255, 255, 255, 0.58);
+  --color-panel: rgba(255, 255, 255, 0.55);
+  --color-raised: rgba(255, 255, 255, 0.72);
 
-  /* 글자. muted 아래로는 읽히지 않으니 더 내리지 않는다. */
-  --color-ink: #ede8e0;
-  --color-ink-dim: #c4bbae;
-  --color-ink-muted: #a39a8d;
+  /**
+   * 선.
+   * 라이트 글래스에서 경계선은 '어두운 획'이 아니라 '흰 하이라이트 모서리'다.
+   * 유리 가장자리에 빛이 걸리는 모양을 그대로 쓴다 — 면보다 흰색이 더 얹혀 있어
+   * 면 위에서도 바깥 그라데이션 위에서도 한 단 밝게 떠 보인다.
+   */
+  --color-line: rgba(255, 255, 255, 0.85);
+  --color-line-soft: rgba(255, 255, 255, 0.7);
 
-  /* 강조. 웜 팔레트에서는 선택/활성과 Chairman 표식이 같은 황동색을 쓴다. */
+  /**
+   * 글자. 라이트에서는 아래로 갈수록 어두워지는 게 아니라 옅어진다(ink > ink-dim > ink-muted).
+   * muted는 383곳이 쓰는 '흐린 글자'인데, 확정표의 #8a7a68은 글래스 카드 위에서 3.73:1로
+   * AA(4.5:1)를 못 넘었다. 이름을 그대로 두고 값만 #6f6152로 내렸다 — 5.39:1(최악 4.64:1).
+   */
+  --color-ink: #1e1a16;
+  --color-ink-dim: #4a3f34;
+  --color-ink-muted: #6f6152;
+
+  /**
+   * 강조. 라이트에서도 선택/활성과 Chairman 표식은 같은 황동색을 쓴다.
+   * 이 값은 '면·테두리 색'이다. 글자로 쓰일 때는 아래 .text-accent/.text-gold 규칙이
+   * 한 단 내려 준다 — #b8862b는 흰 글래스 위에서 2.91:1이라 글자로는 못 쓴다.
+   * accent-soft는 accent를 바탕 쪽으로 눌러 둔 것. 아바타·선택된 줄의 배경에 쓴다.
+   */
+  --color-accent: #b8862b;
+  --color-accent-soft: #f2e3c8;
+  --color-gold: #b8862b;
+
+  /**
+   * 상태. severity 3단계와 증감 부호에 이 색만 쓴다.
+   * warning은 확정표의 #b06a2a를 못 썼다 — 글래스 카드 위에서 글자로 3.82:1이고,
+   * 솔리드로 깔았을 때 흰 글자(4.25:1)도 검은 글자(4.07:1)도 AA를 못 넘는다.
+   * 어느 쪽으로도 읽히지 않는 값이라 #94531a로 내렸다(글자 5.38:1, 흰 글자 5.98:1).
+   * info도 같은 이유로 #7a6a52 → #6b5c46(4.71 → 5.82).
+   */
+  --color-critical: #b23a2a;
+  --color-warning: #94531a;
+  --color-ok: #2c6b2a;
+  --color-info: #6b5c46;
+
+  /* 증감 부호. ok/critical과 같은 값이지만 읽는 자리가 달라 이름을 따로 둔다. */
+  --color-positive: #2c6b2a;
+  --color-negative: #b23a2a;
+
+  /**
+   * 회사별 식별색. 밝은 바탕에서 뜨는 만큼 확정표대로 명도를 12% 내렸다.
+   * 주의: 이 값으로도 "bg-biz-<회사> 20%" 톤 위의 뱃지 글자는 2.4~3.3:1이다(AA 미달).
+   * business-card.tsx는 이 Task의 범위가 아니라 값만 옮기고 수치를 보고서에 남긴다.
+   */
+  --color-biz-dy: #3d74d0;
+  --color-biz-vana: #28a355;
+  --color-biz-sticky: #9453d1;
+  --color-biz-hof: #d1671e;
+  --color-biz-boram: #1a998b;
+
+  /**
+   * 글래스 카드 그림자. 라이트에서 검정 그림자를 쓰면 웜 팔레트가 회색으로 죽는다.
+   * 갈색 쪽으로 돌린 낮은 알파를 쓴다.
+   */
+  --color-glass-shadow: rgba(90, 60, 30, 0.1);
+
+  /* D-day 카드의 골드 그라데이션. 세 칸이 한 벌이라 이름을 셋으로 나눠 둔다. */
+  --color-dday-from: #f6d08e;
+  --color-dday-via: #e79d57;
+  --color-dday-to: #cf6d3d;
+
+  /**
+   * 글래스의 모양. 24~28px 사이의 중앙값으로 하나만 둔다 —
+   * 카드마다 radius가 다르면 여러 장이 겹쳤을 때 모서리 곡률이 어긋나 보인다.
+   * @theme의 --radius- · --blur- 이름 규칙을 따르므로 rounded-glass 유틸리티가 자동으로 생긴다.
+   */
+  --radius-glass: 26px;
+  --blur-glass: 24px;
+
+  --font-sans: var(--font-noto-serif-kr), "Noto Serif KR", serif;
+}
+
+/**
+ * 배경 그라데이션은 @theme이 아니라 :root에 둔다.
+ * @theme은 알려진 이름 규칙(--color-*, --radius-* 등)만 유틸리티로 펴 주고 나머지는
+ * 쓰이는 것만 내보낸다. 이 값은 유틸리티가 아니라 body의 background로만 쓰이므로
+ * 평범한 커스텀 프로퍼티로 두는 편이 의도가 분명하다.
+ */
+:root {
+  --gradient-app:
+    radial-gradient(at 15% 8%, #f7d9b4 0%, transparent 55%),
+    radial-gradient(at 85% 5%, #f0b58a 0%, transparent 50%),
+    radial-gradient(at 50% 100%, #d9c1e6 0%, transparent 55%),
+    linear-gradient(#f6ede0, #ead8c6);
+}
+
+/**
+ * 다크는 아침 루틴(/ai) 한 화면뿐이다. 토큰 이름을 그대로 두고 값만 덮는다 —
+ * Tailwind v4의 .bg-panel은 background-color: var(--color-panel)로 나가므로,
+ * 이 선택자 안에서 그 변수를 다시 정의하면 하위 트리 전체가 따라온다.
+ * 이름을 바꾸는 길은 없다: 42개 파일 948곳이 이 이름을 쓴다(위 주석).
+ *
+ * 이 블록은 레이어 밖에 있다. @theme이 내보내는 :root는 @layer theme 안이고,
+ * 레이어 밖 선언이 레이어 안 선언을 언제나 이긴다 — 선택자 특이도가 같아도(:root 0-1-0,
+ * [data-theme='dark'] 0-1-0) 순서 걱정 없이 덮인다.
+ */
+[data-theme='dark'] {
+  --color-app: #0c1224;
+  --color-nav: rgba(255, 255, 255, 0.04);
+  --color-panel: rgba(255, 255, 255, 0.06);
+  --color-raised: rgba(255, 255, 255, 0.1);
+  --color-line: rgba(255, 255, 255, 0.16);
+  --color-line-soft: rgba(255, 255, 255, 0.12);
+
+  --color-ink: #e9e6f2;
+  --color-ink-dim: #c9c5da;
+  --color-ink-muted: #b7b3c8;
+
   --color-accent: #e0a23a;
-  /* accent-soft는 accent를 바탕 쪽으로 눌러 둔 것. 선택된 줄의 배경에 쓴다. */
   --color-accent-soft: #4a3416;
   --color-gold: #e0a23a;
 
-  /* 상태. severity 3단계와 증감 부호에 이 색만 쓴다. */
   --color-critical: #e8735a;
   --color-warning: #d97b4a;
   --color-ok: #7fb069;
   --color-info: #d0a878;
 
-  /* 증감 부호. ok/critical과 같은 값이지만 읽는 자리가 달라 이름을 따로 둔다. */
   --color-positive: #7fb069;
   --color-negative: #e8735a;
 
-  /* 회사별 식별색. 웜 배경에서 튀어서 채도를 10%p 낮췄다. */
+  /* 회사 식별색은 다크에서 원래 값으로 돌아간다. 어두운 바탕에서는 12% 내릴 이유가 없다. */
   --color-biz-dy: #4584ec;
   --color-biz-vana: #2eb961;
   --color-biz-sticky: #a85eee;
   --color-biz-hof: #ed7522;
   --color-biz-boram: #1eae9e;
 
-  --font-sans: var(--font-noto-serif-kr), "Noto Serif KR", serif;
+  --color-glass-shadow: rgba(0, 0, 0, 0.35);
+
+  --gradient-app:
+    radial-gradient(at 85% 8%, #3a2a5c 0%, transparent 55%),
+    radial-gradient(at 10% 85%, #16345c 0%, transparent 50%),
+    radial-gradient(at 90% 95%, #7a3d2a 0%, transparent 45%),
+    linear-gradient(#0c1224, #0a0f1d);
 }
 
+/**
+ * color-scheme은 브라우저가 스크롤바·폼 컨트롤·자동완성 배경을 칠하는 기준이다.
+ * 루트는 라이트다. 화면 어딘가에 다크 트리가 있으면(아침 루틴) 그때만 다크로 바꾼다 —
+ * :has()를 쓰는 이유는 data-theme이 <html>이 아니라 그 화면의 레이아웃에 붙기 때문이다.
+ */
 html {
+  color-scheme: light;
+}
+
+html:has([data-theme='dark']),
+[data-theme='dark'] {
   color-scheme: dark;
 }
 
+/**
+ * body 바탕.
+ * background-attachment: fixed가 있어야 한다. 이 셸은 body가 아니라 <main>이 스크롤하지만,
+ * 모달·긴 목록에서 뷰포트가 움직이는 순간 라디얼 그라데이션이 같이 흘러가면
+ * 글래스 카드 뒤로 색이 밀려 보인다 — 카드는 제자리인데 그 안에 비치는 색만 움직여서,
+ * 유리 뒤의 배경이 아니라 유리 자체가 물든 것처럼 읽힌다. 배경을 뷰포트에 못 박아 둔다.
+ */
 body {
-  background: var(--color-app);
+  background: var(--gradient-app);
+  background-attachment: fixed;
+  color: var(--color-ink);
+}
+
+/**
+ * 다크 트리는 자기 배경을 직접 칠한다.
+ * body는 여전히 라이트 그라데이션이라, 다크 화면이 body를 다 덮지 못하면 가장자리로 라이트가 샌다.
+ */
+[data-theme='dark'] {
+  background: var(--gradient-app);
+  background-attachment: fixed;
   color: var(--color-ink);
 }
 
@@ -74,46 +230,209 @@ body {
 }
 
 /**
- * 뱃지·톤 박스 글자.
- * `bg-<tone>/N` 과 `text-<tone>` 이 한 요소에 같이 붙는 자리에만 글자를 한 단 밝힌다.
- * 그 자리는 전부 뱃지이거나 톤 박스다(긴급·높음·활성·회수 뱃지, 로그인 실패 문장 등).
+ * 글래스 면.
  *
+ * 유틸리티 클래스로 표현하기 나쁜 것이 셋이라 클래스로 묶어 둔다:
+ * backdrop-filter, 벤더 접두사, 그리고 @supports 폴백.
+ *
+ * .glass는 카드(panel), .glass-nav는 셸(nav)이다. 두 면의 차이는 어느 토큰을 쓰느냐뿐이고,
+ * 셸에는 그림자를 주지 않는다 — 화면에 고정된 틀이 떠 보이면 카드가 그 위에 뜨지 못한다.
+ */
+.glass {
+  background: var(--color-panel);
+  /* 접두사를 먼저 쓴다. 뒤집어 쓰면 Lightning CSS(Turbopack 최적화)가 앞의 표준 속성을
+     지워 버려 산출물에 -webkit-만 남는다 — Firefox는 접두사 쪽을 모르므로 흐림을 통째로 잃는다.
+     실제로 그렇게 나가는 것을 빌드 산출물에서 확인했다. */
+  -webkit-backdrop-filter: blur(var(--blur-glass));
+  backdrop-filter: blur(var(--blur-glass));
+  box-shadow: 0 12px 40px var(--color-glass-shadow);
+}
+
+.glass-nav {
+  background: var(--color-nav);
+  -webkit-backdrop-filter: blur(var(--blur-glass));
+  backdrop-filter: blur(var(--blur-glass));
+}
+
+/**
+ * 흐림이 없으면 배경이 그대로 비쳐 글자가 안 읽힌다. 불투명도로 버틴다.
+ *
+ * 조건에 -webkit- 접두사를 같이 묻는 이유: Safari는 오래 접두사만 지원했다.
+ * `not (backdrop-filter: …)` 하나만 쓰면 흐림이 멀쩡히 되는 Safari에서도 폴백이 켜져
+ * 유리가 아니라 불투명 판이 된다.
+ *
+ * 확정표의 26%/42% 보정으로는 모자랐다. 라이트는 .55 → 실효 알파 0.92까지 올려야
+ * 최악 배경(우상단 #f0b58a) 위에서 ink-muted가 5.31:1로 선다(보정 없으면 4.30:1).
+ * color-mix(in srgb, A, B 82%)는 A 18% + B 82%이고, A가 반투명이라 알파도 같이 섞인다:
+ * 0.18 × 0.55 + 0.82 × 1 = 0.919.
+ */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass {
+    background: color-mix(in srgb, var(--color-panel), #fff 82%);
+  }
+
+  .glass-nav {
+    background: color-mix(in srgb, var(--color-nav), #fff 78%);
+  }
+
+  [data-theme='dark'] .glass {
+    background: color-mix(in srgb, var(--color-panel), #0c1224 88%);
+  }
+
+  [data-theme='dark'] .glass-nav {
+    background: color-mix(in srgb, var(--color-nav), #0c1224 84%);
+  }
+}
+
+/* ===================================================================
+ * 대비 보정.
+ *
+ * 여기부터의 규칙은 전부 '같은 요소에 톤 배경과 톤 글자가 같이 붙은 자리'를 고친다.
  * 왜 토큰이 아니라 여기서 하나 — 같은 --color-critical이 본문 숫자(-4.7억)에도 쓰인다.
- * 토큰을 밝히면 본문 빨강까지 같이 뜬다. 배경이 톤을 15% 얹어 밝아진 만큼 글자도
- * 올려야 대비가 유지되는데, 그 보정이 필요한 곳은 이 조합뿐이다.
+ * 토큰을 움직이면 본문 빨강까지 같이 움직인다. 보정이 필요한 곳은 이 조합뿐이다.
  *
- * 안 하면 raised 위 뱃지가 4.02:1 / 3.93:1로 AA(4.5:1)를 못 넘는다. 붙이면 5.99~8.93:1이 된다.
+ * 라이트와 다크는 방향이 정반대다. 다크는 톤 배경이 어두워지니 글자를 **밝히고**,
+ * 라이트는 톤 배경이 밝아지니 글자를 **내린다**. 2026-09-07의 규칙을 그대로 두면
+ * 흰 글래스 카드 위에서 긴급·지연 뱃지가 가장 안 읽히는 글자가 된다.
+ *
  * 클래스 두 개(0-2-0)라 유틸리티(0-1-0)를 소스 순서와 무관하게 이긴다.
  * hover:bg-…는 클래스 이름이 달라 여기 걸리지 않는다 — 의도한 것이다.
+ *
+ * 아래 숫자는 전부 실측이다. 배경 실효색은 근사했다:
+ * 글래스 카드(흰색 55%)를 그라데이션 위에 얹고 그 위에 톤을 N% 더한 값으로 계산했고,
+ * 그라데이션은 두 점을 봤다 — 보통(#f0e3d3, 선형 베이스 중앙)과 최악(#f0b58a, 우상단 라디얼 중심).
+ * 표기는 '보통 / 최악'이다.
+ * =================================================================== */
+
+/**
+ * 라이트 — 톤 배경이 밝다. 글자를 내려야 읽힌다.
+ * 보정을 안 하면 토큰 색 그대로라 bg-critical/10 위에서 4.04:1(최악)까지 떨어진다.
+ *
+ *   bg-critical/5~20 + #8f2a1d   7.00~5.57 / 6.07~4.91
+ *   bg-warning/5~20  + #6d3c10   7.67~6.20 / 6.64~5.46
+ *   bg-ok/5~20       + #1f4f1d   8.02~6.46 / 6.94~5.65
+ *   bg-gold/5~20     + #6d4a08   6.51~5.92 / 5.75~5.22
  */
 :is(.bg-critical\/5, .bg-critical\/10, .bg-critical\/15, .bg-critical\/20).text-critical {
-  color: #f0a58f;
+  color: #8f2a1d;
 }
 
 :is(.bg-warning\/5, .bg-warning\/10, .bg-warning\/15, .bg-warning\/20).text-warning {
-  color: #e9c27a;
+  color: #6d3c10;
 }
 
 :is(.bg-ok\/5, .bg-ok\/10, .bg-ok\/15, .bg-ok\/20).text-ok {
+  color: #1f4f1d;
+}
+
+:is(.bg-gold\/5, .bg-gold\/10, .bg-gold\/15, .bg-gold\/20).text-gold {
+  color: #6d4a08;
+}
+
+/**
+ * 라이트 — 골드를 글자로 쓸 때.
+ *
+ * --color-accent / --color-gold는 면과 테두리의 색이다(버튼 바탕, 진행률 막대, 활성 테두리).
+ * 확정표의 #b8862b를 글자로 쓰면 글래스 카드 위에서 2.91:1이다 — 링크(text-accent 16곳)와
+ * Vault·회장확인 뱃지(text-gold)가 전부 AA 미달이 된다.
+ *
+ * 토큰 값을 내리는 대신 글자일 때만 내린다. 이유는 골드가 회장 화면의 정체성 색이고,
+ * 면적이 큰 자리(버튼·막대·테두리)에서 그 밝기가 곧 '골드'이기 때문이다.
+ * 글리프는 면적이 작아 같은 밝기로는 못 읽는다 — 색은 유지하고 명도만 한 단 내린다.
+ * #855a11: 5.45 / 4.70.
+ *
+ * 레이어 밖 선언이라 @layer utilities의 .text-accent(같은 0-1-0)를 이긴다.
+ * group-hover:text-gold 같은 변형은 클래스 이름이 달라 걸리지 않는다 —
+ * 그 자리는 hover로만 잠깐 뜨는 아이콘이라 그대로 둔다.
+ */
+.text-accent,
+.text-gold {
+  color: #855a11;
+}
+
+/**
+ * 라이트 — 솔리드 톤 위의 글자.
+ *
+ * 확정표는 다섯 색 전부에 #1e1a16(어두운 글자)을 주라고 했는데, 재어 보니 두 쪽이 갈린다.
+ *   bg-accent / bg-gold (#b8862b)  검은 글자 5.34 / 흰 글자 3.24  → 검은 글자
+ *   bg-critical (#b23a2a)          검은 글자 2.91 / 흰 글자 5.95  → 흰 글자
+ *   bg-warning  (#94531a)          검은 글자 2.89 / 흰 글자 5.98  → 흰 글자
+ *   bg-ok       (#2c6b2a)          검은 글자 2.67 / 흰 글자 6.47  → 흰 글자
+ * 라이트의 상태색은 '밝은 톤'이 아니라 '진한 톤'이다(어두운 바탕에서 읽히려고 밝던 색이
+ * 밝은 바탕에서 읽히려면 어두워져야 한다). 그러니 그 위의 글자는 흰색이 맞다.
+ * 골드만 예외인데, 골드는 밝아야 골드라서 밝게 남겨 둔 색이다.
+ *
+ * 걸리는 자리: 헤더 알림 개수 뱃지, 로그인 버튼, 기안·기업추가·문서등록·좌표저장의 주 버튼.
+ * 사이드바 활성 메뉴는 Phase 5에서 흰색 필로 바뀌어 더 이상 여기 걸리지 않는다 —
+ * 그래도 규칙은 남긴다, 버튼들이 아직 쓴다.
+ * 색이 없는 bg-accent(진행률 막대 등)는 글자가 없어 이 규칙에 걸리지 않는다.
+ */
+:is(.bg-accent, .bg-gold):is(.text-white, .text-ink, .text-ink-dim) {
+  color: #1e1a16;
+}
+
+:is(.bg-warning, .bg-ok, .bg-critical):is(.text-white, .text-ink, .text-ink-dim) {
+  color: #ffffff;
+}
+
+/* hover:로 톤이 깔리는 버튼(결재 위임·거절 등)은 클래스 이름이 달라 위 규칙에 안 걸린다. */
+:is(.hover\:bg-accent):is(.hover\:text-ink, .hover\:text-white):hover {
+  color: #1e1a16;
+}
+
+:is(.hover\:bg-critical):is(.hover\:text-ink, .hover\:text-white):hover {
+  color: #ffffff;
+}
+
+/**
+ * 다크(아침 루틴) — 2026-09-07에 쓴 규칙 그대로다. 방향만 반대라는 것을 보이려고 같이 둔다.
+ * 톤 배경이 톤을 15% 얹어 밝아진 만큼 글자도 올려야 대비가 유지된다.
+ * 안 하면 raised 위 뱃지가 4.02:1 / 3.93:1로 AA를 못 넘는다. 붙이면 5.99~8.93:1이 된다.
+ * 새 다크 바탕(#0c1224 계열)에서 다시 재어도 6.01~8.40:1로 유효하다.
+ */
+[data-theme='dark'] :is(.bg-critical\/5, .bg-critical\/10, .bg-critical\/15, .bg-critical\/20).text-critical {
+  color: #f0a58f;
+}
+
+[data-theme='dark'] :is(.bg-warning\/5, .bg-warning\/10, .bg-warning\/15, .bg-warning\/20).text-warning {
+  color: #e9c27a;
+}
+
+[data-theme='dark'] :is(.bg-ok\/5, .bg-ok\/10, .bg-ok\/15, .bg-ok\/20).text-ok {
   color: #a9cf95;
 }
 
 /**
- * 톤 배경 위의 글자.
- * 구 팔레트의 accent는 남색(#2563eb)이라 흰 글자가 5.17:1로 읽혔다.
- * 웜 차콜의 accent는 황동(#e0a23a)이고, 그 위의 흰 글자는 2.23:1이다 — AA를 크게 못 넘는다.
- * 황동·주황 계열은 밝은 색이라 글자를 어둡게 깔아야 읽힌다(#161412 기준 8.22:1).
+ * 다크에서는 골드가 밝은 색(#e0a23a)이라 글자로 써도 7.24:1이다. 라이트의 글리프 보정을 되돌린다.
+ * 위 .text-accent/.text-gold 규칙(0-1-0)보다 특이도가 높아(0-2-0) 다크 트리 안에서만 이긴다.
  *
- * 걸리는 자리: 사이드바 활성 메뉴, 헤더 알림 개수 뱃지, 로그인 버튼,
- * 기안·기업추가·문서등록·좌표저장의 주 버튼(전부 bg-accent + text-ink/white).
- * 색이 없는 bg-accent(진행률 막대 등)는 글자가 없어 이 규칙에 걸리지 않는다.
+ * 골드 톤 배경 위의 글자도 같이 되돌린다. 라이트 규칙이 0-2-0이라 소스 순서로도 이기긴 하지만,
+ * 동점을 순서에 기대면 이 파일을 재배열하는 순간 조용히 뒤집힌다. 0-3-0으로 못 박는다.
  */
-:is(.bg-accent, .bg-gold, .bg-warning, .bg-ok, .bg-critical):is(.text-white, .text-ink, .text-ink-dim) {
+[data-theme='dark'] .text-accent {
+  color: var(--color-accent);
+}
+
+[data-theme='dark'] .text-gold {
+  color: var(--color-gold);
+}
+
+[data-theme='dark'] :is(.bg-gold\/5, .bg-gold\/10, .bg-gold\/15, .bg-gold\/20).text-gold {
+  color: var(--color-gold);
+}
+
+/**
+ * 다크의 솔리드 톤 위 글자.
+ * 웜 차콜의 accent는 황동(#e0a23a)이고 그 위의 흰 글자는 2.23:1이다 — AA를 크게 못 넘는다.
+ * 황동·주황 계열은 밝은 색이라 글자를 어둡게 깔아야 읽힌다(8.22:1).
+ * 다크에서는 critical·ok도 밝은 색이라 라이트와 달리 다섯 색 전부 같은 방향이다.
+ */
+[data-theme='dark']
+  :is(.bg-accent, .bg-gold, .bg-warning, .bg-ok, .bg-critical):is(.text-white, .text-ink, .text-ink-dim) {
   color: #161412;
 }
 
-/* hover:로 톤이 깔리는 버튼(결재 위임·거절 등)은 클래스 이름이 달라 위 규칙에 안 걸린다. */
-:is(.hover\:bg-accent, .hover\:bg-critical):is(.hover\:text-ink, .hover\:text-white):hover {
+[data-theme='dark'] :is(.hover\:bg-accent, .hover\:bg-critical):is(.hover\:text-ink, .hover\:text-white):hover {
   color: #161412;
 }
 
@@ -121,6 +440,14 @@ body {
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--color-line) transparent;
+}
+
+/**
+ * 라이트의 --color-line은 흰색 85%다. 스크롤바가 배경보다 밝아지면 '비어 있는 홈'처럼 보여
+ * 잡을 데를 못 찾는다. 스크롤바만 잉크 쪽으로 돌려 둔다.
+ */
+html:not(:has([data-theme='dark'])) * {
+  scrollbar-color: rgba(30, 26, 22, 0.22) transparent;
 }
 
 /* Phase 2-A 재무제표. KPI 카드의 숫자를 누르면 그 줄로 내려오고(#total-revenue 등) 잠깐 불이 들어온다. */

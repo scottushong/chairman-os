@@ -14,7 +14,8 @@ import { ROLE_LABEL_KO, type SessionUser } from '@/types'
  */
 export function Header({ user }: { user: SessionUser | null }) {
   return (
-    <header className="flex h-14 shrink-0 items-center gap-4 border-b border-line-soft bg-nav px-5">
+    // glass-nav = --color-nav 면 + backdrop-blur. 사이드바·시스템바와 같은 면이라 같은 클래스를 쓴다.
+    <header className="glass-nav flex h-14 shrink-0 items-center gap-4 border-b border-line-soft px-5">
       {/* CH-043. 이 헤더는 서버 컴포넌트로 두고 검색창만 클라이언트로 떼어 낸다 —
           세션(user)은 여기서 그리고, 입력·드롭다운만 브라우저로 내려간다. */}
       <GlobalSearch />

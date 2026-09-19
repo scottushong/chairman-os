@@ -99,7 +99,7 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
         <RegisterDocument businesses={businesses} />
       </PageHeader>
 
-      <div className="mt-4 space-y-2 rounded-xl border border-line-soft bg-panel/60 px-3.5 py-3">
+      <div className="mt-4 space-y-2 rounded-xl border border-line-soft bg-panel px-3.5 py-3">
         <FilterChips label="등급" options={classOptions} />
         <FilterChips label="소속" options={businessOptions} />
       </div>

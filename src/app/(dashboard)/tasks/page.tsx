@@ -125,7 +125,7 @@ export default async function TasksPage(props: PageProps<'/tasks'>) {
         description="회사·상태로 걸러 보고, 상태와 회장 확인 여부를 여기서 바꾼다. 변경은 감사 기록에 남는다."
       />
 
-      <div className="mt-4 space-y-2 rounded-xl border border-line-soft bg-panel/60 px-3.5 py-3">
+      <div className="mt-4 space-y-2 rounded-xl border border-line-soft bg-panel px-3.5 py-3">
         <FilterChips label="범위" options={scopeOptions} />
         <FilterChips label="상태" options={statusOptions} />
         <FilterChips label="회사" options={businessOptions} />

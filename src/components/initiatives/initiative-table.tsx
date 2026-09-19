@@ -29,7 +29,7 @@ export function InitiativeTable({
 }) {
   if (initiatives.length === 0) {
     return (
-      <p className="mt-4 rounded-xl border border-dashed border-line bg-panel/60 p-6 text-center text-[12px] text-ink-muted">
+      <p className="mt-4 rounded-xl border border-dashed border-line bg-panel p-6 text-center text-[12px] text-ink-muted">
         {hasAny ? '이 조건에 맞는 건이 없습니다.' : '아직 등록된 이니셔티브가 없습니다. 위에서 새 건을 만들어 보세요.'}
       </p>
     )

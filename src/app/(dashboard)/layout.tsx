@@ -9,8 +9,10 @@ import { currentUser } from '@/lib/auth/session'
  * 라우트 그룹으로 나눈 이유는 /login이 이 셸을 쓰면 안 되기 때문이다 —
  * 로그인 화면에 사이드바와 검색창이 떠 있으면 '이미 들어와 있다'로 읽힌다.
  *
- * 여기서 세션을 한 번만 읽어 헤더에 내려 준다. 화면마다 다시 물으면
+ * 여기서 세션을 한 번만 읽어 헤더와 사이드바에 내려 준다. 화면마다 다시 물으면
  * 같은 요청 안에서 Auth 왕복이 여러 번 생긴다.
+ * 사이드바는 클라이언트 컴포넌트지만 세션을 스스로 읽지 않는다 — 같은 값을 두 번 묻지 않으려고
+ * 여기서 읽은 것을 prop으로 내린다(SessionUser는 평범한 객체라 그대로 직렬화된다).
  */
 export default async function DashboardLayout({ children }: LayoutProps<'/'>) {
   const user = await currentUser()
@@ -18,7 +20,7 @@ export default async function DashboardLayout({ children }: LayoutProps<'/'>) {
   return (
     // 셸은 화면에 고정하고 본문만 스크롤한다. 관제 화면에서 헤더가 밀리면 안 된다.
     <div className="flex h-full">
-      <Sidebar />
+      <Sidebar user={user} />
       <div className="flex min-w-0 flex-1 flex-col">
         <Header user={user} />
         <main className="flex-1 overflow-y-auto">{children}</main>

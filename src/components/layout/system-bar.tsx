@@ -17,7 +17,8 @@ const SYSTEMS: { label: string; icon: IconName }[] = [
 
 export function SystemBar() {
   return (
-    <footer className="flex h-12 shrink-0 items-center justify-center gap-1 border-t border-line-soft bg-nav px-5">
+    // glass-nav = --color-nav 면 + backdrop-blur. 사이드바·헤더와 같은 면이라 같은 클래스를 쓴다.
+    <footer className="glass-nav flex h-12 shrink-0 items-center justify-center gap-1 border-t border-line-soft px-5">
       {SYSTEMS.map((s) => (
         <button
           key={s.label}
