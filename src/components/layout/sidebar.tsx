@@ -36,12 +36,14 @@ export function Sidebar({ user }: { user: SessionUser | null }) {
     // glass-nav = --color-nav 면 + backdrop-blur. 셸은 배경 그라데이션 위에 얹힌 유리 틀이고,
     // 그림자는 주지 않는다 — 고정된 틀이 떠 보이면 그 위의 카드가 뜨지 못한다.
     <aside className="glass-nav flex w-[212px] shrink-0 flex-col border-r border-line-soft">
-      {/* 워드마크. 지금은 누를 수 없다 — 대시보드로 가는 Link는 별도 Task(P5-6)다.
-          높이 14는 헤더와 같아야 한다. 다르면 셸 두 장의 아랫선이 어긋난다. */}
-      <div className="flex h-14 items-center gap-2 border-b border-line-soft px-4">
+      {/* 워드마크. 대시보드로 간다. 높이 14는 헤더와 같아야 한다. 다르면 셸 두 장의 아랫선이 어긋난다. */}
+      <Link
+        href="/"
+        className="flex h-14 items-center gap-2 border-b border-line-soft px-4 rounded-md transition-colors hover:bg-raised focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-accent"
+      >
         <Icon name="crown" className="size-5 text-gold" filled />
         <span className="text-[15px] font-bold tracking-[0.04em] text-ink">CHAIRMAN OS</span>
-      </div>
+      </Link>
 
       <nav className="flex-1 overflow-y-auto px-2.5 pb-3">
         {NAV.map((group, i) => (

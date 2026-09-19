@@ -35,11 +35,15 @@ export function RailSidebar({ user }: { user: SessionUser | null }) {
     // glass-nav = --color-nav 면 + backdrop-blur. 다크에서는 같은 이름이 흰색 4%로 뒤집힌다.
     // 셸에는 그림자를 주지 않는다 — 고정된 틀이 떠 보이면 그 위의 카드가 뜨지 못한다.
     <aside className="glass-nav flex w-[76px] shrink-0 flex-col items-center border-r border-line-soft">
-      {/* 워드마크 자리. 76px에는 글자가 안 들어가 왕관만 남긴다.
-          누를 수 없는 것은 (dashboard) 사이드바와 같다 — 대시보드로 가는 Link는 별도 Task다. */}
-      <div className="flex h-14 w-full items-center justify-center border-b border-line-soft">
+      {/* 워드마크 자리. 76px에는 글자가 안 들어가 왕관만 남긴다. 대시보드로 간다. */}
+      <Link
+        href="/"
+        title="대시보드로"
+        aria-label="대시보드로"
+        className="flex h-14 w-full items-center justify-center border-b border-line-soft rounded-xl transition-colors hover:bg-raised focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-accent"
+      >
         <Icon name="crown" className="size-5 text-gold" filled />
-      </div>
+      </Link>
 
       <nav aria-label="주요 메뉴" className="flex-1 overflow-y-auto py-3">
         <ul className="space-y-1">
