@@ -53,7 +53,7 @@ export default async function DashboardPage() {
               <Icon name="crown" className="size-5 text-gold" filled />
             </h1>
             {/* 표시 개수는 카드 줄 머리에서 말한다. 여기서 또 세면 숨김 후 두 숫자가 어긋난다. */}
-            <p className="mt-1 text-[12px] text-ink-muted">오늘도 성공적인 하루 되세요.</p>
+            <p className="mt-1 text-[12px] text-ink-dim">오늘도 성공적인 하루 되세요.</p>
           </div>
           {/* Phase 3-B. 회장이 대시보드를 열 때마다 남은 날을 먼저 본다. 누르면 /ai 아침 루틴. */}
           <ChairmanDdayCard projects={chairmanProjects} />

@@ -111,7 +111,7 @@ export default async function InitiativesPage(props: PageProps<'/initiatives'>) 
         hasAny={initiatives.length > 0}
       />
 
-      <p className="mt-6 text-[11px] text-ink-muted">
+      <p className="mt-6 text-[11px] text-ink-dim">
         보이는 범위는 이 화면이 아니라 0017의 RLS가 정합니다. 회장과 그룹 CFO만 읽습니다.
       </p>
     </div>

@@ -133,7 +133,7 @@ export default async function TasksPage(props: PageProps<'/tasks'>) {
 
       <TaskTable items={items} />
 
-      <p className="mt-3 pb-6 text-[11px] text-ink-muted">
+      <p className="mt-3 pb-6 text-[11px] text-ink-dim">
         {items.length}건 표시 중. 보이는 범위는 권한(RLS)이 정한다 — 자기 회사 밖의 업무는 목록에
         아예 오지 않는다.
       </p>

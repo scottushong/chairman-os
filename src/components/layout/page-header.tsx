@@ -5,6 +5,11 @@ import { Icon, type IconName } from '@/components/ui/icon'
  *
  * 오른쪽 끝의 기능번호(CH-0xx)는 장식이 아니다. 이 화면이 명세의 어느 줄인지
  * 보는 사람과 만드는 사람이 같은 말로 부를 수 있어야 한다. 대시보드 패널들도 같은 표기를 쓴다.
+ *
+ * 2026-09-19: 코드와 설명 줄을 ink-muted에서 ink-dim으로 올렸다.
+ * 이 머리는 카드 밖, 배경 그라데이션 위에 바로 놓인다. 라이트에서 그 자리의 최암점은
+ * 휘도 0.538이고 거기서 ink-muted는 3.36:1(AA 미달), ink-dim은 5.74:1이다.
+ * 유리 없는 글자는 ink 아니면 ink-dim만 쓴다 — globals.css의 '유리 없이 글자를 놓지 마라' 참고.
  */
 export function PageHeader({
   icon,
@@ -25,9 +30,9 @@ export function PageHeader({
         <h1 className="flex items-center gap-2 text-[20px] font-bold tracking-tight">
           <Icon name={icon} className="size-5 text-ink-dim" />
           {title}
-          <span className="text-[9px] font-normal text-ink-muted tnum">{code}</span>
+          <span className="text-[9px] font-normal text-ink-dim tnum">{code}</span>
         </h1>
-        <p className="mt-1 text-[12px] text-ink-muted">{description}</p>
+        <p className="mt-1 text-[12px] text-ink-dim">{description}</p>
       </div>
       {children ? <div className="flex items-center gap-2">{children}</div> : null}
     </div>

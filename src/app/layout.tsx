@@ -32,12 +32,15 @@ export const metadata: Metadata = {
  * data-theme="light"가 루트에 붙는 이유(Phase 5).
  * 이 앱은 낮에 사무실에서 보는 관제 화면이다. 밝은 방에서 다크 화면은 유리에 방이 비치고
  * 종이 보고서와 나란히 놓았을 때 밝기가 튄다 — 그래서 기본을 라이트 웜 글래스로 잡았다.
- * 다크는 아침 루틴 한 화면뿐이다. 그 화면만 아직 해가 뜨기 전에 보는 화면이라,
- * 그 레이아웃이 자기 트리에 data-theme="dark"를 붙여 토큰 값을 덮는다
- * (globals.css의 [data-theme='dark'] 블록. 지금은 /ai, P5-5c 이후로는 (morning)/layout.tsx).
+ * 다크는 아침 루틴 한 화면을 위해 준비해 둔 것이고, **지금은 아무도 켜지 않는다.**
+ * 이 코드베이스에서 data-theme를 다는 곳은 이 줄 하나뿐이라, /ai도 오늘은 라이트로 뜬다.
+ * globals.css의 [data-theme='dark'] 블록을 실제로 켜는 것은 P5-5c다 —
+ * 그 Task가 아침 루틴을 (morning) 셸로 옮기면서 그 레이아웃 트리에 data-theme="dark"를 붙인다.
  *
  * 값을 명시해 두는 편이 안전하다. 루트에 아무것도 없어도 @theme의 라이트가 기본으로 서지만,
  * 그러면 '라이트가 기본'이 마크업 어디에도 안 적혀 있어 다음 사람이 토글을 붙일 자리를 못 찾는다.
+ * 그리고 globals.css의 color-scheme 규칙이 [data-theme='light']를 직접 보므로
+ * 이 속성이 없으면 라이트 트리가 명시적으로 선언되지 않는다.
  */
 export default function RootLayout({ children }: LayoutProps<'/'>) {
   return (

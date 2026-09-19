@@ -115,7 +115,7 @@ export default async function AiPage(props: PageProps<'/ai'>) {
           ) : null}
 
           {isChairman && activeProjects.length === 0 && !manifesto.body ? (
-            <p className="rounded-xl border border-dashed border-line bg-panel/60 p-4 text-[12px] text-ink-muted">
+            <p className="rounded-xl border border-dashed border-line bg-panel p-4 text-[12px] text-ink-muted">
               아직 장기 프로젝트와 선언문이 없습니다.{' '}
               <Link href="/settings/chairman" className="text-accent underline-offset-2 hover:underline">
                 회장 루틴 설정

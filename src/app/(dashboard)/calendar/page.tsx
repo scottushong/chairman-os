@@ -80,7 +80,7 @@ export default async function CalendarPage(props: PageProps<'/calendar'>) {
         </Link>
       </PageHeader>
 
-      <p className="mt-1 text-[12px] text-ink-muted tnum">
+      <p className="mt-1 text-[12px] text-ink-dim tnum">
         {y}년 {Number(m)}월
       </p>
 

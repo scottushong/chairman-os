@@ -100,7 +100,10 @@ export function Sidebar({ user }: { user: SessionUser | null }) {
           기업(A,B,C) 추가
         </button>
         <label className="mt-2.5 flex cursor-pointer items-center gap-2 px-1 text-[11px] text-ink-muted">
-          <span className="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full bg-line transition-colors">
+          {/* 트랙을 --color-line(흰색 85%)으로 두면 라이트 셸 위에서 1.22:1이라 사실상 안 보인다.
+              잉크를 30% 깔아 1.47:1로 올리고, 꺼짐을 알리는 대비는 손잡이가 진다 —
+              손잡이(ink-muted 솔리드)와 트랙이 3.22:1이라 WCAG 1.4.11(비텍스트 3:1)을 넘는다. */}
+          <span className="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full bg-ink-muted/30 transition-colors">
             <span className="absolute left-0.5 size-3 rounded-full bg-ink-muted" />
           </span>
           숨김 기업 관리

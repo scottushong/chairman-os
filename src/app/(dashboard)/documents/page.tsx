@@ -145,7 +145,7 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
         )}
       </div>
 
-      <p className="mt-3 pb-6 text-[11px] text-ink-muted">
+      <p className="mt-3 pb-6 text-[11px] text-ink-dim">
         {shown.length}건 표시 중. 열람 등급이 모자란 문서는 이 목록에 오지 않는다 — 필터를
         Vault로 놓아도 없는 것이 보이지는 않는다(0002 documents_read).
       </p>
