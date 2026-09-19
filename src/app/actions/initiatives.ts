@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 
 import { currentUser } from '@/lib/auth/session'
+import { LOGO_MAX_BYTES, LOGO_MIME, type LogoMime } from '@/lib/initiative-logo'
 import { getRepository } from '@/lib/repository'
 import {
   EVENT_KIND, INITIATIVE_KIND, INITIATIVE_STAGE, INITIATIVE_STATUS,
@@ -61,12 +62,20 @@ export type InitiativeField =
  * saveInitiativeNoteAction(initiative_notes), saveInitiativeDocAction/removeInitiativeDocAction
  * (initiative_docs), saveEventAction/removeEventAction(events)가 전부 같이 쓴다 —
  * 넷 중 하나라도 빠지면 그 표에서 난 권한 거부가 '잠시 후 다시 시도'로 잘못 안내된다.
+ *
+ * 0018_initiative_logos.sql의 정책 넷도 여기 같이 잡는다: initiative_logos_read,
+ * initiative_logos_write_insert, initiative_logos_write_update, initiative_logos_write_delete —
+ * saveInitiativeLogoAction/removeInitiativeLogoAction이 쓴다. 이름이 넷으로 갈라져 있어
+ * 접두어 initiative_logos_\w+ 하나로 전부 잡는다. 여기서 빠지면 로고 권한 거부도
+ * '잠시 후 다시 시도'로 잘못 안내된다 — 재시도로는 절대 안 풀리는 거짓말이다.
  */
 function failure(e: unknown, action: 'write' | 'delete' = 'write'): ActionState {
   console.error('[initiatives]', e)
   const message = e instanceof Error ? e.message : ''
   const deniedByPolicy =
-    /initiatives_write|initiative_docs_write|events_write|initiative_notes_all|42501|PGRST301/.test(message)
+    /initiatives_write|initiative_docs_write|events_write|initiative_notes_all|initiative_logos_\w+|42501|PGRST301/.test(
+      message,
+    )
   // RLS가 delete를 막을 때는 정책 이름이 안 실린다 — PostgREST가 오류 없이 빈 결과만 주고,
   // oneAffectedRow(supabase.ts)가 그걸 이 메시지로 바꾼다(dummy.ts도 같은 문구를 던진다).
   // 정책 이름이 하나도 안 걸려서 아래로 빠지면 못 고칠 실패를 '잠시 후 다시 시도'로 잘못 안내한다.
@@ -167,7 +176,7 @@ export async function createInitiative(
       {
         title: t, kind: kind as InitiativeKind, business_id: null, stage: 'Planning',
         goal: '', target_date: null, next_action: '', next_action_date: null,
-        next_action_owner: '', blocker: '', status: 'Active',
+        next_action_owner: '', blocker: '', status: 'Active', logo_url: null,
       },
       { user_id: user.user_id, role: user.role },
     )
@@ -329,5 +338,64 @@ export async function removeEventAction(eventId: unknown, initiativeId?: unknown
   revalidatePath('/ai')
   const iid = typeof initiativeId === 'string' ? initiativeId.trim() : ''
   if (iid) revalidatePath(`/initiatives/${iid}`)
+  return {}
+}
+
+/**
+ * 로고 업로드 (P5-A). FormData로 받는다 — 파일은 Server Action의 직렬화를 태울 수 없다.
+ *
+ * 브라우저 <input accept>는 안내다. 상한(2MB)과 형식은 여기서 다시 본다 —
+ * accept는 파일 선택창의 필터일 뿐 드래그·붙여넣기로 뚫린다.
+ *
+ * 권한은 보지 않는다. 0018 initiative_logos_write_insert/update가 거부하면 failure()가 문구를 만든다.
+ */
+export async function saveInitiativeLogoAction(formData: FormData): Promise<ActionState> {
+  const id = String(formData.get('initiative_id') ?? '').trim()
+  if (!id) return { error: '어느 건인지 알 수 없습니다.' }
+
+  const file = formData.get('logo')
+  if (!(file instanceof File) || file.size === 0) return { error: '파일을 고르세요.' }
+  if (file.size > LOGO_MAX_BYTES) {
+    return { error: `2MB를 넘길 수 없습니다. (현재 ${(file.size / 1_048_576).toFixed(1)}MB)` }
+  }
+  if (!LOGO_MIME.includes(file.type as LogoMime)) {
+    return { error: 'PNG · JPG · WebP만 올릴 수 있습니다.' }
+  }
+
+  const user = await currentUser()
+  if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+
+  try {
+    const repo = await getRepository()
+    await repo.saveInitiativeLogo(
+      id,
+      { bytes: await file.arrayBuffer(), contentType: file.type },
+      { user_id: user.user_id, role: user.role },
+    )
+  } catch (e) {
+    return failure(e)
+  }
+
+  revalidatePath('/initiatives')
+  revalidatePath(`/initiatives/${id}`)
+  return {}
+}
+
+export async function removeInitiativeLogoAction(initiativeId: unknown): Promise<ActionState> {
+  const id = typeof initiativeId === 'string' ? initiativeId.trim() : ''
+  if (!id) return { error: '어느 건인지 알 수 없습니다.' }
+
+  const user = await currentUser()
+  if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+
+  try {
+    const repo = await getRepository()
+    await repo.removeInitiativeLogo(id, { user_id: user.user_id, role: user.role })
+  } catch (e) {
+    return failure(e, 'delete')
+  }
+
+  revalidatePath('/initiatives')
+  revalidatePath(`/initiatives/${id}`)
   return {}
 }

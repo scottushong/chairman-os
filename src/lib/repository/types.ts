@@ -202,6 +202,20 @@ export interface ChairmanRepository {
   saveInitiativeDoc(input: InitiativeDocInput, actor: AuditActor): Promise<InitiativeDoc>
   removeInitiativeDoc(docId: string, actor: AuditActor): Promise<void>
 
+  /**
+   * 로고를 올린다(0018 initiative-logos). 저장된 **경로**를 돌려준다 — URL이 아니다.
+   * 어댑터가 initiatives.logo_url까지 같이 쓴다. 두 번 부르지 않게 한 메서드로 묶었다 —
+   * 객체만 올라가고 칸이 안 바뀌면 화면에서 영영 안 보이는 고아 객체가 된다.
+   */
+  saveInitiativeLogo(initiativeId: string, file: LogoUpload, actor: AuditActor): Promise<string>
+  /** 객체와 logo_url을 같이 비운다. */
+  removeInitiativeLogo(initiativeId: string, actor: AuditActor): Promise<void>
+  /**
+   * 경로 → 화면에 걸 수 있는 URL. 목록 전체를 한 번에 넘긴다 — 카드마다 부르면
+   * 14장짜리 그리드가 서명 요청 14번이 된다. 발급하지 못한 경로는 맵에 없다(없는 파일 등).
+   */
+  signInitiativeLogos(paths: string[]): Promise<Record<string, string>>
+
   listEvents(): Promise<ChairmanEvent[]>
   saveEvent(input: EventInput, actor: AuditActor): Promise<ChairmanEvent>
   removeEvent(eventId: string, actor: AuditActor): Promise<void>
@@ -230,6 +244,12 @@ export type InitiativeInput = Omit<Initiative, 'initiative_id' | 'updated_at'> &
 export type InitiativeKeymanInput = Omit<InitiativeKeyman, 'keyman_id'> & { keyman_id?: string }
 export type InitiativeDocInput = Omit<InitiativeDoc, 'doc_id'> & { doc_id?: string }
 export type EventInput = Omit<ChairmanEvent, 'event_id'> & { event_id?: string }
+
+/** 로고 업로드 한 건. File을 그대로 넘기지 않는다 — 어댑터가 브라우저 타입을 알 이유가 없다. */
+export interface LogoUpload {
+  bytes: ArrayBuffer
+  contentType: string
+}
 
 /**
  * 개인 화면 설정(user_settings). 업무 데이터가 아니라 '이 사람의 화면'이다.

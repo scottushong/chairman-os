@@ -3,6 +3,7 @@ import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js'
 import type { AuditAction, EntityAuditRecord } from '@/lib/audit-log'
 import { AUDIT_ACTION, DECISION_STATUS, type DecisionAuditRecord } from '@/lib/decision-log'
 import { dayKey } from '@/lib/format'
+import { LOGO_BUCKET, logoPath } from '@/lib/initiative-logo'
 import { needsSubstringSearch, type SearchHit } from '@/lib/search'
 
 import type {
@@ -68,6 +69,7 @@ import {
   type InitiativeInput,
   type InitiativeKeymanInput,
   type KeymanInput,
+  type LogoUpload,
   type NewAccount,
   type NewBusiness,
   type NewDecision,
@@ -434,10 +436,10 @@ function oneAffectedRow<T>(
 /** 0015 business_keymen에서 부르는 칸. 세 함수가 같은 모양을 돌려줘야 한다. */
 const KEYMAN_COLUMNS = 'keyman_id,business_id,name,relation,last_contact_on,note'
 
-/** 0017 initiatives. 읽기·쓰기가 같은 모양을 돌려줘야 한다. */
+/** 0017 initiatives + 0018 logo_url. 읽기·쓰기가 같은 모양을 돌려줘야 한다. */
 const INITIATIVE_COLUMNS =
   'initiative_id,title,kind,business_id,stage,goal,target_date,' +
-  'next_action,next_action_date,next_action_owner,blocker,status,updated_at'
+  'next_action,next_action_date,next_action_owner,blocker,status,logo_url,updated_at'
 
 /** 0017 initiative_keymen. business_keymen과 같은 모양 + channel. */
 const INITIATIVE_KEYMAN_COLUMNS = 'keyman_id,initiative_id,name,relation,channel,last_contact_on,note'
@@ -2567,6 +2569,115 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         .eq('doc_id', docId)
         .select('doc_id')
       oneAffectedRow('initiative_docs', data, error)
+    },
+
+    /**
+     * P5-A. 객체를 올리고 initiatives.logo_url까지 같이 쓴다.
+     *
+     * 순서: Storage 업로드 → audit_log → 칸 쓰기.
+     * 이 파일의 하드 룰("감사가 쓰기보다 먼저")은 **DB 쓰기**에 대한 것이다. Storage 업로드를
+     * 감사 뒤로 미루면 '올렸다는 기록은 남고 파일은 없는' 상태가 된다. 순서를 이렇게 두면
+     * 최악이 '객체는 있는데 아무 건도 안 가리키는' 것인데, 경로가 건 id로 정해져 있어
+     * 다음 업로드가 덮어쓴다. 고아가 쌓이지 않는다.
+     *
+     * upsert: true. 다시 올리면 덮어쓴다 — 경로가 하나라 그래야 한다.
+     * 권한은 보지 않는다. 0018 initiative_logos_write_insert/write_update가 Chairman·GroupCFO만
+     * 통과시킨다(정책이 insert/update로 나뉘어 있다 — bucket_id별 for all 하나로 묶으면
+     * initiative_logos_read가 죽은 정책이 되기 때문이다. 0018_initiative_logos.sql 참고).
+     */
+    async saveInitiativeLogo(initiativeId: string, file: LogoUpload, actor: AuditActor): Promise<string> {
+      const before = await this.getInitiative(initiativeId)
+      if (!before) throw new Error('initiatives: 고칠 건이 없다. (없거나 볼 권한이 없다)')
+
+      const path = logoPath(initiativeId)
+      const { error: upErr } = await sb.storage.from(LOGO_BUCKET).upload(path, file.bytes, {
+        contentType: file.contentType,
+        upsert: true,
+        // 같은 경로를 덮어쓰므로 오래 캐시하면 바꾼 로고가 한참 안 바뀐다.
+        cacheControl: '60',
+      })
+      if (upErr) {
+        throw new Error(
+          `Supabase storage ${LOGO_BUCKET}: ${upErr.message} ` +
+            '(0018 initiative_logos_write_insert/write_update — Chairman·GroupCFO만 올린다)',
+        )
+      }
+
+      if (before.logo_url !== path) {
+        const { error: auditError } = await sb.from('audit_log').insert({
+          actor_user_id: actor.user_id,
+          actor_role: actor.role,
+          action: 'update',
+          entity_table: 'initiatives',
+          entity_id: initiativeId,
+          business_id: before.business_id,
+          before: { logo_url: before.logo_url },
+          after: { logo_url: path },
+        })
+        if (auditError) throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+
+        const { error } = await sb
+          .from('initiatives')
+          .update({ logo_url: path })
+          .eq('initiative_id', initiativeId)
+        if (error) {
+          throw new Error(
+            `Supabase initiatives ${error.code ?? '?'}: ${error.message} ` +
+              '(0017 initiatives_write — 로고는 올라갔고 칸이 안 바뀌었다)',
+          )
+        }
+      }
+      return path
+    },
+
+    async removeInitiativeLogo(initiativeId: string, actor: AuditActor): Promise<void> {
+      const before = await this.getInitiative(initiativeId)
+      if (!before) throw new Error('initiatives: 고칠 건이 없다.')
+      if (!before.logo_url) return
+
+      // 기록이 먼저다. 여기서부터는 DB 쓰기라 하드 룰이 그대로 적용된다.
+      const { error: auditError } = await sb.from('audit_log').insert({
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        action: 'update',
+        entity_table: 'initiatives',
+        entity_id: initiativeId,
+        business_id: before.business_id,
+        before: { logo_url: before.logo_url },
+        after: { logo_url: null },
+        note: '로고 삭제',
+      })
+      if (auditError) throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+
+      const { error } = await sb
+        .from('initiatives')
+        .update({ logo_url: null })
+        .eq('initiative_id', initiativeId)
+      if (error) throw new Error(`Supabase initiatives ${error.code ?? '?'}: ${error.message}`)
+
+      // 칸이 먼저 비워졌으니 객체 삭제가 실패해도 화면은 로고 없음으로 떨어진다.
+      // 남은 객체는 다음 업로드가 같은 경로에 덮어쓴다 — 조용히 무시하지 말고 로그는 남긴다.
+      const { error: rmErr } = await sb.storage.from(LOGO_BUCKET).remove([before.logo_url])
+      if (rmErr) console.error('[initiative-logo] 객체 삭제 실패', before.logo_url, rmErr.message)
+    },
+
+    /**
+     * 목록 전체를 한 번에 서명한다. 요청자 세션으로 발급하므로 0018 정책이 그대로 적용된다 —
+     * 볼 권한이 없는 사람에게는 발급 자체가 실패하고 맵이 빈다.
+     */
+    async signInitiativeLogos(paths: string[]): Promise<Record<string, string>> {
+      if (paths.length === 0) return {}
+      const { data, error } = await sb.storage.from(LOGO_BUCKET).createSignedUrls(paths, 3600)
+      if (error) {
+        // 로고가 안 보이는 것이 화면 전체가 안 보이는 것보다 낫다. 던지지 않는다.
+        console.error('[initiative-logo] 서명 실패', error.message)
+        return {}
+      }
+      const out: Record<string, string> = {}
+      for (const row of data ?? []) {
+        if (row.signedUrl && row.path) out[row.path] = row.signedUrl
+      }
+      return out
     },
 
     /** 0017 events. 회장의 일정 전체 — chairman_projects와 달리 몇 년 치가 쌓일 수 있어 페이지네이션 헬퍼를 쓴다. */

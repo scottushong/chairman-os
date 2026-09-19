@@ -14,6 +14,7 @@ export type {
   DashboardSnapshot,
   DecisionAuditEntry,
   KeymanInput,
+  LogoUpload,
   NewAccount,
   NewBusiness,
   NewDecision,

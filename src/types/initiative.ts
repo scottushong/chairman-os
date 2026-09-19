@@ -69,6 +69,8 @@ export interface Initiative {
   next_action_owner: string
   blocker: string
   status: InitiativeStatus
+  /** 0018 initiative-logos 버킷 안의 객체 경로. URL이 아니다 — 비공개 버킷이라 볼 때마다 서명한다. */
+  logo_url: string | null
   updated_at: IsoDateTime
 }
 

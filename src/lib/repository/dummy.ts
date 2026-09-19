@@ -14,6 +14,7 @@ import {
 import type { EntityAuditRecord } from '@/lib/audit-log'
 import { AUDIT_ACTION, DECISION_STATUS, type DecisionAuditRecord } from '@/lib/decision-log'
 import { dayKey } from '@/lib/format'
+import { logoPath } from '@/lib/initiative-logo'
 import { kpisFromLedger } from '@/lib/ledger/cells'
 
 import * as books from './dummy-books'
@@ -54,6 +55,7 @@ import {
   type InitiativeInput,
   type InitiativeKeymanInput,
   type KeymanInput,
+  type LogoUpload,
   type NewBusiness,
   type NewDecision,
   type NewDocument,
@@ -97,6 +99,14 @@ const memoryInitiatives: Initiative[] = []
 const memoryInitiativeNotes = new Map<string, string>()
 const memoryInitiativeKeymen: InitiativeKeyman[] = []
 const memoryInitiativeDocs: InitiativeDoc[] = []
+
+/**
+ * P5-A. dummy에는 Storage가 없다. 올라온 바이트를 data URL로 들고 있는다 —
+ * 그래야 업로드→표시 전 흐름을 원격 Supabase 없이 검증할 수 있다(회장 확인 방식).
+ * 키는 supabase 어댑터가 쓰는 것과 같은 경로다. 두 어댑터의 logo_url 값이 같은 모양이어야
+ * 화면이 분기를 모른 채 돌아간다.
+ */
+const memoryLogos = new Map<string, string>()
 const memoryEvents: ChairmanEvent[] = []
 let initiativeSeq = 0
 
@@ -711,6 +721,41 @@ export const dummyRepository: ChairmanRepository = {
     if (process.env.NODE_ENV !== 'production') {
       console.warn(`[dummy] remove initiative doc by ${actor.role} — 메모리에만 남는다.`)
     }
+  },
+
+  async saveInitiativeLogo(initiativeId: string, file: LogoUpload, actor: AuditActor) {
+    const target = memoryInitiatives.find((i) => i.initiative_id === initiativeId)
+    if (!target) throw new Error('initiatives: 고칠 건이 없다.')
+    const path = logoPath(initiativeId)
+    const base64 = Buffer.from(file.bytes).toString('base64')
+    memoryLogos.set(path, `data:${file.contentType};base64,${base64}`)
+    target.logo_url = path
+    target.updated_at = new Date().toISOString()
+    if (actor.role !== 'Chairman' && actor.role !== 'GroupCFO') {
+      console.warn(`[dummy] save initiative logo by ${actor.role} — 실제로는 0018 정책이 막는다.`)
+    }
+    return path
+  },
+
+  async removeInitiativeLogo(initiativeId: string, actor: AuditActor) {
+    const target = memoryInitiatives.find((i) => i.initiative_id === initiativeId)
+    if (!target) throw new Error('Dummy initiatives: mutation affected 0 rows.')
+    memoryLogos.delete(logoPath(initiativeId))
+    target.logo_url = null
+    target.updated_at = new Date().toISOString()
+    if (actor.role !== 'Chairman' && actor.role !== 'GroupCFO') {
+      console.warn(`[dummy] remove initiative logo by ${actor.role} — 메모리에만 남는다.`)
+    }
+  },
+
+  async signInitiativeLogos(paths: string[]) {
+    // dummy의 '서명 URL'은 data URL 그 자체다. 만료가 없다.
+    const out: Record<string, string> = {}
+    for (const p of paths) {
+      const url = memoryLogos.get(p)
+      if (url) out[p] = url
+    }
+    return out
   },
 
   async listEvents() {
