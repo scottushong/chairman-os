@@ -39,6 +39,25 @@ const DEFAULT_LOCATION = {
   city: '서울',
 } as const
 
+/**
+ * Vercel 문서상 도시명은 URI 인코딩되어 온다(예: "Ho%20Chi%20Minh%20City").
+ *
+ * **decodeURIComponent를 맨손으로 부르면 안 된다.** 인코딩이 깨진 값("%", "%E0%A4%A")이
+ * 오면 URIError를 던지는데, 이 함수는 서버 컴포넌트가 직접 부르므로 그 예외가 그대로
+ * 올라가 /ai 전체를 500으로 만든다 — 회장이 아침에 가장 먼저 여는 화면이다.
+ * 이 헤더는 로컬에도 Vercel 밖에도 없어서 이 경로는 여기서 한 번도 돌아 본 적이 없고,
+ * 배포하는 순간 모든 요청에서 돈다. 못 읽으면 좌표는 그대로 쓰고 도시 이름만 기본값으로
+ * 떨어뜨린다 — 이름 하나 때문에 날씨까지 버릴 이유는 없다.
+ */
+function decodeCity(rawCity: string | null): string {
+  if (!rawCity) return DEFAULT_LOCATION.city
+  try {
+    return decodeURIComponent(rawCity) || DEFAULT_LOCATION.city
+  } catch {
+    return DEFAULT_LOCATION.city
+  }
+}
+
 export interface ResolvedLocation extends Coordinates {
   city: string
   /** Vercel IP 헤더로 구했는지, 로컬/기본값으로 떨어졌는지. 패널이 출처를 밝힐 수 있게 남긴다. */
@@ -65,8 +84,7 @@ export async function resolveLocation(): Promise<ResolvedLocation> {
     return {
       latitude,
       longitude,
-      // Vercel 문서상 도시명은 URI 인코딩되어 온다(예: "Ho%20Chi%20Minh%20City").
-      city: rawCity ? decodeURIComponent(rawCity) : DEFAULT_LOCATION.city,
+      city: decodeCity(rawCity),
       source: 'vercel-ip',
     }
   }

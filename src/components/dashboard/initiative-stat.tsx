@@ -4,8 +4,10 @@ import { initiativeClock } from '@/lib/initiative'
 import type { Initiative, IsoDate } from '@/types'
 
 /**
- * 대시보드 인사말 옆의 이니셔티브 한 줄 (Task 9). `ChairmanDdayCard`(장기 프로젝트 한 건)의
- * 형제다 — 저건 '가장 가까운 것 한 건', 이건 '전체 센 수'라 성격이 다르다. 누르면 /initiatives.
+ * 대시보드 인사말 옆의 이니셔티브 한 줄 (Task 9). 장기 프로젝트 쪽의 형제는 이제 히어로의
+ * DdayHero다 — 저건 '가장 가까운 것 한 건', 이건 '전체 센 수'라 성격이 다르다.
+ * (인사말 줄에 같이 있던 ChairmanDdayCard는 P5-2 리뷰 1라운드에서 지웠다.)
+ * 누르면 /initiatives.
  *
  * 0개면 그리지 않는다(빈 칸은 인사말 줄만 길게 만든다). 역할을 여기서 보지 않는다 —
  * RLS가 0행을 주는 역할에게는 이 경로로 자연히 사라진다.

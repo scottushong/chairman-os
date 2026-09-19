@@ -119,6 +119,13 @@ $fn$;
 comment on function chairman_today_condition() is
   'P5-5d 1라운드 수정. chairman_checkins의 유일한 keyhole. 오늘(KST) condition 정수 하나만, Chairman과 AIAgent에게만 내준다 — 그 외 역할이거나 오늘 기록이 없으면 null. sleep_hours·weight_kg·meal_note는 반환값에 아예 없다.';
 
+-- Postgres는 새 함수의 execute 권한을 public에 기본으로 준다. security definer 함수에서는
+-- 그 기본값이 곧 "anon도 RPC로 부를 수 있다"는 뜻이다. 이 함수 본문이 auth_role()로 걸러
+-- anon에게는 null만 돌려주므로 새는 값은 없지만, 건강 기록을 지키는 유일한 keyhole에
+-- 기본 권한을 남겨 두지 않는다 — 나중에 본문이 한 줄 바뀌는 날 그 기본값이 구멍이 된다.
+-- 먼저 걷어내고 필요한 역할에만 다시 준다(revoke는 public 기본값만 걷는다 — 아래 grant와
+-- 서로 지우지 않는다). 이 저장소에서 revoke를 쓰는 첫 함수다.
+revoke all on function chairman_today_condition() from public;
 grant execute on function chairman_today_condition() to authenticated;
 
 commit;

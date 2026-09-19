@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 
 import { currentUser } from '@/lib/auth/session'
+import { MEAL_MAX } from '@/lib/checkin'
 import { getRepository } from '@/lib/repository'
 import type { ChairmanCheckin, ChairmanCondition } from '@/types'
 
@@ -20,9 +21,6 @@ export interface SaveCheckinState {
   error?: string
   checkin?: ChairmanCheckin
 }
-
-/** 식사 메모는 한 줄 기록이다. 길어지면 그건 메모가 아니라 일지고, 브리핑 입력으로도 과하다. */
-const MEAL_MAX = 500
 
 function isDate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`))

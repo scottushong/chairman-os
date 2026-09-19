@@ -16,6 +16,14 @@ import { EVENT_KIND, EVENT_KIND_LABEL_KO, type ChairmanEvent, type EventKind } f
  * 여기서는 반드시 넘긴다. 안 넘기면 이 상세 화면이 갱신되지 않는다.
  */
 
+/**
+ * **note는 폼에 없지만 draft에는 반드시 있다.** day-modal.tsx의 Draft와 같은 이유다(그 파일
+ * 주석을 같이 읽는다): repo.saveEvent는 받은 fields를 통째로 update한다(supabase.ts).
+ * 그래서 note를 안 실어 보내면 saveEventAction이 ''로 채우고, 고치는 순간 회장 메모가
+ * 조용히 지워진다. 두 화면이 같은 Server Action을 쓰는 형제라 한쪽만 고치면 다른 쪽이 다시
+ * 깨진다 — 지금은 이 패널에 수정 경로가 없어(eventId를 세우는 자리가 없다) 잠복 상태지만,
+ * 수정을 붙이는 순간 살아나는 종류의 버그다. draft가 그대로 실어 나르게 못 박아 둔다.
+ */
 interface Draft {
   eventId?: string
   title: string
@@ -23,9 +31,10 @@ interface Draft {
   startsOn: string
   endsOn: string
   location: string
+  note: string
 }
 
-const EMPTY: Draft = { title: '', kind: 'Meeting', startsOn: '', endsOn: '', location: '' }
+const EMPTY: Draft = { title: '', kind: 'Meeting', startsOn: '', endsOn: '', location: '', note: '' }
 
 export function EventPanel({
   events,
@@ -59,6 +68,8 @@ export function EventPanel({
       location: draft.location,
       initiative_id: initiativeId,
       business_id: businessId,
+      // 위 Draft 주석 참고 — 이 줄이 빠지면 회장 메모가 지워진다.
+      note: draft.note,
     })
     setBusy(false)
     if (result.error || !result.saved) {

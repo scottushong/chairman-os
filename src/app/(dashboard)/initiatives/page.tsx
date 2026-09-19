@@ -125,13 +125,21 @@ export default async function InitiativesPage(props: PageProps<'/initiatives'>) 
         title="이니셔티브"
         description="회사 다섯 곳 밖에서 회장이 직접 굴리는 건입니다."
       >
+        {/* PageHeader는 카드 밖, 배경 그라데이션 위에 바로 놓인다(그 파일 주석). 골드
+            (.text-accent → #855a11)는 그 자리에서 3.39:1이라 유리 없이는 못 쓴다
+            (globals.css:284-286). 머리 줄만 유리 한 장 위로 올리면 다른 화면의 머리와
+            높이·여백이 어긋나므로, 두 링크를 ink-dim(5.73:1)으로 내리고 hover 밑줄로
+            '누를 수 있다'를 남긴다 — PageHeader의 코드·설명 줄과 같은 처방이다. */}
         <Link
           href={withParams(BASE, { kind, status, business, stage, view: view === 'table' ? undefined : 'table' })}
-          className="text-[12px] text-accent underline-offset-2 hover:underline"
+          className="text-[12px] text-ink-dim underline-offset-2 hover:text-ink hover:underline"
         >
           {view === 'table' ? '카드로 보기' : '단계별 표로 보기'}
         </Link>
-        <Link href="/calendar" className="text-[12px] text-accent underline-offset-2 hover:underline">
+        <Link
+          href="/calendar"
+          className="text-[12px] text-ink-dim underline-offset-2 hover:text-ink hover:underline"
+        >
           캘린더에서 보기
         </Link>
       </PageHeader>

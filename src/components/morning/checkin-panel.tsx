@@ -4,6 +4,7 @@ import { useState } from 'react'
 
 import { saveCheckin } from '@/app/actions/checkin'
 import { GlassCard } from '@/components/ui/glass-card'
+import { MEAL_MAX } from '@/lib/checkin'
 import type { ChairmanCheckin, ChairmanCondition, IsoDate } from '@/types'
 
 /**
@@ -143,9 +144,13 @@ export function CheckinPanel({ date, initial }: { date: IsoDate; initial: Chairm
 
           <label className="mt-2.5 block">
             <span className="block text-[11px] text-ink-muted">식사 메모</span>
+            {/* maxLength는 서버(actions/checkin.ts)가 거절하는 그 숫자다 — 상수 하나를
+                양쪽이 같이 본다(lib/checkin.ts). 화면에만 없으면 회장이 다 적고 저장을
+                누른 다음에야 "500자까지입니다"를 본다. */}
             <input
               type="text"
               value={meal}
+              maxLength={MEAL_MAX}
               onChange={(e) => {
                 setMeal(e.target.value)
                 touched()

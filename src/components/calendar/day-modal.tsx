@@ -33,6 +33,8 @@ interface Draft {
   location: string
   // 이 모달은 그 셋을 고치지 않지만, 안 실어 보내면 saveEventAction이 null/''로 채워
   // 이니셔티브·회사 연결과 메모가 조용히 끊긴다 — 폼에는 안 넣고 그대로 실어 나르기만 한다.
+  // 같은 Server Action을 쓰는 형제가 initiatives/event-panel.tsx다. 그쪽 Draft에도 note가
+  // 있어야 한다(없어서 메모가 지워질 뻔했다) — 한쪽만 고치면 다른 쪽이 다시 깨진다.
   initiativeId: string | null
   businessId: string | null
   note: string
@@ -144,10 +146,20 @@ export function DayModal({
 
   return (
     // 바깥을 누르면 닫힌다. 안쪽 클릭이 올라와 닫히지 않게 stopPropagation을 건다.
+    //
+    // 스크림은 bg-black/50이 아니라 bg-app/80이다(add-business-modal.tsx와 같은 면).
+    // 검정 스크림은 웜 팔레트를 회색으로 죽이고(globals.css '검정 그림자를 쓰면' 주석),
+    // 그 위에 얹은 bg-panel 한 겹은 실효 rgb(196,194,191)까지 내려가 ink-muted 3.35:1 ·
+    // critical 3.33:1로 AA를 못 넘겼다 — 이 모달의 폼 라벨이 전부 ink-muted다.
+    // --color-app이 유일한 불투명 면인 이유가 바로 '모달 오버레이 바탕'이다(globals.css:31).
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 p-4 sm:items-center"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-app/80 p-4 sm:items-center"
       onClick={onClose}
     >
+      {/* 다이얼로그 면은 .glass다(GlassCard와 같은 면 — 그림자·흐림·@supports 폴백이 딸려 온다).
+          bg-app/80 스크림 위의 흰 55%라 실효색이 rgb(250,242,233)까지 올라가고,
+          그라데이션 최악점(#f0b58a) 기준으로 ink 15.60 · ink-dim 9.23 · ink-muted 5.40 ·
+          critical 5.36:1이다. shadow-xl은 뗀다 — .glass가 이미 그림자를 갖는다. */}
       <div
         ref={ref}
         role="dialog"
@@ -155,7 +167,7 @@ export function DayModal({
         aria-label={`${Number(m)}월 ${Number(d)}일 일정`}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg rounded-xl border border-line bg-panel p-4 shadow-xl outline-none"
+        className="glass w-full max-w-lg rounded-glass border border-line p-4 outline-none"
       >
         <div className="flex items-baseline justify-between">
           <h2 className="text-[14px] font-semibold tnum">

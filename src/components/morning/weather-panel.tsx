@@ -7,10 +7,17 @@ import { useGeolocation } from '@/components/morning/use-geolocation'
 import { GlassCard } from '@/components/ui/glass-card'
 import { Icon } from '@/components/ui/icon'
 import type { Coordinates } from '@/lib/geo'
-import type { WeatherCurrent } from '@/lib/weather'
+import type { CityWeather, WeatherCurrent } from '@/lib/weather'
 
 /**
- * 상단 3칸 중 둘째 칸 — 현재 위치 날씨.
+ * 상단 3칸 중 둘째 칸 — 현재 위치 날씨 + 관심 도시.
+ *
+ * 요구사항은 "현재 위치 + 관심 도시(호치민·싱가폴·상하이·두바이·토론토·SF)"다.
+ * 관심 도시는 서버가 한 번에 불러(getBusinessCitiesWeather, 좌표 6개를 콤마로 묶은 요청 하나)
+ * 내려 준다 — 이 컴포넌트는 그리기만 한다. 브라우저 위치 버튼은 현재 위치만 바꾼다.
+ *
+ * 아침에 훑는 칸이라 도시는 3칸 2줄로 접어 이름과 기온만 둔다. 날씨 앱이 아니다 —
+ * 라벨(맑음/비)까지 넣으면 여섯 줄이 되어 이 칸이 옆 두 칸보다 두 배 길어진다.
  *
  * 처음 뜨는 값은 서버가 정한 위치다(P5-5b resolveLocation → getCurrentLocationWeather).
  * Vercel 엣지의 IP 헤더가 있으면 그 도시, 없으면 서울 기본값이다.
@@ -26,6 +33,7 @@ export function WeatherPanel({
   city,
   source,
   initial,
+  cities,
 }: {
   /** 서버가 정한 도시 이름 */
   city: string
@@ -33,6 +41,8 @@ export function WeatherPanel({
   source: 'vercel-ip' | 'default'
   /** 서버가 미리 불러 둔 그 위치의 현재 날씨. 실패했으면 null이다. */
   initial: WeatherCurrent | null
+  /** 관심 도시 6곳. 도시별 current가 null이면 그 도시만 부분 실패다(weather.ts). */
+  cities: CityWeather[]
 }) {
   const { coordinates, status, locate } = useGeolocation()
   /**
@@ -69,8 +79,16 @@ export function WeatherPanel({
   // 좌표는 있는데 그 좌표의 답이 아직 없으면 날씨를 부르는 중이다.
   const busy = status === 'locating' || (coordinates !== null && answer?.for !== coordinates)
 
+  // 못 불러온 도시는 빼고 가진 것만 그린다(weather.ts의 부분 실패 계약). 전부 비면 아래에서
+  // 한 줄로 밝힌다 — 그래도 이 칸 밖(나머지 화면)은 그대로 뜬다.
+  // flatMap으로 거르는 것은 타입 때문이다 — filter로는 current가 null이 아님이 안 좁혀져
+  // 그리는 자리에서 단언(!)을 쓰게 된다.
+  const shownCities = cities.flatMap(({ city: c, current }) =>
+    current ? [{ id: c.id, nameKo: c.nameKo, temperatureC: current.temperatureC }] : [],
+  )
+
   return (
-    <GlassCard as="section" aria-label="현재 위치 날씨" className="flex flex-col justify-between">
+    <GlassCard as="section" aria-label="날씨 — 현재 위치와 관심 도시" className="flex flex-col justify-between">
       <div className="flex items-start justify-between gap-2">
         <p className="flex min-w-0 items-center gap-1.5 text-[13px] font-semibold text-ink">
           <Icon name="pin" className="size-3.5 shrink-0 text-ink-muted" />
@@ -99,7 +117,27 @@ export function WeatherPanel({
         <p className="mt-4 text-[13px] text-ink-muted">날씨를 불러오지 못했습니다.</p>
       )}
 
-      <p className="mt-4 border-t border-line-soft pt-3 text-[11px] text-ink-muted">
+      {/* 관심 도시. 전부 GlassCard 안이라 ink-muted를 써도 된다 —
+          라이트는 5.39(최악 4.64), 다크는 어두운 스크림 위 7.03이다(globals.css). */}
+      {shownCities.length > 0 ? (
+        <ul
+          aria-label="관심 도시 날씨"
+          className="mt-4 grid grid-cols-3 gap-x-3 gap-y-1 border-t border-line-soft pt-3"
+        >
+          {shownCities.map((c) => (
+            <li key={c.id} className="flex items-baseline justify-between gap-1 text-[11px]">
+              <span className="truncate text-ink-muted">{c.nameKo}</span>
+              <span className="shrink-0 text-ink tnum">{Math.round(c.temperatureC)}°</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-4 border-t border-line-soft pt-3 text-[11px] text-ink-muted">
+          관심 도시 날씨를 불러오지 못했습니다.
+        </p>
+      )}
+
+      <p className="mt-3 text-[11px] text-ink-muted">
         {status === 'denied'
           ? '위치 권한이 거부되었습니다. 접속 위치로 표시합니다.'
           : status === 'unsupported'

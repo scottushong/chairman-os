@@ -48,7 +48,7 @@ interface DashboardBoardProps {
   financeKpis: FinanceKpi[]
   projects: Project[]
   settings: UserSettings
-  /** DdayHero용. ChairmanDdayCard(인사말 알약)와 같은 원천을 히어로 크기로 다시 그린다. */
+  /** DdayHero용. 인사말 줄에 있던 D-day 알약이 쓰던 원천을 히어로 크기로 다시 그린다. */
   chairmanProjects: ChairmanProject[]
   /** item B. page.tsx가 이미 '진행 중 상위 6건'으로 고른 요약이다 — 여기서 다시 거르지 않는다. */
   initiativeSummary: Initiative[]
@@ -181,13 +181,22 @@ export function DashboardBoard({
       </div>
 
       <section aria-label="내 비즈니스">
+        {/* 이 줄도 카드 밖(맨 배경)이다 — 아래 이니셔티브 헤더와 같은 규칙을 받는다.
+            보조 숫자는 ink-muted(3.35:1)에서 ink-dim(5.73:1)으로 올린다.
+            오류는 색을 뺄 수 없는 자리라(위험색) 글자 대신 **면을 깐다** — 맨 그라데이션 위의
+            text-critical은 3.33:1이고, bg-critical/10 톤 칩으로 감싸도 4.16:1로 모자란다.
+            bg-raised(흰 72%)를 깔면 최악점에서 5.08:1이 된다 — globals.css가 허용 면으로
+            적어 둔 넷(.glass / .glass-nav / bg-panel / bg-raised) 중 하나다. */}
         <div className="mb-2 flex items-baseline gap-2">
           <h2 className="text-[13px] font-semibold">내 비즈니스 (A,B,C)</h2>
-          <span className="text-[11px] text-ink-muted tnum">
+          <span className="text-[11px] text-ink-dim tnum">
             {shown.length} / {ordered.length}개 표시 중
           </span>
           {error ? (
-            <span role="alert" className="text-[11px] text-critical">
+            <span
+              role="alert"
+              className="rounded-md border border-critical/40 bg-raised px-2 py-0.5 text-[11px] text-critical"
+            >
               {error}
             </span>
           ) : null}
@@ -210,11 +219,13 @@ export function DashboardBoard({
             </div>
           ))}
 
-          {/* CH-002. 카드 줄 끝에 붙어 있어야 '한 장 더 추가'로 읽힌다. */}
+          {/* CH-002. 카드 줄 끝에 붙어 있어야 '한 장 더 추가'로 읽힌다.
+              이 버튼은 카드 줄 끝의 빈 자리라 뒤가 맨 그라데이션이다 — ink-muted는 3.35:1이라
+              ink-dim(5.73:1)으로 올린다. */}
           <button
             type="button"
             onClick={() => setAdding(true)}
-            className="flex w-[64px] shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-line text-ink-muted transition-colors hover:border-accent hover:text-ink"
+            className="flex w-[64px] shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-line text-ink-dim transition-colors hover:border-accent hover:text-ink"
           >
             <Icon name="plus" className="size-5" />
             <span className="text-center text-[11px] leading-tight break-keep">기업 추가</span>
@@ -254,9 +265,13 @@ export function DashboardBoard({
             <span className="text-[11px] text-ink-dim tnum">
               진행 중 {initiativeCount}건 중 {initiativeSummary.length}건
             </span>
+            {/* 열 줄 위의 규칙이 이 링크에도 걸린다. 골드(.text-accent → #855a11)는 맨 배경에서
+                3.39:1이라 유리 없이는 못 쓴다(globals.css:284-286). 링크만 유리 한 장 위로
+                올리면 헤더 줄이 어긋나므로 색을 ink-dim(5.73:1)으로 내리고, 밑줄 hover로
+                '누를 수 있다'를 남긴다. */}
             <Link
               href="/initiatives"
-              className="ml-auto text-[11.5px] text-accent underline-offset-2 hover:underline"
+              className="ml-auto text-[11.5px] text-ink-dim underline-offset-2 hover:text-ink hover:underline"
             >
               전체 보기
             </Link>

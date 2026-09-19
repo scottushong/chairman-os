@@ -159,7 +159,11 @@ export default async function DashboardPage() {
           </div>
         </div>
 
-        <div data-theme="dark" className="h-[268px]">
+        {/* 이 div가 다크 그라데이션을 직접 칠한다(globals.css의 [data-theme='dark'] 배경 규칙).
+            radius가 없으면 그 칠이 네 모서리를 직각으로 채우고, 그 위에 rounded-glass(26px)
+            카드가 얹혀 밝은 화면에 어두운 사각 모서리 네 개가 남는다. 카드와 같은 곡률로
+            잘라 낸다 — overflow-hidden이 있어야 안쪽 카드의 그림자도 모서리를 넘지 않는다. */}
+        <div data-theme="dark" className="h-[268px] overflow-hidden rounded-glass">
           <AiNightPanel outputs={data.aiNightOutputs} businesses={data.businesses} />
         </div>
       </div>

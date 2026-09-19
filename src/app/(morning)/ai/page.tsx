@@ -23,14 +23,14 @@ import {
 } from '@/lib/night-brief-view'
 import { firstParam } from '@/lib/query'
 import { getRepository } from '@/lib/repository'
-import { getCurrentLocationWeather } from '@/lib/weather'
+import { getBusinessCitiesWeather, getCurrentLocationWeather } from '@/lib/weather'
 import type { AiBriefItem, AiNightOutput, Business, ProjectNote } from '@/types'
 
 /**
  * /ai — 회장의 아침 루틴. P5-5c에서 (morning) 다크 셸로 옮겼다(URL은 /ai 그대로다).
  *
  * 화면은 두 층이다.
- *   위 3칸  지금 이 순간 — 인사와 시각, 지금 있는 곳의 날씨, 오늘 체크인.
+ *   위 3칸  지금 이 순간 — 인사와 시각, 날씨(지금 있는 곳 + 관심 도시 6곳), 오늘 체크인.
  *   아래 2단 좌는 **바뀌지 않는 것**(장기 프로젝트 D-day, 선언문 전문),
  *            우는 **오늘 바뀐 것**(오늘·이번 주, 야간 브리핑).
  *
@@ -74,6 +74,7 @@ export default async function AiPage(props: PageProps<'/ai'>) {
     initiatives,
     calendarItems,
     weather,
+    cityWeather,
     checkin,
   ] = await Promise.all([
     repo.listAiNightOutputs(),
@@ -84,6 +85,10 @@ export default async function AiPage(props: PageProps<'/ai'>) {
     repo.listCalendarItems(today, weekLater),
     // 실패해도 null로만 온다. 아침 화면이 외부 API 때문에 비지 않는다(weather.ts 머리 주석).
     getCurrentLocationWeather(location),
+    // 관심 도시 6곳(요구사항의 '현재 위치 + 관심 도시'). 좌표 6개를 한 요청으로 묶어 부르고
+    // 30분 캐시를 탄다 — 현재 위치 호출과 URL이 달라 캐시 항목이 둘이지만, 아침에 몇 번을
+    // 새로고침해도 Open-Meteo에는 30분마다 두 번만 나간다. 실패는 도시별 null로만 온다.
+    getBusinessCitiesWeather(),
     isChairman ? repo.getCheckin(today) : Promise.resolve(null),
   ])
 
@@ -128,7 +133,12 @@ export default async function AiPage(props: PageProps<'/ai'>) {
         className={`grid gap-4 ${isChairman ? 'min-[1025px]:grid-cols-3' : 'min-[1025px]:grid-cols-2'}`}
       >
         <GreetingClock name={user?.name ?? null} dateLabel={dateLabel} />
-        <WeatherPanel city={location.city} source={location.source} initial={weather} />
+        <WeatherPanel
+          city={location.city}
+          source={location.source}
+          initial={weather}
+          cities={cityWeather}
+        />
         {isChairman ? <CheckinPanel date={today} initial={checkin} /> : null}
       </div>
 

@@ -3,6 +3,8 @@ import { DataModeBadge } from '@/components/layout/data-mode-badge'
 import { GlobalSearch } from '@/components/layout/global-search'
 import { WorldClocks } from '@/components/layout/world-clocks'
 import { Icon } from '@/components/ui/icon'
+import { resolveLocation } from '@/lib/geo'
+import { getCurrentLocationWeather } from '@/lib/weather'
 import { ROLE_LABEL_KO, type SessionUser } from '@/types'
 
 /**
@@ -12,8 +14,21 @@ import { ROLE_LABEL_KO, type SessionUser } from '@/types'
  *
  * 오른쪽 끝의 이름은 세션에서 온다. 하드코딩해 두면 어느 계정으로 보고 있는지 알 수 없고,
  * 그건 권한이 역할마다 갈라지는 화면에서 가장 위험한 종류의 거짓말이다.
+ *
+ * 날씨 칩은 이 컴포넌트가 직접 읽는다(요구사항 블록 2: 검색 + 세계시간 칩 + 날씨 칩 + 알림).
+ * 레이아웃을 거쳐 내리지 않는 이유는 이 값이 세션과 달리 화면 어디에도 다시 안 쓰이기
+ * 때문이다 — 셸에서 이 칩 하나만 쓰는 값을 layout의 prop 목록에 올릴 이유가 없다.
+ *
+ * **대시보드를 그릴 때마다 Open-Meteo를 때리지 않는다.** resolveLocation()은 요청 헤더
+ * 조회라 왕복이 없고, getCurrentLocationWeather()의 fetch는 next revalidate 1800이라
+ * Next 데이터 캐시에 30분 머문다 — 화면을 몇 번을 넘겨도 외부 호출은 30분에 한 번이다.
+ * 실패하면 null이 오고 칩은 아예 안 그린다. 예전의 '—' 자리표시자를 남기지 않는 이유가
+ * 그것이다: 회장이 매일 보는 화면에서 em 대시는 '날씨가 없다'가 아니라 '고장'으로 읽힌다.
  */
-export function Header({ user }: { user: SessionUser | null }) {
+export async function Header({ user }: { user: SessionUser | null }) {
+  const location = await resolveLocation()
+  const weather = await getCurrentLocationWeather(location)
+
   return (
     // glass-nav = --color-nav 면 + backdrop-blur. 사이드바·시스템바와 같은 면이라 같은 클래스를 쓴다.
     <header className="glass-nav flex h-14 shrink-0 items-center gap-4 border-b border-line-soft px-5">
@@ -22,14 +37,18 @@ export function Header({ user }: { user: SessionUser | null }) {
       <GlobalSearch />
 
       <div className="flex shrink-0 items-center gap-1">
-        {/* 날씨 칩은 자리만 잡아 둔다 — 데이터는 P5-5b가 붙인다(이 Task 범위 밖). */}
-        <span
-          aria-hidden="true"
-          title="날씨 (준비 중)"
-          className="flex w-[52px] items-center justify-center text-[11px] text-ink-muted"
-        >
-          —
-        </span>
+        {/* 날씨 칩. 헤더는 .glass-nav(흰 58%) 면이라 ink-muted를 써도 된다 — 이 자리의
+            보조 글자가 4.73:1이 되도록 nav 알파를 .45에서 올려 둔 것이 그 계산이다
+            (globals.css의 --color-nav 주석). 기온은 ink-dim으로 한 단 올려 먼저 읽히게 한다. */}
+        {weather ? (
+          <span
+            title={`${location.city} · ${weather.labelKo}`}
+            className="flex shrink-0 items-center gap-1 px-1 text-[11px] text-ink-muted"
+          >
+            <span className="text-ink-dim tnum">{Math.round(weather.temperatureC)}°</span>
+            <span className="max-w-[72px] truncate">{weather.labelKo}</span>
+          </span>
+        ) : null}
         <WorldClocks />
         <DataModeBadge />
         <NotificationButton count={12} tone="critical" />
