@@ -3,9 +3,11 @@ import { notFound } from 'next/navigation'
 
 import { PageHeader } from '@/components/layout/page-header'
 import { AuditTimeline } from '@/components/shared/audit-timeline'
+import { SharePanel } from '@/components/shared/share-panel'
 import { Icon } from '@/components/ui/icon'
 import { dDay, formatDDay, formatPct, isOverdue, compareDeadlines } from '@/lib/format'
 import { businessName } from '@/lib/lookup'
+import { currentUser } from '@/lib/auth/session'
 import { getRepository } from '@/lib/repository'
 import {
   TASK_STATUS,
@@ -51,11 +53,14 @@ export default async function ProjectDetailPage(props: PageProps<'/projects/[id]
   const { id } = await props.params
 
   const repo = await getRepository()
-  const [projects, tasks, businesses, audit] = await Promise.all([
+  const viewer = await currentUser()
+  const [projects, tasks, businesses, audit, shares] = await Promise.all([
     repo.listProjects(),
     repo.listTasks(),
     repo.listBusinesses(),
     repo.listEntityAudit('projects', id),
+    // Phase 6-1 블록 C. 0027이 projects에 subtree 겹을 얹은 뒤로 이 화면도 공유의 대상이다.
+    repo.listShares('projects', id),
   ])
 
   const project = projects.find((p) => p.project_id === id)
@@ -197,6 +202,15 @@ export default async function ProjectDetailPage(props: PageProps<'/projects/[id]
         </div>
 
         <aside className="space-y-4">
+          {/* Phase 6-1 블록 C-1. 프로젝트 하나를 subtree 밖 한 사람에게 여는 예외다. */}
+          <SharePanel
+            entityTable="projects"
+            entityId={project.project_id}
+            title={project.name}
+            shares={shares}
+            viewerId={viewer?.user_id ?? null}
+          />
+
           <section className="rounded-xl border border-line-soft bg-panel p-4">
             <h2 className="text-[13px] font-semibold">상태별</h2>
             <ul className="mt-2.5 space-y-1.5">

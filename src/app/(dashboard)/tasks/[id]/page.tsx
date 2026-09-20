@@ -3,10 +3,12 @@ import { notFound } from 'next/navigation'
 
 import { PageHeader } from '@/components/layout/page-header'
 import { AuditTimeline } from '@/components/shared/audit-timeline'
+import { SharePanel } from '@/components/shared/share-panel'
 import { TaskControls } from '@/components/tasks/task-controls'
 import { Icon } from '@/components/ui/icon'
 import { dDay, formatDDay, isOverdue } from '@/lib/format'
 import { businessName } from '@/lib/lookup'
+import { currentUser } from '@/lib/auth/session'
 import { getRepository } from '@/lib/repository'
 import {
   TASK_STATUS_LABEL_KO,
@@ -56,11 +58,14 @@ export default async function TaskDetailPage(props: PageProps<'/tasks/[id]'>) {
   const { id } = await props.params
 
   const repo = await getRepository()
-  const [tasks, projects, businesses, audit] = await Promise.all([
+  const viewer = await currentUser()
+  const [tasks, projects, businesses, audit, shares] = await Promise.all([
     repo.listTasks(),
     repo.listProjects(),
     repo.listBusinesses(),
     repo.listEntityAudit('tasks', id),
+    // Phase 6-1 블록 C. 0025의 shares_read가 '내가 받은 것 + 내가 한 공유'만 내준다.
+    repo.listShares('tasks', id),
   ])
 
   const task = tasks.find((t) => t.task_id === id)
@@ -174,6 +179,14 @@ export default async function TaskDetailPage(props: PageProps<'/tasks/[id]'>) {
           </h2>
           <div className="mt-3">
             <TaskControls task={task} />
+          </div>
+
+          {/*
+           * 공유는 '바꾸기' 아래다. 이 업무를 subtree 밖 한 사람에게 여는 예외이지
+           * 업무의 상태를 바꾸는 일이 아니다 — 두 동작을 같은 줄에 두면 섞인다.
+           */}
+          <div className="mt-4">
+            <SharePanel entityTable="tasks" entityId={task.task_id} title={task.title} shares={shares} viewerId={viewer?.user_id ?? null} />
           </div>
         </aside>
       </div>

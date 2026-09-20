@@ -93,6 +93,9 @@ export const NAV: readonly NavGroup[] = [
         waitingFor: 'Layer 2 기능 시스템입니다. Phase 2 범위입니다.',
       },
       { label: '문서 / 지식', href: '/documents', icon: 'book', ready: true },
+      // Phase 6-1 블록 C-2. 문서·업무·프로젝트에 걸쳐 '나에게 지금 무엇이 열려 있나'를
+      // 한 화면에서 답한다. 셋에 흩어 두면 그 질문에 아무 데서도 답할 수 없다.
+      { label: '공유받은 것', href: '/shared', icon: 'eye', ready: true },
       {
         label: '영업 / CRM',
         href: '/crm',

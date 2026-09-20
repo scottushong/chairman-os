@@ -1,3 +1,5 @@
+import Link from 'next/link'
+
 import { PageHeader } from '@/components/layout/page-header'
 import { RegisterDocument } from '@/components/documents/register-document'
 import { FilterChips, type FilterOption } from '@/components/ui/filter-chips'
@@ -161,7 +163,14 @@ function DocumentRow({ doc, scopeName }: { doc: DocumentRecord; scopeName: strin
   return (
     <tr className="border-t border-line-soft">
       <td className="px-3 py-2">
-        <p className="text-[12.5px] leading-snug font-semibold">{doc.title}</p>
+        {/* 제목은 단건 화면으로 간다 — 공유 버튼이 거기 있다(Phase 6-1 블록 C-1).
+            목록 줄에 공유를 달지 않은 이유는 그 화면 주석에 적었다. */}
+        <Link
+          href={`/documents/${encodeURIComponent(doc.document_id)}`}
+          className="text-[12.5px] leading-snug font-semibold transition-colors hover:text-accent"
+        >
+          {doc.title}
+        </Link>
         <p className="mt-0.5 text-[10px] text-ink-muted tnum">{doc.document_id}</p>
       </td>
       <td className="px-3 py-2 text-[11.5px] text-ink-dim">{scopeName}</td>

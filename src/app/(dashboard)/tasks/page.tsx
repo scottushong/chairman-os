@@ -112,8 +112,19 @@ export default async function TasksPage(props: PageProps<'/tasks'>) {
     )
     .map((task) => ({
       task,
-      businessName: businessName(businesses, scopeOf(task)),
-      projectName: projectOf.get(task.project_id)?.name ?? task.project_id,
+      // 프로젝트가 안 보이면 회사도 알 수 없다 — 업무는 회사를 직접 들고 있지 않다(0002 tasks_read).
+      // 빈 문자열을 그대로 두면 줄 머리가 ' · 볼 수 없는 프로젝트'로 시작한다.
+      businessName: scopeOf(task) ? businessName(businesses, scopeOf(task)) : '소속 미상',
+      /*
+       * 프로젝트가 안 보이면 id를 그대로 뿌리지 않는다.
+       *
+       * 0027이 projects에 subtree 겹을 얹은 뒤로 이 자리는 흔해졌다 — 팀장이 만든
+       * 프로젝트 안의 **내 업무**는 보이지만 그 프로젝트 자체는 안 보인다(그게 설계다).
+       * 그때 'prj_dy_sales' 같은 내부 키가 화면에 뜨면 사람은 그것을 프로젝트 이름으로
+       * 읽고, 더 나쁘게는 아무 의미 없는 문자열을 이름 자리에서 보게 된다.
+       * 담당자 이름을 못 찾을 때 '미지정'으로 쓰는 것과 같은 판단이다(DEFERRED D-09 결정 B).
+       */
+      projectName: projectOf.get(task.project_id)?.name ?? '볼 수 없는 프로젝트',
     }))
 
   return (
