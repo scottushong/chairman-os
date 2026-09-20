@@ -161,6 +161,9 @@ const UID = {
   ceo: '00000000-0000-0000-0000-00000000000f',
   member: '00000000-0000-0000-0000-00000000000d',
   chairman: '00000000-0000-0000-0000-00000000000e',
+  // 승계 기간처럼 회장이 둘인 날을 흉내 낸다(0023 머리 주석). 0023 kakao 검사에서만 쓴다 —
+  // 다른 표는 "회장은 한 사람"을 전제로 시드돼 있어 여기서 그 전제를 건드리지 않는다.
+  chairman2: '00000000-0000-0000-0000-000000000010',
 }
 
 async function rls(db: Db) {
@@ -170,14 +173,16 @@ async function rls(db: Db) {
     grant usage, select on all sequences in schema public to authenticated;
     insert into auth.users values
       ('${UID.integration}', 'i@x'), ('${UID.agent}', 'a@x'), ('${UID.cfo}', 'c@x'),
-      ('${UID.member}', 'm@x'), ('${UID.chairman}', 'ch@x'), ('${UID.ceo}', 'ceo@x');
+      ('${UID.member}', 'm@x'), ('${UID.chairman}', 'ch@x'), ('${UID.ceo}', 'ceo@x'),
+      ('${UID.chairman2}', 'ch2@x');
     insert into user_profiles (user_id, role, display_name, max_security_class) values
       ('${UID.integration}', 'Integration', 'sync', 'Restricted'),
       ('${UID.agent}', 'AIAgent', 'ai', 'Restricted'),
       ('${UID.cfo}', 'GroupCFO', 'cfo', 'Restricted'),
       ('${UID.member}', 'Member', 'm', 'Normal'),
       ('${UID.chairman}', 'Chairman', 'ch', 'Vault'),
-      ('${UID.ceo}', 'BusinessCEO', 'ceo', 'Restricted');
+      ('${UID.ceo}', 'BusinessCEO', 'ceo', 'Restricted'),
+      ('${UID.chairman2}', 'Chairman', 'ch2', 'Vault');
     insert into user_business_access select '${UID.integration}', business_id from businesses;
     insert into user_business_access select '${UID.agent}', business_id from businesses;
     insert into user_business_access values ('${UID.member}', 'biz_dy');
@@ -982,6 +987,41 @@ async function books(db: Db, as: As) {
     true, '0023: Chairman이 연결을 해제하지 못한다',
   )
 
+  // ── 회장이 둘인 날(승계 기간, G-1) — status()·clear()가 자기 행만 보고 지우는가 ──────
+  //
+  // force를 걷은 뒤로(3절 ③) 정책은 더는 소유자를 묶지 않는다. status()/clear()가 where로
+  // 스스로 좁히지 않으면 A가 B의 연결 상태를 보거나(status) B의 연결까지 지운다(clear) —
+  // 위의 모든 단언은 회장이 하나뿐이라 이 구멍을 재지 못했다. 그래서 A·B 둘을 심고 A로 잰다.
+  const kakaoRowB = `insert into chairman_kakao_token
+      (user_id, access_token, refresh_token, expires_at, refresh_expires_at, scopes)
+    values ('${UID.chairman2}', 'AT-B', 'RT-B', now() + interval '6 hours', now() + interval '60 days', 'profile')`
+
+  // status — A 세션에는 A의 행 하나만 보여야 한다. 길이만으로는 "1행이지만 B의 값"인
+  // 경우를 놓치므로 scopes 값까지 A의 것('talk_message')인지 함께 잰다.
+  const statusA = await rpc<{ scopes: string }>(
+    UID.chairman, 'select * from kakao_token_status()', `${kakaoRow}; ${kakaoRowB}`,
+  )
+  assert.equal(statusA.length, 1, '0023: 회장이 둘일 때 kakao_token_status()가 한 행이 아닌 것을 A에게 준다')
+  assert.equal(statusA[0]?.scopes, 'talk_message', '0023: kakao_token_status()가 A 대신(또는 A와 함께) B의 값을 준다 — where user_id = auth.uid()가 없다')
+
+  // clear — A가 해제해도 B의 연결은 남아야 한다. rpc()는 호출마다 rollback해서 "지운 뒤
+  // 남았나"를 다음 호출로 이어 볼 수 없으므로, 한 트랜잭션 안에서 소유자 권한으로 직접 본다.
+  await db.exec('begin')
+  try {
+    await db.exec(`${kakaoRow}; ${kakaoRowB}`)
+    await db.exec(`select set_config('request.jwt.claim.sub', '${UID.chairman}', true); set local role authenticated;`)
+    const clearedA = await db.query<{ kakao_token_clear: boolean }>('select kakao_token_clear()')
+    assert.equal(clearedA.rows[0].kakao_token_clear, true, '0023: 회장이 둘일 때 A가 자기 연결을 해제하지 못한다')
+    await db.exec('reset role') // 표를 직접 읽으려면 authenticated의 revoke를 벗어나야 한다(3절 ①).
+    const remaining = await db.query<{ user_id: string }>('select user_id from chairman_kakao_token')
+    assert.deepEqual(
+      remaining.rows.map((r) => r.user_id), [UID.chairman2],
+      '0023: 회장이 둘일 때 kakao_token_clear()가 B의 행까지 지운다 — where user_id = auth.uid()가 없다',
+    )
+  } finally {
+    await db.exec('rollback')
+  }
+
   // ── 0023 chairman_recent_condition() — 오늘이 없으면 어제 ─────────────────
   const today = kstToday()
   const yesterday = new Date(Date.parse(`${today}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10)
@@ -1080,6 +1120,9 @@ async function definerUnderNonBypassOwner() {
     `select relname, relforcerowsecurity as f from pg_class
       where relname in ('chairman_kakao_token', 'chairman_checkins')`,
   )
+  // 행 수부터 잰다 — 표 이름이 바뀌거나 오타가 나면 위 쿼리가 0행을 주고, 아래 for는
+  // 그냥 공회전하며 통과해 버린다(무엇도 단언하지 않은 채). 둘을 정확히 찾았는지가 먼저다.
+  assert.equal(forced.rows.length, 2, `0023: force 검사가 표 둘을 못 찾는다 (${forced.rows.map((r) => r.relname).join(', ') || '0개'})`)
   for (const row of forced.rows) {
     assert.equal(row.f, false, `0023: ${row.relname}에 force row level security가 걸려 있다 (definer 함수가 0행을 준다)`)
   }

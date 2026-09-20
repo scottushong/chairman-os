@@ -42,9 +42,11 @@
 -- 왜 행이 여럿일 수 있다고 보고 쓰는가
 --   user_id가 기본키라 Chairman이 둘이면 행도 둘이다. "회장은 한 사람"은 오늘의 운영 사실이지
 --   스키마가 지키는 제약이 아니다 — 언젠가 회장이 둘인 날(승계 기간의 신·구 회장)이 오면
---   표 전체를 갱신하는 코드는 한 계정의 토큰으로 다른 계정의 행을 덮어쓴다. 그래서
+--   표 전체를 갱신하거나 지우는 코드는 한 계정이 다른 계정의 행까지 건드린다. 그래서
 --   kakao_token_for_send()는 `order by updated_at desc limit 1`로 **한 행을 고르고**,
---   kakao_token_refreshed()는 그 행의 user_id를 받아 **그 행만** 갱신한다.
+--   kakao_token_refreshed()는 그 행의 user_id를 받아 **그 행만** 갱신하고,
+--   kakao_token_status()/kakao_token_clear()는 `where user_id = auth.uid()`로 **호출자 자신의
+--   행만** 보고 지운다(force를 걷은 뒤로 정책이 더는 이것을 대신해 주지 않는다 — 3절 ③, G-1).
 --   AIAgent가 user_id를 손에 쥐게 되지만, 그 값은 이미 for_send()가 돌려주던 것이고
 --   (send-brief.ts가 audit_log의 actor로 쓰는 값과 같은 등급이다) 토큰 값이 아니다.
 -- =====================================================================
@@ -137,9 +139,12 @@ create or replace function kakao_token_status()
 returns table (connected boolean, scopes text, expires_at timestamptz,
                refresh_expires_at timestamptz, updated_at timestamptz)
 language sql stable security definer set search_path = public as $fn$
+  -- force를 걷었으므로(3절 ③) 정책이 더는 소유자를 묶지 않는다 — where로 직접 좁히지 않으면
+  -- 회장이 둘인 날 A가 B의 연결 상태(scopes·만료·updated_at)까지 받는다. 호출자가 Chairman
+  -- 세션이라 auth.uid()가 곧 그 회장이다.
   select true, t.scopes, t.expires_at, t.refresh_expires_at, t.updated_at
     from chairman_kakao_token t
-   where is_active() and auth_role() = 'Chairman';
+   where is_active() and auth_role() = 'Chairman' and t.user_id = auth.uid();
 $fn$;
 
 comment on function kakao_token_status() is
@@ -155,12 +160,15 @@ language sql stable security definer set search_path = public as $fn$
    where is_active() and auth_role() in ('Chairman', 'AIAgent')
    -- 회장이 둘이면 행도 둘이다(머리 주석). 호출부는 rows[0]을 쓰므로 '아무 행'이 아니라
    -- **가장 최근에 연결·갱신된 행**을 고른다 — 임의 선택은 어느 날 조용히 바뀐다.
+   -- 이 함수는 AIAgent(야간 Job)가 부르므로 auth.uid()가 회장이 아니다 — G-1처럼 where로
+   -- 좁힐 수 없다. 회장이 둘이 되면 이 limit 1은 '어느 회장이 그 회장인가'라는 개념이
+   -- 필요해지는 자리다(오늘은 운영상 한 명이라 미룬다 — DEFERRED.md Phase 3-C 참고).
    order by t.updated_at desc
    limit 1;
 $fn$;
 
 comment on function kakao_token_for_send() is
-  '0023. 토큰 값을 내주는 유일한 함수. AIAgent에게도 주는 이유는 야간 Job이 07:00 KST에 사람 없이 돌기 때문이다(0019 chairman_today_condition()과 같은 사정).';
+  '0023. 토큰 값을 내주는 유일한 함수. AIAgent에게도 주는 이유는 야간 Job이 07:00 KST에 사람 없이 돌기 때문이다(0019 chairman_today_condition()과 같은 사정). 회장이 둘이 되는 날 이 limit 1이 미뤄 둔 것은 DEFERRED.md Phase 3-C를 본다.';
 
 -- 4-3. 연결/재연결. Chairman만. 행을 만든다.
 create or replace function kakao_token_save(
@@ -227,7 +235,10 @@ begin
   if not (is_active() and auth_role() = 'Chairman') then
     return false;
   end if;
-  delete from chairman_kakao_token;
+  -- force를 걷었으므로(3절 ③) 정책이 더는 소유자를 묶지 않는다 — where 없이 표 전체를
+  -- 지우면 회장이 둘인 날 A의 '연결 해제'가 B의 연결까지 지운다. 호출자가 Chairman
+  -- 세션이라 auth.uid()가 곧 그 회장이다.
+  delete from chairman_kakao_token where user_id = auth.uid();
   return true;
 end;
 $fn$;
