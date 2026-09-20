@@ -4,6 +4,7 @@ import { useState } from 'react'
 
 import { removeEventAction, saveEventAction } from '@/app/actions/initiatives'
 import { Icon } from '@/components/ui/icon'
+import { BRIEF_TIMEZONE_OPTIONS } from '@/lib/chairman-timezone'
 import { EVENT_KIND, EVENT_KIND_LABEL_KO, type ChairmanEvent, type EventKind } from '@/types'
 
 /**
@@ -31,10 +32,12 @@ interface Draft {
   startsOn: string
   endsOn: string
   location: string
+  /** Phase 3-C 현지 시간(0029). 출장일 때만 폼에 나온다. ''이면 안 정한 것이다. */
+  timezone: string
   note: string
 }
 
-const EMPTY: Draft = { title: '', kind: 'Meeting', startsOn: '', endsOn: '', location: '', note: '' }
+const EMPTY: Draft = { title: '', kind: 'Meeting', startsOn: '', endsOn: '', location: '', timezone: '', note: '' }
 
 export function EventPanel({
   events,
@@ -66,6 +69,9 @@ export function EventPanel({
       starts_on: draft.startsOn,
       ends_on: draft.endsOn,
       location: draft.location,
+      // 출장이 아닌 일정에 시간대를 실어 보내지 않는다 — ②가 보는 것은 Trip뿐이고,
+      // 회의 행에 남은 값은 나중에 "이건 왜 여기 있지"가 된다.
+      timezone: draft.kind === 'Trip' ? draft.timezone : '',
       initiative_id: initiativeId,
       business_id: businessId,
       // 위 Draft 주석 참고 — 이 줄이 빠지면 회장 메모가 지워진다.
@@ -153,6 +159,25 @@ export function EventPanel({
             onChange={(endsOn) => setDraft({ ...draft, endsOn })}
           />
           <Field label="장소" value={draft.location} onChange={(location) => setDraft({ ...draft, location })} maxLength={300} />
+          {/* 출장일 때만 묻는다. 이 칸이 비면 아침 알림의 ②(출장 시간대)는 건너뛴다 —
+              '뉴욕'이라는 장소 문자열에서 시간대를 추측하지 않는다(0029 2절). */}
+          {draft.kind === 'Trip' ? (
+            <label className="block text-[10px] font-semibold tracking-[0.08em] text-ink-muted">
+              현지 시간대
+              <select
+                value={draft.timezone}
+                onChange={(e) => setDraft({ ...draft, timezone: e.target.value })}
+                className="mt-1 w-full rounded-md border border-line bg-panel px-2 py-1.5 text-[12px] font-normal text-ink outline-none focus:border-accent"
+              >
+                <option value="">정하지 않음</option>
+                {BRIEF_TIMEZONE_OPTIONS.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <div className="flex items-center gap-1.5 md:col-span-5">
             <button
               type="button"

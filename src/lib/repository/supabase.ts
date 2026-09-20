@@ -94,6 +94,7 @@ import {
   type RevokeTarget,
   type StrategyPatch,
   type TaskPatch,
+  type BriefTimezoneSettings,
   type UserSettings,
 } from './types'
 
@@ -532,7 +533,7 @@ const INITIATIVE_KEYMAN_COLUMNS = 'keyman_id,initiative_id,name,relation,channel
 const INITIATIVE_DOC_COLUMNS = 'doc_id,initiative_id,title,url'
 
 /** 0017 events. */
-const EVENT_COLUMNS = 'event_id,title,starts_on,ends_on,kind,initiative_id,business_id,location,note'
+const EVENT_COLUMNS = 'event_id,title,starts_on,ends_on,kind,initiative_id,business_id,location,timezone,note'
 
 /** 0015 accounts + 0016 active. 읽기와 쓰기가 같은 모양을 돌려줘야 한다. */
 const JOURNAL_ENTRY_COLUMNS = 'business_id,slip_no,entry_date,memo,evidence_url,created_by,created_at,corrects_id,correction_kind'
@@ -3413,5 +3414,41 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
 
       if (error) throw new Error(`Supabase user_settings ${error.code ?? '?'}: ${error.message}`)
     },
+
+    /**
+     * Phase 3-C 현지 시간. 0029 chairman_brief_timezone() RPC.
+     *
+     * 표를 직접 읽지 않는 이유는 계약 주석(repository/types.ts)에 적었다 — 야간 Job은
+     * 이 문으로만 회장의 설정을 볼 수 있고, 화면도 같은 문을 지나야 둘이 갈라지지 않는다.
+     */
+    async getBriefTimezone(): Promise<BriefTimezoneSettings> {
+      const { data, error } = await sb.rpc('chairman_brief_timezone')
+      if (error) throw new Error(`Supabase chairman_brief_timezone ${error.code ?? '?'}: ${error.message}`)
+      const row = (data as BriefTimezoneSettings[] | null)?.[0]
+      return { brief_tz: row?.brief_tz ?? null, current_tz: row?.current_tz ?? null }
+    },
+
+    /** ③ 수동 시간대. 자기 행에만 닿는다 — 0002 user_settings_own이 그것을 지킨다. */
+    async saveBriefTimezone(tz: string | null) {
+      await upsertOwnSettings(sb, { brief_tz: tz })
+    },
+
+    /**
+     * ① 마지막 접속 기기의 시간대. 회장이 비행기에서 내려 앱을 열면 여기가 먼저 바뀐다.
+     * 출장 일정을 안 넣었어도 다음 아침이 그 도시 06시에 오는 것은 이 한 줄 덕분이다.
+     */
+    async saveCurrentTimezone(tz: string) {
+      await upsertOwnSettings(sb, { current_tz: tz })
+    },
   }
+}
+
+/** user_settings의 내 행에 칸 몇 개만 얹는다. saveUserSettings와 같은 모양·같은 이유다. */
+async function upsertOwnSettings(sb: SupabaseClient, patch: Record<string, unknown>) {
+  const {
+    data: { user },
+  } = await sb.auth.getUser()
+  if (!user) throw new Error('세션이 없다. 개인 설정은 로그인한 사람에게만 있다.')
+  const { error } = await sb.from('user_settings').upsert({ user_id: user.id, ...patch }, { onConflict: 'user_id' })
+  if (error) throw new Error(`Supabase user_settings ${error.code ?? '?'}: ${error.message}`)
 }

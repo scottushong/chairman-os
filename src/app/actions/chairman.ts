@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 
 import { currentUser } from '@/lib/auth/session'
+import { isValidTimezone } from '@/lib/chairman-timezone'
 import { getRepository } from '@/lib/repository'
 import { CHAIRMAN_PROJECT_STATUS, type ChairmanProject, type ChairmanProjectStatus } from '@/types'
 
@@ -111,5 +112,33 @@ export async function saveChairmanManifesto(body: unknown): Promise<SaveChairman
 
   revalidatePath('/settings/chairman')
   revalidatePath('/ai')
+  return {}
+}
+
+/**
+ * 아침 알림의 ③ 수동 시간대 (Phase 3-C 현지 시간, 0029).
+ *
+ * 빈 값이 곧 '자동'이고 DB에는 null로 간다 — ''와 null이 같은 뜻을 두 가지로 표현하면
+ * 화면과 Job이 서로 다른 쪽을 본다(0029 1절).
+ *
+ * 목록 바깥의 시간대도 Intl이 알면 받는다. 드롭다운은 회장이 실제로 갈 만한 곳을 추린
+ * 편의지 허용 목록이 아니다 — 목록에 없는 도시로 가는 날 설정을 못 하는 쪽이 더 나쁘다.
+ */
+export async function saveBriefTimezone(tz: unknown): Promise<SaveChairmanState> {
+  const value = typeof tz === 'string' ? tz.trim() : ''
+  if (value && !isValidTimezone(value)) return { error: '알 수 없는 시간대입니다.' }
+
+  const user = await currentUser()
+  if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+
+  try {
+    const repo = await getRepository()
+    await repo.saveBriefTimezone(value || null)
+  } catch (e) {
+    console.error('[saveBriefTimezone]', e)
+    return { error: permissionError(e, '저장하지 못했습니다. 잠시 후 다시 시도하세요.') }
+  }
+
+  revalidatePath('/settings/chairman')
   return {}
 }

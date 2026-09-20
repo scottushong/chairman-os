@@ -108,6 +108,12 @@ export interface ChairmanEvent {
   initiative_id: string | null
   business_id: BusinessId | null
   location: string
+  /**
+   * Phase 3-C 현지 시간(0029). 이 일정 장소의 IANA 시간대. null이면 아침 알림의
+   * ②(출장) 판정에서 빠진다 — location은 사람이 읽는 자유 문자열이라 거기서
+   * 시간대를 추측하지 않는다. 틀린 추측은 회장을 새벽에 깨운다.
+   */
+  timezone: string | null
   note: string
 }
 

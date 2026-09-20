@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { removeEventAction, saveEventAction } from '@/app/actions/initiatives'
 import { Icon } from '@/components/ui/icon'
+import { BRIEF_TIMEZONE_OPTIONS } from '@/lib/chairman-timezone'
 import {
   CALENDAR_ITEM_LABEL_KO, EVENT_KIND, EVENT_KIND_LABEL_KO,
   type CalendarItem, type ChairmanEvent, type EventKind, type IsoDate,
@@ -31,6 +32,8 @@ interface Draft {
   startsOn: string
   endsOn: string
   location: string
+  /** Phase 3-C 현지 시간(0029). 출장일 때만 폼에 나온다. ''이면 안 정한 것이다. */
+  timezone: string
   // 이 모달은 그 셋을 고치지 않지만, 안 실어 보내면 saveEventAction이 null/''로 채워
   // 이니셔티브·회사 연결과 메모가 조용히 끊긴다 — 폼에는 안 넣고 그대로 실어 나르기만 한다.
   // 같은 Server Action을 쓰는 형제가 initiatives/event-panel.tsx다. 그쪽 Draft에도 note가
@@ -44,7 +47,7 @@ function emptyDraft(day: IsoDate): Draft {
   // 새 일정의 시작일은 누른 날짜다. 비워 두면 회장이 달력에서 날짜를 골라 놓고 또 고른다.
   // 캘린더에서 새로 만드는 일정은 정말로 어디에도 안 걸린다 — null/null/''이 맞다.
   return {
-    title: '', kind: 'Meeting', startsOn: day, endsOn: '', location: '',
+    title: '', kind: 'Meeting', startsOn: day, endsOn: '', location: '', timezone: '',
     initiativeId: null, businessId: null, note: '',
   }
 }
@@ -57,6 +60,7 @@ function draftOf(e: ChairmanEvent): Draft {
     startsOn: e.starts_on,
     endsOn: e.ends_on ?? '',
     location: e.location,
+    timezone: e.timezone ?? '',
     initiativeId: e.initiative_id,
     businessId: e.business_id,
     note: e.note,
@@ -112,6 +116,8 @@ export function DayModal({
       starts_on: draft.startsOn,
       ends_on: draft.endsOn,
       location: draft.location,
+      // 출장이 아닌 일정에 시간대를 실어 보내지 않는다(event-panel.tsx와 같은 이유).
+      timezone: draft.kind === 'Trip' ? draft.timezone : '',
       initiative_id: draft.initiativeId,
       business_id: draft.businessId,
       note: draft.note,
@@ -375,6 +381,25 @@ function EventForm({
           className={field}
         />
       </label>
+      {/* 출장일 때만 묻는다. 비면 아침 알림의 ②를 건너뛴다 — 장소 문자열에서 시간대를
+          추측하지 않는다(0029 2절). */}
+      {draft.kind === 'Trip' ? (
+        <label className={label}>
+          현지 시간대
+          <select
+            value={draft.timezone}
+            onChange={(e) => setDraft({ ...draft, timezone: e.target.value })}
+            className={field}
+          >
+            <option value="">정하지 않음</option>
+            {BRIEF_TIMEZONE_OPTIONS.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       <label className={label}>
         시작일
         <input

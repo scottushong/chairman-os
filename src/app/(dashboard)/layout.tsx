@@ -1,6 +1,7 @@
 import { Header } from '@/components/layout/header'
 import { Sidebar } from '@/components/layout/sidebar'
 import { SystemBar } from '@/components/layout/system-bar'
+import { TimezoneBeacon } from '@/components/settings/timezone-beacon'
 import { currentUser } from '@/lib/auth/session'
 
 /**
@@ -20,6 +21,9 @@ export default async function DashboardLayout({ children }: LayoutProps<'/'>) {
   return (
     // 셸은 화면에 고정하고 본문만 스크롤한다. 관제 화면에서 헤더가 밀리면 안 된다.
     <div className="flex h-full">
+      {/* 그려지는 것이 없다. 이 기기의 시간대를 하루 한 번 서버에 남긴다 —
+          아침 알림의 ①이 그 값이다(Phase 3-C 현지 시간). */}
+      <TimezoneBeacon />
       <Sidebar user={user} />
       <div className="flex min-w-0 flex-1 flex-col">
         <Header user={user} />

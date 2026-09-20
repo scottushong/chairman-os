@@ -251,6 +251,16 @@ function ownerLabel(ownerId: string): string {
 const memorySettings: UserSettings = { hidden_businesses: [], pinned_businesses: null }
 
 /**
+ * Phase 3-C 현지 시간. dummy에도 두 칸을 둔다 — /settings/chairman의 '수동 시간대'와
+ * '지금 어느 시간대로 판정되나' 한 줄이 dummy 모드에서 실제로 움직여야 화면을 볼 수 있다.
+ * 프로세스 메모리에만 산다(이 파일의 다른 쓰기와 같다).
+ */
+const memoryBriefTimezone: { brief_tz: string | null; current_tz: string | null } = {
+  brief_tz: null,
+  current_tz: null,
+}
+
+/**
  * JSON 시드 어댑터.
  * src/data는 읽기 전용이라 여기서도 원본을 그대로 내보내지 않고 복사본을 준다 —
  * 화면에서 sort()를 한 번만 잘못 불러도 시드 배열 순서가 영구히 바뀐다.
@@ -1286,6 +1296,18 @@ export const dummyRepository: ChairmanRepository = {
 
   async saveUserSettings(patch: Partial<UserSettings>) {
     Object.assign(memorySettings, patch)
+  },
+
+  async getBriefTimezone() {
+    return { ...memoryBriefTimezone }
+  },
+
+  async saveBriefTimezone(tz: string | null) {
+    memoryBriefTimezone.brief_tz = tz
+  },
+
+  async saveCurrentTimezone(tz: string) {
+    memoryBriefTimezone.current_tz = tz
   },
 
   /**

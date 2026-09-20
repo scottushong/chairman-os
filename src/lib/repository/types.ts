@@ -350,6 +350,27 @@ export interface ChairmanRepository {
   /** CH-003/004/056. 지금 로그인한 사람의 개인 설정. 남의 것은 어떤 역할도 못 읽는다(0002). */
   getUserSettings(): Promise<UserSettings>
   saveUserSettings(patch: Partial<UserSettings>): Promise<void>
+
+  /**
+   * Phase 3-C 현지 시간(0029). 아침 알림 시간대의 입력 두 칸.
+   *
+   * 표가 아니라 keyhole(chairman_brief_timezone())로 읽는다. user_settings는 남의 행을
+   * 어떤 역할도 못 읽는 표라, 야간 Job(AIAgent)이 회장의 설정을 볼 길이 그것뿐이고 —
+   * 화면과 Job이 **같은 문**을 지나야 둘이 다른 값을 보는 날이 안 온다.
+   */
+  getBriefTimezone(): Promise<BriefTimezoneSettings>
+  /** ③ 수동 시간대. null이면 자동(② 출장 → ① 접속 → Asia/Seoul)으로 되돌린다. */
+  saveBriefTimezone(tz: string | null): Promise<void>
+  /** ① 마지막 접속 기기의 시간대. 클라이언트가 Intl로 보낸 값을 그대로 적는다. */
+  saveCurrentTimezone(tz: string): Promise<void>
+}
+
+/** 0029 chairman_brief_timezone()이 주는 두 칸. 우선순위 판정은 lib/chairman-timezone.ts가 한다. */
+export interface BriefTimezoneSettings {
+  /** ③ 회장이 손으로 고른 값. null = 자동. */
+  brief_tz: string | null
+  /** ① 마지막 접속 기기가 보낸 값. */
+  current_tz: string | null
 }
 
 /** CH-024 키맨 폼이 보내는 한 행. keyman_id가 없으면 새 사람이다. */

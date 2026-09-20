@@ -111,11 +111,13 @@ Settings → Environment Variables에서 아래를 넣고, 각 변수의 Environ
   눌러 보면 `/api/kakao/auth`가 `?kakao=config`로 돌려보낸다(설계대로다. 변수가 없어서
   못 가는 것이지 버그가 아니다). 야간 Job은 `skipped: 카카오 환경변수가 없다`로 조용히 지나간다.
   카카오까지 테스트하려면 별도 카카오 앱과 고정 Preview URL이 필요하다(DEFERRED).
-- **Vercel Cron은 Production 배포에서만 돈다.** Preview에서 아침 브리핑은 저절로 돌지 않는다.
-  staging에서 보려면 손으로 부른다:
-  `curl -H "Authorization: Bearer <staging CRON_SECRET>" https://<preview-url>/api/cron/night-brief`
+- **아침 브리핑은 더 이상 Vercel Cron이 부르지 않는다** (Phase 3-C 현지 시간, 2026-09-21).
+  GitHub Actions가 매시 정각 UTC에 틱을 던지고, API가 "지금 회장 현지 06시인가"를 판정한다.
+  절차와 이유는 **10절**에 있다. staging이나 Preview에서 손으로 보려면:
+  `curl -i -H "Authorization: Bearer <staging CRON_SECRET>" "https://<preview-url>/api/cron/night-brief?tick=1"`
+  `?tick=1`이 없으면 400이다(옛 방식 호출이 조용한 중복 발송이 되는 것을 막는다).
   Preview에 Deployment Protection이 켜져 있으면 bypass 토큰을 함께 보내거나 잠시 꺼야 한다.
-- 서브시스템은 여전히 "야간 브리핑"(night-brief)이라는 이름을 쓴다. Phase 3-C에서 cron을 23:00 KST에서 07:00 KST로 옮겼지만, 모듈·경로·감사 액션은 원래 이름 그대로 두었다 — 코드에서 "야간"을 보면 23:00일 때를 의도한 기존 흔적이 아니라 Phase 3-C에서도 그 이름을 그대로 써오기로 정한 결정이다.
+- 서브시스템은 여전히 "야간 브리핑"(night-brief)이라는 이름을 쓴다. Phase 3-C에서 cron을 23:00 KST에서 07:00 KST로 옮기고, Phase 3-C 현지 시간에서 다시 "회장 현지 06:00"으로 옮겼지만, 모듈·경로·감사 액션은 원래 이름 그대로 두었다 — 코드에서 "야간"을 보면 23:00일 때를 의도한 기존 흔적이 아니라 이름을 그대로 써오기로 정한 결정이다.
 - 로그인은 이메일+비밀번호(`signInWithPassword`)다. OAuth·매직링크가 없으므로 staging 프로젝트의
   Auth redirect URL 허용 목록은 건드릴 것이 없다.
 - 붙었는지 보는 법은 배포 후 확인 4단계와 같다. `/api/health`가 staging 숫자를 내고
@@ -582,3 +584,67 @@ CLI 버전이 이 로컬 JWT 정보를 제공하지 않으면 검사는 실패�
    공개 결과로 고객 문서 제목이나 내용을 출력하지 않는다.
 5. 새 정책 수정과 재검증을 거쳐 접근을 복구한다. 잘못된 RLS로 데이터가 변경되었다면 별도 정합성 조사와
    필요시 위 DB 복원 절차를 따른다. 수정 배포가 과거 노출을 없애지는 않으므로 사고 대응 기록을 유지한다.
+
+---
+
+## 10. 아침 브리핑 틱 — GitHub Actions (Phase 3-C 현지 시간)
+
+### 무엇이 바뀌었나
+
+2026-09-21까지 아침 카톡 알림은 `vercel.json`의 cron 한 줄(`0 22 * * *` = 07:00 KST)이 불렀다.
+지금은 **회장이 있는 곳의 06:00**에 간다. Vercel cron으로는 그것을 표현할 수 없다 —
+Hobby 플랜은 cron 슬롯이 하나이고, 그 슬롯의 **시각이 고정**이라 회장이 뉴욕에 가면
+사람이 vercel.json을 고쳐 다시 배포해야 한다. 그런 파일은 아무도 안 고친다.
+
+그래서 `vercel.json`의 `crons`를 **지웠고**(파일에는 `$schema`만 남았다),
+`.github/workflows/chairman-tick.yml`이 매시 정각 UTC에
+`GET /api/cron/night-brief?tick=1`을 한 번 부른다. **시각 판정은 워크플로가 아니라 API가 한다.**
+
+- 회장 시간대: ③ 수동 지정(`/settings/chairman`) > ② 출장 일정의 현지 시간대 > ① 마지막 접속 기기 > `Asia/Seoul`
+- 현지 06:00~09:59 안이고 그날 것을 아직 안 했으면 → 생성 + 발송 (HTTP 200)
+- 그 밖에는 **204**. 하루 스물네 번 중 스물세 번이 이쪽이고, **204는 성공이다.**
+- 현지 10시를 넘기면 그날은 건너뛴다(장부에 사유만 남는다).
+- 창이 한 시간이 아니라 네 시간인 이유: GitHub Actions의 schedule은 정시에 오지 않는다
+  (몇 분~수십 분 지연이 흔하다). `hour === 6`만 보면 07:04에 온 틱이 그날을 통째로 건너뛴다.
+
+판정이 궁금하면 응답 헤더를 본다 — `curl -i`에 `x-brief-outcome`, `x-brief-timezone`,
+`x-brief-timezone-source`, `x-brief-local-date`, `x-brief-local-hour`가 실려 온다.
+
+### GitHub Secrets 두 개 (한 번만)
+
+GitHub 저장소 → **Settings > Secrets and variables > Actions > New repository secret**.
+Environment secret이 아니라 **repository secret**으로 넣는다 — 워크플로에 environment 지정이 없다.
+
+| 이름 | 값 |
+|---|---|
+| `CRON_SECRET` | Vercel Production 환경변수의 `CRON_SECRET`과 **같은 값**. 다르면 매시 401이 난다. |
+| `APP_URL` | production 주소. `https://chairman-os-eosin.vercel.app` — **끝에 `/`를 붙이지 않는다.** |
+
+`APP_URL` 끝의 `/`는 `https://…//api/cron/night-brief`가 되어 404를 낸다. 워크플로가 그 슬래시를
+지워 주지 않는다 — 값이 맞는지는 아래 손 실행으로 한 번 확인한다.
+
+### 넣은 뒤 확인
+
+1. GitHub 저장소 → **Actions > chairman morning tick > Run workflow**(workflow_dispatch).
+2. 로그에 `HTTP 204` 또는 `HTTP 200`이 보이면 붙은 것이다.
+   - `HTTP 401` → `CRON_SECRET`이 Vercel 값과 다르다.
+   - `HTTP 404` → `APP_URL`이 틀렸다(끝의 `/`를 먼저 의심한다).
+   - `HTTP 400` → 누가 `?tick=1` 없이 부르고 있다.
+   - `HTTP 500` → AIAgent 로그인이나 keyhole 읽기가 실패했다. Vercel 로그의 `[brief-tick]`을 본다.
+3. 스케줄로 도는 것은 그다음 정시부터다. GitHub은 **기본 브랜치의** 워크플로만 스케줄로 돌린다 —
+   다른 브랜치에 두면 영영 안 돈다.
+
+### 알아 둘 것
+
+- **저장소가 60일간 비어 있으면 GitHub이 schedule을 자동으로 멈춘다.** 이 저장소는 매일 커밋이
+  들어오는 중이라 오늘의 문제는 아니지만, 개발이 멈추는 기간이 오면 아침 알림도 같이 멈춘다.
+  그때는 Actions 화면에 "이 워크플로를 다시 켜겠습니까" 버튼이 뜬다.
+- 워크플로에 **재시도를 넣지 않았다.** 실패해도 다음 시간에 틱이 다시 오고, API가 장부를 보고
+  그때 보낸다(현지 10시까지). 워크플로가 스스로 재시도하면 같은 판정이 몇 분 간격으로 두 번 돌아
+  중복 발송의 창이 열린다.
+- 회장이 ③ 수동 시간대를 고르는 자리는 `/settings/chairman`의 "카카오 아침 알림" 절이다.
+  그 줄이 **지금 어느 시간대로 판정되고 있는지와 그 근거(①②③)**를 같이 보여 준다 —
+  "왜 이 시각에 왔지"에 답할 자리가 거기다.
+- 출장 일정으로 시간대를 따라가게 하려면 일정의 종류를 **출장(Trip)** 으로 두고
+  **현지 시간대** 칸을 고른다. 그 칸이 비면 ②는 건너뛴다 — 장소 문자열('뉴욕')에서
+  시간대를 추측하지 않는다.

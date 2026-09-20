@@ -1,4 +1,5 @@
 import { RailSidebar } from '@/components/layout/rail-sidebar'
+import { TimezoneBeacon } from '@/components/settings/timezone-beacon'
 import { currentUser } from '@/lib/auth/session'
 
 /**
@@ -28,6 +29,9 @@ export default async function MorningLayout({ children }: LayoutProps<'/'>) {
 
   return (
     <div data-theme="dark" className="flex h-full">
+      {/* (dashboard) 셸과 같은 이유로 여기에도 선다 — 회장이 아침에 여는 화면이 /ai라
+          이 셸을 빼면 ①이 며칠씩 낡은 값으로 남는다(Phase 3-C 현지 시간). */}
+      <TimezoneBeacon />
       <RailSidebar user={user} />
       {/* 세로 칸을 한 겹 둔다. 지금은 main 하나뿐이지만 (dashboard)와 같은 골격이라야
           나중에 이 셸에 바가 붙을 때 자리가 분명하고, 그때 아래 높이 계산도 여기서부터 다시 센다. */}

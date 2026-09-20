@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 
 import { currentUser } from '@/lib/auth/session'
+import { isValidTimezone } from '@/lib/chairman-timezone'
 import { GOAL_MAX } from '@/lib/initiative'
 import { LOGO_MAX_BYTES, LOGO_MIME, type LogoMime } from '@/lib/initiative-logo'
 import { getRepository } from '@/lib/repository'
@@ -288,6 +289,13 @@ export async function saveEventAction(input: unknown): Promise<EventState> {
   if (endsOn && endsOn < startsOn) return { error: '종료일이 시작일보다 앞설 수 없습니다.' }
   if (!EVENT_KIND.includes(f.kind as EventKind)) return { error: '일정 종류를 고르세요.' }
 
+  // Phase 3-C 현지 시간(0029). 빈 값은 null이다 — ''와 null이 같은 뜻을 두 가지로 쓰지 않는다.
+  // Intl이 모르는 문자열은 여기서 막는다. DB의 check는 모양만 보므로('Asia/Seoull'도 통과한다)
+  // 실재 여부를 아는 자리는 여기뿐이고, 틀린 값이 들어가면 그 출장 동안 ②가 조용히 빠진다.
+  const rawTz = typeof f.timezone === 'string' ? f.timezone.trim() : ''
+  if (rawTz && !isValidTimezone(rawTz)) return { error: '시간대를 목록에서 고르세요.' }
+  const timezone = rawTz || null
+
   const user = await currentUser()
   if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
 
@@ -303,6 +311,7 @@ export async function saveEventAction(input: unknown): Promise<EventState> {
         initiative_id: typeof f.initiative_id === 'string' && f.initiative_id ? f.initiative_id : null,
         business_id: typeof f.business_id === 'string' && f.business_id ? f.business_id : null,
         location: typeof f.location === 'string' ? f.location.trim() : '',
+        timezone,
         note: typeof f.note === 'string' ? f.note.trim() : '',
       },
       { user_id: user.user_id, role: user.role },

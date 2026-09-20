@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { PageHeader } from '@/components/layout/page-header'
+import { BriefTimezone } from '@/components/settings/brief-timezone'
 import { ChairmanProjectEditor } from '@/components/settings/chairman-project-editor'
 import { KakaoConnect } from '@/components/settings/kakao-connect'
 import { ManifestoEditor } from '@/components/settings/manifesto-editor'
@@ -9,6 +10,7 @@ import { Icon } from '@/components/ui/icon'
 import { canEditChairmanRoutine } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
 import { kstToday, orderProjects, projectClock } from '@/lib/chairman-project'
+import { decideChairmanTimezone } from '@/lib/chairman-timezone'
 import { formatDateTime } from '@/lib/format'
 import { firstParam } from '@/lib/query'
 import { getRepository } from '@/lib/repository'
@@ -26,12 +28,28 @@ export default async function ChairmanSettingsPage(props: PageProps<'/settings/c
 
   const params = await props.searchParams
   const repo = await getRepository()
-  const [projects, manifesto, kakao] = await Promise.all([
+  const [projects, manifesto, kakao, briefTz, events] = await Promise.all([
     repo.listChairmanProjects(),
     repo.getChairmanManifesto(),
     repo.getKakaoConnection(),
+    repo.getBriefTimezone(),
+    repo.listEvents(),
   ])
+  // 장기 프로젝트의 D-day는 그대로 KST다 — 회장이 어디 있느냐로 장부 눈금이 흔들리면
+  // 어제 본 D-780이 오늘 D-781이 아닌 날이 생긴다(lib/ai/night-brief.ts kstDate 주석).
   const today = kstToday()
+
+  /**
+   * 아침 알림이 **지금** 어느 시간대로 판정되고 있는가 (Phase 3-C 현지 시간).
+   * 야간 Job이 매시 틱에서 부르는 것과 **같은 순수 함수**다 — 다른 걸 쓰면 화면이 말하는
+   * 시각과 실제로 오는 시각이 갈라지고, 그 어긋남은 아침에만 드러난다.
+   */
+  const tzDecision = decideChairmanTimezone({
+    manualTz: briefTz.brief_tz,
+    trips: events.filter((e) => e.kind === 'Trip'),
+    deviceTz: briefTz.current_tz,
+    now: new Date(),
+  })
 
   return (
     <div className="mx-auto max-w-[1100px] px-6 py-5">
@@ -101,11 +119,21 @@ export default async function ChairmanSettingsPage(props: PageProps<'/settings/c
           카카오 아침 알림
         </h2>
         <p className="mt-1 mb-2 text-[10.5px] text-ink-muted">
-          {/* Vercel Hobby의 Cron은 지정 시각으로부터 한 시간 안에 트리거되는 best-effort다.
-              화면이 '07시'로 단정하면 07:30에 온 날 회장은 무언가 고장난 줄 안다. */}
-          매일 아침 7시쯤(7~8시 사이) 그룹 브리핑 앞부분과 전문 링크가 회장님 카카오톡으로 갑니다.
-          토큰은 서버에만 저장되고 이 화면으로 내려오지 않습니다.
+          {/* GitHub Actions의 schedule도 정시에 오지 않는다(몇 분~수십 분 지연). 화면이
+              '06시 정각'으로 단정하면 06:40에 온 날 회장은 무언가 고장난 줄 안다 —
+              그래서 폭(06~10시)을 먼저 말한다. 판정 정책은 lib/chairman-timezone.ts에 있다. */}
+          아침 브리핑 06:00 (현지 시간 자동) — 그룹 브리핑 앞부분과 전문 링크가 회장님
+          카카오톡으로 갑니다. 스케줄러 지연으로 조금 늦을 수 있고, 현지 10시를 넘기면 그날은
+          건너뜁니다. 토큰은 서버에만 저장되고 이 화면으로 내려오지 않습니다.
         </p>
+        <div className="mb-2.5">
+          <BriefTimezone
+            value={briefTz.brief_tz}
+            decided={tzDecision.timezone}
+            source={tzDecision.source}
+            tripTitle={tzDecision.trip?.title ?? null}
+          />
+        </div>
         <KakaoConnect connection={kakao} notice={firstParam(params.kakao)} now={new Date().toISOString()} />
       </section>
 

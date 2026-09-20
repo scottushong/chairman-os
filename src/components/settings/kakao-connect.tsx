@@ -22,10 +22,12 @@ import type { KakaoConnection } from '@/types'
  * 뺐기 때문에 실수로 넘길 방법 자체가 없다.
  */
 
-// 시각을 '7시쯤'으로 눅인 것은 Vercel Hobby의 Cron이 지정 시각 기준 한 시간 안에 트리거되는
-// best-effort라서다. 07:30에 온 날 회장이 고장으로 읽지 않게 화면이 먼저 폭을 말한다.
+// '06시쯤'으로 눅인 것은 GitHub Actions의 schedule이 정시에 오지 않아서다(몇 분~수십 분).
+// 06:40에 온 날 회장이 고장으로 읽지 않게 화면이 먼저 폭을 말한다. Phase 3-C 현지 시간
+// 이전에는 같은 이유를 Vercel Hobby Cron의 best-effort 트리거로 적어 두었다 —
+// 스케줄러는 바뀌었지만 '정시에 오지 않는다'는 사실은 그대로다.
 const NOTICE: Record<string, { tone: 'ok' | 'warn' | 'error'; text: string }> = {
-  connected: { tone: 'ok', text: '카카오에 연결했습니다. 내일 아침 7시쯤부터 브리핑이 카톡으로 옵니다.' },
+  connected: { tone: 'ok', text: '카카오에 연결했습니다. 내일 아침 06시쯤(회장님 현지 시간)부터 브리핑이 카톡으로 옵니다.' },
   noscope: {
     tone: 'warn',
     text: '연결은 됐지만 “카카오톡 메시지 전송” 동의가 없습니다. 다시 연결하면서 그 항목을 체크해 주세요.',
