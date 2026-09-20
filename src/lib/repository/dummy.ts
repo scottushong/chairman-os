@@ -38,8 +38,12 @@ import { emptyStrategy } from '@/lib/strategy-fields'
 import type { SearchHit } from '@/lib/search'
 import { needsChairmanApproval } from '@/types'
 import type {
+  AppNotification,
   Business,
   BusinessKeyman,
+  MyProfile,
+  MyProfilePatch,
+  NotificationInbox,
   NewShare,
   ProfilePatch,
   SecurityClass,
@@ -248,7 +252,29 @@ function ownerLabel(ownerId: string): string {
 }
 
 /** 개인 설정도 마찬가지다. 서버가 살아 있는 동안만 남는다. */
-const memorySettings: UserSettings = { hidden_businesses: [], pinned_businesses: null }
+const memorySettings: UserSettings = {
+  hidden_businesses: [],
+  pinned_businesses: null,
+  // 0030의 두 주머니. dummy에서도 실제로 저장돼야 사이드바 숨김·테마를 화면에서 눌러 볼 수 있다.
+  // 프로세스 메모리에만 산다 — 서버를 재시작하면 사라지는 것이 이 어댑터의 계약이다.
+  sidebar_prefs: {},
+  app_prefs: {},
+}
+
+/**
+ * Phase 5-E 1-2절. dummy의 알림함은 **비어 있다.**
+ *
+ * 시드로 서너 줄 넣어 두고 싶은 유혹이 있는데, 그러면 dummy에서 종에 '3'이 뜨고
+ * live에서 '0'이 뜬다 — 하드코딩 12/5를 지운 이유가 정확히 그 어긋남이다.
+ * 알림을 **만드는** 코드가 생기는 날 이 배열도 같이 채운다.
+ */
+const memoryNotifications: AppNotification[] = []
+
+/**
+ * dummy의 본인 프로필. 시드 사람(dummy-org.ts)에서 시작하고, 설정 화면에서 고친 값이
+ * 여기 얹힌다. user_id별로 둔다 — DUMMY_USER를 바꿔 다른 사람으로 들어오면 그 사람의 값이다.
+ */
+const memoryProfilePatch = new Map<string, MyProfilePatch>()
 
 /**
  * Phase 3-C 현지 시간. dummy에도 두 칸을 둔다 — /settings/chairman의 '수동 시간대'와
@@ -1296,6 +1322,56 @@ export const dummyRepository: ChairmanRepository = {
 
   async saveUserSettings(patch: Partial<UserSettings>) {
     Object.assign(memorySettings, patch)
+  },
+
+  /**
+   * 알림함. 늘 0건이다 — 위 memoryNotifications의 주석이 그 이유다.
+   * limit은 그대로 지킨다. 화면이 "20줄만 달라"고 했는데 전부 주면 그 계약이 dummy에서만
+   * 다르게 동작하고, live에서 목록이 길어지는 날 처음 드러난다.
+   */
+  async listNotifications(limit: number): Promise<NotificationInbox> {
+    const items = [...memoryNotifications]
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))
+      .slice(0, Math.max(0, limit))
+    return { unread: memoryNotifications.filter((n) => n.read_at === null).length, items }
+  },
+
+  async markNotificationsRead(ids: string[]) {
+    const now = new Date().toISOString()
+    for (const n of memoryNotifications) {
+      if (ids.includes(n.notification_id) && n.read_at === null) n.read_at = now
+    }
+  },
+
+  async getMyProfile(): Promise<MyProfile | null> {
+    const me = dummyViewer()
+    const patch = memoryProfilePatch.get(me.user_id)
+    return {
+      user_id: me.user_id,
+      role: me.role,
+      display_name: patch?.display_name ?? me.display_name,
+      display_name_en: patch ? patch.display_name_en : me.display_name_en,
+      title_ko: (patch ? (patch.title_ko ?? '') : me.title_ko) || '',
+      // 시드에는 생년월일이 없다. 회장 행만 0030이 넣는 값과 같은 날짜로 시작한다 —
+      // 화면에서 '비어 있음'과 '값이 있음' 두 모양을 다 볼 수 있어야 한다.
+      birth_date: patch ? patch.birth_date : me.role === 'Chairman' ? '1988-01-01' : null,
+      language: patch?.language ?? me.language,
+      max_security_class: me.max_security_class,
+      created_at: me.created_at,
+    }
+  },
+
+  async saveMyProfile(patch: MyProfilePatch): Promise<boolean> {
+    // 0030 update_own_profile()과 같은 판정이다. 예외가 아니라 false를 돌려준다 —
+    // 두 어댑터가 같은 실패를 다른 모양으로 말하면 화면이 한쪽만 다루게 된다.
+    if (patch.display_name.trim() === '') return false
+    memoryProfilePatch.set(dummyViewer().user_id, {
+      ...patch,
+      display_name: patch.display_name.trim(),
+      display_name_en: patch.display_name_en?.trim() || null,
+      title_ko: patch.title_ko?.trim() || null,
+    })
+    return true
   },
 
   async getBriefTimezone() {

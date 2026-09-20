@@ -29,6 +29,9 @@ import type {
   KakaoConnection,
   SecurityClass,
   MonthlyPriority,
+  MyProfile,
+  MyProfilePatch,
+  NotificationInbox,
   NewOfficialStatement,
   OfficialStatement,
   ProcessChart,
@@ -352,6 +355,32 @@ export interface ChairmanRepository {
   saveUserSettings(patch: Partial<UserSettings>): Promise<void>
 
   /**
+   * Phase 5-E 1-2절 (0030 notifications). 헤더 알림 종이 세는 것.
+   *
+   * **지금은 늘 0건이 온다.** 알림을 만드는 코드가 아직 없고 0030이 insert를 아무에게도
+   * 주지 않았다 — 0이 뜨는 것이 맞고, 그것이 예전의 하드코딩 12/5보다 정직하다.
+   *
+   * limit은 드롭다운이 그릴 줄 수다. 안 읽은 건수(unread)는 그 잘림과 무관하게 전부를 센다.
+   */
+  listNotifications(limit: number): Promise<NotificationInbox>
+
+  /** 읽음 표시. 지우지 않는다 — 0030은 read_at **한 칸만** update를 허용한다. */
+  markNotificationsRead(ids: string[]): Promise<void>
+
+  /**
+   * Phase 5-E 2절. 지금 로그인한 사람의 프로필 한 벌(/settings/profile).
+   * 세션(currentUser)이 아니라 여기서 읽는 이유는 생년월일·언어가 세션에 없기 때문이다 —
+   * 헤더가 매 화면마다 쓰지 않는 칸을 세션에 싣지 않는다.
+   */
+  getMyProfile(): Promise<MyProfile | null>
+
+  /**
+   * 본인 프로필의 다섯 칸. 0030 update_own_profile()이 문이다.
+   * false면 DB가 거절한 것이다(이름이 비었거나 회수된 계정). 예외가 아니라 값으로 온다.
+   */
+  saveMyProfile(patch: MyProfilePatch): Promise<boolean>
+
+  /**
    * Phase 3-C 현지 시간(0029). 아침 알림 시간대의 입력 두 칸.
    *
    * 표가 아니라 keyhole(chairman_brief_timezone())로 읽는다. user_settings는 남의 행을
@@ -411,6 +440,14 @@ export interface UserSettings {
   hidden_businesses: string[]
   /** CH-004. null이면 businesses.pinned를 기본값으로 쓴다. */
   pinned_businesses: string[] | null
+  /**
+   * Phase 5-E 3절 (0030). 사이드바 접힘·숨김의 **키 주머니**. 타입이 unknown인 것이 요점이다 —
+   * 이 계층은 주머니 안의 모양을 모르고, 읽는 규칙은 lib/ui-prefs.ts 한 곳에만 있다.
+   * 그래야 Phase 7이 사이드바 항목을 통째로 갈아 끼워도 어댑터가 따라 바뀌지 않는다.
+   */
+  sidebar_prefs: unknown
+  /** Phase 5-E 4절 (0030). 테마·알림 종류별 on/off. 같은 이유로 unknown이다. */
+  app_prefs: unknown
 }
 
 /**

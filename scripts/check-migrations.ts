@@ -1095,6 +1095,35 @@ async function kakaoRevokeSurvives(db: Db) {
               or has_table_privilege('anon','chairman_brief_sends','select')) as ok`,
   )
   assert.ok(b.rows[0].ok, '0029: chairman_brief_sends에 authenticated/anon 권한이 남아 있다 — 이 표의 자물쇠는 revoke다(0023 3절 ①)')
+
+  /**
+   * 0030 notifications — 여기 세 줄이 이 표의 정책 전부다.
+   *
+   * 이 검사가 rls()보다 **먼저** 도는 이유가 바로 이것이다. rls()는 authenticated에게
+   * 모든 표의 select/insert/update/delete를 한 번에 주는데, 그 줄 뒤에서는 칸 단위 grant가
+   * 통째로 덮여서 아래 두 단언이 아무것도 재지 못한다.
+   */
+  const n = await db.query<{ sel: boolean; ins: boolean; del: boolean; anon: boolean }>(
+    `select has_table_privilege('authenticated','notifications','select')   as sel,
+            has_table_privilege('authenticated','notifications','insert')   as ins,
+            has_table_privilege('authenticated','notifications','delete')   as del,
+            has_table_privilege('anon','notifications','select')            as anon`,
+  )
+  assert.equal(n.rows[0].sel, true, '0030: authenticated가 notifications를 못 읽는다 — 헤더의 종이 영영 0을 센다')
+  assert.equal(n.rows[0].ins, false,
+    '0030: authenticated에게 notifications insert 권한이 있다 — 알림을 만드는 것은 아직 아무도 아니고, 열어 두면 본인이 자기에게 아무 알림이나 만들 수 있다(원문 "insert 정책을 넓게 열지 마라")')
+  assert.equal(n.rows[0].del, false, '0030: authenticated가 notifications 행을 지울 수 있다 — 읽음은 표시지 삭제가 아니다')
+  assert.equal(n.rows[0].anon, false, '0030: 로그인하지 않은 사람이 notifications를 읽는다')
+
+  // 칸 단위 grant. 정책은 행을 고르지 칸을 고르지 못하므로, update를 행 단위로만 열면
+  // 본인이 자기 알림의 title·link를 바꿀 수 있다 — '읽음 표시'가 아니라 '알림 위조'가 된다.
+  const c = await db.query<{ readat: boolean; title: boolean }>(
+    `select has_column_privilege('authenticated','notifications','read_at','update') as readat,
+            has_column_privilege('authenticated','notifications','title','update')   as title`,
+  )
+  assert.equal(c.rows[0].readat, true, '0030: 본인이 자기 알림을 읽음 표시하지 못한다 — 뱃지가 영영 안 줄어든다')
+  assert.equal(c.rows[0].title, false,
+    '0030: authenticated가 notifications.title을 고칠 수 있다 — 읽음 표시 문이 알림 위조 문이 됐다(grant update (read_at) 한 칸만 주는 이유)')
 }
 
 /**
@@ -2203,9 +2232,309 @@ async function definerUnderNonBypassOwner() {
   await db.close()
 }
 
+/**
+ * Phase 5-E (0030) — 알림함·프로필·사이드바 주머니.
+ *
+ * **DB를 따로 세운다.** 위의 공용 db는 rls()가 authenticated에게 모든 표의
+ * select/insert/update/delete를 한 번에 줘 버린 뒤라, 0030의 자물쇠(insert를 아무에게도
+ * 주지 않고 update는 read_at 한 칸만)를 그 위에서는 잴 수 없다.
+ * definerUnderNonBypassOwner()·subtreeBackfill()이 자기 DB를 세우는 것과 같은 이유다.
+ *
+ * 그리고 이 검사는 **0030이 적용되는 순간의 DB 상태**가 입력이다 — 0029까지 올린 뒤
+ * 회장 행을 '홍성호'로 심고, 그 다음에 0030을 올려야 3절의 이름 교정이 재어진다.
+ *
+ * 재는 것 다섯.
+ *   ① 알림함은 개인 우편함이다. 남의 것은 Chairman도 못 읽고, 아무도 만들지 못한다.
+ *   ② 표가 kind와 link의 모양을 지킨다(바깥 주소는 알림을 피싱 통로로 만든다).
+ *   ③ 본인이 자기 프로필 네 칸을 고칠 수 있고, **role은 그 문으로 지나가지 못한다.**
+ *   ④ 0030이 회장 행의 이름을 고쳤고, 사람이 이미 고쳐 둔 이름은 덮지 않았다.
+ *   ⑤ sidebar_prefs는 객체만 받는다(항목 이름은 DB가 모른다 — Phase 7이 갈아 끼워도 무관하게).
+ */
+const N30 = {
+  chair: '00000000-0000-0000-0000-0000000030c0',
+  member: '00000000-0000-0000-0000-0000000030d0',
+  /** 이미 제 손으로 이름을 고쳐 둔 회장. 0030의 update가 이 값을 덮으면 안 된다. */
+  chair2: '00000000-0000-0000-0000-0000000030c2',
+}
+
+/**
+ * 0030 3절의 백필 update 세 줄만 **파일에서 잘라** 다시 돌린다.
+ *
+ * 손으로 베껴 쓰지 않는 것이 요점이다. 베껴 쓰면 마이그레이션의 where 조건을 고쳐도
+ * 이 검사는 옛 문장을 돌려 계속 통과한다 — 음성 대조가 초록으로 나오는 전형적인 자리다.
+ */
+async function applyProfileBackfill(db: Db) {
+  const sql = readFileSync(join(MIGRATIONS, '0030_notifications_profile.sql'), 'utf8')
+  const updates = sql.match(/^update user_profiles[\s\S]*?;$/gm) ?? []
+  assert.ok(updates.length >= 2,
+    `0030 3절: 마이그레이션에서 user_profiles 백필 update를 못 찾았다 (${updates.length}개) — 검사가 파일을 못 따라가고 있다`)
+  for (const one of updates) await db.exec(one)
+}
+
+async function notificationsAndProfile() {
+  const db = new PGlite({ extensions: { pg_trgm } })
+  await applyAll(db, '0029_chairman_local_time.sql')
+
+  // 0003_seed / bootstrap이 넣어 둔 상태를 흉내 낸다 — 회장 이름이 '홍성호'이고
+  // display_name_en과 birth_date는 아직 없다.
+  await db.exec(`
+    grant usage on schema public, auth to authenticated;
+    insert into auth.users values
+      ('${N30.chair}', 'ch30@x'), ('${N30.member}', 'm30@x'), ('${N30.chair2}', 'ch31@x');
+    insert into user_profiles (user_id, role, display_name, title_ko) values
+      ('${N30.chair}',  'Chairman', '홍성호', '회장'),
+      ('${N30.member}', 'Member',   '영업 직원', '사원'),
+      -- 이미 제 손으로 이름을 고쳐 둔 회장. **0030이 적용되기 전에** 있어야 한다 —
+      -- 적용 뒤에 심으면 3절의 update가 이 행을 볼 기회조차 없어서, where 조건을 무엇으로
+      -- 바꿔도 아래 단언이 통과해 버린다(음성 대조가 그것을 잡아냈다).
+      ('${N30.chair2}', 'Chairman', '직접 고친 이름', '회장');
+    update user_profiles set display_name_en = null where user_id = '${N30.chair}';
+    insert into user_settings (user_id) values ('${N30.chair}'), ('${N30.member}');
+  `)
+
+  await applyOne(db, '0030_notifications_profile.sql')
+
+  // ④ 이름 교정. 0003_seed.sql은 손대지 않았고(적용된 파일이다) DB 값만 앞으로 나아가며 고쳤다.
+  const ch = await db.query<{ n: string; en: string | null; b: string | null }>(
+    `select display_name as n, display_name_en as en, birth_date::text as b
+       from user_profiles where user_id = '${N30.chair}'`,
+  )
+  assert.equal(ch.rows[0].n, '홍석현',
+    "0030 3절: 회장 행의 이름이 '홍성호' 그대로다 — 헤더와 대시보드 인사말이 계속 옛 이름을 부른다")
+  assert.equal(ch.rows[0].en, 'Edison S. Hong', '0030 3절: 회장 행의 영문 이름이 비어 있다')
+  assert.equal(ch.rows[0].b, '1988-01-01', '0030 3절: 회장 행의 생년월일이 비어 있다')
+
+  /**
+   * ④ 사람이 이미 고쳐 둔 이름은 덮지 않는다.
+   *
+   * chair2는 0030이 적용되기 **전에** '직접 고친 이름'으로 서 있었다. 3절의 update가
+   * `display_name = '홍성호'`를 where에 달고 있으므로 이 행에는 닿지 않아야 한다 —
+   * 마이그레이션이 사람이 넣은 값을 되돌리는 것은 이 저장소에서 가장 되돌리기 어려운 사고다.
+   */
+  const ch2 = await db.query<{ n: string }>(
+    `select display_name as n from user_profiles where user_id = '${N30.chair2}'`,
+  )
+  assert.equal(ch2.rows[0].n, '직접 고친 이름',
+    '0030 3절: 사람이 손으로 고쳐 둔 회장 이름을 마이그레이션이 덮었다 — where의 display_name 조건이 그것을 막는 유일한 줄이다')
+
+  /**
+   * 생년월일 쪽도 같은 모양이어야 한다. 그런데 birth_date 칸 자체를 0030이 만들기 때문에
+   * '적용 전에 값이 있는 회장'을 심을 수가 없다 — 그래서 3절의 update를 **한 번 더** 돌려
+   * 재적용을 흉내 낸다. 이때 chair2는 이미 사람이 넣은 날짜를 갖고 있고, `birth_date is null`
+   * 조건이 그 값을 지켜야 한다.
+   */
+  await db.exec(
+    `update user_profiles set birth_date = date '1970-02-03' where user_id = '${N30.chair2}'`,
+  )
+  await applyProfileBackfill(db)
+  const ch2b = await db.query<{ b: string }>(
+    `select birth_date::text as b from user_profiles where user_id = '${N30.chair2}'`,
+  )
+  assert.equal(ch2b.rows[0].b, '1970-02-03',
+    '0030 3절: 마이그레이션을 다시 적용하면 사람이 넣어 둔 생년월일을 덮는다 — where의 birth_date is null이 그것을 막는 유일한 줄이다')
+
+  // 칸이 실제로 생겼는가. 아래 단언들이 이름을 조용히 놓치지 않게 먼저 본다.
+  const cols = await db.query<{ n: number }>(
+    `select count(*)::int as n from information_schema.columns
+      where (table_name = 'user_profiles' and column_name = 'birth_date')
+         or (table_name = 'user_settings' and column_name in ('sidebar_prefs', 'app_prefs'))
+         or (table_name = 'notifications' and column_name in
+             ('notification_id','user_id','kind','title','body','link','read_at','created_at'))`,
+  )
+  assert.equal(cols.rows[0].n, 11,
+    '0030: user_profiles.birth_date · user_settings.sidebar_prefs/app_prefs · notifications 여덟 칸 중 빠진 것이 있다')
+
+  /**
+   * force row level security를 새로 걸지 않았는가.
+   *
+   * 지금 이 표에는 definer 함수가 없어서 force가 걸려도 당장 깨지는 것은 없다. 그래도
+   * 재는 이유는, 알림을 **만드는** 문(definer 함수)이 곧 여기 생기기 때문이다 —
+   * 그때 force가 남아 있으면 그 함수가 소유자 권한으로 돌면서도 정책 아래로 내려가
+   * 조용히 0행을 준다. 이 저장소가 0023·0027·0029에서 세 번 만난 함정이고, 세 번 다
+   * production에서만 드러났다. 걸리기 전에 막는 것이 이 한 줄이다.
+   */
+  const forced = await db.query<{ f: boolean }>(
+    `select relforcerowsecurity as f from pg_class where relname = 'notifications'`,
+  )
+  assert.equal(forced.rows.length, 1, '0030: notifications 표를 카탈로그에서 못 찾는다')
+  assert.equal(forced.rows[0].f, false,
+    '0030: notifications에 force row level security가 걸려 있다 — 이 저장소의 자물쇠는 revoke다(0023·0027·0029에서 세 번 만난 함정)')
+
+  // 원문이 지목한 인덱스 그대로인가. 종이 매 화면 묻는 질문이 (내 것, 안 읽음, 최신순)이라
+  // 세 칸이 이 순서여야 인덱스만으로 답한다.
+  const idx = await db.query<{ d: string }>(
+    `select indexdef as d from pg_indexes where indexname = 'notifications_by_user_unread'`,
+  )
+  assert.ok(idx.rows.length === 1 && /\(user_id, read_at, created_at DESC\)/i.test(idx.rows[0].d),
+    `0030: notifications의 (user_id, read_at, created_at desc) 인덱스가 없거나 칸 순서가 다르다 — ${idx.rows[0]?.d ?? '인덱스 없음'}`)
+
+  /** 표가 거절해야 하는 문장. 예외를 삼키고 '거절했나'만 돌려준다. */
+  const rejects = async (sql: string) => {
+    try {
+      await db.exec(sql)
+      return false
+    } catch {
+      return true
+    }
+  }
+  const noti = (uid: string, kind: string, title: string, link: string) =>
+    `insert into notifications (user_id, kind, title, link) values ('${uid}', '${kind}', '${title}', ${link});`
+
+  // ② 표가 모양을 지킨다. 알림을 만드는 코드가 생기는 날 이 넷이 먼저 서 있어야 한다.
+  assert.equal(await rejects(noti(N30.member, 'gossip', '제목', 'null')), true,
+    '0030 1절: notifications.kind가 아무 문자열이나 받는다 — 화면이 모르는 종류를 그릴 방법이 없다')
+  assert.equal(await rejects(noti(N30.member, 'system', '   ', 'null')), true,
+    '0030 1절: 제목이 빈 알림이 들어간다 — 화면에 그릴 것이 없는 행이다')
+  assert.equal(await rejects(noti(N30.member, 'system', '제목', `'https://evil.example/x'`)), true,
+    '0030 1절: notifications.link가 바깥 주소를 받는다 — 알림을 만드는 것이 언젠가 서버가 되는데, 그때 알림이 피싱 통로가 된다')
+  assert.equal(await rejects(noti(N30.member, 'system', '제목', `'//evil.example/x'`)), true,
+    "0030 1절: notifications.link가 '//'로 시작하는 프로토콜 상대 주소를 받는다 — 브라우저는 그것도 바깥으로 읽는다")
+
+  // 소유자 권한으로 두 사람에게 한 줄씩 심는다. 이 표에는 insert 문이 없으므로
+  // (그것이 요구다) 세션으로는 넣을 수 없다 — 아래 ①이 그것을 잰다.
+  await db.exec(noti(N30.member, 'system', '내 알림', `'/tasks'`) + noti(N30.chair, 'system', '회장 알림', 'null'))
+
+  async function asUser<T>(uid: string, sql: string): Promise<T[]> {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
+    try {
+      return (await db.query<T>(sql)).rows
+    } finally {
+      await db.exec('rollback')
+    }
+  }
+
+  // ① 개인 우편함. 남의 알림은 **Chairman도** 못 읽는다. 0002가 user_settings에 건 것과 같은 선이다 —
+  //    '이 사람의 화면'에 속한 것은 권한 위계를 타지 않는다.
+  const mine = await asUser<{ t: string }>(N30.member, `select title as t from notifications`)
+  assert.equal(mine.length, 1, '0030 2절: 본인이 자기 알림을 못 읽거나 남의 알림까지 읽는다')
+  assert.equal(mine[0].t, '내 알림', '0030 2절: 본인에게 남의 알림이 보인다 — 알림함은 개인 우편함이다')
+  assert.equal((await asUser(N30.chair, `select 1 from notifications where user_id = '${N30.member}'`)).length, 0,
+    '0030 2절: Chairman이 남의 알림함을 읽는다 — 알림은 업무 데이터가 아니라 그 사람의 화면이다(user_settings와 같은 선)')
+
+  // ① 아무도 만들지 못한다. 만드는 쪽이 생기는 날 definer 함수 하나가 문이 된다.
+  let inserted = true
+  try {
+    await asUser(N30.member, noti(N30.member, 'system', '내가 만든 알림', 'null'))
+  } catch {
+    inserted = false
+  }
+  assert.equal(inserted, false,
+    '0030 2절: 본인이 자기 알림을 만들 수 있다 — 지금 알림을 만드는 것은 아무도 아니고, 문을 열어 두면 "실제 건수"가 아무 뜻도 없는 숫자가 된다')
+
+  // ① 읽음 표시는 된다. 이것까지 막히면 뱃지가 영영 안 줄어든다.
+  await db.exec(`begin; select set_config('request.jwt.claim.sub', '${N30.member}', true); set local role authenticated;`)
+  const marked = (await db.query(`update notifications set read_at = now() where user_id = '${N30.member}' returning 1`)).rows.length
+  await db.exec('rollback')
+  assert.equal(marked, 1, '0030 2절: 본인이 자기 알림을 읽음 표시하지 못한다')
+
+  // ③ 프로필 문. Member가 **자기** 네 칸을 고친다 — 0002의 user_profiles_admin_write는
+  //    Chairman만 통과시키므로 이 문이 없으면 전 사용자 공통 프로필 설정이 성립하지 않는다.
+  await db.exec(`begin; select set_config('request.jwt.claim.sub', '${N30.member}', true); set local role authenticated;`)
+  const okName = (await db.query<{ ok: boolean }>(
+    `select update_own_profile('새 이름', 'New Name', '대리', date '1991-05-06', 'en') as ok`,
+  )).rows[0].ok
+  await db.exec('commit')
+  assert.equal(okName, true, '0030 4절: Member가 자기 프로필을 못 고친다 — 전 사용자 공통 프로필 설정이 성립하지 않는다')
+
+  const m = await db.query<{ n: string; en: string; t: string; b: string; l: string; r: string }>(
+    `select display_name as n, display_name_en as en, title_ko as t, birth_date::text as b,
+            language as l, role::text as r
+       from user_profiles where user_id = '${N30.member}'`,
+  )
+  assert.deepEqual(
+    [m.rows[0].n, m.rows[0].en, m.rows[0].t, m.rows[0].b, m.rows[0].l, m.rows[0].r],
+    ['새 이름', 'New Name', '대리', '1991-05-06', 'en', 'Member'],
+    '0030 4절: update_own_profile()이 다섯 칸을 제대로 넣지 못했거나 role을 건드렸다',
+  )
+
+  // 모르는 표기 언어는 지금 값을 그대로 둔다. 0028의 check가 ko/en만 받으므로 여기서
+  // 거르지 않으면 폼의 오타 하나가 23514로 올라와 저장 전체가 실패한다.
+  await db.exec(`begin; select set_config('request.jwt.claim.sub', '${N30.member}', true); set local role authenticated;`)
+  await db.query(`select update_own_profile('새 이름', 'New Name', '대리', date '1991-05-06', 'kr')`)
+  await db.exec('commit')
+  assert.equal(
+    (await db.query<{ l: string }>(`select language as l from user_profiles where user_id = '${N30.member}'`)).rows[0].l,
+    'en',
+    '0030 4절: 모르는 표기 언어가 통과했다 — 0028의 check가 ko/en만 받으므로 폼의 오타 하나가 저장 전체를 실패시킨다')
+
+  // ③ 이름 없는 프로필은 만들지 않는다. 예외가 아니라 false다(0023 save와 같은 절제).
+  await db.exec(`begin; select set_config('request.jwt.claim.sub', '${N30.member}', true); set local role authenticated;`)
+  const blank = (await db.query<{ ok: boolean }>(
+    `select update_own_profile('   ', null, null, null, 'ko') as ok`,
+  )).rows[0].ok
+  await db.exec('rollback')
+  assert.equal(blank, false,
+    '0030 4절: 빈 이름을 받아들였다 — 화면 곳곳이 display_name의 첫 글자를 아바타로 쓴다. 빈 문자열이면 그 자리가 통째로 빈다')
+
+  // ③ 직접 쓰기는 여전히 막혀 있다. 문이 생겼다고 표가 열린 것은 아니다.
+  //    grant를 일부러 다 열어 둔 뒤에 잰다 — 막는 것이 grant가 아니라 정책임을 보이기 위해서다.
+  await db.exec(`
+    grant select, insert, update, delete on all tables in schema public to authenticated;
+    grant usage, select on all sequences in schema public to authenticated;
+  `)
+  assert.equal(
+    (await asUser(N30.member, `update user_profiles set role = 'Chairman' where user_id = '${N30.member}' returning 1`)).length,
+    0,
+    '0030 4절: Member가 user_profiles를 직접 고쳐 자기 역할을 올릴 수 있다 — 0002 user_profiles_admin_write가 뚫렸다')
+
+  // 생년월일의 최소선. 사람이 손으로 넣는 칸이라 1800년과 3000년은 오타다.
+  assert.equal(await rejects(`update user_profiles set birth_date = date '1800-01-01' where user_id = '${N30.member}'`), true,
+    '0030 3절: 1900년 이전의 생년월일이 들어간다')
+
+  // ⑤ sidebar_prefs — 객체만. 배열이나 스칼라가 들어오면 읽는 쪽이 키를 찾다가 조용히 빈 설정이 된다.
+  const pref = await db.query<{ p: string }>(
+    `select sidebar_prefs::text as p from user_settings where user_id = '${N30.member}'`,
+  )
+  assert.equal(pref.rows[0].p, '{}', '0030 5절: sidebar_prefs의 기본값이 빈 객체가 아니다')
+
+  const app = await db.query<{ p: string }>(
+    `select app_prefs::text as p from user_settings where user_id = '${N30.member}'`,
+  )
+  assert.equal(app.rows[0].p, '{}', '0030 5절: app_prefs의 기본값이 빈 객체가 아니다')
+  assert.equal(await rejects(`update user_settings set app_prefs = '"dark"'::jsonb where user_id = '${N30.member}'`), true,
+    '0030 5절: app_prefs가 객체가 아닌 값을 받는다 — 읽는 쪽이 theme 키를 찾다가 조용히 라이트로 떨어진다')
+  assert.equal(await rejects(`update user_settings set sidebar_prefs = '[]'::jsonb where user_id = '${N30.member}'`), true,
+    '0030 5절: sidebar_prefs가 배열을 받는다 — 읽는 쪽이 키를 찾다가 조용히 빈 설정이 된다')
+
+  // 모르는 키는 **DB가 거절하지 않는다.** 그것이 이 설계의 요점이다 — Phase 7이 사이드바 항목을
+  // 통째로 갈아 끼워도 남아 있던 키가 마이그레이션을 부르지 않고, 화면이 조용히 무시한다.
+  await db.exec(
+    `update user_settings set sidebar_prefs = '{"hidden_items":["nav_crm","nav_gone"],"collapsed_groups":["grp_systems"]}'::jsonb
+      where user_id = '${N30.member}'`,
+  )
+  const kept = await db.query<{ n: number }>(
+    `select jsonb_array_length(sidebar_prefs -> 'hidden_items')::int as n
+       from user_settings where user_id = '${N30.member}'`,
+  )
+  assert.equal(kept.rows[0].n, 2,
+    '0030 5절: DB가 사이드바 항목 이름을 검사하기 시작했다 — 그러면 Phase 7이 목록을 갈아 끼울 때 마이그레이션이 따라와야 하고, 그것이 이 칸을 jsonb 주머니로 둔 이유를 무르는 일이다')
+
+  await db.close()
+}
+
+/**
+ * 화면이 말하는 마이그레이션 번호가 실제 마지막 파일과 같은가 (Phase 5-E 4절).
+ *
+ * `/settings`의 '이 웹에 대해' 절이 `src/lib/version.ts`의 LATEST_MIGRATION을 그대로 보여 준다.
+ * 그 상수는 사람이 손으로 고치는 값이라 새 마이그레이션을 더하면서 빼먹기 쉽고, 빼먹으면
+ * 화면이 조용히 한 번호 뒤처진 말을 한다 — '버전'이라고 적힌 칸에서 그것은 거짓말이다.
+ *
+ * version.ts를 import 하지 않고 **글자로 읽는다.** 그 파일은 'server-only'를 달고 있어서
+ * RSC 바깥에서 import 하면 던진다.
+ */
+function latestMigrationConstant(files: string[]) {
+  const src = readFileSync(join(__dirname, '..', 'src', 'lib', 'version.ts'), 'utf8')
+  const found = src.match(/LATEST_MIGRATION\s*=\s*'([^']+)'/)
+  assert.ok(found, 'src/lib/version.ts에서 LATEST_MIGRATION을 못 찾았다')
+  const last = (files.at(-1) ?? '').replace(/\.sql$/, '')
+  assert.equal(found[1], last,
+    `Phase 5-E: src/lib/version.ts의 LATEST_MIGRATION('${found[1]}')이 마지막 마이그레이션('${last}')과 다르다 — /settings의 '이 웹에 대해'가 조용히 틀린 번호를 말한다`)
+}
+
 async function main() {
   const db = new PGlite({ extensions: { pg_trgm } })
   const files = await applyAll(db)
+  latestMigrationConstant(files)
   // rls()의 일괄 grant보다 **먼저**. 이유는 함수 주석에 있다.
   await kakaoRevokeSurvives(db)
   await standardChartSeed(db)
@@ -2217,10 +2546,11 @@ async function main() {
   await orgScreen(db)
   await briefLedger(db)
   await db.close()
+  await notificationsAndProfile()
   await definerUnderNonBypassOwner()
   await subtreeBackfill()
   console.log(
-    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제)`,
+    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정)`,
   )
 }
 

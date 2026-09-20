@@ -3,8 +3,11 @@ import Link from 'next/link'
 import { signOut } from '@/app/actions/auth'
 import { DataModeBadge } from '@/components/layout/data-mode-badge'
 import { GlobalSearch } from '@/components/layout/global-search'
+import { NotificationBell } from '@/components/layout/notification-bell'
 import { Icon } from '@/components/ui/icon'
 import { getFxStrip } from '@/lib/fx'
+import { getRepository } from '@/lib/repository'
+import { loadUiPrefs } from '@/lib/ui-prefs-server'
 import { ROLE_LABEL_KO, type SessionUser } from '@/types'
 
 /**
@@ -27,6 +30,19 @@ export async function Header({ user }: { user: SessionUser | null }) {
   // Phase 5-D에서 시간·날씨 칩을 대시보드 1줄 카드로 옮겼다. 헤더에는 USD 칩만 남는다 —
   // 검색창이 이 바에서 가장 넓은 자리를 써야 하고, 칩이 늘수록 그 자리를 뺏는다.
   const fx = await getFxStrip()
+
+  /**
+   * 알림함(Phase 5-E 1-2절). 예전에는 이 자리에 `12`와 `5`가 박혀 있었다.
+   *
+   * 꺼 둔 종류는 뱃지와 목록에서 **뺀다**(설정 → 알림). 저장만 하고 아무 데서도 안 보는
+   * 스위치는 죽은 버튼과 같은 종류의 거짓말이라, 이 한 줄이 그 설정을 실제로 만든다.
+   * 드롭다운은 열 줄까지다 — 그 아래는 스크롤이고, 뱃지는 잘림과 무관하게 전부를 센다.
+   */
+  const repo = await getRepository()
+  const [inbox, prefs] = await Promise.all([repo.listNotifications(10), loadUiPrefs()])
+  const notify = prefs.app.notify
+  const items = inbox.items.filter((n) => notify[n.kind])
+  const unread = items.filter((n) => n.read_at === null).length
   // 헤더에는 USD 하나만 세운다. 다섯 개는 아침 루틴의 띠가 맡는다 —
   // 여기는 검색창이 가장 넓은 자리를 써야 하는 바라 칩을 늘리면 그 자리를 뺏는다.
   //
@@ -62,8 +78,7 @@ export async function Header({ user }: { user: SessionUser | null }) {
           </span>
         ) : null}
         <DataModeBadge />
-        <NotificationButton count={12} tone="critical" />
-        <NotificationButton count={5} tone="accent" />
+        <NotificationBell unread={unread} items={items} />
         {/* 설정 톱니. Phase 5-E 4절이 /settings 허브를 세우기 전까지 이 버튼은 onClick도
             href도 없었다 — 갈 곳이 없어서 아무 데도 안 갔다. */}
         <Link
@@ -75,18 +90,37 @@ export async function Header({ user }: { user: SessionUser | null }) {
           <Icon name="settings" className="size-[18px]" />
         </Link>
 
+        {/* Phase 5-E 2절. 이름+직함이 /settings/profile로 가는 링크가 됐다.
+            세션이 없으면 링크가 아니라 글자다 — 누를 프로필이 없는데 누르는 자리를
+            만들면 그것이 곧 죽은 버튼이다. */}
         <div className="ml-2 flex items-center gap-2.5 border-l border-line pl-3">
-          <span className="flex size-8 items-center justify-center rounded-full bg-accent-soft text-[12px] font-bold text-ink">
-            {user?.name.slice(0, 1) ?? '?'}
-          </span>
-          <span className="leading-tight">
-            <span className="block text-[13px] font-semibold">
-              {user ? user.name : '알 수 없음'}
+          {user ? (
+            <Link
+              href="/settings/profile"
+              title={`${user.name} · 프로필 설정`}
+              className="flex items-center gap-2.5 rounded-md px-1 py-0.5 transition-colors hover:bg-raised"
+            >
+              <span className="flex size-8 items-center justify-center rounded-full bg-accent-soft text-[12px] font-bold text-ink">
+                {user.name.slice(0, 1)}
+              </span>
+              <span className="leading-tight">
+                <span className="block text-[13px] font-semibold">{user.name}</span>
+                <span className="block text-[11px] text-ink-muted">
+                  {user.title_ko || ROLE_LABEL_KO[user.role]}
+                </span>
+              </span>
+            </Link>
+          ) : (
+            <span className="flex items-center gap-2.5">
+              <span className="flex size-8 items-center justify-center rounded-full bg-accent-soft text-[12px] font-bold text-ink">
+                ?
+              </span>
+              <span className="leading-tight">
+                <span className="block text-[13px] font-semibold">알 수 없음</span>
+                <span className="block text-[11px] text-ink-muted">세션 없음</span>
+              </span>
             </span>
-            <span className="block text-[11px] text-ink-muted">
-              {user ? (user.title_ko || ROLE_LABEL_KO[user.role]) : '세션 없음'}
-            </span>
-          </span>
+          )}
 
           {/* 로그아웃은 Server Action이다. 쿠키를 지우는 건 서버만 할 수 있다. */}
           <form action={signOut}>
@@ -102,26 +136,5 @@ export async function Header({ user }: { user: SessionUser | null }) {
         </div>
       </div>
     </header>
-  )
-}
-
-/** 뱃지 색으로 급한 알림(빨강)과 일반 알림(파랑)을 갈라 놓는다. */
-function NotificationButton({ count, tone }: { count: number; tone: 'critical' | 'accent' }) {
-  return (
-    <button
-      type="button"
-      aria-label={`알림 ${count}건`}
-      className="relative rounded-md p-2 text-ink-dim transition-colors hover:bg-raised hover:text-ink"
-    >
-      <Icon name="bell" className="size-[18px]" />
-      <span
-        className={[
-          'absolute top-0.5 right-0.5 flex min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold text-white tnum',
-          tone === 'critical' ? 'bg-critical' : 'bg-accent',
-        ].join(' ')}
-      >
-        {count}
-      </span>
-    </button>
   )
 }

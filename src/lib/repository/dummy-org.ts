@@ -111,7 +111,10 @@ function person(
 }
 
 export const DUMMY_PEOPLE: UserAccount[] = [
-  person(DUMMY_UID.chair, 'Chairman', '회장', 'Chairman', '회장', null, null, {
+  // Phase 5-E 2절. 시드의 회장이 '회장'이라는 역할명으로 서 있었다 — 그래서 dummy에서
+  // 헤더도 인사말도 "안녕하세요, 회장님"이 아니라 "회장 님"으로 읽혔다.
+  // 실제 이름을 둔다(0030 3절이 DB 쪽 값을 같은 값으로 고친다).
+  person(DUMMY_UID.chair, 'Chairman', '홍석현', 'Edison S. Hong', '회장', null, null, {
     max_security_class: 'Vault',
   }),
   person(DUMMY_UID.dyCeo, 'BusinessCEO', 'DY 대표', 'DY CEO', '대표이사', DUMMY_UID.chair, null, {

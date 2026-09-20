@@ -168,3 +168,36 @@ export interface SharePerson {
   display_name: string
   display_name_en: string | null
 }
+
+/**
+ * 본인이 보는 자기 프로필 (Phase 5-E 2절, /settings/profile).
+ *
+ * UserAccount와 합치지 않는다. 저쪽은 **회장이 남을 볼 때**의 모양이라 회사 권한 목록과
+ * 조직 트리 칸이 붙어 있고, 이쪽은 '내 이름·직함·생일'이다. 합치면 프로필 화면 하나가
+ * 조직도 질의를 같이 끌고 온다.
+ *
+ * birth_date는 [제한] 등급이다 — 본인과 Chairman만 읽는다(0002 user_profiles_self_read).
+ */
+export interface MyProfile {
+  user_id: string
+  role: Role
+  display_name: string
+  display_name_en: string | null
+  title_ko: string
+  birth_date: IsoDate | null
+  language: PersonLanguage
+  max_security_class: SecurityClass
+  created_at: string
+}
+
+/**
+ * 프로필 폼이 보내는 것. **role도 max_security_class도 여기 없다** —
+ * 0030 update_own_profile()이 만지는 칸이 정확히 이 다섯이고, 그것이 이 문이 좁은 이유다.
+ */
+export interface MyProfilePatch {
+  display_name: string
+  display_name_en: string | null
+  title_ko: string | null
+  birth_date: IsoDate | null
+  language: PersonLanguage
+}

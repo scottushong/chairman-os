@@ -129,7 +129,11 @@ Settings → Environment Variables에서 아래를 넣고, 각 변수의 Environ
 
 ### 파일
 
-`supabase/migrations/` 에 `0001` ~ `0016`. 번호순으로 적용된다.
+`supabase/migrations/` 에 `0001` ~ `0030`. 번호순으로 적용된다.
+
+마지막 번호는 코드에도 한 벌 적혀 있다(`src/lib/version.ts`의 `LATEST_MIGRATION`) — `/settings`의
+'이 웹에 대해' 절이 그 값을 보여 준다. 두 곳이 갈라지지 않게 `npm run check:migrations`가
+파일 목록의 마지막과 그 상수를 대조한다.
 
 `0004`가 없는 것은 실수가 아니다. `supabase/bootstrap/0004_bootstrap_chairman.sql`이
 그 번호를 이미 쓰고 있다. 그 파일은 `migrations/` 밖에 있어 `db push`가 집지 않는다 —

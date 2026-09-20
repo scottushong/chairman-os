@@ -9,6 +9,10 @@ import { needsSubstringSearch, type SearchHit } from '@/lib/search'
 import type {
   AiNightOutput,
   Alert,
+  AppNotification,
+  MyProfile,
+  MyProfilePatch,
+  NotificationInbox,
   Business,
   BusinessStatus,
   BusinessKeyman,
@@ -417,6 +421,22 @@ interface DocumentRow {
 interface UserSettingsRow {
   hidden_businesses: string[] | null
   pinned_businesses: string[] | null
+  /** 0030의 두 주머니. jsonb는 무엇이든 올 수 있어 unknown이다 — 모양은 lib/ui-prefs.ts가 본다. */
+  sidebar_prefs: unknown
+  app_prefs: unknown
+}
+
+/** 0030. 본인 프로필 한 행(user_profiles). 회수된 계정은 질의가 이미 걸러 온다. */
+interface MyProfileRow {
+  user_id: string
+  role: Role
+  display_name: string
+  display_name_en: string | null
+  title_ko: string | null
+  birth_date: IsoDate | null
+  language: PersonLanguage
+  max_security_class: SecurityClass
+  created_at: string
 }
 
 interface DecisionAuditRow {
@@ -3389,7 +3409,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     async getUserSettings(): Promise<UserSettings> {
       const { data, error } = await sb
         .from('user_settings')
-        .select('hidden_businesses,pinned_businesses')
+        .select('hidden_businesses,pinned_businesses,sidebar_prefs,app_prefs')
         .maybeSingle<UserSettingsRow>()
 
       if (error) throw new Error(`Supabase user_settings ${error.code ?? '?'}: ${error.message}`)
@@ -3398,7 +3418,100 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         hidden_businesses: data?.hidden_businesses ?? [],
         // null을 그대로 넘긴다. '아직 정한 적 없음'이라는 뜻이고 []와 다르다(0005).
         pinned_businesses: data?.pinned_businesses ?? null,
+        // 0030의 두 주머니. 모양을 여기서 보지 않는다 — 읽는 규칙은 lib/ui-prefs.ts 한 곳이고,
+        // 어댑터가 키를 알기 시작하면 Phase 7이 사이드바를 갈아 끼울 때 이 파일도 따라 바뀐다.
+        sidebar_prefs: data?.sidebar_prefs ?? {},
+        app_prefs: data?.app_prefs ?? {},
       }
+    },
+
+    /**
+     * Phase 5-E 1-2절. 알림함 (0030 notifications).
+     *
+     * 권한을 앱에서 보지 않는다 — 0030의 notifications_own_read가 이미 본인 행만 준다.
+     * 건수는 목록과 **따로** 센다. head+count로 묻는 한 번이 목록의 limit과 무관해야
+     * 드롭다운이 20줄만 그려도 뱃지가 전체를 말한다.
+     */
+    async listNotifications(limit: number): Promise<NotificationInbox> {
+      const [list, count] = await Promise.all([
+        sb
+          .from('notifications')
+          .select('notification_id,kind,title,body,link,read_at,created_at')
+          .order('created_at', { ascending: false })
+          .limit(Math.max(0, limit))
+          .returns<AppNotification[]>(),
+        sb
+          .from('notifications')
+          .select('notification_id', { count: 'exact', head: true })
+          .is('read_at', null),
+      ])
+
+      if (list.error) throw new Error(`Supabase notifications ${list.error.code ?? '?'}: ${list.error.message}`)
+      if (count.error) throw new Error(`Supabase notifications ${count.error.code ?? '?'}: ${count.error.message}`)
+
+      return { unread: count.count ?? 0, items: list.data ?? [] }
+    },
+
+    /**
+     * 읽음 표시. read_at **한 칸만** 보낸다 — 0030이 준 update 권한이 그 칸뿐이라
+     * 다른 칸을 같이 보내면 요청 전체가 42501로 떨어진다(그것이 설계다).
+     * 이미 읽은 것은 건드리지 않는다. 처음 읽은 시각이 나중 클릭으로 밀리면 안 된다.
+     */
+    async markNotificationsRead(ids: string[]) {
+      if (ids.length === 0) return
+      const { error } = await sb
+        .from('notifications')
+        .update({ read_at: new Date().toISOString() })
+        .in('notification_id', ids)
+        .is('read_at', null)
+      if (error) throw new Error(`Supabase notifications ${error.code ?? '?'}: ${error.message}`)
+    },
+
+    /** Phase 5-E 2절. 본인 프로필 한 벌. 0002 user_profiles_self_read가 자기 행을 준다. */
+    async getMyProfile(): Promise<MyProfile | null> {
+      const {
+        data: { user },
+      } = await sb.auth.getUser()
+      if (!user) return null
+
+      const { data, error } = await sb
+        .from('user_profiles')
+        .select('user_id,role,display_name,display_name_en,title_ko,birth_date,language,max_security_class,created_at')
+        .eq('user_id', user.id)
+        .is('revoked_at', null)
+        .maybeSingle<MyProfileRow>()
+
+      if (error) throw new Error(`Supabase user_profiles ${error.code ?? '?'}: ${error.message}`)
+      if (!data) return null
+
+      return {
+        user_id: data.user_id,
+        role: data.role,
+        display_name: data.display_name,
+        display_name_en: data.display_name_en,
+        title_ko: data.title_ko ?? '',
+        birth_date: data.birth_date,
+        language: data.language,
+        max_security_class: data.max_security_class,
+        created_at: data.created_at,
+      }
+    },
+
+    /**
+     * 본인 프로필 저장. **표를 직접 update 하지 않는다** — 0002의 user_profiles_admin_write는
+     * Chairman만 통과시키고, 그 정책을 넓히면 본인이 자기 role까지 고칠 수 있게 된다
+     * (정책은 행을 고르지 칸을 고르지 못한다). 0030의 definer 함수 하나가 유일한 문이다.
+     */
+    async saveMyProfile(patch: MyProfilePatch): Promise<boolean> {
+      const { data, error } = await sb.rpc('update_own_profile', {
+        p_display_name: patch.display_name,
+        p_display_name_en: patch.display_name_en,
+        p_title_ko: patch.title_ko,
+        p_birth_date: patch.birth_date,
+        p_language: patch.language,
+      })
+      if (error) throw new Error(`Supabase update_own_profile ${error.code ?? '?'}: ${error.message}`)
+      return data === true
     },
 
     async saveUserSettings(patch: Partial<UserSettings>) {
