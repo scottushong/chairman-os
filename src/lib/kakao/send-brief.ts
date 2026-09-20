@@ -5,7 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { IsoDate } from '@/types'
 
 import { kakaoConfig } from './config'
-import { buildKakaoBriefText, sendKakaoMemo } from './message'
+import { buildKakaoBriefText } from './message'
 import { canSendMessage, refreshTokens } from './token'
 
 /**
@@ -40,6 +40,67 @@ interface TokenRow {
 
 /** 만료 5분 전부터는 이미 만료된 것으로 본다. 발송 도중에 넘어가는 경계를 없앤다. */
 const EARLY_REFRESH_MS = 5 * 60 * 1000
+
+/**
+ * 카카오톡 '나에게 보내기'. 텍스트 템플릿 하나만 쓴다.
+ *
+ * 문자열을 만드는 message.ts가 아니라 여기 사는 이유: message.ts는 import가 하나도 없는
+ * 순수 함수 파일이라 `server-only`를 붙이지 못한다(scripts/check-kakao.ts가 별칭 해석 없이
+ * 그 파일만 읽어 돌아야 한다). 그러면 client component가 실수로 이 fetch를 번들에 끌어와도
+ * 막을 장치가 없다 — 그래서 네트워크를 부르는 쪽은 `server-only`가 붙은 이 파일에 둔다.
+ *
+ * 성공은 { result_code: 0 }이고, 실패는 HTTP 200으로도 온다 — 그래서 res.ok만 보지 않는다.
+ * 자주 보게 될 코드:
+ *   -401  토큰이 만료·무효 (호출부가 refresh로 한 번 되살려 본다)
+ *   -402  talk_message 동의가 없다 (사람이 다시 연결해야 한다. refresh로는 안 고쳐진다)
+ */
+export interface KakaoSendFailure {
+  /** 카카오가 준 code. HTTP 계층에서 실패하면 null. */
+  code: number | null
+  message: string
+}
+
+export async function sendKakaoMemo(opts: {
+  accessToken: string
+  text: string
+  /** '전문 보기' 버튼과 텍스트 링크가 가리킬 절대 주소. */
+  linkUrl: string
+}): Promise<KakaoSendFailure | null> {
+  const templateObject = {
+    object_type: 'text',
+    text: opts.text,
+    link: { web_url: opts.linkUrl, mobile_web_url: opts.linkUrl },
+    button_title: '전문 보기',
+  }
+
+  let res: Response
+  try {
+    res = await fetch('https://kapi.kakao.com/v2/api/talk/memo/default/send', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${opts.accessToken}`,
+        'content-type': 'application/x-www-form-urlencoded;charset=utf-8',
+      },
+      body: new URLSearchParams({ template_object: JSON.stringify(templateObject) }),
+      cache: 'no-store',
+    })
+  } catch (e) {
+    return { code: null, message: `카카오 호출 실패: ${e instanceof Error ? e.message : String(e)}` }
+  }
+
+  const json = (await res.json().catch(() => ({}))) as {
+    result_code?: number
+    code?: number
+    msg?: string
+  }
+  if (res.ok && json.result_code === 0) return null
+  return {
+    code: json.code ?? null,
+    message: `카카오 발송 실패 (HTTP ${res.status}, code ${json.code ?? '?'}) ${json.msg ?? ''}`
+      .trim()
+      .slice(0, 500),
+  }
+}
 
 export async function sendKakaoBrief(opts: {
   /** AIAgent(야간 Job) 또는 Chairman(테스트 발송) 세션. */
@@ -95,7 +156,7 @@ export async function sendKakaoBrief(opts: {
   let accessToken = token.access_token
   let refreshToken = token.refresh_token
   if (Date.parse(token.expires_at) - Date.now() <= EARLY_REFRESH_MS) {
-    const refreshed = await tryRefresh(opts.sb, refreshToken)
+    const refreshed = await tryRefresh(opts.sb, token.user_id, refreshToken)
     if (refreshed) {
       accessToken = refreshed.accessToken
       refreshToken = refreshed.refreshToken
@@ -114,7 +175,7 @@ export async function sendKakaoBrief(opts: {
   //    refreshToken은 ②를 거쳤으면 그 회차의 최신값이다(회전이 없었으면 원래 값 그대로).
   let failure = await sendKakaoMemo({ accessToken, text, linkUrl })
   if (failure?.code === -401) {
-    const refreshed = await tryRefresh(opts.sb, refreshToken)
+    const refreshed = await tryRefresh(opts.sb, token.user_id, refreshToken)
     if (refreshed) failure = await sendKakaoMemo({ accessToken: refreshed.accessToken, text, linkUrl })
   }
 
@@ -126,6 +187,9 @@ export async function sendKakaoBrief(opts: {
  * 성공하면 0023 kakao_token_refreshed()로 되쓴다. AIAgent에게는 그 함수가 유일한 쓰기 길이고,
  * 그 함수는 행을 만들지 못한다 — 연결이 사라진 뒤 Job이 되살리는 일은 일어나지 않는다.
  *
+ * userId는 같은 회차의 kakao_token_for_send()가 준 값이다. 이 값을 넘겨야 갱신이 **그 행에만**
+ * 닿는다 — 회장이 둘이면(승계 기간) 표 전체 update는 한 계정의 토큰으로 다른 계정 행을 덮어쓴다.
+ *
  * refreshToken을 accessToken과 같이 돌려준다. 카카오가 이 회차에 새 refresh_token을 줬으면
  * (만료 한 달 미만일 때만) 그 값을, 안 줬으면 넘겨받은 값을 그대로 — DB의 coalesce와 같은
  * 규칙을 호출부의 로컬 변수에도 적용해서, 다음 호출이 이미 회전되어 무효해진 값을 다시
@@ -134,11 +198,13 @@ export async function sendKakaoBrief(opts: {
  */
 async function tryRefresh(
   sb: SupabaseClient,
+  userId: string,
   refreshToken: string,
 ): Promise<{ accessToken: string; refreshToken: string } | null> {
   try {
     const next = await refreshTokens(refreshToken)
     const { error } = await sb.rpc('kakao_token_refreshed', {
+      p_user_id: userId,
       p_access: next.accessToken,
       p_expires: next.expiresAt,
       p_refresh: next.refreshToken,

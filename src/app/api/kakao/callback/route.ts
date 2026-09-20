@@ -18,8 +18,15 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
  */
 export const dynamic = 'force-dynamic'
 
-function back(reason: string): NextResponse {
-  const base = process.env.APP_BASE_URL ?? 'http://localhost:3000'
+/**
+ * 결과 한 낱말을 달고 /settings/chairman으로 되돌린다.
+ *
+ * APP_BASE_URL이 없으면 요청이 들어온 호스트로 돌아간다. 상수 localhost:3000이면 그 fallback이
+ * 실제로 쓰이는 유일한 배포(Preview — OPERATIONS가 카카오 환경변수를 넣지 말라고 정한 곳)에서
+ * 회장을 남의 기계로 보낸다. production은 APP_BASE_URL이 늘 있으므로 동작이 바뀌지 않는다.
+ */
+function back(request: NextRequest, reason: string): NextResponse {
+  const base = process.env.APP_BASE_URL ?? request.nextUrl.origin
   const res = NextResponse.redirect(new URL(`/settings/chairman?kakao=${reason}`, base))
   // 한 번 쓴 state는 결과가 무엇이든 버린다.
   res.cookies.set(KAKAO_STATE_COOKIE, '', { path: '/api/kakao', maxAge: 0 })
@@ -44,12 +51,12 @@ export async function GET(request: NextRequest) {
 
   const params = request.nextUrl.searchParams
   // 회장이 카카오 화면에서 '취소'를 눌렀을 때도 여기로 온다(error=access_denied).
-  if (params.get('error')) return back('cancelled')
+  if (params.get('error')) return back(request, 'cancelled')
 
   const code = params.get('code')
   const state = params.get('state')
   const cookie = request.cookies.get(KAKAO_STATE_COOKIE)?.value
-  if (!code || !state || !cookie || !sameState(state, cookie)) return back('state')
+  if (!code || !state || !cookie || !sameState(state, cookie)) return back(request, 'state')
 
   try {
     requireKakaoConfig()
@@ -65,16 +72,16 @@ export async function GET(request: NextRequest) {
     })
     if (error) {
       console.error('[kakao] save', error.code, error.message)
-      return back('save')
+      return back(request, 'save')
     }
     // 0023의 함수는 권한이 없으면 예외 대신 false를 준다.
-    if (data !== true) return back('forbidden')
+    if (data !== true) return back(request, 'forbidden')
 
     // 저장은 했다. 다만 '카카오톡 메시지 전송'이 선택 동의라 회장이 체크를 풀고 넘어갈 수 있다 —
     // 그 상태로 두면 아침 07:00에 -402로 조용히 실패한다. 지금 화면에서 말한다.
-    return back(canSendMessage(tokens.scopes) ? 'connected' : 'noscope')
+    return back(request, canSendMessage(tokens.scopes) ? 'connected' : 'noscope')
   } catch (e) {
     console.error('[kakao] callback', e instanceof Error ? e.message : String(e))
-    return back('failed')
+    return back(request, 'failed')
   }
 }

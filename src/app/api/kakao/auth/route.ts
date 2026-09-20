@@ -1,6 +1,6 @@
 import { randomBytes } from 'node:crypto'
 
-import { NextResponse } from 'next/server'
+import { NextResponse, type NextRequest } from 'next/server'
 
 import { currentUser } from '@/lib/auth/session'
 import { KAKAO_STATE_COOKIE } from '@/lib/kakao/config'
@@ -17,7 +17,7 @@ import { authorizeUrl } from '@/lib/kakao/token'
  */
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const user = await currentUser()
   if (!user || user.role !== 'Chairman') {
     // 여기서만 JSON 403이고 아래(config)부터는 리다이렉트다 — 이 분기는 회장의 '카카오 연결'
@@ -35,8 +35,12 @@ export async function GET() {
     // 원인 문자열은 서버 로그에만 남긴다 — kakao-connect.tsx의 NOTICE['config']는 고정 문구라
     // 쿼리스트링에 실어 봐야 아무도 읽지 않고, 회장의 주소창에 내부 메시지만 남는다.
     console.error('[kakao] authorizeUrl', e instanceof Error ? e.message : String(e))
+    // fallback이 localhost:3000이면 이 분기가 실제로 뜨는 유일한 배포(Preview — OPERATIONS가
+    // 카카오 환경변수를 넣지 말라고 정한 곳)에서 회장을 남의 기계로 보낸다. 요청이 들어온
+    // 호스트로 되돌리면 Preview에서도 같은 화면으로 돌아온다. production은 APP_BASE_URL이
+    // 늘 있으므로 동작이 바뀌지 않는다.
     return NextResponse.redirect(
-      new URL('/settings/chairman?kakao=config', process.env.APP_BASE_URL ?? 'http://localhost:3000'),
+      new URL('/settings/chairman?kakao=config', process.env.APP_BASE_URL ?? request.nextUrl.origin),
     )
   }
 

@@ -4,8 +4,11 @@
  * 카카오 텍스트 템플릿의 text는 200자다. 넘으면 카카오가 메시지를 통째로 거절한다 —
  * 그 실패는 아침 07:00에 사람 없이 일어나므로, 자르는 책임을 여기서 끝낸다.
  *
- * 이 파일의 buildKakaoBriefText()는 순수 함수다. 네트워크도 시계도 건드리지 않는다.
- * scripts/check-kakao.ts가 그 덕에 카카오 계정 없이 이 로직 전부를 잰다.
+ * **이 파일에는 순수 함수만 둔다.** import가 하나도 없는 것이 의도다 —
+ * scripts/check-kakao.ts가 tsx에서 경로 별칭(@/) 해석 없이 이 파일만 읽어 돌 수 있어야 한다.
+ * 그래서 `server-only`도 붙이지 못한다. 붙이지 못한다면 client component가 실수로 import 해도
+ * 막을 장치가 없다는 뜻이므로, **막을 것을 여기 두지 않는다** — 실제로 카카오를 부르는
+ * sendKakaoMemo()는 server-only가 붙은 send-brief.ts에 산다.
  */
 
 /** 카카오 text 템플릿의 text 한계. 카카오가 세는 단위는 코드포인트다. */
@@ -105,60 +108,4 @@ export function buildKakaoBriefText(input: BriefTextInput): string {
   }
 
   return body ? `${prefix}${safeHead}\n\n${body}\n\n${TAIL}` : `${prefix}${safeHead}\n\n${TAIL}`
-}
-
-/**
- * 카카오톡 '나에게 보내기'. 텍스트 템플릿 하나만 쓴다.
- *
- * 성공은 { result_code: 0 }이고, 실패는 HTTP 200으로도 온다 — 그래서 res.ok만 보지 않는다.
- * 자주 보게 될 코드:
- *   -401  토큰이 만료·무효 (호출부가 refresh로 한 번 되살려 본다)
- *   -402  talk_message 동의가 없다 (사람이 다시 연결해야 한다. refresh로는 안 고쳐진다)
- */
-export interface KakaoSendFailure {
-  /** 카카오가 준 code. HTTP 계층에서 실패하면 null. */
-  code: number | null
-  message: string
-}
-
-export async function sendKakaoMemo(opts: {
-  accessToken: string
-  text: string
-  /** '전문 보기' 버튼과 텍스트 링크가 가리킬 절대 주소. */
-  linkUrl: string
-}): Promise<KakaoSendFailure | null> {
-  const templateObject = {
-    object_type: 'text',
-    text: opts.text,
-    link: { web_url: opts.linkUrl, mobile_web_url: opts.linkUrl },
-    button_title: '전문 보기',
-  }
-
-  let res: Response
-  try {
-    res = await fetch('https://kapi.kakao.com/v2/api/talk/memo/default/send', {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${opts.accessToken}`,
-        'content-type': 'application/x-www-form-urlencoded;charset=utf-8',
-      },
-      body: new URLSearchParams({ template_object: JSON.stringify(templateObject) }),
-      cache: 'no-store',
-    })
-  } catch (e) {
-    return { code: null, message: `카카오 호출 실패: ${e instanceof Error ? e.message : String(e)}` }
-  }
-
-  const json = (await res.json().catch(() => ({}))) as {
-    result_code?: number
-    code?: number
-    msg?: string
-  }
-  if (res.ok && json.result_code === 0) return null
-  return {
-    code: json.code ?? null,
-    message: `카카오 발송 실패 (HTTP ${res.status}, code ${json.code ?? '?'}) ${json.msg ?? ''}`
-      .trim()
-      .slice(0, 500),
-  }
 }

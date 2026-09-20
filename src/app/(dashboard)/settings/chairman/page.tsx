@@ -101,7 +101,9 @@ export default async function ChairmanSettingsPage(props: PageProps<'/settings/c
           카카오 아침 알림
         </h2>
         <p className="mt-1 mb-2 text-[10.5px] text-ink-muted">
-          매일 아침 07시에 그룹 브리핑 앞부분과 전문 링크가 회장님 카카오톡으로 갑니다.
+          {/* Vercel Hobby의 Cron은 지정 시각으로부터 한 시간 안에 트리거되는 best-effort다.
+              화면이 '07시'로 단정하면 07:30에 온 날 회장은 무언가 고장난 줄 안다. */}
+          매일 아침 7시쯤(7~8시 사이) 그룹 브리핑 앞부분과 전문 링크가 회장님 카카오톡으로 갑니다.
           토큰은 서버에만 저장되고 이 화면으로 내려오지 않습니다.
         </p>
         <KakaoConnect connection={kakao} notice={firstParam(params.kakao)} now={new Date().toISOString()} />
