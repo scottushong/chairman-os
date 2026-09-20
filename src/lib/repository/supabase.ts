@@ -34,6 +34,7 @@ import type {
   InitiativeKeyman,
   IsoDate,
   JournalEntry,
+  KakaoConnection,
   JournalLine,
   DataSource,
   NewInvitation,
@@ -2354,6 +2355,17 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       if (error) throw new Error(`Supabase chairman_recent_condition ${error.code ?? '?'}: ${error.message}`)
       const row = (data as { condition: number; checkin_date: string }[] | null)?.[0]
       return row ? { condition: row.condition as ChairmanCondition, checkin_date: row.checkin_date } : null
+    },
+
+    /**
+     * Phase 3-C. 0023 kakao_token_status() RPC. 토큰 값은 반환 목록에 없다 —
+     * 화면이 "연결됨/다시 연결"을 고르는 데 쓰는 세 칸(scopes·expires_at·refresh_expires_at)만 온다.
+     */
+    async getKakaoConnection(): Promise<KakaoConnection | null> {
+      const { data, error } = await sb.rpc('kakao_token_status')
+      if (error) throw new Error(`Supabase kakao_token_status ${error.code ?? '?'}: ${error.message}`)
+      const row = (data as KakaoConnection[] | null)?.[0]
+      return row ?? null
     },
 
     /**

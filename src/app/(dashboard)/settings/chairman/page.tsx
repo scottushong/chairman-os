@@ -3,12 +3,14 @@ import { notFound } from 'next/navigation'
 
 import { PageHeader } from '@/components/layout/page-header'
 import { ChairmanProjectEditor } from '@/components/settings/chairman-project-editor'
+import { KakaoConnect } from '@/components/settings/kakao-connect'
 import { ManifestoEditor } from '@/components/settings/manifesto-editor'
 import { Icon } from '@/components/ui/icon'
 import { canEditChairmanRoutine } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
 import { kstToday, orderProjects, projectClock } from '@/lib/chairman-project'
 import { formatDateTime } from '@/lib/format'
+import { firstParam } from '@/lib/query'
 import { getRepository } from '@/lib/repository'
 import { CHAIRMAN_PROJECT_STATUS_LABEL_KO } from '@/types'
 
@@ -18,14 +20,16 @@ import { CHAIRMAN_PROJECT_STATUS_LABEL_KO } from '@/types'
  * 장기 프로젝트와 선언문은 시드가 없다. 회장 개인의 문장이라 git에 들어가면 안 된다(0014).
  * 404로 막는 것은 안내다. 실제 문은 0014의 RLS가 지킨다 — /settings/users와 같은 이유로 403이 아니다.
  */
-export default async function ChairmanSettingsPage() {
+export default async function ChairmanSettingsPage(props: PageProps<'/settings/chairman'>) {
   const user = await currentUser()
   if (!canEditChairmanRoutine(user)) notFound()
 
+  const params = await props.searchParams
   const repo = await getRepository()
-  const [projects, manifesto] = await Promise.all([
+  const [projects, manifesto, kakao] = await Promise.all([
     repo.listChairmanProjects(),
     repo.getChairmanManifesto(),
+    repo.getKakaoConnection(),
   ])
   const today = kstToday()
 
@@ -89,6 +93,18 @@ export default async function ChairmanSettingsPage() {
         <div className="mt-3">
           <ChairmanProjectEditor />
         </div>
+      </section>
+
+      <section className="mt-3.5 rounded-xl border border-line-soft bg-panel p-3.5">
+        <h2 className="flex items-baseline gap-1.5 text-[13px] font-semibold">
+          <Icon name="bell" className="size-4 text-ink-dim" />
+          카카오 아침 알림
+        </h2>
+        <p className="mt-1 mb-2 text-[10.5px] text-ink-muted">
+          매일 아침 07시에 그룹 브리핑 앞부분과 전문 링크가 회장님 카카오톡으로 갑니다.
+          토큰은 서버에만 저장되고 이 화면으로 내려오지 않습니다.
+        </p>
+        <KakaoConnect connection={kakao} notice={firstParam(params.kakao)} now={new Date().toISOString()} />
       </section>
 
       <section className="mt-3.5 mb-6 rounded-xl border border-line-soft bg-panel p-3.5">

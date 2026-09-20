@@ -26,6 +26,7 @@ import type {
   InitiativeDoc,
   InitiativeKeyman,
   IsoDate,
+  KakaoConnection,
   SecurityClass,
   MonthlyPriority,
   NewOfficialStatement,
@@ -229,6 +230,15 @@ export interface ChairmanRepository {
    * getCheckin을 쓴다(src/app/(morning)/ai/page.tsx).
    */
   getRecentCondition(): Promise<{ condition: ChairmanCondition; checkin_date: IsoDate } | null>
+
+  /**
+   * Phase 3-C 카카오 연결 상태(0023 kakao_token_status()). Chairman이 아니면 null이다.
+   *
+   * 토큰 값은 이 경로로 오지 않는다 — 0023의 함수가 반환 목록에서 아예 뺐다.
+   * 화면이 필요한 것은 '연결됐나 · 언제까지 · 메시지 동의가 있나' 셋뿐이고,
+   * 그 셋만 오면 access_token이 실수로 HTML에 실리는 경로 자체가 없다.
+   */
+  getKakaoConnection(): Promise<KakaoConnection | null>
 
   /**
    * Phase 4-A 이니셔티브(0017). Chairman·GroupCFO는 읽고 쓰고, AIAgent는 읽기만,

@@ -38,6 +38,7 @@ import type {
   InitiativeDoc,
   InitiativeKeyman,
   IsoDate,
+  KakaoConnection,
   NewInvitation,
   Task,
   UserAccount,
@@ -657,6 +658,16 @@ export const dummyRepository: ChairmanRepository = {
       const found = memoryCheckins.get(d)
       if (found) return { condition: found.condition, checkin_date: d }
     }
+    return null
+  },
+
+  /**
+   * dummy에는 카카오 연결이 없다. '아직 연결 안 됨'이 dummy에서 볼 수 있는 유일한 상태이고,
+   * 그 상태의 화면(= "카카오 연결" 버튼 하나)이 실제로 맞는지가 dummy에서 잴 수 있는 전부다.
+   * 연결과 발송은 카카오 계정이 있어야 하므로 여기서 흉내 내지 않는다 — 흉내 낸 성공은
+   * 검증이 아니라 위안이다.
+   */
+  async getKakaoConnection(): Promise<KakaoConnection | null> {
     return null
   },
 
