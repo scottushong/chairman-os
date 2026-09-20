@@ -1079,6 +1079,206 @@ async function kakaoRevokeSurvives(db: Db) {
 }
 
 /**
+ * Phase 6-1 블록 A1(0025) — 다섯 번째 겹의 바닥.
+ *
+ * 0025는 정책을 한 줄도 고치지 않는다. 그래서 위의 역할별 RLS 검사로는 이 파일이 실제로
+ * 무엇을 하는지 하나도 재지 못한다 — 표가 생겼는지만 보고 넘어간다. 이 함수가 재는 것은
+ * 0026(A2)이 정책에서 부르게 될 **의미** 넷이다.
+ *
+ *   ① class_rank의 새 순서. 0002의 원래 본문은 모르는 값을 else(=3, Vault)로 떨어뜨린다.
+ *      class_rank를 같이 고치는 것을 잊으면 '전 직원 공지'가 '회장 전용'이 된다 —
+ *      아무것도 안 했을 때 안전한 쪽이 아니라 **정반대**로 실패하는 드문 자리다.
+ *   ② 순환 금지. 고리는 in_my_subtree()를 끝나지 않게 만들 뿐 아니라 고리 안의 사람들이
+ *      서로를 전부 보게 만든다 — 다섯 번째 겹을 조용히 무르는 방법이다.
+ *   ③ in_my_subtree()의 방향. 위에서 아래는 보이고, 아래에서 위와 옆은 안 보인다.
+ *      방향이 뒤집힌 함수도 "true를 준다"만 재는 검사는 통과한다.
+ *   ④ shared_with_me()의 만료와 주인. 만료를 안 보는 함수는 기간 공유를 무기한으로 바꾸고,
+ *      shared_with를 안 보는 함수는 한 사람에게 연 문을 전 직원에게 연다.
+ *
+ * rls() 다음에 부른다 — 거기서 authenticated에게 schema usage와 표 권한을 한 번에 주고,
+ * 이 함수의 세션들이 그 위에서 돈다.
+ */
+async function hierarchy(db: Db) {
+  // 0025의 사람들. rls()가 심어 둔 UID와 섞이지 않게 번호를 따로 쓴다 —
+  // 그쪽은 "회장은 한 사람, 나머지는 평평하다"를 전제로 시드돼 있고 여기서는 트리를 세운다.
+  const H = {
+    exec: '00000000-0000-0000-0000-000000000021', // 임원 (뿌리)
+    lead: '00000000-0000-0000-0000-000000000022', // 영업팀장
+    staff: '00000000-0000-0000-0000-000000000023', // 영업 직원
+    peer: '00000000-0000-0000-0000-000000000024', // 영업 직원 2 — staff의 형제
+    buyer: '00000000-0000-0000-0000-000000000025', // 구매팀장 — 다른 팀
+  }
+
+  // ── ① 등급 순서 ────────────────────────────────────────────────────
+  const rank = await db.query<{ pub: number; normal: number; restricted: number; vault: number }>(`
+    select class_rank('Public'::security_class)     as pub,
+           class_rank('Normal'::security_class)     as normal,
+           class_rank('Restricted'::security_class) as restricted,
+           class_rank('Vault'::security_class)      as vault
+  `)
+  const r = rank.rows[0]
+  assert.ok(
+    r.pub < r.normal,
+    `0025: class_rank('Public')=${r.pub} 이 class_rank('Normal')=${r.normal} 보다 낮지 않다 — 공개 공지가 오히려 잠긴다(class_rank 재정의를 빠뜨렸다)`,
+  )
+  // 새 값 하나를 끼워 넣으면서 나머지 순서를 뒤집지 않았는가. pub만 재면 전부 0으로 만든
+  // 함수도 통과한다.
+  assert.ok(
+    r.normal < r.restricted && r.restricted < r.vault,
+    `0025: 기존 등급 순서가 깨졌다 (Normal=${r.normal}, Restricted=${r.restricted}, Vault=${r.vault})`,
+  )
+
+  // ── 팀 시드 ────────────────────────────────────────────────────────
+  const teams = await db.query<{ team_id: string; name: string; name_en: string }>(
+    `select team_id, name, name_en from teams where business_id = 'biz_dy' order by team_id`,
+  )
+  assert.deepEqual(
+    teams.rows.map((t) => [t.team_id, t.name, t.name_en]),
+    [
+      ['team_dy_production', '생산', 'Production'],
+      ['team_dy_purchasing', '구매', 'Purchasing'],
+      ['team_dy_rnd', '연구소', 'R&D'],
+      ['team_dy_sales', '영업', 'Sales'],
+      ['team_dy_support', '경영지원', 'Management Support'],
+    ],
+    '0025: DY 팀 시드 다섯이 biz_dy에 붙어 있지 않다',
+  )
+
+  // ── 트리를 세운다 ──────────────────────────────────────────────────
+  //   임원 ─┬─ 영업팀장 ─┬─ 영업 직원
+  //         │            └─ 영업 직원 2 (형제)
+  //         └─ 구매팀장 (다른 팀, staff의 subtree 밖)
+  await db.exec(`
+    insert into auth.users values
+      ('${H.exec}', 'ex@x'), ('${H.lead}', 'lead@x'), ('${H.staff}', 'st@x'),
+      ('${H.peer}', 'peer@x'), ('${H.buyer}', 'buy@x');
+    insert into user_profiles (user_id, role, display_name, max_security_class, reports_to, team_id) values
+      ('${H.exec}',  'Executive', '임원',        'Restricted', null,         'team_dy_sales'),
+      ('${H.lead}',  'TeamLead',  '영업팀장',    'Normal',     '${H.exec}',  'team_dy_sales'),
+      ('${H.staff}', 'Member',    '영업 직원',   'Normal',     '${H.lead}',  'team_dy_sales'),
+      ('${H.peer}',  'Member',    '영업 직원 2', 'Normal',     '${H.lead}',  'team_dy_sales'),
+      ('${H.buyer}', 'TeamLead',  '구매팀장',    'Normal',     '${H.exec}',  'team_dy_purchasing');
+    insert into user_business_access select '${H.exec}', 'biz_dy';
+    insert into user_business_access select '${H.lead}', 'biz_dy';
+    insert into user_business_access select '${H.staff}', 'biz_dy';
+    insert into user_business_access select '${H.peer}', 'biz_dy';
+    insert into user_business_access select '${H.buyer}', 'biz_dy';
+  `)
+
+  /** 한 사람의 세션으로 boolean 하나를 받는다. authenticated 역할로 도는 것까지 같이 잰다 — 0025의 grant가 빠지면 여기서 터진다. */
+  async function ask(uid: string, sql: string): Promise<boolean> {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
+    try {
+      const res = await db.query<{ v: boolean }>(sql)
+      return res.rows[0].v
+    } finally {
+      await db.exec('rollback')
+    }
+  }
+  const subtree = (me: string, target: string) => ask(me, `select in_my_subtree('${target}') as v`)
+
+  // ── ③ in_my_subtree의 방향 ─────────────────────────────────────────
+  assert.equal(await subtree(H.exec, H.staff), true, '0025: 임원이 2단 아래 직원을 subtree로 못 본다')
+  assert.equal(await subtree(H.lead, H.staff), true, '0025: 팀장이 자기 팀원을 subtree로 못 본다')
+  assert.equal(await subtree(H.staff, H.staff), true, '0025: 자기 자신이 subtree 밖이다')
+  assert.equal(await subtree(H.staff, H.lead), false, '0025: 직원이 자기 팀장을 subtree로 본다 — 위계가 뒤집혔다')
+  assert.equal(await subtree(H.staff, H.exec), false, '0025: 직원이 임원을 subtree로 본다 — 위계가 뒤집혔다')
+  assert.equal(await subtree(H.staff, H.peer), false, '0025: 직원이 같은 팀 동료를 subtree로 본다 — 옆은 안 보여야 한다')
+  assert.equal(await subtree(H.lead, H.buyer), false, '0025: 영업팀장에게 구매팀장이 보인다 — 옆 가지는 안 보여야 한다')
+
+  // 퇴사자가 경로를 끊지 않는가 (0025 4절의 명시적 판단). 팀장이 나간 날 그 팀이 임원의
+  // 화면에서 통째로 사라지면 안 된다. 되돌려 놓고 나간다 — 아래 순환 검사가 같은 트리를 쓴다.
+  await db.exec(`update user_profiles set status = 'left', left_on = (now() at time zone 'Asia/Seoul')::date, revoked_at = now() where user_id = '${H.lead}'`)
+  assert.equal(
+    await subtree(H.exec, H.staff), true,
+    '0025: 팀장이 퇴사하자 그 아래 직원이 임원의 subtree에서 사라졌다 — 사람이 나간 것이 조직이 사라진 것이 될 수는 없다',
+  )
+  assert.equal(
+    await subtree(H.exec, H.lead), true,
+    '0025: 퇴사한 팀장 자신이 subtree에서 빠졌다 — 그 사람을 지금 볼 수 있는가는 다른 겹이 판정한다',
+  )
+  await db.exec(`update user_profiles set status = 'active', left_on = null, revoked_at = null where user_id = '${H.lead}'`)
+
+  // ── ② 순환 금지 ────────────────────────────────────────────────────
+  // 먼저 정상 경로가 통과하는지 본다. 이것이 없으면 "무조건 예외를 던지는 트리거"도
+  // 아래 rejects 셋을 전부 통과한다.
+  await db.exec(`update user_profiles set reports_to = '${H.exec}' where user_id = '${H.peer}'`)
+  await db.exec(`update user_profiles set reports_to = '${H.lead}' where user_id = '${H.peer}'`)
+
+  // 임원 → 팀장 → 직원인 트리에서 임원의 상사를 그 직원으로 바꾸면 고리가 닫힌다.
+  await assert.rejects(
+    db.exec(`update user_profiles set reports_to = '${H.staff}' where user_id = '${H.exec}'`),
+    /순환/,
+    '0025: reports_to로 고리를 만들 수 있다',
+  )
+  // 한 단계 위(직속)로 고리를 닫는 경우도 같이 본다. 재귀가 첫 층만 보고 마는 구현을 잡는다.
+  await assert.rejects(
+    db.exec(`update user_profiles set reports_to = '${H.lead}' where user_id = '${H.exec}'`),
+    /순환/,
+    '0025: 직속 부하를 자기 상사로 지정할 수 있다',
+  )
+  await assert.rejects(
+    db.exec(`update user_profiles set reports_to = '${H.exec}' where user_id = '${H.exec}'`),
+    /자기 자신/,
+    '0025: 자기 자신을 직속 상사로 지정할 수 있다',
+  )
+  // insert 경로도 같은 트리거를 탄다. update만 막고 insert를 열어 두면 조직도의 '사람 추가'가 구멍이다.
+  await assert.rejects(
+    db.exec(`
+      insert into auth.users values ('00000000-0000-0000-0000-000000000026', 'self@x');
+      insert into user_profiles (user_id, role, display_name, reports_to)
+      values ('00000000-0000-0000-0000-000000000026', 'Member', '자기참조', '00000000-0000-0000-0000-000000000026');
+    `),
+    /자기 자신/,
+    '0025: insert로는 자기 자신을 상사로 넣을 수 있다',
+  )
+
+  // ── ④ shared_with_me의 만료와 주인 ─────────────────────────────────
+  // 구매팀장이 영업 직원에게 문서 셋을 공유한다(회장 지시 검증 c의 모양이다).
+  await db.exec(`
+    insert into shares (entity_table, entity_id, shared_with, shared_by, expires_at) values
+      ('documents', 'doc_live',    '${H.staff}', '${H.buyer}', now() + interval '1 day'),
+      ('documents', 'doc_expired', '${H.staff}', '${H.buyer}', now() - interval '1 day'),
+      ('documents', 'doc_forever', '${H.staff}', '${H.buyer}', null);
+  `)
+  const shared = (uid: string, table: string, id: string) =>
+    ask(uid, `select shared_with_me('${table}', '${id}') as v`)
+
+  assert.equal(await shared(H.staff, 'documents', 'doc_live'), true, '0025: 만료 전 공유가 보이지 않는다')
+  assert.equal(await shared(H.staff, 'documents', 'doc_forever'), true, '0025: 무기한 공유(expires_at null)가 보이지 않는다')
+  assert.equal(await shared(H.staff, 'documents', 'doc_expired'), false, '0025: 만료된 공유가 아직 살아 있다 — 사람이 회수를 잊어도 닫혀야 한다')
+  assert.equal(await shared(H.peer, 'documents', 'doc_live'), false, '0025: 남에게 한 공유가 제3자에게도 보인다')
+  // 표 이름까지 보는가. entity_id만 비교하는 구현은 다른 표의 같은 id를 열어 준다.
+  assert.equal(await shared(H.staff, 'tasks', 'doc_live'), false, '0025: entity_table을 보지 않는다 — 다른 표의 같은 id가 열린다')
+
+  // shares의 insert는 0025에서 닫혀 있다(permissive 정책 없음). 0026이 대상 가시성 조건을
+  // 담은 정책을 더할 자리다 — 그 전에 누가 문을 열면 여기가 빨개진다.
+  await db.exec(`begin; select set_config('request.jwt.claim.sub', '${H.buyer}', true); set local role authenticated;`)
+  try {
+    await assert.rejects(
+      db.query(`insert into shares (entity_table, entity_id, shared_with, shared_by) values ('documents', 'doc_new', '${H.staff}', '${H.buyer}')`),
+      /row-level security/,
+      '0025: shares의 insert가 열려 있다 — 대상 가시성 판정 없이 공유를 만들 수 있다(0026이 할 일이다)',
+    )
+  } finally {
+    await db.exec('rollback')
+  }
+
+  // 구조 단언 — 0026의 42P17 방어선.
+  //   in_my_subtree()는 security definer로 user_profiles를 읽는다. 그 표에 FORCE가 걸리면
+  //   소유자(=함수 소유자)마저 정책 아래로 내려가고, 0026이 그 정책 안에서 이 함수를 부르는
+  //   순간 "정책 → 함수 → 정책"의 무한 재귀가 된다. shares/shared_with_me()도 같은 모양이다
+  //   (0023 3절 ③이 chairman_kakao_token에서 먼저 겪은 함정이다).
+  const forced = await db.query<{ relname: string; f: boolean }>(
+    `select relname, relforcerowsecurity as f from pg_class where relname in ('user_profiles', 'shares')`,
+  )
+  assert.equal(forced.rows.length, 2, `0025: force 검사가 표 둘을 못 찾는다 (${forced.rows.map((x) => x.relname).join(', ') || '0개'})`)
+  for (const row of forced.rows) {
+    assert.equal(row.f, false, `0025: ${row.relname}에 force row level security가 걸려 있다 — definer 함수가 정책 아래로 내려가 0026에서 42P17이 난다`)
+  }
+}
+
+/**
  * security definer 함수가 **BYPASSRLS 아닌 소유자**로 돌 때도 값을 주는가 (0023 3절 ③).
  *
  * 왜 별도 인스턴스인가 — 이 실험은 표와 함수의 소유자를 바꾼다. 위의 모든 단언이 소유자
@@ -1197,10 +1397,11 @@ async function main() {
   await sheetOnlyView(db)
   await ledgerView(db)
   await rls(db)
+  await hierarchy(db)
   await db.close()
   await definerUnderNonBypassOwner()
   console.log(
-    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner`,
+    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares)`,
   )
 }
 

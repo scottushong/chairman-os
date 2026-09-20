@@ -28,6 +28,17 @@ import {
 /** 0002의 has_group_scope()와 같은 목록. actions/users.ts와도 같아야 한다. */
 const GROUP_SCOPE: readonly Role[] = ['Chairman', 'GroupCFO']
 
+/**
+ * 사람에게 줄 수 있는 최고 등급에서 '공개'는 뺀다.
+ *
+ * 0025가 더한 'Public'은 **문서에 붙이는** 등급이다("이건 전 직원이 본다"). 그것을 사람의
+ * 최고 열람 등급으로 주면 반대 뜻이 된다 — 공지 말고는 아무것도 못 보는 계정이다. 0011의
+ * 머리 주석이 경계한 '로그인은 되는데 아무것도 안 보이는 사람'을 클릭 한 번으로 만들 수 있는
+ * 자리라, 고를 수 있는 목록에서 뺀다. 등급 순서(class_rank)에서 Public이 Normal보다 낮은
+ * 것이 이 판단의 근거이기도 하다.
+ */
+const GRANTABLE_CLASS = SECURITY_CLASS.filter((c) => c !== 'Public')
+
 export function InviteUser({ businesses }: { businesses: Business[] }) {
   const [open, setOpen] = useState(false)
   const [email, setEmail] = useState('')
@@ -227,7 +238,7 @@ export function InviteUser({ businesses }: { businesses: Business[] }) {
         <fieldset className="md:col-span-2">
           <legend className="text-[11px] text-ink-dim">최고 보안등급</legend>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {SECURITY_CLASS.map((c) => (
+            {GRANTABLE_CLASS.map((c) => (
               <button
                 key={c}
                 type="button"

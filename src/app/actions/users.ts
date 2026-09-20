@@ -40,8 +40,16 @@ function isRole(value: unknown): value is Role {
   return ROLE.includes(value as Role)
 }
 
+/**
+ * 사람의 최고 열람 등급으로 받을 수 있는 값인가.
+ *
+ * 'Public'(0025)은 **문서에 붙이는** 등급이다 — "이건 전 직원이 본다". 그것을 사람의
+ * 최고 등급으로 주면 뜻이 뒤집혀 공지 말고는 아무것도 못 보는 계정이 된다. 폼에서도 빼
+ * 두었지만(components/settings/invite-user.tsx), 폼이 유일한 입구가 아니므로 여기서도
+ * 거른다 — 권한을 정하는 값은 화면이 아니라 서버가 좁힌다.
+ */
 function isSecurityClass(value: unknown): value is SecurityClass {
-  return SECURITY_CLASS.includes(value as SecurityClass)
+  return SECURITY_CLASS.includes(value as SecurityClass) && value !== 'Public'
 }
 
 /**

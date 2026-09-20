@@ -28,8 +28,12 @@ import {
 const BASE = '/documents'
 const GROUP = 'group'
 
-/** 등급 색. Vault만 색을 준다 — 색은 위험에만 쓴다(요구사항서 2번). */
+/**
+ * 등급 색. Vault만 색을 준다 — 색은 위험에만 쓴다(요구사항서 2번).
+ * '공개'(0025)도 색을 주지 않는다. 전 직원이 보는 문서는 경고할 것이 없다.
+ */
 const CLASS_TONE: Record<SecurityClass, string> = {
+  Public: 'bg-raised text-ink-muted',
   Normal: 'bg-raised text-ink-muted',
   Restricted: 'bg-raised text-ink-dim',
   Vault: 'bg-gold/15 text-gold',

@@ -22,8 +22,17 @@ export type WorkPriority = (typeof WORK_PRIORITY)[number]
 export const SEVERITY = ['Info', 'Warning', 'Critical'] as const
 export type Severity = (typeof SEVERITY)[number]
 
-/** SecurityClass — 일반 / 제한 / 최고민감(Vault). Vault는 외주에 실제값을 주지 않는다. */
-export const SECURITY_CLASS = ['Normal', 'Restricted', 'Vault'] as const
+/**
+ * SecurityClass — 공개 / 일반 / 제한 / 최고민감(Vault). Vault는 외주에 실제값을 주지 않는다.
+ *
+ * 'Public'은 0025(Phase 6-1)가 더했다. 위계(subtree)가 기본으로 가리는 것들 사이에서
+ * 공지·규정처럼 **일부러 전 직원에게 열어야 하는** 문서의 자리다 — 같은 회사이기만 하면
+ * 누구 밑인지와 무관하게 보인다(그 AND 조건은 0026이 정책에 건다).
+ *
+ * 배열 순서가 곧 등급 순서다(DB의 class_rank와 같다: Public 0 < Normal 1 < Restricted 2 < Vault 3).
+ * 화면의 등급 칩·필터가 이 순서로 그려지므로 낮은 것부터 둔다.
+ */
+export const SECURITY_CLASS = ['Public', 'Normal', 'Restricted', 'Vault'] as const
 export type SecurityClass = (typeof SECURITY_CLASS)[number]
 
 /** 한글 표기. 화면에는 코드가 아니라 이 값을 노출한다. */
@@ -50,6 +59,7 @@ export const SEVERITY_LABEL_KO: Record<Severity, string> = {
 
 /** 보안등급 표기. 03_Vault_Map의 [일반]/[제한]/[Vault] 표기를 화면에서도 그대로 쓴다. */
 export const SECURITY_CLASS_LABEL_KO: Record<SecurityClass, string> = {
+  Public: '공개',
   Normal: '일반',
   Restricted: '제한',
   Vault: 'Vault',
