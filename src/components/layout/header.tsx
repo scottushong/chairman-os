@@ -3,6 +3,7 @@ import { DataModeBadge } from '@/components/layout/data-mode-badge'
 import { GlobalSearch } from '@/components/layout/global-search'
 import { WorldClocks } from '@/components/layout/world-clocks'
 import { Icon } from '@/components/ui/icon'
+import { getFxStrip } from '@/lib/fx'
 import { resolveLocation } from '@/lib/geo'
 import { getCurrentLocationWeather } from '@/lib/weather'
 import { ROLE_LABEL_KO, type SessionUser } from '@/types'
@@ -27,7 +28,16 @@ import { ROLE_LABEL_KO, type SessionUser } from '@/types'
  */
 export async function Header({ user }: { user: SessionUser | null }) {
   const location = await resolveLocation()
-  const weather = await getCurrentLocationWeather(location)
+  // 날씨와 환율을 나란히 기다린다. 순서대로 await하면 두 왕복이 줄을 서고,
+  // 헤더는 모든 대시보드 화면이 그리는 자리라 그 지연이 화면마다 붙는다.
+  const [weather, fx] = await Promise.all([getCurrentLocationWeather(location), getFxStrip()])
+  // 헤더에는 USD 하나만 세운다. 다섯 개는 아침 루틴의 띠가 맡는다 —
+  // 여기는 검색창이 가장 넓은 자리를 써야 하는 바라 칩을 늘리면 그 자리를 뺏는다.
+  //
+  // 기준일을 칩과 같이 들고 다니게 접어 둔다. 따로 두면 그리는 자리에서 fx가 null이 아님을
+  // 단언(!)하게 되고, 이 저장소는 그 단언을 쓰지 않는다(weather-panel.tsx의 flatMap과 같은 이유).
+  const chip = fx?.chips.find((c) => c.code === 'USD')
+  const usd = chip ? { ...chip, asOf: fx?.asOf ?? '', comparedTo: fx?.comparedTo ?? '' } : null
 
   return (
     // glass-nav = --color-nav 면 + backdrop-blur. 사이드바·시스템바와 같은 면이라 같은 클래스를 쓴다.
@@ -47,6 +57,23 @@ export async function Header({ user }: { user: SessionUser | null }) {
           >
             <span className="text-ink-dim tnum">{Math.round(weather.temperatureC)}°</span>
             <span className="max-w-[72px] truncate">{weather.labelKo}</span>
+          </span>
+        ) : null}
+        {/* USD 칩. 날씨 칩과 같은 규칙이다 — 못 불러오면 자리표시자를 남기지 않고 통째로 뺀다.
+            title에 기준일을 넣는 이유는 주말 아침에 숫자가 안 바뀌는 것이 고장이 아님을
+            hover로 확인할 수 있어야 하기 때문이다(ECB는 주말에 고시하지 않는다). */}
+        {usd ? (
+          <span
+            title={`USD/KRW · ${usd.asOf} 고시 · 전일(${usd.comparedTo}) 대비 ${usd.deltaKrw >= 0 ? '+' : '−'}${Math.abs(usd.deltaKrw).toFixed(2)}원`}
+            className="flex shrink-0 items-center gap-1 px-1 text-[11px] text-ink-muted"
+          >
+            <span>USD</span>
+            <span className="text-ink-dim tnum">{Math.round(usd.krw).toLocaleString('ko-KR')}</span>
+            {usd.direction !== 'flat' ? (
+              <span className={usd.direction === 'up' ? 'text-critical' : 'text-ok'}>
+                {usd.direction === 'up' ? '▲' : '▼'}
+              </span>
+            ) : null}
           </span>
         ) : null}
         <WorldClocks />

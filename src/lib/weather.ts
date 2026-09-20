@@ -1,4 +1,5 @@
-import { BUSINESS_CITIES, type BusinessCity, type Coordinates } from '@/lib/geo'
+import { BUSINESS_CITIES, type BusinessCity, type Coordinates } from '@/lib/cities'
+import { weatherLabel } from '@/lib/weather-codes'
 
 /**
  * Open-Meteo 현재 날씨. 키 없이 익명으로 부른다(초당 요청 제한만 있음).
@@ -7,42 +8,6 @@ import { BUSINESS_CITIES, type BusinessCity, type Coordinates } from '@/lib/geo'
  * 비면 안 된다. 모든 실패 경로(네트워크 에러, 429, 5xx, 응답 파싱 실패)는 null로
  * 수렴하고, 패널(P5-5c)이 null을 "날씨를 불러오지 못했습니다"로 그린다.
  */
-
-/** WMO weather_code → 한국어 라벨. 저장소의 *_LABEL_KO 관례와 같다 — 날것의 숫자는 화면에 못 나간다. */
-export const WEATHER_CODE_LABEL_KO: Record<number, string> = {
-  0: '맑음',
-  1: '대체로 맑음',
-  2: '구름 조금',
-  3: '흐림',
-  45: '안개',
-  48: '서리 안개',
-  51: '이슬비(약)',
-  53: '이슬비(보통)',
-  55: '이슬비(강)',
-  56: '어는 이슬비(약)',
-  57: '어는 이슬비(강)',
-  61: '비(약)',
-  63: '비(보통)',
-  65: '비(강)',
-  66: '어는 비(약)',
-  67: '어는 비(강)',
-  71: '눈(약)',
-  73: '눈(보통)',
-  75: '눈(강)',
-  77: '싸락눈',
-  80: '소나기(약)',
-  81: '소나기(보통)',
-  82: '소나기(강)',
-  85: '소나기눈(약)',
-  86: '소나기눈(강)',
-  95: '뇌우',
-  96: '뇌우(약한 우박)',
-  99: '뇌우(강한 우박)',
-}
-
-function weatherLabel(code: number): string {
-  return WEATHER_CODE_LABEL_KO[code] ?? '알 수 없음'
-}
 
 export interface WeatherCurrent {
   temperatureC: number
@@ -87,7 +52,11 @@ async function fetchOpenMeteoCurrent(coords: Coordinates[]): Promise<(WeatherCur
     `&current=temperature_2m,weather_code&timezone=auto`
 
   try {
-    const res = await fetch(url, { next: { revalidate: 1800 } })
+    // cache: 'force-cache'가 있어야 실제로 캐시된다. Next 16에서 캐시는 opt-in이라
+    // next.revalidate만 두면 아무것도 안 붙는다(node_modules/next/dist/docs의 fetch.md:
+    // "Caching is opt-in"). /ai도 대시보드도 쿠키를 읽는 동적 라우트라, 이 한 줄이 없으면
+    // 화면을 새로고침할 때마다 Open-Meteo를 때린다 — 30분 캐시는 주석에만 있고 없었다.
+    const res = await fetch(url, { cache: 'force-cache', next: { revalidate: 1800 } })
     if (!res.ok) return coords.map(() => null)
 
     const json: unknown = await res.json()

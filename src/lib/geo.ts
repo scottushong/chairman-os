@@ -1,32 +1,23 @@
+import 'server-only'
+
 import { headers } from 'next/headers'
 
+import type { Coordinates } from '@/lib/cities'
+
+
 /**
- * 아침 화면(P5-5)의 위치 해석. 회장이 지금 어디 있는지 + 사업하는 6개 도시 좌표표.
+ * 아침 화면(P5-5)의 위치 해석 — 회장이 지금 어디 있는가. 요청 헤더를 읽으므로 서버 전용이다.
+ *
+ * **import 'server-only'가 맨 위에 있다.** 이 파일이 클라이언트 번들에 닿으면 빌드가
+ * 그 자리에서 멈춘다. 예전에는 조용히 끌려 들어가 next/headers 에러로만 드러났고,
+ * 그 에러는 원인 파일이 아니라 끌고 들어온 파일을 가리켜 읽기 어려웠다.
+ *
+ * 좌표 타입과 도시 표는 lib/cities.ts로 옮겼다 — 클라이언트도 알아야 하는 어휘라
+ * 서버 전용 모듈에 같이 둘 수 없다.
  *
  * 좌표는 절대 URL 쿼리나 클라이언트로 나가는 어떤 것에도 싣지 않는다 — 서버 컴포넌트가
  * resolveLocation()을 직접 불러 그 자리에서 쓰고, weather.ts로 넘길 때도 서버 안에서만 돈다.
  */
-
-export interface Coordinates {
-  latitude: number
-  longitude: number
-}
-
-/** 회장이 사업하는 6개 도시. weather.ts가 이 배열 순서 그대로 Open-Meteo에 묻는다. */
-export interface BusinessCity {
-  id: string
-  nameKo: string
-  coordinates: Coordinates
-}
-
-export const BUSINESS_CITIES: BusinessCity[] = [
-  { id: 'ho-chi-minh', nameKo: '호치민', coordinates: { latitude: 10.8231, longitude: 106.6297 } },
-  { id: 'singapore', nameKo: '싱가폴', coordinates: { latitude: 1.3521, longitude: 103.8198 } },
-  { id: 'shanghai', nameKo: '상하이', coordinates: { latitude: 31.2304, longitude: 121.4737 } },
-  { id: 'dubai', nameKo: '두바이', coordinates: { latitude: 25.2048, longitude: 55.2708 } },
-  { id: 'toronto', nameKo: '토론토', coordinates: { latitude: 43.6532, longitude: -79.3832 } },
-  { id: 'sf', nameKo: 'SF', coordinates: { latitude: 37.7749, longitude: -122.4194 } },
-]
 
 /**
  * Vercel 엣지가 없을 때(로컬 dev, 또는 Vercel 밖 배포)의 명시적 기본값 — 서울.

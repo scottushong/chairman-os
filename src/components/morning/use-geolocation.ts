@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from 'react'
 
-import type { Coordinates } from '@/lib/geo'
+import type { Coordinates } from '@/lib/cities'
 
 /**
  * 브라우저 위치 권한을 명시적으로 묻는 훅.

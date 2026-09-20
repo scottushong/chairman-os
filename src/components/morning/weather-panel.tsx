@@ -6,7 +6,12 @@ import { weatherAtCoordinates } from '@/app/actions/weather'
 import { useGeolocation } from '@/components/morning/use-geolocation'
 import { GlassCard } from '@/components/ui/glass-card'
 import { Icon } from '@/components/ui/icon'
-import type { Coordinates } from '@/lib/geo'
+import { WeatherIcon } from '@/components/ui/weather-icon'
+import type { Coordinates } from '@/lib/cities'
+// 값은 순수 어휘 모듈(cities.ts / weather-codes.ts)에서만 가져온다. lib/weather.ts나
+// lib/geo.ts에서 값을 가져오면 next/headers가 이 클라이언트 번들로 끌려 들어와 빌드가 깨진다.
+// geo.ts는 import 'server-only'로 봉해 두었으므로 실수하면 바로 터진다.
+import { weatherIconFor } from '@/lib/weather-codes'
 import type { CityWeather, WeatherCurrent } from '@/lib/weather'
 
 /**
@@ -84,7 +89,9 @@ export function WeatherPanel({
   // flatMap으로 거르는 것은 타입 때문이다 — filter로는 current가 null이 아님이 안 좁혀져
   // 그리는 자리에서 단언(!)을 쓰게 된다.
   const shownCities = cities.flatMap(({ city: c, current }) =>
-    current ? [{ id: c.id, nameKo: c.nameKo, temperatureC: current.temperatureC }] : [],
+    current
+      ? [{ id: c.id, nameKo: c.nameKo, temperatureC: current.temperatureC, code: current.code }]
+      : [],
   )
 
   return (
@@ -106,12 +113,20 @@ export function WeatherPanel({
       </div>
 
       {current ? (
-        <p className="mt-4 flex items-baseline gap-2 text-ink">
-          <span className="text-[52px] leading-none font-bold tnum">
-            {Math.round(current.temperatureC)}°
+        // 그림은 기온 왼쪽에 크게 선다. items-center인 이유는 52px 숫자와 아이콘의
+        // 시각 중심을 맞추기 위해서다 — baseline에 걸면 구름이 숫자보다 위로 뜬다.
+        <p className="mt-4 flex items-center gap-3 text-ink">
+          <WeatherIcon
+            name={weatherIconFor(current.code)}
+            className="size-11 shrink-0 text-ink-dim"
+          />
+          <span className="flex items-baseline gap-2">
+            <span className="text-[52px] leading-none font-bold tnum">
+              {Math.round(current.temperatureC)}°
+            </span>
+            {/* 날씨 코드는 WEATHER_CODE_LABEL_KO를 거쳐 온 라벨이다 — 날것의 숫자는 화면에 못 나간다. */}
+            <span className="text-[14px] text-ink-dim">{current.labelKo}</span>
           </span>
-          {/* 날씨 코드는 WEATHER_CODE_LABEL_KO를 거쳐 온 라벨이다 — 날것의 숫자는 화면에 못 나간다. */}
-          <span className="text-[14px] text-ink-dim">{current.labelKo}</span>
         </p>
       ) : (
         <p className="mt-4 text-[13px] text-ink-muted">날씨를 불러오지 못했습니다.</p>
@@ -125,8 +140,13 @@ export function WeatherPanel({
           className="mt-4 grid grid-cols-3 gap-x-3 gap-y-1 border-t border-line-soft pt-3"
         >
           {shownCities.map((c) => (
-            <li key={c.id} className="flex items-baseline justify-between gap-1 text-[11px]">
-              <span className="truncate text-ink-muted">{c.nameKo}</span>
+            // 도시 줄은 아이콘이 붙어도 한 줄 그대로다 — 이름 옆에 들어가지
+            // 아래로 늘어나지 않는다. 위 주석의 '여섯 줄이 되면 안 된다'가 그대로 유효하다.
+            <li key={c.id} className="flex items-center justify-between gap-1 text-[11px]">
+              <span className="flex min-w-0 items-center gap-1 text-ink-muted">
+                <WeatherIcon name={weatherIconFor(c.code)} className="size-3.5 shrink-0" />
+                <span className="truncate">{c.nameKo}</span>
+              </span>
               <span className="shrink-0 text-ink tnum">{Math.round(c.temperatureC)}°</span>
             </li>
           ))}

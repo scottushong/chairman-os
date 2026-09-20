@@ -5,6 +5,7 @@ import { Manifesto } from '@/components/chairman/manifesto'
 import { ProjectCounters } from '@/components/chairman/project-counters'
 import { TodayAndWeek } from '@/components/chairman/today-and-week'
 import { CheckinPanel } from '@/components/morning/checkin-panel'
+import { FxStrip } from '@/components/morning/fx-strip'
 import { GreetingClock } from '@/components/morning/greeting-clock'
 import { WeatherPanel } from '@/components/morning/weather-panel'
 import { GlassCard } from '@/components/ui/glass-card'
@@ -12,6 +13,7 @@ import { Icon } from '@/components/ui/icon'
 import { currentUser } from '@/lib/auth/session'
 import { occursOn, shift } from '@/lib/calendar'
 import { kstToday, orderProjects } from '@/lib/chairman-project'
+import { getFxStrip } from '@/lib/fx'
 import { resolveLocation } from '@/lib/geo'
 import { initiativeClock, isStale } from '@/lib/initiative'
 import {
@@ -75,6 +77,7 @@ export default async function AiPage(props: PageProps<'/ai'>) {
     calendarItems,
     weather,
     cityWeather,
+    fx,
     checkin,
   ] = await Promise.all([
     repo.listAiNightOutputs(),
@@ -89,6 +92,10 @@ export default async function AiPage(props: PageProps<'/ai'>) {
     // 30분 캐시를 탄다 — 현재 위치 호출과 URL이 달라 캐시 항목이 둘이지만, 아침에 몇 번을
     // 새로고침해도 Open-Meteo에는 30분마다 두 번만 나간다. 실패는 도시별 null로만 온다.
     getBusinessCitiesWeather(),
+    // 환율도 같은 계약이다 — 실패는 null이고 띠가 통째로 빠질 뿐 화면은 선다.
+    // 날씨 두 건과 함께 묶어 두면 세 외부 왕복이 병렬로 돌아 이 페이지의 대기 시간이
+    // 셋의 합이 아니라 가장 느린 하나가 된다.
+    getFxStrip(),
     isChairman ? repo.getCheckin(today) : Promise.resolve(null),
   ])
 
@@ -141,6 +148,10 @@ export default async function AiPage(props: PageProps<'/ai'>) {
         />
         {isChairman ? <CheckinPanel date={today} initial={checkin} /> : null}
       </div>
+
+      {/* 환율 띠. 상단 3칸 아래 가로로 눕는다 — 옆에 끼우면 사이드바를 펼쳤을 때
+          상단 네 칸이 전부 좁아진다(fx-strip.tsx 머리 주석). 실패하면 아무것도 안 그린다. */}
+      <FxStrip data={fx} />
 
       <div className="mt-5 grid gap-6 min-[1025px]:grid-cols-[minmax(0,560px)_minmax(0,1fr)] min-[1025px]:gap-8">
         {/* 왼쪽 — 바뀌지 않는 것. 스크롤해도 따라온다.
