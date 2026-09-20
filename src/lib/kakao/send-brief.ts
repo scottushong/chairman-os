@@ -82,10 +82,17 @@ export async function sendKakaoBrief(opts: {
 
   // ② 만료가 가까우면 먼저 갱신한다. 갱신 자체가 실패하면 낡은 토큰으로 한 번 시도해 본다 —
   //    카카오의 만료 시각 계산과 우리 시계가 어긋났을 수 있고, 안 보내는 것보다 시도가 낫다.
+  //    refreshToken도 같이 들고 다닌다 — 카카오가 이 회차에 회전시켰으면(만료 한 달 미만)
+  //    ③의 재시도가 그 새 값을 써야 한다. 여기서 갱신했는데 ③에서 낡은 refresh_token으로
+  //    다시 시도하면, DB에는 이미 새 토큰이 있는데도 "이미 회전되어 무효한" 값으로 실패한다.
   let accessToken = token.access_token
+  let refreshToken = token.refresh_token
   if (Date.parse(token.expires_at) - Date.now() <= EARLY_REFRESH_MS) {
-    const refreshed = await tryRefresh(opts.sb, token.refresh_token)
-    if (refreshed) accessToken = refreshed
+    const refreshed = await tryRefresh(opts.sb, refreshToken)
+    if (refreshed) {
+      accessToken = refreshed.accessToken
+      refreshToken = refreshed.refreshToken
+    }
   }
 
   const text = buildKakaoBriefText({
@@ -96,10 +103,11 @@ export async function sendKakaoBrief(opts: {
   const linkUrl = `${config.appBaseUrl}/ai?date=${opts.runDate}`
 
   // ③ 보낸다. -401이면 토큰 문제이므로 한 번만 갱신하고 다시 시도한다.
+  //    refreshToken은 ②를 거쳤으면 그 회차의 최신값이다(회전이 없었으면 원래 값 그대로).
   let failure = await sendKakaoMemo({ accessToken, text, linkUrl })
   if (failure?.code === -401) {
-    const refreshed = await tryRefresh(opts.sb, token.refresh_token)
-    if (refreshed) failure = await sendKakaoMemo({ accessToken: refreshed, text, linkUrl })
+    const refreshed = await tryRefresh(opts.sb, refreshToken)
+    if (refreshed) failure = await sendKakaoMemo({ accessToken: refreshed.accessToken, text, linkUrl })
   }
 
   return await done(opts, failure ? { sent: false, error: failure.message } : { sent: true })
@@ -109,8 +117,17 @@ export async function sendKakaoBrief(opts: {
  * refresh 한 번. 실패는 삼킨다 — 호출부가 낡은 토큰으로 계속 가거나 발송 실패로 끝낸다.
  * 성공하면 0023 kakao_token_refreshed()로 되쓴다. AIAgent에게는 그 함수가 유일한 쓰기 길이고,
  * 그 함수는 행을 만들지 못한다 — 연결이 사라진 뒤 Job이 되살리는 일은 일어나지 않는다.
+ *
+ * refreshToken을 accessToken과 같이 돌려준다. 카카오가 이 회차에 새 refresh_token을 줬으면
+ * (만료 한 달 미만일 때만) 그 값을, 안 줬으면 넘겨받은 값을 그대로 — DB의 coalesce와 같은
+ * 규칙을 호출부의 로컬 변수에도 적용해서, 다음 호출이 이미 회전되어 무효해진 값을 다시
+ * 쓰는 일이 없게 한다. RPC에 보내는 p_refresh 자체는 여전히 next.refreshToken(회전 없으면
+ * null)이다 — kakao_token_refreshed()의 coalesce가 그 null에 기대고 있어서 여기서 채우지 않는다.
  */
-async function tryRefresh(sb: SupabaseClient, refreshToken: string): Promise<string | null> {
+async function tryRefresh(
+  sb: SupabaseClient,
+  refreshToken: string,
+): Promise<{ accessToken: string; refreshToken: string } | null> {
   try {
     const next = await refreshTokens(refreshToken)
     const { error } = await sb.rpc('kakao_token_refreshed', {
@@ -120,7 +137,7 @@ async function tryRefresh(sb: SupabaseClient, refreshToken: string): Promise<str
       p_refresh_expires: next.refreshExpiresAt,
     })
     if (error) console.error('[kakao] token write', error.code, error.message)
-    return next.accessToken
+    return { accessToken: next.accessToken, refreshToken: next.refreshToken ?? refreshToken }
   } catch (e) {
     console.error('[kakao] refresh', e instanceof Error ? e.message : String(e))
     return null
