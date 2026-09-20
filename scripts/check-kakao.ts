@@ -46,11 +46,21 @@ function len(s: string): number {
   assert.ok(text.endsWith('\n\n▶ 전문 보기'), '자르다가 꼬리를 잃었다')
 }
 
-// 4. 문장 단위로 자른다 — 들어갈 만큼만 넣되 최소 한 문장은 산다.
+// 4. 예산 초과로 문장을 자른다 — MAX_SENTENCES 제한이 아니라 문자 수 예산이 결정한다.
+//    S1(50) + S2(75)는 들어가지만 S1+S2+S3(60)는 예산을 초과해서 S3이 제외된다.
 {
-  const text = buildKakaoBriefText({ dDay: 'D-780', projectTitle: '회장직 승계', summary: LONG })
-  assert.ok(text.includes('첫 문장은'), '첫 문장이 통째로 사라졌다')
-  assert.ok(!text.includes('다섯 번째 문장은'), '200자 안에 다섯 문장이 들어갈 리 없다')
+  const s1 = '가'.repeat(50) + '.'
+  const s2 = '나'.repeat(75) + '.'
+  const s3 = '다'.repeat(60) + '.'
+
+  const text = buildKakaoBriefText({
+    dDay: 'D-1', projectTitle: 'A',
+    summary: `${s1} ${s2} ${s3}`,
+  })
+  assert.ok(text.includes('가'), 'S1이 들어가야 한다')
+  assert.ok(text.includes('나'), 'S2도 들어가야 한다')
+  assert.ok(!text.includes('다'), 'S3은 예산 초과로 제외되어야 한다')
+  assert.ok(len(text) <= KAKAO_TEXT_LIMIT, `${len(text)}자 — 200자를 넘었다`)
 }
 
 // 5. 세 문장을 넘기지 않는다 — 짧아서 들어가더라도.
@@ -79,4 +89,20 @@ function len(s: string): number {
   assert.ok(len(text) <= KAKAO_TEXT_LIMIT)
 }
 
-console.log('PASS: buildKakaoBriefText — 머리글 · 200자 · 문장 자르기 · 빈 요약')
+// 8. 첫 문장 자체가 예산을 초과하면 부분을 잘라 타원과 함께 보낸다 — 빈 본문보다는 반 문장이 낫다.
+{
+  const longTitle = '가'.repeat(170)
+  const summary = '첫 문장은 매우 길어서 예산을 초과합니다. 이 부분은 절대 들어갈 수 없습니다.'
+
+  const text = buildKakaoBriefText({
+    dDay: 'D-1',
+    projectTitle: longTitle,
+    summary,
+  })
+  assert.ok(text.includes('…'), '타원이 포함되어야 한다')
+  assert.ok(text.endsWith('\n\n▶ 전문 보기'), '꼬리가 있어야 한다')
+  assert.ok(len(text) <= KAKAO_TEXT_LIMIT, `${len(text)}자 — 200자를 넘었다`)
+  assert.ok(text.includes('…\n\n▶'), '타원이 본문 끝에 있어야 한다')
+}
+
+console.log('PASS: buildKakaoBriefText — 머리글 · 200자 · 문장 자르기 · 빈 요약 · 타원')
