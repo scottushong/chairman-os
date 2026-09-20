@@ -1,3 +1,5 @@
+import Link from 'next/link'
+
 import { signOut } from '@/app/actions/auth'
 import { DataModeBadge } from '@/components/layout/data-mode-badge'
 import { GlobalSearch } from '@/components/layout/global-search'
@@ -62,13 +64,16 @@ export async function Header({ user }: { user: SessionUser | null }) {
         <DataModeBadge />
         <NotificationButton count={12} tone="critical" />
         <NotificationButton count={5} tone="accent" />
-        <button
-          type="button"
+        {/* 설정 톱니. Phase 5-E 4절이 /settings 허브를 세우기 전까지 이 버튼은 onClick도
+            href도 없었다 — 갈 곳이 없어서 아무 데도 안 갔다. */}
+        <Link
+          href="/settings"
           aria-label="설정"
+          title="설정"
           className="rounded-md p-2 text-ink-dim transition-colors hover:bg-raised hover:text-ink"
         >
           <Icon name="settings" className="size-[18px]" />
-        </button>
+        </Link>
 
         <div className="ml-2 flex items-center gap-2.5 border-l border-line pl-3">
           <span className="flex size-8 items-center justify-center rounded-full bg-accent-soft text-[12px] font-bold text-ink">

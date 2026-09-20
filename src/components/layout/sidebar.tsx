@@ -92,24 +92,22 @@ export function Sidebar({ user }: { user: SessionUser | null }) {
         ))}
       </nav>
 
+      {/*
+       * Phase 5-E 1절에서 이 칸의 죽은 둘을 걷어냈다.
+       *
+       *   '기업(A,B,C) 추가'  onClick 없는 <button>이었다. 진짜 추가 버튼은 대시보드
+       *                        회사 카드 줄 끝에 이미 있고(dashboard-board.tsx의 '기업 추가'),
+       *                        거기서만 AddBusinessModal이 열린다. 사이드바의 것은 같은 말을
+       *                        하는 두 번째 버튼인데 한쪽만 동작했다.
+       *   '숨김 기업 관리'      <input>이 없는 가짜 토글이었다. 손잡이가 영영 왼쪽에 있고
+       *                        눌러도 움직이지 않는다. 숨김 관리는 대시보드의
+       *                        '숨김 N개 (데이터는 그대로 있습니다)' 줄이 실제로 하고 있다.
+       *
+       * 둘 다 되살리지 않는다 — 같은 일을 하는 자리가 이미 한 곳씩 있고, 둘로 만들면
+       * 다음에 고치는 사람이 한쪽만 고친다(DEFERRED.md Phase 5-E).
+       */}
       <div className="border-t border-line-soft p-2.5">
         <ProfileBlock user={user} />
-        <button
-          type="button"
-          className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-line py-2 text-[12px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
-        >
-          <Icon name="plus" className="size-4" />
-          기업(A,B,C) 추가
-        </button>
-        <label className="mt-2.5 flex cursor-pointer items-center gap-2 px-1 text-[11px] text-ink-muted">
-          {/* 트랙을 --color-line(흰색 85%)으로 두면 라이트 셸 위에서 1.22:1이라 사실상 안 보인다.
-              잉크를 30% 깔아 1.47:1로 올리고, 꺼짐을 알리는 대비는 손잡이가 진다 —
-              손잡이(ink-muted 솔리드)와 트랙이 3.22:1이라 WCAG 1.4.11(비텍스트 3:1)을 넘는다. */}
-          <span className="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full bg-ink-muted/30 transition-colors">
-            <span className="absolute left-0.5 size-3 rounded-full bg-ink-muted" />
-          </span>
-          숨김 기업 관리
-        </label>
       </div>
     </aside>
   )

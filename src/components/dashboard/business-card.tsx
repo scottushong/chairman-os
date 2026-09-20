@@ -119,13 +119,9 @@ export function BusinessCard({
         >
           <Icon name="eye" className="size-3.5" />
         </button>
-        <button
-          type="button"
-          aria-label={`${business.name} 메뉴`}
-          className="rounded-md p-1 text-ink-muted transition-colors hover:bg-raised hover:text-ink"
-        >
-          <Icon name="more" className="size-3.5" />
-        </button>
+        {/* '더보기(⋯)' 버튼을 뺐다 (Phase 5-E 1절). onClick이 없어 메뉴가 열리지 않았고,
+            열 메뉴도 없었다 — 이 카드가 할 수 있는 일은 핀·숨김·상세 보기 셋뿐이고
+            셋 다 이미 각자의 자리에 있다. 카드가 늘어나는 날 다시 세운다. */}
       </div>
 
       {/* 회사명은 자르지 않고 두 줄까지 접는다. 두 줄 높이를 늘 잡아 둬야 다섯 장의 숫자 줄이 맞는다. */}

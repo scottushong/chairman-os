@@ -317,8 +317,13 @@ export function DashboardBoard({
       <FinanceTrend kpis={financeKpis} businessIds={shown.map((b) => b.business_id)} />
 
 
-      {/* 재배치(P5-2 Step 3): 회사 카드 줄 → KpiStrip. FinanceTrend는 위 히어로로 옮겼다. */}
-      <KpiStrip kpis={financeKpis} businessIds={shown.map((b) => b.business_id)} />
+      {/* 재배치(P5-2 Step 3): 회사 카드 줄 → KpiStrip. FinanceTrend는 위 히어로로 옮겼다.
+          id는 상단 탭 '중요 지표'가 내려오는 자리다(Phase 5-E 1-1절). KpiStrip 안이 아니라
+          여기에 거는 이유는 그 컴포넌트가 회사 한 곳 화면(CH-023)에서도 쓰이기 때문이다 —
+          안에 박아 두면 같은 id가 한 문서에 둘 생긴다. */}
+      <div id="kpi-strip" className="scroll-mt-4">
+        <KpiStrip kpis={financeKpis} businessIds={shown.map((b) => b.business_id)} />
+      </div>
 
       {adding ? <AddBusinessModal onClose={() => setAdding(false)} onCreate={create} /> : null}
     </div>

@@ -3,6 +3,7 @@ import { AlertPanel } from '@/components/dashboard/alert-panel'
 import { ClockWeatherCard } from '@/components/dashboard/clock-weather-card'
 import { CriticalBanner } from '@/components/dashboard/critical-banner'
 import { DashboardBoard } from '@/components/dashboard/dashboard-board'
+import { DashboardTabs } from '@/components/dashboard/dashboard-tabs'
 import { DdayHero } from '@/components/dashboard/dday-hero'
 import { DecisionPanel } from '@/components/dashboard/decision-panel'
 import { InitiativeStat } from '@/components/dashboard/initiative-stat'
@@ -26,8 +27,6 @@ import { getCurrentLocationWeather } from '@/lib/weather'
  * 어느 어댑터로 붙는지(시드냐 Supabase냐)는 getRepository()만 안다 —
  * 이 파일도, 아래 컴포넌트도 그걸 알 필요가 없다.
  */
-
-const TABS = ['전체 요약', '중요 지표', '예산 vs 실적', '리스크', 'AI 요약'] as const
 
 export default async function DashboardPage() {
   const repo = await getRepository()
@@ -72,7 +71,7 @@ export default async function DashboardPage() {
   )
 
   return (
-    <div className="mx-auto max-w-[1600px] px-6 py-5">
+    <div id="dash-top" className="mx-auto max-w-[1600px] px-6 py-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-wrap items-end gap-x-5 gap-y-2">
           <div>
@@ -90,34 +89,18 @@ export default async function DashboardPage() {
               InitiativeStat은 남긴다 — 이건 '이니셔티브 센 수'로 DdayHero와 다른 내용이다. */}
           <InitiativeStat initiatives={initiatives} today={todayIso} />
         </div>
+        {/* '월간 ▾' 알약을 뺐다 (Phase 5-E 1절). 기간을 고르는 버튼이었는데 고를 대상이
+            없었다 — 이 화면의 숫자는 전부 당월 고정이고(KpiStrip period), 기간 선택은
+            CH-027이 붙을 때 오는 것이다. 누르면 아무 일도 없는 드롭다운 표식은
+            '이 화면은 눌러도 안 된다'를 매일 가르친다. */}
         <div className="flex items-center gap-3">
           <span className="text-[12px] text-ink-dim tnum">{today}</span>
-          <button
-            type="button"
-            className="flex items-center gap-1.5 rounded-md border border-line bg-panel px-3 py-1.5 text-[12px] text-ink-dim transition-colors hover:text-ink"
-          >
-            월간
-            <Icon name="chevron-down" className="size-3.5" />
-          </button>
         </div>
       </div>
 
-      <div className="mt-4 flex gap-1 border-b border-line-soft">
-        {TABS.map((tab, i) => (
-          <button
-            key={tab}
-            type="button"
-            className={[
-              'rounded-t-md px-4 py-2 text-[13px] transition-colors',
-              i === 0
-                ? 'bg-panel font-semibold text-ink'
-                : 'text-ink-muted hover:bg-panel/60 hover:text-ink-dim',
-            ].join(' ')}
-          >
-            {tab}
-          </button>
-        ))}
-      </div>
+      {/* 상단 탭. 앵커로 스크롤하거나 /ai로 간다 — 자리 안내지 화면 전환이 아니다.
+          목록과 동작은 components/dashboard/dashboard-tabs.tsx 한 곳에 있다. */}
+      <DashboardTabs />
 
       {/* CH-018 Acceptance는 'Critical rule 즉시 상단 노출'이다. 아래 결정·대기·알림 3장은
           히어로·KPI 8타일·12개월 차트를 지나야 나와 스크롤해야 보인다 —
@@ -192,7 +175,9 @@ export default async function DashboardPage() {
           <WaitingOnMe tasks={data.tasks} projects={data.projects} businesses={data.businesses} />
         </div>
 
-        <div className="h-[268px]">
+        {/* 상단 탭 '리스크'가 내려오는 자리. scroll-mt는 스크롤 컨테이너(<main>)의
+            위쪽 여백이다 — 없으면 카드 머리가 화면 맨 끝에 딱 붙어 잘린 것처럼 보인다. */}
+        <div id="alert-panel" className="h-[268px] scroll-mt-4">
           <AlertPanel
             alerts={data.alerts}
             decisions={data.decisions}
