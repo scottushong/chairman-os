@@ -79,3 +79,59 @@ export function buildKakaoBriefText(input: BriefTextInput): string {
 
   return body ? `${safeHead}\n\n${body}\n\n${TAIL}` : `${safeHead}\n\n${TAIL}`
 }
+
+/**
+ * 카카오톡 '나에게 보내기'. 텍스트 템플릿 하나만 쓴다.
+ *
+ * 성공은 { result_code: 0 }이고, 실패는 HTTP 200으로도 온다 — 그래서 res.ok만 보지 않는다.
+ * 자주 보게 될 코드:
+ *   -401  토큰이 만료·무효 (호출부가 refresh로 한 번 되살려 본다)
+ *   -402  talk_message 동의가 없다 (사람이 다시 연결해야 한다. refresh로는 안 고쳐진다)
+ */
+export interface KakaoSendFailure {
+  /** 카카오가 준 code. HTTP 계층에서 실패하면 null. */
+  code: number | null
+  message: string
+}
+
+export async function sendKakaoMemo(opts: {
+  accessToken: string
+  text: string
+  /** '전문 보기' 버튼과 텍스트 링크가 가리킬 절대 주소. */
+  linkUrl: string
+}): Promise<KakaoSendFailure | null> {
+  const templateObject = {
+    object_type: 'text',
+    text: opts.text,
+    link: { web_url: opts.linkUrl, mobile_web_url: opts.linkUrl },
+    button_title: '전문 보기',
+  }
+
+  let res: Response
+  try {
+    res = await fetch('https://kapi.kakao.com/v2/api/talk/memo/default/send', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${opts.accessToken}`,
+        'content-type': 'application/x-www-form-urlencoded;charset=utf-8',
+      },
+      body: new URLSearchParams({ template_object: JSON.stringify(templateObject) }),
+      cache: 'no-store',
+    })
+  } catch (e) {
+    return { code: null, message: `카카오 호출 실패: ${e instanceof Error ? e.message : String(e)}` }
+  }
+
+  const json = (await res.json().catch(() => ({}))) as {
+    result_code?: number
+    code?: number
+    msg?: string
+  }
+  if (res.ok && json.result_code === 0) return null
+  return {
+    code: json.code ?? null,
+    message: `카카오 발송 실패 (HTTP ${res.status}, code ${json.code ?? '?'}) ${json.msg ?? ''}`
+      .trim()
+      .slice(0, 500),
+  }
+}
