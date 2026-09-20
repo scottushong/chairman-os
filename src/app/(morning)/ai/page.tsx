@@ -236,7 +236,7 @@ export default async function AiPage(props: PageProps<'/ai'>) {
 
             {dates.length === 0 ? (
               <p className="mt-4 text-[12.5px] text-ink-muted">
-                아직 브리핑이 없습니다. 첫 Cron은 오늘 07:00(KST)에 돕니다.
+                아직 브리핑이 없습니다. 첫 Cron은 오늘 7시쯤(7~8시 사이)에 돕니다.
               </p>
             ) : (
               <div className="mt-3">
