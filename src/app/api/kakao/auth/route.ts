@@ -20,6 +20,9 @@ export const dynamic = 'force-dynamic'
 export async function GET() {
   const user = await currentUser()
   if (!user || user.role !== 'Chairman') {
+    // 여기서만 JSON 403이고 아래(config)부터는 리다이렉트다 — 이 분기는 회장의 '카카오 연결'
+    // 버튼을 거치지 않은 흐름 밖 직접 호출에서만 뜬다. 그 아래는 전부 회장이 방금 그 버튼을
+    // 눌러 자기 브라우저에서 도는 흐름이라, 결과가 /settings/chairman 화면에 문장으로 그려져야 한다.
     return NextResponse.json({ error: '카카오 연결은 Chairman만 할 수 있습니다.' }, { status: 403 })
   }
 
@@ -29,9 +32,11 @@ export async function GET() {
     url = authorizeUrl(state)
   } catch (e) {
     // 환경변수가 빠진 채로 카카오에 가면 KOE006이 뜬다. 우리 화면에서 우리 말로 말한다.
-    const reason = e instanceof Error ? e.message : String(e)
+    // 원인 문자열은 서버 로그에만 남긴다 — kakao-connect.tsx의 NOTICE['config']는 고정 문구라
+    // 쿼리스트링에 실어 봐야 아무도 읽지 않고, 회장의 주소창에 내부 메시지만 남는다.
+    console.error('[kakao] authorizeUrl', e instanceof Error ? e.message : String(e))
     return NextResponse.redirect(
-      new URL(`/settings/chairman?kakao=config&reason=${encodeURIComponent(reason)}`, process.env.APP_BASE_URL ?? 'http://localhost:3000'),
+      new URL('/settings/chairman?kakao=config', process.env.APP_BASE_URL ?? 'http://localhost:3000'),
     )
   }
 

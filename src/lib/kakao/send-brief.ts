@@ -48,8 +48,8 @@ export async function sendKakaoBrief(opts: {
   actorUserId: string
   actorRole: 'AIAgent' | 'Chairman'
   runDate: IsoDate
-  /** 그룹 브리핑 summary 전문. 앞 2~3문장만 나간다. */
-  summary: string
+  /** 그룹 브리핑 summary 전문. 앞 2~3문장만 나간다. 그룹 브리핑 자체가 없으면(생성 실패) null. */
+  summary: string | null
   /** 'D-780'. 진행 중인 장기 프로젝트가 없으면 null. */
   dDay: string | null
   projectTitle: string | null
@@ -60,6 +60,13 @@ export async function sendKakaoBrief(opts: {
   if (!config) {
     return await done(opts, { sent: false, skipped: '카카오 환경변수가 없다' })
   }
+
+  // night-brief.ts는 그룹 브리핑이 실패해도(groupBrief === null) cron이면 이 함수를 부른다 —
+  // 그래야 "왜 카톡이 안 왔지"에 audit_log가 답한다. 보낼 내용이 없으니 여기서 skipped로 끝낸다.
+  if (!opts.summary || !opts.summary.trim()) {
+    return await done(opts, { sent: false, skipped: '그룹 브리핑이 없다' })
+  }
+  const summary = opts.summary
 
   // ① 토큰. 0023의 keyhole 하나가 유일한 길이다.
   const { data, error } = await opts.sb.rpc('kakao_token_for_send')
@@ -98,7 +105,7 @@ export async function sendKakaoBrief(opts: {
   const text = buildKakaoBriefText({
     dDay: opts.dDay,
     projectTitle: opts.projectTitle,
-    summary: opts.summary,
+    summary,
   })
   const linkUrl = `${config.appBaseUrl}/ai?date=${opts.runDate}`
 

@@ -217,6 +217,24 @@ async function rls(db: Db) {
   )
   assert.equal(await as(UID.integration, `insert into audit_log (actor_user_id, action, entity_table) values ('${UID.integration}', 'ecount_sync_completed', 'journal_lines')`), 1)
   assert.equal(await as(UID.integration, `insert into audit_log (actor_user_id, action, entity_table) values ('${UID.integration}', 'update', 'journal_lines')`), 'denied')
+  // 0024 — AIAgent가 직접(security definer 함수를 거치지 않고) audit_log에 쓰는 애플리케이션 경로.
+  // send-brief.ts의 done()이 매일 07:00에 이 문장을 던진다. 0023이 kakao_sent/kakao_failed를
+  // 늘렸는데 이 정책만 못 따라가면 여기서 'denied'가 나야 할 자리에 통과가, 혹은 그 반대가 난다.
+  assert.equal(
+    await as(UID.agent, `insert into audit_log (actor_user_id, action, entity_table) values ('${UID.agent}', 'kakao_failed', 'chairman_kakao_token')`),
+    1,
+    '0024: AIAgent가 kakao_failed를 audit_log에 못 남긴다',
+  )
+  assert.equal(
+    await as(UID.agent, `insert into audit_log (actor_user_id, action, entity_table) values ('${UID.agent}', 'kakao_sent', 'chairman_kakao_token')`),
+    1,
+    '0024: AIAgent가 kakao_sent를 audit_log에 못 남긴다',
+  )
+  assert.equal(
+    await as(UID.agent, `insert into audit_log (actor_user_id, action, entity_table) values ('${UID.agent}', 'create', 'chairman_kakao_token')`),
+    'denied',
+    '0024: AIAgent가 임의 action(create)으로 audit_log에 쓸 수 있다',
+  )
 
   // AIAgent — 읽기만
   assert.equal(await as(UID.agent, 'select count(*)::int from finance_kpis'), total)

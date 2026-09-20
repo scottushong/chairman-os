@@ -63,7 +63,7 @@ export function KakaoConnect({
   const router = useRouter()
   const [sending, setSending] = useState(false)
   const [, startTransition] = useTransition()
-  const [result, setResult] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null)
+  const [result, setResult] = useState<{ tone: 'ok' | 'warn' | 'error'; text: string } | null>(null)
 
   const banner = notice ? NOTICE[notice] : undefined
   const expired = connection ? Date.parse(connection.refresh_expires_at) <= Date.parse(now) : false
@@ -76,10 +76,14 @@ export function KakaoConnect({
     try {
       const res = await fetch('/api/kakao/test', { method: 'POST' })
       const body = (await res.json().catch(() => ({}))) as { sent?: boolean; skipped?: string; error?: string }
+      // skipped(연결 없음·동의 없음·만료)와 error(발송 자체 실패)는 회장이 할 일이 다르다 —
+      // skipped는 다시 연결하면 되고, error는 잠시 뒤 재시도할 일이다. 그래서 tone도 나눈다.
       setResult(
         body.sent
           ? { tone: 'ok', text: '보냈습니다. 카카오톡을 확인해 주세요.' }
-          : { tone: 'error', text: body.skipped ?? body.error ?? `발송 실패 (HTTP ${res.status})` },
+          : body.skipped
+            ? { tone: 'warn', text: body.skipped }
+            : { tone: 'error', text: body.error ?? `발송 실패 (HTTP ${res.status})` },
       )
       startTransition(() => router.refresh())
     } catch (e) {

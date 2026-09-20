@@ -106,8 +106,10 @@ Settings → Environment Variables에서 아래를 넣고, 각 변수의 Environ
 - Preview는 기본적으로 production 브랜치가 아닌 **모든 브랜치**에 붙는다. 특정 브랜치만 원하면
   변수에 Branch를 지정한다.
 - **Preview에는 카카오 환경변수를 넣지 않는다.** 카카오 콘솔에 등록된 Redirect URI는 고정된 둘
-  (production, localhost)뿐인데 Preview는 배포마다 호스트가 바뀐다. 변수가 없으면
-  연결 버튼도 나타나지 않고, 야간 Job은 `skipped: 카카오 환경변수가 없다`로 조용히 지나간다.
+  (production, localhost)뿐인데 Preview는 배포마다 호스트가 바뀐다. 변수가 없어도 화면에는
+  연결 버튼이 그대로 뜬다 — `/settings/chairman`은 env를 보고 버튼을 숨기지 않는다.
+  눌러 보면 `/api/kakao/auth`가 `?kakao=config`로 돌려보낸다(설계대로다. 변수가 없어서
+  못 가는 것이지 버그가 아니다). 야간 Job은 `skipped: 카카오 환경변수가 없다`로 조용히 지나간다.
   카카오까지 테스트하려면 별도 카카오 앱과 고정 Preview URL이 필요하다(DEFERRED).
 - **Vercel Cron은 Production 배포에서만 돈다.** Preview에서 아침 브리핑은 저절로 돌지 않는다.
   staging에서 보려면 손으로 부른다:

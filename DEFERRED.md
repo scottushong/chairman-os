@@ -757,7 +757,7 @@ production에서 같은 속도라는 보장이 없다.
 ## Phase 3-C — 카톡 아침 알림 (2026-09-20)
 
 - **토큰 표를 Chairman에게도 열지 않았다.** 0019 chairman_checkins는 표를 Chairman에게 열고
-  AIAgent에게만 keyhole을 줬다. 여기서는 아무에게도 안 열고 security definer 함수 넷만 문으로 뒀다.
+  AIAgent에게만 keyhole을 줬다. 여기서는 아무에게도 안 열고 security definer 함수 다섯만 문으로 뒀다.
   버린 선택지: 0019와 같은 모양(Chairman은 표 직접 읽기). 담긴 것이 건강 기록이 아니라 외부 계정의
   bearer 자격증명이라 — 새 나가면 남이 회장 이름으로 카톡을 보낸다 — 값을 읽는 코드 경로를 하나라도
   더 만들지 않았다.

@@ -48,7 +48,11 @@ export interface NightBriefReport {
   done: number
   failed: number
   rows: { output_id: string; business_id: string | null; status: 'Done' | 'Failed'; error?: string }[]
-  /** Job 자체가 시작도 못 했을 때(로그인 실패 등). 회사별 실패는 rows에 있다. */
+  /**
+   * Job 진입 단계(로그인 등)에서 던진 예외가 여기 실린다. 회사별 실패는 rows에 있다.
+   * 오늘은 이 값이 로그인 실패로만 채워지지만, 바깥 catch가 있는 한 이후 단계의 예상 못한
+   * throw도 이론적으로는 여기로 온다 — "Job이 시작도 못 했다"는 보증까지는 아니다.
+   */
   error?: string
 }
 
@@ -234,8 +238,13 @@ export async function runNightBrief(opts: {
      *
      * report에 싣지 않는 이유: report는 브리핑이 몇 건 남았나를 말하는 값이다.
      * 카톡 성패는 audit_log(kakao_sent / kakao_failed)에서 본다.
+     *
+     * groupBrief가 null이어도(그룹 브리핑 생성 실패) cron이면 그대로 부른다 — sendKakaoBrief가
+     * summary === null을 '그룹 브리핑이 없다'는 skipped로 audit_log에 남긴다. 여기서 안 부르고
+     * 조용히 넘어가면 카톡도 안 오고 감사 행도 안 남아서, 최악의 아침에 "왜 카톡이 안 왔지"에
+     * 답할 자리가 없어진다.
      */
-    if (opts.trigger === 'cron' && groupBrief) {
+    if (opts.trigger === 'cron') {
       // 화면과 같은 고르기다 — orderProjects가 목표일이 가까운 Active를 맨 앞에 둔다.
       const lead = chairman?.projects[0] ?? null
       await sendKakaoBrief({
@@ -243,7 +252,7 @@ export async function runNightBrief(opts: {
         actorUserId: agentId,
         actorRole: 'AIAgent',
         runDate: run_date,
-        summary: groupBrief.summary,
+        summary: groupBrief?.summary ?? null,
         dDay: lead?.d_day ?? null,
         projectTitle: lead?.title ?? null,
         trigger: 'cron',
