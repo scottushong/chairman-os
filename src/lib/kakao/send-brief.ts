@@ -108,7 +108,17 @@ export async function sendKakaoBrief(opts: {
   /** audit_log의 actor. 세션 주인의 user_id다. */
   actorUserId: string
   actorRole: 'AIAgent' | 'Chairman'
+  /**
+   * 브리핑 행의 날짜(KST). 링크(/ai?date=)와 감사 기록의 entity_id가 이것이다 —
+   * ai_night_outputs.run_date가 KST라서 그 축을 그대로 따라간다(0029 머리 주석).
+   */
   runDate: IsoDate
+  /**
+   * 회장 현지 날짜 (Phase 3-C 현지 시간). 메시지의 월요일 줄이 이 값으로 판정되고,
+   * 감사 기록에도 같이 남는다. 대개 runDate와 같지만 같다는 보장이 없다 —
+   * 보장 없는 것을 같다고 쓰는 자리가 이 저장소에서 가장 자주 틀렸다.
+   */
+  localDate: IsoDate
   /** 그룹 브리핑 summary 전문. 앞 2~3문장만 나간다. 그룹 브리핑 자체가 없으면(생성 실패) null. */
   summary: string | null
   /** 'D-780'. 진행 중인 장기 프로젝트가 없으면 null. */
@@ -167,7 +177,10 @@ export async function sendKakaoBrief(opts: {
     dDay: opts.dDay,
     projectTitle: opts.projectTitle,
     summary,
-    runDate: opts.runDate,
+    // 월요일 줄은 **회장이 있는 곳의 월요일**에 붙는다. 링크는 여전히 runDate(KST)다 —
+    // /ai의 날짜 축이 ai_night_outputs.run_date이기 때문이다. 두 날짜가 서로 다른 것을
+    // 가리킨다는 사실을 여기서 한 번 드러내 둔다.
+    localDate: opts.localDate,
   })
   const linkUrl = `${config.appBaseUrl}/ai?date=${opts.runDate}`
 
@@ -228,7 +241,14 @@ async function tryRefresh(
  * 답할 자리가 없어진다.
  */
 async function done(
-  opts: { sb: SupabaseClient; actorUserId: string; actorRole: string; runDate: IsoDate; trigger: string },
+  opts: {
+    sb: SupabaseClient
+    actorUserId: string
+    actorRole: string
+    runDate: IsoDate
+    localDate: IsoDate
+    trigger: string
+  },
   result: KakaoSendResult,
 ): Promise<KakaoSendResult> {
   const note = result.sent
@@ -242,7 +262,15 @@ async function done(
     entity_table: 'chairman_kakao_token',
     entity_id: opts.runDate,
     // 토큰은 여기 실리지 않는다. 실린 적 없는 값은 감사 기록을 읽는 사람에게도 새지 않는다.
-    after: { run_date: opts.runDate, trigger: opts.trigger, sent: result.sent, reason: result.skipped ?? result.error ?? null },
+    after: {
+      run_date: opts.runDate,
+      // 현지 날짜를 같이 남긴다. "지난주 화요일에 카톡이 왔던가"를 회장이 있던 곳의
+      // 날짜로 물을 수 있어야 한다 — 감사 기록만 KST면 그 질문에 답이 안 나온다.
+      local_date: opts.localDate,
+      trigger: opts.trigger,
+      sent: result.sent,
+      reason: result.skipped ?? result.error ?? null,
+    },
     note,
   })
   if (error) console.error('[kakao] audit', error.code, error.message)

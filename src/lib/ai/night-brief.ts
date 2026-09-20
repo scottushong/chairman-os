@@ -59,9 +59,19 @@ export interface NightBriefReport {
 const GROUP_KEY = 'group'
 
 /**
- * 07:00 KST에 돌아 '오늘'을 요약한다(Phase 3-C 이전에는 23:00에 돌아 그날을 요약했다).
- * UTC 날짜를 쓰면 09:00 KST 전에 도는 이 Job이 늘 어제로 찍힌다 — 07:00은 그 구간 안이라
- * 옮긴 뒤로 이 함수가 더 중요해졌다.
+ * 브리핑 행의 날짜. **KST 그대로 둔다** (Phase 3-C 현지 시간에서 한 번 다시 판단한 자리다).
+ *
+ * 발송 시각은 회장 현지 06:00으로 옮겼지만 이 값은 옮기지 않았다. ai_night_outputs.run_date는
+ * /ai의 날짜 축이고 artifact_link(`/ai?date=`)의 키이며, 회계·마감이 쓰는 '오늘'(kstToday)과
+ * 같은 눈금 위에 있어야 하는 값이다. 그 눈금은 그룹의 장부가 도는 서울 시간이고, 회장이
+ * 어디 있느냐로 장부 날짜가 흔들리면 지난 브리핑 이력이 어느 날 하루씩 어긋난다.
+ *
+ * 현지 날짜가 필요한 곳은 셋이고 전부 따로 받는다 — 발송 판정(틱), 중복 방지(0029
+ * chairman_brief_sends), 카톡 메시지의 월요일 줄(lib/kakao/message.ts localDate).
+ *
+ * UTC 날짜를 쓰지 않는 이유는 그대로다. 09:00 KST 전에 도는 회차가 늘 어제로 찍힌다 —
+ * 회장이 서울 바깥에 있으면 이 Job은 KST 새벽에도 돈다(뉴욕 06:00 = 19:00 KST, 시드니
+ * 06:00 = 04:00 KST)라 옮긴 뒤로 이 함수가 더 중요해졌다.
  */
 export function kstDate(now = new Date()): IsoDate {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(now)
@@ -88,6 +98,16 @@ export async function runNightBrief(opts: {
   trigger: NightBriefTrigger
   requestedBy?: string
   now?: Date
+  /**
+   * Phase 3-C 현지 시간. 틱이 판정한 회장의 시간대와 그곳의 오늘 날짜다.
+   * cron 틱으로 들어올 때만 온다 — /ai의 '수동 실행'(POST)에는 없다.
+   *
+   * 이 값이 있으면 Job은 마지막에 0029 chairman_brief_send_record()로 **그 현지 날짜를
+   * 장부에 적는다.** 그 행의 존재가 다음 틱의 '오늘은 이미 끝났다'이고, 곧 중복 발송을
+   * 막는 유일한 장치다. 없으면 적지 않는다 — 수동 실행이 장부를 건드리면 회장이 낮에
+   * 버튼 한 번 누른 것으로 다음 날 아침이 조용히 사라진다.
+   */
+  local?: { timezone: string; localDate: IsoDate }
 }): Promise<NightBriefReport> {
   const now = opts.now ?? new Date()
   const run_id = newRunId(now)
@@ -247,16 +267,43 @@ export async function runNightBrief(opts: {
     if (opts.trigger === 'cron') {
       // 화면과 같은 고르기다 — orderProjects가 목표일이 가까운 Active를 맨 앞에 둔다.
       const lead = chairman?.projects[0] ?? null
-      await sendKakaoBrief({
+      // local이 없는 회차(옛 경로)는 KST 날짜를 현지 날짜로 쓴다. 두 값이 다를 수 있다는
+      // 것을 아는 자리가 여기 하나뿐이라, 그 사실을 이 줄이 드러내 둔다.
+      const localDate = opts.local?.localDate ?? run_date
+      const sendResult = await sendKakaoBrief({
         sb,
         actorUserId: agentId,
         actorRole: 'AIAgent',
         runDate: run_date,
+        localDate,
         summary: groupBrief?.summary ?? null,
         dDay: lead?.d_day ?? null,
         projectTitle: lead?.title ?? null,
         trigger: 'cron',
       })
+
+      /**
+       * 장부에 그 현지 날짜를 적는다 (Phase 3-C 현지 시간, 0029).
+       *
+       * **발송 성공 여부와 무관하게 적는다.** 카카오가 연결되지 않은 날도 그날 아침 Job은
+       * 끝난 날이다 — 안 적으면 06~10시의 틱이 매시 회사 다섯 곳 + 그룹 = 여섯 번의
+       * 모델 호출을 다시 돌린다. 가장 조용하고 가장 비싼 실패다.
+       *
+       * 실패해도 던지지 않는다(sendKakaoBrief와 같은 절제다). 대신 서버 로그에 남긴다 —
+       * 이 기록이 안 되면 다음 틱이 같은 날 것을 한 번 더 보낼 수 있고, 그 중복은
+       * 아무것도 안 오는 것보다는 낫다.
+       */
+      if (opts.local) {
+        const { error: ledgerError } = await sb.rpc('chairman_brief_send_record', {
+          p_local_date: opts.local.localDate,
+          p_timezone: opts.local.timezone,
+          p_sent: sendResult.sent,
+          p_reason: sendResult.sent ? '' : (sendResult.skipped ?? sendResult.error ?? '원인 미상'),
+        })
+        if (ledgerError) {
+          console.error('[night-brief] brief-send ledger', ledgerError.code, ledgerError.message)
+        }
+      }
     }
   } catch (e) {
     report.error = errorText(e)

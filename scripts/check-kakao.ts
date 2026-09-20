@@ -28,7 +28,7 @@ function len(s: string): number {
     dDay: 'D-780',
     projectTitle: '회장직 승계',
     summary: '오늘은 조용하다.',
-    runDate: TUE,
+    localDate: TUE,
   })
   assert.ok(text.startsWith('☀️ D-780 · 회장직 승계\n\n'), `머리글이 다르다: ${JSON.stringify(text)}`)
   assert.ok(text.endsWith('\n\n▶ 전문 보기'), `꼬리가 다르다: ${JSON.stringify(text)}`)
@@ -41,7 +41,7 @@ function len(s: string): number {
     dDay: null,
     projectTitle: null,
     summary: '오늘은 조용하다.',
-    runDate: TUE,
+    localDate: TUE,
   })
   assert.ok(text.startsWith('☀️ 오늘의 브리핑\n\n'), `프로젝트 없을 때 머리글이 다르다: ${JSON.stringify(text)}`)
   assert.ok(!text.includes('null'), 'null이 문자열로 샜다')
@@ -53,7 +53,7 @@ function len(s: string): number {
     dDay: 'D-780',
     projectTitle: '회장직 승계',
     summary: LONG,
-    runDate: TUE,
+    localDate: TUE,
   })
   assert.ok(len(text) <= KAKAO_TEXT_LIMIT, `${len(text)}자 — 200자를 넘었다`)
   assert.ok(text.startsWith('☀️ D-780 · 회장직 승계\n\n'), '자르다가 머리글을 잃었다')
@@ -70,7 +70,7 @@ function len(s: string): number {
   const text = buildKakaoBriefText({
     dDay: 'D-1', projectTitle: 'A',
     summary: `${s1} ${s2} ${s3}`,
-    runDate: TUE,
+    localDate: TUE,
   })
   assert.ok(text.includes('가'), 'S1이 들어가야 한다')
   assert.ok(text.includes('나'), 'S2도 들어가야 한다')
@@ -83,7 +83,7 @@ function len(s: string): number {
   const text = buildKakaoBriefText({
     dDay: 'D-1', projectTitle: 'A',
     summary: '하나. 둘. 셋. 넷.',
-    runDate: TUE,
+    localDate: TUE,
   })
   assert.ok(text.includes('셋.'), '세 문장은 들어가야 한다')
   assert.ok(!text.includes('넷.'), '네 번째 문장까지 넣었다')
@@ -93,7 +93,7 @@ function len(s: string): number {
 {
   const text = buildKakaoBriefText({
     dDay: 'D-9999', projectTitle: '가'.repeat(180), summary: LONG,
-    runDate: TUE,
+    localDate: TUE,
   })
   assert.ok(len(text) <= KAKAO_TEXT_LIMIT, `${len(text)}자 — 긴 제목에서 200자를 넘었다`)
   assert.ok(text.endsWith('\n\n▶ 전문 보기'), '긴 제목에서 꼬리를 잃었다')
@@ -101,7 +101,7 @@ function len(s: string): number {
 
 // 7. 요약이 비어도 보낼 것이 남는다 — 링크를 여는 것이 이 메시지의 목적이다.
 {
-  const text = buildKakaoBriefText({ dDay: 'D-3', projectTitle: 'A', summary: '   ', runDate: TUE })
+  const text = buildKakaoBriefText({ dDay: 'D-3', projectTitle: 'A', summary: '   ', localDate: TUE })
   assert.ok(text.includes('요약을 만들지 못했습니다'), `빈 요약 문구가 다르다: ${JSON.stringify(text)}`)
   assert.ok(len(text) <= KAKAO_TEXT_LIMIT)
 }
@@ -115,7 +115,7 @@ function len(s: string): number {
     dDay: 'D-1',
     projectTitle: longTitle,
     summary,
-    runDate: TUE,
+    localDate: TUE,
   })
   assert.ok(text.includes('…'), '타원이 포함되어야 한다')
   assert.ok(text.endsWith('\n\n▶ 전문 보기'), '꼬리가 있어야 한다')
@@ -126,7 +126,7 @@ function len(s: string): number {
 // 9. 월요일이면 리뷰 줄이 맨 앞에 온다. 4-C 주간 리뷰가 들어올 자리다.
 {
   const text = buildKakaoBriefText({
-    dDay: 'D-780', projectTitle: '회장직 승계', summary: '오늘은 조용하다.', runDate: MON,
+    dDay: 'D-780', projectTitle: '회장직 승계', summary: '오늘은 조용하다.', localDate: MON,
   })
   assert.ok(
     text.startsWith(`${MONDAY_REVIEW_LINE}\n\n☀️ D-780 · 회장직 승계\n\n`),
@@ -140,7 +140,7 @@ function len(s: string): number {
 {
   for (const day of ['2026-09-20', TUE, '2026-09-26']) {
     const text = buildKakaoBriefText({
-      dDay: 'D-780', projectTitle: '회장직 승계', summary: '오늘은 조용하다.', runDate: day,
+      dDay: 'D-780', projectTitle: '회장직 승계', summary: '오늘은 조용하다.', localDate: day,
     })
     assert.ok(!text.includes(MONDAY_REVIEW_LINE), `${day}에 리뷰 줄이 붙었다`)
     assert.ok(text.startsWith('☀️ D-780'), `${day} 머리글이 다르다: ${JSON.stringify(text)}`)
@@ -154,10 +154,10 @@ function len(s: string): number {
 {
   const flood = '가'.repeat(300) + '.'
   const mon = buildKakaoBriefText({
-    dDay: 'D-780', projectTitle: '회장직 승계', summary: flood, runDate: MON,
+    dDay: 'D-780', projectTitle: '회장직 승계', summary: flood, localDate: MON,
   })
   const tue = buildKakaoBriefText({
-    dDay: 'D-780', projectTitle: '회장직 승계', summary: flood, runDate: TUE,
+    dDay: 'D-780', projectTitle: '회장직 승계', summary: flood, localDate: TUE,
   })
 
   assert.ok(len(mon) <= KAKAO_TEXT_LIMIT, `월요일 ${len(mon)}자 — 200자를 넘었다`)

@@ -31,8 +31,14 @@ export interface BriefTextInput {
   projectTitle: string | null
   /** 그룹 브리핑 summary 전문. 여기서 앞 2~3문장만 뽑아 쓴다. */
   summary: string
-  /** 'YYYY-MM-DD', KST 기준. 월요일이면 맨 앞에 MONDAY_REVIEW_LINE이 붙는다. */
-  runDate: string
+  /**
+   * 'YYYY-MM-DD', **회장 현지 날짜**. 월요일이면 맨 앞에 MONDAY_REVIEW_LINE이 붙는다.
+   *
+   * Phase 3-C 현지 시간 이전에는 이 자리가 KST 날짜(runDate)였다. 알림이 회장 현지 06시로
+   * 옮겨 간 뒤로 '월요일 아침'은 회장이 있는 곳의 월요일이다 — 뉴욕 월요일 06:00은 서울로
+   * 19:00 같은 날이라 대개 같지만, 같다는 보장은 없다. 보장 없는 것을 같다고 쓰지 않는다.
+   */
+  localDate: string
 }
 
 /** 코드포인트 기준 길이. '☀️'처럼 surrogate pair인 글자를 2로 세지 않는다. */
@@ -47,19 +53,19 @@ function cut(s: string, max: number): string {
 }
 
 /**
- * runDate가 월요일인가.
+ * 그 날짜가 월요일인가.
  *
- * runDate는 이미 KST 기준 날짜다(night-brief.ts의
- * `Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' })` 산출). 그래서 여기서 시간대를
- * 다시 계산하지 않는다 — 날짜 세 토막을 그대로 읽어 요일만 본다.
+ * 넘어오는 값은 이미 **회장 현지 기준** 날짜다(lib/chairman-timezone.ts의 localDateIn).
+ * 그래서 여기서 시간대를 다시 계산하지 않는다 — 날짜 세 토막을 그대로 읽어 요일만 본다.
+ * 시간대를 두 곳에서 따지면 한쪽만 고쳐지는 날이 온다.
  *
  * Date.UTC로 직접 만드는 이유: `new Date('2026-09-21')`은 UTC로 읽히지만
  * `new Date('2026/09/21')`은 실행 환경의 시간대로 읽혀 요일이 하루 어긋난다. Vercel은 UTC,
  * 개발 기계는 KST라 그 차이가 로컬에서만 맞고 production에서 틀리는 모양으로 나온다.
  * 형식이 맞지 않으면 false — 월요일이 아닌 쪽이 안전한 기본값이다(줄이 빠질 뿐 발송은 간다).
  */
-export function isMonday(runDate: string): boolean {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(runDate)
+export function isMonday(localDate: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(localDate)
   if (!m) return false
   return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))).getUTCDay() === 1
 }
@@ -83,7 +89,7 @@ export function buildKakaoBriefText(input: BriefTextInput): string {
 
   // 월요일이면 리뷰 줄이 맨 앞에 선다. 본문보다 먼저 자리를 잡는다 —
   // 그 줄이 밀려나면 월요일 메시지는 평일 메시지와 구별되지 않는다.
-  const prefix = isMonday(input.runDate) ? `${MONDAY_REVIEW_LINE}\n\n` : ''
+  const prefix = isMonday(input.localDate) ? `${MONDAY_REVIEW_LINE}\n\n` : ''
 
   // 머리글과 꼬리를 먼저 확보한다. 본문이 밀려나더라도 '무슨 날이고 어디를 열면 되는가'는 남는다.
   // 긴 제목 하나로 200자를 다 먹는 경우가 있어 머리글도 자른다.
