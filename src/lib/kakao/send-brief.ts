@@ -106,6 +106,7 @@ export async function sendKakaoBrief(opts: {
     dDay: opts.dDay,
     projectTitle: opts.projectTitle,
     summary,
+    runDate: opts.runDate,
   })
   const linkUrl = `${config.appBaseUrl}/ai?date=${opts.runDate}`
 
