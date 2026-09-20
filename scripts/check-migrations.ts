@@ -197,23 +197,6 @@ async function rls(db: Db) {
     }
   }
 
-  /**
-   * 0019 chairman_today_condition() 전용 — as()를 그대로 못 쓴다. 그 함수는 예외를 던지지
-   * 않고(권한이 없거나 오늘 행이 없으면 조용히 null) 늘 한 행 한 칸으로 돌아오는데, as()는
-   * 그 칸을 Number()로 바꾼다. Number(null) === 0이라 '거부됨'과 '진짜 0'을 구분 못 한다 —
-   * bucketRow 검사(아래, false가 0으로 둔갑하는 문제)와 같은 함정이라 여기도 db.query로
-   * 원래 타입(number | null) 그대로 읽는다.
-   */
-  async function condition(uid: string): Promise<number | null> {
-    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
-    try {
-      const res = await db.query<{ chairman_today_condition: number | null }>('select chairman_today_condition()')
-      return res.rows[0]?.chairman_today_condition ?? null
-    } finally {
-      await db.exec('rollback')
-    }
-  }
-
   const journal = (source: string, slip: string) =>
     `insert into journal_lines (business_id, entry_date, account_code, amount, side, slip_no, line_no, source, fetched_at)
      values ('biz_dy', '2026-08-30', '1010', 1, 'debit', '${slip}', 1, '${source}', now())`
@@ -614,28 +597,6 @@ async function rls(db: Db) {
     'denied', '0019: Integration이 체크인을 만들 수 있다',
   )
 
-  // ── 0019 fix: chairman_today_condition() keyhole (P5-5d 1라운드 수정) ──────
-  // 표는 그대로 Chairman 전용이다. 이 함수 하나만 예외다 — 오늘(KST) condition 정수 하나,
-  // Chairman·AIAgent에게만. 나머지는 오늘 행이 있어도 못 받는다.
-  const today = kstToday()
-  const yesterday = new Date(Date.parse(`${today}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10)
-
-  // 어제 것만 있을 때 — '가장 최근 행'으로 대신 답하면 안 된다. 오늘 행이 없으면 null이어야 한다.
-  await db.exec(`insert into chairman_checkins (checkin_date, condition) values ('${yesterday}', 2)`)
-  assert.equal(
-    await condition(UID.chairman),
-    null, '0019: chairman_today_condition()이 어제 체크인을 오늘 것처럼 돌려준다',
-  )
-
-  // 오늘 것을 넣는다. Chairman·AIAgent는 받고, 나머지는 오늘 행이 있어도 여전히 못 받는다.
-  await db.exec(`insert into chairman_checkins (checkin_date, condition) values ('${today}', 4)`)
-  assert.equal(await condition(UID.chairman), 4, '0019: Chairman이 chairman_today_condition()으로 오늘 condition을 못 받는다')
-  assert.equal(await condition(UID.agent), 4, '0019: AIAgent가 chairman_today_condition() keyhole로 오늘 condition을 못 받는다')
-  assert.equal(await condition(UID.cfo), null, '0019: GroupCFO가 chairman_today_condition()으로 오늘 condition을 받는다')
-  assert.equal(await condition(UID.member), null, '0019: Member가 chairman_today_condition()으로 오늘 condition을 받는다')
-  assert.equal(await condition(UID.ceo), null, '0019: BusinessCEO가 chairman_today_condition()으로 오늘 condition을 받는다')
-  assert.equal(await condition(UID.integration), null, '0019: Integration이 chairman_today_condition()으로 오늘 condition을 받는다')
-
   await books(db, as)
 }
 
@@ -845,6 +806,162 @@ async function books(db: Db, as: As) {
     'Member는 정정 대상을 보지도 못한다',
   )
   assert.equal(await as(UID.chairman, `select count(*)::int from journal_entries`), 1, '(검사 준비) Chairman에게는 보인다')
+
+  // ── 0023 chairman_kakao_token — 표는 아무에게도 안 열린다 ────────────────
+  //
+  // 0019와 다른 검사다. 저기서는 "Chairman은 되고 나머지는 안 된다"를 쟀다.
+  // 여기서는 **Chairman도 안 된다**를 잰다 — 문은 함수 네 개뿐이라는 것이 이 표의 계약이다.
+  //
+  // 주의: 이 스크립트는 rls() 첫머리에서 authenticated에게 모든 표의 grant를 통째로 준다.
+  // 0023의 revoke는 그 grant보다 먼저 돌았으므로 여기서 다시 걷어야 실제 배포와 같은 상태가 된다.
+  // (실제 Supabase에서는 alter default privileges가 같은 일을 하고, 0023의 revoke가 최종 상태다.)
+  await db.exec('revoke all on table chairman_kakao_token from authenticated')
+
+  const kakaoRow = `insert into chairman_kakao_token
+      (user_id, access_token, refresh_token, expires_at, refresh_expires_at, scopes)
+    values ('${UID.chairman}', 'AT', 'RT', now() + interval '6 hours', now() + interval '60 days', 'talk_message')`
+
+  // 표 직접 접근 — 역할 불문 전부 막힌다. grant가 없으면 RLS 이전에 42501로 거절된다.
+  for (const [who, uid] of [['Chairman', UID.chairman], ['AIAgent', UID.agent], ['GroupCFO', UID.cfo]] as const) {
+    await assert.rejects(
+      as(uid, 'select count(*)::int from chairman_kakao_token'),
+      /permission denied|row-level security/,
+      `0023: ${who}가 chairman_kakao_token을 직접 읽는다 (문은 함수뿐이어야 한다)`,
+    )
+  }
+
+  /**
+   * 함수 호출 전용 헬퍼. as()를 그대로 못 쓰는 이유는 지웠던 0019 condition() 헬퍼와 같다 —
+   * 이 함수들은 예외를 던지지 않고 0행이나 false로 돌아온다.
+   * as()는 0행을 affectedRows 0으로, false를 Number(false) === 0으로 뭉개 버려
+   * '거부됨'과 '진짜 없음'을 구분하지 못한다.
+   *
+   * setup은 role을 authenticated로 바꾸기 전에, 소유자 권한으로 먼저 돈다. 이 함수들이 재는
+   * 것은 읽기/쓰기 경로지 시딩 경로가 아니다 — 검사 대상인 grant 밑으로 시드를 넣으면
+   * kakaoRow의 insert 자체가 42501로 막혀 버린다(0023이 authenticated의 모든 grant를 걷었으므로).
+   */
+  async function rpc<T>(uid: string, sql: string, setup = ''): Promise<T[]> {
+    await db.exec(`begin; ${setup ? `${setup};` : ''} select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
+    try {
+      const res = await db.query<T>(sql)
+      return res.rows
+    } finally {
+      await db.exec('rollback')
+    }
+  }
+
+  // 아직 연결이 없다 — status는 누구에게도 행을 주지 않는다.
+  assert.equal(
+    (await rpc(UID.chairman, 'select * from kakao_token_status()')).length, 0,
+    '0023: 연결이 없는데 kakao_token_status()가 행을 준다',
+  )
+
+  // Chairman만 연결을 만든다.
+  assert.equal(
+    (await rpc<{ kakao_token_save: boolean }>(UID.chairman,
+      `select kakao_token_save('AT', 'RT', now() + interval '6 hours', now() + interval '60 days', 'talk_message')`,
+    ))[0].kakao_token_save, true,
+    '0023: Chairman이 카카오 연결을 저장하지 못한다',
+  )
+  for (const [who, uid] of [['AIAgent', UID.agent], ['GroupCFO', UID.cfo], ['Member', UID.member]] as const) {
+    assert.equal(
+      (await rpc<{ kakao_token_save: boolean }>(uid,
+        `select kakao_token_save('X', 'X', now(), now(), 'talk_message')`,
+      ))[0].kakao_token_save, false,
+      `0023: ${who}가 카카오 연결을 만들 수 있다`,
+    )
+  }
+
+  // 연결이 있는 상태에서: status는 Chairman만, 그리고 토큰 값은 반환 목록에 아예 없다.
+  const statusRows = await rpc<Record<string, unknown>>(UID.chairman, 'select * from kakao_token_status()', kakaoRow)
+  assert.equal(statusRows.length, 1, '0023: Chairman이 kakao_token_status()를 못 받는다')
+  assert.ok(!('access_token' in statusRows[0]), '0023: kakao_token_status()가 access_token을 내보낸다')
+  assert.ok(!('refresh_token' in statusRows[0]), '0023: kakao_token_status()가 refresh_token을 내보낸다')
+  for (const [who, uid] of [['AIAgent', UID.agent], ['GroupCFO', UID.cfo], ['Member', UID.member]] as const) {
+    assert.equal(
+      (await rpc(uid, 'select * from kakao_token_status()', kakaoRow)).length, 0,
+      `0023: ${who}에게 kakao_token_status()가 보인다`,
+    )
+  }
+
+  // for_send — Chairman과 AIAgent만.
+  for (const [who, uid] of [['Chairman', UID.chairman], ['AIAgent', UID.agent]] as const) {
+    const rows = await rpc<{ access_token: string }>(uid, 'select * from kakao_token_for_send()', kakaoRow)
+    assert.equal(rows[0]?.access_token, 'AT', `0023: ${who}가 kakao_token_for_send()로 토큰을 못 받는다`)
+  }
+  for (const [who, uid] of [['GroupCFO', UID.cfo], ['Member', UID.member], ['Integration', UID.integration], ['BusinessCEO', UID.ceo]] as const) {
+    assert.equal(
+      (await rpc(uid, 'select * from kakao_token_for_send()', kakaoRow)).length, 0,
+      `0023: ${who}에게 카카오 토큰이 보인다`,
+    )
+  }
+
+  // refreshed — AIAgent는 **있는 행만** 갱신한다. 없는 연결을 되살리지는 못한다.
+  assert.equal(
+    (await rpc<{ kakao_token_refreshed: boolean }>(UID.agent,
+      `select kakao_token_refreshed('AT2', now() + interval '6 hours', null, null)`, kakaoRow,
+    ))[0].kakao_token_refreshed, true,
+    '0023: AIAgent가 토큰을 갱신하지 못한다',
+  )
+  assert.equal(
+    (await rpc<{ kakao_token_refreshed: boolean }>(UID.agent,
+      `select kakao_token_refreshed('AT2', now() + interval '6 hours', null, null)`,
+    ))[0].kakao_token_refreshed, false,
+    '0023: AIAgent가 없는 연결을 만들어 낸다 (행이 없으면 false여야 한다)',
+  )
+  assert.equal(
+    (await rpc<{ kakao_token_refreshed: boolean }>(UID.cfo,
+      `select kakao_token_refreshed('AT2', now(), null, null)`, kakaoRow,
+    ))[0].kakao_token_refreshed, false,
+    '0023: GroupCFO가 토큰을 갱신할 수 있다',
+  )
+  // 카카오가 refresh_token을 안 준 회차(null)에 기존 값이 지워지지 않는가.
+  assert.equal(
+    (await rpc<{ refresh_token: string }>(UID.agent,
+      `select refresh_token from kakao_token_for_send()`,
+      `${kakaoRow}; select kakao_token_refreshed('AT2', now() + interval '6 hours', null, null)`,
+    ))[0].refresh_token, 'RT',
+    '0023: refresh_token을 안 준 갱신이 기존 refresh_token을 지운다',
+  )
+
+  // clear — Chairman만.
+  assert.equal(
+    (await rpc<{ kakao_token_clear: boolean }>(UID.agent, 'select kakao_token_clear()', kakaoRow))[0].kakao_token_clear,
+    false, '0023: AIAgent가 연결을 해제할 수 있다',
+  )
+  assert.equal(
+    (await rpc<{ kakao_token_clear: boolean }>(UID.chairman, 'select kakao_token_clear()', kakaoRow))[0].kakao_token_clear,
+    true, '0023: Chairman이 연결을 해제하지 못한다',
+  )
+
+  // ── 0023 chairman_recent_condition() — 오늘이 없으면 어제 ─────────────────
+  const today = kstToday()
+  const yesterday = new Date(Date.parse(`${today}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10)
+  const twoDaysAgo = new Date(Date.parse(`${today}T00:00:00Z`) - 2 * 86_400_000).toISOString().slice(0, 10)
+  // checkin_date::text로 캐스팅한다 — PGlite는 date 칸을 JS Date 객체로 돌려주므로 '2026-09-19'
+  // 같은 문자열과 그대로 비교하면 타입부터 어긋난다(값이 맞아도 실패한다).
+  const recent = (uid: string, setup: string) =>
+    rpc<{ condition: number; checkin_date: string }>(
+      uid, 'select condition, checkin_date::text as checkin_date from chairman_recent_condition()', setup,
+    )
+
+  const ci = (d: string, c: number) => `insert into chairman_checkins (checkin_date, condition) values ('${d}', ${c})`
+
+  assert.equal((await recent(UID.agent, ci(twoDaysAgo, 2))).length, 0,
+    '0023: chairman_recent_condition()이 그저께 값을 준다 (이틀을 넘기면 안 된다)')
+
+  let r = await recent(UID.agent, ci(yesterday, 3))
+  assert.equal(r[0]?.condition, 3, '0023: 오늘 체크인이 없을 때 어제 값을 못 받는다')
+  assert.equal(r[0]?.checkin_date, yesterday, '0023: 어제 값인데 checkin_date가 어제가 아니다')
+
+  r = await recent(UID.agent, `${ci(yesterday, 3)}; ${ci(today, 5)}`)
+  assert.equal(r[0]?.condition, 5, '0023: 오늘 체크인이 있는데 어제 값을 준다')
+  assert.equal(r[0]?.checkin_date, today, '0023: 오늘 값인데 checkin_date가 오늘이 아니다')
+
+  for (const [who, uid] of [['GroupCFO', UID.cfo], ['Member', UID.member]] as const) {
+    assert.equal((await recent(uid, ci(today, 5))).length, 0,
+      `0023: ${who}에게 chairman_recent_condition()이 값을 준다`)
+  }
 }
 
 async function main() {
