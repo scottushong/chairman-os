@@ -16,6 +16,10 @@
 --   하나라도 더 있으면 언젠가 그 경로가 화면으로 이어진다 — 0019가 sleep_hours를 keyhole
 --   반환값에서 아예 뺀 것과 같은 판단을, 여기서는 표 전체에 적용한다.
 --
+--   그 "열지 않는다"를 실제로 집행하는 것은 3절의 `revoke` 한 줄이다. RLS 정책이 아니다 —
+--   정책(chairman_kakao_token_all)은 permissive라 오히려 Chairman의 select를 **허용**한다.
+--   자세한 것은 3절 주석에 적었다.
+--
 --   그래서 문은 다섯 개뿐이고 전부 security definer다. 각 함수가 자기 몸통 안에서 역할을 판정한다.
 --
 --     kakao_token_status()     Chairman           연결됐나 · 언제까지 · 어떤 동의를 받았나.
@@ -35,10 +39,14 @@
 --   갱신은 Job이 사람 없이 해야 한다. 한 함수로 합치면 AIAgent에게 '행 만들기'까지 주게 되고,
 --   그러면 Job 쪽 버그 하나가 회장이 끊어 둔 연결을 되살릴 수 있다.
 --
--- 왜 행이 하나뿐인가
---   user_id가 기본키지만 실제로는 늘 한 행이다 — 행을 만들 수 있는 역할이 Chairman뿐이고
---   Chairman은 한 사람이다. kakao_token_refreshed()가 대상 행을 user_id로 찾지 않고 표 전체를
---   갱신하는 것은 그래서다(AIAgent는 그 행이 누구 것인지 알 필요가 없고, 알아서도 안 된다).
+-- 왜 행이 여럿일 수 있다고 보고 쓰는가
+--   user_id가 기본키라 Chairman이 둘이면 행도 둘이다. "회장은 한 사람"은 오늘의 운영 사실이지
+--   스키마가 지키는 제약이 아니다 — 언젠가 회장이 둘인 날(승계 기간의 신·구 회장)이 오면
+--   표 전체를 갱신하는 코드는 한 계정의 토큰으로 다른 계정의 행을 덮어쓴다. 그래서
+--   kakao_token_for_send()는 `order by updated_at desc limit 1`로 **한 행을 고르고**,
+--   kakao_token_refreshed()는 그 행의 user_id를 받아 **그 행만** 갱신한다.
+--   AIAgent가 user_id를 손에 쥐게 되지만, 그 값은 이미 for_send()가 돌려주던 것이고
+--   (send-brief.ts가 audit_log의 actor로 쓰는 값과 같은 등급이다) 토큰 값이 아니다.
 -- =====================================================================
 
 begin;
@@ -75,18 +83,30 @@ create trigger chairman_kakao_token_updated_at before update on chairman_kakao_t
   for each row execute function set_updated_at();
 
 -- ---------------------------------------------------------------------
--- 3. 자물쇠 두 겹
+-- 3. 자물쇠는 하나, 최후 방어선이 하나
 --
---    ① grant를 걷는다. 이것이 실제로 표를 닫는다 — security definer 함수는 소유자 권한으로
---       돌아서 이 revoke에 걸리지 않는다.
---    ② 그래도 RLS를 켜고 Chairman 정책을 남긴다. 나중에 누가 grant를 되살리는 날
---       (Supabase의 alter default privileges, 또는 검사 스크립트의 일괄 grant) 이 층이 남는다.
---       0019가 keyhole 함수에 revoke를 걸고도 표의 RLS를 그대로 둔 것과 같은 이유다.
+--    ① **자물쇠는 `revoke`다.** 이것 하나가 표를 닫는다 — grant가 없으면 RLS를 따지기도 전에
+--       42501로 거절된다. security definer 함수 다섯은 소유자 권한으로 돌아 여기에 걸리지 않는다.
+--       scripts/check-migrations.ts가 applyAll() 직후(일괄 grant 이전)에 이 상태를 직접 단언한다 —
+--       이 줄이 지워지면 검사가 빨개진다.
+--
+--    ② **RLS 정책은 자물쇠가 아니다.** chairman_kakao_token_all은 permissive `for all`이라
+--       Chairman의 select를 오히려 **허용**한다. 이 층이 존재하는 이유는 둘이다.
+--         - Chairman의 쓰기 경로(연결·해제). kakao_token_save()/clear()가 definer로 돌지만,
+--           정책이 없으면 나중에 grant가 되살아난 날 Chairman 본인의 행도 못 만진다.
+--         - grant가 되살아나는 날(Supabase의 alter default privileges, 검사 스크립트의 일괄 grant)
+--           **다른 역할**을 막는 최후 방어선. GroupCFO·Member·AIAgent는 그때도 한 행도 못 본다.
+--
+--    ③ **force는 걸지 않는다.** FORCE는 소유자까지 정책 아래로 끌어내린다. Supabase에서 이 표와
+--       함수 다섯의 소유자가 BYPASSRLS가 아니면, 소유자 권한으로 도는 kakao_token_for_send()가
+--       `auth_role() = 'Chairman'` 정책에 걸려 **AIAgent 세션에서 0행**을 준다. 그러면 07:00 cron은
+--       매일 조용히 "카카오가 연결되어 있지 않다"로 끝나고, 회장이 누르는 테스트 발송만 성공해 보인다.
+--       FORCE가 여기서 더해 주는 보안은 없다(자물쇠는 ①이다) — 더하는 것은 그 침묵 실패 위험뿐이다.
+--       check-migrations.ts가 BYPASSRLS 없는 별도 소유자를 세워 이 판단을 영구히 증명한다.
 -- ---------------------------------------------------------------------
 revoke all on table chairman_kakao_token from anon, authenticated;
 
 alter table chairman_kakao_token enable row level security;
-alter table chairman_kakao_token force  row level security;
 
 create policy chairman_kakao_token_all on chairman_kakao_token for all
   using (is_active() and auth_role() = 'Chairman' and user_id = auth.uid())
@@ -132,7 +152,11 @@ returns table (user_id uuid, access_token text, refresh_token text,
 language sql stable security definer set search_path = public as $fn$
   select t.user_id, t.access_token, t.refresh_token, t.expires_at, t.refresh_expires_at, t.scopes
     from chairman_kakao_token t
-   where is_active() and auth_role() in ('Chairman', 'AIAgent');
+   where is_active() and auth_role() in ('Chairman', 'AIAgent')
+   -- 회장이 둘이면 행도 둘이다(머리 주석). 호출부는 rows[0]을 쓰므로 '아무 행'이 아니라
+   -- **가장 최근에 연결·갱신된 행**을 고른다 — 임의 선택은 어느 날 조용히 바뀐다.
+   order by t.updated_at desc
+   limit 1;
 $fn$;
 
 comment on function kakao_token_for_send() is
@@ -166,7 +190,7 @@ comment on function kakao_token_save(text, text, timestamptz, timestamptz, text)
 
 -- 4-4. 갱신. Chairman + AIAgent. **행을 만들지 못한다.**
 create or replace function kakao_token_refreshed(
-  p_access text, p_expires timestamptz,
+  p_user_id uuid, p_access text, p_expires timestamptz,
   p_refresh text, p_refresh_expires timestamptz
 ) returns boolean
 language plpgsql volatile security definer set search_path = public as $fn$
@@ -176,21 +200,25 @@ begin
   if not (is_active() and auth_role() in ('Chairman', 'AIAgent')) then
     return false;
   end if;
-  -- 행은 늘 하나다(머리 주석). 그래서 누구 것인지 묻지 않고 그 하나를 갱신한다.
+  -- **그 행만** 갱신한다. p_user_id는 같은 회차의 kakao_token_for_send()가 돌려준 값이고,
+  -- where 없이 표 전체를 update 하면 회장이 둘인 날 한 계정의 토큰이 다른 계정 행을 덮어쓴다.
+  -- insert 경로가 없는 것은 그대로다 — 없는 user_id면 0행, 즉 false다(연결은 사람이 만든다).
+  --
   -- 카카오는 refresh_token을 '만료 한 달 미만'일 때만 새로 준다. 안 준 회차에는
   -- 기존 값을 그대로 둬야 한다 — null로 덮으면 not null 제약에 걸리기 전에 연결이 끊긴다.
   update chairman_kakao_token set
     access_token       = p_access,
     expires_at         = p_expires,
     refresh_token      = coalesce(p_refresh, refresh_token),
-    refresh_expires_at = coalesce(p_refresh_expires, refresh_expires_at);
+    refresh_expires_at = coalesce(p_refresh_expires, refresh_expires_at)
+  where user_id = p_user_id;
   get diagnostics n = row_count;
   return n > 0;
 end;
 $fn$;
 
-comment on function kakao_token_refreshed(text, timestamptz, text, timestamptz) is
-  '0023. refresh_token 교환 결과를 되쓴다. insert 경로가 없는 것이 요점이다 — 연결은 사람이 브라우저에서 하는 일이고, Job은 이미 있는 연결을 잇기만 한다.';
+comment on function kakao_token_refreshed(uuid, text, timestamptz, text, timestamptz) is
+  '0023. refresh_token 교환 결과를 그 행 하나에만 되쓴다. insert 경로가 없는 것이 요점이다 — 연결은 사람이 브라우저에서 하는 일이고, Job은 이미 있는 연결을 잇기만 한다. p_user_id는 같은 회차의 kakao_token_for_send()가 준 값이다.';
 
 -- 4-5. 해제. Chairman만.
 create or replace function kakao_token_clear() returns boolean
@@ -211,13 +239,13 @@ comment on function kakao_token_clear() is
 revoke all on function kakao_token_status()      from public;
 revoke all on function kakao_token_for_send()    from public;
 revoke all on function kakao_token_save(text, text, timestamptz, timestamptz, text) from public;
-revoke all on function kakao_token_refreshed(text, timestamptz, text, timestamptz)  from public;
+revoke all on function kakao_token_refreshed(uuid, text, timestamptz, text, timestamptz)  from public;
 revoke all on function kakao_token_clear()       from public;
 
 grant execute on function kakao_token_status()      to authenticated;
 grant execute on function kakao_token_for_send()    to authenticated;
 grant execute on function kakao_token_save(text, text, timestamptz, timestamptz, text) to authenticated;
-grant execute on function kakao_token_refreshed(text, timestamptz, text, timestamptz)  to authenticated;
+grant execute on function kakao_token_refreshed(uuid, text, timestamptz, text, timestamptz)  to authenticated;
 grant execute on function kakao_token_clear()       to authenticated;
 
 -- ---------------------------------------------------------------------
@@ -254,5 +282,24 @@ revoke all on function chairman_recent_condition() from public;
 grant execute on function chairman_recent_condition() to authenticated;
 
 drop function if exists chairman_today_condition();
+
+-- ---------------------------------------------------------------------
+-- 6. 0019 chairman_checkins의 force를 내린다
+--
+--    0019:71이 이 표에 force row level security를 걸었다. 3절 ③과 같은 함정이다 —
+--    FORCE는 소유자까지 정책(`auth_role() = 'Chairman'`) 아래로 끌어내리고, 바로 위
+--    chairman_recent_condition()은 그 소유자 권한으로 도는 security definer다. 소유자가
+--    BYPASSRLS가 아니면 **AIAgent 세션에서 0행**이 나온다.
+--
+--    이쪽이 더 조용하다. 카카오 토큰이 0행이면 발송이 통째로 멈추지만, 컨디션이 0행이면
+--    브리핑에서 문장 하나가 빠질 뿐이라 아무도 눈치채지 못한다 — 그래서 여기서 같이 내린다.
+--
+--    0019 파일은 건드리지 않는다. 이미 staging·production에 적용됐고, 적용된 마이그레이션을
+--    고치면 체크섬이 드리프트된다(OPERATIONS 9, 0022가 겪은 일). 그래서 앞으로 나아가며 고친다.
+--
+--    표가 열리는 것이 아니다. enable은 그대로고 정책도 그대로라 Chairman 아닌 역할은 여전히
+--    한 행도 못 본다. 내려가는 것은 '소유자도 정책을 받는다'뿐이다.
+-- ---------------------------------------------------------------------
+alter table public.chairman_checkins no force row level security;
 
 commit;

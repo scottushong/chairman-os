@@ -58,6 +58,14 @@ const SUPABASE_STUBS = `
   grant usage on schema storage to anon, authenticated;
   grant select on storage.buckets to authenticated;
   grant select, insert, update, delete on storage.objects to authenticated;
+
+  -- Supabase의 기본 GRANT 흉내. 실제 프로젝트에서는 postgres 역할에 이 default privileges가
+  -- 걸려 있어서, public 스키마에 새로 만든 표는 **만들자마자** anon/authenticated에게 열린다.
+  -- 이것을 흉내 내지 않으면 마이그레이션의 revoke가 '이미 없는 권한을 걷는' 빈 문장이 되어,
+  -- 그 줄을 지워도 아무 검사도 빨개지지 않는다(0001 audit_log, 0023 chairman_kakao_token).
+  -- 표를 만드는 문장들보다 먼저 걸려야 하므로 STUBS의 마지막에 둔다.
+  alter default privileges in schema public grant all on tables    to anon, authenticated;
+  alter default privileges in schema public grant all on sequences to anon, authenticated;
 `
 
 type Db = PGlite
@@ -833,7 +841,12 @@ async function books(db: Db, as: As) {
   // 주의: 이 스크립트는 rls() 첫머리에서 authenticated에게 모든 표의 grant를 통째로 준다.
   // 0023의 revoke는 그 grant보다 먼저 돌았으므로 여기서 다시 걷어야 실제 배포와 같은 상태가 된다.
   // (실제 Supabase에서는 alter default privileges가 같은 일을 하고, 0023의 revoke가 최종 상태다.)
-  await db.exec('revoke all on table chairman_kakao_token from authenticated')
+  //
+  // **이 줄은 0023의 revoke를 대신 증명하지 않는다.** 여기서 상태를 다시 만들면 검사는 자기가
+  // 만든 상태를 재게 되고, 내일 누가 0023의 revoke를 지워도 아래 단언은 그대로 통과한다.
+  // 마이그레이션이 남긴 실제 권한은 main()의 kakaoRevokeSurvives()가 일괄 grant **이전에** 잰다.
+  // 아래 단언들이 재는 것은 그 다음 층 — grant가 없을 때 RLS까지 묶여 문이 함수뿐이라는 것이다.
+  await db.exec('revoke all on table chairman_kakao_token from anon, authenticated')
 
   const kakaoRow = `insert into chairman_kakao_token
       (user_id, access_token, refresh_token, expires_at, refresh_expires_at, scopes)
@@ -915,32 +928,49 @@ async function books(db: Db, as: As) {
   }
 
   // refreshed — AIAgent는 **있는 행만** 갱신한다. 없는 연결을 되살리지는 못한다.
+  const refreshed = (uid: string, access = 'AT2') =>
+    `select kakao_token_refreshed('${uid}', '${access}', now() + interval '6 hours', null, null)`
   assert.equal(
-    (await rpc<{ kakao_token_refreshed: boolean }>(UID.agent,
-      `select kakao_token_refreshed('AT2', now() + interval '6 hours', null, null)`, kakaoRow,
-    ))[0].kakao_token_refreshed, true,
-    '0023: AIAgent가 토큰을 갱신하지 못한다',
+    (await rpc<{ kakao_token_refreshed: boolean }>(UID.agent, refreshed(UID.chairman), kakaoRow))[0].kakao_token_refreshed,
+    true, '0023: AIAgent가 토큰을 갱신하지 못한다',
   )
   assert.equal(
-    (await rpc<{ kakao_token_refreshed: boolean }>(UID.agent,
-      `select kakao_token_refreshed('AT2', now() + interval '6 hours', null, null)`,
-    ))[0].kakao_token_refreshed, false,
-    '0023: AIAgent가 없는 연결을 만들어 낸다 (행이 없으면 false여야 한다)',
+    (await rpc<{ kakao_token_refreshed: boolean }>(UID.agent, refreshed(UID.chairman)))[0].kakao_token_refreshed,
+    false, '0023: AIAgent가 없는 연결을 만들어 낸다 (행이 없으면 false여야 한다)',
   )
   assert.equal(
-    (await rpc<{ kakao_token_refreshed: boolean }>(UID.cfo,
-      `select kakao_token_refreshed('AT2', now(), null, null)`, kakaoRow,
-    ))[0].kakao_token_refreshed, false,
-    '0023: GroupCFO가 토큰을 갱신할 수 있다',
+    (await rpc<{ kakao_token_refreshed: boolean }>(UID.cfo, refreshed(UID.chairman), kakaoRow))[0].kakao_token_refreshed,
+    false, '0023: GroupCFO가 토큰을 갱신할 수 있다',
+  )
+  // p_user_id가 실제로 where에 걸리는가. 이것이 빠지면(= 표 전체 update로 돌아가면) 남의
+  // user_id를 넘겨도 true가 온다 — 회장이 둘인 날 한 계정 토큰이 다른 계정 행을 덮어쓴다.
+  assert.equal(
+    (await rpc<{ kakao_token_refreshed: boolean }>(UID.agent, refreshed(UID.cfo), kakaoRow))[0].kakao_token_refreshed,
+    false, '0023: kakao_token_refreshed()가 남의 user_id로도 행을 갱신한다 (where가 없다)',
   )
   // 카카오가 refresh_token을 안 준 회차(null)에 기존 값이 지워지지 않는가.
   assert.equal(
     (await rpc<{ refresh_token: string }>(UID.agent,
       `select refresh_token from kakao_token_for_send()`,
-      `${kakaoRow}; select kakao_token_refreshed('AT2', now() + interval '6 hours', null, null)`,
+      `${kakaoRow}; ${refreshed(UID.chairman)}`,
     ))[0].refresh_token, 'RT',
     '0023: refresh_token을 안 준 갱신이 기존 refresh_token을 지운다',
   )
+  // for_send()는 '아무 행'이 아니라 가장 최근 행을 고른다. 회장이 둘이면(승계 기간) 행도 둘이고,
+  // 호출부(send-brief.ts)는 rows[0]을 쓴다 — order by가 없으면 그 선택이 어느 날 조용히 바뀐다.
+  // 둘째 행의 user_id로 UID.ceo를 빌려 쓴다. 표는 user_id만 보고 역할은 묻지 않으므로
+  // '행이 둘일 때 어느 것을 고르나'를 재는 데는 그 값이 누구 것인지가 상관없다.
+  const twoRows = `${kakaoRow};
+    insert into chairman_kakao_token
+      (user_id, access_token, refresh_token, expires_at, refresh_expires_at, scopes, updated_at)
+    values ('${UID.ceo}', 'AT-NEW', 'RT-NEW', now() + interval '6 hours', now() + interval '60 days',
+            'talk_message', now() + interval '1 hour')`
+  const picked = await rpc<{ user_id: string; access_token: string }>(
+    UID.agent, 'select user_id, access_token from kakao_token_for_send()', twoRows,
+  )
+  assert.equal(picked.length, 1, '0023: 행이 둘일 때 kakao_token_for_send()가 둘을 준다 (limit 1이어야 한다)')
+  assert.equal(picked[0].access_token, 'AT-NEW', '0023: kakao_token_for_send()가 가장 최근 행을 고르지 않는다')
+  assert.equal(picked[0].user_id, UID.ceo, '0023: 고른 행의 user_id가 그 행의 것이 아니다')
 
   // clear — Chairman만.
   assert.equal(
@@ -988,16 +1018,146 @@ async function books(db: Db, as: As) {
   }
 }
 
+/**
+ * 0023의 `revoke all on table chairman_kakao_token from anon, authenticated`가 살아 있는가.
+ *
+ * **rls()의 일괄 grant보다 먼저 불러야 한다.** rls() 첫머리가
+ * `grant ... on all tables in schema public to authenticated`를 던져 0023의 revoke를 통째로
+ * 무효화하기 때문이다. 그 뒤에 재면 검사는 자기가 만든 상태를 재게 되고, 0023에서 revoke 줄을
+ * 지워도 통과한다 — 이 표를 실제로 잠그는 것이 그 한 줄이므로(0023 3절 ①) 여기가 유일하게
+ * 의미 있는 자리다.
+ */
+async function kakaoRevokeSurvives(db: Db) {
+  const g = await db.query<{ ok: boolean }>(
+    `select not (has_table_privilege('authenticated','chairman_kakao_token','select')
+              or has_table_privilege('authenticated','chairman_kakao_token','insert')
+              or has_table_privilege('authenticated','chairman_kakao_token','update')
+              or has_table_privilege('authenticated','chairman_kakao_token','delete')
+              or has_table_privilege('anon','chairman_kakao_token','select')) as ok`,
+  )
+  assert.ok(g.rows[0].ok, '0023: chairman_kakao_token에 authenticated/anon 권한이 남아 있다')
+}
+
+/**
+ * security definer 함수가 **BYPASSRLS 아닌 소유자**로 돌 때도 값을 주는가 (0023 3절 ③).
+ *
+ * 왜 별도 인스턴스인가 — 이 실험은 표와 함수의 소유자를 바꾼다. 위의 모든 단언이 소유자
+ * 권한(postgres)으로 심은 시드에 기대고 있어서, 같은 DB에서 소유권을 옮기면 재현이 어려운
+ * 방식으로 서로를 오염시킨다. 깨끗한 PGlite 하나를 더 띄우는 쪽이 싸고 분명하다.
+ *
+ * 왜 필요한가 — 이 harness는 postgres(superuser, bypassrls)로 돈다. superuser는 FORCE와
+ * 무관하게 RLS를 전부 우회하므로, 위의 "AIAgent가 kakao_token_for_send()로 토큰을 받는다"는
+ * 단언은 **이 질문에 원리적으로 답하지 못한다.** Supabase에서 표와 함수의 소유자가 BYPASSRLS가
+ * 아니면, FORCE가 걸린 표에서는 소유자마저 정책(`auth_role() = 'Chairman'`) 아래로 내려가
+ * AIAgent 세션의 definer 함수가 0행을 준다. 그러면 07:00 cron은 매일 조용히
+ * "카카오가 연결되어 있지 않다"로 끝나고, 회장이 누르는 테스트 발송만 늘 성공해 보인다.
+ *
+ * 그래서 두 번 잰다.
+ *   ① 마이그레이션이 남긴 그대로(FORCE 없음) → AIAgent가 값을 받는다.
+ *   ② 같은 DB에 FORCE를 다시 걸면 → 0행. ①이 우연이 아니라 FORCE의 유무 때문임을 증명한다.
+ * 누가 0023에 force를 되살리는 순간 ①이 빨개진다.
+ *
+ * chairman_recent_condition()을 같이 재는 이유: 이쪽이 더 조용하다. 토큰이 0행이면 발송이
+ * 멈추지만 컨디션이 0행이면 브리핑에서 문장 하나가 빠질 뿐이라 아무도 눈치채지 못한다.
+ */
+async function definerUnderNonBypassOwner() {
+  const db = new PGlite({ extensions: { pg_trgm } })
+  await applyAll(db)
+
+  // 전제 확인 — 이 harness가 superuser/bypassrls로 돈다는 것이 이 함수의 존재 이유다.
+  const me = await db.query<{ super: boolean; bypass: boolean }>(
+    `select rolsuper as super, rolbypassrls as bypass from pg_roles where rolname = current_user`,
+  )
+  assert.ok(
+    me.rows[0].super || me.rows[0].bypass,
+    'harness가 더는 superuser가 아니다 — 이 실험의 전제(기본 단언들이 RLS를 우회한다)를 다시 확인하라',
+  )
+
+  // 마이그레이션이 force를 남기지 않았는가. 카탈로그에서 직접 잰다 —
+  // 아래 행동 검사와 겹으로 두는 이유는, 행동 검사가 통과하는 다른 경로가 생겨도
+  // "force를 걸지 않는다"는 0023의 결정 자체는 그대로 지켜져야 하기 때문이다.
+  const forced = await db.query<{ relname: string; f: boolean }>(
+    `select relname, relforcerowsecurity as f from pg_class
+      where relname in ('chairman_kakao_token', 'chairman_checkins')`,
+  )
+  for (const row of forced.rows) {
+    assert.equal(row.f, false, `0023: ${row.relname}에 force row level security가 걸려 있다 (definer 함수가 0행을 준다)`)
+  }
+
+  // 표와 definer 함수를 BYPASSRLS 없는 역할에게 넘긴다. Supabase에서 소유자가 무엇이든
+  // 이 조건에서 동작해야 한다는 것이 요구다 — 소유자의 bypassrls에 기대지 않는다.
+  await db.exec(`
+    create role app_owner nosuperuser nobypassrls nologin;
+    grant usage on schema auth to app_owner;
+    alter table public.chairman_kakao_token owner to app_owner;
+    alter table public.chairman_checkins    owner to app_owner;
+    alter function public.kakao_token_for_send()       owner to app_owner;
+    alter function public.chairman_recent_condition()  owner to app_owner;
+  `)
+  const owner = await db.query<{ s: boolean; b: boolean }>(
+    `select rolsuper as s, rolbypassrls as b from pg_roles where rolname = 'app_owner'`,
+  )
+  assert.equal(owner.rows[0].s, false, '실험 설정이 깨졌다 — app_owner가 superuser다')
+  assert.equal(owner.rows[0].b, false, '실험 설정이 깨졌다 — app_owner가 bypassrls다')
+
+  await db.exec(`
+    insert into auth.users values ('${UID.chairman}', 'ch@x'), ('${UID.agent}', 'a@x');
+    insert into user_profiles (user_id, role, display_name, max_security_class) values
+      ('${UID.chairman}', 'Chairman', 'ch', 'Vault'),
+      ('${UID.agent}', 'AIAgent', 'ai', 'Restricted');
+    insert into chairman_kakao_token
+      (user_id, access_token, refresh_token, expires_at, refresh_expires_at, scopes)
+    values ('${UID.chairman}', 'AT', 'RT', now() + interval '6 hours', now() + interval '60 days', 'talk_message');
+    insert into chairman_checkins (checkin_date, condition)
+    values ((now() at time zone 'Asia/Seoul')::date, 4);
+  `)
+
+  async function rows(uid: string, sql: string): Promise<number> {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
+    try {
+      return (await db.query(sql)).rows.length
+    } finally {
+      await db.exec('rollback')
+    }
+  }
+  const forSend = 'select * from kakao_token_for_send()'
+  const condition = 'select * from chairman_recent_condition()'
+
+  // ① 지금 상태 — 07:00 cron이 실제로 밟는 경로다.
+  assert.equal(await rows(UID.agent, forSend), 1,
+    '0023: BYPASSRLS 없는 소유자에서 AIAgent가 kakao_token_for_send()로 토큰을 못 받는다 — 07:00 발송이 매일 조용히 skipped가 된다')
+  assert.equal(await rows(UID.agent, condition), 1,
+    '0023: BYPASSRLS 없는 소유자에서 AIAgent가 chairman_recent_condition()을 못 받는다 — 브리핑에서 컨디션 문장이 조용히 빠진다')
+  // Chairman(테스트 발송)도 같은 조건에서 되는가. 이쪽만 되는 상태가 바로 숨은 실패 모드였다.
+  assert.equal(await rows(UID.chairman, forSend), 1,
+    '0023: BYPASSRLS 없는 소유자에서 Chairman의 테스트 발송이 토큰을 못 받는다')
+
+  // ② 대조군 — force를 되살리면 정말 0행이 되는가. ①이 FORCE의 유무 때문임을 증명한다.
+  await db.exec(`
+    alter table public.chairman_kakao_token force row level security;
+    alter table public.chairman_checkins    force row level security;
+  `)
+  assert.equal(await rows(UID.agent, forSend), 0,
+    '대조군이 성립하지 않는다 — force를 걸어도 AIAgent가 토큰을 받는다면 ①은 FORCE를 재고 있지 않다')
+  assert.equal(await rows(UID.agent, condition), 0,
+    '대조군이 성립하지 않는다 — force를 걸어도 AIAgent가 컨디션을 받는다면 ①은 FORCE를 재고 있지 않다')
+
+  await db.close()
+}
+
 async function main() {
   const db = new PGlite({ extensions: { pg_trgm } })
   const files = await applyAll(db)
+  // rls()의 일괄 grant보다 **먼저**. 이유는 함수 주석에 있다.
+  await kakaoRevokeSurvives(db)
   await standardChartSeed(db)
   await sheetOnlyView(db)
   await ledgerView(db)
   await rls(db)
   await db.close()
+  await definerUnderNonBypassOwner()
   console.log(
-    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books`,
+    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner`,
   )
 }
 
