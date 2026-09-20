@@ -38,6 +38,11 @@ export interface NavItem {
 }
 
 export interface NavGroup {
+  /**
+   * 접기 상태를 저장할 때 쓰는 안 바뀌는 이름. **제목이 있는 그룹만 갖는다** —
+   * 제목이 없으면 누를 손잡이가 없고, 손잡이가 없는 그룹은 접히지 않는다.
+   */
+  key?: string
   title?: string
   items: NavItem[]
 }
@@ -84,6 +89,7 @@ export const NAV: readonly NavGroup[] = [
     ],
   },
   {
+    key: 'grp_systems',
     title: '기능 시스템',
     items: [
       {
@@ -156,15 +162,10 @@ export const NAV: readonly NavGroup[] = [
       { key: 'nav_users', label: '사용자 · 권한', href: '/settings/users', icon: 'users', ready: true },
       // Phase 3-B. 장기 프로젝트·선언문 입력. Chairman이 아니면 404다(화면이 안내, 0014 RLS가 판정).
       { key: 'nav_chairman', label: '회장 루틴', href: '/settings/chairman', icon: 'crown', ready: true },
-      {
-        key: 'nav_settings', label: '설정',
-        href: '/settings',
-        icon: 'settings',
-        expandable: true,
-        ready: false,
-        waitingFor:
-          'CH-056 대시보드 개인화(위젯·회사·KPI 표시/숨김/위치 저장)가 붙는 자리입니다. 사용자·권한 관리(CH-049)는 바로 위 메뉴로 먼저 서 있습니다.',
-      },
+      // Phase 5-E 4절. 설정 허브가 섰다. 기존 설정 화면(사용자·권한 / 회장 루틴 /
+      // 프로세스차트)은 그 자리에 그대로 있고 허브가 링크만 한다 — Phase 7이 "기존 URL
+      // 전부 리다이렉트 유지"를 명시했으므로 라우트를 옮기지 않는다.
+      { key: 'nav_settings', label: '설정', href: '/settings', icon: 'settings', expandable: true, ready: true },
     ],
   },
 ] as const
