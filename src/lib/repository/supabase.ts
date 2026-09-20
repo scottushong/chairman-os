@@ -2345,15 +2345,15 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     },
 
     /**
-     * P5-5d 1라운드 수정. 표 대신 0019 chairman_today_condition() RPC를 부른다 — 오늘(KST)
-     * condition 하나만, Chairman·AIAgent 세션 양쪽에서 통과한다(표의 RLS가 아니라 함수 안의
-     * 역할 판정이라서다). 다른 역할이거나 오늘 기록이 없으면 함수가 null을 준다 — 여기서도
-     * '없는 것'과 '못 읽는 것'을 구분하지 않는다.
+     * Phase 3-C. 0023 chairman_recent_condition() RPC. 오늘(KST) 행이 없으면 어제 것을 준다 —
+     * 야간 Job이 07:00 KST로 옮겨 가 체크인보다 먼저 도는 것이 기본이 됐기 때문이다.
+     * 어느 날 값인지 같이 받아 모델이 "어제 기준"이라고 말할 수 있게 한다.
      */
-    async getTodayCondition(): Promise<ChairmanCondition | null> {
-      const { data, error } = await sb.rpc('chairman_today_condition')
-      if (error) throw new Error(`Supabase chairman_today_condition ${error.code ?? '?'}: ${error.message}`)
-      return (data ?? null) as ChairmanCondition | null
+    async getRecentCondition(): Promise<{ condition: ChairmanCondition; checkin_date: IsoDate } | null> {
+      const { data, error } = await sb.rpc('chairman_recent_condition')
+      if (error) throw new Error(`Supabase chairman_recent_condition ${error.code ?? '?'}: ${error.message}`)
+      const row = (data as { condition: number; checkin_date: string }[] | null)?.[0]
+      return row ? { condition: row.condition as ChairmanCondition, checkin_date: row.checkin_date } : null
     },
 
     /**

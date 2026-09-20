@@ -3,7 +3,7 @@
   "crons": [
     {
       "path": "/api/cron/night-brief",
-      "schedule": "0 14 * * *"
+      "schedule": "0 22 * * *"
     }
   ]
 }

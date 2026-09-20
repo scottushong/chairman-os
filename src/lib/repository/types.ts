@@ -215,13 +215,20 @@ export interface ChairmanRepository {
   /** checkin_date가 있으면 고치고(그날 값 갱신) 없으면 만든다. audit_log(create|update)를 같이 남긴다. */
   saveCheckin(input: ChairmanCheckinInput, actor: AuditActor): Promise<ChairmanCheckin>
   /**
-   * P5-5d 1라운드 수정. 표를 직접 읽지 않고 0019 chairman_today_condition() RPC를 부른다 —
-   * 오늘(KST) condition 정수 하나만, Chairman·AIAgent 세션 양쪽에서 통과한다(RLS가 아니라
-   * 함수 안의 역할 판정이라서다). 다른 역할이거나 오늘 기록이 없으면 null — 없는 것과 못 읽는
-   * 것을 여기서도 구분하지 않는다. 야간 브리핑(night-brief.ts)이 쓴다. 화면의 '오늘 체크인'
-   * 칸은 Chairman 세션으로 표를 그대로 읽는 getCheckin을 쓴다(src/app/(morning)/ai/page.tsx).
+   * P5-5d에서 만든 keyhole을 Phase 3-C에서 하루 넓힌 것(0023 chairman_recent_condition()).
+   * 표를 직접 읽지 않고 RPC를 부른다 — Chairman·AIAgent 세션 양쪽에서 통과한다(RLS가 아니라
+   * 함수 안의 역할 판정이라서다).
+   *
+   * '오늘'이 아니라 '오늘 아니면 어제'인 이유: 야간 Job이 23:00 KST에서 07:00 KST로 옮겨 가,
+   * 회장의 아침 체크인보다 **먼저** 도는 것이 기본이 됐다. 오늘 것만 보면 거의 매일 null이라
+   * 브리핑에서 컨디션 문장이 통째로 사라진다. 대신 어느 날 값인지(checkin_date) 같이 주고,
+   * 모델이 "어제 컨디션 기준"이라고 말하게 한다.
+   *
+   * 다른 역할이거나 이틀 안에 기록이 없으면 null — 없는 것과 못 읽는 것을 여기서도
+   * 구분하지 않는다. 화면의 '오늘 체크인' 칸은 Chairman 세션으로 표를 그대로 읽는
+   * getCheckin을 쓴다(src/app/(morning)/ai/page.tsx).
    */
-  getTodayCondition(): Promise<ChairmanCondition | null>
+  getRecentCondition(): Promise<{ condition: ChairmanCondition; checkin_date: IsoDate } | null>
 
   /**
    * Phase 4-A 이니셔티브(0017). Chairman·GroupCFO는 읽고 쓰고, AIAgent는 읽기만,

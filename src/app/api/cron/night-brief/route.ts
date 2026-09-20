@@ -9,7 +9,7 @@ import { isCronAuthorized } from '@/lib/cron-auth'
 /**
  * /api/cron/night-brief — 야간 브리핑 Job의 입구 (Phase 3-A 블록 3).
  *
- *   GET   Vercel Cron. vercel.json이 매일 14:00 UTC(23:00 KST)에 부른다.
+ *   GET   Vercel Cron. vercel.json이 매일 22:00 UTC(07:00 KST)에 부른다.
  *         Vercel이 Authorization: Bearer ${CRON_SECRET} 을 실어 보낸다. 그 외에는 401.
  *         (Phase 2-A에서 이 앞에 ECOUNT 동기화를 붙였다가 2-B에서 걷어냈다 — 회계 원천은 자체 장부다.)
  *   POST  /ai 화면의 '수동 실행'(테스트용). 요청자의 세션이 Chairman일 때만 돈다.
@@ -18,6 +18,9 @@ import { isCronAuthorized } from '@/lib/cron-auth'
  * 여기서 확인하는 것은 '이 Job을 시작해도 되는가'까지다.
  *
  * proxy matcher에서 이 경로를 뺐다. Cron 요청에는 로그인 쿠키가 없어 /login으로 튕기기 때문이다.
+ *
+ * Phase 3-C에서 23:00 KST → 07:00 KST로 옮겼다. Vercel Hobby는 cron 슬롯이 하나라
+ * '밤에 만들고 아침에 보낸다'를 두 슬롯으로 나눌 수 없다 — 아침에 만들어 바로 보낸다.
  */
 
 export const dynamic = 'force-dynamic'

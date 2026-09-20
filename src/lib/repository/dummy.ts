@@ -649,10 +649,15 @@ export const dummyRepository: ChairmanRepository = {
     return { ...saved }
   },
 
-  /** P5-5d 1라운드 수정. dummy는 역할별 RLS를 흉내 내지 않으니 오늘 값을 그대로 준다. */
-  async getTodayCondition() {
-    const found = memoryCheckins.get(kstToday())
-    return found ? found.condition : null
+  /** Phase 3-C. dummy는 역할별 RLS를 흉내 내지 않는다 — 오늘 것이 있으면 오늘, 없으면 어제. */
+  async getRecentCondition() {
+    const today = kstToday()
+    const yesterday = new Date(Date.parse(`${today}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10)
+    for (const d of [today, yesterday]) {
+      const found = memoryCheckins.get(d)
+      if (found) return { condition: found.condition, checkin_date: d }
+    }
+    return null
   },
 
   async listInitiatives() {

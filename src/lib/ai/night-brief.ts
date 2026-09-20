@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { orderProjects, projectClock } from '@/lib/chairman-project'
 import { formatEok } from '@/lib/format'
 import { initiativeClock, orderInitiatives, stalenessDays } from '@/lib/initiative'
+import { sendKakaoBrief } from '@/lib/kakao/send-brief'
 import { financeBriefContext } from '@/lib/ledger/brief-context'
 import { createSupabaseRepository } from '@/lib/repository/supabase'
 import { signInServiceAccount } from '@/lib/supabase/service-account'
@@ -16,8 +17,9 @@ import type { AiAdapter, AiBrief, ChairmanContext, CompanyContext } from './adap
  *   AI Agent로 로그인 → 회사별 KPI·결정·알림·업무·원장(0015) 읽기(RLS 통과)
  *   → 회사별 summarizeCompany → generateDailyBrief로 압축 (회장 루틴 0014을 기준으로 함께 넘긴다)
  *   → ai_night_outputs INSERT (회사별 N건 + 그룹 1건) → audit_log(night_job_completed)
+ *   → 카카오 발송(Phase 3-C)
  *
- * 세 가지를 지킨다.
+ * 네 가지를 지킨다.
  *
  * ① 요청한 사람의 세션으로 돌지 않는다. Cron이든 회장의 '수동 실행'이든, 데이터는 늘 Agent 계정으로
  *   읽고 쓴다. 회장 세션으로 돌리면 수동 실행 때만 Vault까지 보이는 요약이 생긴다 —
@@ -27,6 +29,12 @@ import type { AiAdapter, AiBrief, ChairmanContext, CompanyContext } from './adap
  *   '어젯밤 무엇이 안 됐나'도 회장이 아침에 봐야 할 정보다. 조용히 빠진 회사는 정상처럼 보인다.
  *
  * ③ 행마다 바로 쓴다. 다섯 회사를 다 돌고 한 번에 쓰면 마지막에 죽을 때 앞의 결과까지 잃는다.
+ *
+ * ④ 카카오 발송은 맨 마지막이고, 실패해도 Job은 성공이다 (Phase 3-C). 카톡이 안 갔다고
+ *   브리핑 행까지 Failed가 되면 아침에 /ai를 열어도 '어젯밤 실패'만 보인다 —
+ *   발송은 브리핑의 배달 수단이지 브리핑 자체가 아니다. 성패는 audit_log에 남는다.
+ *   cron으로 돌 때만 보낸다. 수동 실행은 하루에 몇 번이고 누를 수 있는 버튼이라
+ *   누를 때마다 카톡이 가면 알림이 아니라 소음이 된다 — 테스트 발송 버튼이 따로 있다.
  */
 
 export type NightBriefTrigger = 'cron' | 'manual'
@@ -46,7 +54,11 @@ export interface NightBriefReport {
 
 const GROUP_KEY = 'group'
 
-/** 23:00 KST에 돌아 '그날'을 요약한다. UTC 날짜를 쓰면 09:00 전 수동 실행이 어제로 찍힌다. */
+/**
+ * 07:00 KST에 돌아 '오늘'을 요약한다(Phase 3-C 이전에는 23:00에 돌아 그날을 요약했다).
+ * UTC 날짜를 쓰면 09:00 KST 전에 도는 이 Job이 늘 어제로 찍힌다 — 07:00은 그 구간 안이라
+ * 옮긴 뒤로 이 함수가 더 중요해졌다.
+ */
 export function kstDate(now = new Date()): IsoDate {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' }).format(now)
 }
@@ -166,18 +178,22 @@ export async function runNightBrief(opts: {
     )
 
     // 그룹 1건. 회사 요약이 하나도 없으면 모델을 부르지 않는다 — 빈 입력으로 쓴 브리핑은 지어낸 글이다.
+    // chairman·groupBrief를 try 밖에 두는 것은 Phase 3-C 때문이다. 카카오 발송이 이 둘을
+    // 다시 읽지 않고 그대로 쓴다 — 같은 브리핑을 두 번 읽으면 화면과 카톡이 다른 말을 할 수 있다.
+    let chairman: ChairmanContext | null = null
+    let groupBrief: AiBrief | null = null
     try {
       if (readError) throw new Error(readError)
       if (!opts.adapter) throw new Error(opts.adapterError ?? 'AI 어댑터 없음')
       if (briefs.length === 0) throw new Error('요약에 성공한 회사가 없다.')
       const order = new Map(businesses.map((b, i) => [b.business_id, i]))
       briefs.sort((a, b) => (order.get(a.business_id) ?? 0) - (order.get(b.business_id) ?? 0))
-      const chairman = await readChairmanContext(repo, run_date)
+      chairman = await readChairmanContext(repo, run_date)
       const finance = snapshot?.ledger
         ? financeBriefContext(snapshot.ledger, businesses.map((b) => b.business_id))
         : null
-      const brief = await opts.adapter.generateDailyBrief({ date: run_date, companies: briefs, failed, chairman, finance })
-      await write({ business_id: null, job_type: 'Daily Brief', status: 'Done', brief })
+      groupBrief = await opts.adapter.generateDailyBrief({ date: run_date, companies: briefs, failed, chairman, finance })
+      await write({ business_id: null, job_type: 'Daily Brief', status: 'Done', brief: groupBrief })
     } catch (e) {
       const msg = errorText(e)
       console.error('[night-brief] group', msg)
@@ -210,6 +226,29 @@ export async function runNightBrief(opts: {
       report.ok = false
       report.error = `audit_log 기록 실패: ${auditError.message}`
     }
+
+    /**
+     * Phase 3-C — 마지막 단계. audit_log 뒤에 두는 것은 순서에 뜻이 있다.
+     * 'Job이 끝났다'가 먼저 기록되고, 그 배달 결과가 뒤따른다. 발송을 앞에 두면
+     * 카톡은 갔는데 Job 완료 기록이 없는 상태가 생길 수 있다.
+     *
+     * report에 싣지 않는 이유: report는 브리핑이 몇 건 남았나를 말하는 값이다.
+     * 카톡 성패는 audit_log(kakao_sent / kakao_failed)에서 본다.
+     */
+    if (opts.trigger === 'cron' && groupBrief) {
+      // 화면과 같은 고르기다 — orderProjects가 목표일이 가까운 Active를 맨 앞에 둔다.
+      const lead = chairman?.projects[0] ?? null
+      await sendKakaoBrief({
+        sb,
+        actorUserId: agentId,
+        actorRole: 'AIAgent',
+        runDate: run_date,
+        summary: groupBrief.summary,
+        dDay: lead?.d_day ?? null,
+        projectTitle: lead?.title ?? null,
+        trigger: 'cron',
+      })
+    }
   } catch (e) {
     report.error = errorText(e)
     console.error('[night-brief] unexpected', report.error)
@@ -231,11 +270,11 @@ export async function runNightBrief(opts: {
  *
  * 체크인(0019)은 0014/0017과 달리 AIAgent에게 표 자체를 읽는 권한을 주지 않는다 — Chairman
  * 전용 RLS다. 이 repo는 AIAgent 세션으로 만들어지고(runNightBrief의 signInAgent) 이 Job의
- * 기본 경로(cron, 23:00 KST)에는 애초에 빌려 올 회장 세션이 없으므로, 화면(/ai)의 getCheckin처럼
+ * 기본 경로(cron, 07:00 KST)에는 애초에 빌려 올 회장 세션이 없으므로, 화면(/ai)의 getCheckin처럼
  * 표를 직접 읽는 메서드는 여기서 못 쓴다(1라운드 수정 전에는 이 자리에서 표를 직접 읽는
  * listRecentCheckins를 불러 늘 빈 배열을 받고 있었다 — 배선은 됐지만 실제로는 한 번도 안
  * 켜지는 죽은 코드였다. 2라운드에서 아무도 안 쓰는 그 메서드 자체를 지웠다). 대신
- * getTodayCondition()으로 0019 chairman_today_condition() RPC(security definer, 표 대신 하나의
+ * getRecentCondition()으로 0023 chairman_recent_condition() RPC(security definer, 표 대신 하나의
  * keyhole)를 부른다 — 이 함수는 세션이 아니라 함수 안의 역할 판정으로 AIAgent를 통과시킨다.
  */
 async function readChairmanContext(
@@ -259,15 +298,15 @@ async function readChairmanContext(
     initiatives = []
   }
 
-  // 체크인(0019)도 이니셔티브와 같은 이유로 따로 감싼다 — 못 읽었다고 나머지 chairman 칸까지
-  // null로 떨구지 않는다. getTodayCondition()은 condition 하나만 돌려준다(0019
-  // chairman_today_condition() RPC) — sleep_hours·weight_kg·meal_note는 그 함수의 반환값에
-  // 아예 없어서 여기서도 고를 것이 없다. 애초에 반환하지 않은 값은 모델 프롬프트로 새어 나갈
-  // 수 없다.
+  // 체크인(0023 chairman_recent_condition())도 이니셔티브와 같은 이유로 따로 감싼다 —
+  // 못 읽었다고 나머지 chairman 칸까지 null로 떨구지 않는다. 오늘 행이 없으면 어제 것이
+  // 오고, 어느 날 값인지 as_of로 같이 온다. 07:00 KST에 도는 이 Job은 회장의 아침 체크인보다
+  // 먼저 도는 것이 기본이라, 여기서 오는 값은 대개 어제 것이다.
+  // sleep_hours·weight_kg·meal_note는 그 함수의 반환값에 아예 없어서 여기서도 고를 것이 없다.
   let checkin: ChairmanContext['checkin'] = null
   try {
-    const condition = await repo.getTodayCondition()
-    checkin = condition ? { condition } : null
+    const recent = await repo.getRecentCondition()
+    checkin = recent ? { condition: recent.condition, as_of: recent.checkin_date } : null
   } catch (e) {
     console.error('[night-brief] checkin', errorText(e))
     checkin = null

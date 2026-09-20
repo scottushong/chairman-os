@@ -82,14 +82,11 @@ export interface ChairmanContext {
   /** 선언문 전문. 아직 안 썼으면 null */
   manifesto: string | null
   /**
-   * 오늘의 체크인(0019, P5-5d). condition 하나만 싣는다 — 프롬프트가 실제로 쓰는 값은
-   * "condition ≤ 2인가"뿐이고, sleep_hours·weight_kg·meal_note는 쓸 일이 없다(1라운드 수정:
-   * sleep_hours도 처음엔 넣었지만 뺐다 — ai_night_outputs는 GroupCFO·임원도 읽으므로, 모델이
-   * 안 쓰는 회장의 수면 시간을 굳이 문장으로 풀어낼 여지를 남기지 않는다). 넘기지 않은 값은
-   * 모델 프롬프트로 새어 나갈 수 없다. 기록이 없으면(또는 못 읽으면) null — daily-brief.md는
-   * 이때 컨디션 문장을 쓰지 않는다.
+   * 0023 chairman_recent_condition()이 준 값. condition 하나와 그것이 **어느 날** 값인가.
+   * as_of가 오늘이 아니면 회장이 아직 아침 체크인을 하기 전이라는 뜻이다 —
+   * 야간 Job이 07:00 KST로 옮겨 간 뒤로는 그쪽이 기본이다.
    */
-  checkin: { condition: ChairmanCondition } | null
+  checkin: { condition: ChairmanCondition; as_of: IsoDate } | null
 }
 
 export interface DailyBriefInput {

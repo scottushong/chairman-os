@@ -68,7 +68,7 @@ export function RunNightBrief() {
         type="button"
         onClick={run}
         disabled={busy}
-        title="테스트용. 매일 23:00 KST Cron과 같은 Job을 지금 한 번 돌립니다."
+        title="테스트용. 매일 07:00 KST Cron과 같은 Job을 지금 한 번 돌립니다."
         className="flex items-center gap-1.5 rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink disabled:cursor-wait disabled:opacity-60"
       >
         <Icon name="sparkles" className={`size-3.5 text-gold ${busy ? 'animate-pulse' : ''}`} />
