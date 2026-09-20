@@ -2328,6 +2328,217 @@ Production 환경에 `KAKAO_REST_API_KEY`, `KAKAO_REDIRECT_URI`, `APP_BASE_URL`,
 
 ---
 
+## Task 9: 월요일 첫 줄 — "지난주 행동 리뷰 하세요 ▶"
+
+2026-09-20 회장 추가 지시. Phase 4-C(주간 행동 리뷰)가 들어올 자리를 미리 연다.
+
+4-C가 아직 없으므로 **이 줄은 링크가 아니라 글이다.** 카카오 텍스트 템플릿의 버튼은 하나뿐이고
+그 하나는 이미 '전문 보기'가 쓰고 있다 — 4-C가 들어오면 그 버튼이 여는 `/ai`가 월요일에
+주간 리뷰 카드를 먼저 보여 주게 되고(4-C 4번), 이 줄은 그때 그 화면을 가리키는 말이 된다.
+지금은 "월요일 아침에 이 말이 눈에 들어오는가"만 맞으면 된다.
+
+**Files:**
+- Modify: `src/lib/kakao/message.ts`
+- Modify: `src/lib/kakao/send-brief.ts`
+- Modify: `scripts/check-kakao.ts`
+
+**Interfaces:**
+- Consumes: Task 2 `buildKakaoBriefText()` · `BriefTextInput`, Task 4 `sendKakaoBrief()`가 이미 들고 있는 `runDate`
+- Produces: `BriefTextInput.runDate`, `MONDAY_REVIEW_LINE`, `isMonday()`
+
+- [ ] **Step 1: `message.ts`에 요일 판정과 그 줄을 더한다**
+
+`KAKAO_TEXT_LIMIT` 아래 상수 자리에 더한다:
+
+```ts
+/** 월요일 아침에만 맨 앞에 붙는 줄. Phase 4-C 주간 행동 리뷰가 들어올 자리다. */
+export const MONDAY_REVIEW_LINE = '지난주 행동 리뷰 하세요 ▶'
+```
+
+`len()`·`cut()` 옆에, 같은 '순수 도구' 무리로 더한다:
+
+```ts
+/**
+ * runDate가 월요일인가.
+ *
+ * runDate는 이미 KST 기준 날짜다(night-brief.ts의
+ * `Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Seoul' })` 산출). 그래서 여기서 시간대를
+ * 다시 계산하지 않는다 — 날짜 세 토막을 그대로 읽어 요일만 본다.
+ *
+ * Date.UTC로 직접 만드는 이유: `new Date('2026-09-21')`은 UTC로 읽히지만
+ * `new Date('2026/09/21')`은 실행 환경의 시간대로 읽혀 요일이 하루 어긋난다. Vercel은 UTC,
+ * 개발 기계는 KST라 그 차이가 로컬에서만 맞고 production에서 틀리는 모양으로 나온다.
+ * 형식이 맞지 않으면 false — 월요일이 아닌 쪽이 안전한 기본값이다(줄이 빠질 뿐 발송은 간다).
+ */
+export function isMonday(runDate: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(runDate)
+  if (!m) return false
+  return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]))).getUTCDay() === 1
+}
+```
+
+`BriefTextInput`에 칸을 하나 더한다(`summary` 아래):
+
+```ts
+  /** 'YYYY-MM-DD', KST 기준. 월요일이면 맨 앞에 MONDAY_REVIEW_LINE이 붙는다. */
+  runDate: string
+```
+
+`IsoDate`(`@/types`)를 쓰지 않고 `string`으로 두는 이유: 이 파일은 지금 import가 하나도 없다.
+그래서 `scripts/check-kakao.ts`가 경로 별칭 해석 없이 tsx로 바로 이 파일을 잰다. 칸 하나 때문에
+그 성질을 잃지 않는다 — 실제 값은 `send-brief.ts`에서 `IsoDate`로 좁혀져 들어온다.
+
+- [ ] **Step 2: `buildKakaoBriefText()`가 월요일에 그 줄을 먼저 세운다**
+
+머리글·꼬리와 **같은 등급**으로 확보한다. 본문이 밀려나도 이 줄은 남는다 — 월요일 메시지의
+용건이 그 줄이기 때문이다. 200자 보장은 그대로다: 붙는 글자를 SCAFFOLD에 먼저 넣고
+본문 예산을 그만큼 줄인다.
+
+`head` 계산 바로 아래에 더하고, SCAFFOLD·return 두 줄을 고친다:
+
+```ts
+  // 월요일이면 리뷰 줄이 맨 앞에 선다. 본문보다 먼저 자리를 잡는다 —
+  // 그 줄이 밀려나면 월요일 메시지는 평일 메시지와 구별되지 않는다.
+  const prefix = isMonday(input.runDate) ? `${MONDAY_REVIEW_LINE}\n\n` : ''
+
+  // 머리글과 꼬리를 먼저 확보한다. 본문이 밀려나더라도 '무슨 날이고 어디를 열면 되는가'는 남는다.
+  // 긴 제목 하나로 200자를 다 먹는 경우가 있어 머리글도 자른다.
+  // SCAFFOLD는 줄바꿈 넷('\n\n' 두 번)과 꼬리, 그리고 월요일이면 리뷰 줄이 차지하는 고정 비용이다.
+  const SCAFFOLD = len(`${prefix}\n\n\n\n${TAIL}`)
+```
+
+```ts
+  return body ? `${prefix}${safeHead}\n\n${body}\n\n${TAIL}` : `${prefix}${safeHead}\n\n${TAIL}`
+}
+```
+
+`safeHead`·`budget` 두 줄은 손대지 않는다 — 이미 `SCAFFOLD`에서 값을 받는다.
+
+- [ ] **Step 3: `send-brief.ts`가 `runDate`를 넘긴다**
+
+`buildKakaoBriefText` 호출(한 자리뿐이다)에 칸 하나를 더한다:
+
+```ts
+  const text = buildKakaoBriefText({
+    dDay: opts.dDay,
+    projectTitle: opts.projectTitle,
+    summary,
+    runDate: opts.runDate,
+  })
+```
+
+`opts.runDate`는 이미 이 함수의 인자다(`linkUrl`이 같은 값을 쓴다). 야간 Job은 KST 날짜를,
+테스트 발송(`/api/kakao/test`)은 그날의 KST 날짜를 넣는다 — 월요일에 테스트 발송을 하면
+월요일 메시지가 그대로 온다. 그것이 맞다. 미리 보는 것이 테스트 발송의 목적이다.
+
+- [ ] **Step 4: `scripts/check-kakao.ts`가 이 줄을 잰다**
+
+먼저 **기존 단언 여덟 자리 전부**에 `runDate`를 더한다. 없으면 타입 오류가 난다.
+기존 단언이 재는 것은 월요일과 무관하므로 전부 화요일을 넣는다 — 파일 위쪽에 상수로:
+
+```ts
+const TUE = '2026-09-22' // 화요일. 리뷰 줄이 없는 평범한 날.
+const MON = '2026-09-21' // 월요일.
+```
+
+기존 여덟 자리는 전부 `TUE`다. 하나도 `MON`으로 바꾸지 않는다 — 그 단언들은 머리글이
+맨 앞에 온다고 단언하고 있어서, 월요일로 바꾸면 이 Task와 무관한 이유로 깨진다.
+월요일의 자르기는 아래 단언 11이 따로 잰다.
+
+그리고 끝의 `console.log` 앞에 단언 넷을 더한다:
+
+```ts
+// 9. 월요일이면 리뷰 줄이 맨 앞에 온다. 4-C 주간 리뷰가 들어올 자리다.
+{
+  const text = buildKakaoBriefText({
+    dDay: 'D-780', projectTitle: '회장직 승계', summary: '오늘은 조용하다.', runDate: MON,
+  })
+  assert.ok(
+    text.startsWith(`${MONDAY_REVIEW_LINE}\n\n☀️ D-780 · 회장직 승계\n\n`),
+    `월요일 첫 줄이 다르다: ${JSON.stringify(text)}`,
+  )
+  assert.ok(text.endsWith('\n\n▶ 전문 보기'), '월요일에 꼬리를 잃었다')
+}
+
+// 10. 다른 요일에는 그 줄이 없다. 일요일·화요일 둘 다 본다 — 경계가 월요일 하루인지 확인한다.
+{
+  for (const day of ['2026-09-20', TUE, '2026-09-26']) {
+    const text = buildKakaoBriefText({
+      dDay: 'D-780', projectTitle: '회장직 승계', summary: '오늘은 조용하다.', runDate: day,
+    })
+    assert.ok(!text.includes(MONDAY_REVIEW_LINE), `${day}에 리뷰 줄이 붙었다`)
+    assert.ok(text.startsWith('☀️ D-780'), `${day} 머리글이 다르다: ${JSON.stringify(text)}`)
+  }
+}
+
+// 11. 월요일에도 200자를 넘지 않는다. 리뷰 줄은 본문보다 먼저 자리를 잡는다 —
+//     긴 요약에 밀려 사라지지 않고, 대신 본문이 그만큼 줄어든다.
+//     한 문장으로 예산을 넘겨 '문장 단위'가 아니라 '글자 단위'로 잘리게 만든다 —
+//     그래야 줄어든 양을 정확히 잴 수 있다(문장 단위로 자르면 경계가 들쭉날쭉하다).
+{
+  const flood = '가'.repeat(300) + '.'
+  const mon = buildKakaoBriefText({
+    dDay: 'D-780', projectTitle: '회장직 승계', summary: flood, runDate: MON,
+  })
+  const tue = buildKakaoBriefText({
+    dDay: 'D-780', projectTitle: '회장직 승계', summary: flood, runDate: TUE,
+  })
+
+  assert.ok(len(mon) <= KAKAO_TEXT_LIMIT, `월요일 ${len(mon)}자 — 200자를 넘었다`)
+  assert.ok(mon.startsWith(`${MONDAY_REVIEW_LINE}
+
+`), '자르다가 월요일 줄을 잃었다')
+  assert.ok(mon.endsWith('
+
+▶ 전문 보기'), '자르다가 꼬리를 잃었다')
+
+  const monBody = mon.split('
+
+')[2]
+  const tueBody = tue.split('
+
+')[1]
+  assert.equal(
+    len(tueBody) - len(monBody),
+    len(MONDAY_REVIEW_LINE) + 2,
+    '리뷰 줄이 차지한 만큼 본문이 줄지 않았다',
+  )
+}
+
+// 12. 날짜 형식이 아니면 월요일로 보지 않는다 — 줄이 빠질 뿐 발송은 간다.
+//     그리고 실행 환경의 시간대가 요일을 흔들지 못한다(Date.UTC로 읽는다).
+{
+  assert.equal(isMonday('2026-09-21'), true)
+  assert.equal(isMonday('2026/09/21'), false)
+  assert.equal(isMonday(''), false)
+  assert.equal(isMonday('2026-09-21T07:00:00+09:00'), false)
+}
+```
+
+import 줄에 `MONDAY_REVIEW_LINE`과 `isMonday`를 더한다.
+마지막 `console.log` 문구에 `· 월요일 리뷰 줄`을 덧붙인다.
+
+- [ ] **Step 5: Self-Review**
+
+```bash
+npm run check:kakao     # 단언 전부 통과
+npm run typecheck
+npm run lint
+```
+
+`npm run check:kakao`를 **TZ를 바꿔서 한 번 더** 돌린다 — 요일 계산이 실행 환경에 흔들리지 않는 것이
+이 Task에서 유일하게 조용히 틀릴 수 있는 자리다:
+
+```bash
+TZ=UTC npm run check:kakao
+TZ=Pacific/Kiritimati npm run check:kakao   # UTC+14
+TZ=Pacific/Midway npm run check:kakao       # UTC-11
+```
+
+세 번 다 같은 결과여야 한다.
+
+---
+
 ## Self-Review
 
 **1. 스펙 대조**
@@ -2350,6 +2561,7 @@ Production 환경에 `KAKAO_REST_API_KEY`, `KAKAO_REDIRECT_URI`, `APP_BASE_URL`,
 | cron을 07:00 KST로, `vercel.json` 수정 | Task 6 Step 1 |
 | 체크인 없으면 전날 값 또는 미입력 | Task 1 Step 1(5절), Task 6 Step 2·3·4·5(e) |
 | "테스트 발송" 버튼 | Task 5 Step 3, Task 7 Step 2 |
+| 월요일 첫 줄 "지난주 행동 리뷰 하세요 ▶" (4-C 주간 리뷰 연동 자리) | Task 9 Step 1·2 |
 | 검증: 연결 → 테스트 발송 → 수신 → 커밋 → staging → production 승인 요청 | Task 8 Step 5 |
 | Vercel 환경변수 이름 출력 | Global Constraints의 표, Task 8 Step 1 |
 
@@ -2396,3 +2608,8 @@ Task 5 Step 3, Task 7 Step 2·3에 "실제 필드명/아이콘 이름을 확인�
 >
 > 검증: 카카오 연결(내가 브라우저에서 로그인) → 테스트 발송 → 수신 확인 → 커밋 → staging → production 승인 요청.
 > Vercel에 넣을 환경변수 이름 출력.
+
+**2026-09-20 추가 지시** (Task 9):
+
+> 계획에 한 줄 추가: 월요일 카톡 메시지는 "지난주 행동 리뷰 하세요 ▶" 를 첫 줄에 (4-C 주간 리뷰 연동 자리).
+> 끝나면 master 병합 → staging → production 승인 요청. 카카오 로그인은 내가 한다.
