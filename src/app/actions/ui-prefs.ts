@@ -8,6 +8,7 @@ import {
   readAppPrefs,
   readSidebarPrefs,
   toggleCollapsed,
+  withNotifySwitch,
   THEME_CHOICE,
   type ThemeChoice,
 } from '@/lib/ui-prefs'
@@ -122,7 +123,7 @@ export async function saveNotifySwitch(kind: unknown, on: unknown): Promise<UiPr
     const repo = await getRepository()
     const current = readAppPrefs((await repo.getUserSettings()).app_prefs)
     await repo.saveUserSettings({
-      app_prefs: { ...current, notify: { ...current.notify, [kind as NotificationKind]: on } },
+      app_prefs: withNotifySwitch(current, kind as NotificationKind, on),
     })
   } catch (e) {
     console.error('[ui-prefs]', e)

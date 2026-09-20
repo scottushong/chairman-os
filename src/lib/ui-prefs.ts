@@ -40,13 +40,9 @@ export interface SidebarPrefs {
   hide_not_ready: boolean
 }
 
-export const SIDEBAR_PREFS_DEFAULT: SidebarPrefs = {
-  collapsed_groups: [],
-  hidden_items: [],
-  // 기본은 '보인다'다. 준비 중 메뉴를 남겨 둔 것이 05_Architecture의 전체 그림을 보여 주기
-  // 위해서라(DEFERRED D-14 선택지 B), 기본으로 감추면 그 판단을 조용히 뒤집는 셈이 된다.
-  hide_not_ready: false,
-}
+// 기본값은 readSidebarPrefs(빈 주머니)가 낸다 — 상수를 따로 두면 두 곳이 갈라진다.
+// 기본이 '전부 보인다'인 이유: 준비 중 메뉴를 남겨 둔 것이 05_Architecture의 전체 그림을
+// 보여 주기 위해서라(DEFERRED D-14 선택지 B), 기본으로 감추면 그 판단을 조용히 뒤집는 셈이 된다.
 
 /* ------------------------------------------------------------------ 화면 전체 */
 
@@ -124,10 +120,17 @@ export function readAppPrefs(raw: PrefsBag): AppPrefs {
 /**
  * 이 항목을 사이드바에서 감출 것인가.
  *
- * 두 갈래다 — 항목별 체크(hidden_items)와 '준비 중 기본 숨김'(hide_not_ready).
- * 항목별 체크가 먼저다: 회장이 '구매 / SCM'을 **직접 체크 해제**해 둔 상태에서
- * 기본 숨김을 켜면, 그 항목은 준비 중이라도 보여야 한다고 읽는 것이 자연스럽다 —
- * 그래서 explicit 목록이 없을 때만 준비 중 규칙으로 내려간다.
+ * 규칙은 둘이고 **더해진다(OR)**.
+ *   ① hidden_items에 이 키가 있다        — 사람이 직접 감췄다
+ *   ② hide_not_ready이고 이 항목이 준비 중 — 한 번에 감추는 지름길
+ *
+ * ②가 켜져 있는 동안 준비 중 항목은 ①과 무관하게 감춰진다. '이 항목만 예외로 보이게'라는
+ * 세 번째 상태를 두지 않았다 — 주머니에 '숨긴 키'와 '보이게 한 키' 두 목록이 생기고,
+ * 둘이 충돌할 때 무엇이 이기는지를 화면과 서버가 각자 판정하게 된다. 지름길을 끄면
+ * ①만 남아 직접 고른 설정이 그대로 살아난다.
+ *
+ * 예외는 하나, **지금 보고 있는 화면**이다(active). 감춰 둔 메뉴로 어쩌다 들어왔을 때
+ * 사이드바에 그 자리가 없으면 어디에 있는지 알 수 없다.
  */
 export function isHidden(
   item: { key: string; ready: boolean },
@@ -176,10 +179,6 @@ export function toggleCollapsed(existing: string[], groupKey: string, collapsed:
 }
 
 /** 알림 종류 하나를 켜거나 끈다. 모르는 키는 들어오지 못한다 — 타입이 막는다. */
-export function withNotifySwitch(
-  prefs: AppPrefs,
-  kind: NotificationKind,
-  on: boolean,
-): AppPrefs {
+export function withNotifySwitch(prefs: AppPrefs, kind: NotificationKind, on: boolean): AppPrefs {
   return { ...prefs, notify: { ...prefs.notify, [kind]: on } }
 }

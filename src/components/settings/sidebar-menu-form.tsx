@@ -97,8 +97,9 @@ export function SidebarMenuForm({
             준비 중 항목을 기본으로 숨기기
           </span>
           <span className="mt-0.5 block text-[10.5px] text-ink-muted">
-            아직 화면이 없는 메뉴를 한 번에 감춥니다. 아래에서 개별로 체크해 둔 항목이 있으면
-            그쪽이 먼저입니다 — 직접 고른 설정을 이 스위치가 덮지 않습니다.
+            아직 화면이 없는 메뉴를 한 번에 감춥니다. 켜 두는 동안 준비 중 항목은 아래에서
+            따로 켤 수 없고(줄이 흐려집니다), 이 스위치를 끄면 개별로 고른 설정이 그대로
+            살아납니다 — 이 스위치가 그 설정을 지우지는 않습니다.
           </span>
         </span>
       </label>
@@ -131,7 +132,7 @@ export function SidebarMenuForm({
                       </span>
                       {!row.ready ? (
                         <span className="ml-auto rounded bg-raised px-1.5 py-0.5 text-[9.5px] text-ink-muted">
-                          준비 중
+                          {notReady && !checked.includes(row.key) ? '준비 중 · 기본 숨김' : '준비 중'}
                         </span>
                       ) : null}
                     </label>
