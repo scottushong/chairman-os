@@ -64,6 +64,18 @@ npm run build         # 빌드 (타입 검사 포함)
 
 `SUPABASE_DB_PASSWORD`는 런타임에 필요 없다. 마이그레이션을 돌리는 자리에만 준다.
 
+Phase 3-C부터 Production에 카카오 4종이 더 필요하다. 전부 서버 전용이라 빌드에 박히지 않는다 —
+값을 바꿨을 때 재빌드가 필요한 것은 `NEXT_PUBLIC_*` 셋뿐이다.
+
+| 변수 | Production 값 |
+|---|---|
+| `KAKAO_REST_API_KEY` | 카카오 앱의 REST API 키 |
+| `KAKAO_REDIRECT_URI` | `https://chairman-os-eosin.vercel.app/api/kakao/callback` |
+| `APP_BASE_URL` | `https://chairman-os-eosin.vercel.app` |
+| `KAKAO_CLIENT_SECRET` | 카카오 콘솔에서 Client Secret을 켰을 때만 |
+
+`KAKAO_REDIRECT_URI`는 카카오 콘솔에 등록된 값과 **한 글자도 달라서는 안 된다.** 다르면 KOE006이다.
+
 ### Vercel Preview를 staging Supabase에 붙인다
 
 Vercel 프로젝트를 새로 만들지 않는다. 같은 프로젝트의 **Preview 환경만** staging DB를 보게 한다.
@@ -82,6 +94,7 @@ Settings → Environment Variables에서 아래를 넣고, 각 변수의 Environ
 | `INTEGRATION_EMAIL` · `INTEGRATION_PASSWORD` | staging 부트스트랩 ③에서 만든 계정 |
 | `ANTHROPIC_API_KEY` · `AI_MODEL` | staging 전용 키를 권한다 |
 | `CRON_SECRET` | production과 **다른** 값 |
+| `KAKAO_REST_API_KEY` · `KAKAO_REDIRECT_URI` · `APP_BASE_URL` | **넣지 않는다** (아래 참고) |
 
 **`SUPABASE_DB_PASSWORD`는 Vercel에 넣지 않는다.** 앱 런타임이 쓰지 않는 값이고, 넣는 순간
 마이그레이션 자격이 배포 환경에 상주한다(0절).
@@ -92,7 +105,12 @@ Settings → Environment Variables에서 아래를 넣고, 각 변수의 Environ
   이미 만들어진 Preview 배포의 값을 바꿨다면 캐시 없이 Redeploy 한다.
 - Preview는 기본적으로 production 브랜치가 아닌 **모든 브랜치**에 붙는다. 특정 브랜치만 원하면
   변수에 Branch를 지정한다.
-- **Vercel Cron은 Production 배포에서만 돈다.** Preview에서 야간 브리핑은 저절로 돌지 않는다.
+- **Preview에서 카카오 연결은 시험하지 않는다.** 카카오 콘솔에 등록된 Redirect URI는 고정된 둘
+  (production, localhost)뿐인데 Preview는 배포마다 호스트가 바뀐다. Preview에 카카오 변수를
+  넣으면 연결 버튼이 KOE006으로 떨어지므로 아예 넣지 않는다 — Preview에서 정상은
+  '연결 없음'이고, 야간 Job은 그때 `skipped: 카카오가 연결되어 있지 않다`로 조용히 지나간다.
+  카카오까지 보려면 별도 카카오 앱과 고정 Preview URL이 필요하다(DEFERRED).
+- **Vercel Cron은 Production 배포에서만 돈다.** Preview에서 아침 브리핑은 저절로 돌지 않는다.
   staging에서 보려면 손으로 부른다:
   `curl -H "Authorization: Bearer <staging CRON_SECRET>" https://<preview-url>/api/cron/night-brief`
   Preview에 Deployment Protection이 켜져 있으면 bypass 토큰을 함께 보내거나 잠시 꺼야 한다.
