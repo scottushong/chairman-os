@@ -1318,7 +1318,8 @@ async function subtreeRls(db: Db) {
     insert into projects (project_id, business_id, name, owner_user_id) values
       ('prj_sales', 'biz_dy',   '영업 프로젝트', '${H.lead}'),
       ('prj_buy',   'biz_dy',   '구매 프로젝트', '${H.buyer}'),
-      ('prj_vana',  'biz_vana', '남의 회사 것', '${H.lead}');
+      ('prj_vana',  'biz_vana', '남의 회사 것', '${H.lead}'),
+      ('prj_null',  'biz_dy',   '담당자 미지정', null);
     insert into tasks (task_id, project_id, title, owner_user_id) values
       ('tsk_lead',  'prj_sales', '팀장 업무',   '${H.lead}'),
       ('tsk_staff', 'prj_sales', '직원 업무',   '${H.staff}'),
@@ -1367,17 +1368,59 @@ async function subtreeRls(db: Db) {
     ['doc_sales'],
     '0026: 회사 격리가 깨졌다 — 소유자가 본인이라는 이유로 남의 회사 문서가 열린다',
   )
-  // **projects는 회사 범위 그대로다.** 0026 2-2절의 판단이고, 여기가 그것을 못 박는다.
-  //   tasks_read(0002:275-281)의 회사 판정이 projects를 exists로 거치는데, 정책 식 안의
-  //   subquery도 그 표의 RLS를 탄다. projects_read를 좁히는 순간 이 exists는 "회사가
-  //   같은가"가 아니라 "그 프로젝트가 나에게 보이는가"가 되고, 팀장이 만든 프로젝트 안의
-  //   **직원 자신의 업무**가 사라진다. 아래 b가 그때 빨개지지만, 원인이 tasks가 아니라
-  //   projects에 있다는 것을 여기서 먼저 말해 준다.
+  // ── 0027. projects에도 다섯 번째 겹이 얹혔는가, 그리고 그 대가를 치르지 않았는가 ──
+  //
+  //   0026은 이 표만 비워 두었다(0026 2-2절). 이유는 정당했다: tasks_read(0002:275-281)의
+  //   회사 판정이 projects를 exists로 거치는데, 정책 식 안의 subquery도 그 표의 RLS를 탄다.
+  //   그래서 projects_read를 좁히는 순간 그 exists는 "회사가 같은가"가 아니라 "그 프로젝트가
+  //   나에게 보이는가"가 되고, 팀장이 만든 프로젝트 안의 **직원 자신의 업무**가 사라진다.
+  //   0027이 그 회사 판정을 project_business_id() definer로 옮겨 먼저 치우고 겹을 얹었다.
+  //
+  //   **아래 첫 단언이 이 파일에서 가장 중요한 자리다.** A2가 PGlite로 재현한 실패가 정확히
+  //   그것이고, 이 단언이 없으면 다음 사람이 같은 실패를 다시 만든 채 초록을 본다 —
+  //   화면이 비는 것은 다음 날 아침이다.
+  assert.deepEqual(
+    await ids(H.staff, `select task_id from tasks where task_id = 'tsk_staff'`),
+    ['tsk_staff'],
+    '0027: 영업 직원이 자기 업무를 잃었다 — projects에 subtree 겹을 얹으면서 tasks_read의 회사 판정이 "프로젝트가 보이는가"로 바뀌었다(A2가 재현한 그 실패다). tasks_read가 project_business_id()를 쓰는지, projects에 force가 되살아나지 않았는지를 보라',
+  )
+  //   그 업무가 매달린 프로젝트 자체는 이제 직원에게 보이지 않는다. 위 단언과 이 단언이
+  //   **같이** 성립해야 0027이 한 일이 성립한다 — 하나만 보면 둘 중 어느 쪽으로든 속는다.
   assert.deepEqual(
     await ids(H.staff, `select project_id from projects where project_id = 'prj_sales'`),
-    ['prj_sales'],
-    '0026: 프로젝트에 subtree 겹이 걸렸다 — 그러면 tasks_read의 회사 판정(0002:275)이 "프로젝트가 보이는가"로 바뀌어 직원 자신의 업무가 사라진다(0026 2-2절)',
+    [],
+    '0027: 팀장의 프로젝트가 직원에게 그대로 보인다 — projects에 subtree 겹이 얹히지 않았다(0026이 남긴 구멍)',
   )
+  // 위에서 아래로는 보인다. 영업팀장은 자기 프로젝트를, 임원은 두 팀 것을 다 본다.
+  assert.deepEqual(
+    await ids(H.lead, `select project_id from projects where project_id in ('prj_sales','prj_buy')`),
+    ['prj_sales'],
+    '0027: 영업팀장이 자기 프로젝트를 못 보거나 구매팀 프로젝트를 본다 — subtree 겹의 방향이 틀렸다',
+  )
+  assert.deepEqual(
+    await ids(H.exec, `select project_id from projects where project_id in ('prj_sales','prj_buy')`),
+    ['prj_buy', 'prj_sales'],
+    '0027: 임원이 자기 subtree의 프로젝트를 못 본다 — 위에서 아래로는 보여야 한다(위임이란 그것이다)',
+  )
+  // 주인 없는 프로젝트는 **기존 회사 규칙 그대로** 보인다. 0026이 여섯 표에 쓴 것과
+  //   같은 규칙(owner_unknown)이다. prj_002는 0003 시드 — 담당자 칸이 비어 있지 않고
+  //   거기 박힌 uuid가 auth.users에 없다. prj_null은 칸 자체가 null인 경우다.
+  //   `owner_user_id is null`만 보면 prj_002가 사라지고 적용 당일 목록이 빈다.
+  assert.deepEqual(
+    await ids(H.staff, `select project_id from projects where project_id in ('prj_002','prj_null')`),
+    ['prj_002', 'prj_null'],
+    '0027: 주인 없는 프로젝트가 사라졌다 — owner_unknown() 분기를 빠뜨렸다(0003 시드의 가상 담당자 uuid까지 같은 규칙이다)',
+  )
+  // 공유는 subtree를 가로지른다. 구매팀장이 영업팀장에게 자기 프로젝트를 연다.
+  //   행은 superuser로 심는다 — 여기서 재는 것은 '읽기'이고, 공유를 만들 수 있는가는
+  //   아래 ③(shares_insert_visible)이 따로 잰다.
+  await db.exec(`insert into shares (entity_table, entity_id, shared_with, shared_by) values ('projects', 'prj_buy', '${H.lead}', '${H.buyer}')`)
+  assert.deepEqual(
+    await ids(H.lead, `select project_id from projects where project_id = 'prj_buy'`),
+    ['prj_buy'],
+    "0027: 공유한 프로젝트가 받는 사람에게 보이지 않는다 — projects_read에 shared_with_me('projects', …) 분기를 빠뜨렸다",
+  )
+  await db.exec(`delete from shares where entity_table = 'projects' and entity_id = 'prj_buy'`)
   // 반대 방향의 회귀 — 주인이 없는 시드 행은 **그대로 보여야** 한다.
   //   0003_seed의 tsk_002는 담당자 칸이 비어 있지 않고, 거기 박힌 uuid는 auth.users에
   //   없어서 user_profiles 행을 만들 수조차 없다(supabase.ts UNKNOWN_OWNER 주석 1번).
@@ -1730,6 +1773,12 @@ async function subtreeBackfill() {
  * chairman_recent_condition()을 같이 재는 이유: 이쪽이 더 조용하다. 토큰이 0행이면 발송이
  * 멈추지만 컨디션이 0행이면 브리핑에서 문장 하나가 빠질 뿐이라 아무도 눈치채지 못한다.
  */
+/** 0027의 실험에 쓰는 둘. rls()/H의 번호와 섞이지 않게 b번대를 쓴다. */
+const OW = {
+  boss: '00000000-0000-0000-0000-0000000000b1',
+  worker: '00000000-0000-0000-0000-0000000000b2',
+}
+
 async function definerUnderNonBypassOwner() {
   const db = new PGlite({ extensions: { pg_trgm } })
   await applyAll(db)
@@ -1746,15 +1795,25 @@ async function definerUnderNonBypassOwner() {
   // 마이그레이션이 force를 남기지 않았는가. 카탈로그에서 직접 잰다 —
   // 아래 행동 검사와 겹으로 두는 이유는, 행동 검사가 통과하는 다른 경로가 생겨도
   // "force를 걸지 않는다"는 0023의 결정 자체는 그대로 지켜져야 하기 때문이다.
+  //
+  // projects가 여기 끼어 있는 이유는 0027이다. 0002:194가 걸고 0003:595가 다시 건 force를
+  // 0027 1절이 내린다 — 그러지 않으면 project_business_id()가 production에서만 null을 준다.
+  // 누가 그것을 되살리면 이 줄이 빨개진다.
   const forced = await db.query<{ relname: string; f: boolean }>(
     `select relname, relforcerowsecurity as f from pg_class
-      where relname in ('chairman_kakao_token', 'chairman_checkins')`,
+      where relname in ('chairman_kakao_token', 'chairman_checkins', 'projects')`,
   )
   // 행 수부터 잰다 — 표 이름이 바뀌거나 오타가 나면 위 쿼리가 0행을 주고, 아래 for는
-  // 그냥 공회전하며 통과해 버린다(무엇도 단언하지 않은 채). 둘을 정확히 찾았는지가 먼저다.
-  assert.equal(forced.rows.length, 2, `0023: force 검사가 표 둘을 못 찾는다 (${forced.rows.map((r) => r.relname).join(', ') || '0개'})`)
+  // 그냥 공회전하며 통과해 버린다(무엇도 단언하지 않은 채). 셋을 정확히 찾았는지가 먼저다.
+  assert.equal(forced.rows.length, 3, `0023/0027: force 검사가 표 셋을 못 찾는다 (${forced.rows.map((r) => r.relname).join(', ') || '0개'})`)
   for (const row of forced.rows) {
-    assert.equal(row.f, false, `0023: ${row.relname}에 force row level security가 걸려 있다 (definer 함수가 0행을 준다)`)
+    assert.equal(
+      row.f,
+      false,
+      row.relname === 'projects'
+        ? '0027: projects에 force row level security가 되살아났다 — project_business_id()가 소유자 권한으로 돌면서 정책 아래로 내려가 조용히 null을 주고, 직원의 업무 화면이 production에서만 빈다(0027 1절)'
+        : `0023: ${row.relname}에 force row level security가 걸려 있다 (definer 함수가 0행을 준다)`,
+    )
   }
 
   // 표와 definer 함수를 BYPASSRLS 없는 역할에게 넘긴다. Supabase에서 소유자가 무엇이든
@@ -1762,10 +1821,24 @@ async function definerUnderNonBypassOwner() {
   await db.exec(`
     create role app_owner nosuperuser nobypassrls nologin;
     grant usage on schema auth to app_owner;
+    -- 0027 ②의 대조군을 성립시키는 줄이다. force를 되살리면 app_owner가 projects_read
+    -- **아래로** 내려가고, 그 정책은 in_my_subtree() 같은 헬퍼를 부른다 — 실행 권한이
+    -- 없으면 0행이 아니라 42501이 나서 "조용히 빈다"가 "시끄럽게 터진다"로 바뀐다.
+    -- Supabase에서는 표와 헬퍼의 소유자가 같은 역할(postgres)이라 이 권한이 원래 있다.
+    -- 0027의 위험은 '권한이 없다'가 아니라 '권한이 있는데도 0행'이고, 그쪽을 재야 한다.
+    grant execute on all functions in schema public to app_owner;
     alter table public.chairman_kakao_token owner to app_owner;
     alter table public.chairman_checkins    owner to app_owner;
     alter function public.kakao_token_for_send()       owner to app_owner;
     alter function public.chairman_recent_condition()  owner to app_owner;
+    -- 0027. 같은 실험을 projects/project_business_id()에도 건다. 0026이 이 길을 아예
+    -- 피한 이유가 정확히 이 함정이었고(0026 2-2절 ①), 0027은 force를 먼저 내리는 것으로
+    -- 치웠다고 주장한다 — 그 주장을 여기서 실험으로 세운다.
+    alter table public.projects                       owner to app_owner;
+    alter function public.project_business_id(text)   owner to app_owner;
+    -- 세션들이 authenticated로 돌려면 schema usage가 필요하다(main()의 rls()가 하는 일).
+    -- 표 권한은 STUBS의 default privileges가 이미 줬다.
+    grant usage on schema public, auth to authenticated;
   `)
   const owner = await db.query<{ s: boolean; b: boolean }>(
     `select rolsuper as s, rolbypassrls as b from pg_roles where rolname = 'app_owner'`,
@@ -1783,6 +1856,20 @@ async function definerUnderNonBypassOwner() {
     values ('${UID.chairman}', 'AT', 'RT', now() + interval '6 hours', now() + interval '60 days', 'talk_message');
     insert into chairman_checkins (checkin_date, condition)
     values ((now() at time zone 'Asia/Seoul')::date, 4);
+
+    -- 0027. 팀장 하나 · 그 밑 직원 하나. 프로젝트는 팀장 것이고 업무는 직원 것이다 —
+    -- 직원에게 프로젝트는 보이지 않고(0027 3절), 그래도 자기 업무는 보여야 한다(0027 2절).
+    -- 회사 격리를 실제로 타게 하려고 직원은 Member다(전사 역할이면 has_business가 무조건
+    -- true라 이 실험이 아무것도 재지 못한다).
+    insert into auth.users values ('${OW.boss}', 'b1@x'), ('${OW.worker}', 'b2@x');
+    insert into user_profiles (user_id, role, display_name, reports_to) values
+      ('${OW.boss}',   'TeamLead', '팀장', null),
+      ('${OW.worker}', 'Member',   '직원', '${OW.boss}');
+    insert into user_business_access values ('${OW.worker}', 'biz_dy');
+    insert into projects (project_id, business_id, name, owner_user_id)
+    values ('prj_own', 'biz_dy', '팀장 프로젝트', '${OW.boss}');
+    insert into tasks (task_id, project_id, title, owner_user_id)
+    values ('tsk_own', 'prj_own', '직원 업무', '${OW.worker}');
   `)
 
   async function rows(uid: string, sql: string): Promise<number> {
@@ -1793,8 +1880,20 @@ async function definerUnderNonBypassOwner() {
       await db.exec('rollback')
     }
   }
+  /** 0027. 한 사람의 세션으로 첫 칸 값 하나를 받는다(건수가 아니라 '무엇을 받았나'를 잰다). */
+  async function value<T>(uid: string, sql: string): Promise<T | null> {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
+    try {
+      const r = await db.query<Record<string, T>>(sql)
+      return r.rows.length ? (Object.values(r.rows[0])[0] ?? null) : null
+    } finally {
+      await db.exec('rollback')
+    }
+  }
   const forSend = 'select * from kakao_token_for_send()'
   const condition = 'select * from chairman_recent_condition()'
+  const myTasks = `select count(*)::int from tasks where task_id = 'tsk_own'`
+  const bizOf = `select project_business_id('prj_own')`
 
   // ① 지금 상태 — 07:00 cron이 실제로 밟는 경로다.
   assert.equal(await rows(UID.agent, forSend), 1,
@@ -1805,15 +1904,34 @@ async function definerUnderNonBypassOwner() {
   assert.equal(await rows(UID.chairman, forSend), 1,
     '0023: BYPASSRLS 없는 소유자에서 Chairman의 테스트 발송이 토큰을 못 받는다')
 
+  // ①-0027 같은 조건에서 project_business_id()가 값을 주는가.
+  //   0026 2-2절 ①이 "definer 헬퍼로 projects를 읽는 길은 안 된다"고 적은 근거가 이것이고,
+  //   0027 1절이 force를 내려 그 근거를 없앴다고 주장한다. 주장을 여기서 실험으로 세운다.
+  //   **호출자는 그 프로젝트를 볼 수 없는 직원이다** — definer가 호출자의 눈이 아니라
+  //   소유자의 눈으로 회사 칸을 본다는 것이 요점이라, 볼 수 있는 사람으로 재면 아무 의미가 없다.
+  assert.equal(await value<string>(OW.worker, bizOf), 'biz_dy',
+    '0027: BYPASSRLS 없는 소유자에서 project_business_id()가 회사를 못 준다 — 0026 2-2절 ①의 함정 그대로다. projects의 force를 확인하라')
+  assert.equal(await value<number>(OW.worker, myTasks), 1,
+    '0027: BYPASSRLS 없는 소유자에서 직원이 자기 업무를 잃는다 — tasks_read의 회사 판정이 조용히 null을 받는다(production에서만 빈 화면이 된다)')
+  // 겹이 실제로 걸려 있는 상태에서 잰 것인가. 프로젝트가 직원에게 보인다면 위 단언은
+  // "겹이 없어서" 통과한 것일 수도 있다 — 그러면 아무것도 재지 못한 셈이다.
+  assert.equal(await value<number>(OW.worker, `select count(*)::int from projects where project_id = 'prj_own'`), 0,
+    '0027: 이 실험의 전제가 깨졌다 — 팀장의 프로젝트가 직원에게 보인다면 projects에 subtree 겹이 없는 것이고, 위 두 단언은 아무것도 재지 않는다')
+
   // ② 대조군 — force를 되살리면 정말 0행이 되는가. ①이 FORCE의 유무 때문임을 증명한다.
   await db.exec(`
     alter table public.chairman_kakao_token force row level security;
     alter table public.chairman_checkins    force row level security;
+    alter table public.projects             force row level security;
   `)
   assert.equal(await rows(UID.agent, forSend), 0,
     '대조군이 성립하지 않는다 — force를 걸어도 AIAgent가 토큰을 받는다면 ①은 FORCE를 재고 있지 않다')
   assert.equal(await rows(UID.agent, condition), 0,
     '대조군이 성립하지 않는다 — force를 걸어도 AIAgent가 컨디션을 받는다면 ①은 FORCE를 재고 있지 않다')
+  assert.equal(await value<string>(OW.worker, bizOf), null,
+    '대조군이 성립하지 않는다 — projects에 force를 걸어도 project_business_id()가 회사를 준다면 ①-0027은 FORCE를 재고 있지 않다')
+  assert.equal(await value<number>(OW.worker, myTasks), 0,
+    '대조군이 성립하지 않는다 — projects에 force를 걸어도 직원이 자기 업무를 본다면 ①-0027은 0026 2-2절 ①의 함정을 재고 있지 않다')
 
   await db.close()
 }
@@ -1833,7 +1951,7 @@ async function main() {
   await definerUnderNonBypassOwner()
   await subtreeBackfill()
   console.log(
-    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill`,
+    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole)`,
   )
 }
 

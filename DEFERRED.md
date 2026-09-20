@@ -873,3 +873,23 @@ production에서 같은 속도라는 보장이 없다.
 - **승계에서 올릴 상사가 없으면 아래 사람들의 `reports_to`를 그대로 둔다.**
   버린 선택지: null로 내리기. 그러면 그 가지가 트리에서 떨어져 회장 말고 아무에게도 안 보인다.
   트리를 끊는 것보다 조직도에 '상사가 나간 사람으로 남아 있음' 경고로 뜨는 편이 낫다.
+
+## Phase 6-1 projects 구멍 메우기 — 0027 (2026-09-21)
+
+- **A2가 남긴 `projects` 구멍을 메웠다** (컨트롤러 판정). 위 A2 절의 "얹지 않았다"는 오늘로 끝났다 —
+  그 절은 그날의 판단 기록으로 남겨 두고, 지금 도는 것은 0027이다.
+- **`projects`의 `force row level security`를 내렸다.** 버린 선택지: FORCE를 둔 채 definer 헬퍼를
+  세우기. 그러면 헬퍼가 소유자 권한으로 돌다가 자기 표의 정책 아래로 내려가 **production에서만**
+  조용히 null을 준다(0023 3절 ③·6절이 겪은 함정). PGlite harness는 superuser라 그 함정을
+  통과시키므로 검사는 초록인 채 화면만 빈다 — `definerUnderNonBypassOwner()`가 BYPASSRLS 없는
+  소유자를 세워 그 자리를 실험으로 잡는다. FORCE가 여기서 더해 주는 보안은 없다(자물쇠는 revoke다).
+- **`tasks_read`의 회사 판정을 `project_business_id()` definer 헬퍼로 옮겼다.**
+  버린 선택지 둘: ① `projects_read`에 "내 업무가 이 프로젝트에 있다" 분기 더하기 — 42P17.
+  ② `tasks.business_id` 비정규화 — 백필·동기화 트리거가 둘 다 `projects`를 읽어야 하고,
+  이 파일이 FORCE를 먼저 내린 덕에 이제 가능하긴 하지만 표에 칸을 더하고 두 경로를 영구히
+  동기화해야 한다. 헬퍼 하나가 같은 일을 더 적게 한다.
+- **헬퍼는 `business_id` 하나만 돌려준다.** 버린 선택지: 프로젝트 행을 통째로 돌려주는 definer.
+  그것은 `projects_read`를 우회하는 창이지 문이 아니다 — 반환 목록이 하나인 것이 keyhole의 증거다.
+- **`projects`의 '소유자 없음'도 `owner_unknown()`으로 판정한다**(A2와 같은 규칙).
+  버린 선택지: `owner_user_id is null`. 0003 시드의 담당자 칸은 비어 있지 않다 — `is null`만 보면
+  적용 당일 프로젝트 목록이 빈다(검사가 `prj_002`로 그 자리를 지킨다).
