@@ -1932,6 +1932,10 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
           // 올린 결재는 항상 Open이다. 이 값을 화면이 정하게 두지 않는다.
           status: 'Open',
           attachment_url: input.attachment_url ?? null,
+          // 0026이 더한 칸. 기안자가 없으면 이 결재에는 '본인'이 없고, 0026의 다섯 번째 겹이
+          // 그것을 '주인 없음 = 회사 공통'으로 읽어 올린 사람만 보는 결재가 전사에 열린다.
+          // 화면이 보내는 값이 아니라 세션의 actor다 — 남의 이름으로 기안할 수 없다.
+          created_by: actor.user_id,
         })
         .select(
           'decision_id,business_id,title,options,ai_recommendation,ai_confidence,impact,deadline,status,attachment_url',
