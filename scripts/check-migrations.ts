@@ -958,6 +958,12 @@ async function books(db: Db, as: As) {
   assert.equal(r[0]?.condition, 5, '0023: 오늘 체크인이 있는데 어제 값을 준다')
   assert.equal(r[0]?.checkin_date, today, '0023: 오늘 값인데 checkin_date가 오늘이 아니다')
 
+  // 계약은 "Chairman과 AIAgent에게만"이다. 위 두 값 검사는 전부 AIAgent로만 돌았으니
+  // Chairman 몫이 검증되지 않은 채 남는다 — 같은 setup으로 Chairman도 직접 잰다.
+  const rChairman = await recent(UID.chairman, `${ci(yesterday, 3)}; ${ci(today, 5)}`)
+  assert.equal(rChairman[0]?.condition, 5, '0023: Chairman이 chairman_recent_condition()으로 오늘 condition을 못 받는다')
+  assert.equal(rChairman[0]?.checkin_date, today, '0023: Chairman에게 checkin_date가 오늘이 아니다')
+
   for (const [who, uid] of [['GroupCFO', UID.cfo], ['Member', UID.member]] as const) {
     assert.equal((await recent(uid, ci(today, 5))).length, 0,
       `0023: ${who}에게 chairman_recent_condition()이 값을 준다`)

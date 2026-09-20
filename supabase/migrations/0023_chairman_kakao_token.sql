@@ -16,7 +16,7 @@
 --   하나라도 더 있으면 언젠가 그 경로가 화면으로 이어진다 — 0019가 sleep_hours를 keyhole
 --   반환값에서 아예 뺀 것과 같은 판단을, 여기서는 표 전체에 적용한다.
 --
---   그래서 문은 네 개뿐이고 전부 security definer다. 각 함수가 자기 몸통 안에서 역할을 판정한다.
+--   그래서 문은 다섯 개뿐이고 전부 security definer다. 각 함수가 자기 몸통 안에서 역할을 판정한다.
 --
 --     kakao_token_status()     Chairman           연결됐나 · 언제까지 · 어떤 동의를 받았나.
 --                                                 **토큰 값은 반환하지 않는다.** 화면이 쓴다.
@@ -65,7 +65,7 @@ create table chairman_kakao_token (
 );
 
 comment on table chairman_kakao_token is
-  'Phase 3-C. 회장 카카오 OAuth 토큰. 외부 계정의 bearer 자격증명이라 0019 chairman_checkins보다 한 단계 더 좁다 — Chairman에게도 표를 직접 열지 않고, security definer 함수 네 개만 문이다.';
+  'Phase 3-C. 회장 카카오 OAuth 토큰. 외부 계정의 bearer 자격증명이라 0019 chairman_checkins보다 한 단계 더 좁다 — Chairman에게도 표를 직접 열지 않고, security definer 함수 다섯 개만 문이다.';
 comment on column chairman_kakao_token.access_token is
   '[Vault] 이 값을 select 하는 코드는 kakao_token_for_send()뿐이어야 한다. 화면·로그·모델 프롬프트 어디에도 나가지 않는다.';
 comment on column chairman_kakao_token.scopes is
@@ -89,7 +89,7 @@ alter table chairman_kakao_token enable row level security;
 alter table chairman_kakao_token force  row level security;
 
 create policy chairman_kakao_token_all on chairman_kakao_token for all
-  using (is_active() and auth_role() = 'Chairman')
+  using (is_active() and auth_role() = 'Chairman' and user_id = auth.uid())
   with check (is_active() and auth_role() = 'Chairman' and user_id = auth.uid());
 
 do $$
@@ -107,7 +107,7 @@ end
 $$;
 
 -- ---------------------------------------------------------------------
--- 4. 문 네 개
+-- 4. 문 다섯 개
 --    전부 예외를 던지지 않는다. 역할이 맞지 않으면 조용히 0행 / null이다 —
 --    '없는 것'과 '못 읽는 것'을 구분하지 않는 이 저장소의 계약을 그대로 따른다.
 -- ---------------------------------------------------------------------
@@ -161,7 +161,7 @@ begin
 end;
 $fn$;
 
-comment on function kakao_token_save is
+comment on function kakao_token_save(text, text, timestamptz, timestamptz, text) is
   '0023. 카카오 연결/재연결. Chairman만, 자기 user_id로만. 실패를 예외가 아니라 false로 돌려준다 — 호출부(/api/kakao/callback)가 사람에게 보여 줄 문구를 스스로 고르게 한다.';
 
 -- 4-4. 갱신. Chairman + AIAgent. **행을 만들지 못한다.**
@@ -189,7 +189,7 @@ begin
 end;
 $fn$;
 
-comment on function kakao_token_refreshed is
+comment on function kakao_token_refreshed(text, timestamptz, text, timestamptz) is
   '0023. refresh_token 교환 결과를 되쓴다. insert 경로가 없는 것이 요점이다 — 연결은 사람이 브라우저에서 하는 일이고, Job은 이미 있는 연결을 잇기만 한다.';
 
 -- 4-5. 해제. Chairman만.
