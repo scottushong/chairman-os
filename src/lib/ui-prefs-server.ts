@@ -1,5 +1,6 @@
 import 'server-only'
 
+import { connection } from 'next/server'
 import { cache } from 'react'
 
 import { getRepository } from '@/lib/repository'
@@ -21,6 +22,14 @@ export interface UiPrefs {
 }
 
 export const loadUiPrefs = cache(async function loadUiPrefs(): Promise<UiPrefs> {
+  /**
+   * **try 앞에 서야 한다.** 이 함수는 아래에서 쿠키를 읽고(live 어댑터), Next는 그 사실을
+   * 빌드 때 예외를 던져 알린다 — '이 라우트는 정적으로 못 그린다'는 신호다.
+   * 그 예외가 아래 catch에 잡히면 신호가 삼켜지고, 빌드 로그가 그 오류로 가득 찬다.
+   * connection()을 먼저 부르면 그 판정이 여기서 끝나 예외 자체가 안 난다
+   * (lib/auth/session.ts currentUser()가 같은 이유로 같은 줄을 갖고 있다).
+   */
+  await connection()
   try {
     const repo = await getRepository()
     const settings = await repo.getUserSettings()
