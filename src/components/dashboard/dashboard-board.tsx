@@ -177,131 +177,136 @@ export function DashboardBoard({
   return (
     <div className="space-y-5">
       {/*
-       * 2줄 (Phase 5-D 배치). 이니셔티브 2/3 + 프로세스차트 1/3.
-       * 이니셔티브가 0건이면 그 칸이 비고 프로세스차트가 오른쪽에 그대로 선다 —
-       * 두 칸의 표시 조건이 다르므로 그리드는 항상 그린다.
+       * 2줄 이하는 전부 전폭이다 (Phase 5-D 수정, 실화면 피드백).
+       * 나란히 두 칸으로 나누면 프로세스차트의 구글 시트가 1/3 폭으로 눌려 셀이 안 읽히고,
+       * 회사 카드도 1/2 폭에 다섯 장을 욱여넣어 글자가 카드 밖으로 밀려 나갔다.
+       * 줄마다 가로를 다 쓰면 둘 다 풀린다.
        */}
-      <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-[2fr_1fr]">
-        <div className="min-w-0">
-        {/* item B. 진행 중인 이니셔티브 요약 — 목록 화면(/initiatives)의 전체 그리드를
-            복제하지 않는다. 0건이면 섹션째로 숨긴다(InitiativeStat과 같은 판단: 빈 카드 줄은
-            인사말 아래 이미 있는 요약과 겹쳐 의미 없이 자리만 차지한다).
-            이 헤더 줄은 카드 밖(맨 배경) 위다 — text-ink-dim만 쓴다(item D, globals.css
-            '유리 없이 글자를 놓지 마라'). text-ink-muted는 여기서 3.36:1로 AA 미달이다. */}
-        {initiativeSummary.length > 0 ? (
-          <section aria-label="이니셔티브">
-            <div className="mb-2 flex items-baseline gap-2">
-              <h2 className="text-[13px] font-semibold">이니셔티브</h2>
-              <span className="text-[11px] text-ink-dim tnum">
-                진행 중 {initiativeCount}건 중 {initiativeSummary.length}건
-              </span>
-              {/* 열 줄 위의 규칙이 이 링크에도 걸린다. 골드(.text-accent → #855a11)는 맨 배경에서
-                  3.39:1이라 유리 없이는 못 쓴다(globals.css:284-286). 링크만 유리 한 장 위로
-                  올리면 헤더 줄이 어긋나므로 색을 ink-dim(5.73:1)으로 내리고, 밑줄 hover로
-                  '누를 수 있다'를 남긴다. */}
-              <Link
-                href="/initiatives"
-                className="ml-auto text-[11.5px] text-ink-dim underline-offset-2 hover:text-ink hover:underline"
-              >
-                전체 보기
-              </Link>
-            </div>
-            <InitiativeCards
-              initiatives={initiativeSummary}
-              businesses={businesses}
-              logoUrls={initiativeLogoUrls}
-              today={today}
-              hasAny
-            />
-          </section>
-        ) : null}
-        </div>
-        {/* 카드가 옆 칸만큼 높아지도록 최소 높이를 준다. iframe이 남는 높이를 다 쓴다. */}
-        <div className="min-h-[320px]">
-          <ProcessChartCard charts={processCharts} businesses={businesses} />
-        </div>
-      </div>
 
-      {/* 3줄. 그룹 재무 추이 1/2 + 회사 카드 1/2. */}
-      <div className="grid grid-cols-1 gap-3.5 lg:grid-cols-2">
-        <div className="min-w-0">
-          <FinanceTrend kpis={financeKpis} businessIds={shown.map((b) => b.business_id)} />
-        </div>
-        <div className="min-w-0">
-        <section aria-label="내 비즈니스">
-          {/* 이 줄도 카드 밖(맨 배경)이다 — 아래 이니셔티브 헤더와 같은 규칙을 받는다.
-              보조 숫자는 ink-muted(3.35:1)에서 ink-dim(5.73:1)으로 올린다.
-              오류는 색을 뺄 수 없는 자리라(위험색) 글자 대신 **면을 깐다** — 맨 그라데이션 위의
-              text-critical은 3.33:1이고, bg-critical/10 톤 칩으로 감싸도 4.16:1로 모자란다.
-              bg-raised(흰 72%)를 깔면 최악점에서 5.08:1이 된다 — globals.css가 허용 면으로
-              적어 둔 넷(.glass / .glass-nav / bg-panel / bg-raised) 중 하나다. */}
+      {/* 2줄 — 이니셔티브 */}
+      {/* item B. 진행 중인 이니셔티브 요약 — 목록 화면(/initiatives)의 전체 그리드를
+          복제하지 않는다. 0건이면 섹션째로 숨긴다(InitiativeStat과 같은 판단: 빈 카드 줄은
+          인사말 아래 이미 있는 요약과 겹쳐 의미 없이 자리만 차지한다).
+          이 헤더 줄은 카드 밖(맨 배경) 위다 — text-ink-dim만 쓴다(item D, globals.css
+          '유리 없이 글자를 놓지 마라'). text-ink-muted는 여기서 3.36:1로 AA 미달이다. */}
+      {initiativeSummary.length > 0 ? (
+        <section aria-label="이니셔티브">
           <div className="mb-2 flex items-baseline gap-2">
-            <h2 className="text-[13px] font-semibold">내 비즈니스 (A,B,C)</h2>
+            <h2 className="text-[13px] font-semibold">이니셔티브</h2>
             <span className="text-[11px] text-ink-dim tnum">
-              {shown.length} / {ordered.length}개 표시 중
+              진행 중 {initiativeCount}건 중 {initiativeSummary.length}건
             </span>
-            {error ? (
-              <span
-                role="alert"
-                className="rounded-md border border-critical/40 bg-raised px-2 py-0.5 text-[11px] text-critical"
-              >
-                {error}
-              </span>
-            ) : null}
-          </div>
-
-          {/* 카드는 남는 폭을 균등하게 나눠 갖고, 추가 버튼만 좁게 끝에 붙인다.
-              lg 이상에서는 줄을 넘기지 않는다 — 다섯 장 중 한 장만 아랫줄로 떨어지면 그 회사만 커 보인다.
-              그 아래 폭에서는 숫자가 안 읽히므로 접는다. */}
-          <div className="flex flex-wrap items-stretch gap-2 lg:flex-nowrap">
-            {shown.map((b) => (
-              <div key={b.business_id} className="min-w-[180px] flex-1 lg:min-w-0 lg:basis-0">
-                <BusinessCard
-                  business={b}
-                  metrics={metrics.get(b.business_id) ?? empty}
-                  letter={letters.get(b.business_id) ?? '?'}
-                  pinned={pinned.includes(b.business_id)}
-                  onToggleVisible={toggle}
-                  onTogglePinned={togglePin}
-                />
-              </div>
-            ))}
-
-            {/* CH-002. 카드 줄 끝에 붙어 있어야 '한 장 더 추가'로 읽힌다.
-                이 버튼은 카드 줄 끝의 빈 자리라 뒤가 맨 그라데이션이다 — ink-muted는 3.35:1이라
-                ink-dim(5.73:1)으로 올린다. */}
-            <button
-              type="button"
-              onClick={() => setAdding(true)}
-              className="flex w-[64px] shrink-0 flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-line text-ink-dim transition-colors hover:border-accent hover:text-ink"
+            {/* 열 줄 위의 규칙이 이 링크에도 걸린다. 골드(.text-accent → #855a11)는 맨 배경에서
+                3.39:1이라 유리 없이는 못 쓴다(globals.css:284-286). 링크만 유리 한 장 위로
+                올리면 헤더 줄이 어긋나므로 색을 ink-dim(5.73:1)으로 내리고, 밑줄 hover로
+                '누를 수 있다'를 남긴다. */}
+            <Link
+              href="/initiatives"
+              className="ml-auto text-[11.5px] text-ink-dim underline-offset-2 hover:text-ink hover:underline"
             >
-              <Icon name="plus" className="size-5" />
-              <span className="text-center text-[11px] leading-tight break-keep">기업 추가</span>
-            </button>
+              전체 보기
+            </Link>
           </div>
-
-          {hiddenList.length > 0 ? (
-            <div className="mt-2.5 flex flex-wrap items-center gap-2 rounded-lg border border-line-soft bg-panel px-3 py-2">
-              <span className="flex items-center gap-1.5 text-[11px] text-ink-muted">
-                <Icon name="eye-off" className="size-3.5" />
-                숨김 {hiddenList.length}개 (데이터는 그대로 있습니다)
-              </span>
-              {hiddenList.map((b) => (
-                <button
-                  key={b.business_id}
-                  type="button"
-                  onClick={() => toggle(b.business_id)}
-                  className="flex items-center gap-1 rounded-md bg-raised px-2 py-1 text-[11px] text-ink-dim transition-colors hover:text-ink"
-                >
-                  {b.name}
-                  <span className="text-ink-muted">다시 표시</span>
-                </button>
-              ))}
-            </div>
-          ) : null}
+          <InitiativeCards
+            initiatives={initiativeSummary}
+            businesses={businesses}
+            logoUrls={initiativeLogoUrls}
+            today={today}
+            hasAny
+          />
         </section>
+      ) : null}
+
+      {/* 3줄 — 프로세스차트. 높이는 카드가 스스로 확보한다(시트가 읽혀야 한다). */}
+      <ProcessChartCard charts={processCharts} businesses={businesses} />
+
+      {/* 4줄 — 내 비즈니스 (가로 5열) */}
+      <section aria-label="내 비즈니스">
+        {/* 이 줄도 카드 밖(맨 배경)이다 — 아래 이니셔티브 헤더와 같은 규칙을 받는다.
+            보조 숫자는 ink-muted(3.35:1)에서 ink-dim(5.73:1)으로 올린다.
+            오류는 색을 뺄 수 없는 자리라(위험색) 글자 대신 **면을 깐다** — 맨 그라데이션 위의
+            text-critical은 3.33:1이고, bg-critical/10 톤 칩으로 감싸도 4.16:1로 모자란다.
+            bg-raised(흰 72%)를 깔면 최악점에서 5.08:1이 된다 — globals.css가 허용 면으로
+            적어 둔 넷(.glass / .glass-nav / bg-panel / bg-raised) 중 하나다. */}
+        <div className="mb-2 flex items-baseline gap-2">
+          <h2 className="text-[13px] font-semibold">내 비즈니스 (A,B,C)</h2>
+          <span className="text-[11px] text-ink-dim tnum">
+            {shown.length} / {ordered.length}개 표시 중
+          </span>
+          {error ? (
+            <span
+              role="alert"
+              className="rounded-md border border-critical/40 bg-raised px-2 py-0.5 text-[11px] text-critical"
+            >
+              {error}
+            </span>
+          ) : null}
         </div>
-      </div>
+
+        {/*
+         * flex-nowrap으로 다섯 장을 한 줄에 욱여넣던 것을 **그리드로 바꿨다.**
+         * 폭이 모자라면 flex는 카드를 130px까지 짜부라뜨리고, 그때 회사명과 숫자가
+         * 카드 밖으로 밀려 나갔다(실화면에서 그렇게 나왔다). 그리드는 칸 수를 폭에 맞춰
+         * 줄이므로 카드 한 장의 최소 폭이 지켜진다.
+         *
+         * 1440px에서 다섯 장이 한 줄에 선다. 1280~1439는 넷, 1024~1279는 셋,
+         * 그 아래는 둘이다 — 폰에서도 두 장은 나란히 읽힌다.
+         *
+         * **이름 있는 변형(lg/xl)과 arbitrary 변형을 섞지 않는다.** 처음엔
+         * `xl:grid-cols-4 min-[1440px]:grid-cols-5`로 썼는데 2560px에서도 네 칸만 섰다 —
+         * 둘의 특이도가 같아 생성된 CSS의 순서가 승부를 가르는데, arbitrary 쪽이
+         * 먼저 나와 xl에게 덮였다. 전부 min-[]로 맞추면 폭 순서대로 정렬된다.
+         */}
+        <div className="grid grid-cols-2 items-stretch gap-2 min-[1024px]:grid-cols-3 min-[1280px]:grid-cols-4 min-[1440px]:grid-cols-5">
+          {shown.map((b) => (
+            <div key={b.business_id} className="min-w-0">
+              <BusinessCard
+                business={b}
+                metrics={metrics.get(b.business_id) ?? empty}
+                letter={letters.get(b.business_id) ?? '?'}
+                pinned={pinned.includes(b.business_id)}
+                onToggleVisible={toggle}
+                onTogglePinned={togglePin}
+              />
+            </div>
+          ))}
+
+          {/* CH-002. 카드 줄 끝에 붙어 있어야 '한 장 더 추가'로 읽힌다.
+              이 버튼은 카드 줄 끝의 빈 자리라 뒤가 맨 그라데이션이다 — ink-muted는 3.35:1이라
+              ink-dim(5.73:1)으로 올린다. 그리드 칸 하나를 그대로 쓴다. */}
+          <button
+            type="button"
+            onClick={() => setAdding(true)}
+            className="flex min-h-[120px] flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-line text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          >
+            <Icon name="plus" className="size-5" />
+            <span className="text-center text-[11px] leading-tight break-keep">기업 추가</span>
+          </button>
+        </div>
+
+        {hiddenList.length > 0 ? (
+          <div className="mt-2.5 flex flex-wrap items-center gap-2 rounded-lg border border-line-soft bg-panel px-3 py-2">
+            <span className="flex items-center gap-1.5 text-[11px] text-ink-muted">
+              <Icon name="eye-off" className="size-3.5" />
+              숨김 {hiddenList.length}개 (데이터는 그대로 있습니다)
+            </span>
+            {hiddenList.map((b) => (
+              <button
+                key={b.business_id}
+                type="button"
+                onClick={() => toggle(b.business_id)}
+                className="flex items-center gap-1 rounded-md bg-raised px-2 py-1 text-[11px] text-ink-dim transition-colors hover:text-ink"
+              >
+                {b.name}
+                <span className="text-ink-muted">다시 표시</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </section>
+
+      {/* 5줄 — 그룹 전체 재무 현황 */}
+      <FinanceTrend kpis={financeKpis} businessIds={shown.map((b) => b.business_id)} />
 
 
       {/* 재배치(P5-2 Step 3): 회사 카드 줄 → KpiStrip. FinanceTrend는 위 히어로로 옮겼다. */}

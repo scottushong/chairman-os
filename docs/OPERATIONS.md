@@ -39,6 +39,16 @@ npm run build         # 빌드 (타입 검사 포함)
 셋이 다 통과해야 한다. `next build`는 라우트 타입도 다시 생성하므로,
 **동적 라우트를 새로 만든 직후에는 build를 한 번 돌려야** `tsc`가 통과한다.
 
+### 주소
+
+| 환경 | 앱 | Supabase |
+|---|---|---|
+| production | https://chairman-os-eosin.vercel.app | `nndvspgnljivkvihxlzj` (Tokyo, D-22) |
+| staging | Vercel Preview (아직 연결 전) | `itpenmxyracfhyormcep` (Seoul) |
+
+배포 주소를 여기 적어 두는 이유는 저장소 어디에도 없어서 배포 후 확인을 할 때마다
+사람에게 물어야 했기 때문이다. `.vercel/` 링크는 커밋하지 않으므로 이 표가 유일한 기록이다.
+
 ### 배포 후 확인 (순서대로)
 
 1. `GET /api/health` — anon 쪽이 **전부 `rows: 0`, `rls_closed: true`** 인가.

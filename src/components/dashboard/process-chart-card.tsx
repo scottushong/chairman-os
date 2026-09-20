@@ -10,9 +10,14 @@ import { embedSrc } from '@/lib/process-chart'
 import type { Business, ProcessChart } from '@/types'
 
 /**
- * 프로세스차트 카드 (Phase 5-D 1단계). 대시보드 2줄 우측 1/3.
+ * 프로세스차트 카드 (Phase 5-D). 대시보드 3줄 전폭.
  *
  * 회사 탭 → 팀 탭 → 시트. 시트는 구글 '웹에 게시' 링크를 iframe으로 띄운다.
+ *
+ * **높이 700px, 폭은 전폭이다.** 처음엔 1/3 폭 320px 카드에 넣었는데 시트가
+ * 몇 칸만 보여 아무것도 읽히지 않았다. 표는 가로로 긴 문서라 폭을 아끼면 쓸모가 사라진다.
+ * 거기에 SheetFrame이 축소 렌더까지 해서(iframe을 넓게 만들고 scale로 줄인다)
+ * 같은 넓이에 더 많은 칸을 넣는다.
  * **내용을 이 앱으로 옮기지 않는다** — 실무가 이미 시트에서 돌고, 베끼면 두 벌이 어긋난다.
  *
  * iframe이 뜨려면 CSP frame-src에 docs.google.com이 있어야 한다(next.config.ts).
@@ -65,9 +70,11 @@ export function ProcessChartCard({
         ) : null}
       </div>
 
-      {/* 회사 탭. 한 곳뿐이면 그리지 않는다 — 고를 것이 없는 탭 줄은 자리만 먹는다. */}
-      {withCharts.length > 1 ? (
-        <div className="mt-2 flex flex-wrap gap-1">
+      {/* 회사·팀 탭을 한 줄에 둔다. 전폭이라 두 줄로 나눌 이유가 없다.
+          회사가 한 곳뿐이면 회사 탭은 그리지 않는다 — 고를 것이 없는 탭은 자리만 먹는다. */}
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+        {withCharts.length > 1 ? (
+          <div className="flex flex-wrap gap-1">
           {withCharts.map((b) => (
             <button
               key={b.business_id}
@@ -82,15 +89,17 @@ export function ProcessChartCard({
                   ? 'bg-accent/15 font-semibold text-accent'
                   : 'text-ink-dim hover:bg-raised hover:text-ink'
               }`}
-            >
-              {b.name}
-            </button>
-          ))}
-        </div>
-      ) : null}
+              >
+                {b.name}
+              </button>
+            ))}
+          </div>
+        ) : null}
 
-      <div className="mt-1.5 flex flex-wrap gap-1">
-        {teams.map((t) => (
+        {withCharts.length > 1 ? <span className="text-line" aria-hidden="true">|</span> : null}
+
+        <div className="flex flex-wrap gap-1">
+          {teams.map((t) => (
           <button
             key={t.id}
             type="button"
@@ -101,18 +110,20 @@ export function ProcessChartCard({
                 ? 'bg-white/80 font-semibold text-ink shadow-sm'
                 : 'text-ink-dim hover:bg-raised hover:text-ink'
             }`}
-          >
-            {t.team_name}
-          </button>
-        ))}
+            >
+              {t.team_name}
+            </button>
+          ))}
+        </div>
       </div>
 
       {current ? (
         <>
+          {/* 700px는 '표가 읽히는 최소'다. 그 아래로 내리면 시트의 머리글과 첫 몇 행만 남는다. */}
           <SheetFrame
             src={embedSrc(current.embed_url)}
             title={current.title}
-            className="mt-2 min-h-0 flex-1 rounded-md border border-line-soft"
+            className="mt-2 min-h-[700px] flex-1 rounded-md border border-line-soft"
           />
           <p className="mt-1.5 flex items-center justify-between gap-2 text-[10.5px] text-ink-muted">
             <span className="truncate">{current.title}</span>
