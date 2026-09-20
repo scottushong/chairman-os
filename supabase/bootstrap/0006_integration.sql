@@ -25,7 +25,12 @@ begin;
 
 -- 1. 역할. 금액을 읽어야 upsert가 돈다 — [제한]까지.
 insert into user_profiles (user_id, role, display_name, title_ko, max_security_class)
-values (:sync_uid, 'Integration', 'ECOUNT Sync', 'ECOUNT 동기화', 'Restricted')
+-- 표시 이름은 'Integration'이다. 2026-09-21(Phase 6-1 블록 B-6)에 'ECOUNT Sync'에서 바꿨다 —
+-- 이 계정이 하는 일은 ECOUNT만이 아니고(0015 Integration 역할은 원장 다섯 표를 쓴다),
+-- 조직도의 시스템 계정 탭이 그 이름으로 부른다. 이미 production에 박힌 옛 값은
+-- 0028_org_screen.sql의 5절이 고친다(이 파일은 손으로 실행되는 파일이라 그것만으로는
+-- 옛 값이 남는다).
+values (:sync_uid, 'Integration', 'Integration', 'ECOUNT 동기화', 'Restricted')
 on conflict (user_id) do update
   set role               = excluded.role,
       display_name       = excluded.display_name,

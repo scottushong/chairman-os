@@ -2,11 +2,13 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { PageHeader } from '@/components/layout/page-header'
+import { ApproveInvitation } from '@/components/settings/approve-invitation'
 import { InviteUser } from '@/components/settings/invite-user'
+import { OrgChart } from '@/components/settings/org-chart'
 import { RevokeButton } from '@/components/settings/revoke-button'
 import { Icon } from '@/components/ui/icon'
-import { canManageUsers } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
+import { kstToday } from '@/lib/chairman-project'
 import { formatDateTime } from '@/lib/format'
 import { businessName } from '@/lib/lookup'
 import { getRepository } from '@/lib/repository'
@@ -14,55 +16,70 @@ import {
   ROLE_LABEL_KO,
   SECURITY_CLASS_LABEL_KO,
   type Business,
-  type UserAccount,
   type UserInvitation,
 } from '@/types'
 
 /**
- * CH-049 RBAC — 사용자와 권한.
+ * CH-049 RBAC + Phase 6-1 블록 B — 사용자 · 권한 · 조직도.
  *
  * 0004_bootstrap_chairman은 첫 사람 한 명을 SQL Editor에서 심는 파일이고, 그 머리에
- * "두 번째 사람부터는 회장이 앱에서 초대한다"고 적혀 있다. 이 화면이 그 약속의 이행이다.
+ * "두 번째 사람부터는 회장이 앱에서 초대한다"고 적혀 있다. 이 화면이 그 약속의 이행이고,
+ * Phase 6-1부터는 '누가 누구 밑인가'를 그리는 자리이기도 하다.
  *
- * 두 목록이 따로 있는 이유
- *   사용자   이미 들어와 있는 사람. 지금 무엇을 볼 수 있는가.
+ * **이 화면은 회장 전용이 아니다.** 0026이 초대를 위임하고 사람 목록을 subtree로 자른 뒤로,
+ * 팀장도 자기 아래를 보고 자기 아래로 사람을 부른다. 그래서 canManageUsers()로 404를
+ * 내던 문을 열었다 — 대신 **보이는 것과 눌리는 것을 DB가 정한다**:
+ *   · 사람 목록은 0026이 subtree로 자른다(위·옆은 존재도 보이지 않는다).
+ *   · 역할·팀·상사 변경과 팀 편집 버튼은 회장에게만 그린다(0002/0025가 판정한다).
+ *   · 초대는 0026의 위임 정책이 판정한다(자기 subtree · 자기 등급 이하 · 자기 회사).
+ * 로그인하지 않은 사람에게만 404다 — 그 경우는 볼 것이 아무것도 없다.
+ *
+ * 세 목록이 따로 있는 이유
+ *   조직도   지금 시스템을 쓰는 사람들이 어디에 매달려 있는가.
  *   초대     아직 계정이 없는 사람에게 준 약속. 계정이 생기면 무엇을 줄 것인가.
- *   합치면 '이 사람은 지금 시스템을 쓰고 있나'가 흐려진다. 자를 때 채우는 칸도 서로 다르다.
- *
- * 404로 막는 것은 안내다. 실제 문은 0002의 user_profiles_admin_write와 0011의
- * user_invitations_admin이 지킨다 — Chairman이 아니면 이 화면을 열어도 목록이 비고
- * 어떤 버튼도 통하지 않는다. 403이 아니라 404인 이유는 회사 상세와 같다:
- * '있지만 권한이 없다'고 말해 주는 것 자체가 그 화면의 존재를 알려 주는 일이다.
+ *   입퇴사   최근 30일에 누가 들어오고 나갔는가(KST 기준).
  */
-export default async function UsersPage() {
+export default async function UsersPage(props: PageProps<'/settings/users'>) {
+  const params = await props.searchParams
   const user = await currentUser()
-  if (!canManageUsers(user)) notFound()
+  if (!user) notFound()
 
   const repo = await getRepository()
-  const [accounts, invitations, businesses] = await Promise.all([
+  const [accounts, invitations, businesses, teams] = await Promise.all([
     repo.listUserAccounts(),
     repo.listUserInvitations(),
     repo.listBusinesses(),
+    repo.listTeams(),
   ])
 
-  // 살아 있는 사람이 위, 회수된 사람이 아래. 회수된 사람을 숨기지 않는 이유는
-  // '누가 잘렸는지'가 이 화면이 답해야 하는 질문의 절반이기 때문이다.
-  const orderedAccounts = [...accounts].sort(
-    (a, b) =>
-      Number(Boolean(a.revoked_at)) - Number(Boolean(b.revoked_at)) ||
-      a.created_at.localeCompare(b.created_at),
-  )
+  const isChairman = user.role === 'Chairman'
+  const viewerAccount = accounts.find((a) => a.user_id === user.user_id) ?? null
 
   const pending = invitations.filter((i) => !i.accepted_at && !i.revoked_at)
   const settled = invitations.filter((i) => i.accepted_at || i.revoked_at)
+
+  // 30일 입퇴사 이력 — '오늘'은 언제나 KST다(0025 3절의 계산과 같은 기준).
+  const today = kstToday()
+  const from = kstToday(new Date(Date.parse(`${today}T00:00:00Z`) - 30 * 86_400_000))
+  const movements = [
+    ...accounts
+      .filter((a) => a.joined_on && a.joined_on >= from && a.joined_on <= today)
+      .map((a) => ({ person: a, kind: 'in' as const, on: a.joined_on! })),
+    ...accounts
+      .filter((a) => a.left_on && a.left_on >= from && a.left_on <= today)
+      .map((a) => ({ person: a, kind: 'out' as const, on: a.left_on! })),
+  ].sort((x, y) => y.on.localeCompare(x.on))
+
+  const nameOf = (userId: string | null) =>
+    userId ? (accounts.find((a) => a.user_id === userId)?.display_name ?? null) : null
 
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-5">
       <PageHeader
         icon="users"
-        title="사용자 · 권한"
+        title="사용자 · 권한 · 조직도"
         code="CH-049"
-        description="초대하면 역할·회사 범위·보안등급이 같이 정해집니다. 회수는 한 줄로 전 테이블을 동시에 닫습니다."
+        description="회사 > 팀 > 사람. 보이는 범위는 자기 아래까지입니다 — 위와 옆은 존재도 보이지 않습니다."
       >
         <Link
           href="/"
@@ -73,37 +90,26 @@ export default async function UsersPage() {
       </PageHeader>
 
       <div className="mt-4">
-        <InviteUser businesses={businesses} />
+        <InviteUser
+          businesses={businesses}
+          teams={teams}
+          people={accounts}
+          viewer={user}
+          viewerAccount={viewerAccount}
+          initiallyOpen={params.invite === '1'}
+        />
       </div>
 
-      <section className="mt-3.5 rounded-xl border border-line-soft bg-panel p-3.5">
-        <h2 className="flex items-baseline gap-1.5 text-[13px] font-semibold">
-          <Icon name="users" className="size-4 text-ink-dim" />
-          사용자
-          <span className="text-[11px] font-normal text-ink-muted tnum">
-            {orderedAccounts.filter((a) => !a.revoked_at).length}명 활성 · 총{' '}
-            {orderedAccounts.length}명
-          </span>
-        </h2>
-
-        {orderedAccounts.length === 0 ? (
-          <p className="py-8 text-center text-[12px] text-ink-muted">
-            아직 사용자가 없습니다. dummy 모드에서는 늘 비어 있습니다 — 사용자 표는 live에만
-            있습니다.
+      <div className="mt-3.5">
+        {accounts.length === 0 ? (
+          <p className="rounded-xl border border-line-soft bg-panel px-3.5 py-8 text-center text-[12px] text-ink-muted">
+            보이는 사람이 없습니다. 조직도는 자기 아래(직속·그 아래)만 보여 줍니다 — 아직 아무도
+            이 아래에 없다는 뜻입니다.
           </p>
         ) : (
-          <ul className="mt-2 space-y-1">
-            {orderedAccounts.map((a) => (
-              <AccountRow
-                key={a.user_id}
-                account={a}
-                businesses={businesses}
-                self={a.user_id === user?.user_id}
-              />
-            ))}
-          </ul>
+          <OrgChart people={accounts} teams={teams} businesses={businesses} viewer={user} />
         )}
-      </section>
+      </div>
 
       <section className="mt-3.5 rounded-xl border border-line-soft bg-panel p-3.5">
         <h2 className="flex items-baseline gap-1.5 text-[13px] font-semibold">
@@ -113,8 +119,8 @@ export default async function UsersPage() {
         </h2>
         <p className="mt-1 text-[10.5px] leading-relaxed text-ink-muted">
           계정이 아직 없는 사람들입니다. Supabase Dashboard에서 이 주소로 계정이 만들어지는 순간
-          아래 권한이 자동으로 붙습니다(0011 on_auth_user_created). 메일을 앱에서 직접 보내지
-          못하는 이유는 DEFERRED D-15에 적어 두었습니다.
+          아래 권한이 자동으로 붙습니다(0011 on_auth_user_created). 회장 결재가 붙은 초대는
+          승인 전에는 계정이 생겨도 권한이 붙지 않습니다(0026).
         </p>
 
         {pending.length === 0 ? (
@@ -122,7 +128,50 @@ export default async function UsersPage() {
         ) : (
           <ul className="mt-2 space-y-1">
             {pending.map((i) => (
-              <InvitationRow key={i.invitation_id} invitation={i} businesses={businesses} />
+              <InvitationRow
+                key={i.invitation_id}
+                invitation={i}
+                businesses={businesses}
+                inviterName={nameOf(i.invited_by)}
+                bossName={nameOf(i.reports_to)}
+                canManage={isChairman}
+              />
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="mt-3.5 rounded-xl border border-line-soft bg-panel p-3.5">
+        <h2 className="flex items-baseline gap-1.5 text-[13px] font-semibold">
+          <Icon name="clock" className="size-4 text-ink-dim" />
+          최근 30일 입·퇴사
+          <span className="text-[11px] font-normal text-ink-muted tnum">{movements.length}건</span>
+        </h2>
+        <p className="mt-1 text-[10.5px] text-ink-muted">
+          {from} ~ {today} (KST). 입사일·퇴사일이 비어 있는 사람은 여기 오지 않습니다.
+        </p>
+        {movements.length === 0 ? (
+          <p className="py-6 text-center text-[12px] text-ink-muted">
+            최근 30일에 들어오거나 나간 사람이 없습니다.
+          </p>
+        ) : (
+          <ul className="mt-2 space-y-1">
+            {movements.map((m) => (
+              <li
+                key={`${m.kind}-${m.person.user_id}`}
+                className="flex flex-wrap items-center gap-1.5 rounded-lg px-2 py-1.5"
+              >
+                <span
+                  className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                    m.kind === 'in' ? 'bg-ok/15 text-ok' : 'bg-critical/15 text-critical'
+                  }`}
+                >
+                  {m.kind === 'in' ? '입사' : '퇴사'}
+                </span>
+                <span className="text-[12.5px] font-semibold">{m.person.display_name}</span>
+                <span className="text-[11px] text-ink-dim">{ROLE_LABEL_KO[m.person.role]}</span>
+                <span className="ml-auto text-[11px] text-ink-muted tnum">{m.on}</span>
+              </li>
             ))}
           </ul>
         )}
@@ -137,7 +186,14 @@ export default async function UsersPage() {
           </h2>
           <ul className="mt-2 space-y-1">
             {settled.map((i) => (
-              <InvitationRow key={i.invitation_id} invitation={i} businesses={businesses} />
+              <InvitationRow
+                key={i.invitation_id}
+                invitation={i}
+                businesses={businesses}
+                inviterName={nameOf(i.invited_by)}
+                bossName={nameOf(i.reports_to)}
+                canManage={isChairman}
+              />
             ))}
           </ul>
         </section>
@@ -153,72 +209,32 @@ function scopeText(businessIds: string[], businesses: Business[], groupScope: bo
   return businessIds.map((id) => businessName(businesses, id)).join(' · ')
 }
 
-function AccountRow({
-  account,
-  businesses,
-  self,
-}: {
-  account: UserAccount
-  businesses: Business[]
-  /** 지금 이 화면을 보고 있는 본인인가. 자기 자신은 자를 수 없다. */
-  self: boolean
-}) {
-  const revoked = Boolean(account.revoked_at)
-  const groupScope = account.role === 'Chairman' || account.role === 'GroupCFO'
-
-  return (
-    <li
-      className={`rounded-lg px-2 py-2 transition-colors hover:bg-raised/60 ${
-        revoked ? 'opacity-50' : ''
-      }`}
-    >
-      <div className="flex flex-wrap items-center gap-1.5">
-        <span className="text-[12.5px] font-semibold">{account.display_name}</span>
-        {account.title_ko ? (
-          <span className="text-[11px] text-ink-muted">{account.title_ko}</span>
-        ) : null}
-        <span className="rounded bg-raised px-1.5 py-0.5 text-[10px] text-ink-dim">
-          {ROLE_LABEL_KO[account.role]}
-        </span>
-        <span className="rounded bg-raised px-1.5 py-0.5 text-[10px] text-ink-muted">
-          {SECURITY_CLASS_LABEL_KO[account.max_security_class]}
-        </span>
-        {revoked ? (
-          <span className="rounded bg-critical/15 px-1.5 py-0.5 text-[10px] font-semibold text-critical">
-            회수됨 {formatDateTime(account.revoked_at!)}
-          </span>
-        ) : null}
-
-        <span className="ml-auto">
-          {revoked ? null : self ? (
-            // 마지막 Chairman이 스스로를 자르면 admin 정책을 통과할 사람이 남지 않는다.
-            <span className="text-[10.5px] text-ink-muted">본인 계정</span>
-          ) : (
-            <RevokeButton kind="account" id={account.user_id} label={account.display_name} />
-          )}
-        </span>
-      </div>
-      <p className="mt-0.5 text-[10.5px] text-ink-muted">
-        {scopeText(account.business_ids, businesses, groupScope)}
-      </p>
-    </li>
-  )
-}
-
 function InvitationRow({
   invitation,
   businesses,
+  inviterName,
+  bossName,
+  canManage,
 }: {
   invitation: UserInvitation
   businesses: Business[]
+  /** 누가 불렀는가. 이름을 못 찾으면 null이다 — uuid를 대신 쓰지 않는다. */
+  inviterName: string | null
+  bossName: string | null
+  /** 재발송·취소·승인은 아직 회장만 된다(0026이 update/delete 정책을 넓히지 않았다). */
+  canManage: boolean
 }) {
   const groupScope = invitation.role === 'Chairman' || invitation.role === 'GroupCFO'
   const settled = Boolean(invitation.accepted_at || invitation.revoked_at)
+  const waiting = invitation.chairman_approval_required && !invitation.chairman_approved_at
 
   return (
     <li className={`rounded-lg px-2 py-2 transition-colors hover:bg-raised/60 ${settled ? 'opacity-60' : ''}`}>
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="text-[12.5px] font-semibold">{invitation.display_name}</span>
+        {invitation.display_name_en ? (
+          <span className="text-[11px] text-ink-muted">{invitation.display_name_en}</span>
+        ) : null}
         <span className="text-[11px] text-ink-dim">{invitation.email}</span>
         <span className="rounded bg-raised px-1.5 py-0.5 text-[10px] text-ink-dim">
           {ROLE_LABEL_KO[invitation.role]}
@@ -226,6 +242,11 @@ function InvitationRow({
         <span className="rounded bg-raised px-1.5 py-0.5 text-[10px] text-ink-muted">
           {SECURITY_CLASS_LABEL_KO[invitation.max_security_class]}
         </span>
+        {waiting ? (
+          <span className="rounded bg-warning/15 px-1.5 py-0.5 text-[10px] font-semibold text-warning">
+            회장 결재 대기
+          </span>
+        ) : null}
         {invitation.accepted_at ? (
           <span className="rounded bg-ok/15 px-1.5 py-0.5 text-[10px] font-semibold text-ok">
             수락됨 {formatDateTime(invitation.accepted_at)}
@@ -237,22 +258,42 @@ function InvitationRow({
           </span>
         ) : null}
 
-        <span className="ml-auto">
+        <span className="ml-auto flex items-center gap-1.5">
           {settled ? (
             <span className="text-[10.5px] text-ink-muted tnum">
               {formatDateTime(invitation.invited_at)} 초대
             </span>
+          ) : canManage ? (
+            <>
+              {waiting ? (
+                <ApproveInvitation invitationId={invitation.invitation_id} label={invitation.email} />
+              ) : null}
+              <RevokeButton
+                kind="invitation"
+                id={invitation.invitation_id}
+                label={invitation.email}
+              />
+            </>
           ) : (
-            <RevokeButton
-              kind="invitation"
-              id={invitation.invitation_id}
-              label={invitation.email}
-            />
+            <span className="text-[10.5px] text-ink-muted">
+              취소·승인은 회장만 할 수 있습니다
+            </span>
           )}
         </span>
       </div>
       <p className="mt-0.5 text-[10.5px] text-ink-muted">
         {scopeText(invitation.business_ids, businesses, groupScope)}
+        {' · '}
+        초대: {inviterName ?? '—'}
+        {' · '}
+        들어갈 자리: {bossName ?? '—'} 아래
+        {/*
+         * '재발송'은 만들 수 없는 칸이라 '—'다. 이 앱은 메일을 보내지 못한다 —
+         * 계정 생성과 초대 메일은 service_role을 요구하고 이 프로젝트에는 없다(DEFERRED D-15).
+         * 버튼을 그려 두고 아무 일도 안 일어나게 하는 것보다, 어디서 보내야 하는지를 적는다.
+         */}
+        {' · '}
+        재발송 — Supabase Dashboard → Authentication에서 보냅니다
       </p>
     </li>
   )

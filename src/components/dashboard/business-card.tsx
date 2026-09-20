@@ -47,8 +47,13 @@ const FALLBACK_TONE = { badge: 'bg-raised text-ink-dim', bar: 'bg-accent', track
 export interface BusinessMetrics {
   revenue: number
   ebitda: number
-  /** DEFERRED D-04 결정 C. 목표 대비가 아니라 프로젝트 진행률 평균이다. */
-  progress: number
+  /**
+   * DEFERRED D-04 결정 C. 목표 대비가 아니라 프로젝트 진행률 평균이다.
+   * 0028의 company_progress()가 **회사 전체**에서 낸 값이다 — 보는 사람에 따라 달라지지
+   * 않는다. 못 보는 회사이거나 프로젝트가 한 건도 없으면 null이고 카드가 '—'를 그린다
+   * (0으로 내리면 '아직 아무것도 없다'와 '전부 0%다'가 같은 그림이 된다).
+   */
+  progress: number | null
   /** 재무 원천이 아예 없는 회사인가. 0억으로 쓰면 적자 0원처럼 읽힌다. */
   hasFinance: boolean
   /** 매출·EBITDA의 출처 꼬리표(Phase 2-A). 원천이 없으면 null */
@@ -150,13 +155,13 @@ export function BusinessCard({
           basis={ebitdaBasis}
         />
         {/* DEFERRED D-04 결정 C. 목표 대비가 아니라 프로젝트 진행률 평균이라 이름을 그대로 쓴다. */}
-        <Metric label="프로젝트 진행률" value={formatPct(progress)} />
+        <Metric label="프로젝트 진행률" value={progress === null ? '—' : formatPct(progress)} />
       </dl>
 
       <div className={`mt-3 h-1.5 w-full overflow-hidden rounded-full ${tone.track}`}>
         <div
           className={`h-full rounded-full ${tone.bar}`}
-          style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+          style={{ width: `${Math.min(100, Math.max(0, progress ?? 0))}%` }}
         />
       </div>
 

@@ -60,6 +60,17 @@ export default async function DashboardPage() {
     [...new Set(initiativeSummary.map((i) => i.logo_url).filter((p): p is string => p !== null))],
   )
 
+  /**
+   * 회사 카드의 진행률(0028 company_progress).
+   *
+   * 프로젝트 목록에서 평균을 내지 않는다. 0027이 projects에 subtree 겹을 얹은 뒤로 그
+   * 목록은 보는 사람마다 잘려서, 같은 회사 카드가 사람마다 다른 숫자를 말하게 된다.
+   * 진행률은 회사의 사실이라 definer 집계가 회사 전체에서 평균 하나만 내준다.
+   */
+  const companyProgress = await repo.listCompanyProgress(
+    data.businesses.map((b) => b.business_id),
+  )
+
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -154,8 +165,8 @@ export default async function DashboardPage() {
         <DashboardBoard
           businesses={data.businesses}
           financeKpis={data.financeKpis}
-          projects={data.projects}
           settings={data.userSettings}
+          companyProgress={companyProgress}
           processCharts={processCharts}
           initiativeSummary={initiativeSummary}
           initiativeLogoUrls={initiativeLogoUrls}

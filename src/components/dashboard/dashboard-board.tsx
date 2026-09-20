@@ -16,9 +16,9 @@ import { ProcessChartCard } from '@/components/dashboard/process-chart-card'
 import { InitiativeCards } from '@/components/initiatives/initiative-cards'
 import { Icon } from '@/components/ui/icon'
 import { effectivePinned } from '@/lib/business-pins'
-import { businessProgress, groupFigure, hasFinanceData, latestPeriodOf, valueOf } from '@/lib/finance'
+import { groupFigure, hasFinanceData, latestPeriodOf, valueOf } from '@/lib/finance'
 import type { UserSettings } from '@/lib/repository'
-import type { Business, FinanceKpi, Initiative, IsoDate, ProcessChart, Project } from '@/types'
+import type { Business, FinanceKpi, Initiative, IsoDate, ProcessChart } from '@/types'
 
 /**
  * Business 카드(CH-001~005)와 그룹 KPI(CH-006~010)를 한 상태 위에 올린다.
@@ -48,10 +48,18 @@ const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
 interface DashboardBoardProps {
   businesses: Business[]
   financeKpis: FinanceKpi[]
-  projects: Project[]
+  // projects는 더 받지 않는다. 카드가 쓰던 유일한 자리가 진행률 평균이었고, 그것은
+  // 0028의 company_progress()가 회사 전체에서 내는 값으로 옮겨 갔다(companyProgress).
   settings: UserSettings
   /** 프로세스차트(0021). 권한 밖 회사의 행은 아예 오지 않으므로 여기서 다시 거르지 않는다. */
   processCharts: ProcessChart[]
+  /**
+   * 회사별 프로젝트 진행률(0028 company_progress). **여기서 계산하지 않는다** —
+   * 0027 이후 projects 목록은 보는 사람마다 잘려서, 그 평균은 사람마다 다른 숫자가 된다.
+   * 회사 진행률은 회사의 사실이라 definer 집계가 회사 전체에서 평균 하나를 내고,
+   * 못 보는 회사와 프로젝트가 없는 회사는 null이다(카드가 '—'를 그린다).
+   */
+  companyProgress: Record<string, number | null>
   /** item B. page.tsx가 이미 '진행 중 상위 6건'으로 고른 요약이다 — 여기서 다시 거르지 않는다. */
   initiativeSummary: Initiative[]
   /** signInitiativeLogos(paths)가 initiativeSummary 몫만 한 번에 서명한 맵. */
@@ -76,8 +84,8 @@ function letterMap(all: Business[]): Map<string, string> {
 export function DashboardBoard({
   businesses,
   financeKpis,
-  projects,
   settings,
+  companyProgress,
   processCharts,
   initiativeSummary,
   initiativeLogoUrls,
@@ -119,14 +127,14 @@ export function DashboardBoard({
         {
           revenue: valueOf(financeKpis, b.business_id, 'Revenue', period),
           ebitda: valueOf(financeKpis, b.business_id, 'EBITDA', period),
-          progress: businessProgress(projects, b.business_id),
+          progress: companyProgress[b.business_id] ?? null,
           hasFinance: hasFinanceData(financeKpis, b.business_id),
           revenueBasis: groupFigure(financeKpis, 'Revenue', period, [b.business_id])?.basis ?? null,
           ebitdaBasis: groupFigure(financeKpis, 'EBITDA', period, [b.business_id])?.basis ?? null,
         },
       ]),
     )
-  }, [ordered, financeKpis, projects])
+  }, [ordered, financeKpis, companyProgress])
 
   /** 낙관적으로 먼저 바꾸고, 저장이 실패하면 이전 값으로 되돌린다. */
   function persist(
@@ -172,7 +180,7 @@ export function DashboardBoard({
   const shown = ordered.filter((b) => !hidden.includes(b.business_id))
   const hiddenList = ordered.filter((b) => hidden.includes(b.business_id))
 
-  const empty: BusinessMetrics = { revenue: 0, ebitda: 0, progress: 0, hasFinance: false, revenueBasis: null, ebitdaBasis: null }
+  const empty: BusinessMetrics = { revenue: 0, ebitda: 0, progress: null, hasFinance: false, revenueBasis: null, ebitdaBasis: null }
 
   return (
     <div className="space-y-5">

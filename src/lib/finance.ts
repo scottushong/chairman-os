@@ -1,6 +1,6 @@
 import { sumFigures } from '@/lib/ledger/basis'
 import { kpiFigure } from '@/lib/ledger/cells'
-import type { BusinessId, Figure, FinanceKpi, FinanceMetric, PeriodKey, Project } from '@/types'
+import type { BusinessId, Figure, FinanceKpi, FinanceMetric, PeriodKey } from '@/types'
 
 /**
  * 집계는 전부 여기 한 곳에서만 한다.
@@ -75,15 +75,21 @@ export function deltaPct(series: number[]): number | null {
 }
 
 /**
- * 회사 카드의 진행률.
- * 시트에 회사별 목표 진행률 칸이 없어, 그 회사가 굴리는 프로젝트 진행률의 평균으로 낸다.
- * Goal DB가 붙으면(CH-011) 이 함수만 갈아 끼우면 된다.
+ * 회사 카드의 진행률은 **여기서 계산하지 않는다** (Phase 6-1, 컨트롤러 판정 2026-09-21).
+ *
+ * 2026-09-21까지 이 자리에 businessProgress(projects, businessId)가 있었다. 화면이 받은
+ * 프로젝트 목록의 평균이었고, 0027이 projects에 다섯 번째 겹(subtree)을 얹은 그날부터
+ * 그 목록은 **보는 사람마다 잘린다**. 같은 회사 카드를 회장은 41%로, 영업 직원은 80%로
+ * 보게 된다는 뜻이다. 새는 것은 없지만 '같은 숫자를 서로 다르게 보는 상태'이고,
+ * 그런 숫자는 회의에서 둘 중 하나가 틀렸다는 것조차 모른 채 인용된다.
+ *
+ * 진행률은 회사의 사실이지 개인의 시야가 아니다. 그래서 0028의 company_progress()
+ * (security definer 집계, 평균 하나만 내주는 keyhole)가 낸 값을 repository가 받아
+ * 화면으로 내려준다 — 재무 KPI가 이미 회사·역할 단위로 보이는 것과 같은 등급이다.
+ *
+ * 프로젝트 배열에서 평균을 다시 내는 함수를 이 파일에 되살리지 마라. 되살리는 순간
+ * 회사 카드가 다시 사람마다 다른 숫자를 말한다.
  */
-export function businessProgress(projects: Project[], businessId: BusinessId): number {
-  const own = projects.filter((p) => p.business_id === businessId)
-  if (own.length === 0) return 0
-  return Math.round(own.reduce((sum, p) => sum + p.progress_pct, 0) / own.length)
-}
 
 /** 재무 행이 하나도 없는 회사(CH-002로 방금 추가된 회사)는 숫자를 0으로 쓰면 안 된다. */
 export function hasFinanceData(kpis: FinanceKpi[], businessId: BusinessId): boolean {

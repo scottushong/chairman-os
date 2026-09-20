@@ -36,7 +36,14 @@ import type {
   NextMilestone,
   Project,
   NewInvitation,
+  NewShare,
+  ProfilePatch,
+  ShareEntityTable,
+  ShareRecord,
+  SharePerson,
   Task,
+  Team,
+  TeamInput,
   TaskStatus,
   TopGoal,
   UserAccount,
@@ -196,6 +203,54 @@ export interface ChairmanRepository {
   revokeUser(target: RevokeTarget, actor: AuditActor): Promise<void>
 
   /**
+   * Phase 6-1 블록 B — 조직도(회사 > 팀 > 사람).
+   *
+   * 권한은 여기서 보지 않는다. 0025의 teams_read가 회사 격리를, 0026의
+   * user_profiles_self_read가 subtree를 이미 건다. **화면에서 다시 거르지 않는다** —
+   * 두 곳에 규칙이 있으면 갈라지고, 갈라지는 순간 둘 중 하나는 틀린 것이 된다.
+   */
+  listTeams(): Promise<Team[]>
+  /** 팀 추가·이름 변경·팀장 지정·회사 간 이동. 0025의 teams_write가 Chairman만 통과시킨다. */
+  saveTeam(input: TeamInput, actor: AuditActor): Promise<Team>
+
+  /**
+   * 사람 한 명의 역할·팀·상사를 옮긴다. audit_log에 permission_change로 남는다
+   * (새 enum 값을 만들지 않는다 — 0025 5절).
+   * 0002의 user_profiles_admin_write가 Chairman만 통과시킨다.
+   */
+  updateUserProfile(userId: string, patch: ProfilePatch, actor: AuditActor): Promise<void>
+
+  /**
+   * 회장 결재 큐의 도장. chairman_approved_at을 채우는 update 하나다 —
+   * 0026의 user_invitations_approved 트리거가 그 순간 이행까지 한다.
+   */
+  approveInvitation(invitationId: string, actor: AuditActor): Promise<void>
+
+  /**
+   * 회사 카드의 진행률(0028 company_progress).
+   *
+   * 프로젝트 목록에서 앱이 평균을 내지 않는다. 0027 이후 그 목록은 보는 사람마다 잘려서
+   * 같은 회사 카드가 사람마다 다른 숫자를 보이기 때문이다. 진행률은 회사의 사실이라
+   * definer 집계가 평균 하나만 내준다. 못 보는 회사와 프로젝트가 없는 회사는 둘 다 null이다.
+   */
+  listCompanyProgress(businessIds: string[]): Promise<Record<string, number | null>>
+
+  /**
+   * Phase 6-1 블록 C — 공유.
+   *
+   * 가시성을 앱이 다시 검사하지 않는다. 0026의 shares_insert_visible이 "볼 수 있는 것만
+   * 공유할 수 있다"를 판정하고, 거부되면 그 사유를 한국어로 옮겨 보여 주는 것까지가 화면의 몫이다.
+   */
+  listShares(entityTable: ShareEntityTable, entityId: string): Promise<ShareRecord[]>
+  /** 나에게 공유된 것 전부. 만료된 것은 오지 않는다 — shared_with_me()가 이미 거른다. */
+  listSharesWithMe(): Promise<ShareRecord[]>
+  createShare(input: NewShare, actor: AuditActor): Promise<ShareRecord>
+  /** 회수. 연 사람만 지울 수 있다(0025 shares_revoke). 기간 연장은 회수 후 재공유다. */
+  revokeShare(shareId: string, actor: AuditActor): Promise<void>
+  /** 공유 대상 후보(0028 company_people). 이름 두 칸과 id뿐이고, 질의가 비면 0행이다. */
+  searchSharePeople(query: string): Promise<SharePerson[]>
+
+  /**
    * Phase 3-B 회장 루틴(0014). Chairman은 읽고 쓰고, AIAgent는 읽기만, 나머지는 빈 결과다.
    * 권한은 여기서 보지 않는다 — 0014의 RLS가 판정한다.
    */
@@ -346,6 +401,15 @@ export const DUPLICATE_BUSINESS_ID = 'DUPLICATE_BUSINESS_ID'
  * 입력 오류라 다른 실패와 다르게 말해야 한다 — DUPLICATE_BUSINESS_ID와 같은 이유다.
  */
 export const DUPLICATE_INVITATION = 'DUPLICATE_INVITATION'
+
+/**
+ * 같은 사람에게 같은 것을 두 번 공유하려 했을 때(0025 shares의 unique 제약).
+ *
+ * 이것도 사용자가 고쳐야 풀리는 입력이라 다른 실패와 다르게 말해야 한다 —
+ * "이미 열려 있습니다. 기간을 바꾸려면 회수하고 다시 공유하세요"가 그 문장이다
+ * (기간 연장 경로가 따로 없는 이유는 0025가 shares에 update 정책을 두지 않았기 때문이다).
+ */
+export const DUPLICATE_SHARE = 'DUPLICATE_SHARE'
 
 /**
  * 무엇을 한 사람인가. audit_log의 actor_user_id / actor_role로 들어간다(CH-051).

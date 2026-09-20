@@ -4,7 +4,8 @@ import { cache } from 'react'
 import { DATA_MODE } from '@/lib/env'
 import { supabaseConfig } from '@/lib/supabase/config'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import { ROLE, type Role, type SessionUser } from '@/types'
+import { dummyViewer } from '@/lib/repository/dummy-org'
+import { type Role, type SessionUser } from '@/types'
 
 /**
  * 지금 요청을 보낸 사람이 누구인가. 서버에서만 부른다.
@@ -71,18 +72,29 @@ export const currentUser = cache(async function currentUser(): Promise<SessionUs
  *
  * 키가 없으면 로그인이라는 개념이 없고(proxy.ts), 그러면 dummy 화면에서 쓰기 흐름(장부 입력 등)을
  * 한 번도 눌러 볼 수 없다. 이 사용자는 메모리 어댑터에만 닿는다 — getRepository()가 live에서 키 없이는
- * 던지므로 실데이터에는 닿을 길이 없다. 역할은 DUMMY_ROLE(서버 전용)로 바꿔 화면 안내를 역할별로 본다.
+ * 던지므로 실데이터에는 닿을 길이 없다.
+ *
+ * Phase 6-1부터 이 사람은 **조직도 시드의 한 사람**이다(lib/repository/dummy-org.ts).
+ * 0026이 사람·업무·문서를 subtree로 자른 뒤로 'DUMMY'라는 이름의 떠 있는 계정으로는
+ * 회장 지시의 검증 a~f(네 세션)를 화면에서 한 번도 볼 수 없기 때문이다 — 트리에 매달리지
+ * 않은 사람에게는 자기 것 말고 아무것도 보이지 않는다.
+ *
+ *   DUMMY_USER=sales_lead   시드의 키로 직접 고른다(chairman · dy_ceo · exec · sales_lead ·
+ *                           sales_staff · buy_lead · buy_staff)
+ *   DUMMY_ROLE=TeamLead     역할로 고른다. 예전 개발 습관을 그대로 둔다.
+ *   둘 다 없으면 회장이다.
+ *
+ * display_name_en은 시드가 가진 값이다. 없는 사람은 null이고, 화면은 영문 줄을 아예 그리지
+ * 않는다 — 코드가 한글 이름을 로마자로 지어내지 않는다(0017의 판단).
  */
 function dummyUser(): SessionUser | null {
   if (DATA_MODE !== 'dummy') return null
-  const role = ROLE.find((r) => r === process.env.DUMMY_ROLE) ?? 'Chairman'
-  // display_name_en은 null이다. 지어내지 않는다 — 영문 표기는 본인이 쓰는 철자가 유일한 정답이고,
-  // dummy에 가짜 철자를 넣으면 '영문 줄이 없을 때 화면이 어떻게 보이는가'를 한 번도 못 보게 된다.
+  const person = dummyViewer()
   return {
-    user_id: '00000000-0000-0000-0000-00000000d0d0',
-    name: 'DUMMY',
-    role,
-    title_ko: role,
-    display_name_en: null,
+    user_id: person.user_id,
+    name: person.display_name,
+    role: person.role,
+    title_ko: person.title_ko,
+    display_name_en: person.display_name_en,
   }
 }

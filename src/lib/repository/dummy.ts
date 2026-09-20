@@ -20,11 +20,34 @@ import { kpisFromLedger } from '@/lib/ledger/cells'
 
 import * as books from './dummy-books'
 import { dummyLedger } from './dummy-books'
+import {
+  DUMMY_DOCUMENTS,
+  DUMMY_INVITATION_SEED,
+  DUMMY_PEOPLE,
+  DUMMY_PROJECTS,
+  DUMMY_SHARE_SEED,
+  DUMMY_TASKS,
+  DUMMY_TEAMS,
+  dummyHasBusiness,
+  dummyOwnerUnknown,
+  dummyPerson,
+  dummySharedWithMe,
+  dummyViewer,
+} from './dummy-org'
 import { emptyStrategy } from '@/lib/strategy-fields'
 import type { SearchHit } from '@/lib/search'
+import { needsChairmanApproval } from '@/types'
 import type {
   Business,
   BusinessKeyman,
+  NewShare,
+  ProfilePatch,
+  SecurityClass,
+  ShareEntityTable,
+  ShareRecord,
+  SharePerson,
+  Team,
+  TeamInput,
   BusinessStrategy,
   CalendarItem,
   ChairmanCheckin,
@@ -48,6 +71,7 @@ import type {
 import {
   DUPLICATE_BUSINESS_ID,
   DUPLICATE_INVITATION,
+  DUPLICATE_SHARE,
   type AuditActor,
   type AuditEntityTable,
   type ChairmanCheckinInput,
@@ -158,7 +182,70 @@ const memoryDecisions: Decision[] = []
  * 없어서 흉내 낼 사람이 없다 — 시드로 가짜 계정을 만들어 두면 '누가 이 시스템을 쓰나'의
  * 답이 두 곳(가짜 시드 / 진짜 DB)으로 갈라진다. 화면은 그때 빈 목록을 그리고 이유를 말한다.
  */
-const memoryInvitations: UserInvitation[] = []
+const memoryInvitations: UserInvitation[] = DUMMY_INVITATION_SEED.map((i) => ({ ...i }))
+
+/**
+ * Phase 6-1. 조직도·공유의 dummy 저장소.
+ *
+ * 사람과 팀은 시드가 있다(dummy-org.ts). 0026 이후로 '계정 목록은 늘 비어 있다'가
+ * 더는 정답이 아니기 때문이다 — 조직도 화면과 검증 a~f를 눈으로 볼 방법이 없어진다.
+ * 화면에서 옮긴 자리(역할·팀·상사)와 회수는 서버가 살아 있는 동안만 남는다.
+ */
+const memoryPeople: UserAccount[] = DUMMY_PEOPLE.map((p) => ({ ...p }))
+const memoryTeams: Team[] = DUMMY_TEAMS.map((t) => ({ ...t }))
+const memoryShares: ShareRecord[] = DUMMY_SHARE_SEED.map((s) => ({ ...s }))
+
+/** 0025 class_rank(). 배열 순서가 곧 등급 순서다(SECURITY_CLASS). */
+const CLASS_RANK: Record<SecurityClass, number> = { Public: 0, Normal: 1, Restricted: 2, Vault: 3 }
+
+/**
+ * dummy의 다섯 번째 겹. **DB 정책을 옮겨 적은 것이지 화면의 규칙이 아니다** —
+ * live에서는 이 함수가 한 번도 돌지 않고 RLS가 같은 판정을 한다(dummy-org.ts 머리 주석).
+ *
+ * 0026이 tasks/projects/documents에 쓴 식과 같은 모양이다:
+ *   회사 격리 AND (본인 | 내 subtree | 공유받음 | 주인 없음 [| 문서는 공개 등급])
+ */
+function canSeeRow(businessId: string | null, ownerId: string | null): boolean {
+  const viewer = memoryPerson(dummyViewer().user_id)
+  if (!dummyHasBusiness(viewer, businessId)) return false
+  return (
+    ownerId === viewer.user_id ||
+    inMemorySubtree(viewer.user_id, ownerId) ||
+    dummyOwnerUnknown(ownerId)
+  )
+}
+
+/** 화면에서 상사를 옮기면 그 순간부터 subtree도 달라져야 한다 — 시드가 아니라 현재 상태를 본다. */
+function inMemorySubtree(viewerId: string, targetId: string | null): boolean {
+  if (!targetId) return false
+  let cur = memoryPeople.find((p) => p.user_id === targetId)
+  for (let depth = 0; cur && depth < 20; depth += 1) {
+    if (cur.user_id === viewerId) return true
+    const next: string | null = cur.reports_to
+    cur = next ? memoryPeople.find((p) => p.user_id === next) : undefined
+  }
+  return false
+}
+
+function memoryPerson(userId: string): UserAccount {
+  return memoryPeople.find((p) => p.user_id === userId) ?? dummyViewer()
+}
+
+/**
+ * 업무가 매달린 프로젝트의 회사. live에서는 0027의 project_business_id()가 같은 답을 준다 —
+ * 그쪽도 회사 칸 하나만 내주는 문이고, 업무의 회사 판정이 '프로젝트가 보이는가'로
+ * 바뀌지 않게 하는 것이 요점이다.
+ */
+function businessOfDummyProject(projectId: string): string | null {
+  const owned = DUMMY_PROJECTS.find((p) => p.project.project_id === projectId)
+  if (owned) return owned.project.business_id
+  return projects.find((p) => p.project_id === projectId)?.business_id ?? null
+}
+
+/** 담당자 uuid → 표시 이름. live의 createOwnerNames()와 같은 자리다(못 찾으면 원값 그대로). */
+function ownerLabel(ownerId: string): string {
+  return dummyPerson(ownerId)?.display_name ?? ownerId
+}
 
 /** 개인 설정도 마찬가지다. 서버가 살아 있는 동안만 남는다. */
 const memorySettings: UserSettings = { hidden_businesses: [], pinned_businesses: null }
@@ -225,11 +312,37 @@ export const dummyRepository: ChairmanRepository = {
       console.warn(`[dummy] remove keyman by ${actor.role} — 메모리에만 남는다.`)
     }
   },
+  /**
+   * 시드 다섯 + 담당자가 분명한 DY 행 둘. 뒤엣것에만 다섯 번째 겹이 실제로 걸린다 —
+   * 시드의 담당자('user_001')는 이 조직도에 없는 사람이라 '주인 없는 행'이고,
+   * 그건 live에서 0003 시드의 가상 uuid가 읽히는 방식 그대로다(0026 owner_unknown).
+   */
   async listProjects() {
-    return [...projects]
+    const viewer = dummyViewer()
+    return [
+      ...projects.filter((p) => canSeeRow(p.business_id, null)),
+      ...DUMMY_PROJECTS.filter(
+        (p) =>
+          canSeeRow(p.project.business_id, p.owner_user_id) ||
+          dummySharedWithMe(memoryShares, viewer.user_id, 'projects', p.project.project_id),
+      ).map((p) => ({ ...p.project, owner: ownerLabel(p.owner_user_id) })),
+    ]
   },
   async listTasks(): Promise<Task[]> {
-    return tasks.map((t) => ({ ...t, ...memoryTaskPatches.get(t.task_id) }))
+    const viewer = dummyViewer()
+    const seeded = tasks
+      .filter((t) => canSeeRow(businessOfDummyProject(t.project_id), null))
+      .map((t) => ({ ...t, ...memoryTaskPatches.get(t.task_id) }))
+    const owned = DUMMY_TASKS.filter(
+      (t) =>
+        canSeeRow(businessOfDummyProject(t.task.project_id), t.owner_user_id) ||
+        dummySharedWithMe(memoryShares, viewer.user_id, 'tasks', t.task.task_id),
+    ).map((t) => ({
+      ...t.task,
+      owner: ownerLabel(t.owner_user_id),
+      ...memoryTaskPatches.get(t.task.task_id),
+    }))
+    return [...seeded, ...owned]
   },
   async listDecisions() {
     return [...decisions, ...memoryDecisions].map((decision) => ({
@@ -244,9 +357,24 @@ export const dummyRepository: ChairmanRepository = {
     return [...aiNightOutputs]
   },
 
-  /** CH-042. live에서는 보안등급 판정이 documents_read(0002)에 있다. dummy에는 등급도 사람도 없다. */
+  /**
+   * CH-042. live에서는 documents_read(0002+0026)가 판정한다. 여기서는 그 식을 옮겨 적는다:
+   * 회사 AND 등급 AND (본인 | subtree | 공유 | 공개 | 주인 없음).
+   * '공개'(Public) 분기가 검증 e다 — 공지는 위계와 무관하게 전 직원이 본다.
+   */
   async listDocuments(): Promise<DocumentRecord[]> {
-    return [...memoryDocuments]
+    const viewer = memoryPerson(dummyViewer().user_id)
+    const seeded = DUMMY_DOCUMENTS.filter(
+      (d) =>
+        dummyHasBusiness(viewer, d.document.business_id) &&
+        CLASS_RANK[d.document.security_class] <= CLASS_RANK[viewer.max_security_class] &&
+        (d.document.security_class === 'Public' ||
+          d.owner_user_id === viewer.user_id ||
+          inMemorySubtree(viewer.user_id, d.owner_user_id) ||
+          dummySharedWithMe(memoryShares, viewer.user_id, 'documents', d.document.document_id) ||
+          dummyOwnerUnknown(d.owner_user_id)),
+    ).map((d) => ({ ...d.document, uploaded_by: ownerLabel(d.owner_user_id) }))
+    return [...seeded, ...memoryDocuments]
   },
 
   /**
@@ -535,16 +663,202 @@ export const dummyRepository: ChairmanRepository = {
   },
 
   /**
-   * CH-049. dummy에는 사용자 표가 없다. 빈 배열이 정답이다 —
-   * 가짜 계정을 넣어 두면 화면이 dummy에서만 사람 목록을 보여 주고,
-   * 그걸 보고 '권한이 이렇게 되어 있구나'로 읽는 사고가 난다.
+   * CH-049 + Phase 6-1 블록 B.
+   *
+   * 2026-09-21까지 이 함수는 빈 배열이었다("dummy에는 사용자 표가 없다"). 0026이 사람 목록을
+   * subtree로 자른 뒤로 그 답은 더는 맞지 않는다 — 조직도 화면과 회장 지시의 검증 a~f를
+   * **화면에서** 확인할 방법이 사라진다. 그래서 시드 트리를 넣고(dummy-org.ts),
+   * 0026의 user_profiles_self_read와 같은 식으로 자른다.
+   *
+   * 자르는 자리는 여기다. 화면은 받은 것을 그대로 그린다.
    */
   async listUserAccounts(): Promise<UserAccount[]> {
-    return []
+    const viewer = memoryPerson(dummyViewer().user_id)
+    if (viewer.role === 'Chairman') return memoryPeople.map((p) => ({ ...p }))
+    return memoryPeople
+      .filter((p) => p.user_id === viewer.user_id || inMemorySubtree(viewer.user_id, p.user_id))
+      .map((p) => ({ ...p }))
   },
 
+  /** 0025 teams_read = 회사 격리. subtree로 자르지 않는다 — 팀 이름은 뼈대이지 비밀이 아니다. */
+  async listTeams(): Promise<Team[]> {
+    const viewer = memoryPerson(dummyViewer().user_id)
+    return memoryTeams.filter((t) => dummyHasBusiness(viewer, t.business_id)).map((t) => ({ ...t }))
+  },
+
+  /** live에서는 0025의 teams_write가 Chairman만 통과시킨다. dummy는 판정을 흉내 내지 않는다. */
+  async saveTeam(input: TeamInput, actor: AuditActor): Promise<Team> {
+    const existing = memoryTeams.find((t) => t.team_id === input.team_id)
+    const saved: Team = existing ? Object.assign(existing, input) : { ...input }
+    if (!existing) memoryTeams.push(saved)
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[dummy] save team ${input.team_id} by ${actor.role} — 메모리에만 남는다.`)
+    }
+    return { ...saved }
+  },
+
+  /**
+   * 역할·팀·상사를 옮긴다. live에서는 0002 user_profiles_admin_write가 Chairman만 통과시키고,
+   * 순환은 0025의 트리거가 막는다. 여기서는 순환만 흉내 낸다 — 그것이 막히지 않으면
+   * 조직도가 무한히 접히는 화면 버그로 나타나서, dummy에서도 같은 거부 문구가 필요하다.
+   */
+  async updateUserProfile(userId: string, patch: ProfilePatch, actor: AuditActor): Promise<void> {
+    const target = memoryPeople.find((p) => p.user_id === userId)
+    if (!target) throw new Error('Dummy user_profiles: mutation affected 0 rows.')
+
+    if (patch.reports_to !== undefined && patch.reports_to !== null) {
+      if (patch.reports_to === userId) throw new Error('자기 자신을 직속 상사로 지정할 수 없습니다')
+      if (inMemorySubtree(userId, patch.reports_to)) {
+        throw new Error('보고 체계에 순환이 생깁니다')
+      }
+    }
+    Object.assign(target, patch)
+
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        `[dummy] profile ${userId} ${JSON.stringify(patch)} by ${actor.role} — 메모리에만 남는다.`,
+      )
+    }
+  },
+
+  /**
+   * 0026 user_invitations_subtree_read를 옮겨 적은 것: 초대자 본인 + 그 위 subtree
+   * (회장은 0011의 정책으로 전부 본다). 아래와 옆은 남의 초대를 보지 못한다.
+   */
   async listUserInvitations(): Promise<UserInvitation[]> {
-    return [...memoryInvitations]
+    const viewer = memoryPerson(dummyViewer().user_id)
+    if (viewer.role === 'Chairman') return memoryInvitations.map((i) => ({ ...i }))
+    return memoryInvitations
+      .filter((i) => i.invited_by === viewer.user_id || inMemorySubtree(viewer.user_id, i.invited_by))
+      .map((i) => ({ ...i }))
+  },
+
+  /**
+   * 회장 결재 큐의 도장. live에서는 이 update 하나가 0026의 트리거로 이행까지 간다.
+   * dummy에는 계정이 생기는 순간이 없으므로 도장까지만 찍는다.
+   */
+  async approveInvitation(invitationId: string, actor: AuditActor): Promise<void> {
+    const found = memoryInvitations.find((i) => i.invitation_id === invitationId)
+    if (!found || found.accepted_at || found.revoked_at || found.chairman_approved_at) {
+      throw new Error('Dummy user_invitations: mutation affected 0 rows.')
+    }
+    found.chairman_approved_at = new Date().toISOString()
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[dummy] approve invitation ${invitationId} by ${actor.role} — 메모리에만 남는다.`)
+    }
+  },
+
+  /**
+   * 회사 진행률(live는 0028 company_progress). **보는 사람에 따라 달라지지 않는다** —
+   * 위에서 listProjects()가 자른 목록이 아니라 시드 전체에서 낸다. 그것이 definer 집계의
+   * 뜻이고, 그래서 영업 직원과 회장이 같은 회사 카드에서 같은 숫자를 본다.
+   */
+  async listCompanyProgress(businessIds: string[]): Promise<Record<string, number | null>> {
+    const viewer = memoryPerson(dummyViewer().user_id)
+    const all = [...projects, ...DUMMY_PROJECTS.map((p) => p.project)]
+    return Object.fromEntries(
+      businessIds.map((id) => {
+        if (!dummyHasBusiness(viewer, id)) return [id, null]
+        const own = all.filter((p) => p.business_id === id)
+        if (own.length === 0) return [id, null]
+        return [id, Math.round(own.reduce((sum, p) => sum + p.progress_pct, 0) / own.length)]
+      }),
+    )
+  },
+
+  /** 0025 shares_read = 내가 받은 것 + 내가 한 공유. 남이 남에게 한 공유는 존재도 보이지 않는다. */
+  async listShares(entityTable: ShareEntityTable, entityId: string): Promise<ShareRecord[]> {
+    const me = dummyViewer().user_id
+    return memoryShares
+      .filter(
+        (s) =>
+          s.entity_table === entityTable &&
+          s.entity_id === entityId &&
+          (s.shared_with === me || s.shared_by === me),
+      )
+      .map((s) => ({ ...s }))
+  },
+
+  /** 나에게 공유된 것. 만료된 것은 오지 않는다 — live의 shared_with_me()와 같은 판정이다. */
+  async listSharesWithMe(): Promise<ShareRecord[]> {
+    const me = dummyViewer().user_id
+    return memoryShares
+      .filter((s) => s.shared_with === me)
+      .filter((s) => s.expires_at === null || Date.parse(s.expires_at) > Date.now())
+      .map((s) => ({ ...s }))
+  },
+
+  /**
+   * 공유를 연다. live에서는 0026의 shares_insert_visible이 "볼 수 있는 것만"을 판정한다.
+   * dummy는 그 판정을 흉내 내지 않는다 — 여기서 다시 구현하면 규칙이 갈라진다.
+   * 같은 사람에게 같은 것을 두 번 열지 않는 것만 지킨다(0025의 unique 제약).
+   */
+  async createShare(input: NewShare, actor: AuditActor): Promise<ShareRecord> {
+    const dup = memoryShares.some(
+      (s) =>
+        s.entity_table === input.entity_table &&
+        s.entity_id === input.entity_id &&
+        s.shared_with === input.shared_with,
+    )
+    if (dup) throw new Error(DUPLICATE_SHARE)
+
+    const created: ShareRecord = {
+      share_id: `shr_${memoryShares.length + 1}_${Date.now()}`,
+      entity_table: input.entity_table,
+      entity_id: input.entity_id,
+      shared_with: input.shared_with,
+      shared_with_name: dummyPerson(input.shared_with)?.display_name ?? null,
+      shared_by: actor.user_id,
+      shared_by_name: dummyPerson(actor.user_id)?.display_name ?? null,
+      expires_at: input.expires_at,
+      created_at: new Date().toISOString(),
+    }
+    memoryShares.push(created)
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        `[dummy] share ${input.entity_table}/${input.entity_id} by ${actor.role} — 메모리에만 남는다.`,
+      )
+    }
+    return { ...created }
+  },
+
+  async revokeShare(shareId: string, actor: AuditActor): Promise<void> {
+    const i = memoryShares.findIndex((s) => s.share_id === shareId)
+    if (i < 0) throw new Error('Dummy shares: mutation affected 0 rows.')
+    memoryShares.splice(i, 1)
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[dummy] revoke share ${shareId} by ${actor.role} — 메모리에만 남는다.`)
+    }
+  },
+
+  /**
+   * 공유 대상 후보. live는 0028 company_people() — 같은 회사 사람의 이름 두 칸만 내준다.
+   * **subtree로 자르지 않는다**(구매팀장이 영업팀장에게 공유하는 것이 검증 c다).
+   */
+  async searchSharePeople(query: string): Promise<SharePerson[]> {
+    const q = query.trim().toLowerCase()
+    if (!q) return []
+    const viewer = memoryPerson(dummyViewer().user_id)
+    return memoryPeople
+      .filter(
+        (p) =>
+          p.user_id !== viewer.user_id &&
+          !p.revoked_at &&
+          p.status === 'active' &&
+          p.role !== 'AIAgent' &&
+          p.role !== 'Integration' &&
+          (p.role === 'Chairman' ||
+            p.role === 'GroupCFO' ||
+            p.business_ids.some((b) => dummyHasBusiness(viewer, b))) &&
+          (p.display_name.toLowerCase().includes(q) ||
+            (p.display_name_en ?? '').toLowerCase().includes(q)),
+      )
+      .slice(0, 20)
+      .map((p) => ({
+        user_id: p.user_id,
+        display_name: p.display_name,
+        display_name_en: p.display_name_en,
+      }))
   },
 
   /** CH-049. live에서는 0011의 user_invitations_admin이 Chairman만 통과시킨다. */
@@ -562,8 +876,20 @@ export const dummyRepository: ChairmanRepository = {
       max_security_class: input.max_security_class,
       business_ids: input.business_ids,
       display_name: input.display_name,
+      display_name_en: input.display_name_en,
       title_ko: input.title_ko,
+      invited_by: actor.user_id,
       invited_at: new Date().toISOString(),
+      reports_to: input.reports_to,
+      team_id: input.team_id,
+      joined_on: input.joined_on,
+      language: input.language,
+      // **서버가 정한다.** 0026의 user_invitations_set_approval 트리거가 role_rank로
+      // 덮어쓰는 값이라, dummy도 폼이 보낸 값을 쓰지 않고 같은 기준으로 여기서 정한다 —
+      // 두 곳이 다르면 화면이 dummy에서만 다른 말을 하게 된다.
+      chairman_approval_required: needsChairmanApproval(input.role),
+      // 회장이 직접 넣은 초대는 그 자리에서 결재된 것으로 남는다(0026 4-2절).
+      chairman_approved_at: actor.role === 'Chairman' ? new Date().toISOString() : null,
       // live에서는 0011의 트리거가 계정 생성 시점에 채운다. dummy에는 그 순간이 없다.
       accepted_at: null,
       revoked_at: null,
@@ -579,7 +905,11 @@ export const dummyRepository: ChairmanRepository = {
     return created
   },
 
-  /** CH-049. dummy에는 계정이 없으므로 초대 취소만 실제로 뭔가 한다. */
+  /**
+   * CH-049 권한 회수. 0026이 승계 트리거를 붙인 뒤로 dummy에서도 계정 쪽이 실제로 움직인다 —
+   * 회장 지시의 검증 f("영업팀장 회수 → 임원이 영업팀 자동 승계")를 화면에서 보려면
+   * 그 트리거가 하는 일을 여기서도 해야 한다(0026 5절을 옮겨 적은 것이다).
+   */
   async revokeUser(target: RevokeTarget, actor: AuditActor): Promise<void> {
     if (target.kind === 'invitation') {
       const found = memoryInvitations.find((i) => i.invitation_id === target.invitation_id)
@@ -588,7 +918,25 @@ export const dummyRepository: ChairmanRepository = {
       }
       found.revoked_at = new Date().toISOString()
     } else {
-      throw new Error('Dummy user_profiles: mutation affected 0 rows.')
+      const found = memoryPeople.find((p) => p.user_id === target.user_id)
+      if (!found || found.revoked_at) {
+        throw new Error('Dummy user_profiles: mutation affected 0 rows.')
+      }
+      found.revoked_at = new Date().toISOString()
+      found.status = 'left'
+      found.left_on = kstToday()
+
+      // 승계(0026 5절). 올릴 상사가 없으면 아무것도 하지 않는다 —
+      // 트리를 끊는 것보다 조직도에 경고로 남는 편이 낫다.
+      const successor = found.reports_to
+      if (successor) {
+        for (const p of memoryPeople) {
+          if (p.reports_to === found.user_id && p.user_id !== found.user_id) p.reports_to = successor
+        }
+        for (const t of memoryTeams) {
+          if (t.lead_user_id === found.user_id) t.lead_user_id = successor
+        }
+      }
     }
 
     if (process.env.NODE_ENV !== 'production') {

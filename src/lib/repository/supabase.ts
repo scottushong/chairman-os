@@ -37,8 +37,17 @@ import type {
   KakaoConnection,
   JournalLine,
   DataSource,
+  EmploymentStatus,
   NewInvitation,
+  NewShare,
+  PersonLanguage,
+  ProfilePatch,
   Role,
+  ShareEntityTable,
+  ShareRecord,
+  SharePerson,
+  Team,
+  TeamInput,
   UserAccount,
   UserInvitation,
   FinanceMetric,
@@ -259,9 +268,38 @@ interface UserProfileRow {
   user_id: string
   role: Role
   display_name: string
+  display_name_en: string | null
   title_ko: string | null
   max_security_class: SecurityClass
   revoked_at: string | null
+  created_at: string
+  /** 0025/0028. 조직도가 읽는 칸들. */
+  reports_to: string | null
+  team_id: string | null
+  status: EmploymentStatus
+  joined_on: string | null
+  left_on: string | null
+  language: PersonLanguage
+}
+
+/** 0025 teams 한 행. 읽기·쓰기가 같은 모양을 돌려줘야 한다. */
+const TEAM_COLUMNS = 'team_id,business_id,name,name_en,lead_user_id'
+
+/** 0025/0028. 조직도가 읽는 user_profiles의 칸 전부. */
+const PROFILE_COLUMNS =
+  'user_id,role,display_name,display_name_en,title_ko,max_security_class,revoked_at,created_at,' +
+  'reports_to,team_id,status,joined_on,left_on,language'
+
+/** 0025 shares 한 행. */
+const SHARE_COLUMNS = 'share_id,entity_table,entity_id,shared_with,shared_by,expires_at,created_at'
+
+interface ShareRow {
+  share_id: string
+  entity_table: ShareEntityTable
+  entity_id: string
+  shared_with: string
+  shared_by: string
+  expires_at: string | null
   created_at: string
 }
 
@@ -277,11 +315,25 @@ interface UserInvitationRow {
   max_security_class: SecurityClass
   business_ids: string[] | null
   display_name: string
+  display_name_en: string | null
   title_ko: string | null
+  invited_by: string | null
   invited_at: string
+  reports_to: string | null
+  team_id: string | null
+  joined_on: string | null
+  language: PersonLanguage
+  chairman_approval_required: boolean
+  chairman_approved_at: string | null
   accepted_at: string | null
   revoked_at: string | null
 }
+
+/** 0011 + 0026 + 0028. 초대 목록과 방금 만든 초대가 같은 모양을 돌려줘야 한다. */
+const INVITATION_COLUMNS =
+  'invitation_id,email,role,max_security_class,business_ids,display_name,display_name_en,title_ko,' +
+  'invited_by,invited_at,reports_to,team_id,joined_on,language,' +
+  'chairman_approval_required,chairman_approved_at,accepted_at,revoked_at'
 
 /** 0011 한 행을 화면의 UserInvitation으로. 목록과 방금 만든 초대가 같은 함수를 쓴다. */
 function toInvitation(r: UserInvitationRow): UserInvitation {
@@ -292,10 +344,34 @@ function toInvitation(r: UserInvitationRow): UserInvitation {
     max_security_class: r.max_security_class,
     business_ids: r.business_ids ?? [],
     display_name: r.display_name,
+    display_name_en: r.display_name_en,
     title_ko: r.title_ko ?? '',
+    invited_by: r.invited_by,
     invited_at: r.invited_at,
+    reports_to: r.reports_to,
+    team_id: r.team_id,
+    joined_on: r.joined_on,
+    language: r.language ?? 'ko',
+    chairman_approval_required: r.chairman_approval_required,
+    chairman_approved_at: r.chairman_approved_at,
     accepted_at: r.accepted_at,
     revoked_at: r.revoked_at,
+  }
+}
+
+
+/** 0025 shares 한 행을 화면의 ShareRecord로. 이름은 user_profiles에서 붙이고, 못 찾으면 null이다. */
+function toShare(r: ShareRow, names: Map<string, string>): ShareRecord {
+  return {
+    share_id: r.share_id,
+    entity_table: r.entity_table,
+    entity_id: r.entity_id,
+    shared_with: r.shared_with,
+    shared_with_name: names.get(r.shared_with) ?? null,
+    shared_by: r.shared_by,
+    shared_by_name: names.get(r.shared_by) ?? null,
+    expires_at: r.expires_at,
+    created_at: r.created_at,
   }
 }
 
@@ -1989,10 +2065,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         fetchAll('user_profiles', ['user_id'], (from, to) =>
           sb
             .from('user_profiles')
-            .select(
-              'user_id,role,display_name,title_ko,max_security_class,revoked_at,created_at',
-              { count: 'exact' },
-            )
+            .select(PROFILE_COLUMNS, { count: 'exact' })
             .order('created_at')
             .order('user_id')
             .range(from, to)
@@ -2020,11 +2093,18 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         user_id: r.user_id,
         role: r.role,
         display_name: r.display_name,
+        display_name_en: r.display_name_en,
         title_ko: r.title_ko ?? '',
         max_security_class: r.max_security_class,
         revoked_at: r.revoked_at,
         business_ids: byUser.get(r.user_id) ?? [],
         created_at: r.created_at,
+        reports_to: r.reports_to,
+        team_id: r.team_id,
+        status: r.status ?? 'active',
+        joined_on: r.joined_on,
+        left_on: r.left_on,
+        language: r.language ?? 'ko',
       }))
     },
 
@@ -2033,10 +2113,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       const { data, error } = await fetchAll('user_invitations', ['invitation_id'], (from, to) =>
         sb
           .from('user_invitations')
-          .select(
-            'invitation_id,email,role,max_security_class,business_ids,display_name,title_ko,invited_at,accepted_at,revoked_at',
-            { count: 'exact' },
-          )
+          .select(INVITATION_COLUMNS, { count: 'exact' })
           .order('invited_at', { ascending: false })
           .order('invitation_id')
           .range(from, to)
@@ -2078,6 +2155,10 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
           max_security_class: input.max_security_class,
           business_ids: input.business_ids,
           display_name: input.display_name,
+          // 0026이 더한 칸. '누구 밑으로 불렀나'가 남아야 나중에 "왜 이 사람이 이걸 보나"에
+          // 답할 수 있다 — 위계가 가시성의 다섯 번째 겹이 된 뒤로는 자리도 권한이다.
+          reports_to: input.reports_to,
+          team_id: input.team_id,
         },
       })
       if (auditError) {
@@ -2092,12 +2173,19 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
           max_security_class: input.max_security_class,
           business_ids: input.business_ids,
           display_name: input.display_name,
+          display_name_en: input.display_name_en || null,
           title_ko: input.title_ko || null,
           invited_by: actor.user_id,
+          // 0026. 회장이 아닌 초대자는 이 칸이 없으면 user_invitations_delegated_insert가
+          // 42501로 거부한다. 화면의 기본값은 초대자 자신이다.
+          reports_to: input.reports_to,
+          team_id: input.team_id,
+          joined_on: input.joined_on,
+          language: input.language,
+          // chairman_approval_required는 **보내지 않는다.** 0026의 트리거가 role_rank로
+          // 덮어쓴다 — 클라이언트가 정할 수 있으면 그것은 결재가 아니다.
         })
-        .select(
-          'invitation_id,email,role,max_security_class,business_ids,display_name,title_ko,invited_at,accepted_at,revoked_at',
-        )
+        .select(INVITATION_COLUMNS)
         .single<UserInvitationRow>()
 
       if (error || !data) {
@@ -2162,6 +2250,296 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
           .returns<{ invitation_id: string }[]>()
         oneAffectedRow(table, data, error)
       }
+    },
+
+    /**
+     * Phase 6-1 블록 B. 조직도의 가운데 층(0025 teams).
+     * 회사 격리는 teams_read가 이미 건다 — 남의 회사 팀은 아예 오지 않는다.
+     */
+    async listTeams(): Promise<Team[]> {
+      const { data, error } = await fetchAll('teams', ['team_id'], (from, to) =>
+        sb
+          .from('teams')
+          .select(TEAM_COLUMNS, { count: 'exact' })
+          .order('business_id')
+          .order('team_id')
+          .range(from, to)
+          .returns<Team[]>(),
+      )
+      return unwrap('teams', data, error)
+    },
+
+    /**
+     * 팀 추가·이름 변경·팀장 지정·회사 간 이동 (회장 지시 블록 B-7).
+     * 0025의 teams_write가 Chairman만 통과시킨다 — 화면은 버튼을 안 그릴 뿐이고 판정은 DB가 한다.
+     * 기록이 먼저다: 팀장 지정은 권한이 움직이는 사건이라 permission_change로 남는다.
+     */
+    async saveTeam(input: TeamInput, actor: AuditActor): Promise<Team> {
+      const { error: auditError } = await sb.from('audit_log').insert({
+        action: 'permission_change',
+        entity_table: 'teams',
+        entity_id: input.team_id,
+        business_id: input.business_id,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        after: {
+          team_id: input.team_id,
+          business_id: input.business_id,
+          name: input.name,
+          name_en: input.name_en,
+          lead_user_id: input.lead_user_id,
+        },
+      })
+      if (auditError) {
+        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      }
+
+      const { data, error } = await sb
+        .from('teams')
+        .upsert(
+          {
+            team_id: input.team_id,
+            business_id: input.business_id,
+            name: input.name,
+            name_en: input.name_en,
+            lead_user_id: input.lead_user_id,
+          },
+          { onConflict: 'team_id' },
+        )
+        .select(TEAM_COLUMNS)
+        .returns<Team[]>()
+      return oneAffectedRow('teams', data, error)
+    },
+
+    /**
+     * 사람 한 명의 자리를 옮긴다(역할·팀·상사).
+     *
+     * audit_action에 새 값을 만들지 않는다 — 셋 다 permission_change다(0025 5절).
+     * 역할은 말할 것도 없고, 팀과 상사도 0025/0026 이후로는 **가시성을 정하는 값**이다.
+     * 상사를 옮기면 그 사람이 보는 범위가 통째로 달라진다.
+     *
+     * 순환은 여기서 검사하지 않는다. 0025의 user_profiles_no_cycle 트리거가 막고,
+     * 화면은 그 거부 문구를 한국어로 옮겨 보여 준다.
+     */
+    async updateUserProfile(userId: string, patch: ProfilePatch, actor: AuditActor): Promise<void> {
+      const { data: before, error: beforeError } = await sb
+        .from('user_profiles')
+        .select('user_id,role,team_id,reports_to')
+        .eq('user_id', userId)
+        .maybeSingle<{ user_id: string; role: Role; team_id: string | null; reports_to: string | null }>()
+      if (beforeError) {
+        throw new Error(`Supabase user_profiles ${beforeError.code ?? '?'}: ${beforeError.message}`)
+      }
+      if (!before) throw new Error('Supabase user_profiles: mutation affected 0 rows.')
+
+      const { error: auditError } = await sb.from('audit_log').insert({
+        action: 'permission_change',
+        entity_table: 'user_profiles',
+        entity_id: userId,
+        business_id: null,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        before: { role: before.role, team_id: before.team_id, reports_to: before.reports_to },
+        after: patch,
+      })
+      if (auditError) {
+        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      }
+
+      const { data, error } = await sb
+        .from('user_profiles')
+        .update(patch)
+        .eq('user_id', userId)
+        .select('user_id')
+        .returns<{ user_id: string }[]>()
+      oneAffectedRow('user_profiles', data, error)
+    },
+
+    /**
+     * 회장 결재 큐의 도장 하나.
+     *
+     * update 한 칸이다. 0026의 user_invitations_approved 트리거가 그 순간
+     * apply_user_invitation()을 불러 이행까지 한다 — 계정이 아직 없으면 조용히 대기하고,
+     * 계정이 생길 때 accept_user_invitation()이 이어받는다.
+     * chairman_approved_by는 보내지 않는다 — 0026의 트리거가 auth.uid()로 채운다.
+     */
+    async approveInvitation(invitationId: string, actor: AuditActor): Promise<void> {
+      const now = new Date().toISOString()
+      const { error: auditError } = await sb.from('audit_log').insert({
+        action: 'permission_change',
+        entity_table: 'user_invitations',
+        entity_id: invitationId,
+        business_id: null,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        note: '회장 결재: 초대 승인',
+        after: { chairman_approved_at: now },
+      })
+      if (auditError) {
+        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      }
+
+      const { data, error } = await sb
+        .from('user_invitations')
+        .update({ chairman_approved_at: now })
+        .eq('invitation_id', invitationId)
+        .is('chairman_approved_at', null)
+        .is('accepted_at', null)
+        .is('revoked_at', null)
+        .select('invitation_id')
+        .returns<{ invitation_id: string }[]>()
+      oneAffectedRow('user_invitations', data, error)
+    },
+
+    /**
+     * 회사 카드의 진행률(0028 company_progress).
+     *
+     * 회사마다 RPC 한 번이다. 대시보드가 그리는 회사는 손에 꼽고(다섯 곳), 한 번에
+     * 여러 회사를 받는 함수로 만들면 그 함수가 '행'을 내주게 된다 — 평균 하나만 내주는
+     * 것이 이 keyhole의 요점이라 그쪽으로 가지 않았다.
+     *
+     * 실패는 삼킨다. 진행률 한 칸 때문에 대시보드 전체가 서지 못하면 안 된다 —
+     * 못 받은 회사는 null이고 화면이 그 자리에 '—'를 그린다.
+     */
+    async listCompanyProgress(businessIds: string[]): Promise<Record<string, number | null>> {
+      const entries = await Promise.all(
+        businessIds.map(async (id) => {
+          const { data, error } = await sb.rpc('company_progress', { p_business_id: id })
+          if (error) {
+            console.error('[company_progress]', id, error.code, error.message)
+            return [id, null] as const
+          }
+          return [id, typeof data === 'number' ? data : null] as const
+        }),
+      )
+      return Object.fromEntries(entries)
+    },
+
+    /**
+     * Phase 6-1 블록 C. 이 한 건에 걸린 공유들.
+     *
+     * 0025의 shares_read가 '내가 받은 것 + 내가 한 공유'만 내준다 — 남이 남에게 한 공유는
+     * 존재도 보이지 않는다. 앱은 그 결과를 그대로 그린다.
+     * 이름은 user_profiles에서 붙인다. 못 찾으면 null이고, 화면이 uuid를 대신 쓰지 않는다.
+     */
+    async listShares(entityTable: ShareEntityTable, entityId: string): Promise<ShareRecord[]> {
+      const { data, error } = await sb
+        .from('shares')
+        .select(SHARE_COLUMNS)
+        .eq('entity_table', entityTable)
+        .eq('entity_id', entityId)
+        .order('created_at', { ascending: false })
+        .returns<ShareRow[]>()
+      const rows = unwrap('shares', data, error)
+      const names = await ownerNames()
+      return rows.map((r) => toShare(r, names))
+    },
+
+    /** 나에게 공유된 것 전부. 만료된 것은 오지 않는다 — 0025 shares_read + shared_with_me(). */
+    async listSharesWithMe(): Promise<ShareRecord[]> {
+      const { data, error } = await sb
+        .from('shares')
+        .select(SHARE_COLUMNS)
+        .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+        .order('created_at', { ascending: false })
+        .returns<ShareRow[]>()
+      const rows = unwrap('shares', data, error)
+      const names = await ownerNames()
+      return rows.map((r) => toShare(r, names))
+    },
+
+    /**
+     * 공유 한 건을 연다.
+     *
+     * 가시성을 앱이 검사하지 않는다. 0026의 shares_insert_visible이 "볼 수 있는 것만
+     * 공유할 수 있다"를 판정하고(대상 표를 exists로 읽는 것이 곧 판정이다),
+     * 0025의 restrictive 둘이 '남의 이름으로'와 'Integration 계정'을 막는다.
+     * 거부되면 그 사유를 한국어로 옮기는 것은 Server Action의 몫이다.
+     *
+     * 감사 기록은 delegate다. 새 enum 값을 만들지 않는다 — 공유는 '내가 보는 것을 남이
+     * 보게 하는' 위임이고, 0001의 audit_action에 이미 그 말이 있다.
+     */
+    async createShare(input: NewShare, actor: AuditActor): Promise<ShareRecord> {
+      const { error: auditError } = await sb.from('audit_log').insert({
+        action: 'delegate',
+        entity_table: input.entity_table,
+        entity_id: input.entity_id,
+        business_id: null,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        after: { shared_with: input.shared_with, expires_at: input.expires_at },
+      })
+      if (auditError) {
+        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      }
+
+      const { data, error } = await sb
+        .from('shares')
+        .insert({
+          entity_table: input.entity_table,
+          entity_id: input.entity_id,
+          shared_with: input.shared_with,
+          shared_by: actor.user_id,
+          expires_at: input.expires_at,
+        })
+        .select(SHARE_COLUMNS)
+        .returns<ShareRow[]>()
+      const row = oneAffectedRow('shares', data, error)
+      return toShare(row, await ownerNames())
+    },
+
+    /**
+     * 회수. 0025의 shares_revoke가 연 사람(shared_by = auth.uid())만 통과시킨다.
+     * 기간 연장은 회수 후 재공유다 — 그 표에 update 정책이 없다(0025의 판단).
+     * 기록은 permission_change다(주는 것과 거두는 것을 한 값으로 걸러 낼 수 있어야 한다).
+     */
+    async revokeShare(shareId: string, actor: AuditActor): Promise<void> {
+      const { data: before, error: beforeError } = await sb
+        .from('shares')
+        .select(SHARE_COLUMNS)
+        .eq('share_id', shareId)
+        .maybeSingle<ShareRow>()
+      if (beforeError) {
+        throw new Error(`Supabase shares ${beforeError.code ?? '?'}: ${beforeError.message}`)
+      }
+      if (!before) throw new Error('Supabase shares: mutation affected 0 rows.')
+
+      const { error: auditError } = await sb.from('audit_log').insert({
+        action: 'permission_change',
+        entity_table: before.entity_table,
+        entity_id: before.entity_id,
+        business_id: null,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        note: '공유 회수',
+        before: { shared_with: before.shared_with, expires_at: before.expires_at },
+      })
+      if (auditError) {
+        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      }
+
+      const { data, error } = await sb
+        .from('shares')
+        .delete()
+        .eq('share_id', shareId)
+        .select('share_id')
+        .returns<{ share_id: string }[]>()
+      oneAffectedRow('shares', data, error)
+    },
+
+    /**
+     * 공유 대상 후보(0028 company_people).
+     *
+     * 사람 목록을 직접 읽지 않는다 — 0026이 그 표를 subtree로 잘라서, 옆 가지(구매팀장이
+     * 영업팀장에게)로 공유할 때 화면에서 그 사람을 고를 수가 없다. 이 RPC는 같은 회사
+     * 사람의 **이름 두 칸과 id만** 내주는 문이다(역할·등급·이메일은 오지 않는다).
+     */
+    async searchSharePeople(query: string): Promise<SharePerson[]> {
+      const q = query.trim()
+      if (!q) return []
+      const { data, error } = await sb.rpc('company_people', { p_query: q })
+      if (error) throw new Error(`Supabase company_people ${error.code ?? '?'}: ${error.message}`)
+      return (data ?? []) as SharePerson[]
     },
 
     /**
