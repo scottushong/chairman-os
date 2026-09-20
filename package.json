@@ -20,6 +20,7 @@
     "check:statements": "tsx scripts/check-statements.ts",
     "check:process-charts": "tsx scripts/check-process-charts.ts",
     "check:kakao": "tsx scripts/check-kakao.ts",
+    "check:schedule": "tsx scripts/check-brief-schedule.ts",
     "check:migrations": "tsx scripts/check-migrations.ts"
   },
   "dependencies": {
