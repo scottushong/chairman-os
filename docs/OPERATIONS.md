@@ -105,15 +105,15 @@ Settings → Environment Variables에서 아래를 넣고, 각 변수의 Environ
   이미 만들어진 Preview 배포의 값을 바꿨다면 캐시 없이 Redeploy 한다.
 - Preview는 기본적으로 production 브랜치가 아닌 **모든 브랜치**에 붙는다. 특정 브랜치만 원하면
   변수에 Branch를 지정한다.
-- **Preview에서 카카오 연결은 시험하지 않는다.** 카카오 콘솔에 등록된 Redirect URI는 고정된 둘
-  (production, localhost)뿐인데 Preview는 배포마다 호스트가 바뀐다. Preview에 카카오 변수를
-  넣으면 연결 버튼이 KOE006으로 떨어지므로 아예 넣지 않는다 — Preview에서 정상은
-  '연결 없음'이고, 야간 Job은 그때 `skipped: 카카오가 연결되어 있지 않다`로 조용히 지나간다.
-  카카오까지 보려면 별도 카카오 앱과 고정 Preview URL이 필요하다(DEFERRED).
+- **Preview에는 카카오 환경변수를 넣지 않는다.** 카카오 콘솔에 등록된 Redirect URI는 고정된 둘
+  (production, localhost)뿐인데 Preview는 배포마다 호스트가 바뀐다. 변수가 없으면
+  연결 버튼도 나타나지 않고, 야간 Job은 `skipped: 카카오 환경변수가 없다`로 조용히 지나간다.
+  카카오까지 테스트하려면 별도 카카오 앱과 고정 Preview URL이 필요하다(DEFERRED).
 - **Vercel Cron은 Production 배포에서만 돈다.** Preview에서 아침 브리핑은 저절로 돌지 않는다.
   staging에서 보려면 손으로 부른다:
   `curl -H "Authorization: Bearer <staging CRON_SECRET>" https://<preview-url>/api/cron/night-brief`
   Preview에 Deployment Protection이 켜져 있으면 bypass 토큰을 함께 보내거나 잠시 꺼야 한다.
+- 서브시스템은 여전히 "야간 브리핑"(night-brief)이라는 이름을 쓴다. Phase 3-C에서 cron을 23:00 KST에서 07:00 KST로 옮겼지만, 모듈·경로·감사 액션은 원래 이름 그대로 두었다 — 코드에서 "야간"을 보면 23:00일 때를 의도한 기존 흔적이 아니라 Phase 3-C에서도 그 이름을 그대로 써오기로 정한 결정이다.
 - 로그인은 이메일+비밀번호(`signInWithPassword`)다. OAuth·매직링크가 없으므로 staging 프로젝트의
   Auth redirect URL 허용 목록은 건드릴 것이 없다.
 - 붙었는지 보는 법은 배포 후 확인 4단계와 같다. `/api/health`가 staging 숫자를 내고
