@@ -1085,6 +1085,100 @@ async function kakaoRevokeSurvives(db: Db) {
               or has_table_privilege('anon','chairman_kakao_token','select')) as ok`,
   )
   assert.ok(g.rows[0].ok, '0023: chairman_kakao_token에 authenticated/anon 권한이 남아 있다')
+
+  // 0029도 같은 자물쇠를 쓴다. 장부 표는 아무 역할도 직접 못 읽고, 문은 함수 셋뿐이다.
+  const b = await db.query<{ ok: boolean }>(
+    `select not (has_table_privilege('authenticated','chairman_brief_sends','select')
+              or has_table_privilege('authenticated','chairman_brief_sends','insert')
+              or has_table_privilege('authenticated','chairman_brief_sends','update')
+              or has_table_privilege('authenticated','chairman_brief_sends','delete')
+              or has_table_privilege('anon','chairman_brief_sends','select')) as ok`,
+  )
+  assert.ok(b.rows[0].ok, '0029: chairman_brief_sends에 authenticated/anon 권한이 남아 있다 — 이 표의 자물쇠는 revoke다(0023 3절 ①)')
+}
+
+/**
+ * 0029 — 아침 알림의 현지 날짜 장부와 문 셋.
+ *
+ * 재는 것은 셋이다.
+ *   ① **행의 존재가 중복 방지다.** 발송에 실패한 날도 행이 남아야 한다 — 안 남으면
+ *      06~10시의 틱이 매시 회사 다섯 + 그룹 = 여섯 번의 모델 호출을 다시 돌린다.
+ *   ② **true는 false로 내려가지 않는다.** 같은 날짜에 '포기' 기록이 뒤따라와도
+ *      이미 보낸 사실이 이긴다. or를 빼고 그냥 덮어쓰면 이력이 거짓말을 한다.
+ *   ③ **문은 Chairman과 AIAgent에게만 열린다.** 다른 역할에게는 예외가 아니라 0행/false다
+ *      (이 저장소의 계약 — '없는 것'과 '못 읽는 것'을 구분하지 않는다).
+ *
+ * rls() 다음에 부른다 — 거기서 세션이 쓸 schema usage와 표 권한이 한 번에 깔린다.
+ */
+async function briefLedger(db: Db) {
+  async function rows<T extends object>(uid: string, sql: string): Promise<T[]> {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
+    try {
+      return (await db.query<T>(sql)).rows
+    } finally {
+      await db.exec('rollback')
+    }
+  }
+  const one = async <T>(uid: string, sql: string): Promise<T | null> => {
+    const r = await rows<Record<string, T>>(uid, sql)
+    return r.length ? (Object.values(r[0])[0] ?? null) : null
+  }
+  /**
+   * 쓰기는 커밋해야 한다. 위의 rows()는 롤백하므로 적은 행이 다음 단언에 남지 않는다 —
+   * 이 검사가 재려는 것이 바로 '다음 틱이 그 행을 본다'이고, 롤백하면 그 자리가 사라진다.
+   */
+  const write = async <T>(uid: string, sql: string): Promise<T | null> => {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
+    try {
+      const r = await db.query<Record<string, T>>(sql)
+      await db.exec('commit')
+      return r.rows.length ? (Object.values(r.rows[0])[0] ?? null) : null
+    } catch (e) {
+      await db.exec('rollback')
+      throw e
+    }
+  }
+
+  // 0029 1절·2절이 실제로 칸을 더했는가. 아래 단언들이 칸 이름을 조용히 놓치지 않게 먼저 본다.
+  const cols = await db.query<{ n: number }>(
+    `select count(*)::int as n from information_schema.columns
+      where (table_name = 'user_settings' and column_name in ('current_tz','brief_tz'))
+         or (table_name = 'events' and column_name = 'timezone')`,
+  )
+  assert.equal(cols.rows[0].n, 3, '0029: user_settings.current_tz/brief_tz · events.timezone 셋 중 빠진 칸이 있다')
+
+  // ① 야간 Job(AIAgent)이 그날을 적는다. 보냈다는 기록.
+  assert.equal(await write<boolean>(UID.agent, `select chairman_brief_send_record('2026-09-22'::date, 'America/New_York', true, '')`), true,
+    '0029: AIAgent가 현지 날짜 장부를 못 적는다 — 다음 틱이 같은 날 아침을 한 번 더 보낸다')
+  assert.equal(await one<string>(UID.agent, `select local_date::text from chairman_brief_send_status(null::date)`), '2026-09-22',
+    '0029: 적은 행이 chairman_brief_send_status()로 안 돌아온다 — 틱이 "오늘은 이미 끝났다"를 영영 모른다')
+
+  // ① 카카오가 연결되지 않아 못 보낸 날도 행은 남는다. 그날 Job은 끝난 날이다.
+  assert.equal(await write<boolean>(UID.agent, `select chairman_brief_send_record('2026-09-23'::date, 'Asia/Seoul', false, '카카오가 연결되어 있지 않다')`), true,
+    '0029: 발송 실패한 날을 장부에 못 적는다 — 연결이 없는 동안 매시 여섯 번의 모델 호출이 다시 돈다')
+
+  // ② 포기 기록이 뒤따라와도 '보냈다'를 뒤집지 못한다.
+  await write(UID.agent, `select chairman_brief_send_record('2026-09-22'::date, 'America/New_York', false, '현지 10시를 넘겼다')`)
+  assert.equal(await one<boolean>(UID.agent, `select sent from chairman_brief_send_status('2026-09-22'::date)`), true,
+    '0029: 나중에 온 포기 기록이 "보냈다"를 false로 덮었다 — 감사 이력이 거짓말을 한다(0029 6-3의 or)')
+  assert.equal(await one<string>(UID.agent, `select reason from chairman_brief_send_status('2026-09-22'::date)`), '현지 10시를 넘겼다',
+    '0029: reason은 마지막 판정으로 갱신되어야 한다')
+
+  // 날짜나 시간대가 없는 행은 장부가 아니다. 예외가 아니라 false다(0023 save와 같은 절제).
+  assert.equal(await write<boolean>(UID.agent, `select chairman_brief_send_record(null::date, 'Asia/Seoul', true, '')`), false,
+    '0029: 날짜 없는 기록을 받아들였다')
+  assert.equal(await write<boolean>(UID.agent, `select chairman_brief_send_record('2026-09-24'::date, '  ', true, '')`), false,
+    '0029: 시간대 없는 기록을 받아들였다 — 어느 시간대로 판정한 날인지 모르는 행은 나중에 아무것도 설명하지 못한다')
+
+  // ③ 다른 역할에게는 문이 없다. 표도 못 읽고, 함수도 0행/false다.
+  assert.equal(await write<boolean>(UID.member, `select chairman_brief_send_record('2026-09-25'::date, 'Asia/Seoul', true, '')`), false,
+    '0029: Member가 아침 알림 장부를 적는다')
+  assert.equal((await rows(UID.member, `select * from chairman_brief_send_status(null::date)`)).length, 0,
+    '0029: Member가 아침 알림 장부를 읽는다')
+  assert.equal((await rows(UID.member, `select * from chairman_brief_timezone()`)).length, 0,
+    '0029: Member가 회장의 시간대 설정을 읽는다 — user_settings는 남의 행을 어떤 역할도 못 보는 표다')
+  assert.equal((await rows(UID.cfo, `select * from chairman_brief_timezone()`)).length, 0,
+    '0029: GroupCFO가 회장의 시간대 설정을 읽는다')
 }
 
 /**
@@ -1936,20 +2030,27 @@ async function definerUnderNonBypassOwner() {
   // projects가 여기 끼어 있는 이유는 0027이다. 0002:194가 걸고 0003:595가 다시 건 force를
   // 0027 1절이 내린다 — 그러지 않으면 project_business_id()가 production에서만 null을 준다.
   // 누가 그것을 되살리면 이 줄이 빨개진다.
+  //
+  // user_settings가 여기 끼어 있는 이유는 0029다. 0002:201이 건 force를 0029 3절이 내린다 —
+  // 그러지 않으면 chairman_brief_timezone()이 AIAgent 세션에서 0행을 주고, 시간대가 조용히
+  // 'Asia/Seoul'로 떨어져 회장이 뉴욕에 있어도 알림은 서울 06시에 간다. 화면에는 '자동'이라
+  // 적혀 있으니 아무도 고장을 의심하지 않는다.
   const forced = await db.query<{ relname: string; f: boolean }>(
     `select relname, relforcerowsecurity as f from pg_class
-      where relname in ('chairman_kakao_token', 'chairman_checkins', 'projects')`,
+      where relname in ('chairman_kakao_token', 'chairman_checkins', 'projects', 'user_settings', 'chairman_brief_sends')`,
   )
   // 행 수부터 잰다 — 표 이름이 바뀌거나 오타가 나면 위 쿼리가 0행을 주고, 아래 for는
-  // 그냥 공회전하며 통과해 버린다(무엇도 단언하지 않은 채). 셋을 정확히 찾았는지가 먼저다.
-  assert.equal(forced.rows.length, 3, `0023/0027: force 검사가 표 셋을 못 찾는다 (${forced.rows.map((r) => r.relname).join(', ') || '0개'})`)
+  // 그냥 공회전하며 통과해 버린다(무엇도 단언하지 않은 채). 다섯을 정확히 찾았는지가 먼저다.
+  assert.equal(forced.rows.length, 5, `0023/0027/0029: force 검사가 표 다섯을 못 찾는다 (${forced.rows.map((r) => r.relname).join(', ') || '0개'})`)
   for (const row of forced.rows) {
     assert.equal(
       row.f,
       false,
       row.relname === 'projects'
         ? '0027: projects에 force row level security가 되살아났다 — project_business_id()가 소유자 권한으로 돌면서 정책 아래로 내려가 조용히 null을 주고, 직원의 업무 화면이 production에서만 빈다(0027 1절)'
-        : `0023: ${row.relname}에 force row level security가 걸려 있다 (definer 함수가 0행을 준다)`,
+        : row.relname === 'user_settings' || row.relname === 'chairman_brief_sends'
+          ? `0029: ${row.relname}에 force row level security가 걸려 있다 — 아침 알림의 시간대 keyhole이 AIAgent 세션에서 0행을 주고, 회장이 어디 있든 서울 06시에 알림이 간다(0029 3절)`
+          : `0023: ${row.relname}에 force row level security가 걸려 있다 (definer 함수가 0행을 준다)`,
     )
   }
 
@@ -1968,6 +2069,15 @@ async function definerUnderNonBypassOwner() {
     alter table public.chairman_checkins    owner to app_owner;
     alter function public.kakao_token_for_send()       owner to app_owner;
     alter function public.chairman_recent_condition()  owner to app_owner;
+    -- 0029. 같은 실험을 아침 알림의 시간대 keyhole에도 건다.
+    -- user_profiles까지 같이 넘기는 것은 Supabase를 흉내 내기 위해서다 — 거기서는 public의
+    -- 표와 함수가 전부 postgres 한 소유자라 definer가 어느 표를 읽든 소유자로 읽는다.
+    -- 여기서만 소유자가 갈리면, 재려던 것(user_settings의 FORCE)이 아니라 harness의
+    -- 소유권 분할을 재게 된다.
+    alter table public.user_settings        owner to app_owner;
+    alter table public.user_profiles        owner to app_owner;
+    alter table public.chairman_brief_sends owner to app_owner;
+    alter function public.chairman_brief_timezone()    owner to app_owner;
     -- 0027. 같은 실험을 projects/project_business_id()에도 건다. 0026이 이 길을 아예
     -- 피한 이유가 정확히 이 함정이었고(0026 2-2절 ①), 0027은 force를 먼저 내리는 것으로
     -- 치웠다고 주장한다 — 그 주장을 여기서 실험으로 세운다.
@@ -1993,6 +2103,11 @@ async function definerUnderNonBypassOwner() {
     values ('${UID.chairman}', 'AT', 'RT', now() + interval '6 hours', now() + interval '60 days', 'talk_message');
     insert into chairman_checkins (checkin_date, condition)
     values ((now() at time zone 'Asia/Seoul')::date, 4);
+
+    -- 0029. 회장이 뉴욕을 손으로 골라 뒀고, 마지막 접속 기기는 런던이었다.
+    -- 두 칸을 다르게 두는 것이 요점이다 — 같으면 keyhole이 어느 칸을 주는지 알 수 없다.
+    insert into user_settings (user_id, brief_tz, current_tz)
+    values ('${UID.chairman}', 'America/New_York', 'Europe/London');
 
     -- 0027. 팀장 하나 · 그 밑 직원 하나. 프로젝트는 팀장 것이고 업무는 직원 것이다 —
     -- 직원에게 프로젝트는 보이지 않고(0027 3절), 그래도 자기 업무는 보여야 한다(0027 2절).
@@ -2029,6 +2144,8 @@ async function definerUnderNonBypassOwner() {
   }
   const forSend = 'select * from kakao_token_for_send()'
   const condition = 'select * from chairman_recent_condition()'
+  const briefTz = 'select brief_tz from chairman_brief_timezone()'
+  const deviceTz = 'select current_tz from chairman_brief_timezone()'
   const myTasks = `select count(*)::int from tasks where task_id = 'tsk_own'`
   const bizOf = `select project_business_id('prj_own')`
 
@@ -2040,6 +2157,16 @@ async function definerUnderNonBypassOwner() {
   // Chairman(테스트 발송)도 같은 조건에서 되는가. 이쪽만 되는 상태가 바로 숨은 실패 모드였다.
   assert.equal(await rows(UID.chairman, forSend), 1,
     '0023: BYPASSRLS 없는 소유자에서 Chairman의 테스트 발송이 토큰을 못 받는다')
+
+  // ①-0029 아침 알림의 시간대. AIAgent가 회장의 두 칸을 받는가.
+  //   못 받으면 예외가 아니라 null이고, 판정은 조용히 'Asia/Seoul'로 떨어진다 —
+  //   회장이 뉴욕에 있어도 알림은 서울 06시(= 뉴욕 전날 17시)에 간다.
+  assert.equal(await value<string>(UID.agent, briefTz), 'America/New_York',
+    '0029: BYPASSRLS 없는 소유자에서 AIAgent가 chairman_brief_timezone()으로 ③ 수동 시간대를 못 받는다 — 매일 아침이 조용히 서울 시간으로 돌아간다(0029 3절)')
+  assert.equal(await value<string>(UID.agent, deviceTz), 'Europe/London',
+    '0029: AIAgent가 ① current_tz를 못 받는다 — 출장 일정을 안 넣은 날 시간대가 서울로 떨어진다')
+  assert.equal(await value<string>(UID.chairman, briefTz), 'America/New_York',
+    '0029: Chairman이 자기 설정을 keyhole로 못 받는다 — /settings/chairman의 "지금 판정" 한 줄이 빈다')
 
   // ①-0027 같은 조건에서 project_business_id()가 값을 주는가.
   //   0026 2-2절 ①이 "definer 헬퍼로 projects를 읽는 길은 안 된다"고 적은 근거가 이것이고,
@@ -2060,6 +2187,7 @@ async function definerUnderNonBypassOwner() {
     alter table public.chairman_kakao_token force row level security;
     alter table public.chairman_checkins    force row level security;
     alter table public.projects             force row level security;
+    alter table public.user_settings        force row level security;
   `)
   assert.equal(await rows(UID.agent, forSend), 0,
     '대조군이 성립하지 않는다 — force를 걸어도 AIAgent가 토큰을 받는다면 ①은 FORCE를 재고 있지 않다')
@@ -2069,6 +2197,8 @@ async function definerUnderNonBypassOwner() {
     '대조군이 성립하지 않는다 — projects에 force를 걸어도 project_business_id()가 회사를 준다면 ①-0027은 FORCE를 재고 있지 않다')
   assert.equal(await value<number>(OW.worker, myTasks), 0,
     '대조군이 성립하지 않는다 — projects에 force를 걸어도 직원이 자기 업무를 본다면 ①-0027은 0026 2-2절 ①의 함정을 재고 있지 않다')
+  assert.equal(await value<string>(UID.agent, briefTz), null,
+    '대조군이 성립하지 않는다 — user_settings에 force를 걸어도 AIAgent가 시간대를 받는다면 ①-0029는 0029 3절이 내린 FORCE를 재고 있지 않다')
 
   await db.close()
 }
@@ -2085,11 +2215,12 @@ async function main() {
   await hierarchy(db)
   await subtreeRls(db)
   await orgScreen(db)
+  await briefLedger(db)
   await db.close()
   await definerUnderNonBypassOwner()
   await subtreeBackfill()
   console.log(
-    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름)`,
+    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제)`,
   )
 }
 
