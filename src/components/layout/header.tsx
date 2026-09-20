@@ -1,11 +1,8 @@
 import { signOut } from '@/app/actions/auth'
 import { DataModeBadge } from '@/components/layout/data-mode-badge'
 import { GlobalSearch } from '@/components/layout/global-search'
-import { WorldClocks } from '@/components/layout/world-clocks'
 import { Icon } from '@/components/ui/icon'
 import { getFxStrip } from '@/lib/fx'
-import { resolveLocation } from '@/lib/geo'
-import { getCurrentLocationWeather } from '@/lib/weather'
 import { ROLE_LABEL_KO, type SessionUser } from '@/types'
 
 /**
@@ -16,21 +13,18 @@ import { ROLE_LABEL_KO, type SessionUser } from '@/types'
  * 오른쪽 끝의 이름은 세션에서 온다. 하드코딩해 두면 어느 계정으로 보고 있는지 알 수 없고,
  * 그건 권한이 역할마다 갈라지는 화면에서 가장 위험한 종류의 거짓말이다.
  *
- * 날씨 칩은 이 컴포넌트가 직접 읽는다(요구사항 블록 2: 검색 + 세계시간 칩 + 날씨 칩 + 알림).
- * 레이아웃을 거쳐 내리지 않는 이유는 이 값이 세션과 달리 화면 어디에도 다시 안 쓰이기
- * 때문이다 — 셸에서 이 칩 하나만 쓰는 값을 layout의 prop 목록에 올릴 이유가 없다.
+ * **Phase 5-D에서 시간·날씨 칩이 빠졌다.** 둘은 대시보드 1줄의 카드로 옮겼다 —
+ * 헤더에서는 11px 한 줄이라 훑기 어려웠고, 검색창이 가장 넓은 자리를 써야 하는 바에서
+ * 자리만 다투고 있었다. 남은 것은 USD 칩 하나다(Phase 5-C).
  *
- * **대시보드를 그릴 때마다 Open-Meteo를 때리지 않는다.** resolveLocation()은 요청 헤더
- * 조회라 왕복이 없고, getCurrentLocationWeather()의 fetch는 next revalidate 1800이라
- * Next 데이터 캐시에 30분 머문다 — 화면을 몇 번을 넘겨도 외부 호출은 30분에 한 번이다.
- * 실패하면 null이 오고 칩은 아예 안 그린다. 예전의 '—' 자리표시자를 남기지 않는 이유가
- * 그것이다: 회장이 매일 보는 화면에서 em 대시는 '날씨가 없다'가 아니라 '고장'으로 읽힌다.
+ * USD 값은 이 컴포넌트가 직접 읽는다. 레이아웃을 거쳐 내리지 않는 이유는 이 값이 세션과 달리
+ * 화면 어디에도 다시 안 쓰이기 때문이다 — 셸에서 이 칩 하나만 쓰는 값을 layout의 prop 목록에
+ * 올릴 이유가 없다. getFxStrip()은 cache: 'force-cache'로 30분 캐시를 탄다(lib/fx.ts).
  */
 export async function Header({ user }: { user: SessionUser | null }) {
-  const location = await resolveLocation()
-  // 날씨와 환율을 나란히 기다린다. 순서대로 await하면 두 왕복이 줄을 서고,
-  // 헤더는 모든 대시보드 화면이 그리는 자리라 그 지연이 화면마다 붙는다.
-  const [weather, fx] = await Promise.all([getCurrentLocationWeather(location), getFxStrip()])
+  // Phase 5-D에서 시간·날씨 칩을 대시보드 1줄 카드로 옮겼다. 헤더에는 USD 칩만 남는다 —
+  // 검색창이 이 바에서 가장 넓은 자리를 써야 하고, 칩이 늘수록 그 자리를 뺏는다.
+  const fx = await getFxStrip()
   // 헤더에는 USD 하나만 세운다. 다섯 개는 아침 루틴의 띠가 맡는다 —
   // 여기는 검색창이 가장 넓은 자리를 써야 하는 바라 칩을 늘리면 그 자리를 뺏는다.
   //
@@ -47,19 +41,8 @@ export async function Header({ user }: { user: SessionUser | null }) {
       <GlobalSearch />
 
       <div className="flex shrink-0 items-center gap-1">
-        {/* 날씨 칩. 헤더는 .glass-nav(흰 58%) 면이라 ink-muted를 써도 된다 — 이 자리의
-            보조 글자가 4.73:1이 되도록 nav 알파를 .45에서 올려 둔 것이 그 계산이다
-            (globals.css의 --color-nav 주석). 기온은 ink-dim으로 한 단 올려 먼저 읽히게 한다. */}
-        {weather ? (
-          <span
-            title={`${location.city} · ${weather.labelKo}`}
-            className="flex shrink-0 items-center gap-1 px-1 text-[11px] text-ink-muted"
-          >
-            <span className="text-ink-dim tnum">{Math.round(weather.temperatureC)}°</span>
-            <span className="max-w-[72px] truncate">{weather.labelKo}</span>
-          </span>
-        ) : null}
-        {/* USD 칩. 날씨 칩과 같은 규칙이다 — 못 불러오면 자리표시자를 남기지 않고 통째로 뺀다.
+        {/* USD 칩. 못 불러오면 자리표시자를 남기지 않고 통째로 뺀다 —
+            회장이 매일 보는 화면에서 em 대시는 '값이 없다'가 아니라 '고장'으로 읽힌다.
             title에 기준일을 넣는 이유는 주말 아침에 숫자가 안 바뀌는 것이 고장이 아님을
             hover로 확인할 수 있어야 하기 때문이다(ECB는 주말에 고시하지 않는다). */}
         {usd ? (
@@ -76,7 +59,6 @@ export async function Header({ user }: { user: SessionUser | null }) {
             ) : null}
           </span>
         ) : null}
-        <WorldClocks />
         <DataModeBadge />
         <NotificationButton count={12} tone="critical" />
         <NotificationButton count={5} tone="accent" />

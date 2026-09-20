@@ -45,6 +45,8 @@ import type {
   MonthlyPriority,
   NewOfficialStatement,
   OfficialStatement,
+  ProcessChart,
+  ProcessChartInput,
   NextMilestone,
   Project,
   SecurityClass,
@@ -914,6 +916,49 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         .order('period_key', { ascending: true })
       if (error) throw new Error(`Supabase official_statements ${error.code ?? '?'}: ${error.message}`)
       return (data ?? []) as OfficialStatement[]
+    },
+
+    /**
+     * Phase 5-D 프로세스차트(0021). 회사 범위와 역할은 can_read_process_charts()가 본다 —
+     * 권한 밖 회사의 행은 아예 오지 않으므로 여기서 다시 거르지 않는다.
+     */
+    async listProcessCharts(): Promise<ProcessChart[]> {
+      const { data, error } = await sb
+        .from('process_charts')
+        .select('*')
+        .order('business_id', { ascending: true })
+        .order('sort_order', { ascending: true })
+      if (error) throw new Error(`Supabase process_charts ${error.code ?? '?'}: ${error.message}`)
+      return (data ?? []) as ProcessChart[]
+    },
+
+    /** 등록·수정. 게시 링크가 아니면 0021의 check 제약이 거부한다. 감사 기록은 트리거가 남긴다. */
+    async saveProcessChart(input: ProcessChartInput, actor: AuditActor): Promise<number> {
+      void actor // 행위자는 DB가 auth.uid()로 적는다.
+      const row = {
+        business_id: input.business_id,
+        team_name: input.team_name.trim(),
+        title: input.title.trim(),
+        embed_url: input.embed_url.trim(),
+        sort_order: input.sort_order,
+      }
+      const query = input.id
+        ? sb.from('process_charts').update(row).eq('id', input.id).select('id').single()
+        : sb.from('process_charts').insert(row).select('id').single()
+      const { data, error } = await query
+      if (error) {
+        throw new Error(
+          `Supabase process_charts save ${error.code ?? '?'}: ${error.message}${error.details ? ` — ${error.details}` : ''}`,
+        )
+      }
+      return Number((data as { id: number }).id)
+    },
+
+    /** 링크만 지운다. 시트 자체는 구글에 그대로 남는다. */
+    async deleteProcessChart(id: number, actor: AuditActor): Promise<void> {
+      void actor
+      const { error } = await sb.from('process_charts').delete().eq('id', id)
+      if (error) throw new Error(`Supabase process_charts delete ${error.code ?? '?'}: ${error.message}`)
     },
 
     /** 블록 3. 감사 기록·결산·라인 closed가 0016 close_period() 한 트랜잭션이다. */

@@ -320,3 +320,29 @@ export interface NewOfficialStatement {
   memo: string
   lines: { account_code: string; amount: number }[]
 }
+
+/**
+ * 프로세스차트 (0021, Phase 5-D). 팀별 업무 프로세스 구글 시트의 **게시 링크**만 보관한다.
+ * 시트 내용을 이 앱으로 옮기지 않는다 — 실무가 시트에서 돌고 있고, 베끼면 두 벌이 어긋난다.
+ */
+export interface ProcessChart {
+  id: number
+  business_id: BusinessId
+  team_name: string
+  title: string
+  /** 반드시 '웹에 게시'(pubhtml) 주소. 편집 링크는 DB와 화면이 둘 다 막는다 */
+  embed_url: string
+  sort_order: number
+  updated_by: string
+  updated_at: IsoDateTime
+}
+
+/** 등록·수정으로 들어오는 값. id·updated_*는 DB가 정한다. */
+export interface ProcessChartInput {
+  id?: number
+  business_id: BusinessId
+  team_name: string
+  title: string
+  embed_url: string
+  sort_order: number
+}

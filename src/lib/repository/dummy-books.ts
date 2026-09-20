@@ -15,6 +15,7 @@ import {
   type NewCorrection,
   type NewJournalEntry,
 } from '@/lib/ledger/journal'
+import { embedProblem } from '@/lib/process-chart'
 import { BALANCE_SHEET_SECTIONS } from '@/lib/statements/balance'
 import type {
   Account,
@@ -25,6 +26,8 @@ import type {
   NewOfficialStatement,
   OfficialStatement,
   OfficialStatementLine,
+  ProcessChart,
+  ProcessChartInput,
 } from '@/types'
 
 import { DUPLICATE_ACCOUNT_CODE, type AccountPatch, type AuditActor, type NewAccount } from './types'
@@ -318,4 +321,82 @@ export async function listOfficialStatements(businessId: string): Promise<Offici
 /** 화면이 이전 값을 보여 줄 때 쓴다. */
 export async function officialStatementLines(statementId: number): Promise<OfficialStatementLine[]> {
   return officialLines.filter((l) => l.statement_id === statementId).map((l) => ({ ...l }))
+}
+
+// ---------------------------------------------------------------------
+// Phase 5-D — 프로세스차트(0021). 링크만 들고 있다.
+// dummy에도 DY 두 팀을 미리 넣어 둔다 — 0021 시드와 같은 게시 링크라
+// 화면을 dummy로 검증한 모습이 live와 같다.
+// ---------------------------------------------------------------------
+const processCharts: ProcessChart[] = [
+  {
+    id: 1,
+    business_id: 'biz_dy',
+    team_name: '경영지원',
+    title: 'DY 경영지원 업무 프로세스',
+    embed_url:
+      'https://docs.google.com/spreadsheets/d/e/2PACX-1vQyRIlUseLHMSeJT0Tr8HvnL0MmHpE8IeR0zx4AvVhJc5HJkcRZ_rzxy14l6pssZHdvXsRceC3mZPi5/pubhtml',
+    sort_order: 10,
+    updated_by: 'dummy',
+    updated_at: MOCK_FETCHED_AT,
+  },
+  {
+    id: 2,
+    business_id: 'biz_dy',
+    team_name: '연구소',
+    title: 'DY 연구소 업무 프로세스',
+    embed_url:
+      'https://docs.google.com/spreadsheets/d/e/2PACX-1vTR5jxnGGpYiiu-GBVI-45HmeRSbcKV5XzzD15NsxrwrWPaxJAPuSTQAuf6t1psQPg96ECH-p6TARRs/pubhtml',
+    sort_order: 20,
+    updated_by: 'dummy',
+    updated_at: MOCK_FETCHED_AT,
+  },
+]
+let processSeq = processCharts.length
+
+export async function listProcessCharts(): Promise<ProcessChart[]> {
+  return processCharts
+    .map((c) => ({ ...c }))
+    .sort((a, b) => a.business_id.localeCompare(b.business_id) || a.sort_order - b.sort_order)
+}
+
+export async function saveProcessChart(input: ProcessChartInput, actor: AuditActor): Promise<number> {
+  // 링크 검증은 화면과 DB가 한다. dummy는 DB 자리라 여기서 한 번 더 본다 —
+  // dummy에서 통과한 값이 live에서 막히면 dummy 검증의 뜻이 없다.
+  if (embedProblem(input.embed_url) !== null) throw new Error('invalid_embed_url')
+
+  const existing = input.id ? processCharts.find((c) => c.id === input.id) : undefined
+  const now = new Date().toISOString()
+  if (existing) {
+    Object.assign(existing, {
+      team_name: input.team_name.trim(),
+      title: input.title.trim(),
+      embed_url: input.embed_url.trim(),
+      sort_order: input.sort_order,
+      updated_by: actor.user_id,
+      updated_at: now,
+    })
+    note(actor, `process chart update ${existing.id}`)
+    return existing.id
+  }
+
+  const id = ++processSeq
+  processCharts.push({
+    id,
+    business_id: input.business_id,
+    team_name: input.team_name.trim(),
+    title: input.title.trim(),
+    embed_url: input.embed_url.trim(),
+    sort_order: input.sort_order,
+    updated_by: actor.user_id,
+    updated_at: now,
+  })
+  note(actor, `process chart insert ${id}`)
+  return id
+}
+
+export async function deleteProcessChart(id: number, actor: AuditActor): Promise<void> {
+  const at = processCharts.findIndex((c) => c.id === id)
+  if (at >= 0) processCharts.splice(at, 1)
+  note(actor, `process chart delete ${id}`)
 }

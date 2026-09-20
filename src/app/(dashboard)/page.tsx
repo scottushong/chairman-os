@@ -1,7 +1,9 @@
 import { AiNightPanel } from '@/components/dashboard/ai-night-panel'
 import { AlertPanel } from '@/components/dashboard/alert-panel'
+import { ClockWeatherCard } from '@/components/dashboard/clock-weather-card'
 import { CriticalBanner } from '@/components/dashboard/critical-banner'
 import { DashboardBoard } from '@/components/dashboard/dashboard-board'
+import { DdayHero } from '@/components/dashboard/dday-hero'
 import { DecisionPanel } from '@/components/dashboard/decision-panel'
 import { InitiativeStat } from '@/components/dashboard/initiative-stat'
 import { StrategicCoordinates } from '@/components/dashboard/strategic-coordinates'
@@ -10,7 +12,9 @@ import { Icon } from '@/components/ui/icon'
 import { currentUser } from '@/lib/auth/session'
 import { kstToday } from '@/lib/chairman-project'
 import { orderInitiatives } from '@/lib/initiative'
+import { resolveLocation } from '@/lib/geo'
 import { getRepository, loadDashboard } from '@/lib/repository'
+import { getCurrentLocationWeather } from '@/lib/weather'
 
 /**
  * 메인 대시보드. CH-001~019가 모두 올라와 있다.
@@ -27,11 +31,16 @@ const TABS = ['전체 요약', '중요 지표', '예산 vs 실적', '리스크',
 
 export default async function DashboardPage() {
   const repo = await getRepository()
-  const [data, user, chairmanProjects, initiatives] = await Promise.all([
+  // 위치는 요청 헤더 조회라 왕복이 없다. 날씨·프로세스차트는 나머지와 나란히 기다린다.
+  const location = await resolveLocation()
+  const [data, user, chairmanProjects, initiatives, weather, processCharts] = await Promise.all([
     loadDashboard(repo),
     currentUser(),
     repo.listChairmanProjects(),
     repo.listInitiatives(),
+    // 실패해도 null로만 온다. 카드가 그 칸만 비우고 시계는 그대로 선다.
+    getCurrentLocationWeather(location),
+    repo.listProcessCharts(),
   ])
 
   const today = new Intl.DateTimeFormat('ko-KR', {
@@ -108,13 +117,35 @@ export default async function DashboardPage() {
         businesses={data.businesses}
       />
 
-      <div className="mt-4 space-y-5">
+      {/*
+       * 1줄 (Phase 5-D 배치). AI 브리핑 2/4 · D-day 1/4 · 날씨+세계시간 1/4.
+       *
+       * 브리핑 카드에만 data-theme="dark"를 건다 — 안쪽(AiNightPanel)은 한 줄도 고치지 않는다.
+       * 이 div가 다크 그라데이션을 직접 칠하므로 카드와 같은 곡률로 잘라 내야 한다.
+       * radius가 없으면 그 칠이 네 모서리를 직각으로 채워 밝은 화면에 어두운 사각이 남는다.
+       *
+       * 시간·날씨는 헤더 칩에서 이 줄의 카드로 옮겼다. 헤더에서는 11px 한 줄이라 훑기 어려웠고,
+       * 검색창이 가장 넓은 자리를 써야 하는 바에서 자리만 다투고 있었다.
+       */}
+      <div className="mt-4 grid grid-cols-1 gap-3.5 lg:grid-cols-4">
+        <div data-theme="dark" className="h-[268px] overflow-hidden rounded-glass lg:col-span-2">
+          <AiNightPanel outputs={data.aiNightOutputs} businesses={data.businesses} />
+        </div>
+        <div className="h-[268px]">
+          <DdayHero projects={chairmanProjects} />
+        </div>
+        <div className="h-[268px]">
+          <ClockWeatherCard city={location.city} weather={weather} />
+        </div>
+      </div>
+
+      <div className="mt-5 space-y-5">
         <DashboardBoard
           businesses={data.businesses}
           financeKpis={data.financeKpis}
           projects={data.projects}
           settings={data.userSettings}
-          chairmanProjects={chairmanProjects}
+          processCharts={processCharts}
           initiativeSummary={initiativeSummary}
           initiativeLogoUrls={initiativeLogoUrls}
           initiativeCount={activeInitiatives.length}
@@ -129,42 +160,29 @@ export default async function DashboardPage() {
         />
       </div>
 
-      {/* 재배치(P5-2 Step 3). 좌: 결정·대기·알림(오늘 훑는 순서 그대로) / 우 400px: 야간 AI 브리핑.
-          브리핑 카드에만 data-theme="dark"를 건다 — 안쪽(AiNightPanel)은 한 줄도 고치지 않는다.
-          토큰이 하위 트리에서 뒤집히는지 여기서 실물로 확인한다(P5-1 토큰 설계 검증, 항목 D). */}
-      <div className="mt-5 grid grid-cols-1 gap-3.5 pb-6 lg:grid-cols-[1fr_400px]">
-        <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-3">
-          <div className="h-[268px]">
-            <DecisionPanel
-              decisions={data.decisions}
-              businesses={data.businesses}
-              audit={data.decisionAudit}
-            />
-          </div>
-
-          <div className="h-[268px]">
-            <WaitingOnMe
-              tasks={data.tasks}
-              projects={data.projects}
-              businesses={data.businesses}
-            />
-          </div>
-
-          <div className="h-[268px]">
-            <AlertPanel
-              alerts={data.alerts}
-              decisions={data.decisions}
-              businesses={data.businesses}
-            />
-          </div>
+      {/*
+       * 3줄 아래 (Phase 5-D). 결정·대기·알림 — 오늘 훑는 순서 그대로.
+       * 야간 AI 브리핑은 1줄 맨 위로 올라갔다(회장이 아침에 가장 먼저 보는 것이라).
+       */}
+      <div className="mt-5 grid grid-cols-1 gap-3.5 pb-6 sm:grid-cols-3">
+        <div className="h-[268px]">
+          <DecisionPanel
+            decisions={data.decisions}
+            businesses={data.businesses}
+            audit={data.decisionAudit}
+          />
         </div>
 
-        {/* 이 div가 다크 그라데이션을 직접 칠한다(globals.css의 [data-theme='dark'] 배경 규칙).
-            radius가 없으면 그 칠이 네 모서리를 직각으로 채우고, 그 위에 rounded-glass(26px)
-            카드가 얹혀 밝은 화면에 어두운 사각 모서리 네 개가 남는다. 카드와 같은 곡률로
-            잘라 낸다 — overflow-hidden이 있어야 안쪽 카드의 그림자도 모서리를 넘지 않는다. */}
-        <div data-theme="dark" className="h-[268px] overflow-hidden rounded-glass">
-          <AiNightPanel outputs={data.aiNightOutputs} businesses={data.businesses} />
+        <div className="h-[268px]">
+          <WaitingOnMe tasks={data.tasks} projects={data.projects} businesses={data.businesses} />
+        </div>
+
+        <div className="h-[268px]">
+          <AlertPanel
+            alerts={data.alerts}
+            decisions={data.decisions}
+            businesses={data.businesses}
+          />
         </div>
       </div>
     </div>

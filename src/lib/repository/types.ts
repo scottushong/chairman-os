@@ -30,6 +30,8 @@ import type {
   MonthlyPriority,
   NewOfficialStatement,
   OfficialStatement,
+  ProcessChart,
+  ProcessChartInput,
   NextMilestone,
   Project,
   NewInvitation,
@@ -104,6 +106,18 @@ export interface ChairmanRepository {
 
   /** 그 회사의 **활성** 공식 재무제표 목록(정정으로 밀려난 것은 뺀다). 월별 화면의 잠금 판정이 쓴다. */
   listOfficialStatements(businessId: string): Promise<OfficialStatement[]>
+
+  /**
+   * Phase 5-D — 프로세스차트(0021). 읽기는 Executive 이상 + 자기 회사(DB가 판정).
+   * 권한 밖 회사의 행은 아예 오지 않으므로 화면에서 다시 거르지 않는다.
+   */
+  listProcessCharts(): Promise<ProcessChart[]>
+
+  /** 등록·수정. id가 있으면 수정이다. 게시 링크가 아니면 DB가 거부한다. */
+  saveProcessChart(input: ProcessChartInput, actor: AuditActor): Promise<number>
+
+  /** 삭제. 시트 자체는 그대로 남는다 — 여기서 지우는 것은 링크뿐이다. */
+  deleteProcessChart(id: number, actor: AuditActor): Promise<void>
   listProjects(): Promise<Project[]>
   listTasks(): Promise<Task[]>
   listDecisions(): Promise<Decision[]>
