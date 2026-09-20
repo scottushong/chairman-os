@@ -1,0 +1,71 @@
+# 아침 브리핑 틱 (Phase 3-C 현지 시간)
+#
+# 매시 정각 UTC에 /api/cron/night-brief?tick=1 을 한 번 부른다. **여기는 시각을 모른다** —
+# "지금이 회장 현지 06시인가"는 API가 판정한다(src/lib/chairman-timezone.ts).
+# 워크플로가 시각을 알면 회장이 뉴욕으로 가는 날 이 파일도 같이 고쳐야 하는데,
+# 그런 파일은 아무도 안 고친다.
+#
+# Vercel cron을 지우고 여기로 온 이유: Vercel Hobby는 cron 슬롯이 하나이고 **시각이 고정**이라
+# "회장이 있는 곳의 06시"를 표현할 방법이 없다. 버린 선택지는 DEFERRED.md에 적었다.
+#
+# 필요한 것 둘 (Settings > Secrets and variables > Actions):
+#   CRON_SECRET  Vercel 환경변수의 그 값과 같아야 한다. 다르면 매시 401이다.
+#   APP_URL      production 주소. 끝에 '/'를 붙이지 않는다.
+# 절차는 docs/OPERATIONS.md 10절.
+name: chairman morning tick
+
+on:
+  schedule:
+    # 매시 정각 UTC. GitHub Actions의 schedule은 **정시에 오지 않는다**(몇 분~수십 분 지연이
+    # 흔하고, 러너가 붐비면 건너뛰기도 한다). API가 06:00~09:59 창으로 그것을 흡수한다 —
+    # 여기서 분을 잘게 쪼개 여러 번 부르는 식으로 해결하지 않는다.
+    - cron: '0 * * * *'
+  # 손으로 한 번 돌려 보는 문. 배포 직후 "붙었나"를 확인할 자리가 이것 말고는 없다.
+  workflow_dispatch:
+
+# 겹쳐 돌 이유가 없다. 앞 틱이 브리핑을 만드는 중이면 다음 틱은 기다리지 말고 버린다 —
+# 기다렸다가 돌면 그쪽이 중복 발송의 입구가 된다(장부 확인과 발송 사이가 벌어진다).
+concurrency:
+  group: chairman-morning-tick
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    # 회사 다섯 곳 + 그룹 = 모델 호출 여섯 번. API의 maxDuration이 300초라 그보다 넉넉히 둔다.
+    timeout-minutes: 10
+    steps:
+      - name: 틱 한 번
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_URL}" ] || [ -z "${CRON_SECRET}" ]; then
+            echo "APP_URL / CRON_SECRET secret이 없습니다 (Settings > Secrets and variables > Actions)." >&2
+            exit 1
+          fi
+
+          # `curl -f`를 쓰지 않는다. -f는 4xx/5xx에서 본문을 버리고 죽어서 "왜 실패했나"가
+          # 사라지고, 무엇보다 **204를 성공으로 다루는지가 curl 버전에 달린 일이 된다**.
+          # 상태 코드를 직접 받아 우리가 판정한다.
+          status=$(curl -sS -o /tmp/tick-body -w '%{http_code}' \
+            --max-time 600 \
+            -X GET "${APP_URL}/api/cron/night-brief?tick=1" \
+            -H "Authorization: Bearer ${CRON_SECRET}")
+
+          echo "HTTP ${status}"
+          cat /tmp/tick-body || true
+          echo
+
+          case "${status}" in
+            # 204 = 보낼 때가 아니다(현지 06시 전 / 이미 보냈다 / 10시를 넘겼다). 성공이다.
+            # 하루 스물네 번 중 스물세 번이 여기다 — 이것을 빨갛게 만들면 알림이 잡음이 된다.
+            204) echo "보낼 때가 아닙니다 (정상)." ;;
+            200) echo "브리핑 생성·발송 완료." ;;
+            *)   echo "틱 실패 (HTTP ${status})." >&2; exit 1 ;;
+          esac
+
+      # 재시도를 넣지 않는다. 실패해도 다음 시간에 틱이 다시 오고, API가 "오늘 것을 아직
+      # 안 했다"를 장부로 알아서 그때 보낸다(현지 10시까지). 워크플로가 스스로 재시도하면
+      # 같은 판정이 몇 분 간격으로 두 번 돌아 중복 발송의 창이 열린다.
