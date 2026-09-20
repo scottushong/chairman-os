@@ -242,8 +242,15 @@ export interface ChairmanRepository {
    * 공유할 수 있다"를 판정하고, 거부되면 그 사유를 한국어로 옮겨 보여 주는 것까지가 화면의 몫이다.
    */
   listShares(entityTable: ShareEntityTable, entityId: string): Promise<ShareRecord[]>
-  /** 나에게 공유된 것 전부. 만료된 것은 오지 않는다 — shared_with_me()가 이미 거른다. */
-  listSharesWithMe(): Promise<ShareRecord[]>
+  /**
+   * **나에게** 공유된 것 전부. 만료된 것은 오지 않는다 — shared_with_me()가 이미 거른다.
+   *
+   * viewerId를 받는다. 0025의 shares_read는 '받은 것 + 내가 한 공유'를 같이 내주는데
+   * (그 둘 다 그 사람의 일이다), 이 목록이 답하는 질문은 "나에게 지금 무엇이 열려 있나"
+   * 하나뿐이라 받은 것만 남겨야 한다. 정책을 좁히는 것이 아니라 **질문이 다르다** —
+   * 내가 연 공유는 그 항목의 상세 화면(SharePanel)이 보여 준다.
+   */
+  listSharesWithMe(viewerId: string): Promise<ShareRecord[]>
   createShare(input: NewShare, actor: AuditActor): Promise<ShareRecord>
   /** 회수. 연 사람만 지울 수 있다(0025 shares_revoke). 기간 연장은 회수 후 재공유다. */
   revokeShare(shareId: string, actor: AuditActor): Promise<void>

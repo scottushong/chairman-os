@@ -1,7 +1,9 @@
 import Link from 'next/link'
+import { notFound } from 'next/navigation'
 
 import { PageHeader } from '@/components/layout/page-header'
 import { Icon } from '@/components/ui/icon'
+import { currentUser } from '@/lib/auth/session'
 import { formatDateTime } from '@/lib/format'
 import { getRepository } from '@/lib/repository'
 import { SHARE_ENTITY_LABEL_KO, type ShareEntityTable, type ShareRecord } from '@/types'
@@ -22,9 +24,13 @@ import { SHARE_ENTITY_LABEL_KO, type ShareEntityTable, type ShareRecord } from '
  * 걸지 않는다 — 없는 화면으로 보내면 404가 뜬다.
  */
 export default async function SharedWithMePage() {
+  const user = await currentUser()
+  // 로그인하지 않았으면 '나'가 없다. 그 경우 볼 것이 아무것도 없다(proxy가 먼저 /login으로 보낸다).
+  if (!user) notFound()
+
   const repo = await getRepository()
   const [shares, documents, tasks, projects] = await Promise.all([
-    repo.listSharesWithMe(),
+    repo.listSharesWithMe(user.user_id),
     repo.listDocuments(),
     repo.listTasks(),
     repo.listProjects(),

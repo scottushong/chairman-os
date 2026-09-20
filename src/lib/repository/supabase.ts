@@ -2435,12 +2435,18 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       return rows.map((r) => toShare(r, names))
     },
 
-    /** 나에게 공유된 것 전부. 만료된 것은 오지 않는다 — 0025 shares_read + shared_with_me(). */
-    async listSharesWithMe(): Promise<ShareRecord[]> {
+    /**
+     * 나에게 공유된 것 전부. 만료된 것은 오지 않는다 — 0025 shared_with_me()와 같은 조건이다.
+     * shared_with를 명시적으로 건다: shares_read는 '내가 한 공유'도 같이 내주는데,
+     * 이 화면의 질문은 "나에게 무엇이 열려 있나" 하나다.
+     */
+    async listSharesWithMe(viewerId: string): Promise<ShareRecord[]> {
       const { data, error } = await sb
         .from('shares')
         .select(SHARE_COLUMNS)
-        .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+        .eq('shared_with', viewerId)
+        // 값에 ':'와 '.'가 들어가므로 큰따옴표로 묶는다 — or() 필터는 문자열을 그대로 파싱한다.
+        .or(`expires_at.is.null,expires_at.gt."${new Date().toISOString()}"`)
         .order('created_at', { ascending: false })
         .returns<ShareRow[]>()
       const rows = unwrap('shares', data, error)

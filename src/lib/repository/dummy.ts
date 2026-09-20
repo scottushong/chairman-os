@@ -780,10 +780,9 @@ export const dummyRepository: ChairmanRepository = {
   },
 
   /** 나에게 공유된 것. 만료된 것은 오지 않는다 — live의 shared_with_me()와 같은 판정이다. */
-  async listSharesWithMe(): Promise<ShareRecord[]> {
-    const me = dummyViewer().user_id
+  async listSharesWithMe(viewerId: string): Promise<ShareRecord[]> {
     return memoryShares
-      .filter((s) => s.shared_with === me)
+      .filter((s) => s.shared_with === viewerId)
       .filter((s) => s.expires_at === null || Date.parse(s.expires_at) > Date.now())
       .map((s) => ({ ...s }))
   },
