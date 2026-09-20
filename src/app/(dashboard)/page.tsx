@@ -140,6 +140,17 @@ export default async function DashboardPage() {
       </div>
 
       <div className="mt-5 space-y-5">
+        {/* 이니셔티브 카드 위다. 좌표(어디로·뭘·뭐가 막고·언제)를 먼저 읽고
+            그 아래에서 실제로 굴러가는 이니셔티브를 본다 — 순서가 뒤집히면
+            목록을 다 읽고 나서야 '왜 이걸 하고 있나'가 나온다. */}
+        <StrategicCoordinates
+          topGoals={data.topGoals}
+          monthlyPriorities={data.monthlyPriorities}
+          criticalRisks={data.criticalRisks}
+          nextMilestones={data.nextMilestones}
+          businesses={data.businesses}
+          today={todayIso}
+        />
         <DashboardBoard
           businesses={data.businesses}
           financeKpis={data.financeKpis}
@@ -150,13 +161,6 @@ export default async function DashboardPage() {
           initiativeLogoUrls={initiativeLogoUrls}
           initiativeCount={activeInitiatives.length}
           today={todayIso}
-        />
-        <StrategicCoordinates
-          topGoals={data.topGoals}
-          monthlyPriorities={data.monthlyPriorities}
-          criticalRisks={data.criticalRisks}
-          nextMilestones={data.nextMilestones}
-          businesses={data.businesses}
         />
       </div>
 
