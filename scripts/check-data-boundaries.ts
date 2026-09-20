@@ -309,6 +309,13 @@ async function renderPage(path: string, repo: ChairmanRepository) {
   runInNewContext(code, { exports, require: (name: string) => {
     if (name === '@/lib/repository') return { getRepository: async () => repo }
     if (name === '@/components/tasks/task-controls') return { TaskControls: () => null }
+    // Phase 6-1 블록 C. 공유 패널도 '상호작용 컨트롤'이라 TaskControls와 같이 비운다 —
+    // 이 검사가 재는 것은 날짜 null이 화면에서 어떻게 보이는가이고, 공유는 그 축이 아니다.
+    if (name === '@/components/shared/share-panel') return { SharePanel: () => null }
+    // 세션은 요청 스코프가 있어야 읽힌다(currentUser가 connection()을 부른다). 이 검사는
+    // 요청 밖에서 페이지 JSX만 돌리므로 '로그인하지 않은 상태'로 세운다 — 공유 패널의
+    // 회수 버튼을 누가 보는가는 여기서 재는 것이 아니다.
+    if (name === '@/lib/auth/session') return { currentUser: async () => null }
     return requireFromHere(name.startsWith('@/') ? resolve('src', name.slice(2)) : name)
   } }, { filename })
   return renderToStaticMarkup(await exports.default!({ params: Promise.resolve({ id: '0000' }) }))

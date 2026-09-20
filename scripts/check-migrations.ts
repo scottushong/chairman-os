@@ -1668,6 +1668,143 @@ async function subtreeRls(db: Db) {
 }
 
 /**
+ * 0028 — 화면 층이 요구한 문 둘과 칸 셋.
+ *
+ * 블록 B·C(화면)는 정책을 다시 구현하지 않는다. 그래서 여기서 재는 것도 '화면이 맞나'가
+ * 아니라 **화면이 기대는 DB의 성질**이다. 둘 다 앞의 검사들이 세워 둔 트리 위에서 잰다
+ * (subtreeRls가 쓰는 그 DB다 — 두 벌을 만들면 "DB에서는 되는데 화면에서는 안 된다"를
+ * 매번 새로 조사하게 된다).
+ *
+ *   ① company_progress()  회사 진행률은 **보는 사람에 따라 달라지지 않는다.**
+ *      0027이 projects를 잘랐기 때문에, 화면이 목록에서 평균을 내면 같은 회사 카드가
+ *      사람마다 다른 숫자가 된다. 그 두 값이 실제로 다르다는 것까지 같이 잰다 —
+ *      다르지 않으면 이 단언은 아무것도 재지 못한다.
+ *   ② company_people()    공유 대상 검색. 옆 가지가 보여야 하고(검증 c의 전제),
+ *      남의 회사·나간 사람·시스템 계정은 보이지 않아야 하며, **칸이 셋뿐**이어야 한다.
+ *   ③ 초대장의 새 칸 셋이 계정 생성 시점에 프로필로 옮겨지는가.
+ *   ④ 'ECOUNT Sync' → 'Integration'. 0028을 한 번 더 적용해서 잰다(그 파일은 재적용해도
+ *      안전하게 썼다).
+ */
+async function orgScreen(db: Db) {
+  async function rows<T extends object>(uid: string, sql: string): Promise<T[]> {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
+    try {
+      return (await db.query<T>(sql)).rows
+    } finally {
+      await db.exec('rollback')
+    }
+  }
+  const one = async <T>(uid: string, sql: string): Promise<T> => {
+    const r = await rows<Record<string, T>>(uid, sql)
+    return r.length ? Object.values(r[0])[0] : (null as T)
+  }
+
+  // ── ① 회사 진행률 ────────────────────────────────────────────────
+  //   두 프로젝트에 서로 다른 값을 박아 '잘린 목록의 평균'과 '회사 전체 평균'이 실제로
+  //   갈리게 만든다. 같아지면 아래 단언이 통과해도 아무것도 재지 못한다.
+  await db.exec(`
+    update projects set progress_pct = 40 where project_id = 'prj_sales';
+    update projects set progress_pct = 80 where project_id = 'prj_buy';
+  `)
+  const whole = (await db.query<{ v: number }>(
+    `select round(avg(progress_pct))::int as v from projects where business_id = 'biz_dy'`,
+  )).rows[0].v
+
+  const progressFor = (uid: string) => one<number>(uid, `select company_progress('biz_dy') as v`)
+  // 화면이 예전에 하던 계산 — 자기에게 보이는 목록의 평균.
+  const visibleAvg = (uid: string) =>
+    one<number>(uid, `select round(avg(progress_pct))::int as v from projects where business_id = 'biz_dy'`)
+
+  assert.notEqual(
+    Number(await visibleAvg(H.staff)), Number(whole),
+    '0028: 이 실험의 전제가 깨졌다 — 직원에게 보이는 프로젝트의 평균과 회사 전체 평균이 같으면 company_progress()가 무엇을 고쳤는지 잴 수 없다',
+  )
+  assert.equal(Number(await progressFor(H.staff)), Number(whole),
+    '0028: 영업 직원이 보는 회사 진행률이 회사 전체 평균이 아니다 — 회사 카드의 숫자가 보는 사람마다 달라진다(회의에서 둘 중 하나가 틀렸다는 것조차 모른 채 인용된다)')
+  assert.equal(Number(await progressFor(H.lead)), Number(whole),
+    '0028: 영업팀장이 보는 회사 진행률이 회사 전체 평균이 아니다')
+  assert.equal(Number(await progressFor(H.exec)), Number(whole),
+    '0028: 임원이 보는 회사 진행률이 회사 전체 평균이 아니다')
+  // 회사 격리는 함수 안에서 그대로 진다. keyhole은 다섯 번째 겹만 비켜서는 문이다.
+  assert.equal(await one<number>(H.staff, `select company_progress('biz_vana') as v`), null,
+    '0028: 못 보는 회사의 진행률이 나온다 — company_progress()가 has_business()를 잃었다(keyhole이 창이 됐다)')
+
+  // ── ② 공유 대상 검색 ─────────────────────────────────────────────
+  //   남의 회사 사람 하나와 나간 사람 하나를 심는다. 둘 다 후보가 아니어야 한다.
+  // 41번대를 쓴다. 31·32는 0026 절의 초대 검사가 이미 쓴 번호다.
+  const OUTSIDER = '00000000-0000-0000-0000-000000000041'
+  const LEAVER = '00000000-0000-0000-0000-000000000042'
+  await db.exec(`
+    insert into auth.users values ('${OUTSIDER}', 'out@x'), ('${LEAVER}', 'left@x');
+    insert into user_profiles (user_id, role, display_name, display_name_en, reports_to, status) values
+      ('${OUTSIDER}', 'Member', '남의 회사 영업', 'Vana Sales', null, 'active'),
+      ('${LEAVER}',   'Member', '영업 퇴사자',   null,          '${H.lead}', 'left');
+    insert into user_business_access values ('${OUTSIDER}', 'biz_vana'), ('${LEAVER}', 'biz_dy');
+  `)
+  const names = async (uid: string, q: string) =>
+    (await rows<{ display_name: string }>(uid, `select display_name from company_people('${q}') order by display_name`))
+      .map((r) => r.display_name)
+
+  // 검증 c의 전제: 구매팀장에게 영업팀장은 **옆 가지**라 조직도에는 없다. 그런데도
+  // 공유 대상으로는 고를 수 있어야 한다 — 고를 수 없으면 블록 C가 통째로 서지 못한다.
+  assert.equal(
+    (await rows(H.buyer, `select user_id from user_profiles where user_id = '${H.lead}'`)).length, 0,
+    '0028: 이 실험의 전제가 깨졌다 — 구매팀장에게 영업팀장이 이미 보인다면 company_people()이 무엇을 여는지 잴 수 없다',
+  )
+  assert.ok((await names(H.buyer, '영업팀장')).includes('영업팀장'),
+    '0028: 구매팀장이 영업팀장을 공유 대상으로 찾지 못한다 — 옆 가지로 공유하는 길이 닫혔다(회장 지시 검증 c가 화면에서 성립하지 않는다)')
+  assert.deepEqual(await names(H.lead, '남의 회사'), [],
+    '0028: 공유 대상 검색이 회사를 넘는다 — company_people()이 has_business()를 잃었다')
+  assert.deepEqual(await names(H.lead, '영업 퇴사자'), [],
+    '0028: 나간 사람이 공유 대상으로 나온다 — 나간 사람에게 문서를 여는 것은 원칙 8을 정면으로 거스른다')
+  assert.deepEqual(await names(H.lead, '영업팀장'), [],
+    '0028: 자기 자신이 공유 대상 목록에 있다 — 자기에게 공유하는 일은 없다')
+  assert.deepEqual(await names(H.lead, ''), [],
+    '0028: 빈 질의에 사람이 나온다 — 이 문은 검색이지 목록 조회가 아니다(회사 사람을 통째로 훑는 창구가 된다)')
+  assert.deepEqual(await names(H.lead, 'sync'), [],
+    '0028: 시스템 계정이 공유 대상으로 나온다 — 야간 Job·동기화 계정에 사람이 문서를 여는 일은 없다')
+
+  // 칸이 셋뿐인가. 다음 사람이 역할이나 이메일을 하나 더 붙이면 이 문은 조직도를
+  // 우회하는 창이 된다(0028 머리 주석). 그 순간 여기가 빨개진다.
+  const shape = await rows<Record<string, unknown>>(H.lead, `select * from company_people('영업') limit 1`)
+  assert.deepEqual(Object.keys(shape[0] ?? {}).sort(), ['display_name', 'display_name_en', 'user_id'],
+    '0028: company_people()이 이름 두 칸과 id 말고 다른 것을 내준다 — 좁은 문이 창이 됐다')
+
+  // ── ③ 초대장의 새 칸 셋이 프로필로 옮겨지는가 ────────────────────
+  const NEWBIE = '00000000-0000-0000-0000-000000000043'
+  await db.exec(`
+    insert into user_invitations (email, role, display_name, display_name_en, title_ko, business_ids,
+                                  invited_by, reports_to, team_id, joined_on, language)
+    values ('newbie@x', 'Member', '신입', 'New Joiner', '사원', array['biz_dy'],
+            '${H.lead}', '${H.lead}', 'team_dy_sales', date '2026-03-02', 'en');
+    insert into auth.users values ('${NEWBIE}', 'newbie@x');
+  `)
+  const applied = await db.query<{ en: string; joined: string; lang: string; team: string }>(
+    `select display_name_en as en, joined_on::text as joined, language as lang, team_id as team
+       from user_profiles where user_id = '${NEWBIE}'`,
+  )
+  assert.deepEqual(
+    applied.rows,
+    [{ en: 'New Joiner', joined: '2026-03-02', lang: 'en', team: 'team_dy_sales' }],
+    '0028: 초대장의 이름(en)·입사일·표기 언어가 계정 생성 시점에 프로필로 옮겨지지 않는다 — 초대 폼이 받은 값이 어디에도 남지 않는다',
+  )
+
+  // ── ④ 'ECOUNT Sync' → 'Integration' ─────────────────────────────
+  //   0028은 통째로 재적용해도 안전하게 썼다. 옛 이름을 심어 두고 한 번 더 적용한다.
+  const SYNC = '00000000-0000-0000-0000-000000000044'
+  await db.exec(`
+    insert into auth.users values ('${SYNC}', 'sync2@x');
+    insert into user_profiles (user_id, role, display_name) values ('${SYNC}', 'Integration', 'ECOUNT Sync');
+  `)
+  await applyOne(db, '0028_org_screen.sql')
+  assert.equal(
+    (await db.query<{ n: string }>(`select display_name as n from user_profiles where user_id = '${SYNC}'`)).rows[0].n,
+    'Integration',
+    "0028: 시스템 계정의 이름이 'ECOUNT Sync'로 남아 있다 — 이 값은 화면 문자열이 아니라 DB 값이라 마이그레이션이 고쳐야 한다(회장 지시 블록 B-6)",
+  )
+}
+
+/**
  * 0026 0절 — 백필이 트리를 세우는가, 그리고 회장이 하나가 아닐 때 물러서는가.
  *
  * **왜 별도 인스턴스인가.** 이 검사의 입력은 '0026이 적용되는 순간의 user_profiles'다.
@@ -1947,11 +2084,12 @@ async function main() {
   await rls(db)
   await hierarchy(db)
   await subtreeRls(db)
+  await orgScreen(db)
   await db.close()
   await definerUnderNonBypassOwner()
   await subtreeBackfill()
   console.log(
-    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole)`,
+    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름)`,
   )
 }
 
