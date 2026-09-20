@@ -261,6 +261,40 @@ async function rls(db: Db) {
   assert.equal(await as(UID.chairman, journal('ecount', 'T-3')), 'denied')
   assert.equal(await as(UID.chairman, 'select count(*)::int from finance_kpis_masked'), total)
 
+  /**
+   * Phase 5-D 프로세스차트(0021/0022). **감사 트리거를 실제로 때린다.**
+   *
+   * 0021이 production에서 터진 적이 있다: 트리거가 lower(tg_op)로 'insert'를 만들었는데
+   * audit_action enum에 그 값이 없었다. 그때 이 검사는 통과했다 — 0021의 시드가
+   * Chairman이 있어야 INSERT를 하는데, 마이그레이션이 도는 시점에는 user_profiles가
+   * 비어 있어 시드가 일찍 빠져나갔고 트리거가 한 번도 돌지 않았기 때문이다.
+   *
+   * 그래서 여기서 직접 넣는다. 넣는 순간 트리거가 돌고, 감사 낱말이 틀리면 여기서 터진다.
+   */
+  const embed = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTEST/pubhtml'
+  assert.equal(
+    await as(UID.chairman, `insert into process_charts (business_id, team_name, title, embed_url, updated_by) values ('biz_dy', '검사팀', 'x', '${embed}', '${UID.chairman}')`),
+    1, 'Chairman은 프로세스차트를 넣는다 — 감사 트리거가 같이 돈다',
+  )
+  // 트리거가 남긴 낱말이 enum에 있는 값인지 본다. 'insert'였다면 위에서 이미 터졌다.
+  assert.equal(
+    await as(UID.chairman,
+      `select count(*)::int from audit_log where entity_table = 'process_charts' and action = 'create'`,
+      `insert into process_charts (business_id, team_name, title, embed_url, updated_by) values ('biz_dy', '검사팀2', 'x', '${embed}', '${UID.chairman}')`),
+    1, '감사 기록이 create로 남는다',
+  )
+  // 게시 링크가 아니면 DB가 막는다. 화면 검증만으로는 API로 들어오는 길이 남는다.
+  await assert.rejects(
+    as(UID.chairman, `insert into process_charts (business_id, team_name, title, embed_url, updated_by) values ('biz_dy', '편집링크', 'x', 'https://docs.google.com/spreadsheets/d/1AbC/edit', '${UID.chairman}')`),
+    /embed_url/, '편집 링크는 check 제약이 거부한다',
+  )
+  // Member는 Executive 미만이라 읽지도 쓰지도 못한다.
+  assert.equal(await as(UID.member, 'select count(*)::int from process_charts'), 0)
+  assert.equal(
+    await as(UID.member, `insert into process_charts (business_id, team_name, title, embed_url, updated_by) values ('biz_dy', 'x', 'x', '${embed}', '${UID.member}')`),
+    'denied',
+  )
+
   // Phase 4-A 이니셔티브. 전사 역할만 읽고 쓴다. AIAgent는 읽기만, 나머지는 아무것도 없다.
   assert.equal(
     await as(UID.chairman, `insert into initiatives (title, kind) values ('테스트 딜', 'Deal')`),

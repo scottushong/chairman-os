@@ -84,7 +84,15 @@ language plpgsql security definer set search_path = public as $fn$
 begin
   insert into audit_log (action, entity_table, entity_id, business_id, actor_user_id, actor_role, before, after, note)
   values (
-    lower(tg_op)::audit_action,
+    -- **tg_op를 그대로 소문자로 낮추면 안 된다.** audit_action enum에는 'insert'가 없다
+    -- (0001: read/create/update/delete_request/approve/reject/modify/delegate/...).
+    -- 'delete_request'가 삭제 계열의 유일한 값이라 실제 삭제도 여기로 보낸다 —
+    -- 낱말은 거칠지만 note가 '프로세스차트 링크 삭제'로 정확히 말한다.
+    case tg_op
+      when 'INSERT' then 'create'
+      when 'UPDATE' then 'update'
+      else 'delete_request'
+    end::audit_action,
     'process_charts',
     coalesce(new.id, old.id)::text,
     coalesce(new.business_id, old.business_id),
@@ -94,7 +102,7 @@ begin
          then jsonb_build_object('team_name', old.team_name, 'title', old.title, 'embed_url', old.embed_url) end,
     case when tg_op in ('INSERT', 'UPDATE')
          then jsonb_build_object('team_name', new.team_name, 'title', new.title, 'embed_url', new.embed_url) end,
-    '프로세스차트'
+    case tg_op when 'DELETE' then '프로세스차트 링크 삭제' else '프로세스차트' end
   );
   return coalesce(new, old);
 end;
