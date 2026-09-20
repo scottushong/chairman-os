@@ -5,10 +5,13 @@ import Link from 'next/link'
  * 셋은 같은 원장의 다른 면이라 같은 자리에서 오간다. 머리글 오른쪽(PageHeader children)에 선다.
  */
 
-export type BooksTab = 'statements' | 'journal' | 'accounts'
+export type BooksTab = 'statements' | 'monthly' | 'official' | 'journal' | 'accounts'
 
 const TABS: { tab: BooksTab; label: string; suffix: string }[] = [
   { tab: 'statements', label: '재무제표', suffix: '' },
+  // Phase 2-C. 장부에 쓰는 두 입구 — 월별 간이 손익(잠정)과 공식 결산(확정).
+  { tab: 'monthly', label: '월별 입력', suffix: '/monthly' },
+  { tab: 'official', label: '공식 결산', suffix: '/statements/new' },
   { tab: 'journal', label: '전표', suffix: '/journal' },
   { tab: 'accounts', label: '계정과목', suffix: '/accounts' },
 ]

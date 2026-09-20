@@ -43,6 +43,8 @@ import type {
   FinanceMetric,
   FigureBasis,
   MonthlyPriority,
+  NewOfficialStatement,
+  OfficialStatement,
   NextMilestone,
   Project,
   SecurityClass,
@@ -876,6 +878,42 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       const r = (data ?? {}) as { reversal?: unknown; restatement?: unknown }
       if (typeof r.reversal !== 'string') throw new Error('post_correction: 역분개 전표번호가 오지 않았다.')
       return { reversal: r.reversal, restatement: typeof r.restatement === 'string' ? r.restatement : null }
+    },
+
+    /**
+     * Phase 2-C 블록 1. supersede·헤더·라인·감사 기록이 0020 official_statement_save() 한 트랜잭션이다.
+     * 재무상태표가 닫히지 않으면 DB가 예외를 던진다 — 화면이 먼저 보지만 마지막 판정은 여기다.
+     */
+    async saveOfficialStatement(input: NewOfficialStatement, actor: AuditActor): Promise<number> {
+      void actor // 행위자는 DB가 auth.uid() / auth_role()로 적는다.
+      const { data, error } = await sb.rpc('official_statement_save', {
+        p_business_id: input.business_id,
+        p_period_kind: input.period_kind,
+        p_period_key: input.period_key,
+        p_evidence_url: input.evidence_url,
+        p_memo: input.memo,
+        p_lines: input.lines,
+      })
+      if (error) {
+        throw new Error(
+          `Supabase official_statement_save ${error.code ?? '?'}: ${error.message}${error.details ? ` — ${error.details}` : ''}`,
+        )
+      }
+      const id = Number(data)
+      if (!Number.isFinite(id)) throw new Error('official_statement_save: id가 오지 않았다.')
+      return id
+    },
+
+    /** 활성 행만 읽는다. 정정으로 밀려난 결산이 잠금 판정에 끼면 이미 고친 기간이 계속 잠긴다. */
+    async listOfficialStatements(businessId: string): Promise<OfficialStatement[]> {
+      const { data, error } = await sb
+        .from('official_statements')
+        .select('*')
+        .eq('business_id', businessId)
+        .is('superseded_at', null)
+        .order('period_key', { ascending: true })
+      if (error) throw new Error(`Supabase official_statements ${error.code ?? '?'}: ${error.message}`)
+      return (data ?? []) as OfficialStatement[]
     },
 
     /** 블록 3. 감사 기록·결산·라인 closed가 0016 close_period() 한 트랜잭션이다. */

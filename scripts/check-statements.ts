@@ -19,6 +19,13 @@ import {
   incomeSubtotals,
   type StatementLine,
 } from '../src/lib/statements/balance'
+import {
+  MANUFACTURING_ROWS,
+  STARTUP_ROWS,
+  SUSPENSE_ACCOUNT,
+  buildMonthlySlip,
+} from '../src/lib/statements/monthly'
+import { basisLine, compactMonths } from '../src/lib/statements/basis-line'
 import { parsePastedColumn } from '../src/lib/statements/paste'
 import { isLocked, monthsCovered } from '../src/lib/statements/period'
 
@@ -30,6 +37,86 @@ const line = (section: StatementLine['section'], amount: number, code = 'x'): St
 
 /** 억 단위로 쓰면 읽기 쉽다. 검사는 원 단위로 돈다. */
 const eok = (n: number) => n * 100_000_000
+
+/**
+ * 요약 전표는 **반드시 닫힌다.** 이것이 블록 2의 핵심 계약이다 —
+ * 닫히지 않는 전표는 0016의 post_journal_entry()가 거부하므로, 여기서 닫지 못하면
+ * 회장이 넣은 한 달치가 통째로 저장되지 않는다.
+ */
+function monthlySlipAlwaysBalances() {
+  const sum = (lines: { side: string; amount: number }[], side: string) =>
+    lines.filter((l) => l.side === side).reduce((t, l) => t + l.amount, 0)
+
+  // 손익만 넣고 상대(현금·채권·채무)를 안 넣은 달. 4억이 설명되지 않아 미분류로 남는다.
+  // **이익잉여금이 아니다** — 이익잉여금이 상대가 되는 것은 마감 전표이지 활동 전표가 아니다.
+  const pl = buildMonthlySlip({
+    rows: MANUFACTURING_ROWS,
+    values: { revenue: 1_000_000_000, cogs: 400_000_000, labor: 200_000_000 },
+  })
+  assert.equal(sum(pl.lines, 'debit'), sum(pl.lines, 'credit'), '전표가 닫혀야 한다')
+  const suspense = pl.lines.find((l) => l.account_code === SUSPENSE_ACCOUNT)
+  assert.ok(suspense, '설명되지 않은 차액은 미분류 한 줄로 남는다')
+  assert.equal(suspense.amount, 400_000_000)
+
+  // **숫자가 서로 맞으면 미분류 줄이 아예 없다.** 이것이 정상적으로 채운 달의 모습이다.
+  // 매출 10억(대변) − 비용 6억(차변) = 이익 4억이 현금 4억 증가로 설명된다.
+  const tidy = buildMonthlySlip({
+    rows: MANUFACTURING_ROWS,
+    values: { revenue: 1_000_000_000, cogs: 400_000_000, labor: 200_000_000, cash: 400_000_000 },
+  })
+  assert.equal(sum(tidy.lines, 'debit'), sum(tidy.lines, 'credit'))
+  assert.equal(tidy.residual, 0)
+  assert.equal(
+    tidy.lines.some((l) => l.account_code === SUSPENSE_ACCOUNT),
+    false,
+    '맞는 달에는 미분류 줄이 서지 않는다',
+  )
+
+  // 손실인 달도 닫힌다.
+  const loss = buildMonthlySlip({
+    rows: MANUFACTURING_ROWS,
+    values: { revenue: 100_000_000, labor: 300_000_000 },
+  })
+  assert.equal(sum(loss.lines, 'debit'), sum(loss.lines, 'credit'))
+
+  // 잔액 항목은 **전월과의 차이**가 줄이 된다. 잔액 그대로 넣으면 매달 전액이 다시 움직인다.
+  const balances = buildMonthlySlip({
+    rows: MANUFACTURING_ROWS,
+    values: { cash: 500_000_000 },
+    priorBalances: { cash: 300_000_000 },
+  })
+  const cashLine = balances.lines.find((l) => l.account_code === '1030')
+  assert.ok(cashLine)
+  assert.equal(cashLine.amount, 200_000_000, '현금은 증가분만 움직인다')
+  assert.equal(cashLine.side, 'debit')
+  assert.equal(sum(balances.lines, 'debit'), sum(balances.lines, 'credit'))
+
+  // 잔액이 줄어든 달은 방향이 뒤집힌다.
+  const drop = buildMonthlySlip({
+    rows: MANUFACTURING_ROWS,
+    values: { cash: 100_000_000 },
+    priorBalances: { cash: 300_000_000 },
+  })
+  assert.equal(drop.lines.find((l) => l.account_code === '1030')?.side, 'credit')
+
+  // 매입채무(대변 계정)가 줄어든 달은 차변이다.
+  const payableDown = buildMonthlySlip({
+    rows: MANUFACTURING_ROWS,
+    values: { payable: 50_000_000 },
+    priorBalances: { payable: 80_000_000 },
+  })
+  assert.equal(payableDown.lines.find((l) => l.account_code === '2010')?.side, 'debit')
+
+  // 0인 항목은 줄이 되지 않는다. 열한 줄 중 대부분이 비는 달이 보통이다.
+  assert.equal(buildMonthlySlip({ rows: MANUFACTURING_ROWS, values: {} }).lines.length, 0)
+
+  // 차액 줄은 숨기지 않는다 — 화면이 그 줄을 그대로 보여 준다.
+  assert.equal(pl.residual, -400_000_000)
+
+  // 스타트업 간이형은 매출원가·외주가 없고 매출 계정이 용역매출이다.
+  assert.equal(STARTUP_ROWS.some((r) => r.key === 'cogs'), false)
+  assert.equal(STARTUP_ROWS.find((r) => r.key === 'revenue')?.account_code, '4030')
+}
 
 function balanceSheetCloses() {
   // 자산 100억 = 부채 40억 + 자본 60억. 부채·자본은 대변이라 원장에 음수로 앉는다.
@@ -159,11 +246,42 @@ function officialPeriodLocking() {
   assert.equal(isLocked('2026-08', []), false)
 }
 
+
+/**
+ * 회사 상세 상단의 '기준' 한 줄. 두 층을 실제로 조회해 만든다 —
+ * 하드코딩하면 결산이 하나 더 들어온 날부터 '확정'이라는 낱말을 단 거짓말이 된다.
+ */
+function basisSentence() {
+  assert.equal(compactMonths([1, 2, 3, 4, 5, 6, 7, 8]), '1~8월')
+  assert.equal(compactMonths([1, 2, 3, 5, 6, 9]), '1~3, 5~6, 9월')
+  assert.equal(compactMonths([7]), '7월')
+  assert.equal(compactMonths([]), '')
+
+  // 요구사항의 그 문장이 그대로 나와야 한다.
+  const line = basisLine({
+    officials: [{ kind: 'year', key: '2025' }],
+    ledgerMonths: Array.from({ length: 8 }, (_, i) => `2026-0${i + 1}`),
+  })
+  assert.equal(line, '기준: 2025 결산(확정) + 2026 1~8월(잠정)')
+
+  // 공식이 덮은 달은 잠정에서 빠진다. 두 층이 같은 달을 두 번 말하면 안 된다.
+  const overlap = basisLine({
+    officials: [{ kind: 'quarter', key: '2026-Q1' }],
+    ledgerMonths: ['2026-01', '2026-02', '2026-03', '2026-04', '2026-05'],
+  })
+  assert.equal(overlap, '기준: 2026-Q1 결산(확정) + 2026 4~5월(잠정)')
+
+  // 아무것도 없으면 빈 문자열 — 화면이 줄을 아예 그리지 않는다.
+  assert.equal(basisLine({ officials: [], ledgerMonths: [] }), '')
+}
+
 balanceSheetCloses()
+basisSentence()
 incomeMatchesTheView()
 pasteParser()
 officialPeriodLocking()
+monthlySlipAlwaysBalances()
 
 console.log(
-  'PASS: 재무상태표 1원 차이 검출, 손익 소계 = finance_kpis 공식, 붙여넣기 파서(실패는 null), 공식 기간 잠금',
+  'PASS: 재무상태표 1원 차이 검출, 손익 소계 = finance_kpis 공식, 붙여넣기 파서(실패는 null), 공식 기간 잠금, 요약 전표 차대 균형, 기준 문장',
 )

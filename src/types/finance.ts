@@ -279,3 +279,44 @@ export interface FinanceLedger {
   fxRates: FxRate[]
   costIndices: CostIndex[]
 }
+
+/**
+ * 공식 재무제표 (0020, Phase 2-C 블록 1). 회계법인이 낸 연·분기 결산이다.
+ *
+ * closings(월 단위)와 표를 나눈 이유는 기간 단위가 다르기 때문이다 — 연간 총액을
+ * 월 표에 넣으면 그 달 발생액이 되어 추이 차트와 YTD가 깨진다(0020 머리 주석).
+ * 이 층이 덮은 달은 월별 간이 손익 입력이 잠긴다.
+ */
+export interface OfficialStatement {
+  id: number
+  business_id: BusinessId
+  period_kind: 'year' | 'quarter'
+  /** 'YYYY' 또는 'YYYY-Q1'..'YYYY-Q4' */
+  period_key: string
+  /** 증빙 링크. 파일 실체는 사내 스토리지(CLAUDE.md). 필수다 — 확정 꼬리표의 근거다 */
+  evidence_url: string
+  memo: string
+  created_by: string
+  created_at: IsoDateTime
+  /** 정정되어 밀려난 행이면 그 시각. 활성 행은 null */
+  superseded_at: IsoDateTime | null
+  supersedes_id: number | null
+}
+
+/** 공식 재무제표의 계정별 금액. amount = 차변 − 대변(0015 규약 그대로) */
+export interface OfficialStatementLine {
+  statement_id: number
+  business_id: BusinessId
+  account_code: string
+  amount: number
+}
+
+/** 저장할 재무제표 한 벌. id·created_at은 DB가 정한다. */
+export interface NewOfficialStatement {
+  business_id: BusinessId
+  period_kind: 'year' | 'quarter'
+  period_key: string
+  evidence_url: string
+  memo: string
+  lines: { account_code: string; amount: number }[]
+}

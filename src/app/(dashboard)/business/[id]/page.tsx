@@ -6,6 +6,7 @@ import { KeymenPanel } from '@/components/business/keymen-panel'
 import { FinanceTrend } from '@/components/dashboard/finance-trend'
 import { KpiStrip } from '@/components/dashboard/kpi-strip'
 import { PageHeader } from '@/components/layout/page-header'
+import { basisLine } from '@/lib/statements/basis-line'
 import { Icon } from '@/components/ui/icon'
 import { currentUser } from '@/lib/auth/session'
 import { canEditStrategy } from '@/lib/auth/roles'
@@ -44,7 +45,7 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
   const { id } = await props.params
 
   const repo = await getRepository()
-  const [businesses, financeKpis, projects, tasks, decisions, alerts, strategies, keymen, user] =
+  const [businesses, financeKpis, projects, tasks, decisions, alerts, strategies, keymen, user, officials] =
     await Promise.all([
       repo.listBusinesses(),
       repo.listFinanceKpis(),
@@ -55,12 +56,26 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
       repo.listBusinessStrategy(),
       repo.listKeymen(),
       currentUser(),
+      // Phase 2-C 블록 3. 공식 결산은 finance_kpis 뷰 밖의 층이라 따로 읽는다(0020).
+      repo.listOfficialStatements(id),
     ])
 
   const business = businesses.find((b) => b.business_id === id)
   if (!business) notFound()
 
   const strategy = strategies.find((s) => s.business_id === id) ?? null
+
+  /**
+   * "기준: 2025 결산(확정) + 2026 1~8월(잠정)".
+   * 두 층을 실제로 조회해 만든다 — 하드코딩하면 결산이 하나 더 들어온 날부터
+   * '확정'이라는 낱말을 단 거짓말이 된다(lib/statements/basis-line.ts).
+   */
+  const basis = basisLine({
+    officials: officials.map((o) => ({ kind: o.period_kind, key: o.period_key })),
+    ledgerMonths: [
+      ...new Set(financeKpis.filter((k) => k.business_id === id).map((k) => k.period)),
+    ].sort(),
+  })
 
   const ownProjects = projects.filter((p) => p.business_id === id)
   const projectIds = new Set(ownProjects.map((p) => p.project_id))
@@ -94,6 +109,15 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
       </PageHeader>
 
       <div className="mt-4 space-y-3.5">
+        {/* 이 회사 숫자가 어느 층에서 왔는가. 둘 다 없으면 줄을 그리지 않는다 —
+            "기준: 없음"은 회장에게 아무것도 말해 주지 않는다. */}
+        {basis ? (
+          <p className="flex items-center gap-1.5 rounded-md border border-line-soft bg-panel px-3 py-1.5 text-[11.5px] text-ink-dim">
+            <Icon name="file-text" className="size-3.5 shrink-0 text-ink-muted" />
+            {basis}
+          </p>
+        ) : null}
+
         {/* 그룹 화면과 같은 8타일·같은 색 규칙을 쓴다. 범위만 이 회사 하나다. */}
         <KpiStrip
           kpis={financeKpis}

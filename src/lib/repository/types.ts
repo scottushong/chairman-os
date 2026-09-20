@@ -28,6 +28,8 @@ import type {
   IsoDate,
   SecurityClass,
   MonthlyPriority,
+  NewOfficialStatement,
+  OfficialStatement,
   NextMilestone,
   Project,
   NewInvitation,
@@ -92,6 +94,16 @@ export interface ChairmanRepository {
    * 원 전표는 그대로 남는다. 거부 사유는 lib/ledger/journal.ts CORRECTION_PROBLEM_KO의 낱말로 온다.
    */
   postCorrection(input: NewCorrection, actor: AuditActor): Promise<CorrectionResult>
+
+  /**
+   * Phase 2-C 블록 1 — 공식 재무제표(연·분기 결산) 한 벌. 새 행의 id를 돌려준다.
+   * live는 0020의 official_statement_save(). 같은 기간의 이전 결산은 덮지 않고 supersede 된다.
+   * 재무상태표가 닫히지 않으면 DB가 거부한다 — 화면이 먼저 보지만 판정은 DB가 한 번 더 한다.
+   */
+  saveOfficialStatement(input: NewOfficialStatement, actor: AuditActor): Promise<number>
+
+  /** 그 회사의 **활성** 공식 재무제표 목록(정정으로 밀려난 것은 뺀다). 월별 화면의 잠금 판정이 쓴다. */
+  listOfficialStatements(businessId: string): Promise<OfficialStatement[]>
   listProjects(): Promise<Project[]>
   listTasks(): Promise<Task[]>
   listDecisions(): Promise<Decision[]>

@@ -15,7 +15,17 @@ import {
   type NewCorrection,
   type NewJournalEntry,
 } from '@/lib/ledger/journal'
-import type { Account, Closing, FinanceLedger, JournalEntry, JournalLine } from '@/types'
+import { BALANCE_SHEET_SECTIONS } from '@/lib/statements/balance'
+import type {
+  Account,
+  Closing,
+  FinanceLedger,
+  JournalEntry,
+  JournalLine,
+  NewOfficialStatement,
+  OfficialStatement,
+  OfficialStatementLine,
+} from '@/types'
 
 import { DUPLICATE_ACCOUNT_CODE, type AccountPatch, type AuditActor, type NewAccount } from './types'
 
@@ -233,4 +243,79 @@ export async function closePeriod(businessId: string, period: string, actor: Aud
   closedMonths.add(key(businessId, period))
   note(actor, `close ${businessId}:${period} (${rows.length})`)
   return rows.length
+}
+
+// ---------------------------------------------------------------------
+// Phase 2-C 블록 1 — 공식 재무제표. 0020의 official_statement_save()를 흉내 낸다.
+// 검사 순서와 거부 낱말을 같게 둔다 — dummy에서 통과한 입력이 live에서 막히면
+// 화면을 dummy로 검증한 의미가 없다(CLAUDE.md의 검증 관례).
+// ---------------------------------------------------------------------
+const officialStatements: OfficialStatement[] = []
+const officialLines: OfficialStatementLine[] = []
+let officialSeq = 0
+
+export async function saveOfficialStatement(
+  input: NewOfficialStatement,
+  actor: AuditActor,
+): Promise<number> {
+  if (input.lines.length === 0) throw new Error('재무제표에 줄이 하나도 없습니다.')
+
+  // 자산 + 부채 + 자본 = 0. 0020의 함수가 보는 것과 같은 식이다.
+  const ledger = await dummyLedger()
+  const sectionOf = new Map(
+    ledger.accounts
+      .filter((a) => a.business_id === input.business_id)
+      .map((a) => [a.account_code, a.section]),
+  )
+  const balance = input.lines.reduce((total, l) => {
+    const section = sectionOf.get(l.account_code)
+    return section && BALANCE_SHEET_SECTIONS.includes(section) ? total + l.amount : total
+  }, 0)
+  if (balance !== 0) throw new Error(`재무상태표가 닫히지 않습니다. 차이 ${balance}원`)
+
+  const now = new Date().toISOString()
+  const prev = officialStatements.find(
+    (s) =>
+      s.business_id === input.business_id &&
+      s.period_kind === input.period_kind &&
+      s.period_key === input.period_key &&
+      s.superseded_at === null,
+  )
+  if (prev) prev.superseded_at = now
+
+  const id = ++officialSeq
+  officialStatements.push({
+    id,
+    business_id: input.business_id,
+    period_kind: input.period_kind,
+    period_key: input.period_key,
+    evidence_url: input.evidence_url.trim(),
+    memo: input.memo.trim(),
+    created_by: actor.user_id,
+    created_at: now,
+    superseded_at: null,
+    supersedes_id: prev?.id ?? null,
+  })
+  officialLines.push(
+    ...input.lines.map((l) => ({
+      statement_id: id,
+      business_id: input.business_id,
+      account_code: l.account_code,
+      amount: l.amount,
+    })),
+  )
+  note(actor, `official ${input.business_id}:${input.period_key}${prev ? ` (정정 #${prev.id})` : ''}`)
+  return id
+}
+
+/** 활성 행만. 정정으로 밀려난 것은 목록에 없다 — 잠금 판정이 옛 결산을 보면 안 된다. */
+export async function listOfficialStatements(businessId: string): Promise<OfficialStatement[]> {
+  return officialStatements
+    .filter((s) => s.business_id === businessId && s.superseded_at === null)
+    .map((s) => ({ ...s }))
+}
+
+/** 화면이 이전 값을 보여 줄 때 쓴다. */
+export async function officialStatementLines(statementId: number): Promise<OfficialStatementLine[]> {
+  return officialLines.filter((l) => l.statement_id === statementId).map((l) => ({ ...l }))
 }

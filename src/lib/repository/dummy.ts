@@ -191,6 +191,8 @@ export const dummyRepository: ChairmanRepository = {
   postJournalEntry: books.postJournalEntry,
   closePeriod: books.closePeriod,
   postCorrection: books.postCorrection,
+  saveOfficialStatement: books.saveOfficialStatement,
+  listOfficialStatements: books.listOfficialStatements,
 
   async listKeymen() {
     return memoryKeymen.map((k) => ({ ...k }))
