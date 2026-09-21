@@ -1065,3 +1065,79 @@ production에서 같은 속도라는 보장이 없다.
 - **빌드 시각을 `next.config.ts`의 `env`로 굽는다.** Next에는 '이 빌드가 언제 만들어졌나'를
   주는 표준 값이 없고 Vercel 환경변수에도 시각은 없다. 요청 시점의 `new Date()`를 쓰면
   화면이 "지금 시각"을 "배포 시각"이라고 부르게 된다.
+
+## Phase 7 블록 A — 의존 (SUCCESSION) (2026-09-21, 0033)
+
+- **`decisions.decided_by_kind`의 역산 규칙을 코드가 아니라 여기와 0033 3절에 글로 적는다.**
+  0001의 `decisions`에는 "회장이 정했는가"를 말해 주는 칸이 없었다. 그래서 값은
+  **이미 남아 있는 기록**에서만 되짚었다:
+  ① `audit_log`에서 그 결정의 마지막 처리 줄(`entity_table='decisions'`,
+     `action ∈ approve/reject/modify/delegate`)의 `actor_role`.
+     Chairman → `chairman`, BusinessCEO·Executive·TeamLead → `ceo`, AIAgent → `rule`.
+  ② ①이 없으면 `decisions.decided_by`가 가리키는 사람의 **지금** 역할.
+     ①보다 약하다(역할은 바뀐다). 그래서 두 번째다.
+  ③ 둘 다 없으면 **null.** 값이 아니라 '모른다'는 사실이다.
+  뷰 `founder_dependency`가 null 행을 **분자에서도 분모에서도** 빼고 `unknown_count`로
+  따로 낸다. 버린 선택지: null을 `ceo`로 접기 — 도달률은 100%가 되지만 의존도가
+  실제보다 낮게 보인다. 이 지표에서 그 방향의 거짓이 가장 나쁘다.
+  **staging의 오늘 도달률은 "처리된 결정 0건 중 0건"이다** — 0003 시드의 결정 4건이
+  전부 `status='Open'`이고 `audit_log`에는 시드가 한 줄도 없다(0003:14 "기록은 행위에서만
+  생긴다"). 이것은 고장이 아니라 옛 기록이 그만큼밖에 없다는 뜻이고, /dependency/settings가
+  그 문장을 그대로 적는다.
+- **`GroupCFO`는 `decision_kind_of()`에서 null이다.** 그룹 CFO는 그 회사의 CEO가 아니고
+  §7이 세려는 '회사가 스스로 정한 결정'도 아니다. 모르는 것을 `ceo`로 접으면 지표가
+  좋아 보인다. (오늘 GroupCFO는 `decisions`를 못 닫는다 — 0002의 `can_approve()`가
+  Chairman·BusinessCEO뿐이다. 방어선이지 경로가 아니다.)
+- **`rule` 값은 오늘 만들어질 경로가 없다.** 0013이 `decisions`에 `ai_agent_no_update`를
+  restrictive로 걸어 야간 Job이 결정을 못 닫는다. 값을 미리 둔 것은 블록 B가 규칙 자동
+  종결을 들고 올 때 check 제약을 고치지 않아도 되게 하려는 것이고, 오늘은 0건이다.
+- **`requests` 표는 이 저장소에 없다.** 0001~0032의 `create table` 43개를 확인했다.
+  가장 가까운 것이 0011의 `user_invitations`인데 그것은 초대 승인 큐이지 '중요한
+  의사결정'이 아니다(회사도 없다). 그래서 `decided_by_kind`는 `decisions`에만 더했다.
+- **`dependency_areas.level`과 `transfer_status`가 둘 다 nullable이다.** 문서의 두 목록이
+  겹치되 같지 않다 — §7의 의존 영역 6개와 §11 TRANSFER MATRIX의 7개, 합집합 8개.
+  R&D에는 이양 계획이 없고, 국내영업·자본배분에는 의존도 평가가 없다. `not null + default`를
+  걸면 그 세 칸이 'not_started'와 'LOW'라는 **없는 사실**로 채워진다.
+- **R&D의 이양 상태는 비워 두었다 — 문서 안에서 §11과 §35가 어긋난다.**
+  §11 TRANSFER MATRIX의 7줄에 R&D가 없고, §35 화면 예시에는 R&D가 IN PROGRESS로 있다.
+  한쪽을 고르는 것은 추측이라 null로 두고 화면이 '이양 계획 없음'이라고 적는다.
+  원문 지시와 §11이 말한 '이양 7'을 따랐다.
+- **DY의 자율성 등급과 Founder Dependency %를 시드에 넣지 않았다.** 문서 어디에도
+  "DY는 지금 L몇"이 없고(§34는 목표가 L5라고만 한다), §35의 37%는 예시 화면 숫자다.
+  등급을 찍어 두면 다음 분기 평가가 그 숫자에서 출발한다. dummy 어댑터에만 12개월 치
+  결정 이력이 있고(화면이 한 번도 안 켜지는 것을 막는다), 그쪽은 DATA MODE 뱃지가 매 화면에서
+  "시드다"라고 말한다.
+- **`absence_tests.days`는 7도 받는다.** 원문 지시는 30/90/365 셋이었지만 문서 §12가
+  7/30/90/365 넷을 말하고, 어긋나면 문서가 이긴다. 7을 빼면 첫 시험부터 30일을 요구하게 된다.
+- **`chairman_directions`에 §21의 빠진 다섯 칸을 더했다.** 원문 지시는 five_year ·
+  priorities · do_not · contact_when · letter 다섯이었는데, §21의 필드 목록과 대조하니
+  `why_own` · `capital_philosophy` · `cares_about` · `not_managed` · `red_lines`가 없었다.
+  §20의 `do_not`(회사가 하지 말 것)과 §21의 `not_managed`(회장이 관리하지 않을 것)를
+  접지 않은 것이 유일하게 망설인 자리다 — 승계 문서에서 그 둘은 반대말에 가깝다.
+- **뷰 둘 다 `security_invoker = true`다 — RLS를 우회하지 않는다.** 대가가 둘 있다.
+  ① `founder_dependency`: 0026이 `decisions_read`에 얹은 다섯 번째 겹 때문에, 회장이 아닌
+     사람은 자기에게 보이는 결정만으로 계산된 %를 본다. 오늘은 시드 행의 소유자 칸이 둘 다
+     비어 회사 공통으로 읽히므로 차이가 없지만, 기안자가 붙은 결정이 쌓이면 갈린다.
+     화면이 "이 값은 보는 사람의 권한 안에서 계산됩니다"라고 적는다.
+  ② `interventions`: `audit_log`의 FORCE RLS + `audit_log_read`(회장/본인/subtree) 때문에
+     **회장 세션에서만 행이 나온다.** GroupCFO도 CEO도 0행이다(회장은 누구의 subtree에도 없다).
+     definer로 열 수도 없다 — FORCE가 걸린 표는 소유자도 정책을 받는다. 정책을 넓히면
+     블록 7이 지킨 것(남의 열람 기록을 가로질러 읽지 못한다)이 무너진다. 그래서 화면이
+     0건이라고 말하지 않고 '회장 계정에서만 집계됩니다'라고 말한다.
+     버린 선택지: `audit_log_read`에 GroupCFO 분기를 열기.
+- **`interventions`는 위임(delegate)도 센다.** 원문은 "승인·반려·수정"이라고 적었지만
+  위임도 회장이 그 건을 손댄 것이고, 빼면 개입이 실제보다 적어 보인다.
+- **승계 표 넷의 RLS는 역할 기반이고 subtree가 아니다.** 원문이 권한을 역할로 못 박았다
+  (Chairman·GroupCFO 읽기·쓰기 / CEO 자기 회사 읽기 / 나머지 거부). 0026의 다섯 번째 겹을
+  얹지 않았다 — 승계는 회사의 사실이지 개인의 업무가 아니다. Executive·TeamLead·Member는
+  자기 회사에서도 0건이다.
+- **분기 평가 «알림»에 스위치를 두지 않았다.** 알림을 만들어 보내는 코드가 아직 없다
+  (0030의 `notifications`는 비어 있고 야간 Job은 블록 B가 들고 온다). 켜 놓고도 아무것도
+  오지 않는 스위치는 특히 나쁜 종류의 거짓말이라, /dependency/settings가 **이번 분기에
+  평가가 없는 회사 목록**을 대신 보여 준다 — 그 목록이 곧 알림이다.
+- **§7 식의 구현이 둘이다(SQL 뷰 + `lib/dependency.ts`).** dummy 어댑터가 화면을 세우려면
+  TS 쪽이 필요하다. 갈라지는 것을 막으려고 검사가 **같은 고정 입력**(chairman 37 / ceo 42 /
+  rule 21 + 역산 미도달 13)을 둘에 각각 넣고 둘 다 정확히 37%를 내는지 본다.
+- **사이드바의 '관제 그룹'은 제목 없는 첫 묶음이다.** 이 저장소에 '관제'라는 제목의 그룹은
+  없다. 회장이 매일 보는 항목이 모인 첫 묶음에 '의존'을 넣었고, 블록 E가 사이드바를 10개로
+  갈아 끼울 때 06 SUCCESSION이 된다.
