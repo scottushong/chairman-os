@@ -9,9 +9,15 @@ import { PHOTO_BUCKET, photoPath } from '@/lib/profile-photo'
 import { needsSubstringSearch, type SearchHit } from '@/lib/search'
 
 import type {
+  AbsenceTest,
   AiNightOutput,
   Alert,
   AppNotification,
+  AutonomyAssessment,
+  ChairmanDirection,
+  DependencyArea,
+  FounderDependencyRow,
+  InterventionRow,
   MyProfile,
   MyProfilePatch,
   NotificationInbox,
@@ -80,9 +86,13 @@ import {
   DUPLICATE_ACCOUNT_CODE,
   DUPLICATE_BUSINESS_ID,
   DUPLICATE_INVITATION,
+  type AbsenceTestInput,
   type AccountPatch,
   type ActivityWeek,
   type AuditActor,
+  type AutonomyAssessmentInput,
+  type ChairmanDirectionInput,
+  type DependencyAreaInput,
   type AuditEntityTable,
   type ChairmanCheckinInput,
   type ChairmanProjectInput,
@@ -3716,7 +3726,262 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       if (error) throw new Error(`Supabase activity_digest ${error.code ?? '?'}: ${error.message}`)
       return data ?? null
     },
+
+    /* -------------------------------------------------------------- 블록 A 승계 */
+
+    async listDependencyAreas(): Promise<DependencyArea[]> {
+      const { data, error } = await sb
+        .from('dependency_areas')
+        .select(DEPENDENCY_AREA_COLUMNS)
+        .order('business_id')
+        .order('sort_order')
+        .returns<DependencyArea[]>()
+      return unwrap('dependency_areas', data, error)
+    },
+
+    async listAutonomyAssessments(): Promise<AutonomyAssessment[]> {
+      const { data, error } = await sb
+        .from('autonomy_assessments')
+        .select('id,business_id,quarter,level,assessed_by,note')
+        .order('business_id')
+        .order('quarter', { ascending: false })
+        .returns<AutonomyAssessment[]>()
+      return unwrap('autonomy_assessments', data, error)
+    },
+
+    async listAbsenceTests(): Promise<AbsenceTest[]> {
+      const { data, error } = await sb
+        .from('absence_tests')
+        .select('id,business_id,days,scheduled_on,result,note')
+        .order('business_id')
+        .order('scheduled_on')
+        .returns<AbsenceTest[]>()
+      return unwrap('absence_tests', data, error)
+    },
+
+    async listChairmanDirections(): Promise<ChairmanDirection[]> {
+      const { data, error } = await sb
+        .from('chairman_directions')
+        .select(DIRECTION_COLUMNS)
+        .order('business_id')
+        .returns<ChairmanDirection[]>()
+      return unwrap('chairman_directions', data, error)
+    },
+
+    /**
+     * §7 지표. 뷰가 계산한다 — 여기서 다시 세지 않는다.
+     * 뷰는 security_invoker라 **RLS를 우회하지 않는다**(0033 9절에 그 대가를 적었다).
+     */
+    async listFounderDependency(): Promise<FounderDependencyRow[]> {
+      const { data, error } = await sb
+        .from('founder_dependency')
+        .select(
+          'business_id,period,chairman_count,ceo_count,rule_count,total_count,unknown_count,dependency_pct',
+        )
+        .order('business_id')
+        .order('period')
+        .returns<FounderDependencyRow[]>()
+      return unwrap('founder_dependency', data, error)
+    },
+
+    /** 회장 세션이 아니면 0행으로 온다(audit_log의 FORCE RLS). 화면이 그 사실을 말한다. */
+    async listInterventions(): Promise<InterventionRow[]> {
+      const { data, error } = await sb
+        .from('interventions')
+        .select('business_id,period,kind,count')
+        .order('period')
+        .returns<InterventionRow[]>()
+      return unwrap('interventions', data, error)
+    },
+
+    /**
+     * 의존 영역 한 줄. (business_id, area)가 자연키라 upsert다 —
+     * 화면은 '가격 결정'을 고치는 것이지 '3번 행'을 고치는 것이 아니다.
+     *
+     * 권한은 보지 않는다. 0033의 dependency_areas_write가 can_write_succession()을 본다.
+     * 기록이 먼저다(recordDecisionAction과 같은 순서·같은 이유).
+     */
+    async saveDependencyArea(input: DependencyAreaInput, actor: AuditActor): Promise<DependencyArea> {
+      const { data: before } = await sb
+        .from('dependency_areas')
+        .select(DEPENDENCY_AREA_COLUMNS)
+        .eq('business_id', input.business_id)
+        .eq('area', input.area)
+        .maybeSingle<DependencyArea>()
+
+      await writeAudit(sb, {
+        action: before ? 'update' : 'create',
+        entity_table: 'dependency_areas',
+        entity_id: `${input.business_id}:${input.area}`,
+        business_id: input.business_id,
+        actor,
+        before,
+        after: input,
+      })
+
+      const row = {
+        business_id: input.business_id,
+        area: input.area,
+        area_en: input.area_en ?? before?.area_en ?? null,
+        level: input.level,
+        transfer_status: input.transfer_status,
+        target_date: input.target_date,
+        note: input.note,
+        sort_order: input.sort_order ?? before?.sort_order ?? 99,
+      }
+      const { data, error } = await sb
+        .from('dependency_areas')
+        .upsert(row, { onConflict: 'business_id,area' })
+        .select(DEPENDENCY_AREA_COLUMNS)
+        .single<DependencyArea>()
+      if (error) {
+        throw new Error(
+          `Supabase dependency_areas ${error.code ?? '?'}: ${error.message} ` +
+            '(감사 기록은 남았고 영역은 바뀌지 않았다. 0033 dependency_areas_write를 본다.)',
+        )
+      }
+      return data
+    },
+
+    async saveAutonomyAssessment(
+      input: AutonomyAssessmentInput,
+      actor: AuditActor,
+    ): Promise<AutonomyAssessment> {
+      const { data: before } = await sb
+        .from('autonomy_assessments')
+        .select('id,business_id,quarter,level,assessed_by,note')
+        .eq('business_id', input.business_id)
+        .eq('quarter', input.quarter)
+        .maybeSingle<AutonomyAssessment>()
+
+      await writeAudit(sb, {
+        action: before ? 'update' : 'create',
+        entity_table: 'autonomy_assessments',
+        entity_id: `${input.business_id}:${input.quarter}`,
+        business_id: input.business_id,
+        actor,
+        before,
+        after: input,
+      })
+
+      const { data, error } = await sb
+        .from('autonomy_assessments')
+        .upsert(
+          { ...input, assessed_by: actor.user_id ?? null },
+          { onConflict: 'business_id,quarter' },
+        )
+        .select('id,business_id,quarter,level,assessed_by,note')
+        .single<AutonomyAssessment>()
+      if (error) {
+        throw new Error(`Supabase autonomy_assessments ${error.code ?? '?'}: ${error.message}`)
+      }
+      return data
+    },
+
+    async saveAbsenceTest(input: AbsenceTestInput, actor: AuditActor): Promise<AbsenceTest> {
+      const { data: before } = await sb
+        .from('absence_tests')
+        .select('id,business_id,days,scheduled_on,result,note')
+        .eq('business_id', input.business_id)
+        .eq('days', input.days)
+        .eq('scheduled_on', input.scheduled_on)
+        .maybeSingle<AbsenceTest>()
+
+      await writeAudit(sb, {
+        action: before ? 'update' : 'create',
+        entity_table: 'absence_tests',
+        entity_id: `${input.business_id}:${input.days}:${input.scheduled_on}`,
+        business_id: input.business_id,
+        actor,
+        before,
+        after: input,
+      })
+
+      const { data, error } = await sb
+        .from('absence_tests')
+        .upsert(input, { onConflict: 'business_id,days,scheduled_on' })
+        .select('id,business_id,days,scheduled_on,result,note')
+        .single<AbsenceTest>()
+      if (error) throw new Error(`Supabase absence_tests ${error.code ?? '?'}: ${error.message}`)
+      return data
+    },
+
+    /**
+     * Direction·Letter. **보낸 칸만 바꾼다.** §21의 일곱 칸은 한 번에 다 쓰는 것이 아니라
+     * 회장이 생각날 때 한 칸씩 채우는 것이라, 전부 덮으면 다른 칸이 조용히 지워진다.
+     */
+    async saveChairmanDirection(
+      input: ChairmanDirectionInput,
+      actor: AuditActor,
+    ): Promise<ChairmanDirection> {
+      const { business_id, ...patch } = input
+      const { data: before } = await sb
+        .from('chairman_directions')
+        .select(DIRECTION_COLUMNS)
+        .eq('business_id', business_id)
+        .maybeSingle<ChairmanDirection>()
+
+      const fields = Object.fromEntries(
+        Object.entries(patch).filter(([, v]) => v !== undefined),
+      )
+
+      await writeAudit(sb, {
+        action: before ? 'update' : 'create',
+        entity_table: 'chairman_directions',
+        entity_id: business_id,
+        business_id,
+        actor,
+        before,
+        after: fields,
+      })
+
+      const { data, error } = await sb
+        .from('chairman_directions')
+        .upsert({ business_id, ...fields, updated_by: actor.user_id ?? null }, { onConflict: 'business_id' })
+        .select(DIRECTION_COLUMNS)
+        .single<ChairmanDirection>()
+      if (error) {
+        throw new Error(`Supabase chairman_directions ${error.code ?? '?'}: ${error.message}`)
+      }
+      return data
+    },
   }
+}
+
+const DEPENDENCY_AREA_COLUMNS =
+  'id,business_id,area,area_en,level,transfer_status,target_date,note,sort_order'
+const DIRECTION_COLUMNS =
+  'business_id,five_year,priorities,do_not,contact_when,why_own,capital_philosophy,cares_about,not_managed,red_lines,letter,updated_at'
+
+/**
+ * 승계 표 넷의 감사 기록 한 줄. **기록이 먼저다** — 상태만 바뀌고 기록이 없는 순간이
+ * 생기면 그것이 감사 구멍이다(recordDecisionAction과 같은 판단·같은 순서).
+ *
+ * 새 audit_action 값을 만들지 않는다. create/update는 0001에 있다.
+ */
+async function writeAudit(
+  sb: SupabaseClient,
+  entry: {
+    action: 'create' | 'update'
+    entity_table: string
+    entity_id: string
+    business_id: string
+    actor: AuditActor
+    before: unknown
+    after: unknown
+  },
+) {
+  const { error } = await sb.from('audit_log').insert({
+    action: entry.action,
+    entity_table: entry.entity_table,
+    entity_id: entry.entity_id,
+    business_id: entry.business_id,
+    actor_user_id: entry.actor.user_id,
+    actor_role: entry.actor.role,
+    before: entry.before ?? null,
+    after: entry.after ?? null,
+  })
+  if (error) throw new Error(`Supabase audit_log ${error.code ?? '?'}: ${error.message}`)
 }
 
 /** user_settings의 내 행에 칸 몇 개만 얹는다. saveUserSettings와 같은 모양·같은 이유다. */

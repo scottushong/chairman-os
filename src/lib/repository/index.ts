@@ -7,9 +7,13 @@ import { createSupabaseRepository } from './supabase'
 import type { ChairmanRepository } from './types'
 
 export type {
+  AbsenceTestInput,
   AccountPatch,
   AuditActor,
+  AutonomyAssessmentInput,
+  ChairmanDirectionInput,
   ChairmanProjectInput,
+  DependencyAreaInput,
   ChairmanRepository,
   DashboardSnapshot,
   DecisionAuditEntry,

@@ -5,9 +5,20 @@ import type { CorrectionResult, NewCorrection, NewJournalEntry } from '@/lib/led
 import type { DecisionAuditRecord, DecisionAction } from '@/lib/decision-log'
 import type { SearchHit } from '@/lib/search'
 import type {
+  AbsenceDays,
+  AbsenceResult,
+  AbsenceTest,
   Account,
   AiNightOutput,
   Alert,
+  AutonomyAssessment,
+  AutonomyLevel,
+  ChairmanDirection,
+  DependencyArea,
+  DependencyLevel,
+  FounderDependencyRow,
+  InterventionRow,
+  TransferStatus,
   Business,
   BusinessStatus,
   BusinessKeyman,
@@ -441,6 +452,105 @@ export interface ChairmanRepository {
    * 일이다. 그래서 요약이 표로 따로 산다. 없으면(그 주에 기록이 없으면) null.
    */
   getActivityWeek(): Promise<ActivityWeek | null>
+
+  /* ---------------------------------------------------------------- 블록 A 승계 */
+
+  /**
+   * §7+§11 의존 영역. 0033 dependency_areas.
+   * level·transfer_status는 **null일 수 있다** — 'LOW'도 'not_started'도 아닌 '아직 없음'이다.
+   */
+  listDependencyAreas(): Promise<DependencyArea[]>
+
+  /** §9 분기 자율성 평가. 평가가 없는 회사는 행이 아예 없다 — 화면이 추정하지 않는다. */
+  listAutonomyAssessments(): Promise<AutonomyAssessment[]>
+
+  /** §12 부재 테스트. pending(예정)도 같은 표에 있다. */
+  listAbsenceTests(): Promise<AbsenceTest[]>
+
+  /** §20+§21 Direction·Letter. 회사당 한 줄, 없으면 목록에 없다. */
+  listChairmanDirections(): Promise<ChairmanDirection[]>
+
+  /**
+   * §7 지표. 0033 뷰 founder_dependency(회사 × 월 · KST).
+   *
+   * 뷰가 security_invoker라 **보는 사람의 RLS가 그대로 걸린다.** 회장이 아닌 사람은
+   * 0026의 다섯 번째 겹 때문에 자기에게 보이는 결정만으로 계산된 값을 볼 수 있다 —
+   * 화면이 그 사실을 적는다. definer로 우회하는 길은 만들지 않았다.
+   */
+  listFounderDependency(): Promise<FounderDependencyRow[]>
+
+  /**
+   * §7·§34 회장 개입. 0033 뷰 interventions.
+   *
+   * **회장 세션이 아니면 0행이다.** audit_log의 FORCE RLS + audit_log_read 때문이고
+   * (회장은 누구의 subtree에도 없다), 그 정책을 넓히는 것은 블록 7이 지킨 것을 무너뜨린다.
+   * 화면은 0건이라고 말하지 않고 '회장 계정에서만 집계됩니다'라고 말한다.
+   */
+  listInterventions(): Promise<InterventionRow[]>
+
+  /** 의존 영역 한 줄 저장(신규·수정). Chairman·GroupCFO만. */
+  saveDependencyArea(input: DependencyAreaInput, actor: AuditActor): Promise<DependencyArea>
+
+  /** 분기 자율성 평가 저장. 같은 분기에 두 번 넣으면 덮어쓴다. */
+  saveAutonomyAssessment(
+    input: AutonomyAssessmentInput,
+    actor: AuditActor,
+  ): Promise<AutonomyAssessment>
+
+  /** 부재 테스트 저장(예정 등록 · 결과 기록). */
+  saveAbsenceTest(input: AbsenceTestInput, actor: AuditActor): Promise<AbsenceTest>
+
+  /** Direction·Letter 저장. 보낸 칸만 바꾼다 — 안 보낸 칸은 그대로 둔다. */
+  saveChairmanDirection(
+    input: ChairmanDirectionInput,
+    actor: AuditActor,
+  ): Promise<ChairmanDirection>
+}
+
+/** 0033 dependency_areas 한 줄의 입력. id가 없으면 신규다(business_id+area로 덮어쓴다). */
+export interface DependencyAreaInput {
+  business_id: string
+  area: string
+  area_en?: string | null
+  level: DependencyLevel | null
+  transfer_status: TransferStatus | null
+  target_date: string | null
+  note: string | null
+  sort_order?: number
+}
+
+export interface AutonomyAssessmentInput {
+  business_id: string
+  /** YYYY-Qn */
+  quarter: string
+  level: AutonomyLevel
+  note: string | null
+}
+
+export interface AbsenceTestInput {
+  business_id: string
+  days: AbsenceDays
+  scheduled_on: string
+  result: AbsenceResult
+  note: string | null
+}
+
+/**
+ * Direction 저장. **보낸 칸만 바꾼다.** 전부 덮으면 편집 화면 한 곳에서 저장할 때마다
+ * 다른 화면이 채운 칸이 지워진다(§21의 일곱 칸은 한 번에 다 쓰는 것이 아니다).
+ */
+export interface ChairmanDirectionInput {
+  business_id: string
+  five_year?: string | null
+  priorities?: string[]
+  do_not?: string[]
+  contact_when?: string[]
+  why_own?: string | null
+  capital_philosophy?: string | null
+  cares_about?: string[]
+  not_managed?: string[]
+  red_lines?: string[]
+  letter?: string | null
 }
 
 /** 사진 바이트 한 장. LogoUpload와 같은 모양이다(파일은 Server Action 직렬화를 못 탄다). */

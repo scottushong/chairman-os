@@ -14,6 +14,7 @@ import {
 import { ACTIVITY_DEDUP_MINUTES, ACTIVITY_RETENTION_DAYS, type ActivityEvent } from '@/lib/activity'
 import type { EntityAuditRecord } from '@/lib/audit-log'
 import { kstToday } from '@/lib/chairman-project'
+import { founderDependency } from '@/lib/dependency'
 import { AUDIT_ACTION, DECISION_STATUS, type DecisionAuditRecord } from '@/lib/decision-log'
 import { dayKey } from '@/lib/format'
 import { logoPath } from '@/lib/initiative-logo'
@@ -21,6 +22,14 @@ import { photoPath } from '@/lib/profile-photo'
 import { kpisFromLedger } from '@/lib/ledger/cells'
 
 import { dummyActivitySeed } from './dummy-activity'
+import {
+  DUMMY_ABSENCE_TESTS,
+  DUMMY_AUTONOMY,
+  DUMMY_DEPENDENCY_AREAS,
+  DUMMY_DIRECTIONS,
+  dummyDecisionRows,
+  dummyInterventions,
+} from './dummy-succession'
 import * as books from './dummy-books'
 import { dummyLedger } from './dummy-books'
 import {
@@ -36,6 +45,7 @@ import {
   dummyPerson,
   dummySharedWithMe,
   dummyViewer,
+  dummyViewerId,
 } from './dummy-org'
 import { emptyStrategy } from '@/lib/strategy-fields'
 import type { SearchHit } from '@/lib/search'
@@ -43,7 +53,11 @@ import { needsChairmanApproval } from '@/types'
 import type {
   AppNotification,
   Business,
+  AbsenceTest,
+  AutonomyAssessment,
   BusinessKeyman,
+  ChairmanDirection,
+  DependencyArea,
   MyProfile,
   MyProfilePatch,
   NotificationInbox,
@@ -79,10 +93,14 @@ import {
   DUPLICATE_BUSINESS_ID,
   DUPLICATE_INVITATION,
   DUPLICATE_SHARE,
+  type AbsenceTestInput,
   type AuditActor,
   type AuditEntityTable,
+  type AutonomyAssessmentInput,
   type ChairmanCheckinInput,
+  type ChairmanDirectionInput,
   type ChairmanProjectInput,
+  type DependencyAreaInput,
   type ChairmanRepository,
   type DecisionAuditEntry,
   type EventInput,
@@ -207,6 +225,39 @@ const memoryInvitations: UserInvitation[] = DUMMY_INVITATION_SEED.map((i) => ({ 
  * 더는 정답이 아니기 때문이다 — 조직도 화면과 검증 a~f를 눈으로 볼 방법이 없어진다.
  * 화면에서 옮긴 자리(역할·팀·상사)와 회수는 서버가 살아 있는 동안만 남는다.
  */
+/**
+ * 블록 A. 승계 자료의 dummy 저장소.
+ *
+ * 화면에서 고친 것은 서버가 살아 있는 동안만 남는다(다른 memory…와 같다). 읽기·쓰기
+ * 게이트는 0033의 RLS와 **같은 모양**으로 둔다 — dummy가 더 관대하면 dummy에서 본 화면이
+ * 거짓이 되고, 그 거짓은 live로 넘어가는 날에야 드러난다.
+ */
+const memoryDependencyAreas: DependencyArea[] = DUMMY_DEPENDENCY_AREAS.map((r) => ({ ...r }))
+const memoryAutonomy: AutonomyAssessment[] = DUMMY_AUTONOMY.map((r) => ({ ...r }))
+const memoryAbsenceTests: AbsenceTest[] = DUMMY_ABSENCE_TESTS.map((r) => ({ ...r }))
+const memoryDirections: ChairmanDirection[] = DUMMY_DIRECTIONS.map((r) => ({ ...r }))
+
+/** 0033 can_read_succession(). 역할 기반이다 — subtree가 아니다. */
+function canReadSuccession(businessId: string): boolean {
+  const viewer = dummyViewer()
+  if (viewer.role === 'Chairman' || viewer.role === 'GroupCFO') return true
+  if (viewer.role === 'BusinessCEO') return dummyHasBusiness(viewer, businessId)
+  return false
+}
+
+/** 0033 can_write_succession(). CEO는 자기 회사도 읽기까지다(원문). */
+function canWriteSuccession(): boolean {
+  const role = dummyViewer().role
+  return role === 'Chairman' || role === 'GroupCFO'
+}
+
+/** 권한 밖의 쓰기는 조용히 넘어가지 않는다. live에서는 42501 대신 0행이 온다. */
+function assertSuccessionWrite() {
+  if (!canWriteSuccession()) {
+    throw new Error('승계 자료는 Chairman·GroupCFO만 고칠 수 있다(0033 can_write_succession).')
+  }
+}
+
 const memoryPeople: UserAccount[] = DUMMY_PEOPLE.map((p) => ({ ...p }))
 const memoryTeams: Team[] = DUMMY_TEAMS.map((t) => ({ ...t }))
 const memoryShares: ShareRecord[] = DUMMY_SHARE_SEED.map((s) => ({ ...s }))
@@ -1544,6 +1595,126 @@ export const dummyRepository: ChairmanRepository = {
    * 프로세스 메모리에만 쌓는다. 서버를 재시작하면 사라진다.
    * 조용히 '저장됐다'고 넘어가면 그 사실이 가려지므로 개발 중에는 매번 경고를 남긴다.
    */
+  /* ---------------------------------------------------------------- 블록 A 승계 */
+
+  async listDependencyAreas() {
+    return memoryDependencyAreas.filter((r) => canReadSuccession(r.business_id)).map((r) => ({ ...r }))
+  },
+
+  async listAutonomyAssessments() {
+    return memoryAutonomy.filter((r) => canReadSuccession(r.business_id)).map((r) => ({ ...r }))
+  },
+
+  async listAbsenceTests() {
+    return memoryAbsenceTests.filter((r) => canReadSuccession(r.business_id)).map((r) => ({ ...r }))
+  },
+
+  async listChairmanDirections() {
+    return memoryDirections.filter((r) => canReadSuccession(r.business_id)).map((r) => ({ ...r }))
+  },
+
+  /**
+   * §7 지표. **식은 lib/dependency.ts의 founderDependency() 하나뿐이다** — 0033의 뷰와
+   * 같은 규칙이고, 검사가 같은 고정 입력으로 둘을 맞춰 본다. 여기서 다시 세지 않는다.
+   */
+  async listFounderDependency() {
+    return founderDependency(dummyDecisionRows()).filter((r) => canReadSuccession(r.business_id))
+  },
+
+  /**
+   * **회장 세션이 아니면 0건이다.** live에서는 audit_log의 FORCE RLS가 그렇게 만든다
+   * (회장은 누구의 subtree에도 없다). dummy가 더 관대하면 화면이 거짓을 배운다.
+   */
+  async listInterventions() {
+    if (dummyViewer().role !== 'Chairman') return []
+    return dummyInterventions(dummyDecisionRows())
+  },
+
+  async saveDependencyArea(input: DependencyAreaInput) {
+    assertSuccessionWrite()
+    const at = memoryDependencyAreas.findIndex(
+      (r) => r.business_id === input.business_id && r.area === input.area,
+    )
+    const next: DependencyArea = {
+      id: at >= 0 ? memoryDependencyAreas[at].id : memoryDependencyAreas.length + 1,
+      business_id: input.business_id,
+      area: input.area,
+      area_en: input.area_en ?? (at >= 0 ? memoryDependencyAreas[at].area_en : null),
+      level: input.level,
+      transfer_status: input.transfer_status,
+      target_date: input.target_date,
+      note: input.note,
+      sort_order: input.sort_order ?? (at >= 0 ? memoryDependencyAreas[at].sort_order : 99),
+    }
+    if (at >= 0) memoryDependencyAreas[at] = next
+    else memoryDependencyAreas.push(next)
+    return { ...next }
+  },
+
+  async saveAutonomyAssessment(input: AutonomyAssessmentInput) {
+    assertSuccessionWrite()
+    const at = memoryAutonomy.findIndex(
+      (r) => r.business_id === input.business_id && r.quarter === input.quarter,
+    )
+    const next: AutonomyAssessment = {
+      id: at >= 0 ? memoryAutonomy[at].id : memoryAutonomy.length + 1,
+      business_id: input.business_id,
+      quarter: input.quarter,
+      level: input.level,
+      assessed_by: dummyViewerId(),
+      note: input.note,
+    }
+    if (at >= 0) memoryAutonomy[at] = next
+    else memoryAutonomy.push(next)
+    return { ...next }
+  },
+
+  async saveAbsenceTest(input: AbsenceTestInput) {
+    assertSuccessionWrite()
+    const at = memoryAbsenceTests.findIndex(
+      (r) =>
+        r.business_id === input.business_id &&
+        r.days === input.days &&
+        r.scheduled_on === input.scheduled_on,
+    )
+    const next: AbsenceTest = {
+      id: at >= 0 ? memoryAbsenceTests[at].id : memoryAbsenceTests.length + 1,
+      ...input,
+    }
+    if (at >= 0) memoryAbsenceTests[at] = next
+    else memoryAbsenceTests.push(next)
+    return { ...next }
+  },
+
+  /** 보낸 칸만 바꾼다. 전부 덮으면 §21의 다른 칸이 조용히 지워진다. */
+  async saveChairmanDirection(input: ChairmanDirectionInput) {
+    assertSuccessionWrite()
+    const { business_id, ...patch } = input
+    const at = memoryDirections.findIndex((r) => r.business_id === business_id)
+    const base: ChairmanDirection =
+      at >= 0
+        ? memoryDirections[at]
+        : {
+            business_id,
+            five_year: null,
+            priorities: [],
+            do_not: [],
+            contact_when: [],
+            why_own: null,
+            capital_philosophy: null,
+            cares_about: [],
+            not_managed: [],
+            red_lines: [],
+            letter: null,
+            updated_at: null,
+          }
+    const fields = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined))
+    const next: ChairmanDirection = { ...base, ...fields, updated_at: new Date().toISOString() }
+    if (at >= 0) memoryDirections[at] = next
+    else memoryDirections.push(next)
+    return { ...next }
+  },
+
   async recordDecisionAction(entry: DecisionAuditEntry) {
     const decision = [...decisions, ...memoryDecisions].find(
       (item) => item.decision_id === entry.decision_id,
