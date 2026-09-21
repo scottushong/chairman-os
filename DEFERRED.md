@@ -1235,3 +1235,13 @@ production에서 같은 속도라는 보장이 없다.
   이 저장소가 바로 이 질문을 재려고 고른 도구이고(`check-migrations.ts`
   `definerUnderNonBypassOwner()`, 0023:107), superuser 하네스보다 엄격한 쪽이다.
   staging 적용 뒤 실제 소유자에서 한 번 더 보는 것이 남았다.
+- **staging 적용은 끝났다(2026-09-21). 남은 것은 실계정 확인 하나다.**
+  `npm run db:push:staging`로 0033·0034가 `itpenmxyracfhyormcep`에 올라갔고 로컬 33개와
+  원격이 일치한다. 마이그레이션이 한 트랜잭션이라 backfill 창과 트리거 생성은 **성공으로
+  증명됐다** — 실패했으면 push 자체가 깨졌다. 아직 못 잰 것은 **행동**이다:
+  실제 Supabase 소유자에서 `founder_dependency_rows()`가 GroupCFO 세션에 행을 주는가.
+  그것은 staging에 GroupCFO 계정이 있어야 잴 수 있고(D-17의 '부트스트랩 계정'이 그 자리다),
+  계정은 Dashboard에서 손으로 만든다(D-15 결정 — service_role은 도입하지 않는다).
+  **그 계정이 생기는 날 `/dependency`를 GroupCFO로 한 번 열어 개입 칸에 숫자가 뜨는지 본다.**
+  0행이면 이 블록의 전제가 staging에서 틀린 것이고, 그때는 0034를 되돌린다(정책을 한 글자도
+  안 바꿨으므로 표를 드롭하고 뷰를 audit_log 직독으로 되돌리면 끝이다).
