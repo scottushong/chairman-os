@@ -13,6 +13,7 @@ import { Icon } from '@/components/ui/icon'
 import { recordScreenRead } from '@/lib/activity-record'
 import { currentUser } from '@/lib/auth/session'
 import { kstToday } from '@/lib/chairman-project'
+import { summarizeDependency } from '@/lib/dependency'
 import { orderInitiatives } from '@/lib/initiative'
 import { resolveLocation } from '@/lib/geo'
 import { getRepository, loadDashboard } from '@/lib/repository'
@@ -74,6 +75,30 @@ export default async function DashboardPage() {
   const companyProgress = await repo.listCompanyProgress(
     data.businesses.map((b) => b.business_id),
   )
+
+  /**
+   * 블록 A. 의존도 카드가 쓰는 한 줄. **여기서 한 번만 접는다** — /dependency도 같은
+   * summarizeDependency()를 쓰고, 두 화면이 각자 접으면 같은 회사가 두 숫자를 갖는다.
+   *
+   * 개입 건수는 회장 세션에서만 나온다(0033 10절: audit_log의 FORCE RLS). 그래서
+   * 0건을 '0'으로 그리면 안 되는 사람이 있고, 그 판정을 화면에 내려 준다.
+   */
+  const [dependencyRows, interventionRows, dependencyAreas, autonomyRows, absenceRows] =
+    await Promise.all([
+      repo.listFounderDependency(),
+      repo.listInterventions(),
+      repo.listDependencyAreas(),
+      repo.listAutonomyAssessments(),
+      repo.listAbsenceTests(),
+    ])
+  const dependency = summarizeDependency({
+    businessIds: data.businesses.map((b) => b.business_id),
+    dependency: dependencyRows,
+    interventions: interventionRows,
+    areas: dependencyAreas,
+    autonomy: autonomyRows,
+    tests: absenceRows,
+  })
 
   return (
     <div id="dash-top" className="mx-auto max-w-[1600px] px-6 py-5">
@@ -159,6 +184,8 @@ export default async function DashboardPage() {
           initiativeSummary={initiativeSummary}
           initiativeLogoUrls={initiativeLogoUrls}
           initiativeCount={activeInitiatives.length}
+          dependency={dependency}
+          canSeeInterventions={user?.role === 'Chairman'}
           today={todayIso}
         />
       </div>

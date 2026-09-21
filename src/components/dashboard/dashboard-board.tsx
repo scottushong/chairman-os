@@ -12,12 +12,14 @@ import {
 import { BusinessCard, type BusinessMetrics } from '@/components/dashboard/business-card'
 import { FinanceTrend } from '@/components/dashboard/finance-trend'
 import { KpiStrip } from '@/components/dashboard/kpi-strip'
+import { DependencyCard } from '@/components/dependency/dependency-card'
 import { ProcessChartCard } from '@/components/dashboard/process-chart-card'
 import { InitiativeCards } from '@/components/initiatives/initiative-cards'
 import { Icon } from '@/components/ui/icon'
 import { effectivePinned } from '@/lib/business-pins'
 import { groupFigure, hasFinanceData, latestPeriodOf, valueOf } from '@/lib/finance'
 import type { UserSettings } from '@/lib/repository'
+import type { DependencySummary } from '@/lib/dependency'
 import type { Business, FinanceKpi, Initiative, IsoDate, ProcessChart } from '@/types'
 
 /**
@@ -66,6 +68,14 @@ interface DashboardBoardProps {
   initiativeLogoUrls: Record<string, string>
   /** 요약이 아닌 전체 '진행 중' 건수. 헤더 줄의 'N / M건'에 쓴다. */
   initiativeCount: number
+  /**
+   * 블록 A. 회사별 의존도 요약. **여기서 계산하지 않는다** — /dependency와 같은
+   * summarizeDependency()의 결과를 page.tsx가 내려 준다. 두 화면이 각자 접으면
+   * 같은 회사가 두 숫자를 갖게 되고, 회장은 둘 다 안 믿게 된다.
+   */
+  dependency: DependencySummary[]
+  /** 회장 세션인가. 개입 건수는 회장 계정에서만 집계된다(0033 10절). */
+  canSeeInterventions: boolean
   today: IsoDate
 }
 
@@ -90,6 +100,8 @@ export function DashboardBoard({
   initiativeSummary,
   initiativeLogoUrls,
   initiativeCount,
+  dependency,
+  canSeeInterventions,
   today,
 }: DashboardBoardProps) {
   const [hidden, setHidden] = useState<string[]>(settings.hidden_businesses)
@@ -225,10 +237,18 @@ export function DashboardBoard({
         </section>
       ) : null}
 
-      {/* 3줄 — 프로세스차트. 높이는 카드가 스스로 확보한다(시트가 읽혀야 한다). */}
+      {/* 3줄 — 의존도 (블록 A · §7). 원문이 자리를 지정했다: 이니셔티브와 프로세스차트 사이, 전폭.
+          회장이 하루에 처음 여는 화면에서 "내가 없으면 얼마나 도나"가 한 줄로 보여야 한다. */}
+      <DependencyCard
+        rows={dependency}
+        businesses={businesses}
+        canSeeInterventions={canSeeInterventions}
+      />
+
+      {/* 4줄 — 프로세스차트. 높이는 카드가 스스로 확보한다(시트가 읽혀야 한다). */}
       <ProcessChartCard charts={processCharts} businesses={businesses} />
 
-      {/* 4줄 — 내 비즈니스 (가로 5열) */}
+      {/* 5줄 — 내 비즈니스 (가로 5열) */}
       <section aria-label="내 비즈니스">
         {/* 이 줄도 카드 밖(맨 배경)이다 — 아래 이니셔티브 헤더와 같은 규칙을 받는다.
             보조 숫자는 ink-muted(3.35:1)에서 ink-dim(5.73:1)으로 올린다.

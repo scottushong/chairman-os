@@ -68,6 +68,10 @@ export const NAV: readonly NavGroup[] = [
       { key: 'nav_tasks', label: '업무 관리', href: '/tasks', icon: 'clipboard', ready: true },
       // Phase 4-A. 회사 다섯 곳 밖에서 회장이 직접 굴리는 건(딜·신사업·투자유치 등).
       { key: 'nav_initiatives', label: '이니셔티브', href: '/initiatives', icon: 'target', ready: true },
+      // Phase 7 블록 A. §7 Founder Dependency. 관제 그룹(제목 없는 맨 위 묶음)에 들어간다 —
+      // 이 저장소의 사이드바에 '관제'라는 제목의 그룹은 없고, 회장이 매일 보는 항목이 모인
+      // 이 첫 묶음이 그 자리다. 블록 E가 사이드바를 10개로 갈아 끼울 때 06 SUCCESSION이 된다.
+      { key: 'nav_dependency', label: '의존', href: '/dependency', icon: 'shield', ready: true },
       {
         key: 'nav_projects', label: '프로젝트',
         href: '/projects',
