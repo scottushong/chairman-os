@@ -146,6 +146,39 @@ if (!task) notFound()      // 없는 업무도 404, 권한 밖 업무도 404
 - **`audit_log`** — `INSERT`/`SELECT` 정책만 있다. `UPDATE`/`DELETE`는 정책 자체를 안 만들어
   Default Deny로 막힌다. 트리거와 `REVOKE`까지 합쳐 3중이다. 읽는 것도 Chairman만.
 
+### security definer 문이 몇 개이고 왜 있는가
+
+RLS를 **우회하는** 함수는 이 저장소에 없다. definer 함수는 전부 «문(keyhole)»이다 —
+몸통이 스스로 같은 만큼만 판정하고, 반환 칸에 필요한 값 하나만 둔다. 그래서 세는 기준은
+"무엇을 내주는가"이지 "definer인가"가 아니다. 지금 있는 것:
+
+| 문 | 내주는 것 | 왜 표를 통째로 열지 않았나 |
+|---|---|---|
+| `chairman_today_condition()` · `chairman_recent_condition()` (0019·0023) | 오늘 컨디션 정수 하나 | 표는 Chairman 전용이고 야간 Job만 값 하나가 필요하다. `sleep_hours`·`weight_kg`는 반환 목록에 없다 |
+| `kakao_token_*()` 다섯 (0023) | 연결 상태 / 발송용 토큰 | 토큰 값을 내주는 자리는 `for_send()` 하나뿐이고 `status()`의 반환 목록에는 토큰이 아예 없다 |
+| `project_business_id()` (0027) | `business_id` 문자열 하나 | `tasks_read`의 회사 판정이 `projects`의 RLS를 타면 직원이 자기 업무를 잃는다. 이름도 담당자도 안 준다 |
+| `chairman_brief_timezone()` (0029) | 시간대 두 칸 | 야간 Job이 회장의 설정 두 칸만 필요하다 |
+| `record_read()` · `record_login_failure()` (0031) | boolean 하나 | 쓰는 문이다. 중복 억제를 DB 안에 두려고 definer다 |
+| `activity_events()` (0031) | 열람 기록 목록 | **우회가 아니다.** `audit_log`의 FORCE 때문에 definer라도 정책을 그대로 받는다 — 몸통의 `Chairman` 판정과 정책이 같은 답을 말한다 |
+| `can_read_succession()` · `can_write_succession()` (0033) | boolean 하나 | 정책이 부르는 판정 함수다 |
+| `founder_dependency_rows()` (0034) | 회사 × 월의 **숫자 여덟** | §7 의존도는 **회사의** 사실이라 계정마다 달라지면 안 된다. 결정의 제목·기안자·처리자는 반환 목록에 없다 |
+| `interventions_bump()` (0034) | (트리거) | `intervention_counts`의 쓰기 권한이 아무에게도 없어서 definer다. 사람이 부를 수 없게 `execute`를 다시 주지 않았다 |
+
+두 가지가 이 목록을 지탱한다.
+
+1. **FORCE가 걸린 표에서는 definer가 문이 되지 못한다.** FORCE는 소유자까지 정책 아래로
+   끌어내리고, Supabase의 `postgres`는 BYPASSRLS가 아니다 — definer가 **조용히 0행**을
+   받는다(0027 1절). 그래서 문을 세우는 표에서는 force를 먼저 내린다
+   (`chairman_checkins` 0023, `projects` 0027, `user_settings` 0029, `decisions` 0034).
+   **표가 열리는 것이 아니다**: enable도 정책도 그대로라 `authenticated`로 붙는 실제 경로는
+   정책을 한 줄도 빠짐없이 탄다. 내려가는 것은 '소유자도 정책을 받는가' 하나뿐이고,
+   그 자리의 자물쇠는 revoke다. `check-migrations.ts`가 이 표들을 카탈로그로 지킨다.
+2. **`audit_log`에서는 그 길을 쓰지 않는다.** 그 표에는 `read`·`login` 줄이 있다 —
+   누가 언제 무엇을 열어 봤나다. force를 내리면 앞으로 definer 하나만 잘못 써도 그 줄까지
+   닿는다. 그래서 두 번 다 **집계 전용 표**를 대신 지었다: `activity_digest`(0031)와
+   `intervention_counts`(0034). 둘 다 숫자만 들고 있고, 사람·경로·도시·`entity_id`는
+   한 칸도 없다. `audit_log_read`는 0031 이후 한 글자도 넓어지지 않았다.
+
 ### 표를 새로 만들면
 
 **같은 파일에 RLS 정책도 같이 쓴다.** 안 쓰면 아무도 못 읽는 표가 되는데,

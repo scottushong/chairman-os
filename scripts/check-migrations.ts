@@ -2080,10 +2080,14 @@ async function subtreeBackfill() {
  * chairman_recent_condition()을 같이 재는 이유: 이쪽이 더 조용하다. 토큰이 0행이면 발송이
  * 멈추지만 컨디션이 0행이면 브리핑에서 문장 하나가 빠질 뿐이라 아무도 눈치채지 못한다.
  */
-/** 0027의 실험에 쓰는 둘. rls()/H의 번호와 섞이지 않게 b번대를 쓴다. */
+/** 0027·0034의 실험에 쓰는 넷. rls()/H의 번호와 섞이지 않게 b번대를 쓴다. */
 const OW = {
   boss: '00000000-0000-0000-0000-0000000000b1',
   worker: '00000000-0000-0000-0000-0000000000b2',
+  /** 0034. 회장 직속 그룹 CFO — 회장과 같은 %를 보아야 하는 사람이다. */
+  cfo: '00000000-0000-0000-0000-0000000000b3',
+  /** 0034. 회장 직속 대표. 이 사람이 **기안자**라 0026의 다섯째 겹이 실제로 걸린다. */
+  drafter: '00000000-0000-0000-0000-0000000000b4',
 }
 
 async function definerUnderNonBypassOwner() {
@@ -2111,24 +2115,45 @@ async function definerUnderNonBypassOwner() {
   // 그러지 않으면 chairman_brief_timezone()이 AIAgent 세션에서 0행을 주고, 시간대가 조용히
   // 'Asia/Seoul'로 떨어져 회장이 뉴욕에 있어도 알림은 서울 06시에 간다. 화면에는 '자동'이라
   // 적혀 있으니 아무도 고장을 의심하지 않는다.
+  //
+  // decisions가 여기 끼어 있는 이유는 0034다. 0002:196이 걸고 0003:597이 시드 뒤에 다시 건
+  // force를 0034 2절이 내린다 — 그러지 않으면 founder_dependency_rows()가 소유자 권한으로
+  // 돌면서 decisions_read(0026의 다섯째 겹) 아래로 내려가고, **회사의 의존도가 계정마다
+  // 다른 %**로 보인다. 그리고 PGlite harness는 superuser라 그 상태를 그냥 통과시킨다.
   const forced = await db.query<{ relname: string; f: boolean }>(
     `select relname, relforcerowsecurity as f from pg_class
-      where relname in ('chairman_kakao_token', 'chairman_checkins', 'projects', 'user_settings', 'chairman_brief_sends')`,
+      where relname in ('chairman_kakao_token', 'chairman_checkins', 'projects', 'user_settings', 'chairman_brief_sends', 'decisions')`,
   )
   // 행 수부터 잰다 — 표 이름이 바뀌거나 오타가 나면 위 쿼리가 0행을 주고, 아래 for는
-  // 그냥 공회전하며 통과해 버린다(무엇도 단언하지 않은 채). 다섯을 정확히 찾았는지가 먼저다.
-  assert.equal(forced.rows.length, 5, `0023/0027/0029: force 검사가 표 다섯을 못 찾는다 (${forced.rows.map((r) => r.relname).join(', ') || '0개'})`)
+  // 그냥 공회전하며 통과해 버린다(무엇도 단언하지 않은 채). 여섯을 정확히 찾았는지가 먼저다.
+  assert.equal(forced.rows.length, 6, `0023/0027/0029/0034: force 검사가 표 여섯을 못 찾는다 (${forced.rows.map((r) => r.relname).join(', ') || '0개'})`)
   for (const row of forced.rows) {
     assert.equal(
       row.f,
       false,
       row.relname === 'projects'
         ? '0027: projects에 force row level security가 되살아났다 — project_business_id()가 소유자 권한으로 돌면서 정책 아래로 내려가 조용히 null을 주고, 직원의 업무 화면이 production에서만 빈다(0027 1절)'
-        : row.relname === 'user_settings' || row.relname === 'chairman_brief_sends'
-          ? `0029: ${row.relname}에 force row level security가 걸려 있다 — 아침 알림의 시간대 keyhole이 AIAgent 세션에서 0행을 주고, 회장이 어디 있든 서울 06시에 알림이 간다(0029 3절)`
-          : `0023: ${row.relname}에 force row level security가 걸려 있다 (definer 함수가 0행을 준다)`,
+        : row.relname === 'decisions'
+          ? '0034: decisions에 force row level security가 되살아났다 — founder_dependency의 집계 문이 소유자 권한으로 돌면서 정책 아래로 내려가, 회사의 의존도가 계정마다 다른 %로 보인다'
+          : row.relname === 'user_settings' || row.relname === 'chairman_brief_sends'
+            ? `0029: ${row.relname}에 force row level security가 걸려 있다 — 아침 알림의 시간대 keyhole이 AIAgent 세션에서 0행을 주고, 회장이 어디 있든 서울 06시에 알림이 간다(0029 3절)`
+            : `0023: ${row.relname}에 force row level security가 걸려 있다 (definer 함수가 0행을 준다)`,
     )
   }
+
+  // 반대쪽 단언 하나. **audit_log에는 force가 있어야 한다.**
+  // 0034 6절이 backfill을 위해 같은 트랜잭션 안에서 잠깐 열었다 닫는다 — 그 창이 닫힌 채로
+  // 커밋됐음을 다음 사람이 여기서 확인한다. 0031 2절이 이 표의 force를 내리기를 거절하고
+  // activity_digest를 지은 판단이 이 한 줄이고, 그 표에는 열람 기록(read·login)이 있다.
+  const auditForced = await db.query<{ f: boolean }>(
+    `select relforcerowsecurity as f from pg_class where relname = 'audit_log'`,
+  )
+  assert.equal(auditForced.rows.length, 1, '0034: audit_log를 못 찾는다 — 이 단언이 아무것도 재지 못한다')
+  assert.equal(
+    auditForced.rows[0].f,
+    true,
+    '0034: audit_log에서 force row level security가 사라졌다 — 6절의 backfill 창이 열린 채로 닫히지 않았거나 누가 영구히 내렸다. 그 표에는 누가 언제 무엇을 열어 봤나(read·login)가 쌓이고, 0031 2절이 지키려던 것이 이 한 줄이다',
+  )
 
   // 표와 definer 함수를 BYPASSRLS 없는 역할에게 넘긴다. Supabase에서 소유자가 무엇이든
   // 이 조건에서 동작해야 한다는 것이 요구다 — 소유자의 bypassrls에 기대지 않는다.
@@ -2159,6 +2184,11 @@ async function definerUnderNonBypassOwner() {
     -- 치웠다고 주장한다 — 그 주장을 여기서 실험으로 세운다.
     alter table public.projects                       owner to app_owner;
     alter function public.project_business_id(text)   owner to app_owner;
+    -- 0034. 같은 실험을 decisions/founder_dependency_rows()에도 건다. 0033 9절이 이 길을
+    -- 피한 이유가 정확히 이 함정이었고(그래서 뷰가 security_invoker였다), 0034 2절은
+    -- force를 먼저 내리는 것으로 치웠다고 주장한다 — 그 주장을 여기서 실험으로 세운다.
+    alter table public.decisions                      owner to app_owner;
+    alter function public.founder_dependency_rows()   owner to app_owner;
     -- 세션들이 authenticated로 돌려면 schema usage가 필요하다(main()의 rls()가 하는 일).
     -- 표 권한은 STUBS의 default privileges가 이미 줬다.
     grant usage on schema public, auth to authenticated;
@@ -2198,6 +2228,19 @@ async function definerUnderNonBypassOwner() {
     values ('prj_own', 'biz_dy', '팀장 프로젝트', '${OW.boss}');
     insert into tasks (task_id, project_id, title, owner_user_id)
     values ('tsk_own', 'prj_own', '직원 업무', '${OW.worker}');
+
+    -- 0034. 회장 직속 둘: 그룹 CFO와, 결정을 기안하는 대표.
+    -- 기안자가 **회장의 아래이면서 CFO의 아래가 아닌** 것이 이 실험의 전부다 —
+    -- 0026의 다섯째 겹(in_my_subtree(created_by))이 그 차이에서만 갈린다.
+    -- 소유자 칸이 비어 있으면 '회사 공통'으로 읽혀 누가 봐도 같은 값이 나오고,
+    -- 그 시드로 재면 아래 단언은 아무것도 재지 못한 채 늘 초록이다.
+    insert into auth.users values ('${OW.cfo}', 'b3@x'), ('${OW.drafter}', 'b4@x');
+    insert into user_profiles (user_id, role, display_name, reports_to) values
+      ('${OW.cfo}',     'GroupCFO',    '그룹 CFO', '${UID.chairman}'),
+      ('${OW.drafter}', 'BusinessCEO', '기안 대표', '${UID.chairman}');
+    insert into decisions (decision_id, business_id, title, status, decided_at, decided_by_kind, created_by) values
+      ('d34_1', 'biz_dy', '회장이 정한 건', 'Approved', timestamptz '2026-08-10 12:00+09', 'chairman', '${OW.drafter}'),
+      ('d34_2', 'biz_dy', 'CEO가 정한 건',  'Approved', timestamptz '2026-08-10 12:00+09', 'ceo',      '${OW.drafter}');
   `)
 
   async function rows(uid: string, sql: string): Promise<number> {
@@ -2224,6 +2267,7 @@ async function definerUnderNonBypassOwner() {
   const deviceTz = 'select current_tz from chairman_brief_timezone()'
   const myTasks = `select count(*)::int from tasks where task_id = 'tsk_own'`
   const bizOf = `select project_business_id('prj_own')`
+  const fdPct = `select dependency_pct from founder_dependency where business_id = 'biz_dy' and period = '2026-08'`
 
   // ① 지금 상태 — 07:00 cron이 실제로 밟는 경로다.
   assert.equal(await rows(UID.agent, forSend), 1,
@@ -2258,12 +2302,27 @@ async function definerUnderNonBypassOwner() {
   assert.equal(await value<number>(OW.worker, `select count(*)::int from projects where project_id = 'prj_own'`), 0,
     '0027: 이 실험의 전제가 깨졌다 — 팀장의 프로젝트가 직원에게 보인다면 projects에 subtree 겹이 없는 것이고, 위 두 단언은 아무것도 재지 않는다')
 
+  // ①-0034 **회사의 의존도가 보는 사람에 따라 달라지지 않는가.**
+  //   0033 9절이 "definer로 우회하는 길은 만들지 않았다"며 감수한 대가가 정확히 이것이고,
+  //   0034 2절이 decisions의 force를 내려 그 대가를 없앴다고 주장한다. 주장을 실험으로 세운다.
+  //   **재는 사람은 그룹 CFO다** — 회장으로 재면 in_my_subtree(기안자)가 통과해서
+  //   0026의 겹이 애초에 안 걸리고, 이 단언은 아무것도 재지 못한다.
+  assert.equal(await value<string>(UID.chairman, fdPct), '50.0',
+    '0034: 회장이 §7 지표를 못 받는다 — founder_dependency_rows()가 BYPASSRLS 없는 소유자에서 0행이다')
+  assert.equal(await value<string>(OW.cfo, fdPct), '50.0',
+    '0034: BYPASSRLS 없는 소유자에서 그룹 CFO가 회장과 다른 %를 본다 — 0026의 다섯째 겹이 집계에 끼어들었다. 회사의 의존도가 계정마다 달라지고, 회장은 둘 다 안 믿게 된다(0034 2·3절)')
+  // 겹이 실제로 걸려 있는 상태에서 잰 것인가. 그 결정이 CFO에게 그냥 보인다면 위 단언은
+  // "겹이 없어서" 통과한 것이고, 그러면 아무것도 재지 못한 셈이다.
+  assert.equal(await value<number>(OW.cfo, `select count(*)::int from decisions where decision_id = 'd34_1'`), 0,
+    '0034: 이 실험의 전제가 깨졌다 — 기안자가 붙은 결정이 그룹 CFO에게 직접 보인다면 decisions에 0026의 겹이 없는 것이고, 위 단언은 아무것도 재지 않는다')
+
   // ② 대조군 — force를 되살리면 정말 0행이 되는가. ①이 FORCE의 유무 때문임을 증명한다.
   await db.exec(`
     alter table public.chairman_kakao_token force row level security;
     alter table public.chairman_checkins    force row level security;
     alter table public.projects             force row level security;
     alter table public.user_settings        force row level security;
+    alter table public.decisions            force row level security;
   `)
   assert.equal(await rows(UID.agent, forSend), 0,
     '대조군이 성립하지 않는다 — force를 걸어도 AIAgent가 토큰을 받는다면 ①은 FORCE를 재고 있지 않다')
@@ -2275,6 +2334,13 @@ async function definerUnderNonBypassOwner() {
     '대조군이 성립하지 않는다 — projects에 force를 걸어도 직원이 자기 업무를 본다면 ①-0027은 0026 2-2절 ①의 함정을 재고 있지 않다')
   assert.equal(await value<string>(UID.agent, briefTz), null,
     '대조군이 성립하지 않는다 — user_settings에 force를 걸어도 AIAgent가 시간대를 받는다면 ①-0029는 0029 3절이 내린 FORCE를 재고 있지 않다')
+  // 0034. force를 되살리면 집계 문이 decisions_read 아래로 내려가, CFO에게는 그 달의
+  // 행 자체가 사라진다(기안자가 붙은 두 건이 전부 안 보인다). 회장은 그대로 50.0%다 —
+  // **같은 회사·같은 달이 계정마다 다른 값이 되는** 그 상태가 0033이 감수한 대가였다.
+  assert.equal(await value<string>(OW.cfo, fdPct), null,
+    '대조군이 성립하지 않는다 — decisions에 force를 걸어도 그룹 CFO가 같은 %를 본다면 ①-0034는 0034 2절이 내린 FORCE를 재고 있지 않다')
+  assert.equal(await value<string>(UID.chairman, fdPct), '50.0',
+    '대조군이 성립하지 않는다 — force를 건 뒤 회장까지 값을 잃으면 위 단언이 "계정마다 다르다"가 아니라 "아무도 못 본다"를 재게 된다')
 
   await db.close()
 }

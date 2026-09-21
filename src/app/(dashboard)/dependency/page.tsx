@@ -24,8 +24,10 @@ import { TRANSFER_STATUS_LABEL_KO, type AutonomyLevel } from '@/types'
  *
  * ■ 이 화면이 하지 않는 것 ■ **빈 칸을 그럴듯한 숫자로 채우지 않는다.**
  * 처리된 결정이 없으면 0%가 아니라 '아직 계산할 수 없습니다'다. 평가가 없으면 L1이
- * 아니라 '아직 평가 없음'이다. 개입 기록이 안 보이면 0건이 아니라 '회장 계정에서만
- * 집계됩니다'다 — **없는 것과 못 보는 것은 다른 사실이다.**
+ * 아니라 '아직 평가 없음'이다. 개입 기록이 안 보이면 0건이 아니라 '권한 밖이라
+ * 집계되지 않습니다'다 — **없는 것과 못 보는 것은 다른 사실이다.**
+ * 0034가 개입을 Chairman·GroupCFO·자기 회사 CEO에게 열었지만, 그 밖의 역할에게는
+ * 여전히 0행이고 그들에게 '0건'이라고 말하지 않는 규율은 그대로다.
  *
  * ■ 색(문서 §32) ■ 색이 붙는 자리는 목표(10%)를 넘은 수치뿐이다. 스파크라인도 죽인 색이다.
  * 그래프는 회사당 한 줄, 축도 눈금도 없다 — "Too many graphs"가 §32의 금지 목록에 있다.
@@ -57,11 +59,18 @@ export default async function DependencyPage() {
   const thisMonth = months[months.length - 1]
 
   /**
-   * 개입 기록은 **회장 세션에서만** 나온다(0033 10절: audit_log의 FORCE RLS + audit_log_read).
-   * 그래서 0건을 '0'으로 그리면 안 되는 사람이 있다. 그 판정을 화면이 역할로 한다 —
-   * DB가 0행을 주는 이유를 화면이 알아야 그 자리에 다른 문장을 쓸 수 있다.
+   * 개입 기록은 **Chairman·GroupCFO와 그 회사의 CEO**에게 나온다(0034 4절의
+   * `intervention_counts_read` = `can_read_succession()`). 0033에서는 회장 전용이었는데,
+   * 그것은 `audit_log`의 FORCE RLS가 만든 제약이지 원문이 아니었다 — 0034가 감사 기록을
+   * 넓히는 대신 집계 전용 표를 두어 원문의 가시성을 준다.
+   *
+   * 그래도 **Executive·TeamLead·Member에게는 여전히 0행**이다. 그들에게 0건을 '0'으로
+   * 그리면 안 되고, 그 판정을 화면이 역할로 한다 — DB가 0행을 주는 이유를 화면이 알아야
+   * 그 자리에 다른 문장을 쓸 수 있다. (CEO는 자기 회사만 보지만, 그 사람의 목록에는
+   * 애초에 자기 회사만 들어 있다 — 승계 표 넷이 같은 판정으로 걸러져 온다.)
    */
-  const canSeeInterventions = user?.role === 'Chairman'
+  const canSeeInterventions =
+    user?.role === 'Chairman' || user?.role === 'GroupCFO' || user?.role === 'BusinessCEO'
 
   // §9 GROUP KPI. 평가가 있는 회사만으로 낸다 — 없는 회사를 L1로 세면 평균이 내려간다.
   const levels = rows.map((r) => r.autonomy?.level).filter((l): l is AutonomyLevel => Boolean(l))
@@ -191,7 +200,7 @@ export default async function DependencyPage() {
                             <span className="ml-1 text-[10px] text-ink-muted">{thisMonth}</span>
                           </>
                         ) : (
-                          <span className="text-[10.5px] text-ink-muted">회장 계정에서만 집계됩니다</span>
+                          <span className="text-[10.5px] text-ink-muted">권한 밖이라 집계되지 않습니다</span>
                         )}
                       </td>
                       <td className="py-2 pr-3">
@@ -234,8 +243,9 @@ export default async function DependencyPage() {
       </Section>
 
       <p className="mt-3 text-[10px] leading-relaxed text-ink-muted">
-        이 값은 보는 사람의 권한 안에서 계산됩니다. 결정 목록에 권한 제한이 걸린 계정에서는
-        분모가 작아질 수 있습니다 — 뷰가 RLS를 우회하지 않기 때문입니다.
+        이 값은 회사의 값입니다. 같은 회사·같은 달이면 어느 계정에서 보아도 같은 수치입니다 —
+        집계는 회사 전체의 결정으로 하고, 계정에 따라 달라지는 것은 «어느 회사가 목록에
+        보이는가»뿐입니다.
       </p>
 
       <div className="pb-6" />

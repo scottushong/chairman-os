@@ -3770,7 +3770,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
 
     /**
      * §7 지표. 뷰가 계산한다 — 여기서 다시 세지 않는다.
-     * 뷰는 security_invoker라 **RLS를 우회하지 않는다**(0033 9절에 그 대가를 적었다).
+     * 0034 3절부터 **회사의 값은 보는 사람과 무관하게 같다**(집계는 소유자의 눈으로 하고,
+     * 계정은 어느 회사가 목록에 오는지만 정한다). 칸 이름은 0033과 그대로다.
      */
     async listFounderDependency(): Promise<FounderDependencyRow[]> {
       const { data, error } = await sb
@@ -3784,7 +3785,11 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       return unwrap('founder_dependency', data, error)
     },
 
-    /** 회장 세션이 아니면 0행으로 온다(audit_log의 FORCE RLS). 화면이 그 사실을 말한다. */
+    /**
+     * 0034 7절부터 이 뷰는 `intervention_counts`(집계 전용 표)를 읽는다.
+     * Chairman·GroupCFO는 전부, BusinessCEO는 자기 회사. 그 밖의 역할에는 0행으로 오고,
+     * 화면이 그것을 0건이라고 말하지 않는다. `audit_log_read`는 넓히지 않았다.
+     */
     async listInterventions(): Promise<InterventionRow[]> {
       const { data, error } = await sb
         .from('interventions')

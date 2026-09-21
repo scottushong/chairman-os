@@ -26,7 +26,7 @@ export function DependencyCard({
 }: {
   rows: DependencySummary[]
   businesses: Business[]
-  /** 회장 세션인가. 개입 건수는 회장 계정에서만 집계된다(0033 10절). */
+  /** 개입 건수를 볼 수 있는 세션인가. Chairman·GroupCFO·자기 회사 CEO다(0034 4절). */
   canSeeInterventions: boolean
 }) {
   if (rows.length === 0) return null
@@ -83,7 +83,7 @@ export function DependencyCard({
                       {canSeeInterventions ? (
                         <>이번 달 개입 {r.interventions}건</>
                       ) : (
-                        '개입은 회장 계정에서만 집계됩니다'
+                        '개입은 권한 밖이라 집계되지 않습니다'
                       )}
                     </p>
                   </>

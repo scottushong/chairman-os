@@ -471,20 +471,23 @@ export interface ChairmanRepository {
   listChairmanDirections(): Promise<ChairmanDirection[]>
 
   /**
-   * §7 지표. 0033 뷰 founder_dependency(회사 × 월 · KST).
+   * §7 지표. 뷰 founder_dependency(회사 × 월 · KST). 0034가 문을 바꿨다.
    *
-   * 뷰가 security_invoker라 **보는 사람의 RLS가 그대로 걸린다.** 회장이 아닌 사람은
-   * 0026의 다섯 번째 겹 때문에 자기에게 보이는 결정만으로 계산된 값을 볼 수 있다 —
-   * 화면이 그 사실을 적는다. definer로 우회하는 길은 만들지 않았다.
+   * **회사의 값은 보는 사람과 무관하게 같다.** 집계는 `founder_dependency_rows()`가
+   * 소유자의 눈으로 하고(0034 2절이 `decisions`의 force를 내렸다), 계정에 따라 달라지는
+   * 것은 «어느 회사가 목록에 오는가»뿐이다 — 판정은 `can_read_succession()` 하나다.
+   * 0033에서는 0026의 다섯째 겹이 분모를 계정마다 다르게 만들었다.
    */
   listFounderDependency(): Promise<FounderDependencyRow[]>
 
   /**
-   * §7·§34 회장 개입. 0033 뷰 interventions.
+   * §7·§34 회장 개입. 뷰 interventions. 0034부터 `audit_log`가 아니라 집계 전용 표
+   * `intervention_counts`를 읽는다.
    *
-   * **회장 세션이 아니면 0행이다.** audit_log의 FORCE RLS + audit_log_read 때문이고
-   * (회장은 누구의 subtree에도 없다), 그 정책을 넓히는 것은 블록 7이 지킨 것을 무너뜨린다.
-   * 화면은 0건이라고 말하지 않고 '회장 계정에서만 집계됩니다'라고 말한다.
+   * **Chairman·GroupCFO는 전부, BusinessCEO는 자기 회사.** 그 밖의 역할에는 0행이다.
+   * `audit_log_read`는 한 글자도 넓히지 않았다 — 그 표에는 열람 기록(read·login)이 있어
+   * 넓히면 블록 7이 지킨 것이 무너진다(0031 2절이 같은 자리에서 같은 판단을 했다).
+   * 0행인 역할에게 화면은 0건이라고 말하지 않고 '권한 밖이라 집계되지 않습니다'라고 말한다.
    */
   listInterventions(): Promise<InterventionRow[]>
 

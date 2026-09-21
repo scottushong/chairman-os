@@ -55,7 +55,7 @@ import {
   TRANSFER_STATUS,
   TRANSFER_STATUS_EMPTY_KO,
 } from '../src/types'
-import { applyAll, MIGRATIONS } from './pglite'
+import { applyAll, applyOne, MIGRATIONS } from './pglite'
 
 const ROOT = join(__dirname, '..')
 const src = (...p: string[]) => readFileSync(join(ROOT, 'src', ...p), 'utf8')
@@ -83,8 +83,30 @@ const BREAKS = {
   'drop-trigger': 'decisions_fill_kind 트리거를 지운다',
   /** 역산 규칙 ①을 되돌린다(역산이 한 건도 안 닿은 상태로 만든다). */
   'undo-backfill': '역산 결과를 전부 null로 되돌린다',
-  /** 뷰에서 security_invoker를 뗀다 — RLS를 우회하는 뷰가 된다. */
-  'view-definer': 'founder_dependency의 security_invoker를 끈다',
+  /**
+   * 0034가 내린 decisions의 force를 되살린다 — 집계 문이 소유자 권한으로 돌면서 정책
+   * 아래로 내려가고, 회사의 의존도가 **계정마다 다른 %**로 보인다(0027이 적은 그 함정).
+   */
+  'no-force-decisions': '0034가 내린 decisions의 force를 되살린다',
+  /**
+   * intervention_counts에 audit 줄의 내용물 칸을 더한다 — 그 순간 이 표는 audit_log의
+   * 사본이 되고, 정책을 넓히지 않고도 정책을 우회한 것이 된다.
+   */
+  'counts-leak': 'intervention_counts에 actor_user_id 칸을 더한다',
+  /**
+   * interventions 뷰에서 security_invoker를 뗀다 — 뷰가 intervention_counts의 정책을
+   * 지나가 버려서, select 권한만 있으면 누구나 전사 개입 건수를 본다.
+   * **이 블록이 실제로 금지한 것**이 그것이다(0033의 security_invoker 논쟁이 아니라).
+   */
+  'view-definer': 'interventions 뷰의 security_invoker를 끈다',
+  /** founder_dependency_rows()의 역할 게이트를 뗀다 — 게이트 없는 문으로 갈아 끼운다. */
+  'fd-gate-off': 'founder_dependency_rows()에서 can_read_succession 게이트를 뗀다',
+  /** intervention_counts의 쓰기를 authenticated에게 연다 — 집계를 사람이 고칠 수 있게 된다. */
+  'counts-write': 'intervention_counts의 쓰기를 모든 활성 사용자에게 연다',
+  /** 트리거의 예외 블록을 뗀다 — 집계가 터지면 감사 줄이 같이 사라진다. */
+  'trigger-fatal': 'interventions_bump()의 예외 블록을 떼서 집계 실패가 감사 줄을 죽이게 한다',
+  /** 0034가 채운 과거분을 지운다 — 12개월 추이가 통째로 빈다. */
+  'wipe-counts': '0034가 backfill로 채운 과거 개입 건수를 지운다',
   /** interventions가 위임을 빼고 센다 — 개입이 실제보다 적어 보인다. */
   'interventions-no-delegate': 'interventions에서 위임(delegate)을 뺀다',
   /** TS 식이 null을 ceo로 접는다. */
@@ -139,6 +161,14 @@ async function database() {
     alter table public.absence_tests         owner to app_owner;
     alter table public.chairman_directions   owner to app_owner;
     alter table public.user_profiles         owner to app_owner;
+    -- 0034. audit_log와 집계 표, 그리고 0034가 세운 문 둘을 같은 소유자로 넘긴다.
+    -- **이 소유권 이전이 0034 검사의 전부다.** superuser 하네스는 FORCE와 무관하게 RLS를
+    -- 전부 우회하므로, 이것 없이 세운 단언은 "definer가 정책을 지나가는가"를 **원리적으로
+    -- 답하지 못한다**(0027:60 — 검사가 초록인 채 production만 깨지는 모양).
+    alter table public.audit_log             owner to app_owner;
+    alter table public.intervention_counts   owner to app_owner;
+    alter function public.founder_dependency_rows() owner to app_owner;
+    alter function public.interventions_bump()      owner to app_owner;
     grant usage on schema public, auth to authenticated, anon;
   `)
   const owner = await db.query<{ s: boolean; b: boolean }>(
@@ -274,23 +304,142 @@ async function database() {
     )
   }
 
-  /** ⑤ 뷰 둘이 security_invoker다 — RLS를 우회하는 새 경로를 만들지 않는다. */
+  /**
+   * ⑤ 뷰 둘이 여전히 security_invoker다. **0034에서 이 단언의 뜻이 바뀌었다.**
+   *
+   * 0033에서 이것은 "뷰가 RLS를 우회하지 않는다"였다. 0034는 그 대가가 스펙 미달이라
+   * 문을 하나씩 만들었지만, **문은 뷰보다 한 층 아래에 두었다** — founder_dependency는
+   * 함수 몸통(can_read_succession)이, interventions는 intervention_counts의 정책이 문이다.
+   * 뷰가 definer가 되면 그 문을 뷰가 지나가 버린다: interventions는 select 권한만 있으면
+   * 누구나 전사 개입 건수를 보게 되고, founder_dependency는 함수 execute 권한이 빠진
+   * 날에도 멀쩡히 돌아 검사가 그 사실을 놓친다. 문이 둘이 되는 것도 그래서 피한다.
+   */
+  if (broke('view-definer')) {
+    await db.exec(`alter view interventions set (security_invoker = false)`)
+  }
   for (const v of ['founder_dependency', 'interventions']) {
-    if (broke('view-definer') && v === 'founder_dependency') {
-      await db.exec(`alter view founder_dependency set (security_invoker = false)`)
-    }
     const opts = await val<string[]>(null, `select reloptions from pg_class where relname = '${v}'`, 'app_owner')
     assert.ok(
       (opts ?? []).includes('security_invoker=true'),
-      `뷰 ${v}에 security_invoker=true가 없다 — 뷰가 RLS를 우회한다(reloptions=${JSON.stringify(opts)})`,
+      `뷰 ${v}에 security_invoker=true가 없다 — 문이 뷰보다 위로 올라갔다. 0034는 판정을 함수 몸통과 intervention_counts 정책에 두었고, 뷰가 definer면 그 문을 지나간다(reloptions=${JSON.stringify(opts)})`,
     )
   }
 
-  /** ⑥ anon에게는 새 표 넷과 뷰 둘의 권한이 없다. 자물쇠는 revoke다. */
-  for (const t of ['dependency_areas', 'autonomy_assessments', 'absence_tests', 'chairman_directions', 'founder_dependency', 'interventions']) {
+  /**
+   * ⑤-a **0034가 내린 decisions의 force가 그대로 내려가 있다.**
+   *    되살아나면 founder_dependency_rows()가 소유자 권한으로 돌면서 decisions_read 아래로
+   *    내려가고, 회사의 의존도가 계정마다 다른 %로 보인다. PGlite harness는 superuser라
+   *    이 상태를 그냥 통과시키므로(0027:60) 아래 ㉗-a가 소유권을 옮긴 뒤에 실제로 잰다.
+   */
+  if (broke('no-force-decisions')) {
+    await db.exec(`alter table public.decisions force row level security`)
+  }
+  const decForce = await val<boolean>(
+    null,
+    `select relforcerowsecurity from pg_class where relname = 'decisions'`,
+    'app_owner',
+  )
+  assert.equal(
+    decForce,
+    false,
+    'decisions에 force row level security가 되살아났다 — 0034 2절이 내린 것이다. 이대로면 §7 집계 문이 소유자 권한으로 돌면서 정책 아래로 내려가, 회사의 의존도가 보는 사람마다 다른 %가 된다(0027 1절과 같은 함정)',
+  )
+
+  /**
+   * ⑤-b **audit_log의 force는 그대로 걸려 있다.** 0034 6절이 backfill을 위해 같은
+   *    트랜잭션 안에서 잠깐 열었다 닫았고, 그 창이 닫힌 채로 커밋됐는지를 여기서 잰다.
+   *    0031 2절이 force를 내리기를 거절하고 activity_digest를 지은 그 판단이 이 한 줄이다.
+   */
+  const auditForce = await val<boolean>(
+    null,
+    `select relforcerowsecurity from pg_class where relname = 'audit_log'`,
+    'app_owner',
+  )
+  assert.equal(
+    auditForce,
+    true,
+    'audit_log에 force row level security가 없다 — 0034 6절의 backfill 창이 열린 채로 닫히지 않았다. 그 표에는 read·login 줄(누가 언제 무엇을 열어 봤나)이 있고, 0031 2절이 지키려던 것이 바로 이 한 줄이다',
+  )
+
+  /**
+   * ⑤-c **intervention_counts에 audit 줄의 내용물이 한 칸도 없다.** 칸 이름 집합을 못 박는다.
+   *    entity_id·actor_user_id·before/after·note가 한 칸이라도 들어오면 이 표는 audit_log의
+   *    사본이 되고, 정책을 넓히지 않고도 정책을 우회한 것이 된다.
+   */
+  if (broke('counts-leak')) {
+    await db.exec(`alter table intervention_counts add column actor_user_id uuid`)
+  }
+  const countCols = (
+    await rows<{ column_name: string }>(
+      null,
+      `select column_name from information_schema.columns where table_name = 'intervention_counts' order by 1`,
+      'app_owner',
+    )
+  ).map((r) => r.column_name)
+  assert.deepEqual(
+    countCols,
+    ['business_id', 'count', 'kind', 'period', 'updated_at'],
+    `intervention_counts의 칸이 회사·달·유형·건수와 updated_at 다섯이 아니다(${countCols.join(',')}) — 한 칸이라도 더 있으면 이 표는 audit_log의 사본이고, audit_log_read를 넓히지 않고도 넓힌 것이 된다(0031 activity_digest가 사람·경로·도시를 한 칸도 두지 않은 것과 같은 규율)`,
+  )
+  /** intervention_counts에 force를 걸지 않았다 — 걸면 트리거가 조용히 아무것도 안 쓴다. */
+  assert.equal(
+    await val<boolean>(null, `select relforcerowsecurity from pg_class where relname = 'intervention_counts'`, 'app_owner'),
+    false,
+    'intervention_counts에 force row level security가 걸렸다 — 0034 5절의 트리거가 소유자 권한으로 이 표에 쓰는데, force가 걸리면 그 쓰기가 정책 아래로 내려가 조용히 아무것도 안 쓴다(이 저장소가 네 번 밟은 함정)',
+  )
+
+  /** ⑥ anon에게는 새 표 넷과 뷰 둘, 그리고 0034의 집계 표까지 권한이 없다. 자물쇠는 revoke다. */
+  for (const t of ['dependency_areas', 'autonomy_assessments', 'absence_tests', 'chairman_directions', 'founder_dependency', 'interventions', 'intervention_counts']) {
     const anon = await val<boolean>(null, `select has_table_privilege('anon', '${t}', 'select')`, 'app_owner')
     assert.equal(anon, false, `anon이 ${t}를 읽을 수 있다 — revoke가 빠졌다`)
   }
+
+  /**
+   * ⑥-a **intervention_counts에 쓰기 권한이 아무에게도 없다.** 이 표를 쓰는 것은 0034 5절의
+   *    트리거 하나뿐이고, 그 트리거는 소유자 권한으로 돈다. 사람이 쓸 수 있게 되는 순간
+   *    이 표는 «집계»가 아니라 «누가 고친 숫자»가 된다 — 감사 기록에서 뽑은 값이라는
+   *    이 표의 유일한 근거가 사라진다.
+   */
+  if (broke('counts-write')) {
+    await db.exec(`grant insert, update, delete on table intervention_counts to authenticated;
+                   create policy break_counts_write on intervention_counts for all
+                     using (is_active()) with check (is_active());`)
+  }
+  for (const priv of ['insert', 'update', 'delete']) {
+    for (const who of ['authenticated', 'anon']) {
+      assert.equal(
+        await val<boolean>(null, `select has_table_privilege('${who}', 'intervention_counts', '${priv}')`, 'app_owner'),
+        false,
+        `${who}에게 intervention_counts의 ${priv} 권한이 있다 — 이 표를 쓰는 것은 audit_log의 트리거 하나뿐이어야 한다. 사람이 고칠 수 있으면 이 숫자가 감사 기록에서 나왔다는 근거가 사라진다`,
+      )
+    }
+  }
+
+  /**
+   * ⑥-b **0034가 만든 문 둘의 execute가 public에 없다**(0019 3절의 revoke가 살아 있는가).
+   *    security definer 함수에서 public 기본 execute는 곧 "anon도 RPC로 부를 수 있다"는
+   *    뜻이다. 몸통이 걸러 주더라도 기본 권한을 남겨 두지 않는다 — 나중에 몸통이 한 줄
+   *    바뀌는 날 그 기본값이 구멍이 된다.
+   */
+  for (const fn of ['founder_dependency_rows()', 'interventions_bump()']) {
+    assert.equal(
+      await val<boolean>(null, `select has_function_privilege('public', '${fn}', 'execute')`, 'app_owner'),
+      false,
+      `${fn}의 execute가 public에 남아 있다 — 0019 3절의 revoke가 빠졌다. security definer 함수에서 그 기본값은 곧 anon도 부를 수 있다는 뜻이다`,
+    )
+  }
+  /** 화면이 부르는 문은 authenticated에게 열려 있어야 한다. 걷기만 하고 다시 안 주면 42501이다. */
+  assert.equal(
+    await val<boolean>(null, `select has_function_privilege('authenticated', 'founder_dependency_rows()', 'execute')`, 'app_owner'),
+    true,
+    'authenticated에게 founder_dependency_rows()의 execute가 없다 — 뷰가 security_invoker라 화면이 42501을 받는다',
+  )
+  /** 트리거만 부르는 문은 다시 주지 않는다 — 사람이 부를 자리가 없다. */
+  assert.equal(
+    await val<boolean>(null, `select has_function_privilege('authenticated', 'interventions_bump()', 'execute')`, 'app_owner'),
+    false,
+    'authenticated에게 interventions_bump()의 execute가 있다 — 이 함수를 부르는 것은 audit_log의 트리거뿐이다',
+  )
 
   /* ---------------------------------------------------------------- 3. DY 시드 */
 
@@ -456,6 +605,95 @@ async function database() {
     100 + FIXTURE_UNKNOWN,
     '아직 처리되지 않은 결정(Open)이 지표에 들어갔다 — 그 행에는 "누가 정했나"가 아직 없다',
   )
+
+  /* ------------------------------------- 4-a. 0034: 회사의 값은 보는 사람과 무관하다 */
+
+  /**
+   * **기안자를 일부러 붙인 달을 하나 더 만든다.**
+   *
+   * 위 ⑫의 고정 입력은 `created_by`가 전부 null이라 0026 다섯째 겹의
+   * '소유자 칸이 둘 다 비면 회사 공통' 분기로 읽힌다 — 그 시드로 재면 아래 단언은
+   * 아무것도 재지 못한 채 늘 초록이다. DY 대표가 기안한 결정으로 2026-08을 따로 만든다.
+   * GroupCFO는 DY 대표의 위가 아니므로(둘 다 회장 직속이다) 0026의 겹이 **실제로 걸리는**
+   * 입력이고, 0034가 없으면 회장은 75%를 CFO는 아무것도 못 보는 자리다.
+   */
+  await db.exec(`
+    insert into decisions (decision_id, business_id, title, status, decided_at, decided_by_kind, created_by) values
+      ('t_own_1', 'biz_dy', '기안자가 붙은 회장 결정 1', 'Approved', timestamptz '2026-08-10 12:00+09', 'chairman', '${U.dyCeo}'),
+      ('t_own_2', 'biz_dy', '기안자가 붙은 회장 결정 2', 'Approved', timestamptz '2026-08-10 12:00+09', 'chairman', '${U.dyCeo}'),
+      ('t_own_3', 'biz_dy', '기안자가 붙은 회장 결정 3', 'Approved', timestamptz '2026-08-10 12:00+09', 'chairman', '${U.dyCeo}'),
+      ('t_own_4', 'biz_dy', '기안자가 붙은 CEO 결정',    'Approved', timestamptz '2026-08-10 12:00+09', 'ceo',      '${U.dyCeo}');
+  `)
+
+  /** 게이트 없는 문으로 갈아 끼운다 — 식은 그대로 두고 can_read_succession만 뗀다. */
+  if (broke('fd-gate-off')) {
+    await db.exec(`
+      create or replace function founder_dependency_rows()
+      returns table (business_id text, period text, chairman_count bigint, ceo_count bigint,
+                     rule_count bigint, total_count bigint, unknown_count bigint, dependency_pct numeric)
+      language sql stable security definer set search_path = public as $fn$
+        select d.business_id,
+               to_char(coalesce(d.decided_at, d.created_at) at time zone 'Asia/Seoul', 'YYYY-MM'),
+               count(*) filter (where d.decided_by_kind = 'chairman'),
+               count(*) filter (where d.decided_by_kind = 'ceo'),
+               count(*) filter (where d.decided_by_kind = 'rule'),
+               count(*) filter (where d.decided_by_kind is not null),
+               count(*) filter (where d.decided_by_kind is null),
+               case when count(*) filter (where d.decided_by_kind is not null) = 0 then null
+                    else round(count(*) filter (where d.decided_by_kind = 'chairman')::numeric * 100
+                               / count(*) filter (where d.decided_by_kind is not null), 1) end
+          from decisions d where d.status <> 'Open' group by 1, 2;
+      $fn$;
+    `)
+  }
+
+  const august = (uid: string) =>
+    rows<{ dependency_pct: string; total_count: number; chairman_count: number }>(
+      uid,
+      `select dependency_pct, total_count, chairman_count from founder_dependency
+        where business_id = 'biz_dy' and period = '2026-08'`,
+    )
+
+  /** ⑭-a 회장이 보는 값. 기안자가 붙어도 식은 같다 — 회장 3 / 전체 4 → 75.0%. */
+  const augChair = await august(U.chair)
+  assert.equal(augChair.length, 1, '2026-08의 founder_dependency 행이 회장에게 없다')
+  assert.equal(
+    Number(augChair[0].dependency_pct),
+    75,
+    `기안자가 붙은 달의 의존도가 75%가 아니다(${augChair[0].dependency_pct}%)`,
+  )
+
+  /**
+   * ⑭-b **Chairman과 GroupCFO가 같은 회사·같은 달에 같은 %를 본다.**
+   *    0026의 겹이 갈라놓던 자리이고, 0033이 "앞으로 기안자가 붙은 결정이 쌓이면 갈린다"고
+   *    적어 둔 바로 그 자리다. 회사의 의존도는 보는 사람에 따라 달라지면 안 된다.
+   */
+  const augCfo = await august(U.cfo)
+  assert.deepEqual(
+    augCfo,
+    augChair,
+    `회장과 그룹 CFO가 같은 회사·달에서 다른 값을 본다(회장 ${JSON.stringify(augChair)} / CFO ${JSON.stringify(augCfo)}) — 0026의 다섯째 겹이 집계에 끼어들었다. 회사의 의존도는 보는 사람이 아니라 회사의 사실이다(0034 3절)`,
+  )
+  /** ⑭-c 그 회사의 CEO도 같은 값을 본다(원문: CEO 자기 회사 읽기). */
+  assert.deepEqual(
+    await august(U.dyCeo),
+    augChair,
+    'DY 대표가 자기 회사의 의존도를 회장과 다른 값으로 본다 — 원문은 "CEO 자기 회사 읽기"다',
+  )
+  /** ⑭-d 다른 회사의 CEO는 0행이다. 회사 격리는 그대로다. */
+  assert.equal(
+    (await august(U.vanaCeo)).length,
+    0,
+    'VANA 대표에게 DY의 의존도가 보인다 — 0034의 문이 회사 격리를 잃었다',
+  )
+  /** ⑭-e **Executive·TeamLead·Member는 0행이다.** 문이 넓어진 것이 아니라 스펙대로 열린 것이다. */
+  for (const [who, uid] of [['Executive', U.exec], ['TeamLead', U.lead], ['Member', U.member]] as const) {
+    assert.equal(
+      (await august(uid)).length,
+      0,
+      `${who}에게 §7 지표가 보인다 — 0034의 문은 can_read_succession()과 같은 판정이어야 하고, 원문이 "나머지 거부"라고 못 박았다`,
+    )
+  }
 
   /* ---------------------------------------------------------------- 5. 역산 */
 
@@ -636,14 +874,29 @@ async function database() {
 
   /* ---------------------------------------------------------------- 7. interventions */
 
-  if (broke('interventions-no-delegate')) {
+  /**
+   * 0034부터 이 뷰는 audit_log가 아니라 intervention_counts를 읽는다. 그 표를 채우는 것은
+   * audit_log의 after-insert 트리거 하나뿐이라, 아래 insert 넷이 곧 트리거 시험이다.
+   */
+  if (broke('trigger-fatal')) {
     await db.exec(`
-      create or replace view interventions with (security_invoker = true) as
-        select a.business_id, to_char(a.occurred_at at time zone 'Asia/Seoul', 'YYYY-MM') as period,
-               a.action::text as kind, count(*) as count
-          from audit_log a
-         where a.actor_role = 'Chairman' and a.action::text in ('approve','reject','modify')
-         group by 1, 2, 3;
+      create or replace function interventions_bump() returns trigger
+      language plpgsql volatile security definer set search_path = public as $fn$
+      begin
+        if new.actor_role = 'Chairman'
+           and new.action::text in ('approve', 'reject', 'modify', 'delegate')
+           and new.business_id is not null then
+          insert into intervention_counts (business_id, period, kind, count, updated_at)
+          values (new.business_id,
+                  to_char(new.occurred_at at time zone 'Asia/Seoul', 'YYYY-MM'),
+                  new.action::text, 1, now())
+          on conflict (business_id, period, kind) do update
+            set count = intervention_counts.count + 1, updated_at = now();
+        end if;
+        return null;
+      end;
+      $fn$;
+      alter function public.interventions_bump() owner to app_owner;
     `)
   }
   await db.exec(`
@@ -653,6 +906,42 @@ async function database() {
       ('${U.chair}', 'Chairman',    'delegate', 'decisions', 't_iv_3', 'biz_dy'),
       ('${U.dyCeo}', 'BusinessCEO', 'approve',  'decisions', 't_iv_4', 'biz_dy');
   `)
+
+  /**
+   * ㉔-a **트리거는 감사 줄의 insert를 절대 실패시키지 않는다**(HANDOVER 2절 ③).
+   *
+   *    집계가 터지는 상황을 실제로 만든다 — businesses에 없는 회사를 단 줄이다.
+   *    intervention_counts의 FK가 거기서 터지고, 0034 5절의 예외 블록이 그것을 삼킨다.
+   *    삼키지 않으면 **감사 줄 자체가 안 남는다.** audit_log는 append only라 남지 않은
+   *    줄을 되살릴 방법이 없다 — 집계가 틀리면 다시 셀 수 있지만 기록은 다시 만들 수 없다.
+   */
+  let bumpError: string | null = null
+  try {
+    await db.exec(`
+      insert into audit_log (actor_user_id, actor_role, action, entity_table, entity_id, business_id)
+      values ('${U.chair}', 'Chairman', 'approve', 'decisions', 't_iv_fk', 'biz_없는회사');
+    `)
+  } catch (e) {
+    bumpError = e instanceof Error ? e.message : String(e)
+  }
+  assert.equal(
+    bumpError,
+    null,
+    `집계가 터지면서 감사 줄의 insert까지 같이 실패했다 (${bumpError}) — 기록이 먼저이고 집계는 나중이다. audit_log는 append only라 여기서 잃은 줄은 되살릴 수 없다`,
+  )
+  assert.equal(
+    Number(await val(U.chair, `select count(*)::int from audit_log where entity_id = 't_iv_fk'`)),
+    1,
+    '집계가 터진 뒤 감사 줄이 남지 않았다 — 0034 5절의 예외 블록이 빠졌다',
+  )
+
+  if (broke('interventions-no-delegate')) {
+    await db.exec(`
+      create or replace view interventions with (security_invoker = true) as
+        select c.business_id, c.period, c.kind, c.count
+          from intervention_counts c where c.kind <> 'delegate';
+    `)
+  }
   const iv = await rows<{ kind: string; count: number }>(
     U.chair,
     `select kind, sum(count)::int as count from interventions where business_id = 'biz_dy' group by kind order by kind`,
@@ -671,16 +960,180 @@ async function database() {
     await val(U.chair, `select count(*)::int from audit_log where actor_role = 'Chairman' and business_id = 'biz_dy' and action::text in ('approve','reject','modify','delegate')`),
   )
   assert.equal(ivTotal, chairRows, `interventions 합계(${ivTotal})가 회장 audit 줄 수(${chairRows})와 다르다`)
-  /** ㉗ **회장이 아니면 0행이다** — audit_log의 FORCE RLS. 화면은 그것을 0건이라고 말하지 않는다. */
-  for (const [who, uid] of [['GroupCFO', U.cfo], ['BusinessCEO', U.dyCeo], ['TeamLead', U.lead]] as const) {
+
+  /**
+   * ㉗ **0034에서 이 자리가 뒤집혔다.** 0033에서는 "회장이 아니면 0행"이었다 —
+   *    audit_log의 FORCE RLS 때문이었고, 그것이 원문(GroupCFO 읽기) 미달이었다.
+   *    0034는 audit_log를 열지 않고 집계 전용 표를 두어 원문의 가시성을 준다.
+   *
+   *    ㉗-a **GroupCFO와 그 회사의 CEO가 회장과 같은 합계를 본다.**
+   */
+  const ivFor = async (uid: string) =>
+    Number(
+      await val(
+        uid,
+        `select coalesce(sum(count), 0)::int from interventions where business_id = 'biz_dy'`,
+      ),
+    )
+  const ivChair = await ivFor(U.chair)
+  assert.equal(
+    ivChair,
+    chairRows,
+    `회장이 보는 개입 합계(${ivChair})가 회장 audit 줄 수(${chairRows})와 다르다`,
+  )
+  for (const [who, uid] of [['GroupCFO', U.cfo], ['BusinessCEO', U.dyCeo]] as const) {
+    assert.equal(
+      await ivFor(uid),
+      ivChair,
+      `${who}가 회장과 다른 개입 합계를 본다(${await ivFor(uid)} vs ${ivChair}) — 원문은 "Chairman·GroupCFO 읽기 · CEO 자기 회사 읽기"다. 0034가 audit_log를 넓히지 않고 이것을 주려고 집계 전용 표를 두었다`,
+    )
+  }
+  /** ㉗-b 다른 회사의 CEO에게는 이 회사의 개입이 보이지 않는다. 회사 격리는 그대로다. */
+  assert.equal(
+    await ivFor(U.vanaCeo),
+    0,
+    'VANA 대표에게 DY의 개입 건수가 보인다 — intervention_counts_read가 회사 격리를 잃었다',
+  )
+  /**
+   * ㉗-c **Executive·TeamLead·Member는 여전히 0행이다.** 가시성이 넓어져도 여기는 그대로다.
+   *    화면은 그들에게 «0건»이라고 말하지 않는다 — 없는 것과 못 보는 것은 다른 사실이고,
+   *    그 둘을 같은 '0'으로 그리는 것이 이 블록에서 금지된 거짓말이다.
+   */
+  for (const [who, uid] of [['Executive', U.exec], ['TeamLead', U.lead], ['Member', U.member]] as const) {
     assert.equal(
       Number(await val(uid, `select count(*)::int from interventions`)),
       0,
-      `${who}가 interventions를 읽는다 — audit_log_read는 회장/본인/subtree뿐이고, 이 값이 0이 아니면 정책이 넓어진 것이다`,
+      `${who}가 interventions를 읽는다 — 원문이 "나머지 거부"라고 못 박았고, 이 값이 0이 아니면 문이 스펙보다 넓어진 것이다`,
     )
   }
+  /** ㉗-d anon은 한 줄도 못 읽는다. */
+  assert.ok(
+    (await rejected(null, `select count(*) from interventions`, 'anon')) !== null,
+    'anon이 interventions를 읽는다 — 자물쇠는 revoke다',
+  )
 
   return { july }
+}
+
+/* =====================================================================
+ * A-2. backfill — 0034 **이전의** 회장 개입이 남는가
+ * ===================================================================== */
+
+/**
+ * **DB를 따로 세운다.** 이 검사의 입력은 «0034가 적용되는 순간의 audit_log»이고,
+ * 위 database()의 DB는 0034가 이미 적용된 뒤라 그 순간을 재현할 수 없다
+ * (check-migrations.ts의 subtreeBackfill()이 자기 DB를 세우는 것과 같은 이유).
+ *
+ * 왜 재는가 — 트리거만 달고 과거분을 안 채우면 0034 이전의 회장 개입이 **영원히 0**이다.
+ * §34가 12개월 추이를 요구하므로 그 침묵은 곧 거짓이 된다: "개입이 없었다"와 "0034
+ * 이전이라 세지 않았다"는 다른 사실인데, 화면에는 둘 다 빈 칸으로 온다.
+ *
+ * 그리고 **그 backfill이 조용히 0행을 집어 왔을 수 있다.** 마이그레이션 세션에는 JWT가
+ * 없어 audit_log_read의 세 분기가 전부 거짓이고, FORCE가 걸려 있으면 소유자마저 그
+ * 정책 아래로 내려간다 — 예외 없이 0행이다(0027 1절의 함정). 0034 6절이 경계가 분명한
+ * 창 하나로 그것을 피한다. ②의 대조군이 그 창이 **정말 필요했는지**를 증명한다.
+ */
+async function backfill() {
+  const db = new PGlite({ extensions: { pg_trgm } })
+  await applyAll(db, '0033_succession.sql')
+  await db.exec(`
+    insert into auth.users values ('${U.chair}', 'chair@x'), ('${U.dyCeo}', 'dyceo@x');
+    insert into user_profiles (user_id, role, display_name) values
+      ('${U.chair}', 'Chairman', '회장'), ('${U.dyCeo}', 'BusinessCEO', 'DY 대표');
+    insert into audit_log (actor_user_id, actor_role, action, entity_table, entity_id, business_id, occurred_at) values
+      ('${U.chair}', 'Chairman', 'approve',  'decisions', 'o1', 'biz_dy',   timestamptz '2026-05-02 10:00+09'),
+      ('${U.chair}', 'Chairman', 'approve',  'decisions', 'o2', 'biz_dy',   timestamptz '2026-05-03 10:00+09'),
+      ('${U.chair}', 'Chairman', 'delegate', 'decisions', 'o3', 'biz_dy',   timestamptz '2026-06-02 10:00+09'),
+      ('${U.chair}', 'Chairman', 'reject',   'decisions', 'o4', 'biz_vana', timestamptz '2026-06-02 10:00+09'),
+      -- 세면 안 되는 셋: 열람 기록 · CEO가 처리한 건 · 어느 회사인지 모르는 줄
+      ('${U.chair}', 'Chairman',    'read',    'screen',    'o5', 'biz_dy', timestamptz '2026-06-02 10:00+09'),
+      ('${U.dyCeo}', 'BusinessCEO', 'approve', 'decisions', 'o6', 'biz_dy', timestamptz '2026-06-02 10:00+09'),
+      ('${U.chair}', 'Chairman',    'approve', 'decisions', 'o7', null,     timestamptz '2026-06-02 10:00+09');
+  `)
+  await applyOne(db, '0034_succession_views.sql')
+  if (broke('wipe-counts')) await db.exec(`delete from intervention_counts`)
+
+  /** ㉘-a 과거분이 회사 × 달 × 유형으로 그대로 들어왔다. */
+  const filled = await db.query<{ business_id: string; period: string; kind: string; count: number }>(
+    `select business_id, period, kind, count::int as count from intervention_counts order by 1, 2, 3`,
+  )
+  assert.deepEqual(
+    filled.rows.map((r) => [r.business_id, r.period, r.kind, Number(r.count)]),
+    [
+      ['biz_dy', '2026-05', 'approve', 2],
+      ['biz_dy', '2026-06', 'delegate', 1],
+      ['biz_vana', '2026-06', 'reject', 1],
+    ],
+    `0034의 backfill이 과거 개입을 그대로 옮기지 못했다(${JSON.stringify(filled.rows)}) — 트리거만 달면 0034 이전의 회장 개입이 영원히 0이고, §34의 12개월 추이가 통째로 빈다`,
+  )
+
+  /** ㉘-b **합계 == 회장 audit 줄 수.** 0033의 ㉖이 이 형태로 살아남는다. */
+  const sum = await db.query<{ n: number }>(`select coalesce(sum(count), 0)::int as n from intervention_counts`)
+  const chairRows = await db.query<{ n: number }>(
+    `select count(*)::int as n from audit_log
+      where actor_role = 'Chairman' and action::text in ('approve','reject','modify','delegate')
+        and business_id is not null`,
+  )
+  assert.equal(
+    Number(sum.rows[0].n),
+    Number(chairRows.rows[0].n),
+    `backfill 합계(${sum.rows[0].n})가 회장 audit 줄 수(${chairRows.rows[0].n})와 다르다`,
+  )
+
+  /** ㉘-c **열람 기록은 한 줄도 넘어오지 않았다.** 이 표에 read가 들어오면 규율이 깨진 것이다. */
+  assert.equal(
+    Number((await db.query<{ n: number }>(`select count(*)::int as n from intervention_counts where kind not in ('approve','reject','modify','delegate')`)).rows[0].n),
+    0,
+    'intervention_counts에 승인·반려·수정·위임 밖의 유형이 들어왔다 — audit_log의 read·login 줄이 이 표로 새면 0031 2절이 지키려던 것이 무너진다',
+  )
+
+  /** ㉘-d **창이 닫힌 채로 커밋됐다.** 0034 6절이 연 것은 같은 트랜잭션 안의 창 하나다. */
+  assert.equal(
+    (await db.query<{ f: boolean }>(`select relforcerowsecurity as f from pg_class where relname = 'audit_log'`)).rows[0].f,
+    true,
+    'audit_log의 force가 내려간 채로 0034가 끝났다 — 6절의 창은 같은 트랜잭션 안에서 닫혀야 하고, 끝난 뒤 상태는 오늘과 글자 하나까지 같아야 한다',
+  )
+
+  /*
+   * ㉘-e **대조군 — 그 창이 정말 필요했는가.**
+   *
+   * BYPASSRLS 없는 소유자로 backfill의 select를 그대로 돌린다. check-migrations.ts의
+   * definerUnderNonBypassOwner() ②와 같은 모양이고, 같은 이유다: 이 harness는 superuser라
+   * FORCE와 무관하게 RLS를 전부 우회하므로, 이것 없이는 "창이 필요했다"를 **원리적으로
+   * 증명할 수 없다.** 창 없이 둔 0034는 production에서만 12개월 추이가 비고, 검사는 초록이다.
+   */
+  await db.exec(`
+    create role app_owner nosuperuser nobypassrls nologin;
+    grant usage on schema auth, public to app_owner;
+    grant select on auth.users to app_owner;
+    grant execute on all functions in schema public to app_owner;
+    alter table public.audit_log     owner to app_owner;
+    alter table public.user_profiles owner to app_owner;
+  `)
+  const scan = `select count(*)::int as n from audit_log a
+                 where a.actor_role = 'Chairman' and a.action::text in ('approve','reject','modify','delegate')`
+  async function asOwner(sql: string): Promise<number> {
+    await db.exec(`begin; set local role app_owner;`)
+    try {
+      return Number(Object.values((await db.query<Record<string, unknown>>(sql)).rows[0])[0])
+    } finally {
+      await db.exec('rollback')
+    }
+  }
+  assert.equal(
+    await asOwner(scan),
+    0,
+    '대조군이 성립하지 않는다 — force가 걸린 audit_log를 BYPASSRLS 없는 소유자가 그냥 읽는다면 0034 6절의 창은 아무것도 하지 않은 것이고, 이 검사는 그 창을 재고 있지 않다',
+  )
+  await db.exec(`alter table public.audit_log no force row level security`)
+  assert.equal(
+    await asOwner(scan),
+    5,
+    '창을 열어도 소유자가 회장의 audit 줄을 못 읽는다 — 이 실험의 전제가 깨졌다(0034 6절이 기대는 것이 정확히 이 차이다)',
+  )
+  await db.exec(`alter table public.audit_log force row level security`)
+
+  await db.close()
 }
 
 /* =====================================================================
@@ -782,13 +1235,25 @@ async function dummy() {
     'dummy 시드에 역산 미도달 행이 하나도 없다 — 화면의 "역산 미도달 N건" 문구가 개발 중에 한 번도 안 뜬다',
   )
 
-  /** ㉞ 회장이 아닌 세션에서는 개입이 0건이다(live의 FORCE RLS와 같은 답). */
+  /**
+   * ㉞ **0034에서 이 자리가 뒤집혔다.** 그 회사의 CEO는 자기 회사의 개입을 본다
+   *    (live에서는 intervention_counts_read = can_read_succession이 그렇게 만든다).
+   *    dummy가 더 좁으면 화면이 거짓을 배운다 — 확인은 dummy로만 하기 때문이다.
+   */
   const ceoIv = await as('dy_ceo', () => dummyRepository.listInterventions())
-  assert.equal(
-    ceoIv.length,
-    0,
-    'dummy가 CEO에게 회장 개입 기록을 준다 — live에서는 audit_log의 FORCE RLS가 0행을 준다. dummy가 더 관대하면 화면이 거짓을 배운다',
+  assert.ok(
+    ceoIv.length > 0 && ceoIv.every((r) => r.business_id === 'biz_dy'),
+    `dummy에서 DY 대표가 자기 회사의 개입을 못 보거나 남의 회사까지 본다(${JSON.stringify(ceoIv.map((r) => r.business_id))}) — 0034는 원문대로 CEO에게 자기 회사 읽기를 준다`,
   )
+  /** ㉞-a 팀장·직원은 여전히 0건이다. 가시성이 넓어져도 여기는 그대로다. */
+  for (const who of ['sales_lead', 'sales_staff'] as const) {
+    const iv = await as(who, () => dummyRepository.listInterventions())
+    assert.equal(
+      iv.length,
+      0,
+      `dummy에서 ${who}가 회장 개입을 읽는다 — 원문이 "나머지 거부"라고 못 박았고, 화면은 그들에게 0건이라고 말하지 않는다`,
+    )
+  }
 
   /** ㉟ 팀장·직원은 승계 표에서 0건이다. */
   for (const who of ['sales_lead', 'sales_staff'] as const) {
@@ -914,8 +1379,22 @@ function screens() {
     '화면 어디에도 역산 이야기가 없다 — 회장이 "이 숫자는 어디서 왔나"를 물을 자리가 지표 옆이 아니면 없다',
   )
   assert.ok(
-    all.includes(needle('회장 계정에서만')),
-    "개입 건수가 보이지 않을 때 '회장 계정에서만 집계됩니다'라고 말하지 않는다 — 없는 것과 못 보는 것을 같은 0으로 그리는 것이 이 블록에서 금지된 거짓말이다",
+    all.includes(needle('권한 밖이라 집계되지 않습니다')),
+    "개입 건수가 보이지 않을 때 '권한 밖이라 집계되지 않습니다'라고 말하지 않는다 — 없는 것과 못 보는 것을 같은 0으로 그리는 것이 이 블록에서 금지된 거짓말이고, 0034로 가시성이 넓어져도 Executive·TeamLead·Member에게는 그대로다",
+  )
+  /**
+   * ㊶-a **0033의 문구가 남아 있지 않다.** 0034가 개입을 GroupCFO와 자기 회사 CEO에게
+   *    열었으므로 '회장 계정에서만 집계됩니다'는 **거짓**이 됐다. 지우는 것을 잊으면
+   *    화면이 사실이 아닌 말을 하고, 그것이 이 블록이 유일하게 금지한 것이다.
+   */
+  assert.ok(
+    !all.includes('회장 계정에서만'),
+    "화면에 '회장 계정에서만 집계됩니다'가 남아 있다 — 0034부터 그룹 CFO와 그 회사 대표도 개입 건수를 본다. 거짓이 된 문장이다",
+  )
+  /** ㊶-b 의존도가 «보는 사람의 권한 안에서» 계산된다는 문구도 거짓이 됐다. */
+  assert.ok(
+    !all.includes('보는 사람의 권한 안에서'),
+    "화면에 '이 값은 보는 사람의 권한 안에서 계산됩니다'가 남아 있다 — 0034부터 회사의 의존도는 계정과 무관하게 같은 값이다",
   )
   assert.ok(
     all.includes(needle('아직 계산할 수 없습니다')),
@@ -975,6 +1454,43 @@ function screens() {
     /역산/.test(sql),
     '0033에 역산 규칙이 글로 적혀 있지 않다 — Ruling이 "코드가 아니라 마이그레이션 주석과 DEFERRED에 명시"를 요구했다',
   )
+
+  /**
+   * ㊺-a **0034가 `audit_log_read`를 건드리지 않았다.** 이 블록의 하드 경계다.
+   *
+   *    파일을 글자로 읽는다. DB 단언(위 ⑤-b의 force, ㉗-c의 0행)은 «지금 상태»를 재지만,
+   *    이 단언은 «이 파일이 그 정책에 손을 댔는가»를 잰다 — 정책을 열었다가 닫는 식의
+   *    변경은 상태로는 안 보이고, 그 자리가 정확히 블록 7이 지킨 자리다.
+   *    주석은 걷고 본다(이 파일의 주석에 policy 이름이 여러 번 나온다 — 걷지 않으면
+   *    검사가 문장을 세지 않고 글자를 세게 된다. 0033을 볼 때와 같은 이유다).
+   */
+  const sql34 = readFileSync(join(MIGRATIONS, '0034_succession_views.sql'), 'utf8')
+  const stmt34 = sql34
+    .split('\n')
+    .map((line) => line.replace(/--.*$/, ''))
+    .join('\n')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+  assert.ok(
+    !/audit_log_read/i.test(stmt34),
+    '0034가 audit_log_read에 손을 댔다 — 이 블록의 하드 경계다. 그 정책을 넓히면 블록 7이 지킨 것(남의 열람 기록을 가로질러 읽지 못한다)이 같이 무너진다',
+  )
+  assert.ok(
+    !/alter\s+type\s+audit_action/i.test(stmt34),
+    '0034가 audit_action enum을 건드린다 — 0022가 production에서 55P04를 밟은 자리다',
+  )
+  /** 창을 열었으면 **같은 파일 안에서 닫아야 한다.** 여는 줄 하나에 닫는 줄 하나다. */
+  const opened = (stmt34.match(/alter\s+table\s+public\.audit_log\s+no\s+force/gi) ?? []).length
+  const closed = (stmt34.match(/alter\s+table\s+public\.audit_log\s+force/gi) ?? []).length
+  assert.equal(
+    opened,
+    closed,
+    `0034에서 audit_log의 force를 여는 줄(${opened})과 닫는 줄(${closed})의 수가 다르다 — 6절의 창은 같은 트랜잭션 안에서 열리고 닫혀야 한다`,
+  )
+  /** 0001~0033은 이 작업에서 한 글자도 안 바뀐다 — 0034가 전방 수정이다(0024 주석). */
+  assert.ok(
+    /전방 수정/.test(sql34),
+    '0034에 "전방 수정"이라는 말이 없다 — 이미 적용된 0002·0003·0033을 고치지 않고 앞으로 나아가며 고친다는 것이 이 파일의 전제다',
+  )
 }
 
 /* ===================================================================== */
@@ -982,14 +1498,18 @@ function screens() {
 async function main() {
   if (BREAK) console.log(`※ 음성 대조: DEP_BREAK=${BREAK} — ${BREAKS[BREAK]}`)
   const { july } = await database()
+  await backfill()
   formula()
   await dummy()
   screens()
   console.log(
-    `PASS: 0033 승계 — §7 식(고정 입력 ${FIXTURE.chairman}/${FIXTURE.ceo}/${FIXTURE.rule} → ` +
+    `PASS: 0033·0034 승계 — §7 식(고정 입력 ${FIXTURE.chairman}/${FIXTURE.ceo}/${FIXTURE.rule} → ` +
       `${july[0].dependency_pct}%, 역산 미도달 ${july[0].unknown_count}건은 분자·분모 밖) · ` +
       '역산 규칙 ①②③ · 트리거 · 표 넷의 역할 RLS(CEO 읽기까지 · Executive/TeamLead/Member 0건) · ' +
-      'check 제약 셋 · force 없음 · security_invoker · interventions(위임 포함 · 회장만) · ' +
+      'check 제약 셋 · force 없음 · security_invoker · ' +
+      '0034 문 둘(decisions no force → 회장=CFO=CEO 같은 % · intervention_counts 칸 다섯 · ' +
+      '쓰기 권한 0 · 트리거가 감사 줄을 죽이지 않는다 · backfill 합계 = 회장 audit 줄 수 · ' +
+      'audit_log force 유지) · interventions(위임 포함 · Chairman·GroupCFO·자기 회사 CEO) · ' +
       'DY 시드(영역 6 · 이양 7 · 부재 2 · 자율성 0) · TS 식 = SQL 식 · dummy 게이트 · 화면 문구',
   )
 }

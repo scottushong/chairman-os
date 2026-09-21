@@ -35,7 +35,7 @@ import {
  * ■ 이 화면이 절대 하지 않는 것 ■
  *   · 처리된 결정이 없을 때 0%를 그리지 않는다 — '아직 계산할 수 없습니다'다.
  *   · 평가가 없을 때 L1을 칠하지 않는다 — 게이지가 비고 '아직 평가 없음'이다.
- *   · 개입이 안 보일 때 0건이라고 하지 않는다 — '회장 계정에서만 집계됩니다'다.
+ *   · 개입이 안 보일 때 0건이라고 하지 않는다 — '권한 밖이라 집계되지 않습니다'다.
  *   · 이양 계획이 없는 영역을 '미이양'이라고 하지 않는다 — 계획이 없는 것은 다른 사실이다.
  *
  * ■ 목표 로드맵의 37 ■ 문서 §35의 **예시 화면 숫자**이지 이 저장소가 잰 값이 아니다.
@@ -61,7 +61,13 @@ export default async function DependencyDetailPage({ params }: { params: Promise
   if (!business) notFound()
 
   const canWrite = user?.role === 'Chairman' || user?.role === 'GroupCFO'
-  const canSeeInterventions = user?.role === 'Chairman'
+  /**
+   * 0034 4절. 개입은 Chairman·GroupCFO와 **그 회사의 CEO**가 본다
+   * (`intervention_counts_read` = `can_read_succession()`). 이 화면에 들어온 CEO는
+   * 자기 회사에만 들어올 수 있으므로(위의 404 판정이 그것을 한다) 역할만 보면 된다.
+   */
+  const canSeeInterventions =
+    user?.role === 'Chairman' || user?.role === 'GroupCFO' || user?.role === 'BusinessCEO'
 
   const months = recentPeriods(12)
   const rows = dependency.filter((r) => r.business_id === id && months.includes(r.period))
@@ -197,9 +203,8 @@ export default async function DependencyDetailPage({ params }: { params: Promise
       <Section icon="clock" title="회장 개입 (§7 · §34)" note="최근 12개월 · 승인 · 반려 · 수정요청 · 위임">
         {!canSeeInterventions ? (
           <Missing>
-            개입 기록은 회장 계정에서만 집계됩니다. 감사 기록(audit_log)을 읽는 권한이 회장 본인과
-            자기 조직으로 제한되어 있고, 회장은 누구의 조직 아래에도 없기 때문입니다. 0건이 아니라
-            «여기서는 셀 수 없다»는 뜻입니다.
+            개입 건수는 권한 밖이라 집계되지 않습니다. 이 수치는 회장님·그룹 CFO와 해당 회사
+            대표에게만 열려 있습니다. 0건이 아니라 «여기서는 셀 수 없다»는 뜻입니다.
           </Missing>
         ) : myInterventions.length === 0 ? (
           <Missing>최근 12개월에 이 회사에서 회장님이 직접 처리한 건이 없습니다. 0건입니다.</Missing>

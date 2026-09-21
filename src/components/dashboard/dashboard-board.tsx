@@ -74,7 +74,7 @@ interface DashboardBoardProps {
    * 같은 회사가 두 숫자를 갖게 되고, 회장은 둘 다 안 믿게 된다.
    */
   dependency: DependencySummary[]
-  /** 회장 세션인가. 개입 건수는 회장 계정에서만 집계된다(0033 10절). */
+  /** 개입 건수를 볼 수 있는 세션인가. Chairman·GroupCFO·자기 회사 CEO다(0034 4절). */
   canSeeInterventions: boolean
   today: IsoDate
 }

@@ -185,7 +185,9 @@ export default async function DashboardPage() {
           initiativeLogoUrls={initiativeLogoUrls}
           initiativeCount={activeInitiatives.length}
           dependency={dependency}
-          canSeeInterventions={user?.role === 'Chairman'}
+          canSeeInterventions={
+            user?.role === 'Chairman' || user?.role === 'GroupCFO' || user?.role === 'BusinessCEO'
+          }
           today={todayIso}
         />
       </div>

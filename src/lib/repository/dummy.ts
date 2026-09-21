@@ -1622,12 +1622,12 @@ export const dummyRepository: ChairmanRepository = {
   },
 
   /**
-   * **회장 세션이 아니면 0건이다.** live에서는 audit_log의 FORCE RLS가 그렇게 만든다
-   * (회장은 누구의 subtree에도 없다). dummy가 더 관대하면 화면이 거짓을 배운다.
+   * 0034 4절. live에서는 `intervention_counts_read`(= `can_read_succession()`)가 판정한다 —
+   * Chairman·GroupCFO는 전부, BusinessCEO는 자기 회사, 나머지는 0행. dummy가 더 좁거나
+   * 더 넓으면 화면이 거짓을 배운다(확인은 dummy로만 한다).
    */
   async listInterventions() {
-    if (dummyViewer().role !== 'Chairman') return []
-    return dummyInterventions(dummyDecisionRows())
+    return dummyInterventions(dummyDecisionRows()).filter((r) => canReadSuccession(r.business_id))
   },
 
   async saveDependencyArea(input: DependencyAreaInput) {

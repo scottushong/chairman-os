@@ -1119,12 +1119,16 @@ production에서 같은 속도라는 보장이 없다.
      사람은 자기에게 보이는 결정만으로 계산된 %를 본다. 오늘은 시드 행의 소유자 칸이 둘 다
      비어 회사 공통으로 읽히므로 차이가 없지만, 기안자가 붙은 결정이 쌓이면 갈린다.
      화면이 "이 값은 보는 사람의 권한 안에서 계산됩니다"라고 적는다.
+     **→ 0034에서 바뀌었다.** `decisions`의 force를 내리고 집계를 definer 문으로 옮겨,
+     회사의 값이 계정과 무관하게 같아졌다.
   ② `interventions`: `audit_log`의 FORCE RLS + `audit_log_read`(회장/본인/subtree) 때문에
      **회장 세션에서만 행이 나온다.** GroupCFO도 CEO도 0행이다(회장은 누구의 subtree에도 없다).
      definer로 열 수도 없다 — FORCE가 걸린 표는 소유자도 정책을 받는다. 정책을 넓히면
      블록 7이 지킨 것(남의 열람 기록을 가로질러 읽지 못한다)이 무너진다. 그래서 화면이
      0건이라고 말하지 않고 '회장 계정에서만 집계됩니다'라고 말한다.
      버린 선택지: `audit_log_read`에 GroupCFO 분기를 열기.
+     **→ 0034에서 바뀌었다.** `audit_log`는 그대로 두고 집계 전용 표
+     `intervention_counts`를 두어 원문의 가시성(Chairman·GroupCFO·자기 회사 CEO)을 준다.
 - **`interventions`는 위임(delegate)도 센다.** 원문은 "승인·반려·수정"이라고 적었지만
   위임도 회장이 그 건을 손댄 것이고, 빼면 개입이 실제보다 적어 보인다.
 - **승계 표 넷의 RLS는 역할 기반이고 subtree가 아니다.** 원문이 권한을 역할로 못 박았다
@@ -1141,3 +1145,76 @@ production에서 같은 속도라는 보장이 없다.
 - **사이드바의 '관제 그룹'은 제목 없는 첫 묶음이다.** 이 저장소에 '관제'라는 제목의 그룹은
   없다. 회장이 매일 보는 항목이 모인 첫 묶음에 '의존'을 넣었고, 블록 E가 사이드바를 10개로
   갈아 끼울 때 06 SUCCESSION이 된다.
+
+## Phase 7 블록 A 잔여 — 뷰 둘의 문 (2026-09-21, 0034)
+
+- **먼저 실증했고, 그 결과가 설계를 바꿨다.** 0033 10절("definer 함수로 열어 줄 수도 없다.
+  FORCE가 걸린 표는 소유자도 정책 아래로 끌려 내려온다")과 0024:15(검사가 RPC를 "owner
+  권한으로만 돌렸을 뿐"이라 RLS가 막는 자리를 못 밟았다)가 어긋나 보였는데, **둘 다
+  맞았다 — 서로 다른 소유자를 말하고 있었다.** PGlite에 0001~0033을 올리고 BYPASSRLS 없는
+  소유자를 세워 GroupCFO 세션에서 같은 몸통을 네 가지로 불렀다:
+  `raw=0 · invoker(app_owner)=0 · definer(app_owner)=0 · definer(postgres/superuser)=2`.
+  마지막 칸만 값을 내는데 PGlite의 postgres가 superuser라 RLS를 통째로 건너뛰기 때문이다.
+  0027 1절이 배포 환경의 사실을 이미 적어 두었다 — "소유자가 BYPASSRLS가 아니면(Supabase의
+  postgres가 그렇다) definer가 **조용히 0행**을 받는다."
+  다른 길도 전부 닫혀 있었다: 함수 소유자를 표 소유자가 아닌 제3의 역할로 두어도
+  ENABLE RLS가 그대로 걸리고(0행), `set local row_security = off`는 우회가 아니라
+  **에러**다(`query would be affected by row-level security policy`).
+  그래서 "definer 집계 문 둘"은 그대로는 성립하지 않았고, **두 절반을 다르게 닫았다.**
+- **`decisions`의 force를 내렸다(② `founder_dependency`).** 0027 1절이 `projects`에,
+  0029 3절이 `user_settings`에 한 것과 같은 판단이고 그 둘은 staging·production에서 살아
+  있다. **표가 열리는 것이 아니다** — enable도 정책도 그대로라 `authenticated`로 붙는 실제
+  경로는 `decisions_read`의 겹 다섯을 한 줄도 빠짐없이 탄다. 내려가는 것은 '소유자도 정책을
+  받는가' 하나뿐이고, 그 자리의 자물쇠는 revoke다(0023 3절 ①).
+  버린 선택지: 뷰를 그대로 두고 화면이 "계정마다 다를 수 있습니다"라고 계속 적기 —
+  §7은 **회사의** 지표이고, 계정마다 다른 숫자는 회장이 둘 다 안 믿게 만든다.
+- **`audit_log`의 force는 내리지 않았다(① `interventions`).** 0031 2절이 바로 이 질문
+  앞에서 거절하고 `activity_digest`를 지었고, 그 거절이 여기서도 유효하다.
+  `decisions`와 다른 이유 하나: **`audit_log`에는 `read`·`login` 줄이 있다** — 누가 언제
+  무엇을 열어 봤나다. force를 내리면 앞으로 누가 definer 함수 하나만 잘못 쓰면 그 줄까지
+  닿고, 막는 것은 '우리가 조심한다'뿐이 된다. 블록 7이 지킨 것은 그런 방어선이 아니었다.
+  대신 집계 전용 표 `intervention_counts`를 두었다.
+- **`intervention_counts`에 무엇이 없는지가 이 표의 요점이다.** 칸은 회사·달·유형·건수와
+  `updated_at` 다섯뿐이다. `entity_id`·`actor_user_id`·`before`/`after`·`note`가 한 칸이라도
+  들어오면 이 표는 `audit_log`의 사본이 되고, **정책을 넓히지 않고도 정책을 우회한 것**이
+  된다. `activity_digest`가 사람·경로·도시를 한 칸도 두지 않은 것과 같은 규율이고,
+  검사가 칸 이름 집합을 통째로 못 박는다.
+- **쓰기 권한은 아무에게도 없다.** 이 표를 쓰는 것은 `audit_log`의 after-insert 트리거
+  하나뿐이다. 사람이 쓸 수 있게 되는 순간 이 표는 '집계'가 아니라 '누가 고친 숫자'가 되고,
+  감사 기록에서 뽑은 값이라는 유일한 근거가 사라진다. restrictive 정책(0031 2절)은 따로
+  두지 않았다 — permissive 쓰기 정책이 하나도 없어 이미 default deny이고, 정책이 없으면
+  Supabase의 default privileges로 grant가 되살아나도 한 줄도 못 쓴다.
+- **트리거는 감사 줄의 insert를 절대 실패시키지 않는다.** 기록이 먼저이고 집계는
+  나중이다(HANDOVER 2절 ③). 집계를 예외 블록으로 감쌌다 — 서브트랜잭션이라 집계만
+  되돌아가고 바깥의 insert는 커밋된다. **집계가 틀리면 다시 셀 수 있지만 기록은 다시 만들
+  수 없다**(`audit_log`는 append only다). 검사가 실제로 집계를 터뜨려 놓고 감사 줄이
+  남는지 본다. 대가: 집계 실패가 조용하다 — 회사가 `businesses`에 없는 줄은 건수에서
+  빠지고 아무 데도 안 남는다. 그 줄은 `audit_log`에 그대로 있으므로 다시 셀 수 있다.
+- **과거분은 경계가 분명한 창 하나로 채웠다.** 트리거만 달면 0034 이전의 회장 개입이
+  영원히 0이고, §34가 12개월 추이를 요구하므로 그 침묵은 곧 거짓이 된다("개입이 없었다"와
+  "0034 이전이라 세지 않았다"는 다른 사실이다). 마이그레이션 안에서
+  `no force` → `insert…select` → `force`를 **같은 트랜잭션에** 두었고, 끝난 뒤 상태는
+  오늘과 글자 하나까지 같다. 창이 필요한 이유는 마이그레이션 세션에 JWT가 없어
+  `audit_log_read`의 세 분기가 전부 거짓이고, FORCE 아래에서는 **마이그레이션의 SELECT마저
+  예외 없이 조용히 0행**이 되기 때문이다(0027이 적은 그 함정). 검사가 BYPASSRLS 없는
+  소유자로 그 차이(0행 ↔ 5행)를 직접 재서 창이 장식이 아님을 증명한다.
+- **여전히 0행인 역할 셋: Executive · TeamLead · Member.** 원문이 "나머지 거부"라고 못
+  박았고, 가시성이 넓어져도 이 셋은 그대로다. 그래서 화면은 그들에게 **'0건'이라고 말하지
+  않는다** — '권한 밖이라 집계되지 않습니다'다. 없는 것과 못 보는 것을 같은 '0'으로
+  그리는 것이 이 블록에서 금지된 거짓말이고, 문이 넓어져도 그 규율은 그대로다.
+  `AIAgent`·`Integration`도 두 문 다 0행이다 — 야간 Job이 이 숫자를 필요로 하는 경로가
+  오늘 없다. 필요해지면 그때 낸다.
+- **뷰 둘 다 여전히 `security_invoker = true`다. 뜻이 바뀌었다.** 0033에서 이것은 "뷰가
+  RLS를 우회하지 않는다"였다. 0034에서는 **"문은 뷰보다 한 층 아래에 둔다"**다 —
+  `founder_dependency`의 문은 함수 몸통(`can_read_succession`)이고 `interventions`의 문은
+  `intervention_counts`의 정책이다. 뷰가 definer가 되면 그 문을 뷰가 지나간다:
+  `interventions`는 select 권한만 있으면 누구나 전사 개입 건수를 보게 되고,
+  `founder_dependency`는 함수 execute 권한이 빠진 날에도 멀쩡히 돌아 검사가 그것을 놓친다.
+- **`audit_log_read`는 한 글자도 넓히지 않았다.** 0034에 그 이름이 (주석 말고는) 등장조차
+  하지 않고, 검사가 파일을 글자로 읽어 그것을 단언한다 — 정책을 열었다가 닫는 식의 변경은
+  DB 상태로는 안 보이기 때문이다.
+- **`npm run db:local`로는 실증하지 못했다.** 이 머신에 Docker가 없고
+  `.env.validation.local`도 없다. 대신 PGlite에 BYPASSRLS 없는 소유자를 세워 쟀다 —
+  이 저장소가 바로 이 질문을 재려고 고른 도구이고(`check-migrations.ts`
+  `definerUnderNonBypassOwner()`, 0023:107), superuser 하네스보다 엄격한 쪽이다.
+  staging 적용 뒤 실제 소유자에서 한 번 더 보는 것이 남았다.
