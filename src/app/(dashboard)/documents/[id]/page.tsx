@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { AuditTimeline } from '@/components/shared/audit-timeline'
 import { SharePanel } from '@/components/shared/share-panel'
 import { Icon } from '@/components/ui/icon'
+import { recordScreenRead } from '@/lib/activity-record'
 import { formatDateTime } from '@/lib/format'
 import { businessName } from '@/lib/lookup'
 import { currentUser } from '@/lib/auth/session'
@@ -38,6 +39,19 @@ export default async function DocumentDetailPage(props: PageProps<'/documents/[i
 
   const doc = documents.find((d) => d.document_id === id)
   if (!doc) notFound()
+
+  /**
+   * 블록 7. **문서 열람**을 기록한다. 404 뒤에 둔다 — 볼 수 없는 문서의 id를 찍어
+   * 보는 것은 열람이 아니라 탐색이고, 그것을 '문서 열람'으로 세면 기록이 거짓이 된다.
+   * 같은 문서를 5분 안에 다시 열면 한 줄이다(억제는 DB 안에 있다).
+   */
+  await recordScreenRead({
+    path: `/documents/${id}`,
+    kind: 'document',
+    entity_id: id,
+    entity_table: 'documents',
+    business_id: doc.business_id,
+  })
 
   const scope = doc.business_id === 'group' ? '그룹 공통' : businessName(businesses, doc.business_id)
 

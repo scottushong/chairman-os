@@ -18,8 +18,15 @@ import { resolveSession } from '@/lib/supabase/proxy'
  * 그래서 여기서는 화면 이동만 하고 권한 판정을 하지 않는다.
  */
 
-/** 로그인하지 않아도 열려야 하는 경로. 늘리지 않는다. */
-const PUBLIC_PATHS = ['/login']
+/**
+ * 로그인하지 않아도 열려야 하는 경로. 늘리지 않는다.
+ *
+ * /privacy는 블록 7이 더했다. 로그인 화면 하단의 고지가 이 문서를 가리키는데,
+ * 로그인해야만 열리는 개인정보 처리방침은 고지가 아니다 — 계정이 없는 사람도,
+ * 로그인하기 **전에** 무엇이 기록되는지 읽을 수 있어야 그 문장이 뜻을 가진다.
+ * 이 문서에는 회사 데이터가 한 줄도 없다(무엇을 남기고 얼마나 두는지의 설명뿐이다).
+ */
+const PUBLIC_PATHS = ['/login', '/privacy']
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))

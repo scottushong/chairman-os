@@ -1,3 +1,4 @@
+import type { ActivityEvent, ActivityKind } from '@/lib/activity'
 import type { EntityAuditRecord } from '@/lib/audit-log'
 import type { AccountFields } from '@/lib/ledger/accounts'
 import type { CorrectionResult, NewCorrection, NewJournalEntry } from '@/lib/ledger/journal'
@@ -392,6 +393,58 @@ export interface ChairmanRepository {
   saveBriefTimezone(tz: string | null): Promise<void>
   /** ① 마지막 접속 기기의 시간대. 클라이언트가 Intl로 보낸 값을 그대로 적는다. */
   saveCurrentTimezone(tz: string): Promise<void>
+
+  /**
+   * 블록 7. 열람 기록 한 줄(audit_log action='read', 0031 record_read()).
+   *
+   * **5분 중복 억제는 여기가 아니라 DB 안에 있다.** 어댑터가 억제를 판정하면 그것은
+   * 앱이 "이번엔 안 보낼게"를 정하는 것이고, 그러면 기록이 아니다. 돌려주는 값은
+   * '이번에 한 줄 남았는가'이고, 화면은 그 값을 쓰지 않는다 — 검사와 dummy 확인이 쓴다.
+   *
+   * ip 칸이 없다. 도시까지다.
+   */
+  recordRead(input: ReadEventInput): Promise<boolean>
+
+  /**
+   * 블록 7. /settings/activity가 읽는 유일한 문(0031 activity_events()).
+   *
+   * **회장이 아니면 0건이다.** 그 판정은 DB 함수 안에 있다 — 화면이 역할을 보고 안
+   * 부르는 것이 아니라, 불러도 0건이 온다. 두 겹이 같은 답을 해야 한 겹이 느슨해진
+   * 날 드러난다.
+   *
+   * days는 180(보관 기간)에서 잘린다. 그것도 DB 쪽에서 한다.
+   */
+  listActivityEvents(days: number): Promise<ActivityEvent[]>
+
+  /**
+   * 블록 7. 브리핑 한 줄이 읽는 주간 집계(0031 activity_digest).
+   *
+   * **숫자만이다 — 사람도 경로도 도시도 없다.** 야간 Job(AIAgent)은 audit_log의 FORCE
+   * RLS 때문에 남의 열람 기록을 한 줄도 못 읽고, 읽게 해 주는 것이 이 기능이 막으려는
+   * 일이다. 그래서 요약이 표로 따로 산다. 없으면(그 주에 기록이 없으면) null.
+   */
+  getActivityWeek(): Promise<ActivityWeek | null>
+}
+
+/** record_read()가 받는 것. **ip가 없다** — 0031의 함수 시그니처와 같은 모양이다. */
+export interface ReadEventInput {
+  path: string
+  kind: ActivityKind
+  entity_id: string | null
+  entity_table: string | null
+  business_id: string | null
+  /** 'Chrome · Windows'. 원문 User-Agent가 아니다. */
+  device: string | null
+  /** 'Seoul, KR'. IP가 아니다. */
+  city: string | null
+}
+
+/** 0031 activity_digest 한 행. 사람 이름이 한 칸도 없다. */
+export interface ActivityWeek {
+  week_start: IsoDate
+  events: number
+  doc_reads: number
+  people: number
 }
 
 /** 0029 chairman_brief_timezone()이 주는 두 칸. 우선순위 판정은 lib/chairman-timezone.ts가 한다. */

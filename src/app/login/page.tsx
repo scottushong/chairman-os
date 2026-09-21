@@ -1,4 +1,7 @@
+import Link from 'next/link'
+
 import { Icon } from '@/components/ui/icon'
+import { ACTIVITY_RETENTION_DAYS } from '@/lib/activity'
 import { DATA_MODE } from '@/lib/env'
 
 import { LoginForm } from './login-form'
@@ -36,6 +39,37 @@ export default async function LoginPage({ searchParams }: PageProps<'/login'>) {
           </p>
 
           <LoginForm next={next} />
+        </div>
+
+        {/*
+          접속 기록 고지 (블록 7). 원문이 "로그인 화면 하단에 고지 문구 (ko/en)"를 시켰다.
+          고지와 /privacy는 이 기능의 일부이지 옵션이 아니다 — 사람의 행동을 기록하면서
+          그 사실을 말하지 않는 것이 이 기능의 유일한 진짜 위험이다.
+
+          **담담하게 쓴다. 겁주지 않는다.** "감시됩니다"도 "모든 활동이 추적됩니다"도
+          아니다. 남기는 것과 안 남기는 것과 보관 기간을 한 문장씩 적고, 자세한 것은
+          문서로 넘긴다. 로그인 전에 읽을 수 있어야 고지라서 /privacy는 로그인 없이 열린다.
+
+          ko/en 둘 다인 것도 원문의 요구다. 새 i18n 체계를 만들지 않는다 —
+          이 저장소가 지금까지 해 온 방식대로 두 문단을 나란히 둔다.
+        */}
+        <div className="mt-5 rounded-lg border border-line-soft bg-panel/60 px-3.5 py-3">
+          <p className="text-[10.5px] leading-relaxed text-ink-dim">
+            로그인하면 접속 기록이 남습니다. 남기는 것은 계정 · 시각 · 열어 본 화면 · 기기 요약 ·
+            도시까지이고, IP 주소 원본은 남기지 않습니다. 기록은 {ACTIVITY_RETENTION_DAYS}일 뒤
+            아무도 볼 수 없게 됩니다.
+          </p>
+          <p className="mt-1.5 text-[10.5px] leading-relaxed text-ink-muted">
+            Signing in is recorded: your account, the time, the screens you open, a short device
+            summary and the city — never the raw IP address. Records become unreadable to everyone
+            after {ACTIVITY_RETENTION_DAYS} days.
+          </p>
+          <Link
+            href="/privacy"
+            className="mt-1.5 inline-block text-[10.5px] text-ink-dim underline underline-offset-2 transition-colors hover:text-ink"
+          >
+            개인정보 처리방침 · Privacy notice
+          </Link>
         </div>
 
         {/* 이 화면에 무슨 데이터가 붙어 있는지 로그인 전에 말한다. 뱃지와 같은 약속이다. */}

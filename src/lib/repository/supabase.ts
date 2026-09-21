@@ -1,5 +1,6 @@
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js'
 
+import type { ActivityEvent } from '@/lib/activity'
 import type { AuditAction, EntityAuditRecord } from '@/lib/audit-log'
 import { AUDIT_ACTION, DECISION_STATUS, type DecisionAuditRecord } from '@/lib/decision-log'
 import { dayKey } from '@/lib/format'
@@ -79,6 +80,7 @@ import {
   DUPLICATE_BUSINESS_ID,
   DUPLICATE_INVITATION,
   type AccountPatch,
+  type ActivityWeek,
   type AuditActor,
   type AuditEntityTable,
   type ChairmanCheckinInput,
@@ -95,6 +97,7 @@ import {
   type NewBusiness,
   type NewDecision,
   type NewDocument,
+  type ReadEventInput,
   type RevokeTarget,
   type StrategyPatch,
   type TaskPatch,
@@ -3552,6 +3555,60 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
      */
     async saveCurrentTimezone(tz: string) {
       await upsertOwnSettings(sb, { current_tz: tz })
+    },
+
+    /**
+     * 블록 7. 열람 기록 한 줄 (0031 record_read()).
+     *
+     * **이 어댑터는 억제를 판정하지 않는다.** '최근에 같은 경로를 봤나'를 여기서 물으면
+     * 두 요청이 겹칠 때 둘 다 "없다"를 보고 둘 다 넣는 경합이 남고, 앱을 거치지 않고
+     * PostgREST로 직접 넣는 길도 그대로 열려 있다. 함수 안에서 같은 트랜잭션으로
+     * 보고-넣어야 그 둘이 같이 닫힌다.
+     *
+     * 던지지 않는다. 기록이 안 됐다고 화면이 500이 되면 감사 기록 장애가 곧 전면
+     * 장애가 된다(actions/auth.ts의 로그인 기록과 같은 판단). 서버 로그에는 남긴다.
+     *
+     * **ip를 보내지 않는다.** 함수에 그 인자가 없다.
+     */
+    async recordRead(input: ReadEventInput): Promise<boolean> {
+      const { data, error } = await sb.rpc('record_read', {
+        p_path: input.path,
+        p_kind: input.kind,
+        p_entity_id: input.entity_id,
+        p_entity_table: input.entity_table,
+        p_business_id: input.business_id,
+        p_device: input.device,
+        p_city: input.city,
+      })
+      if (error) {
+        console.error(`[activity] record_read ${error.code ?? '?'}: ${error.message}`)
+        return false
+      }
+      return data === true
+    },
+
+    /**
+     * 블록 7. 접속 현황(0031 activity_events()).
+     *
+     * 회장이 아니면 0건이다 — 그 판정은 함수 안에 있고, 이 어댑터는 역할을 보지 않는다.
+     * 보관 기간(180일)도 함수와 정책이 같이 건다. 여기서 다시 자르면 규칙이 세 곳으로 갈라진다.
+     */
+    async listActivityEvents(days: number): Promise<ActivityEvent[]> {
+      const { data, error } = await sb.rpc('activity_events', { p_days: days })
+      if (error) throw new Error(`Supabase activity_events ${error.code ?? '?'}: ${error.message}`)
+      return (data ?? []) as ActivityEvent[]
+    },
+
+    /** 블록 7. 이번 주 집계 한 행(0031 activity_digest). 숫자만이다 — 사람도 경로도 없다. */
+    async getActivityWeek(): Promise<ActivityWeek | null> {
+      const { data, error } = await sb
+        .from('activity_digest')
+        .select('week_start,events,doc_reads,people')
+        .order('week_start', { ascending: false })
+        .limit(1)
+        .maybeSingle<ActivityWeek>()
+      if (error) throw new Error(`Supabase activity_digest ${error.code ?? '?'}: ${error.message}`)
+      return data ?? null
     },
   }
 }

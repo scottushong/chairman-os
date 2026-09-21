@@ -14,11 +14,15 @@
  * 원격 DB에 연결하지 않는다. 환경변수도 읽지 않는다.
  */
 import assert from 'node:assert/strict'
-import { readdirSync, readFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { PGlite } from '@electric-sql/pglite'
 import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm'
+
+// PGlite 스텁과 적용 루프는 scripts/pglite.ts로 옮겼다 — 블록 7의 check-activity.ts가
+// 같은 것을 쓴다. 두 벌이 되면 한쪽만 고쳐지는 날이 온다(특히 default privileges 흉내).
+import { applyAll, applyOne, MIGRATIONS, type Db } from './pglite'
 
 import { sheetFinanceKpis } from '../src/data'
 import { kstToday } from '../src/lib/chairman-project'
@@ -26,71 +30,7 @@ import { loadMockLedger } from '../src/lib/ecount/mock-ledger'
 import { kpisFromLedger } from '../src/lib/ledger/cells'
 import { STANDARD_CHART, STANDARD_CHART_BUSINESSES } from '../src/lib/ledger/standard-chart'
 
-const MIGRATIONS = join(__dirname, '..', 'supabase', 'migrations')
 const BUSINESSES = ['biz_dy', 'biz_vana', 'biz_sticky', 'biz_hof', 'biz_boram']
-
-const SUPABASE_STUBS = `
-  create schema auth;
-  create schema extensions;
-  create table auth.users (id uuid primary key, email text);
-  create function auth.uid() returns uuid language sql stable as
-    $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
-  create role anon;
-  create role authenticated;
-
-  -- Supabase Storage 최소 흉내 (0018). 실제 storage 스키마에는 훨씬 많은 칸이 있지만
-  -- 0018이 건드리는 것은 buckets의 public과 objects의 bucket_id뿐이다.
-  create schema storage;
-  create table storage.buckets (
-    id text primary key,
-    name text not null,
-    public boolean not null default false
-  );
-  create table storage.objects (
-    id uuid primary key default gen_random_uuid(),
-    bucket_id text references storage.buckets(id),
-    name text not null,
-    owner uuid,
-    created_at timestamptz not null default now(),
-    unique (bucket_id, name)
-  );
-  alter table storage.objects enable row level security;
-  grant usage on schema storage to anon, authenticated;
-  grant select on storage.buckets to authenticated;
-  grant select, insert, update, delete on storage.objects to authenticated;
-
-  -- Supabase의 기본 GRANT 흉내. 실제 프로젝트에서는 postgres 역할에 이 default privileges가
-  -- 걸려 있어서, public 스키마에 새로 만든 표는 **만들자마자** anon/authenticated에게 열린다.
-  -- 이것을 흉내 내지 않으면 마이그레이션의 revoke가 '이미 없는 권한을 걷는' 빈 문장이 되어,
-  -- 그 줄을 지워도 아무 검사도 빨개지지 않는다(0001 audit_log, 0023 chairman_kakao_token).
-  -- 표를 만드는 문장들보다 먼저 걸려야 하므로 STUBS의 마지막에 둔다.
-  alter default privileges in schema public grant all on tables    to anon, authenticated;
-  alter default privileges in schema public grant all on sequences to anon, authenticated;
-`
-
-type Db = PGlite
-
-/** 마이그레이션 한 장. 실패하면 어느 파일인지 말한다 — PGlite의 오류에는 파일 이름이 없다. */
-async function applyOne(db: Db, file: string) {
-  try {
-    await db.exec(readFileSync(join(MIGRATIONS, file), 'utf8'))
-  } catch (e) {
-    throw new Error(`${file} 적용 실패: ${e instanceof Error ? e.message : String(e)}`)
-  }
-}
-
-/**
- * upTo를 주면 그 파일까지만 적용한다. 0026의 백필처럼 **적용 순간의 DB 상태**가 입력인
- * 검사는 그 사이에 사람을 심어야 해서, 중간에 한 번 멈출 수 있어야 한다.
- */
-async function applyAll(db: Db, upTo?: string): Promise<string[]> {
-  await db.exec(SUPABASE_STUBS)
-  const all = readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql')).sort()
-  const files = upTo ? all.slice(0, all.indexOf(upTo) + 1) : all
-  assert.ok(files.length > 0, `적용할 마이그레이션이 없다 (upTo=${upTo ?? '전부'})`)
-  for (const f of files) await applyOne(db, f)
-  return files
-}
 
 async function bulk(db: Db, table: string, rows: object[], cols: string[]) {
   for (let i = 0; i < rows.length; i += 500) {

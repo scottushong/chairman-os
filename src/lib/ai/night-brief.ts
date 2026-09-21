@@ -368,6 +368,25 @@ async function readChairmanContext(
     checkin = null
   }
 
+  /**
+   * 블록 7. 이번 주 접속 기록의 한 줄(0031 activity_digest).
+   *
+   * 다른 칸과 같은 이유로 따로 감싼다 — 못 읽었다고 나머지 chairman 칸까지 null로
+   * 떨구지 않는다. **숫자만 읽는다.** 이 Job은 audit_log의 개별 줄을 못 읽고(FORCE RLS),
+   * 못 읽는 것이 맞다. 그래서 여기서 만들 수 있는 문장이 이 한 줄뿐이다.
+   */
+  let activity: string | null = null
+  try {
+    const week = await repo.getActivityWeek()
+    activity = week
+      ? `이번 주(${week.week_start}~) 접속 기록 ${week.events}건 · 문서 열람 ${week.doc_reads}건 · ` +
+        `활동한 사람 ${week.people}명. 사람별 내역과 이상 징후는 회장 전용 화면(/settings/activity)에만 있다.`
+      : null
+  } catch (e) {
+    console.error('[night-brief] activity', errorText(e))
+    activity = null
+  }
+
   return {
     projects: orderProjects(projects)
       .filter((p) => p.status === 'Active')
@@ -404,6 +423,7 @@ async function readChairmanContext(
       }),
     manifesto: manifesto.body || null,
     checkin,
+    activity,
   }
 }
 

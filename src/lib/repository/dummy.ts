@@ -11,6 +11,7 @@ import {
   tasks,
   topGoals,
 } from '@/data'
+import { ACTIVITY_DEDUP_MINUTES, ACTIVITY_RETENTION_DAYS, type ActivityEvent } from '@/lib/activity'
 import type { EntityAuditRecord } from '@/lib/audit-log'
 import { kstToday } from '@/lib/chairman-project'
 import { AUDIT_ACTION, DECISION_STATUS, type DecisionAuditRecord } from '@/lib/decision-log'
@@ -18,6 +19,7 @@ import { dayKey } from '@/lib/format'
 import { logoPath } from '@/lib/initiative-logo'
 import { kpisFromLedger } from '@/lib/ledger/cells'
 
+import { dummyActivitySeed } from './dummy-activity'
 import * as books from './dummy-books'
 import { dummyLedger } from './dummy-books'
 import {
@@ -91,6 +93,7 @@ import {
   type NewBusiness,
   type NewDecision,
   type NewDocument,
+  type ReadEventInput,
   type RevokeTarget,
   type StrategyPatch,
   type TaskPatch,
@@ -285,6 +288,31 @@ const memoryBriefTimezone: { brief_tz: string | null; current_tz: string | null 
   brief_tz: null,
   current_tz: null,
 }
+
+/**
+ * 블록 7 접속 현황. 시드(dummy-activity.ts) 위에 이 서버가 사는 동안의 기록이 쌓인다.
+ * 최신이 앞이다 — recordRead가 unshift한다.
+ */
+const memoryActivity: ActivityEvent[] = dummyActivitySeed()
+
+/**
+ * 브리핑 한 줄이 읽는 주간 집계(0031 activity_digest의 흉내). **숫자만이다.**
+ * 시드에서 세어 시작한다 — 0으로 두면 화면이 "이번 주 0건"이라는 거짓말을 한다.
+ */
+const memoryActivityWeek = (() => {
+  const monday = new Date()
+  const kstNow = new Date(monday.getTime() + 9 * 3_600_000)
+  const weekday = (kstNow.getUTCDay() + 6) % 7 // 월=0
+  const start = new Date(Date.UTC(kstNow.getUTCFullYear(), kstNow.getUTCMonth(), kstNow.getUTCDate() - weekday))
+  const floor = start.getTime() - 9 * 3_600_000
+  const thisWeek = memoryActivity.filter((e) => e.action === 'read' && Date.parse(e.occurred_at) >= floor)
+  return {
+    week_start: start.toISOString().slice(0, 10),
+    events: thisWeek.length,
+    doc_reads: thisWeek.filter((e) => e.kind === 'document').length,
+    people: new Set(thisWeek.map((e) => e.actor_user_id)).size,
+  }
+})()
 
 /**
  * JSON 시드 어댑터.
@@ -1384,6 +1412,76 @@ export const dummyRepository: ChairmanRepository = {
 
   async saveCurrentTimezone(tz: string) {
     memoryBriefTimezone.current_tz = tz
+  },
+
+  /**
+   * 블록 7. 열람 기록 한 줄 (0031 record_read()의 흉내).
+   *
+   * **억제 규칙을 여기에 옮겨 적는다.** dummy-org.ts의 subtree 흉내와 같은 성격이다 —
+   * live에서는 이 코드가 한 줄도 돌지 않고 DB 함수가 판정한다. 두 곳에 있는 이유는
+   * dummy로 확인하는 것이 이 저장소의 확인 방식이기 때문이고, **같은 숫자를 쓰도록**
+   * 상수를 lib/activity.ts에서 가져온다(5를 손으로 두 번 적지 않는다).
+   */
+  async recordRead(input: ReadEventInput) {
+    const viewer = dummyViewer()
+    // 시스템 계정과 회수된 계정은 기록 대상이 아니다. 0031의 첫 세 분기와 같다.
+    if (viewer.revoked_at || viewer.role === 'AIAgent' || viewer.role === 'Integration') return false
+    if (!input.path.startsWith('/')) return false
+
+    const floor = Date.now() - ACTIVITY_DEDUP_MINUTES * 60_000
+    const duplicate = memoryActivity.some(
+      (e) =>
+        e.actor_user_id === viewer.user_id &&
+        e.action === 'read' &&
+        e.path === input.path &&
+        Date.parse(e.occurred_at) > floor,
+    )
+    if (duplicate) return false
+
+    const weekFloor = Date.parse(`${memoryActivityWeek.week_start}T00:00:00+09:00`)
+    const seenThisWeek = memoryActivity.some(
+      (e) => e.actor_user_id === viewer.user_id && e.action === 'read' && Date.parse(e.occurred_at) >= weekFloor,
+    )
+
+    memoryActivity.unshift({
+      occurred_at: new Date().toISOString(),
+      actor_user_id: viewer.user_id,
+      actor_role: viewer.role,
+      action: 'read',
+      entity_id: input.entity_id,
+      entity_table: input.entity_table,
+      business_id: input.business_id,
+      path: input.path,
+      kind: input.kind,
+      device: input.device,
+      city: input.city,
+      tz: memoryBriefTimezone.current_tz,
+      ok: null,
+    })
+    // people은 '이번 주에 한 번이라도 남긴 사람 수'다. 방금 넣은 줄을 빼고 세야
+    // 처음인지 알 수 있다 — 0031이 audit_log insert보다 먼저 보는 것과 같은 이유다.
+    if (!seenThisWeek) memoryActivityWeek.people += 1
+    memoryActivityWeek.events += 1
+    if (input.kind === 'document') memoryActivityWeek.doc_reads += 1
+    return true
+  },
+
+  /**
+   * 블록 7. **회장이 아니면 0건이다.** 0031 activity_events()의 첫 줄과 같다 —
+   * 화면이 역할을 보고 안 부르는 것이 아니라, 불러도 0건이 온다.
+   */
+  async listActivityEvents(days: number) {
+    if (dummyViewer().role !== 'Chairman') return []
+    const capped = Math.min(Math.max(days, 1), ACTIVITY_RETENTION_DAYS)
+    const floor = Date.now() - capped * 86_400_000
+    return memoryActivity
+      .filter((e) => Date.parse(e.occurred_at) >= floor)
+      .map((e) => ({ ...e }))
+      .sort((a, b) => Date.parse(b.occurred_at) - Date.parse(a.occurred_at))
+  },
+
+  async getActivityWeek() {
+    return { ...memoryActivityWeek }
   },
 
   /**

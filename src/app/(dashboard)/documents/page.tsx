@@ -4,6 +4,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { RegisterDocument } from '@/components/documents/register-document'
 import { FilterChips, type FilterOption } from '@/components/ui/filter-chips'
 import { Icon } from '@/components/ui/icon'
+import { recordScreenRead } from '@/lib/activity-record'
 import { formatDateTime } from '@/lib/format'
 import { businessName } from '@/lib/lookup'
 import { firstParam, oneOf, withParams } from '@/lib/query'
@@ -45,6 +46,10 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
   const params = await props.searchParams
   const classFilter = oneOf(firstParam(params.class), SECURITY_CLASS)
   const businessFilter = firstParam(params.business)
+
+  // 블록 7. 페이지 진입. 필터(쿼리)는 경로에 싣지 않는다 — 등급 칩을 눌러 볼 때마다
+  // 줄이 하나씩 늘면 목록 화면 하나가 하루에 수십 줄이 된다.
+  await recordScreenRead({ path: '/documents', kind: 'page' })
 
   const repo = await getRepository()
   const [documents, businesses] = await Promise.all([repo.listDocuments(), repo.listBusinesses()])

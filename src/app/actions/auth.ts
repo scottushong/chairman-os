@@ -2,6 +2,7 @@
 
 import { redirect } from 'next/navigation'
 
+import { readActivityOrigin } from '@/lib/activity-record'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 
 /**
@@ -47,6 +48,30 @@ export async function signIn(_prev: SignInState, formData: FormData): Promise<Si
 
   const { data, error } = await sb.auth.signInWithPassword({ email, password })
   if (error || !data.user) {
+    /**
+     * 블록 7. 실패한 로그인 한 줄 (0031 record_login_failure()).
+     *
+     * **자격 증명이 실제로 틀렸을 때만 남긴다.** 요청 제한(over_request_rate_limit)이나
+     * 네트워크 오류로 돌아온 것은 '누가 남의 계정에 들어가려 했다'가 아니고, 그것까지
+     * 세면 실패 기록이 잡음으로 가득 차 ④ 이상 징후가 아무 뜻도 없게 된다.
+     * 이 좁힘이 동시에 그 문의 부풀리기 방어이기도 하다(0031 5절의 '남은 구멍').
+     *
+     * DB 함수는 **실재하는 활성 계정**에 대해서만 한 줄을 남긴다. 모르는 이메일로는
+     * 아무 일도 없다. 화면 문구는 어느 쪽이든 같아서 계정 존재 여부가 새지 않는다.
+     *
+     * 기록이 실패해도 로그인 흐름은 그대로다 — 감사 기록 장애가 곧 로그인 장애가
+     * 되면 안 된다(아래 성공 경로와 같은 판단).
+     */
+    const invalidCredentials =
+      error?.code === 'invalid_credentials' || /invalid login credentials/i.test(error?.message ?? '')
+    if (invalidCredentials) {
+      try {
+        const { device, city } = await readActivityOrigin()
+        await sb.rpc('record_login_failure', { p_email: email, p_device: device, p_city: city })
+      } catch (e) {
+        console.error('[audit] login 실패 기록 실패', e instanceof Error ? e.message : String(e))
+      }
+    }
     return { error: messageKo(error?.code, error?.message ?? '') }
   }
 
@@ -66,12 +91,19 @@ export async function signIn(_prev: SignInState, formData: FormData): Promise<Si
 
   // CH-051. 기록이 실패해도 로그인 자체는 되돌리지 않는다 —
   // 여기서 막으면 audit_log 장애가 곧 전면 로그인 장애가 된다. 대신 서버 로그에 남긴다.
+  //
+  // 블록 7이 after 세 칸을 더했다. 성공한 로그인에도 기기·도시가 있어야
+  // 접속 현황의 '오늘 로그인'이 성공과 실패를 같은 모양으로 늘어놓을 수 있고,
+  // ② 새 기기·새 도시 판정이 로그인 줄에서도 선다. **IP는 넣지 않는다** —
+  // readActivityOrigin()은 x-forwarded-for를 읽지 않는다. 도시까지다.
+  const { device, city } = await readActivityOrigin()
   const { error: auditError } = await sb.from('audit_log').insert({
     actor_user_id: profile.user_id,
     actor_role: profile.role,
     action: 'login',
     entity_table: 'auth.users',
     entity_id: profile.user_id,
+    after: { ok: 'true', path: '/login', device, city },
   })
   if (auditError) {
     console.error(`[audit] login 기록 실패 ${auditError.code ?? '?'}: ${auditError.message}`)

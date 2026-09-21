@@ -87,6 +87,19 @@ export interface ChairmanContext {
    * 야간 Job이 07:00 KST로 옮겨 간 뒤로는 그쪽이 기본이다.
    */
   checkin: { condition: ChairmanCondition; as_of: IsoDate } | null
+  /**
+   * 블록 7. 이번 주 접속 기록의 **한 줄 요약**. 읽지 못했으면 null.
+   *
+   * **요약이지 명단이 아니다.** 누가 무엇을 언제 봤는지는 이 줄에 없고, 브리핑에도
+   * 들어가지 않는다. 0031의 activity_digest는 숫자 넷(주 시작·건수·문서 열람·사람 수)뿐인
+   * 표이고, 야간 Job은 audit_log의 개별 줄을 **읽을 수 없다**(FORCE RLS). 그것이
+   * 이 칸이 문자열 하나인 이유다 — 모델에게 더 줄 것이 없어서가 아니라 주면 안 돼서다.
+   *
+   * 이상 징후 건수는 여기 없다. 그 판정은 사람마다의 30일 기준선을 가로질러 봐야 하는데,
+   * 그 가로지르기는 회장 세션에서만 가능하다(/settings/activity). 야간 Job에게 그 문을
+   * 열어 주는 것이 이 기능이 막으려는 일 그 자체다.
+   */
+  activity: string | null
 }
 
 export interface DailyBriefInput {

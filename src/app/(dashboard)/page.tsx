@@ -10,6 +10,7 @@ import { InitiativeStat } from '@/components/dashboard/initiative-stat'
 import { StrategicCoordinates } from '@/components/dashboard/strategic-coordinates'
 import { WaitingOnMe } from '@/components/dashboard/waiting-on-me'
 import { Icon } from '@/components/ui/icon'
+import { recordScreenRead } from '@/lib/activity-record'
 import { currentUser } from '@/lib/auth/session'
 import { kstToday } from '@/lib/chairman-project'
 import { orderInitiatives } from '@/lib/initiative'
@@ -29,6 +30,10 @@ import { getCurrentLocationWeather } from '@/lib/weather'
  */
 
 export default async function DashboardPage() {
+  // 블록 7. 페이지 진입. 회장이 하루에 가장 자주 여는 화면이라 5분 억제가 실제로
+  // 일하는 자리이기도 하다 — 없으면 이 한 줄이 기록의 절반을 차지한다.
+  await recordScreenRead({ path: '/', kind: 'page' })
+
   const repo = await getRepository()
   // 위치는 요청 헤더 조회라 왕복이 없다. 날씨·프로세스차트는 나머지와 나란히 기다린다.
   const location = await resolveLocation()

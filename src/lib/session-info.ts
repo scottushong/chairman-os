@@ -2,6 +2,7 @@ import 'server-only'
 
 import { headers } from 'next/headers'
 
+import { summarizeUserAgent } from '@/lib/activity'
 import { supabaseConfig } from '@/lib/supabase/config'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 
@@ -21,10 +22,12 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
  *
  * 다음은 **만들 수 없다.**
  *
- *   과거 로그인 목록   audit_log에 action='login'이 쌓이고는 있지만(actions/auth.ts) 그 줄에는
- *                      기기도 IP도 없다. 그 칸들은 블록 7(회장 전용 접속 현황 /settings/activity)이
- *                      더하기로 되어 있는 것이고, 없는 칸을 여기서 추측으로 채우면
- *                      '기록'이라는 말의 뜻이 무너진다. 목록은 그 블록이 온 뒤에 선다.
+ *   과거 로그인 목록   블록 7이 audit_log의 login 줄에 기기 요약과 도시를 같이 넣기
+ *                      시작했다(IP 원본은 넣지 않는다 — 도시까지다). 그래서 칸은 이제 있다.
+ *                      그것을 한 판에 늘어놓는 화면은 회장 전용 /settings/activity뿐이고,
+ *                      **본인용 목록 화면은 아직 없다.** 여기에 목록을 붙이려면 본인의
+ *                      audit_log를 읽어 오는 경로가 하나 더 필요한데, 그 화면이 필요하다는
+ *                      요구가 아직 없다. 없는 화면을 미리 짓지 않는다.
  *   다른 기기의 세션   GoTrue에는 자기 세션 목록을 주는 API가 없다(admin API는 service_role이
  *                      필요하고 이 프로젝트에는 그 키가 없다 — CLAUDE.md 데이터 원칙).
  *                      그래서 '활성 세션 목록'은 **지금 이 기기 한 줄**이 전부다.
@@ -51,35 +54,16 @@ function nonEmpty(value: string | null | undefined): string | null {
 }
 
 /**
- * User-Agent에서 브라우저와 OS만 대충 읽는다.
+ * 기기 요약은 lib/activity.ts의 summarizeUserAgent()를 쓴다.
  *
- * 라이브러리를 들이지 않는다. 이 값이 쓰이는 자리는 "지금 이 기기가 무엇인가" 한 줄이고,
- * 그 한 줄을 위해 UA 파서를 의존성으로 들이면 유지비가 값보다 크다.
- * 모르면 null이다 — 'Unknown Browser'라고 적어 두면 그게 이름인 줄 안다.
+ * 예전에는 이 파일에 같은 규칙이 한 벌 더 있었다. 블록 7이 접속 현황에 같은 값을
+ * 남기기 시작하면서 두 벌이 되면, 설정 화면의 '지금 이 기기'와 접속 현황의 기기 칸이
+ * 같은 브라우저를 다르게 부를 수 있게 된다 — 그러면 회장이 둘을 대조할 수 없다.
  */
-function readDevice(ua: string | null): string | null {
-  if (!ua) return null
-  const browser =
-    /Edg\//.test(ua) ? 'Edge'
-    : /OPR\//.test(ua) ? 'Opera'
-    : /Chrome\//.test(ua) ? 'Chrome'
-    : /Safari\//.test(ua) && /Version\//.test(ua) ? 'Safari'
-    : /Firefox\//.test(ua) ? 'Firefox'
-    : null
-  const os =
-    /Windows NT/.test(ua) ? 'Windows'
-    : /iPhone|iPad/.test(ua) ? 'iOS'
-    : /Mac OS X/.test(ua) ? 'macOS'
-    : /Android/.test(ua) ? 'Android'
-    : /Linux/.test(ua) ? 'Linux'
-    : null
-  if (!browser && !os) return null
-  return [browser, os].filter(Boolean).join(' · ')
-}
 
 export async function readSessionInfo(): Promise<SessionInfo> {
   const h = await headers()
-  const device = readDevice(h.get('user-agent'))
+  const device = summarizeUserAgent(h.get('user-agent'))
 
   const city = nonEmpty(h.get('x-vercel-ip-city'))
   const country = nonEmpty(h.get('x-vercel-ip-country'))

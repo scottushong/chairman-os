@@ -92,9 +92,10 @@ export default async function SettingsHubPage() {
          */}
         <ul className="mt-2 space-y-1 text-[10.5px] text-ink-muted">
           <li>
-            · <b className="font-semibold">지난 로그인 목록</b>은 아직 없습니다. 로그인은
-            감사 기록에 남지만 그 줄에 기기·IP 칸이 없습니다 — 그 칸들은 회장 전용 접속 현황
-            화면(블록 7)이 같이 가져옵니다.
+            · <b className="font-semibold">지난 로그인 목록</b>을 보여 주는 화면은 아직
+            없습니다. 블록 7부터 로그인 줄에 기기 요약과 도시가 같이 남지만(IP 원본은 남기지
+            않습니다), 그것을 한 판에 늘어놓는 화면은 회장 전용 접속 현황뿐입니다. 본인용
+            목록 화면은 필요해지는 날 세웁니다 — 지금은 목록이 없다고 말하는 쪽이 맞습니다.
           </li>
           <li>
             · <b className="font-semibold">활성 세션 목록</b>도 지금 이 기기 한 줄이 전부입니다.
@@ -187,8 +188,23 @@ export default async function SettingsHubPage() {
       <Section icon="book" title="데이터" scope="전 사용자 공통">
         <p className="text-[11px] text-ink-dim">
           문서·업무·결정의 변경 이력은 각 화면의 기록 줄에서 그 행만 시간 역순으로 볼 수
-          있습니다. 전체 감사 로그를 한 판에 보는 화면은 회장 전용으로 따로 섭니다(블록 7).
+          있습니다.
         </p>
+        {/*
+          블록 7. 접속 현황은 회장 전용이라 이 줄도 회장에게만 그린다.
+          권한 없는 절은 렌더하지 않는다는 이 화면의 규칙과 같다 — 회색 버튼을 두면
+          "왜 안 되지"가 남고, 그 회색 버튼은 죽은 버튼과 구별되지 않는다.
+        */}
+        {isChairman ? (
+          <div className="mt-2 space-y-1.5">
+            <Row
+              title="접속 현황"
+              note="누가 언제 무엇을 열었는지. 현재 접속 중 · 오늘 로그인 · 30일 타임라인 · 이상 징후."
+              href="/settings/activity"
+              cta="열기"
+            />
+          </div>
+        ) : null}
         <p className="mt-2 rounded-lg bg-raised px-3 py-2.5 text-[10.5px] text-ink-muted">
           <b className="font-semibold text-ink-dim">내보내기는 없습니다.</b> 이 시스템에 나가는
           통로를 만들지 않는다는 것이 회장님 지시입니다. 파일로 받아 가는 버튼도, 그 코드도
@@ -248,9 +264,16 @@ export default async function SettingsHubPage() {
         </p>
 
         <div className="mt-2.5 space-y-1.5">
+          {/* 블록 7이 세웠다. 이용약관은 아직 없다 — 없는 것을 있는 것처럼 적지 않는다. */}
+          <Row
+            title="개인정보 처리방침"
+            note="무엇을 남기고, 왜 남기고, 누가 보고, 얼마나 두는지. 열람 기록 항목이 들어 있습니다. 로그인 없이도 열립니다."
+            href="/privacy"
+            cta="읽기"
+          />
           <Waiting
-            title="개인정보 처리방침 · 이용약관"
-            note="아직 문서가 없습니다. 링크만 먼저 걸면 누르는 순간 404가 되고, 그것이 법적 문구에서는 가장 나쁜 모양입니다. 블록 7이 열람 기록 항목과 함께 세웁니다."
+            title="이용약관"
+            note="아직 문서가 없습니다. 링크만 먼저 걸면 누르는 순간 404가 되고, 그것이 법적 문구에서는 가장 나쁜 모양입니다."
           />
           <div className="rounded-lg bg-raised px-3 py-2.5">
             <p className="text-[11.5px] font-semibold text-ink">오픈소스</p>

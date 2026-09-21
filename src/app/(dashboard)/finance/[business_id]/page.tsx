@@ -5,6 +5,7 @@ import { BooksNav } from '@/components/finance/books-nav'
 import { CloseMonth } from '@/components/finance/close-month'
 import { FinanceView } from '@/components/finance/finance-view'
 import { PageHeader } from '@/components/layout/page-header'
+import { recordScreenRead } from '@/lib/activity-record'
 import { canCloseBooks } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
 import { closablePeriod } from '@/lib/ledger/closing'
@@ -28,6 +29,19 @@ export default async function BusinessFinancePage(props: PageProps<'/finance/[bu
 
   const business = businesses.find((b) => b.business_id === business_id)
   if (!business) notFound()
+
+  /**
+   * 블록 7. **재무 화면 조회**를 기록한다. 원문이 페이지 진입·문서 열람과 나란히 지목한
+   * 셋 중 하나다 — 금액이 뜨는 화면은 누가 언제 봤는지가 감사의 대상이다.
+   * 404 뒤에 둔다(볼 수 없는 회사의 id를 찍어 본 것은 조회가 아니다).
+   * 월·탭을 바꿔 가며 보는 화면이라 경로에 쿼리를 싣지 않는다 — 그러면 5분 억제가
+   * 탭마다 따로 걸려 한 번 앉은 자리가 여러 줄이 된다.
+   */
+  await recordScreenRead({
+    path: `/finance/${business_id}`,
+    kind: 'finance',
+    business_id,
+  })
 
   // 마감 차례인 달. 마감 담당(Chairman · GroupCFO)에게만 버튼이 선다 — 안내다, 문은 0016 close_period().
   const closable = canCloseBooks(user) ? closablePeriod(ledger, business_id, todayKst()) : null

@@ -21,7 +21,8 @@
     "check:process-charts": "tsx scripts/check-process-charts.ts",
     "check:kakao": "tsx scripts/check-kakao.ts",
     "check:schedule": "tsx scripts/check-brief-schedule.ts",
-    "check:migrations": "tsx scripts/check-migrations.ts"
+    "check:migrations": "tsx scripts/check-migrations.ts",
+    "check:activity": "tsx scripts/check-activity.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",
