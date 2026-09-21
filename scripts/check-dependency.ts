@@ -105,8 +105,21 @@ const BREAKS = {
   'counts-write': 'intervention_counts의 쓰기를 모든 활성 사용자에게 연다',
   /** 트리거의 예외 블록을 뗀다 — 집계가 터지면 감사 줄이 같이 사라진다. */
   'trigger-fatal': 'interventions_bump()의 예외 블록을 떼서 집계 실패가 감사 줄을 죽이게 한다',
+  /**
+   * 예외 블록은 두되 `raise warning`을 `null;`로 되돌린다 — 감사 줄은 살지만 빠진
+   * 건수가 **어디에도 흔적이 없다.** 0034 이전에 내가 쓴 모양이고, 리뷰가 잡은 자리다.
+   */
+  'trigger-silent': 'interventions_bump()이 집계 실패를 경고 없이 삼키게 한다',
   /** 0034가 채운 과거분을 지운다 — 12개월 추이가 통째로 빈다. */
   'wipe-counts': '0034가 backfill로 채운 과거 개입 건수를 지운다',
+  /**
+   * **audit_log의 force를 내린 채로 둔다** — 0034 6절의 창이 닫히지 않은 상태다.
+   * 0031 2절이 표를 하나 더 지어 가며 피한 그 결정을 뒤집는 한 줄이고, 이 설계와
+   * 0031이 거절한 것을 가르는 자리가 정확히 그 한 줄이다.
+   */
+  'audit-window': '0034 6절의 backfill 창을 닫지 않는다(audit_log의 force를 내린 채로 둔다)',
+  /** 문 하나의 execute를 public에 돌려준다 — 0019 3절의 revoke를 무르는 것이다. */
+  'door-public': 'founder_dependency_rows()의 execute를 public에 준다',
   /** interventions가 위임을 빼고 센다 — 개입이 실제보다 적어 보인다. */
   'interventions-no-delegate': 'interventions에서 위임(delegate)을 뺀다',
   /** TS 식이 null을 ceo로 접는다. */
@@ -314,9 +327,13 @@ async function database() {
    * 누구나 전사 개입 건수를 보게 되고, founder_dependency는 함수 execute 권한이 빠진
    * 날에도 멀쩡히 돌아 검사가 그 사실을 놓친다. 문이 둘이 되는 것도 그래서 피한다.
    */
-  if (broke('view-definer')) {
-    await db.exec(`alter view interventions set (security_invoker = false)`)
-  }
+  /*
+   * **짝이 되는 돌연변이는 여기가 아니라 7절에 있다.** `view-definer`를 여기서 걸면
+   * 이 단언이 "옵션을 껐더니 옵션이 꺼져 있다"를 재는 동어반복이 된다. 그 키는 7절의
+   * ㉗ 앞에서 걸리고, 거기서 **행동**이 먼저 빨개진다(definer 뷰가 되면 select 권한만
+   * 있는 팀장이 전사 개입 건수를 본다 — 그것이 이 선택이 막는 것이다). 아래 둘은 그
+   * 행동 단언의 구조적 뒷받침이고, 7절 끝에서 같은 옵션을 한 번 더 읽는다.
+   */
   for (const v of ['founder_dependency', 'interventions']) {
     const opts = await val<string[]>(null, `select reloptions from pg_class where relname = '${v}'`, 'app_owner')
     assert.ok(
@@ -350,6 +367,9 @@ async function database() {
    *    트랜잭션 안에서 잠깐 열었다 닫았고, 그 창이 닫힌 채로 커밋됐는지를 여기서 잰다.
    *    0031 2절이 force를 내리기를 거절하고 activity_digest를 지은 그 판단이 이 한 줄이다.
    */
+  if (broke('audit-window')) {
+    await db.exec(`alter table public.audit_log no force row level security`)
+  }
   const auditForce = await val<boolean>(
     null,
     `select relforcerowsecurity from pg_class where relname = 'audit_log'`,
@@ -381,9 +401,24 @@ async function database() {
     ['business_id', 'count', 'kind', 'period', 'updated_at'],
     `intervention_counts의 칸이 회사·달·유형·건수와 updated_at 다섯이 아니다(${countCols.join(',')}) — 한 칸이라도 더 있으면 이 표는 audit_log의 사본이고, audit_log_read를 넓히지 않고도 넓힌 것이 된다(0031 activity_digest가 사람·경로·도시를 한 칸도 두지 않은 것과 같은 규율)`,
   )
-  /** intervention_counts에 force를 걸지 않았다 — 걸면 트리거가 조용히 아무것도 안 쓴다. */
+  /**
+   * intervention_counts는 **enable은 켜고 force는 끈다.** 위 ④가 승계 표 넷에 대해
+   * 두 칸을 다 재는 것과 같은 모양이다 — force만 재면 "정책이 아예 안 걸리는 표"가
+   * 그대로 통과한다(그 순간 이 표는 select 권한만 있으면 누구나 읽는 표가 된다).
+   */
+  const countsFlags = await rows<{ r: boolean; f: boolean }>(
+    null,
+    `select relrowsecurity as r, relforcerowsecurity as f from pg_class where relname = 'intervention_counts'`,
+    'app_owner',
+  )
+  assert.equal(countsFlags.length, 1, 'intervention_counts를 못 찾는다 — 이 단언이 아무것도 재지 못한다')
   assert.equal(
-    await val<boolean>(null, `select relforcerowsecurity from pg_class where relname = 'intervention_counts'`, 'app_owner'),
+    countsFlags[0].r,
+    true,
+    'intervention_counts에 row level security가 꺼져 있다 — 정책이 한 줄도 안 걸리고, select 권한만 있으면 누구나 전사 개입 건수를 읽는다',
+  )
+  assert.equal(
+    countsFlags[0].f,
     false,
     'intervention_counts에 force row level security가 걸렸다 — 0034 5절의 트리거가 소유자 권한으로 이 표에 쓰는데, force가 걸리면 그 쓰기가 정책 아래로 내려가 조용히 아무것도 안 쓴다(이 저장소가 네 번 밟은 함정)',
   )
@@ -421,6 +456,9 @@ async function database() {
    *    뜻이다. 몸통이 걸러 주더라도 기본 권한을 남겨 두지 않는다 — 나중에 몸통이 한 줄
    *    바뀌는 날 그 기본값이 구멍이 된다.
    */
+  if (broke('door-public')) {
+    await db.exec(`grant execute on function founder_dependency_rows() to public`)
+  }
   for (const fn of ['founder_dependency_rows()', 'interventions_bump()']) {
     assert.equal(
       await val<boolean>(null, `select has_function_privilege('public', '${fn}', 'execute')`, 'app_owner'),
@@ -899,6 +937,31 @@ async function database() {
       alter function public.interventions_bump() owner to app_owner;
     `)
   }
+  if (broke('trigger-silent')) {
+    await db.exec(`
+      create or replace function interventions_bump() returns trigger
+      language plpgsql volatile security definer set search_path = public as $fn$
+      begin
+        begin
+          if new.actor_role = 'Chairman'
+             and new.action::text in ('approve', 'reject', 'modify', 'delegate')
+             and new.business_id is not null then
+            insert into intervention_counts (business_id, period, kind, count, updated_at)
+            values (new.business_id,
+                    to_char(new.occurred_at at time zone 'Asia/Seoul', 'YYYY-MM'),
+                    new.action::text, 1, now())
+            on conflict (business_id, period, kind) do update
+              set count = intervention_counts.count + 1, updated_at = now();
+          end if;
+        exception when others then
+          null;
+        end;
+        return null;
+      end;
+      $fn$;
+      alter function public.interventions_bump() owner to app_owner;
+    `)
+  }
   await db.exec(`
     insert into audit_log (actor_user_id, actor_role, action, entity_table, entity_id, business_id) values
       ('${U.chair}', 'Chairman',    'reject',   'decisions', 't_iv_1', 'biz_dy'),
@@ -910,16 +973,21 @@ async function database() {
   /**
    * ㉔-a **트리거는 감사 줄의 insert를 절대 실패시키지 않는다**(HANDOVER 2절 ③).
    *
-   *    집계가 터지는 상황을 실제로 만든다 — businesses에 없는 회사를 단 줄이다.
-   *    intervention_counts의 FK가 거기서 터지고, 0034 5절의 예외 블록이 그것을 삼킨다.
-   *    삼키지 않으면 **감사 줄 자체가 안 남는다.** audit_log는 append only라 남지 않은
-   *    줄을 되살릴 방법이 없다 — 집계가 틀리면 다시 셀 수 있지만 기록은 다시 만들 수 없다.
+   *    § 실패 경로를 이 검사가 직접 만든다 §
+   *    0034는 `intervention_counts`에 FK를 걸지 않는다(`audit_log.business_id`가 제약 없는
+   *    자유 문자열이라 파생 집계를 원천보다 좁게 묶지 않는다 — 0034 4절). 그래서 "없는
+   *    회사"로는 더 이상 아무것도 안 터진다. 스키마의 우연한 제약에 기대는 대신 **여기서
+   *    제약 하나를 심어** 집계를 확실히 터뜨리고, 재고 나서 걷는다. 이렇게 두면 이 단언은
+   *    앞으로 제약이 붙거나 떨어져도 계속 «예외 블록이 있는가»만 잰다.
    */
+  await db.exec(
+    `alter table intervention_counts add constraint dep_check_break check (business_id <> 'biz_집계실패')`,
+  )
   let bumpError: string | null = null
   try {
     await db.exec(`
       insert into audit_log (actor_user_id, actor_role, action, entity_table, entity_id, business_id)
-      values ('${U.chair}', 'Chairman', 'approve', 'decisions', 't_iv_fk', 'biz_없는회사');
+      values ('${U.chair}', 'Chairman', 'approve', 'decisions', 't_iv_fail', 'biz_집계실패');
     `)
   } catch (e) {
     bumpError = e instanceof Error ? e.message : String(e)
@@ -930,9 +998,36 @@ async function database() {
     `집계가 터지면서 감사 줄의 insert까지 같이 실패했다 (${bumpError}) — 기록이 먼저이고 집계는 나중이다. audit_log는 append only라 여기서 잃은 줄은 되살릴 수 없다`,
   )
   assert.equal(
-    Number(await val(U.chair, `select count(*)::int from audit_log where entity_id = 't_iv_fk'`)),
+    Number(await val(U.chair, `select count(*)::int from audit_log where entity_id = 't_iv_fail'`)),
     1,
     '집계가 터진 뒤 감사 줄이 남지 않았다 — 0034 5절의 예외 블록이 빠졌다',
+  )
+  /** 전제 확인: 집계는 **실제로** 터졌는가. 안 터졌으면 위 둘은 아무것도 재지 않았다. */
+  assert.equal(
+    Number(await val(null, `select count(*)::int from intervention_counts where business_id = 'biz_집계실패'`, 'app_owner')),
+    0,
+    '이 실험의 전제가 깨졌다 — 심어 둔 제약을 뚫고 집계가 들어갔다면 위 두 단언은 «예외 블록»을 재고 있지 않다',
+  )
+  await db.exec(`alter table intervention_counts drop constraint dep_check_break`)
+
+  /**
+   * ㉔-b **잃은 것을 조용히 삼키지 않는다.** 예외 블록이 있어도 `null;`로 두면 빠진
+   *    건수가 서버 로그에도 안 남는다(잡힌 예외는 저절로 기록되지 않는다) — §34가
+   *    12개월 추이로 그리는 값에서 그 침묵은 «개입이 없었다»와 구별되지 않는다.
+   *    파일이 아니라 **DB에 실제로 올라간 정의**를 읽는다.
+   */
+  const bumpDef = await val<string>(
+    null,
+    `select pg_get_functiondef('interventions_bump()'::regprocedure)`,
+    'app_owner',
+  )
+  assert.ok(
+    /raise\s+warning/i.test(bumpDef ?? ''),
+    'interventions_bump()이 집계 실패를 raise warning 없이 삼킨다 — 빠진 건수가 어디에도 흔적이 없고, 아무도 다시 세지 않는다(0034 5절)',
+  )
+  assert.ok(
+    /new\.business_id/.test(bumpDef ?? '') && /sqlerrm/i.test(bumpDef ?? ''),
+    'interventions_bump()의 경고에 회사(new.business_id)나 원인(sqlerrm)이 없다 — 무엇을 잃었는지 모르는 경고는 다시 셀 근거가 되지 못한다',
   )
 
   if (broke('interventions-no-delegate')) {
@@ -968,6 +1063,16 @@ async function database() {
    *
    *    ㉗-a **GroupCFO와 그 회사의 CEO가 회장과 같은 합계를 본다.**
    */
+  /*
+   * ⑤의 짝이 되는 돌연변이가 **여기서** 걸린다. 뷰가 definer가 되면 `intervention_counts`의
+   * 정책을 뷰가 지나가 버리므로, 아래 ㉗-b·㉗-c가 **행동으로** 먼저 빨개진다 —
+   * 다른 회사의 CEO와 팀장이 전사 개입 건수를 보게 된다. 그것이 이 선택이 막는 것이고,
+   * reloption을 다시 읽는 것만으로는 그 사실이 재어지지 않는다(동어반복이 된다).
+   */
+  if (broke('view-definer')) {
+    await db.exec(`alter view interventions set (security_invoker = false)`)
+  }
+
   const ivFor = async (uid: string) =>
     Number(
       await val(
@@ -1011,6 +1116,21 @@ async function database() {
     (await rejected(null, `select count(*) from interventions`, 'anon')) !== null,
     'anon이 interventions를 읽는다 — 자물쇠는 revoke다',
   )
+  /**
+   * ㉗-e 구조적 뒷받침. ⑤에서 이미 읽었지만 여기서 한 번 더 읽는다 — 위 ㉗-b·㉗-c가
+   * 행동으로 재는 것과 **같은 사실**이고, 둘이 같은 답을 말해야 한다. 행동 단언이
+   * 통과하는 다른 경로가 생기는 날에도 "문은 뷰보다 한 층 아래"라는 결정 자체는
+   * 그대로 지켜져야 한다(check-migrations의 force 카탈로그와 같은 이유로 겹으로 둔다).
+   */
+  const ivOpts = await val<string[]>(
+    null,
+    `select reloptions from pg_class where relname = 'interventions'`,
+    'app_owner',
+  )
+  assert.ok(
+    (ivOpts ?? []).includes('security_invoker=true'),
+    `뷰 interventions에서 security_invoker가 꺼졌다 — 뷰가 intervention_counts의 정책을 지나간다(reloptions=${JSON.stringify(ivOpts)})`,
+  )
 
   return { july }
 }
@@ -1052,6 +1172,11 @@ async function backfill() {
   `)
   await applyOne(db, '0034_succession_views.sql')
   if (broke('wipe-counts')) await db.exec(`delete from intervention_counts`)
+  // ㉘-d의 짝. database()의 ⑤-b가 같은 사실을 먼저 재므로 한 번에 두 단언이 걸린다 —
+  // 둘 다 "0034 6절의 창이 닫힌 채로 커밋됐는가"이고, 여기 것은 **적용 직후**를 본다.
+  if (broke('audit-window')) {
+    await db.exec(`alter table public.audit_log no force row level security`)
+  }
 
   /** ㉘-a 과거분이 회사 × 달 × 유형으로 그대로 들어왔다. */
   const filled = await db.query<{ business_id: string; period: string; kind: string; count: number }>(
@@ -1359,6 +1484,19 @@ function screens() {
    *    빈 칸은 '0%'와 구별되지 않게 된다 — 이 블록이 막으려던 바로 그 상태다.
    */
   const all = [group, detail, card, pieces, areaEditor].join('\n')
+  /**
+   * **물러난 문구를 찾는 자리는 더 넓다.** 그 두 문장은 화면에만 있던 것이 아니라
+   * 대시보드 카드의 주석(`dashboard-board.tsx`) · 계약 주석(`types.ts`) ·
+   * 어댑터 주석(`supabase.ts`)에도 있었다. `all`만 보면 그 셋에서 되살아나도 초록이다 —
+   * 주석이 거짓말을 하는 것도 화면이 거짓말을 하는 것과 같은 종류의 고장이다
+   * (다음 사람이 그 주석을 읽고 화면을 고친다).
+   */
+  const retired = [
+    all,
+    board,
+    src('lib', 'repository', 'types.ts'),
+    src('lib', 'repository', 'supabase.ts'),
+  ].join('\n')
   /** 문구는 글자로 박아도 되고 상수로 불러도 된다. 둘 다 아니면 화면이 그 말을 안 하는 것이다. */
   const says = (literal: string, constant: string) =>
     all.includes(needle(literal)) || all.includes(needle(constant))
@@ -1388,13 +1526,13 @@ function screens() {
    *    화면이 사실이 아닌 말을 하고, 그것이 이 블록이 유일하게 금지한 것이다.
    */
   assert.ok(
-    !all.includes('회장 계정에서만'),
-    "화면에 '회장 계정에서만 집계됩니다'가 남아 있다 — 0034부터 그룹 CFO와 그 회사 대표도 개입 건수를 본다. 거짓이 된 문장이다",
+    !retired.includes('회장 계정에서만'),
+    "화면·카드·어댑터·계약 주석 어딘가에 '회장 계정에서만 집계됩니다'가 남아 있다 — 0034부터 그룹 CFO와 그 회사 대표도 개입 건수를 본다. 거짓이 된 문장이다",
   )
   /** ㊶-b 의존도가 «보는 사람의 권한 안에서» 계산된다는 문구도 거짓이 됐다. */
   assert.ok(
-    !all.includes('보는 사람의 권한 안에서'),
-    "화면에 '이 값은 보는 사람의 권한 안에서 계산됩니다'가 남아 있다 — 0034부터 회사의 의존도는 계정과 무관하게 같은 값이다",
+    !retired.includes('보는 사람의 권한 안에서'),
+    "화면·카드·어댑터·계약 주석 어딘가에 '이 값은 보는 사람의 권한 안에서 계산됩니다'가 남아 있다 — 0034부터 회사의 의존도는 계정과 무관하게 같은 값이다",
   )
   assert.ok(
     all.includes(needle('아직 계산할 수 없습니다')),

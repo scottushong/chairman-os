@@ -207,8 +207,19 @@ grant select on founder_dependency to authenticated;
 --    privileges로 grant가 되살아나는 날에도 정책이 없으면 한 줄도 못 쓴다 — restrictive를
 --    얹어도 잴 것이 없다. 0033이 승계 표 넷에 같은 판단을 했다.
 -- ---------------------------------------------------------------------
+--    § businesses로 가는 FK를 걸지 않는다 §
+--    처음엔 `references businesses(business_id) on delete cascade`를 걸었다. 걷어냈다.
+--    `activity_digest`(0031 2절)에도 FK가 없고 그것은 실수가 아니다 —
+--    **원천인 `audit_log.business_id`가 제약 없는 자유 문자열이다**(0001:350). 그리고 그
+--    칸에는 실제로 없는 회사 id가 들어온다: `recordScreenRead()`가 URL에서 딴 값을 그대로
+--    넣고(`/dependency/[id]/page.tsx:46`), 그 화면의 404 판정은 **그 다음 줄**이다.
+--    파생 집계를 원천보다 좁게 묶으면 원천에 없던 실패 경로를 새로 만드는 것이 된다.
+--    오늘 그 FK에 걸릴 줄은 «회장이 없는 회사 id로 승인·반려·수정·위임을 한 줄» —
+--    즉 **이 표가 가장 잃으면 안 되는 종류의 줄**이다.
+--    대가: 회사가 지워지면 이 표에 주인 없는 줄이 남는다. 화면은 `businesses` 목록으로
+--    이름을 붙이고 보이는 회사만 접으므로(`summarizeDependency`) 그 줄은 그려지지 않는다.
 create table intervention_counts (
-  business_id text not null references businesses(business_id) on delete cascade, -- [일반]
+  business_id text not null,                                 -- [일반] audit_log와 같은 자유 문자열. FK 없음(위 주석)
   period      text not null,                                 -- [일반] YYYY-MM, KST
   kind        text not null,                                 -- [일반] approve·reject·modify·delegate
   count       bigint not null default 0,                     -- [일반] 건수. **이 표에는 이 숫자뿐이다**
@@ -255,16 +266,31 @@ create policy intervention_counts_read on intervention_counts
 --    예외 블록으로 감싼다. 예외 블록은 서브트랜잭션이라 집계만 되돌아가고 바깥의
 --    insert는 그대로 커밋된다. 집계가 틀리면 다시 셀 수 있지만 기록은 다시 만들 수 없다.
 --
+--    **판정 세 줄도 예외 블록 «안»에 둔다.** 그 셋(텍스트 비교 · enum→text 캐스트 ·
+--    null 검사)은 던질 수 없으므로 밖에 둬도 오늘은 안전하다. 그래도 안에 둔다 —
+--    이 함수의 존재 이유가 «절대 실패시키지 않는다» 하나인데, 그것이 «지금 이 세 줄이
+--    우연히 안전해서» 성립하는 것과 «구조가 보장해서» 성립하는 것은 다르다. 나중에 이
+--    조건에 함수 호출 하나가 끼는 날, 전자는 조용히 깨지고 아무도 모른다.
+--    대가: 서브트랜잭션이 이제 **모든** audit_log insert마다 하나씩 잡힌다(전에는 회장의
+--    결정 처리 줄에서만 잡혔다). 줄당 비용은 작지만, 한 트랜잭션이 감사 줄을 64줄 넘게
+--    넣으면 `pg_subtrans`가 SLRU를 넘겨 조회가 느려진다 — 오늘 그런 경로는 없다
+--    (`record_read()`는 한 번에 한 줄이다).
+--
+--    § 잃은 것을 조용히 삼키지 않는다 § `raise warning`으로 회사·유형·SQLSTATE·메시지를
+--    남긴다. 잡힌 예외는 서버 로그에 저절로 남지 않으므로, `null;`로 두면 빠진 건수가
+--    **어디에도 흔적이 없다** — §34가 12개월 추이로 그리는 값에서 그것은 특히 나쁘다.
+--    warning은 insert를 실패시키지 않는다(그 경계는 그대로다).
+--
 --    after 트리거라 반환값은 무시된다. `null`을 돌려준다.
 -- ---------------------------------------------------------------------
 create or replace function interventions_bump() returns trigger
 language plpgsql volatile security definer set search_path = public as $fn$
 begin
-  if new.actor_role = 'Chairman'
-     and new.action::text in ('approve', 'reject', 'modify', 'delegate')
-     and new.business_id is not null
-  then
-    begin
+  begin
+    if new.actor_role = 'Chairman'
+       and new.action::text in ('approve', 'reject', 'modify', 'delegate')
+       and new.business_id is not null
+    then
       insert into intervention_counts (business_id, period, kind, count, updated_at)
       values (
         new.business_id,
@@ -276,17 +302,20 @@ begin
       on conflict (business_id, period, kind) do update
         set count = intervention_counts.count + 1,
             updated_at = now();
-    exception when others then
-      -- 기록이 먼저, 집계는 나중(HANDOVER 2절 ③). 집계 실패로 감사 줄을 잃지 않는다.
-      null;
-    end;
-  end if;
+    end if;
+  exception when others then
+    -- 기록이 먼저, 집계는 나중(HANDOVER 2절 ③). 집계 실패로 감사 줄을 잃지 않는다.
+    -- 삼키지는 않는다 — 빠진 건수가 어디에도 흔적이 없으면 아무도 다시 세지 않는다.
+    raise warning
+      '0034 interventions_bump: 개입 집계 실패 — business_id=% action=% sqlstate=% %',
+      new.business_id, new.action, sqlstate, sqlerrm;
+  end;
   return null;
 end;
 $fn$;
 
 comment on function interventions_bump() is
-  '§7·§34. audit_log의 after-insert 트리거. 회장의 승인·반려·수정·위임 한 줄이 남을 때 intervention_counts의 건수 하나를 올린다. **감사 줄의 insert를 절대 실패시키지 않는다** — 집계는 예외 블록 안에서 돌고, 터지면 조용히 포기한다(기록이 먼저, 집계는 나중).';
+  '§7·§34. audit_log의 after-insert 트리거. 회장의 승인·반려·수정·위임 한 줄이 남을 때 intervention_counts의 건수 하나를 올린다. **감사 줄의 insert를 절대 실패시키지 않는다** — 판정과 집계가 전부 예외 블록 안에서 돌고, 터지면 raise warning으로 회사·유형·SQLSTATE를 로그에 남긴 뒤 포기한다(기록이 먼저, 집계는 나중. 다만 조용히 잃지는 않는다).';
 
 -- 이 함수를 부르는 것은 아래 트리거뿐이다. 0019 3절과 같은 이유로 public 기본 execute를
 -- 걷되, **다시 주지 않는다** — 사람이 부를 자리가 없는 함수다.
@@ -318,11 +347,21 @@ create trigger audit_log_interventions
 --    양쪽 다에서 같은 결과를 내는 것이 이 세 줄의 요점이다.
 --
 --    § 순서가 요점이다 — 트리거(5절)가 **먼저**이고 backfill이 나중이다 §
---    `create trigger`가 audit_log에 ACCESS EXCLUSIVE 락을 잡으므로, 그 시점부터 커밋까지
---    다른 세션의 insert는 막힌다. 아래 select는 그 락을 잡은 뒤에 도니 **그 순간까지
---    커밋된 줄 전부**를 본다(read committed). 반대 순서로 두면 select와 create trigger
---    사이에 커밋된 줄이 둘 다에서 빠진다 — backfill은 못 봤고 트리거는 아직 없었다.
---    빠진 줄은 예외도 경고도 없이 그냥 세어지지 않으므로, 그 틈은 열어 두지 않는다.
+--    `create trigger`는 audit_log에 SHARE ROW EXCLUSIVE 락을 잡는다. 그 락이 insert의
+--    ROW EXCLUSIVE와 충돌하므로, 그 시점부터 커밋까지 다른 세션의 insert는 막힌다.
+--    아래 select는 그 락을 잡은 뒤에 도니 **그 순간까지 커밋된 줄 전부**를 본다
+--    (read committed). 반대 순서로 두면 select와 create trigger 사이에 커밋된 줄이
+--    둘 다에서 빠진다 — backfill은 못 봤고 트리거는 아직 없었다. 빠진 줄은 예외도
+--    경고도 없이 그냥 세어지지 않으므로, 그 틈은 열어 두지 않는다.
+--
+--    § 적용하는 사람에게 — 이 파일은 감사 쓰기를 잠깐 멈춘다 §
+--    `actor_role` + `action`을 받는 인덱스가 audit_log에 없다(0001의 둘은 entity와 actor
+--    기준이고, 0031의 부분 인덱스는 read·login 전용이다). 그래서 아래 select는 audit_log를
+--    **통째로 순차 스캔**하고, 그 동안 위의 락 때문에 **모든 감사 쓰기 경로가 대기한다** —
+--    `record_read()`가 화면 진입마다 쓰므로 사실상 앱 전체다. 표가 작은 지금은 눈에 안
+--    보이지만, 줄이 쌓인 뒤에 적용하면 그만큼 멈춘다. 인덱스를 새로 만들지 않았다:
+--    이 스캔은 **한 번만** 도는 문장이고, 그 인덱스를 남기면 그 뒤로 영원히 쓰기 비용을
+--    낸다. 한산한 시간에 적용하는 것이 그보다 싸다(OPERATIONS 9).
 --
 --    `on conflict do nothing` — 이 마이그레이션이 두 번 도는 일은 없지만, 시드가 사람이
 --    고친 값을 덮는 경로는 만들지 않는다(0033 11절과 같은 규율).
