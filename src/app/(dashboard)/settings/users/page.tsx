@@ -52,6 +52,18 @@ export default async function UsersPage(props: PageProps<'/settings/users'>) {
     repo.listTeams(),
   ])
 
+  /**
+   * 0032. 보이는 사람들의 사진을 **한 번에** 서명한다. 사람마다 부르지 않는다 —
+   * 대시보드가 이니셔티브 로고를 다루는 방식과 같다.
+   *
+   * **가시성을 여기서 다시 판정하지 않는다.** accounts는 이미 0026이 subtree로 잘라 준
+   * 목록이고, 그래서 이 경로 목록이 곧 '이름이 보이는 범위'다. 서명 쪽에도 0032의 읽기
+   * 정책이 한 번 더 걸리므로 두 겹이 같은 답을 한다.
+   */
+  const photoUrls = await repo.signProfilePhotos(
+    [...new Set(accounts.map((a) => a.photo_path).filter((p): p is string => p !== null))],
+  )
+
   const isChairman = user.role === 'Chairman'
   const viewerAccount = accounts.find((a) => a.user_id === user.user_id) ?? null
 
@@ -107,7 +119,13 @@ export default async function UsersPage(props: PageProps<'/settings/users'>) {
             이 아래에 없다는 뜻입니다.
           </p>
         ) : (
-          <OrgChart people={accounts} teams={teams} businesses={businesses} viewer={user} />
+          <OrgChart
+            people={accounts}
+            teams={teams}
+            businesses={businesses}
+            viewer={user}
+            photoUrls={photoUrls}
+          />
         )}
       </div>
 

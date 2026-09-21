@@ -106,6 +106,9 @@ function person(
     joined_on: shift(-400),
     left_on: null,
     language: 'ko',
+    // 0032. 시드에는 사진이 없다 — 화면 곳곳의 동그라미가 이름 첫 글자로 떨어지는 것이
+    // 기본 모양이고, 그 모양을 먼저 볼 수 있어야 한다. dummy에서 올리면 메모리에 붙는다.
+    photo_path: null,
     ...extra,
   }
 }

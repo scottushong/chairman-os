@@ -46,6 +46,12 @@ export interface UserAccount {
   joined_on: IsoDate | null
   left_on: IsoDate | null
   language: PersonLanguage
+  /**
+   * 0032. profile-photos 버킷 안의 객체 경로. URL이 아니다 — 비공개 버킷이라 볼 때마다
+   * 서명 URL을 발급한다(repo.signProfilePhotos). null이면 화면이 이름 첫 글자로 떨어진다.
+   * 이 칸이 보이는 범위 = 이름이 보이는 범위다(같은 표의 같은 행이라 자동으로 그렇다).
+   */
+  photo_path: string | null
 }
 
 export interface UserInvitation {
@@ -188,6 +194,8 @@ export interface MyProfile {
   language: PersonLanguage
   max_security_class: SecurityClass
   created_at: string
+  /** 0032. 버킷 안 경로. URL이 아니다. null이면 사진이 없다. */
+  photo_path: string | null
 }
 
 /**

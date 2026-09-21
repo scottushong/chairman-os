@@ -395,6 +395,23 @@ export interface ChairmanRepository {
   saveCurrentTimezone(tz: string): Promise<void>
 
   /**
+   * 0032 프로필 사진. 본인 것만이다 — 어댑터가 user_id를 받지 않는 것이 그 표현이다.
+   * 경로는 auth.uid()로 정해지고(lib/profile-photo.ts photoPath), 0032의 쓰기 정책 셋이
+   * 그 경로의 주인과 세션을 비교한다. 올린 경로를 돌려준다.
+   */
+  saveMyPhoto(file: PhotoUpload): Promise<string>
+
+  /** 사진을 내린다. 포인터를 먼저 비우고 객체를 지운다(0018 removeInitiativeLogo와 같은 순서). */
+  removeMyPhoto(): Promise<void>
+
+  /**
+   * 경로 목록을 한 번에 서명한다. 요청자 세션으로 발급하므로 **0032의 읽기 정책이
+   * 그대로 걸린다** — 이름이 안 보이는 사람의 사진은 서명 자체가 실패하고 맵에서 빠진다.
+   * 가시성을 화면이 다시 판정하지 않는 이유가 그것이다.
+   */
+  signProfilePhotos(paths: string[]): Promise<Record<string, string>>
+
+  /**
    * 블록 7. 열람 기록 한 줄(audit_log action='read', 0031 record_read()).
    *
    * **5분 중복 억제는 여기가 아니라 DB 안에 있다.** 어댑터가 억제를 판정하면 그것은
@@ -424,6 +441,12 @@ export interface ChairmanRepository {
    * 일이다. 그래서 요약이 표로 따로 산다. 없으면(그 주에 기록이 없으면) null.
    */
   getActivityWeek(): Promise<ActivityWeek | null>
+}
+
+/** 사진 바이트 한 장. LogoUpload와 같은 모양이다(파일은 Server Action 직렬화를 못 탄다). */
+export interface PhotoUpload {
+  bytes: ArrayBuffer
+  contentType: string
 }
 
 /** record_read()가 받는 것. **ip가 없다** — 0031의 함수 시그니처와 같은 모양이다. */

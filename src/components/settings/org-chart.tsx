@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 
 import { saveTeam, updateUserProfile } from '@/app/actions/users'
+import { ProfilePhoto } from '@/components/settings/profile-photo'
 import { RevokeButton } from '@/components/settings/revoke-button'
 import { Icon } from '@/components/ui/icon'
 import { businessName } from '@/lib/lookup'
@@ -52,11 +53,18 @@ export function OrgChart({
   teams,
   businesses,
   viewer,
+  photoUrls,
 }: {
   people: UserAccount[]
   teams: Team[]
   businesses: Business[]
   viewer: SessionUser | null
+  /**
+   * 0032. signProfilePhotos()가 **보이는 사람들의 경로만** 서명해 준 맵이다.
+   * 사람마다 부르지 않는다(로고 카드 그리드와 같은 방식). 여기 없는 경로는 이름
+   * 첫 글자로 떨어진다 — 서명이 실패한 것과 사진이 없는 것을 화면은 같게 다룬다.
+   */
+  photoUrls: Record<string, string>
 }) {
   const canManage = viewer?.role === 'Chairman'
   const [selection, setSelection] = useState<Selection>(null)
@@ -151,13 +159,19 @@ export function OrgChart({
 
           <div className="mt-3">
             {activeTab === SYSTEM_TAB ? (
-              <SystemAccounts people={systems} selection={selection} onSelect={openPerson} />
+              <SystemAccounts
+                people={systems}
+                selection={selection}
+                photoUrls={photoUrls}
+                onSelect={openPerson}
+              />
             ) : activeTab === GROUP_TAB ? (
               <PeopleGroup
                 title="전사 (회사 범위 없음)"
                 note="전사 역할은 user_business_access에 행이 없고 그래도 전부 봅니다(0002 has_business)."
                 people={groupScopePeople}
                 selection={selection}
+                photoUrls={photoUrls}
                 onSelect={openPerson}
               />
             ) : (
@@ -167,6 +181,7 @@ export function OrgChart({
                 teams={teams.filter((t) => t.business_id === activeTab)}
                 people={humans.filter((p) => p.business_ids.includes(activeTab))}
                 selection={selection}
+                photoUrls={photoUrls}
                 onSelectPerson={openPerson}
                 onSelectTeam={openTeam}
               />
@@ -199,6 +214,7 @@ export function OrgChart({
             businesses={businesses}
             canManage={canManage}
             self={selected.user_id === viewer?.user_id}
+            photoUrls={photoUrls}
             onClose={() => setSelection(null)}
           />
         ) : (
@@ -286,6 +302,7 @@ function CompanyTree({
   teams,
   people,
   selection,
+  photoUrls,
   onSelectPerson,
   onSelectTeam,
 }: {
@@ -294,6 +311,7 @@ function CompanyTree({
   teams: Team[]
   people: UserAccount[]
   selection: Selection
+  photoUrls: Record<string, string>
   onSelectPerson: (id: string) => void
   onSelectTeam: (id: string) => void
 }) {
@@ -372,6 +390,7 @@ function CompanyTree({
                       person={p}
                       lead={b.team?.lead_user_id === p.user_id}
                       active={selection?.kind === 'person' && selection.id === p.user_id}
+                      photoUrls={photoUrls}
                       onSelect={onSelectPerson}
                     />
                   ))}
@@ -389,12 +408,14 @@ function PeopleGroup({
   note,
   people,
   selection,
+  photoUrls,
   onSelect,
 }: {
   title: string
   note: string
   people: UserAccount[]
   selection: Selection
+  photoUrls: Record<string, string>
   onSelect: (id: string) => void
 }) {
   return (
@@ -412,6 +433,7 @@ function PeopleGroup({
               key={p.user_id}
               person={p}
               active={selection?.kind === 'person' && selection.id === p.user_id}
+              photoUrls={photoUrls}
               onSelect={onSelect}
             />
           ))}
@@ -425,10 +447,12 @@ function PeopleGroup({
 function SystemAccounts({
   people,
   selection,
+  photoUrls,
   onSelect,
 }: {
   people: UserAccount[]
   selection: Selection
+  photoUrls: Record<string, string>
   onSelect: (id: string) => void
 }) {
   return (
@@ -437,6 +461,7 @@ function SystemAccounts({
       note="사람이 아니라 로그인해서 RLS 안에서 도는 계정입니다(service_role은 없습니다). 초대로 만들지 않고 supabase/bootstrap의 SQL로 붙입니다."
       people={people}
       selection={selection}
+      photoUrls={photoUrls}
       onSelect={onSelect}
     />
   )
@@ -447,11 +472,13 @@ function PersonRow({
   person,
   lead = false,
   active,
+  photoUrls,
   onSelect,
 }: {
   person: UserAccount
   lead?: boolean
   active: boolean
+  photoUrls: Record<string, string>
   onSelect: (id: string) => void
 }) {
   const revoked = Boolean(person.revoked_at)
@@ -464,6 +491,13 @@ function PersonRow({
           active ? 'bg-raised' : ''
         } ${revoked ? 'opacity-50' : ''}`}
       >
+        {/* 0032. 얼굴이 먼저 온다 — 회장이 목록에서 찾는 것은 이름이 아니라 얼굴이다. */}
+        <ProfilePhoto
+          name={person.display_name}
+          path={person.photo_path}
+          url={person.photo_path ? photoUrls[person.photo_path] : undefined}
+          size={24}
+        />
         <span className="text-[12.5px] font-semibold">{person.display_name}</span>
         {/* 영문 이름은 있는 사람만 그린다. 코드가 한글을 로마자로 지어내지 않는다(0017). */}
         {person.display_name_en ? (
@@ -520,6 +554,7 @@ function PersonPanel({
   businesses,
   canManage,
   self,
+  photoUrls,
   onClose,
 }: {
   person: UserAccount
@@ -528,6 +563,7 @@ function PersonPanel({
   businesses: Business[]
   canManage: boolean
   self: boolean
+  photoUrls: Record<string, string>
   onClose: () => void
 }) {
   const [busy, setBusy] = useState(false)
@@ -560,7 +596,13 @@ function PersonPanel({
   return (
     <div className="rounded-xl border border-line bg-panel p-3.5">
       <div className="flex items-baseline justify-between gap-2">
-        <h2 className="text-[13px] font-semibold">
+        <h2 className="flex items-center gap-2 text-[13px] font-semibold">
+          <ProfilePhoto
+            name={person.display_name}
+            path={person.photo_path}
+            url={person.photo_path ? photoUrls[person.photo_path] : undefined}
+            size={32}
+          />
           {person.display_name}
           {person.display_name_en ? (
             <span className="ml-1.5 text-[11px] font-normal text-ink-muted">

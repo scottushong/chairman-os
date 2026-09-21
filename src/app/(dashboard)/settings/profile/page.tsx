@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { PageHeader } from '@/components/layout/page-header'
+import { PhotoUpload } from '@/components/settings/photo-upload'
 import { ProfileForm } from '@/components/settings/profile-form'
 import { Icon } from '@/components/ui/icon'
 import { decideChairmanTimezone } from '@/lib/chairman-timezone'
@@ -15,10 +16,9 @@ import { ROLE_LABEL_KO, SECURITY_CLASS_LABEL_KO } from '@/types'
  * 헤더 오른쪽의 이름을 누르면 여기로 온다. 전 사용자 공통 화면이다 —
  * 역할이 무엇이든 자기 이름은 자기가 고친다(0030 update_own_profile이 그 문이다).
  *
- * **프로필 사진(Storage)은 아직 없다.** 원문 4절이 요구한 항목이지만 아바타 버킷과
- * 그 정책이 서지 않았다 — 0018이 initiative-logos에 한 것과 같은 한 벌이 필요하고,
- * 그것은 이번 범위 밖이다. 자리를 만들어 두고 '준비 중'이라고 말한다.
- * 회색으로 비활성만 해 둔 버튼을 놓지 않는다(DEFERRED.md Phase 5-E).
+ * **프로필 사진(Storage)이 섰다(0032).** 5-E가 '준비 중'으로 남겨 둔 자리를 갚았다 —
+ * 0018이 initiative-logos에 한 것과 같은 한 벌(비공개 버킷 + 정책 넷 + 서명 URL)이고,
+ * 다른 것은 '누가'뿐이다: 올리는 것은 **본인만**, 보는 것은 **이름이 보이는 사람**이다.
  */
 export default async function ProfileSettingsPage() {
   const repo = await getRepository()
@@ -44,6 +44,11 @@ export default async function ProfileSettingsPage() {
     now: new Date(),
   })
   const chairman = profile.role === 'Chairman'
+
+  // 한 장짜리도 signProfilePhotos로 서명한다 — 별도의 단건 서명 API를 새로 만들지 않는다
+  // (/initiatives/[id]가 로고 한 장에 signInitiativeLogos를 쓰는 것과 같다).
+  const photoUrls = profile.photo_path ? await repo.signProfilePhotos([profile.photo_path]) : {}
+  const photoUrl = profile.photo_path ? photoUrls[profile.photo_path] : undefined
 
   return (
     <div className="mx-auto max-w-[900px] px-6 py-5">
@@ -111,13 +116,15 @@ export default async function ProfileSettingsPage() {
         <h2 className="flex items-baseline gap-1.5 text-[13px] font-semibold">
           <Icon name="eye" className="size-4 text-ink-dim" />
           프로필 사진
-          <span className="rounded bg-raised px-1.5 py-0.5 text-[10px] text-ink-dim">준비 중</span>
         </h2>
-        <p className="mt-1 text-[10.5px] text-ink-muted">
-          아직 올릴 수 없습니다. 사진을 담을 Storage 버킷과 그 접근 정책이 서야 하고(이니셔티브
-          로고가 쓰는 것과 같은 한 벌입니다), 그것은 다음 블록의 일입니다. 지금 화면 곳곳의
-          동그라미는 이름의 첫 글자입니다.
+        <p className="mt-1 text-[10.5px] leading-relaxed text-ink-muted">
+          조직도와 사람 목록에 이 사진이 뜹니다. <b className="font-semibold text-ink-dim">보이는
+          범위는 이름이 보이는 범위와 같습니다</b> — 조직도에 이름이 안 보이는 사람에게는 얼굴도
+          보이지 않고, 그 판정은 화면이 아니라 데이터베이스가 합니다.
+          사진은 <b className="font-semibold text-ink-dim">본인만</b> 올리고 내립니다. 회장님도
+          남의 사진은 바꾸지 못합니다. 올리지 않으면 이름의 첫 글자가 대신 섭니다.
         </p>
+        <PhotoUpload name={profile.display_name} path={profile.photo_path} url={photoUrl} />
       </section>
     </div>
   )

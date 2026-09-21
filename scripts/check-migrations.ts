@@ -466,6 +466,113 @@ async function rls(db: Db) {
     0, '0018: GroupCFO가 vault-docs를 지운다 — write_delete의 bucket_id 조건이 빠졌다',
   )
 
+  // ── 0032 profile-photos 버킷 ───────────────────────────────────────
+  //
+  // 0018과 **같은 한 벌**이지만 '누가'가 다르다. 그 차이를 재는 것이 이 블록의 전부다.
+  //   올리는 것  본인만. 회장도 남의 얼굴은 못 바꾼다(0018은 역할로 물었다).
+  //   보는 것    이름이 보이는 범위와 같다(0026 user_profiles_self_read를 정책이 그대로 쓴다).
+  //
+  // 이 harness의 시드에는 reports_to가 없다 — 그래서 각자의 subtree는 자기 자신뿐이고,
+  // 회장만 전원을 본다. 그것이 여기서 재려는 조건 그대로다.
+  const photoBucket = await db.query<{ public: boolean }>(
+    `select public from storage.buckets where id = 'profile-photos'`,
+  )
+  assert.equal(photoBucket.rows[0]?.public, false,
+    '0032: profile-photos 버킷이 비공개가 아니다 — 경로가 <user_id>/photo라 user_id만 알면 로그인 없이 얼굴이 열린다')
+
+  // 세 사람의 사진 + **모양이 어긋난 이름 하나.** 콘솔에서 손으로 올린 파일이 그렇게 생긴다.
+  await db.exec(`
+    insert into storage.objects (bucket_id, name) values
+      ('profile-photos', '${UID.chairman}/photo'),
+      ('profile-photos', '${UID.cfo}/photo'),
+      ('profile-photos', '${UID.member}/photo'),
+      ('profile-photos', 'not-a-uuid/photo'),
+      -- **다른 버킷에 같은 모양의 이름.** 이것이 없으면 읽기 정책에서 bucket_id 조건이
+      -- 통째로 빠져도 아무것도 안 잡힌다 — vault-docs의 'contract_001.pdf'는
+      -- profile_photo_owner()가 null을 주어 exists가 어차피 막아 주기 때문이다.
+      -- 음성 대조가 그 구멍을 잡아냈다.
+      ('vault-docs', '${UID.chairman}/photo');
+  `)
+
+  assert.equal(
+    await as(UID.chairman, `select count(*)::int from storage.objects where bucket_id = 'profile-photos'`),
+    3, '0032: 회장이 세 사람의 사진을 다 보지 못한다 — 조직도에 이름이 보이는 사람의 얼굴은 보여야 한다',
+  )
+  assert.equal(
+    await as(UID.member, `select count(*)::int from storage.objects where bucket_id = 'profile-photos'`),
+    1, '0032: 직원에게 남의 사진이 보인다 — 이 직원의 subtree는 자기 자신뿐이고, 사진이 보이는 범위는 이름이 보이는 범위와 같아야 한다',
+  )
+  // GroupCFO가 0018과 갈라지는 자리다. 로고는 전부 보지만 얼굴은 자기 것만 본다.
+  assert.equal(
+    await as(UID.cfo, `select count(*)::int from storage.objects where bucket_id = 'profile-photos'`),
+    1, '0032: GroupCFO에게 남의 사진이 보인다 — 0018의 로고와 달리 사진은 역할이 아니라 이름 가시성으로 갈린다',
+  )
+  // 모양이 어긋난 이름은 아무도 못 본다. profile_photo_owner()가 null을 주고, null은
+  // exists 안에서 어떤 행과도 안 맞는다 — '모르는 이름의 객체는 안 보인다'가 기본값이다.
+  assert.equal(
+    await as(UID.chairman, `select count(*)::int from storage.objects where bucket_id = 'profile-photos' and name = 'not-a-uuid/photo'`),
+    0, '0032: 이름 모양이 어긋난 객체가 회장에게 보인다 — profile_photo_owner()가 null을 안 주고 있다',
+  )
+
+  // 쓰기 — 본인 것만.
+  assert.equal(
+    await as(UID.member, `insert into storage.objects (bucket_id, name) values ('profile-photos', '${UID.member}/photo2')`),
+    'denied', '0032: 직원이 자기 것이 아닌 경로(<uid>/photo2)에 올릴 수 있다 — 경로 모양이 정책의 판정 근거다',
+  )
+  assert.equal(
+    await as(UID.member, `update storage.objects set owner = null where bucket_id = 'profile-photos' and name = '${UID.member}/photo'`),
+    1, '0032: 본인이 자기 사진을 못 바꾼다',
+  )
+  assert.equal(
+    await as(UID.member, `delete from storage.objects where bucket_id = 'profile-photos' and name = '${UID.member}/photo'`),
+    1, '0032: 본인이 자기 사진을 못 내린다',
+  )
+  assert.equal(
+    await as(UID.member, `insert into storage.objects (bucket_id, name) values ('profile-photos', '${UID.chairman}/photo-x')`),
+    'denied', '0032: 직원이 회장의 경로에 사진을 올릴 수 있다',
+  )
+
+  // **회장도 남의 얼굴은 못 바꾼다.** 0018과 정확히 갈라지는 자리이고, 이 블록에서
+  // 가장 중요한 세 줄이다. update/delete는 using이 필터라 예외가 아니라 0행이다.
+  assert.equal(
+    await as(UID.chairman, `insert into storage.objects (bucket_id, name) values ('profile-photos', '${UID.member}/photo-x')`),
+    'denied', '0032: 회장이 남의 경로에 사진을 올릴 수 있다 — 사진은 그 사람의 얼굴이지 회사의 자산이 아니다',
+  )
+  assert.equal(
+    await as(UID.chairman, `update storage.objects set owner = null where bucket_id = 'profile-photos' and name = '${UID.cfo}/photo'`),
+    0, '0032: 회장이 남의 사진을 바꿔치기할 수 있다',
+  )
+  assert.equal(
+    await as(UID.chairman, `delete from storage.objects where bucket_id = 'profile-photos' and name = '${UID.cfo}/photo'`),
+    0, '0032: 회장이 남의 사진을 지울 수 있다',
+  )
+
+  // bucket_id 범위 — 0032의 읽기 정책에서 bucket_id 조건이 빠지면 "본인 행이 있는 사람"은
+  // storage.objects 전체를 보게 된다. 0018의 Member 단언(로고 0건)이 그 구멍을 같이 막지만,
+  // vault-docs를 직접 겨눠야 이 정책이 연 문인지 저 정책이 연 문인지가 드러난다.
+  assert.equal(
+    await as(UID.member, `select count(*)::int from storage.objects where bucket_id = 'vault-docs'`),
+    0, '0032: 직원이 vault-docs를 본다 — profile_photos_read의 bucket_id 조건이 빠졌다',
+  )
+  assert.equal(
+    await as(UID.chairman, `select count(*)::int from storage.objects where bucket_id = 'vault-docs'`),
+    0, '0032: 회장이 vault-docs의 <uuid>/photo 객체를 본다 — profile_photos_read의 bucket_id 조건이 빠졌다. 이름 모양만 맞으면 다른 버킷의 파일까지 열린다',
+  )
+
+  // update_own_photo() — 포인터를 쓰는 좁은 문. **남의 경로는 받지 않는다.**
+  assert.equal(
+    await as(UID.member, `select update_own_photo('${UID.member}/photo')::int`),
+    1, '0032: 본인이 자기 photo_path를 못 쓴다 — update_own_photo()가 거절한다',
+  )
+  assert.equal(
+    await as(UID.member, `select update_own_photo('${UID.chairman}/photo')::int`),
+    0, '0032: update_own_photo()가 남의 경로를 자기 칸에 적어 준다 — 화면이 남의 경로로 서명 URL을 요청하게 된다',
+  )
+  assert.equal(
+    await as(UID.member, `select update_own_photo(null)::int`),
+    1, '0032: photo_path를 null로 되돌리지 못한다 — 등록과 삭제가 같은 문을 지나야 한다',
+  )
+
   // ── 0019 chairman_checkins ──────────────────────────────────────────
   // Chairman 전용. GroupCFO·AIAgent·Member·BusinessCEO·Integration 전부 읽기도 쓰기도 없다 —
   // 0014 chairman_manifesto/0017 initiatives와 달리 AIAgent에게도 안 준다(마이그레이션 주석 참고).
@@ -2490,7 +2597,7 @@ async function main() {
   await definerUnderNonBypassOwner()
   await subtreeBackfill()
   console.log(
-    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정)`,
+    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo)`,
   )
 }
 

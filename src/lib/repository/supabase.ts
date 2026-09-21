@@ -5,6 +5,7 @@ import type { AuditAction, EntityAuditRecord } from '@/lib/audit-log'
 import { AUDIT_ACTION, DECISION_STATUS, type DecisionAuditRecord } from '@/lib/decision-log'
 import { dayKey } from '@/lib/format'
 import { LOGO_BUCKET, logoPath } from '@/lib/initiative-logo'
+import { PHOTO_BUCKET, photoPath } from '@/lib/profile-photo'
 import { needsSubstringSearch, type SearchHit } from '@/lib/search'
 
 import type {
@@ -97,6 +98,7 @@ import {
   type NewBusiness,
   type NewDecision,
   type NewDocument,
+  type PhotoUpload,
   type ReadEventInput,
   type RevokeTarget,
   type StrategyPatch,
@@ -288,6 +290,8 @@ interface UserProfileRow {
   joined_on: string | null
   left_on: string | null
   language: PersonLanguage
+  /** 0032. 버킷 안 경로. URL이 아니다. */
+  photo_path: string | null
 }
 
 /** 0025 teams 한 행. 읽기·쓰기가 같은 모양을 돌려줘야 한다. */
@@ -296,7 +300,8 @@ const TEAM_COLUMNS = 'team_id,business_id,name,name_en,lead_user_id'
 /** 0025/0028. 조직도가 읽는 user_profiles의 칸 전부. */
 const PROFILE_COLUMNS =
   'user_id,role,display_name,display_name_en,title_ko,max_security_class,revoked_at,created_at,' +
-  'reports_to,team_id,status,joined_on,left_on,language'
+  // photo_path(0032)는 이름과 같은 행에 있다 — 이름이 보이는 사람의 사진만 여기 실려 온다.
+  'reports_to,team_id,status,joined_on,left_on,language,photo_path'
 
 /** 0025 shares 한 행. */
 const SHARE_COLUMNS = 'share_id,entity_table,entity_id,shared_with,shared_by,expires_at,created_at'
@@ -440,6 +445,7 @@ interface MyProfileRow {
   language: PersonLanguage
   max_security_class: SecurityClass
   created_at: string
+  photo_path: string | null
 }
 
 interface DecisionAuditRow {
@@ -2129,6 +2135,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         joined_on: r.joined_on,
         left_on: r.left_on,
         language: r.language ?? 'ko',
+        photo_path: r.photo_path,
       }))
     },
 
@@ -3479,7 +3486,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
 
       const { data, error } = await sb
         .from('user_profiles')
-        .select('user_id,role,display_name,display_name_en,title_ko,birth_date,language,max_security_class,created_at')
+        .select('user_id,role,display_name,display_name_en,title_ko,birth_date,language,max_security_class,created_at,photo_path')
         .eq('user_id', user.id)
         .is('revoked_at', null)
         .maybeSingle<MyProfileRow>()
@@ -3497,6 +3504,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         language: data.language,
         max_security_class: data.max_security_class,
         created_at: data.created_at,
+        photo_path: data.photo_path,
       }
     },
 
@@ -3555,6 +3563,104 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
      */
     async saveCurrentTimezone(tz: string) {
       await upsertOwnSettings(sb, { current_tz: tz })
+    },
+
+    /**
+     * 0032 프로필 사진. **user_id를 받지 않는다** — 어느 객체에 쓸지는 세션이 정한다.
+     * 인자로 받으면 그 순간 '남의 사진을 바꿀 수 있는 모양'이 되고, 정책이 막아 주더라도
+     * 그런 모양의 함수가 있다는 것 자체가 다음 사람을 헷갈리게 한다(actions/profile.ts와 같은 이유).
+     *
+     * 순서: Storage 업로드 → audit_log → 포인터 쓰기. 0018 saveInitiativeLogo()와 같다 —
+     * 이 파일의 하드 룰("감사가 쓰기보다 먼저")은 **DB 쓰기**에 대한 것이고, Storage
+     * 업로드를 감사 뒤로 미루면 '올렸다는 기록은 남고 파일은 없는' 상태가 된다.
+     * 경로가 user_id로 정해져 있어 최악이라도 다음 업로드가 덮어쓴다.
+     */
+    async saveMyPhoto(file: PhotoUpload): Promise<string> {
+      const {
+        data: { user },
+      } = await sb.auth.getUser()
+      if (!user) throw new Error('세션이 없다. 프로필 사진은 본인만 올린다.')
+
+      const path = photoPath(user.id)
+      const { error: upErr } = await sb.storage.from(PHOTO_BUCKET).upload(path, file.bytes, {
+        contentType: file.contentType,
+        upsert: true,
+        // 같은 경로를 덮어쓰므로 오래 캐시하면 바꾼 사진이 한참 안 바뀐다(0018과 같은 값).
+        cacheControl: '60',
+      })
+      if (upErr) {
+        throw new Error(
+          `Supabase storage ${PHOTO_BUCKET}: ${upErr.message} ` +
+            '(0032 profile_photos_write_insert/update — 본인 경로만 통과한다)',
+        )
+      }
+
+      // 감사는 객체를, photo_path는 포인터를 본다. 경로는 늘 같으므로 '바뀌었을 때만'으로
+      // 가두면 사진을 바꿔치기해도 감사 행이 한 줄도 안 남는다 — 0018이 로고에서 겪고
+      // 적어 둔 자리와 같다. 업로드가 성공할 때마다 무조건 남긴다.
+      const { error: auditError } = await sb.from('audit_log').insert({
+        actor_user_id: user.id,
+        actor_role: null,
+        action: 'update',
+        entity_table: 'user_profiles',
+        entity_id: user.id,
+        after: { photo_path: path },
+        note: '프로필 사진 등록·교체',
+      })
+      if (auditError) throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+
+      const { data, error } = await sb.rpc('update_own_photo', { p_path: path })
+      if (error) throw new Error(`Supabase update_own_photo ${error.code ?? '?'}: ${error.message}`)
+      if (data !== true) {
+        throw new Error('프로필 사진 경로를 저장하지 못했다. (0032 update_own_photo가 거절했다)')
+      }
+      return path
+    },
+
+    async removeMyPhoto(): Promise<void> {
+      const {
+        data: { user },
+      } = await sb.auth.getUser()
+      if (!user) throw new Error('세션이 없다.')
+
+      const { error: auditError } = await sb.from('audit_log').insert({
+        actor_user_id: user.id,
+        actor_role: null,
+        action: 'update',
+        entity_table: 'user_profiles',
+        entity_id: user.id,
+        after: { photo_path: null },
+        note: '프로필 사진 삭제',
+      })
+      if (auditError) throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+
+      const { error } = await sb.rpc('update_own_photo', { p_path: null })
+      if (error) throw new Error(`Supabase update_own_photo ${error.code ?? '?'}: ${error.message}`)
+
+      // 칸이 먼저 비워졌으니 객체 삭제가 실패해도 화면은 사진 없음으로 떨어진다.
+      // 남은 객체는 다음 업로드가 같은 경로에 덮어쓴다 — 조용히 무시하지 말고 로그는 남긴다.
+      const { error: rmErr } = await sb.storage.from(PHOTO_BUCKET).remove([photoPath(user.id)])
+      if (rmErr) console.error('[profile-photo] 객체 삭제 실패', rmErr.message)
+    },
+
+    /**
+     * 목록 전체를 한 번에 서명한다. **가시성을 여기서 다시 판정하지 않는다** —
+     * 요청자 세션으로 발급하므로 0032의 읽기 정책(= 0026의 이름 가시성)이 그대로 걸리고,
+     * 못 보는 사람의 사진은 발급이 실패해 맵에서 빠진다.
+     */
+    async signProfilePhotos(paths: string[]): Promise<Record<string, string>> {
+      if (paths.length === 0) return {}
+      const { data, error } = await sb.storage.from(PHOTO_BUCKET).createSignedUrls(paths, 3600)
+      if (error) {
+        // 사진이 안 보이는 것이 화면 전체가 안 보이는 것보다 낫다. 던지지 않는다.
+        console.error('[profile-photo] 서명 실패', error.message)
+        return {}
+      }
+      const out: Record<string, string> = {}
+      for (const row of data ?? []) {
+        if (row.signedUrl && row.path) out[row.path] = row.signedUrl
+      }
+      return out
     },
 
     /**

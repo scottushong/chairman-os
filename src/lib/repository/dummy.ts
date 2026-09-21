@@ -17,6 +17,7 @@ import { kstToday } from '@/lib/chairman-project'
 import { AUDIT_ACTION, DECISION_STATUS, type DecisionAuditRecord } from '@/lib/decision-log'
 import { dayKey } from '@/lib/format'
 import { logoPath } from '@/lib/initiative-logo'
+import { photoPath } from '@/lib/profile-photo'
 import { kpisFromLedger } from '@/lib/ledger/cells'
 
 import { dummyActivitySeed } from './dummy-activity'
@@ -93,6 +94,7 @@ import {
   type NewBusiness,
   type NewDecision,
   type NewDocument,
+  type PhotoUpload,
   type ReadEventInput,
   type RevokeTarget,
   type StrategyPatch,
@@ -148,6 +150,13 @@ const memoryInitiativeDocs: InitiativeDoc[] = []
  * 화면이 분기를 모른 채 돌아간다.
  */
 const memoryLogos = new Map<string, string>()
+
+/**
+ * 0032 프로필 사진의 **바이트**. 포인터는 memoryPeople의 photo_path 칸이 든다 —
+ * live에서 둘이 다른 자리에 사는 것과 같은 모양이다(바이트는 Storage, 포인터는 표).
+ * 한 곳에 뭉치면 조직도가 포인터를 읽는 경로와 프로필 화면이 읽는 경로가 갈라진다.
+ */
+const memoryPhotos = new Map<string, string>()
 const memoryEvents: ChairmanEvent[] = []
 let initiativeSeq = 0
 
@@ -1386,7 +1395,54 @@ export const dummyRepository: ChairmanRepository = {
       language: patch?.language ?? me.language,
       max_security_class: me.max_security_class,
       created_at: me.created_at,
+      photo_path: memoryPerson(me.user_id).photo_path,
     }
+  },
+
+  /**
+   * 0032 프로필 사진. **user_id를 받지 않는다** — 누구 것인지는 세션이 정한다.
+   * live에서는 0032의 쓰기 정책 셋이 경로의 주인과 세션을 비교하고, 여기서는 그 흉내다.
+   */
+  async saveMyPhoto(file: PhotoUpload) {
+    const me = dummyViewer()
+    const path = photoPath(me.user_id)
+    const base64 = Buffer.from(file.bytes).toString('base64')
+    memoryPhotos.set(path, `data:${file.contentType};base64,${base64}`)
+    // 포인터는 사람 행에 쓴다 — 조직도(listUserAccounts)가 읽는 자리가 여기다.
+    memoryPerson(me.user_id).photo_path = path
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(
+        me.revoked_at
+          ? `[dummy] save profile photo by ${me.display_name} — 실제로는 0032의 is_active()가 막는다.`
+          : `[dummy] save profile photo by ${me.display_name} — 메모리에만 남는다.`,
+      )
+    }
+    return path
+  },
+
+  async removeMyPhoto() {
+    const me = dummyViewer()
+    memoryPhotos.delete(photoPath(me.user_id))
+    memoryPerson(me.user_id).photo_path = null
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[dummy] remove profile photo by ${me.display_name} — 메모리에만 남는다.`)
+    }
+  },
+
+  /**
+   * dummy의 '서명 URL'은 data URL 그 자체다(signInitiativeLogos와 같다). 만료가 없다.
+   *
+   * **가시성을 여기서 흉내 내지 않는다.** live에서는 0032의 읽기 정책이 user_profiles를
+   * 한 번 읽는 것으로 판정하고, dummy에서는 화면이 넘기는 경로 목록 자체가 이미
+   * listUserAccounts()로 잘린 사람들의 것이다 — 그 목록이 곧 '이름이 보이는 범위'다.
+   */
+  async signProfilePhotos(paths: string[]) {
+    const out: Record<string, string> = {}
+    for (const p of paths) {
+      const url = memoryPhotos.get(p)
+      if (url) out[p] = url
+    }
+    return out
   },
 
   async saveMyProfile(patch: MyProfilePatch): Promise<boolean> {
