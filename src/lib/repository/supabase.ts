@@ -3974,32 +3974,51 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
      * §18 예외(0035). 최신순. **권한은 여기서 보지 않는다** — `exceptions_read`가
      * 회사 범위와 [제한] 등급을 같이 본다. 못 보는 사람에게는 0행이 오고,
      * 화면은 그것을 "0건"이라고 말하지 않는다.
+     *
+     * **`fetchAll`이다 — 이 표는 자란다.** 규칙 13종 × 회사 다섯 × 달이면 한 해에 수백
+     * 행이고, 서버의 기본 상한(1000)에 닿는 날 한 번의 select는 **조용히** 잘린 목록을
+     * 돌려준다. 잘린 쪽에 열린 예외가 있으면 화면은 그것을 «없는 것»으로 그린다
+     * (P0-07이 막는 바로 그 모양이다). 승계 표 넷이 plain select인 것과 다른 판단이고,
+     * 가른 기준은 «시간이 지나면 행이 늘어나는 표인가»다.
      */
     async listExceptions(): Promise<ExceptionRecord[]> {
-      const { data, error } = await sb
-        .from('exceptions')
-        .select(EXCEPTION_COLUMNS)
-        .order('detected_at', { ascending: false })
-        .returns<ExceptionRecord[]>()
+      const { data, error } = await fetchAll<ExceptionRecord>('exceptions', ['id'], (from, to) =>
+        sb
+          .from('exceptions')
+          .select(EXCEPTION_COLUMNS, { count: 'exact' })
+          .order('id', { ascending: false })
+          .range(from, to)
+          .returns<ExceptionRecord[]>(),
+      )
       return unwrap('exceptions', data, error)
     },
 
-    /** §19 점수(0035). 예외 하나에 한 줄이고, 아직 안 매겨진 예외에는 행이 없다. */
+    /**
+     * §19 점수(0035). 예외 하나에 한 줄이고, 아직 안 매겨진 예외에는 행이 없다.
+     * `exceptions`와 같은 이유로 `fetchAll`이다 — 같이 자라는 표다.
+     */
     async listAttentionScores(): Promise<AttentionScore[]> {
-      const { data, error } = await sb
-        .from('attention_scores')
-        .select(ATTENTION_SCORE_COLUMNS)
-        .order('exception_id', { ascending: false })
-        .returns<AttentionScore[]>()
+      const { data, error } = await fetchAll<AttentionScore>(
+        'attention_scores',
+        ['exception_id'],
+        (from, to) =>
+          sb
+            .from('attention_scores')
+            .select(ATTENTION_SCORE_COLUMNS, { count: 'exact' })
+            .order('exception_id', { ascending: false })
+            .range(from, to)
+            .returns<AttentionScore[]>(),
+      )
       return unwrap('attention_scores', data, error)
     },
   }
 }
 
+/** 야간 Job(lib/attention/stage.ts)이 insert의 `returning`에 같은 목록을 쓴다 — 두 벌이 되지 않게 내보낸다. */
+export const EXCEPTION_COLUMNS =
+  'id,business_id,rule_key,detected_at,period,value,threshold,severity,ai_analysis,ceo_handling,chairman_action_required,status,monitor_until'
 const EXCEPTION_RULE_COLUMNS =
   'rule_key,name,scope,kind,metric,comparator,threshold,window_days,severity_base,enabled,sort_order'
-const EXCEPTION_COLUMNS =
-  'id,business_id,rule_key,detected_at,period,value,threshold,severity,ai_analysis,ceo_handling,chairman_action_required,status,monitor_until'
 const ATTENTION_SCORE_COLUMNS =
   'exception_id,business_id,financial_impact,financial_impact_source,strategic_impact,strategic_impact_source,urgency,urgency_source,probability,probability_source,ceo_ability,ceo_ability_source,capital_requirement,capital_requirement_source,score,level,unknown_axes,scored_at'
 const DEPENDENCY_AREA_COLUMNS =

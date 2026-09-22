@@ -5,6 +5,7 @@ import { formatEok } from '@/lib/format'
 import { runway } from '@/lib/ledger/analysis'
 import { financeBriefContext, type FinanceBriefContext } from '@/lib/ledger/brief-context'
 import { ledgerScope } from '@/lib/ledger/scope'
+import { createSupabaseRepository, EXCEPTION_COLUMNS } from '@/lib/repository/supabase'
 import type {
   AttentionHeadline,
   Business,
@@ -116,32 +117,25 @@ export async function runAttentionStage(input: {
     notes: [],
   }
 
-  // 규칙 사전. 못 읽으면 단계 전체가 못 돈다 — 조용히 0건으로 끝내지 않는다.
-  const { data: ruleRows, error: ruleError } = await input.sb
-    .from('exception_rules')
-    .select(
-      'rule_key,name,scope,kind,metric,comparator,threshold,window_days,severity_base,enabled,sort_order',
-    )
-    .order('sort_order')
-    .returns<ExceptionRule[]>()
-  if (ruleError) {
-    result.error = `exception_rules 읽기 실패 ${ruleError.code ?? '?'}: ${ruleError.message}`
-    return result
-  }
-  const rules = ruleRows ?? []
+  /**
+   * 읽기는 **화면과 같은 repository**로 한다(night-brief.ts와 같은 규율). 그 어댑터의
+   * `listExceptions()`가 `fetchAll`로 끝까지 읽는다 — 한 번의 select는 서버 상한에서
+   * 조용히 잘리고, 잘린 쪽에 있는 예외는 중복 방지 조회에서 «없는 것»이 되어 같은 사실이
+   * 두 번 올라간다. 쓰기만 `sb`로 한다(계약에 쓰기 함수가 없다 — 예외를 만드는 것은
+   * 화면이 아니라 이 Job이다).
+   *
+   * 못 읽으면 단계 전체가 못 돈다 — **조용히 0건으로 끝내지 않는다.**
+   */
+  const repo = createSupabaseRepository(input.sb)
 
-  // 이미 있는 예외. 중복 방지 조회이자 «맨 위 3~5건»의 원천이다.
-  const { data: existingRows, error: existingError } = await input.sb
-    .from('exceptions')
-    .select(
-      'id,business_id,rule_key,detected_at,period,value,threshold,severity,ai_analysis,ceo_handling,chairman_action_required,status,monitor_until',
-    )
-    .returns<ExceptionRecord[]>()
-  if (existingError) {
-    result.error = `exceptions 읽기 실패 ${existingError.code ?? '?'}: ${existingError.message}`
+  let rules: ExceptionRule[]
+  let existing: ExceptionRecord[]
+  try {
+    ;[rules, existing] = await Promise.all([repo.listExceptionRules(), repo.listExceptions()])
+  } catch (e) {
+    result.error = `규칙·예외 읽기 실패: ${errorText(e)}`
     return result
   }
-  const existing = existingRows ?? []
   const seen = new Set(existing.map((e) => `${e.business_id}\u0000${e.rule_key}\u0000${e.period ?? ''}`))
 
   const created: ExceptionRecord[] = []
@@ -305,8 +299,6 @@ async function createException(a: {
   } else {
     console.warn('[attention] analyze skipped —', a.adapterError ?? 'AI 어댑터 없음')
   }
-  if (ai_analysis === null) a.result.withoutAnalysis += 1
-
   const { data, error } = await a.sb
     .from('exceptions')
     .insert({
@@ -322,9 +314,9 @@ async function createException(a: {
       // AIAgent가 넣는 줄은 언제나 'open'이다. 닫는 것도 관찰로 옮기는 것도 회장의 일이다.
       status: 'open',
     })
-    .select(
-      'id,business_id,rule_key,detected_at,period,value,threshold,severity,ai_analysis,ceo_handling,chairman_action_required,status,monitor_until',
-    )
+    // 칸 목록이 두 벌이 되지 않게 어댑터의 것을 가져다 쓴다.
+    // `returning`에도 SELECT 정책이 걸리고, 그 갈래를 0035 7절이 열어 두었다.
+    .select(EXCEPTION_COLUMNS)
     .single<ExceptionRecord>()
 
   if (error) {
@@ -336,6 +328,8 @@ async function createException(a: {
     throw new Error(`exceptions insert ${error.code ?? '?'}: ${error.message}`)
   }
   a.result.created += 1
+  // **만들어진** 예외 가운데 분석이 없는 것을 센다(중복으로 건너뛴 건은 세지 않는다).
+  if (ai_analysis === null) a.result.withoutAnalysis += 1
 
   const { error: scoreError } = await a.sb.from('attention_scores').insert({
     exception_id: data.id,
