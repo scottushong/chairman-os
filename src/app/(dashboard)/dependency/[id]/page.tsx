@@ -22,8 +22,8 @@ import { getRepository } from '@/lib/repository'
 import {
   AUTONOMY_CRITERIA_KO,
   AUTONOMY_EMPTY_KO,
+  INTERVENTION_KINDS,
   INTERVENTION_LABEL_KO,
-  type InterventionRow,
 } from '@/types'
 
 /**
@@ -91,7 +91,10 @@ export default async function DependencyDetailPage({ params }: { params: Promise
     period: m,
     count: myInterventions.filter((r) => r.period === m).reduce((a, r) => a + Number(r.count), 0),
   }))
-  const byKind = (['approve', 'reject', 'modify', 'delegate'] as InterventionRow['kind'][]).map((k) => ({
+  // 유형 목록을 여기 적지 않는다. 위의 월 합계는 **모든** 줄을 더하므로, 여기서 유형을
+  // 하나라도 빠뜨리면 막대의 합이 합계보다 조용히 작아진다(0035가 monitor를 더했을 때
+  // 실제로 그랬다). INTERVENTION_KINDS는 라벨 표에서 뽑으므로 둘이 갈라지지 않는다.
+  const byKind = INTERVENTION_KINDS.map((k) => ({
     kind: k,
     count: myInterventions.filter((r) => r.kind === k).reduce((a, r) => a + Number(r.count), 0),
   }))

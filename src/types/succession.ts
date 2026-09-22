@@ -203,8 +203,15 @@ export interface FounderDependencyRow {
 export interface InterventionRow {
   business_id: BusinessId
   period: string
-  /** audit_log.action — approve/reject/modify/delegate. 0001의 값이고 새로 만들지 않았다. */
-  kind: 'approve' | 'reject' | 'modify' | 'delegate'
+  /**
+   * `audit_log.action` — approve/reject/modify/delegate/**monitor**.
+   * 앞의 넷은 0001의 값이고, `monitor`(관찰 N일)는 0035가 더했다.
+   *
+   * **이 목록에 값을 더하면 `INTERVENTION_LABEL_KO`에도 같이 더한다.** 화면의 유형별
+   * 막대가 그 표에서 나오므로(하드코딩한 배열이 아니다), 라벨이 빠진 유형은 월 합계에는
+   * 들어가는데 막대에서는 사라진다 — 0035가 `monitor`를 더했을 때 실제로 그랬다.
+   */
+  kind: 'approve' | 'reject' | 'modify' | 'delegate' | 'monitor'
   count: number
 }
 
@@ -213,4 +220,12 @@ export const INTERVENTION_LABEL_KO: Record<InterventionRow['kind'], string> = {
   reject: '반려',
   modify: '수정요청',
   delegate: '위임',
+  monitor: '관찰',
 }
+
+/**
+ * 화면이 유형별 막대를 그릴 순서. **라벨 표에서 뽑는다** — 배열을 따로 적어 두면
+ * 새 유형이 들어온 날 한쪽만 고쳐지고, 빠진 유형은 월 합계에만 남아 막대의 합이
+ * 합계와 달라진다(0035의 `monitor`가 그 자리였다).
+ */
+export const INTERVENTION_KINDS = Object.keys(INTERVENTION_LABEL_KO) as InterventionRow['kind'][]
