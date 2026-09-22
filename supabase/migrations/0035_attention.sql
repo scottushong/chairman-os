@@ -304,7 +304,7 @@ comment on column exceptions.value is
 comment on column exceptions.threshold is
   '걸린 순간의 임계값. 규칙 표의 값을 **복사해 둔다** — /attention/rules에서 회장이 임계를 고쳐도 지난 예외가 "왜 걸렸나"를 계속 설명할 수 있어야 한다. manual 규칙에서는 null이다.';
 comment on column exceptions.monitor_until is
-  '관찰 종료 시점(원문의 "관찰 14일"). timestamptz다 — date로 두면 경계가 어느 시간대인지가 칸에 없고, 이 저장소는 current_date를 쓰지 않는다(0019 3절).';
+  '관찰 종료 시점(원문의 "관찰 14일"). timestamptz다 — date로 두면 경계가 어느 시간대인지가 칸에 없고, 이 저장소는 서버의 «오늘»에 기대지 않는다(0019 3절). 비교는 now()로 한다.';
 
 create trigger exceptions_updated_at before update on exceptions
   for each row execute function set_updated_at();
