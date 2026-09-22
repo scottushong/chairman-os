@@ -162,7 +162,8 @@ RLS를 **우회하는** 함수는 이 저장소에 없다. definer 함수는 전
 | `activity_events()` (0031) | 열람 기록 목록 | **우회가 아니다.** `audit_log`의 FORCE 때문에 definer라도 정책을 그대로 받는다 — 몸통의 `Chairman` 판정과 정책이 같은 답을 말한다 |
 | `can_read_succession()` · `can_write_succession()` (0033) | boolean 하나 | 정책이 부르는 판정 함수다 |
 | `founder_dependency_rows()` (0034) | 회사 × 월의 **숫자 여덟** | §7 의존도는 **회사의** 사실이라 계정마다 달라지면 안 된다. 결정의 제목·기안자·처리자는 반환 목록에 없다 |
-| `interventions_bump()` (0034) | (트리거) | `intervention_counts`의 쓰기 권한이 아무에게도 없어서 definer다. 사람이 부를 수 없게 `execute`를 다시 주지 않았다 |
+| `interventions_bump()` (0034·0035) | (트리거) | `intervention_counts`의 쓰기 권한이 아무에게도 없어서 definer다. 사람이 부를 수 없게 `execute`를 다시 주지 않았다. 0035가 몸통만 갈아 `monitor`를 다섯 번째로 센다 |
+| `can_write_attention()` (0035) | boolean 하나 | 정책이 부르는 판정 함수다. 예외·점수를 **만드는** 쪽(Chairman·GroupCFO·AIAgent)이고, 회사 판정은 `has_business()`에 맡긴다 |
 
 두 가지가 이 목록을 지탱한다.
 
@@ -178,6 +179,26 @@ RLS를 **우회하는** 함수는 이 저장소에 없다. definer 함수는 전
    닿는다. 그래서 두 번 다 **집계 전용 표**를 대신 지었다: `activity_digest`(0031)와
    `intervention_counts`(0034). 둘 다 숫자만 들고 있고, 사람·경로·도시·`entity_id`는
    한 칸도 없다. `audit_log_read`는 0031 이후 한 글자도 넓어지지 않았다.
+
+### `exceptions`의 restrictive 정책 — 오늘은 잴 것이 없는데도 둔 한 줄
+
+0035의 `exceptions`에는 permissive 정책 셋(읽기 · 처리 · 생성) 말고
+`exceptions_ai_agent_no_update`가 **restrictive**로 하나 더 걸려 있다. 0013이 `decisions`에
+건 것과 같은 모양이다. **오늘 그 줄은 아무것도 막지 않는다** — 그 표의 update 정책이
+`can_approve()`를 요구하고 그 함수는 Chairman·BusinessCEO뿐이라, AIAgent는 이미 통과하지
+못한다. 그래서 지우고 싶어진다(0034 4절은 똑같은 상황에서 실제로 **두지 않기로** 했다:
+permissive 쓰기 정책이 하나도 없으면 restrictive는 잴 것이 없다).
+
+그런데도 둔 이유는 **그 길이 열릴 날이 이미 적혀 있기** 때문이다. 0033 1절이
+`decisions.decided_by_kind`의 `'rule'` 값을 만들어 두고 "블록 B가 규칙 자동 종결을 들고 올
+때 채워진다"고 적었다. 그날 누군가 예외의 `status`를 규칙 엔진이 닫게 하려면 이 표의
+update를 AIAgent에게 열어야 하고, 그 순간 **의식적으로 지워야 하는 한 줄**이 이
+restrictive다. 그 한 줄이 §19의 경계를 코드로 붙잡고 있다 —
+*"AI가 CEO를 대신하지 않는다. AI는 Chairman에게 «어디를 볼 것인가»를 알려준다."*
+AIAgent는 예외를 **만들고**(`exceptions_create`) 점수를 매기지만, 그것은 분석이지 결정이
+아니다 — `exceptions.ai_analysis` 칸의 주석과 화면의 «결정 아님» 라벨이 같은 말을 한다.
+`delete`는 grant도 정책도 없어 두 겹으로 막혀 있고(예외는 지우는 것이 아니라 닫는 것이다),
+그쪽에는 restrictive를 걸지 않았다 — 잴 것이 없다.
 
 ### 표를 새로 만들면
 
