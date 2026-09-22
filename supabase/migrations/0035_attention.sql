@@ -14,6 +14,12 @@
 --   별개 작업이다. 여기서 짓지 않고, 짓는 척하는 빈 껍데기도 두지 않는다 — 점수를
 --   계산하는 문장이 이 파일에 하나도 없는 것이 그 경계다(6절).
 --
+-- ■ B-2가 제자리에서 고친 것 — `exceptions.period`와 중복 방지 유니크 ■
+--   이 파일은 **아직 staging에 적용되지 않았다.** 그래서 앞으로 나아가는 대신 제자리에서
+--   고쳤다(0001~0034는 한 글자도 건드리지 않았다). 더한 것은 칸 하나와 제약 둘이고,
+--   이유는 «앱에서만 막으면 두 틱이 겹치는 날 뚫린다»다 — 4절의 긴 주석에 적었다.
+--   B-2가 이 파일에서 한 일은 그것이 전부다. 점수를 계산하는 문장은 여전히 없다.
+--
 -- ■ 가장 위험한 자리 — AI가 축을 지어내는 것 ■
 --   §19의 축은 여섯인데(재무 영향·전략 영향·긴급도·확률·CEO 해결 능력·자본 필요)
 --   이 저장소에 그 여섯을 **재어 줄 원천이 다 있지는 않다.** 수치가 있는 것은
@@ -285,12 +291,38 @@ on conflict (rule_key) do nothing;
 --      (그 이유는 6절에 있다) 복사가 원본과 어긋나지 못하게 복합 FK로 묶는다. 이 unique는
 --      그 FK가 가리킬 자리다. `id`가 이미 PK라 행을 더 좁히지는 않는다 — 인덱스 한 개의
 --      비용으로 '두 표의 회사가 다른 행'을 구조적으로 불가능하게 만든다.
+--
+--    ■ `period`와 중복 방지 — **B-2가 제자리에서 더했다**(0035는 아직 staging에 없다) ■
+--      야간 Job은 하루에 한 번이 아니라 **틱으로 여러 번 돈다**(0029 — 회장 현지 06:00을
+--      맞추려고 매시 정각에 깨어난다). 같은 회사·같은 규칙·같은 기간을 두 틱이 연달아
+--      평가하면 같은 사실이 예외 두 건이 되고, 화면은 "현금 부족"을 두 줄로 그린다.
+--      **앱에서만 막으면 두 틱이 겹치는 날 뚫린다** — 조회와 insert 사이가 비어 있고,
+--      이 Job은 회사 다섯을 `Promise.all`로 동시에 돈다(night-brief.ts). 그래서 제약을 건다.
+--
+--      **칸이 하나 필요했다.** 처음에는 `detected_at`의 날짜로 묶으려 했지만 그것은
+--      «언제 감지했나»이지 «무엇을 쟀나»가 아니다. 자정을 넘긴 두 틱이 같은 8월 수치를
+--      두 번 올리게 되고, 그 반대(같은 날 두 번 도는 월초)도 막지 못한다. 그래서
+--      **잰 기간**(`finance_kpis.period`와 같은 눈금의 'YYYY-MM')을 칸으로 둔다.
+--      이 값은 시계가 아니라 **데이터**에서 나온다 — 서버의 '오늘'에 기대지 않는다는
+--      이 저장소의 규율과 같은 자리다(0019 3절).
+--
+--      **manual 규칙에서는 null이다.** 잰 기간이 없기 때문이고, Postgres의 unique는 null을
+--      서로 다른 값으로 보므로 **사람이 올리는 플래그는 이 제약에 걸리지 않는다.**
+--      그것이 맞다 — 같은 달에 거래처가 둘 이탈하면 그것은 예외 두 건이다.
+--
+--      **status를 조건에 넣지 않았다**(부분 유니크 인덱스로 «열린 것만» 묶는 길을 버렸다).
+--      그러면 회장이 닫은 예외를 그날 밤 Job이 **다시 올린다** — 닫은 사람에게는 닫기가
+--      되돌려진 것으로 보이고, 두 번째로 닫을 때는 그 버튼을 믿지 않게 된다.
+--      **대가**: 한 기간에 한 건이라 같은 달에 다시 나빠진 것을 새 예외로 올리지 못한다.
+--      그 자리를 메우는 것이 회장의 '관찰 N일'(`monitor_until`)이고, 다음 달 수치가 오면
+--      기간이 달라져 새 예외가 선다.
 -- ---------------------------------------------------------------------
 create table exceptions (
   id                       bigint generated always as identity primary key,
   business_id              text not null references businesses(business_id) on delete cascade, -- [일반]
   rule_key                 text not null references exception_rules(rule_key),                 -- [일반] FK가 옳은 자리(위 주석)
   detected_at              timestamptz not null default now(),   -- [일반]
+  period                   text,                                 -- [일반] 잰 기간(YYYY-MM). manual 규칙에서는 null. 중복 방지의 키
   value                    numeric,                              -- [제한] 잰 값. manual 규칙에서는 null
   threshold                numeric,                              -- [제한] 걸린 순간의 임계. 규칙이 나중에 바뀌어도 그때의 값이 남는다
   severity                 attention_level not null,             -- [일반] §19. 누가 손대는가
@@ -306,11 +338,16 @@ create table exceptions (
   -- '언제까지'가 없는 관찰은 관찰이 아니라 조용히 잊는 것이다.
   constraint exceptions_monitor_until_check
     check (status <> 'monitoring' or monitor_until is not null),
-  constraint exceptions_id_business_unique unique (id, business_id)
+  constraint exceptions_id_business_unique unique (id, business_id),
+  -- 'YYYY-MM'. 모양만 묶는다 — 어느 달이 유효한가는 데이터가 답할 질문이지 제약이 아니다.
+  constraint exceptions_period_shape_check
+    check (period is null or period ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'),
+  -- 같은 회사·같은 규칙·같은 기간은 한 건이다(위 주석). 두 틱이 겹쳐도 DB가 막는다.
+  constraint exceptions_dedupe_unique unique (business_id, rule_key, period)
 );
 
 comment on table exceptions is
-  '§18. 규칙이 실제로 걸려서 생긴 예외. **시드 행이 한 건도 없다** — 예외는 규칙이 걸려야 생기는 것이고, 시드로 넣으면 화면이 첫날부터 있지도 않은 위험을 빨갛게 그린다. value·threshold는 manual 규칙에서 null이다(잰 값이 없다). status=monitoring이면 monitor_until이 반드시 있다.';
+  '§18. 규칙이 실제로 걸려서 생긴 예외. **시드 행이 한 건도 없다** — 예외는 규칙이 걸려야 생기는 것이고, 시드로 넣으면 화면이 첫날부터 있지도 않은 위험을 빨갛게 그린다. value·threshold는 manual 규칙에서 null이다(잰 값이 없다). status=monitoring이면 monitor_until이 반드시 있다. **(business_id, rule_key, period)가 유일하다** — 야간 Job이 틱으로 여러 번 도는 날 같은 사실이 두 건이 되는 것을 DB가 막는다(period 칸 주석).';
 comment on column exceptions.severity is
   '§19. **이 예외의 «지금» 등급이고, 화면이 색을 고를 때 읽는 칸은 이것 하나다.** 등급이 세 칸에 나오므로 순서를 못 박는다: ① exception_rules.severity_base가 첫 값을 준다(축이 아직 없을 때의 출발점) ② 점수가 나오면 attention_scores.level이 나오고 **B-2가 그 값으로 이 칸을 갱신한다** ③ 화면은 attention_scores를 색 때문에 읽지 않는다 — 점수 표는 «왜 그 색인가»를 설명할 때 읽는다. 둘이 어긋난 행이 있으면 갱신이 아직 안 된 것이지, 화면이 고를 문제가 아니다.';
 comment on column exceptions.ai_analysis is
@@ -319,6 +356,8 @@ comment on column exceptions.value is
   '잰 값. **manual 규칙에서는 null이다 — 0이 아니라 없다.** 0으로 채우면 "임계 0을 넘겼다"는 없는 사실이 화면에 그려진다.';
 comment on column exceptions.threshold is
   '걸린 순간의 임계값. 규칙 표의 값을 **복사해 둔다** — /attention/rules에서 회장이 임계를 고쳐도 지난 예외가 "왜 걸렸나"를 계속 설명할 수 있어야 한다. manual 규칙에서는 null이다.';
+comment on column exceptions.period is
+  '이 예외가 **잰 기간**(YYYY-MM · finance_kpis.period와 같은 눈금). 「언제 감지했나」(detected_at)가 아니라 「무엇을 쟀나」다. **중복 방지의 키다** — (business_id, rule_key, period)에 unique가 걸려 있고, 야간 Job이 틱으로 여러 번 도는 날(0029) 같은 사실이 예외 두 건이 되는 것을 DB가 막는다. 앱에서만 막으면 조회와 insert 사이에서 두 틱이 겹친다. **manual 규칙에서는 null이다** — 잰 기간이 없고, unique가 null을 서로 다른 값으로 보므로 사람이 올리는 플래그는 이 제약에 걸리지 않는다(같은 달에 거래처가 둘 이탈하면 그것은 두 건이다). status를 조건에 넣지 않은 이유는 4절 주석에 있다 — 넣으면 회장이 닫은 예외를 그날 밤 Job이 다시 올린다.';
 comment on column exceptions.monitor_until is
   '관찰 종료 시점(원문의 "관찰 14일"). timestamptz다 — date로 두면 경계가 어느 시간대인지가 칸에 없고, 이 저장소는 서버의 «오늘»에 기대지 않는다(0019 3절). 비교는 now()로 한다.';
 
