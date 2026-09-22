@@ -30,9 +30,13 @@
 --   * **`severity` enum(Info/Warning/Critical)을 재사용하지 않는다.** RED/YELLOW/GREEN은
 --     '얼마나 나쁜가'가 아니라 **'누가 손대는가'**다(§19). 같은 낱말이 두 뜻을 갖는 순간이
 --     이 저장소가 반복해서 피해 온 '두 벌'이고, 새 enum 이름에 그 차이를 넣었다(1절).
---   * **판정 함수를 새로 만들지 않는다.** 읽기는 `has_business()`, 회장 액션은
---     `can_approve()`다 — 둘 다 0002에 있다. 새로 만드는 것은 규칙 엔진의 쓰기 문 하나뿐이고
---     (7절) 그것도 기존 함수 셋을 합치는 껍데기다.
+--   * **판정을 새로 «만들지» 않는다 — 있는 것을 조합한다.** 읽기는
+--     `has_business()` + `can_read_restricted()`, 회장 액션은 `can_approve()`다 —
+--     셋 다 0002에 있다. 새로 짓는 함수는 쓰기 문 **둘**(`can_write_attention`
+--     `can_score_attention`, 7절)뿐이고, 둘 다 그 기존 함수들을 합치는 껍데기이며
+--     뒤의 것은 앞의 것을 부른다(역할 목록이 두 벌이 되지 않게).
+--     읽기가 `can_read_restricted()`까지 요구하는 이유는 7절에 길게 적었다 —
+--     `exceptions.value`에 들어오는 숫자가 `finance_kpis`가 잠가 둔 바로 그 숫자다.
 --   * **예외 행을 한 건도 시드로 넣지 않는다.** 예외는 규칙이 실제로 걸려야 생기는 것이고,
 --     시드로 넣으면 화면이 첫날부터 **있지도 않은 위험을 빨갛게 그린다.** 회장이 그 빨강을
 --     한 번 열어 보고 아무것도 없는 것을 확인하면, 그 뒤로 진짜 빨강도 안 열어 본다.
@@ -306,7 +310,7 @@ comment on table exceptions is
 comment on column exceptions.severity is
   '§19. **이 예외의 «지금» 등급이고, 화면이 색을 고를 때 읽는 칸은 이것 하나다.** 등급이 세 칸에 나오므로 순서를 못 박는다: ① exception_rules.severity_base가 첫 값을 준다(축이 아직 없을 때의 출발점) ② 점수가 나오면 attention_scores.level이 나오고 **B-2가 그 값으로 이 칸을 갱신한다** ③ 화면은 attention_scores를 색 때문에 읽지 않는다 — 점수 표는 «왜 그 색인가»를 설명할 때 읽는다. 둘이 어긋난 행이 있으면 갱신이 아직 안 된 것이지, 화면이 고를 문제가 아니다.';
 comment on column exceptions.ai_analysis is
-  '§19. AI의 원인 분해·권고. **분석이지 결정이 아니다** — 화면의 «결정 아님» 라벨이 이 칸에서 나온다. 이 칸에 무엇이 적혀 있어도 status를 바꾸는 것은 사람이고, exceptions_ai_agent_no_update가 그것을 DB에서 막는다.';
+  '§19. AI의 원인 분해·권고. **분석이지 결정이 아니다** — 화면의 «결정 아님» 라벨이 이 칸에서 나온다. 이 칸에 무엇이 적혀 있어도 status를 바꾸는 것은 사람이고, ai_agent_no_update가 그것을 DB에서 막는다.';
 comment on column exceptions.value is
   '잰 값. **manual 규칙에서는 null이다 — 0이 아니라 없다.** 0으로 채우면 "임계 0을 넘겼다"는 없는 사실이 화면에 그려진다.';
 comment on column exceptions.threshold is
@@ -629,8 +633,23 @@ create policy exception_rules_write on exception_rules
 
 -- ② exceptions — 읽기는 그 회사의 [제한] 독자, 처리는 승인권자, 올리는 것은 규칙 엔진과
 --    Chairman·GroupCFO. 읽기가 `alerts_read`보다 한 겹 좁은 이유는 위 주석에 있다.
+-- 읽기 = «그 회사의 [제한] 독자» **또는** «그 표에 쓰는 사람».
+--
+-- 뒤의 갈래가 없으면 **야간 Job이 자기가 방금 넣은 줄을 못 읽는다.** Postgres는 INSERT의
+-- `returning`에도 SELECT 정책을 건다(supabase-js의 `.insert().select()`가 내는 문장이
+-- 정확히 그것이다). `exceptions.id`는 `generated always as identity`라 그 값을 알 방법이
+-- 그 하나뿐이고, 그것을 못 읽으면 AIAgent는 `attention_scores.exception_id`를 채울 수
+-- 없다 — 점수를 매길 예외를 가리키지 못한다. 중복 방지 조회(같은 규칙이 오늘 이미
+-- 걸렸는가)도 같은 이유로 막힌다.
+--
+-- **이 갈래가 새로 내주는 것은 없다.** `can_write_attention()`을 통과하는 역할은 바로 그
+-- 값들을 **집어넣는** 쪽이다. 그리고 실제로 늘어나는 독자는 AIAgent 하나뿐이다 —
+-- Chairman·GroupCFO는 이미 `can_read_restricted()` 안에 있다.
 create policy exceptions_read on exceptions
-  for select using (has_business(business_id) and can_read_restricted());
+  for select using (
+    has_business(business_id)
+    and (can_read_restricted() or can_write_attention(business_id))
+  );
 create policy exceptions_triage on exceptions
   for update using (can_approve() and has_business(business_id))
   with check (can_approve() and has_business(business_id));
@@ -639,7 +658,13 @@ create policy exceptions_create on exceptions
 
 -- AI는 결정하지 않는다(§19). 위 update 정책이 이미 막지만, 그 정책이 넓어지는 날
 -- 이 한 줄이 마지막 문이 된다(위 주석 참조 — 0013과 같은 모양, 0034와 다른 판단).
-create policy exceptions_ai_agent_no_update on exceptions
+--
+-- 이름에 표 이름을 붙이지 않는다. 정책 이름은 표 안에서만 유일하면 되고, 0013이 표 열일곱에
+-- 건 것이 전부 맨이름 `ai_agent_no_<op>`다. **그 관례를 지키는 것이 검사 한 줄을 산다** —
+-- `check-migrations.ts`의 restrictive 카탈로그가 `policyname like 'ai_agent_no_%'`로 긁는다.
+-- (긁기만 해서는 아무것도 재지 않는다. 그 카탈로그는 표 이름 목록을 따로 들고 키로 찾으므로,
+--  `exceptions` 두 줄을 실제로 재는 단언을 같은 파일에 더했다 — 그 주석에 이유가 있다.)
+create policy ai_agent_no_update on exceptions
   as restrictive for update
   using (auth_role() is distinct from 'AIAgent')
   with check (auth_role() is distinct from 'AIAgent');
@@ -648,16 +673,27 @@ create policy exceptions_ai_agent_no_update on exceptions
 -- 들어오는 예외는 "만들되 닫지 않는다"를 글자로만 지킨 것이고, `monitoring`으로
 -- 들어오는 예외는 '언제까지 두고 볼지'를 AI가 정한 것이 된다. 둘 다 결정이다.
 -- restrictive라 `exceptions_create`의 회사·역할 판정 **위에** 겹으로 걸린다.
-create policy exceptions_ai_agent_open_only on exceptions
+create policy ai_agent_no_closed_insert on exceptions
   as restrictive for insert
   with check (auth_role() is distinct from 'AIAgent' or status = 'open');
 
--- ③ attention_scores — 읽기는 exceptions와 **같은 범위**(그래서 같은 두 함수를 같은
---    순서로 부른다). 쓰기는 Chairman과 규칙 엔진뿐이다 — 점수를 매기는 것은 «분석»이라
---    AIAgent가 update까지 한다(야간 Job이 다시 매긴다). 바꾸지 못하는 것은
---    `exceptions.status` — 그것이 결정이다.
+-- ③ attention_scores — 읽기는 `exceptions`와 **같은 모양이고 같은 사람들**이다.
+--    모양: «그 회사의 [제한] 독자» 또는 «그 표에 쓰는 사람». 표마다 쓰는 사람이 다르므로
+--    뒤의 갈래가 부르는 함수도 다르다(`can_write_attention` ↔ `can_score_attention`).
+--    **그런데 결과 집합은 같다**: 두 갈래가 더해 주는 것은 어느 쪽이나 AIAgent 하나뿐이고
+--    (Chairman·GroupCFO는 이미 `can_read_restricted()` 안에 있다), 그래서 두 표의 독자는
+--    Chairman · GroupCFO · BusinessCEO · Executive · AIAgent로 **정확히 같다.**
+--    이 갈래가 없으면 아래 `for all` 정책의 `using`이 AIAgent에게 select를 주는 바람에
+--    "두 표의 읽기 범위가 같다"는 말이 조용히 거짓이 된다 — 리뷰가 잡은 자리다.
+--
+--    쓰기는 Chairman과 규칙 엔진뿐이다 — 점수를 매기는 것은 «분석»이라 AIAgent가
+--    update까지 한다(야간 Job이 다시 매긴다). 바꾸지 못하는 것은 `exceptions.status` —
+--    그것이 결정이다.
 create policy attention_scores_read on attention_scores
-  for select using (has_business(business_id) and can_read_restricted());
+  for select using (
+    has_business(business_id)
+    and (can_read_restricted() or can_score_attention(business_id))
+  );
 create policy attention_scores_write on attention_scores
   for all using (can_score_attention(business_id))
   with check (can_score_attention(business_id));

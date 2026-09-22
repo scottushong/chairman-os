@@ -326,6 +326,34 @@ async function rls(db: Db) {
     }
   }
 
+  /**
+   * 0035 `exceptions` — **세 짝이 아니다.** 그래서 위의 루프에 표 이름만 얹을 수 없고,
+   * 이 표만 따로 잰다.
+   *
+   *   · `ai_agent_no_insert`가 **없다.** 있으면 안 된다 — 야간 Job이 예외를 만드는 것이
+   *     블록 B의 설계다(0035 7절). AI가 못 하는 것은 «만드는 것»이 아니라 «정하는 것»이다.
+   *   · `ai_agent_no_delete`도 없다. 그 표에는 permissive delete 정책도 grant도 없어
+   *     이미 default deny이고, restrictive를 얹어도 잴 것이 없다(0034 4절과 같은 판단).
+   *   · 대신 둘이 있다: update를 통째로 막는 줄과, **insert를 `status='open'`으로만
+   *     통과시키는 줄.** 뒤의 것이 없으면 AIAgent가 처음부터 닫힌 예외를 넣을 수 있고,
+   *     그것은 "만들되 닫지 않는다"를 글자로만 지킨 것이다.
+   *
+   * 위의 두 루프와 같은 이유로 카탈로그에서 직접 잰다: 행동 검사는 permissive가 막았는지
+   * restrictive가 막았는지 구분하지 못하고, restrictive의 존재 이유는 **permissive가
+   * 느슨해진 날 남는 방어선**이다. `as restrictive`를 빠뜨리면 permissive 정책이 하나
+   * 늘어난 셈이 되는데, 그때 이 표는 더 조용히 넓어진다 — permissive는 OR로 합쳐진다.
+   */
+  for (const name of ['ai_agent_no_update', 'ai_agent_no_closed_insert']) {
+    assert.equal(
+      policyKind.get(`exceptions.${name}`), 'RESTRICTIVE',
+      `0035: exceptions에 ${name}가 restrictive로 있어야 한다 — AI는 예외를 만들 수는 있어도 닫지는 못한다(§19 "AI가 CEO를 대신하지 않는다")`,
+    )
+  }
+  assert.equal(
+    policyKind.get('exceptions.ai_agent_no_insert'), undefined,
+    '0035: exceptions에 ai_agent_no_insert가 생겼다 — 야간 Job이 예외를 만들지 못하면 블록 B의 규칙 엔진이 통째로 막힌다. AI가 못 하는 것은 «만드는 것»이 아니라 «정하는 것»이다',
+  )
+
   // ── 0018 initiative-logos 버킷 ─────────────────────────────────────
   // 버킷이 비공개인가. as()는 첫 칸을 Number()로 바꾸는데 false가 0으로 둔갑하면
   // 잘못된 값도 조용히 통과한다 — db.query로 boolean 그대로 잰다.
