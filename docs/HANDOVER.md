@@ -163,7 +163,8 @@ RLS를 **우회하는** 함수는 이 저장소에 없다. definer 함수는 전
 | `can_read_succession()` · `can_write_succession()` (0033) | boolean 하나 | 정책이 부르는 판정 함수다 |
 | `founder_dependency_rows()` (0034) | 회사 × 월의 **숫자 여덟** | §7 의존도는 **회사의** 사실이라 계정마다 달라지면 안 된다. 결정의 제목·기안자·처리자는 반환 목록에 없다 |
 | `interventions_bump()` (0034·0035) | (트리거) | `intervention_counts`의 쓰기 권한이 아무에게도 없어서 definer다. 사람이 부를 수 없게 `execute`를 다시 주지 않았다. 0035가 몸통만 갈아 `monitor`를 다섯 번째로 센다 |
-| `can_write_attention()` (0035) | boolean 하나 | 정책이 부르는 판정 함수다. 예외·점수를 **만드는** 쪽(Chairman·GroupCFO·AIAgent)이고, 회사 판정은 `has_business()`에 맡긴다 |
+| `can_write_attention()` (0035) | boolean 하나 | 정책이 부르는 판정 함수다. **예외를 올리는** 쪽(Chairman·GroupCFO·AIAgent)이고, 회사 판정은 `has_business()`에 맡긴다. `exceptions`의 insert와 **읽기의 둘째 갈래**가 이것을 부른다 — 야간 Job이 자기가 넣은 줄을 `returning`으로 못 읽으면 점수를 붙일 id를 알 수 없다 |
+| `can_score_attention()` (0035) | boolean 하나 | 정책이 부르는 판정 함수다. **점수를 매기는** 쪽으로 한 역할 더 좁다 — Chairman·AIAgent뿐이고 GroupCFO는 없다(원문: "쓰기는 규칙 엔진과 Chairman"). 역할 목록이 두 벌이 되지 않게 몸통이 `can_write_attention()`을 부른다 |
 
 두 가지가 이 목록을 지탱한다.
 

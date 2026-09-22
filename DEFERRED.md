@@ -1380,7 +1380,24 @@ production에서 같은 속도라는 보장이 없다.
   설명하려면 그 회사 사람도 규칙은 봐야 한다. **쓰기는 Chairman만**이다 — 잴 대상이 잣대를
   고치면 지표가 지표가 아니게 된다.
   승계 표의 `can_read_succession()`은 쓰지 않는다 — 그것은 승계 전용 문이고, 여기서 필요한
-  겹은 '회사'와 '등급' 둘이다. 처리(status·monitor_until)는 `can_approve()`이고
+  겹은 '회사'와 '등급' 둘이다.
+  **좁히고 나서 한 번 더 고쳤다(리뷰 2차).** `can_read_restricted()`에 **AIAgent가 없어서**
+  야간 Job이 자기가 방금 넣은 줄을 못 읽게 됐다 — Postgres는 INSERT의 `returning`에도
+  SELECT 정책을 걸고, `exceptions.id`가 `generated always as identity`라 그 id를 알 길이
+  그것뿐이며, 못 읽으면 `attention_scores.exception_id`를 채울 수 없다(B-2가 점수를 예외에
+  못 붙인다). 규칙 엔진의 중복 방지 조회도 같이 막혔다. 그래서 읽기를
+  **«그 회사의 [제한] 독자 또는 그 표에 쓰는 사람»**으로 고쳤다. 새로 내주는 것은 없다 —
+  그 역할은 바로 그 값들을 집어넣는 쪽이고, 늘어나는 독자는 AIAgent 하나다.
+  두 표의 최종 독자는 **Chairman · GroupCFO · BusinessCEO · Executive · AIAgent**로 같다.
+- **restrictive 두 줄의 이름을 0013의 관례(맨이름)로 맞췄다 — 그리고 그것만으로는 검사를
+  사지 못한다는 것을 확인했다.** `check-migrations.ts`의 restrictive 카탈로그는
+  `policyname like 'ai_agent_no_%'`로 긁지만 **표 이름 목록을 따로 들고 키로 찾는다.**
+  그래서 이름을 바꾸는 것은 필요조건일 뿐이고, `exceptions`를 실제로 재는 단언을 같이
+  더했다. 이 표는 0013의 세 짝(insert·update·delete)이 아니다:
+  `ai_agent_no_insert`는 **있으면 안 되고**(야간 Job이 예외를 만드는 것이 설계다),
+  delete는 permissive가 없어 잴 것이 없다. 그래서 update를 막는 줄과 insert를
+  `status='open'`으로만 통과시키는 줄 둘이 RESTRICTIVE인지, 그리고 `ai_agent_no_insert`가
+  **없는지**를 잰다. 셋 다 돌연변이로 빨간 것을 확인했다. 처리(status·monitor_until)는 `can_approve()`이고
   `decisions_decide`와 같은 모양으로 회사 판정을 같이 건다 — VANA 대표가 DY의 예외를 닫는
   길은 열지 않는다.
 - **`attention_scores`의 쓰기는 Chairman과 AIAgent뿐이다(`can_score_attention()`).**
