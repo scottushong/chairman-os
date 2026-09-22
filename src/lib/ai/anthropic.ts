@@ -3,8 +3,16 @@ import { join } from 'node:path'
 
 import Anthropic from '@anthropic-ai/sdk'
 
-import type { AiAdapter, AiBrief, CompanyContext, DailyBriefInput } from './adapter'
+import type {
+  AiAdapter,
+  AiBrief,
+  CompanyContext,
+  DailyBriefInput,
+  ExceptionAnalysis,
+  ExceptionContext,
+} from './adapter'
 import { BRIEF_JSON_SCHEMA, BriefShapeError, DAILY_BRIEF_JSON_SCHEMA, parseBrief } from './brief-schema'
+import { EXCEPTION_ANALYSIS_JSON_SCHEMA, parseExceptionAnalysis } from './exception-schema'
 
 /**
  * AiAdapter의 Anthropic 구현.
@@ -23,8 +31,10 @@ export const DEFAULT_AI_MODEL = 'claude-sonnet-4-5'
 
 const PROMPT_DIR = join(process.cwd(), 'src', 'lib', 'ai', 'prompts')
 
+type PromptName = 'company-summary' | 'daily-brief' | 'exception-analysis'
+
 const promptCache = new Map<string, Promise<string>>()
-function loadPrompt(name: 'company-summary' | 'daily-brief'): Promise<string> {
+function loadPrompt(name: PromptName): Promise<string> {
   let p = promptCache.get(name)
   if (!p) {
     p = readFile(join(PROMPT_DIR, `${name}.md`), 'utf8')
@@ -40,18 +50,21 @@ export function createAnthropicAdapter(): AiAdapter {
   const client = new Anthropic({ apiKey })
   const model = process.env.AI_MODEL?.trim() || DEFAULT_AI_MODEL
 
-  async function ask(promptName: 'company-summary' | 'daily-brief', payload: unknown): Promise<AiBrief> {
+  /**
+   * 한 번의 호출. 구조 강제 → 물러서기 → JSON 파싱까지가 여기 있고, **돌아온 값을 무엇으로
+   * 읽을지는 호출자가 정한다**(브리핑이냐 예외 분석이냐). 세 프롬프트가 같은 실패 처리를
+   * 쓰게 하려고 이 자리를 가른 것이다 — 두 벌이 되면 한쪽만 refusal을 못 보게 된다.
+   */
+  async function callJson(
+    promptName: PromptName,
+    payload: unknown,
+    schema: { [key: string]: unknown },
+    maxTokens: number,
+  ): Promise<unknown> {
     const system = await loadPrompt(promptName)
-    // 그룹 브리핑만 project_notes를 더 받는다(Phase 3-B).
-    const daily = promptName === 'daily-brief'
-    const schema = daily ? DAILY_BRIEF_JSON_SCHEMA : BRIEF_JSON_SCHEMA
     const params = {
       model,
-      // 그룹 브리핑은 회사 5곳 요약 + 항목 7개 + 프로젝트별 한 줄을 한 응답에 담는다.
-      // 4000에서 실제로 잘렸다(2026-09-19 회장 첫 사용). 12000은 그 세 배 여유다 —
-      // 길이 자체는 daily-brief.md의 상한이 잡고, 이 숫자는 그 상한을 지킨 응답이
-      // 절대 잘리지 않도록 두는 천장이다.
-      max_tokens: 12_000,
+      max_tokens: maxTokens,
       system,
       messages: [{ role: 'user' as const, content: JSON.stringify(payload) }],
     }
@@ -84,12 +97,22 @@ export function createAnthropicAdapter(): AiAdapter {
       .replace(/^```(?:json)?\s*/i, '')
       .replace(/\s*```$/, '')
 
-    let json: unknown
     try {
-      json = JSON.parse(text)
+      return JSON.parse(text)
     } catch {
       throw new BriefShapeError(`JSON이 아니다: ${text.slice(0, 120)}`)
     }
+  }
+
+  async function ask(promptName: 'company-summary' | 'daily-brief', payload: unknown): Promise<AiBrief> {
+    // 그룹 브리핑만 project_notes를 더 받는다(Phase 3-B).
+    const daily = promptName === 'daily-brief'
+    const schema = daily ? DAILY_BRIEF_JSON_SCHEMA : BRIEF_JSON_SCHEMA
+    // 그룹 브리핑은 회사 5곳 요약 + 항목 7개 + 프로젝트별 한 줄을 한 응답에 담는다.
+    // 4000에서 실제로 잘렸다(2026-09-19 회장 첫 사용). 12000은 그 세 배 여유다 —
+    // 길이 자체는 daily-brief.md의 상한이 잡고, 이 숫자는 그 상한을 지킨 응답이
+    // 절대 잘리지 않도록 두는 천장이다.
+    const json = await callJson(promptName, payload, schema, 12_000)
     return parseBrief(json, { projectNotes: daily })
   }
 
@@ -97,5 +120,14 @@ export function createAnthropicAdapter(): AiAdapter {
     model,
     summarizeCompany: (input: CompanyContext) => ask('company-summary', input),
     generateDailyBrief: (input: DailyBriefInput) => ask('daily-brief', input),
+    /**
+     * 블록 B-2. 예외 하나의 분석(§18). 출력이 문장 셋이라 천장이 브리핑보다 훨씬 낮다 —
+     * 2000이면 두세 문장 × 2 + 수 하나가 잘릴 일이 없고, 예외가 밤마다 여러 건씩 돌아서
+     * 브리핑의 천장을 그대로 쓰면 한 회사가 규칙 셋에 걸린 날 값이 커진다.
+     */
+    analyzeException: async (input: ExceptionContext): Promise<ExceptionAnalysis> =>
+      parseExceptionAnalysis(
+        await callJson('exception-analysis', input, EXCEPTION_ANALYSIS_JSON_SCHEMA, 2_000),
+      ),
   }
 }

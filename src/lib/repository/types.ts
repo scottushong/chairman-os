@@ -11,6 +11,7 @@ import type {
   Account,
   AiNightOutput,
   Alert,
+  AttentionScore,
   AutonomyAssessment,
   AutonomyLevel,
   ChairmanDirection,
@@ -32,6 +33,8 @@ import type {
   CriticalRisk,
   Decision,
   DocumentRecord,
+  ExceptionRecord,
+  ExceptionRule,
   FinanceKpi,
   FinanceLedger,
   Initiative,
@@ -508,6 +511,32 @@ export interface ChairmanRepository {
     input: ChairmanDirectionInput,
     actor: AuditActor,
   ): Promise<ChairmanDirection>
+
+  /* ---------------------------------------------------------------- 블록 B 주의 */
+
+  /**
+   * §18 규칙 사전. 0035 `exception_rules`의 13종.
+   * **읽기는 활성 사용자 전부다** — 임계값은 회사 데이터가 아니라 그룹의 정책 상수이고,
+   * "왜 DY가 yellow인가"를 설명하려면 그 회사 사람도 규칙을 봐야 한다.
+   */
+  listExceptionRules(): Promise<ExceptionRule[]>
+
+  /**
+   * §18 감지된 예외. 0035 `exceptions`.
+   *
+   * **독자는 그 회사의 [제한] 등급 독자(+ 그 표에 쓰는 사람)뿐이다** — `exceptions.value`에
+   * 들어오는 숫자가 `finance_kpis`가 잠가 둔 바로 그 숫자라서다(0035 7절).
+   * TeamLead·Member에게는 **0행**이고, 화면은 그들에게 "0건"이나 "정상입니다"라고 말하면
+   * 안 된다 — 없는 것과 못 보는 것은 다른 사실이다.
+   */
+  listExceptions(): Promise<ExceptionRecord[]>
+
+  /**
+   * §19 점수. 0035 `attention_scores`. 예외 하나에 한 줄이고, **없을 수 있다**.
+   * **화면이 색을 고를 때 읽는 칸이 아니다** — 그것은 `exceptions.severity` 하나다.
+   * 이 표는 «왜 그 색인가»와 «여섯 축 중 몇 개가 비었나»를 설명할 때 읽는다.
+   */
+  listAttentionScores(): Promise<AttentionScore[]>
 }
 
 /** 0033 dependency_areas 한 줄의 입력. id가 없으면 신규다(business_id+area로 덮어쓴다). */

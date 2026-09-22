@@ -13,9 +13,12 @@ import type {
   AiNightOutput,
   Alert,
   AppNotification,
+  AttentionScore,
   AutonomyAssessment,
   ChairmanDirection,
   DependencyArea,
+  ExceptionRecord,
+  ExceptionRule,
   FounderDependencyRow,
   InterventionRow,
   MyProfile,
@@ -3950,9 +3953,55 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       }
       return data
     },
+
+    /* -------------------------------------------------------------- 블록 B 주의 */
+
+    /**
+     * §18 규칙 사전(0035). 순서는 `sort_order` — §18이 적은 그 순서다.
+     * **꺼진 규칙도 같이 온다.** 화면이 "이 규칙은 꺼져 있다"를 그릴 수 있어야 하고,
+     * 여기서 걸러 내면 회장이 /attention/rules에서 그 규칙을 다시 켤 자리가 없어진다.
+     */
+    async listExceptionRules(): Promise<ExceptionRule[]> {
+      const { data, error } = await sb
+        .from('exception_rules')
+        .select(EXCEPTION_RULE_COLUMNS)
+        .order('sort_order')
+        .returns<ExceptionRule[]>()
+      return unwrap('exception_rules', data, error)
+    },
+
+    /**
+     * §18 예외(0035). 최신순. **권한은 여기서 보지 않는다** — `exceptions_read`가
+     * 회사 범위와 [제한] 등급을 같이 본다. 못 보는 사람에게는 0행이 오고,
+     * 화면은 그것을 "0건"이라고 말하지 않는다.
+     */
+    async listExceptions(): Promise<ExceptionRecord[]> {
+      const { data, error } = await sb
+        .from('exceptions')
+        .select(EXCEPTION_COLUMNS)
+        .order('detected_at', { ascending: false })
+        .returns<ExceptionRecord[]>()
+      return unwrap('exceptions', data, error)
+    },
+
+    /** §19 점수(0035). 예외 하나에 한 줄이고, 아직 안 매겨진 예외에는 행이 없다. */
+    async listAttentionScores(): Promise<AttentionScore[]> {
+      const { data, error } = await sb
+        .from('attention_scores')
+        .select(ATTENTION_SCORE_COLUMNS)
+        .order('exception_id', { ascending: false })
+        .returns<AttentionScore[]>()
+      return unwrap('attention_scores', data, error)
+    },
   }
 }
 
+const EXCEPTION_RULE_COLUMNS =
+  'rule_key,name,scope,kind,metric,comparator,threshold,window_days,severity_base,enabled,sort_order'
+const EXCEPTION_COLUMNS =
+  'id,business_id,rule_key,detected_at,period,value,threshold,severity,ai_analysis,ceo_handling,chairman_action_required,status,monitor_until'
+const ATTENTION_SCORE_COLUMNS =
+  'exception_id,business_id,financial_impact,financial_impact_source,strategic_impact,strategic_impact_source,urgency,urgency_source,probability,probability_source,ceo_ability,ceo_ability_source,capital_requirement,capital_requirement_source,score,level,unknown_axes,scored_at'
 const DEPENDENCY_AREA_COLUMNS =
   'id,business_id,area,area_en,level,transfer_status,target_date,note,sort_order'
 const DIRECTION_COLUMNS =

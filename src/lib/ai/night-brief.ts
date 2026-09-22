@@ -1,5 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
+import { attentionBriefLines, attentionItems } from '@/lib/attention/brief'
+import { runAttentionStage, type AttentionStageResult } from '@/lib/attention/stage'
 import { orderProjects, projectClock } from '@/lib/chairman-project'
 import { formatEok } from '@/lib/format'
 import { initiativeClock, orderInitiatives, stalenessDays } from '@/lib/initiative'
@@ -15,6 +17,7 @@ import type { AiAdapter, AiBrief, ChairmanContext, CompanyContext } from './adap
  * 야간 브리핑 Job (Phase 3-A, CH-019 / CH-045~048).
  *
  *   AI Agent로 로그인 → 회사별 KPI·결정·알림·업무·원장(0015) 읽기(RLS 통과)
+ *   → **주의(ATTENTION) 단계**(Phase 7 블록 B-2, 0035): 규칙 평가 → 점수 → AI 분석 → 예외 생성
  *   → 회사별 summarizeCompany → generateDailyBrief로 압축 (회장 루틴 0014을 기준으로 함께 넘긴다)
  *   → ai_night_outputs INSERT (회사별 N건 + 그룹 1건) → audit_log(night_job_completed)
  *   → 카카오 발송(Phase 3-C)
@@ -29,6 +32,12 @@ import type { AiAdapter, AiBrief, ChairmanContext, CompanyContext } from './adap
  *   '어젯밤 무엇이 안 됐나'도 회장이 아침에 봐야 할 정보다. 조용히 빠진 회사는 정상처럼 보인다.
  *
  * ③ 행마다 바로 쓴다. 다섯 회사를 다 돌고 한 번에 쓰면 마지막에 죽을 때 앞의 결과까지 잃는다.
+ *
+ * ⑤ 주의 단계는 브리핑보다 **먼저**다 (§18의 화살표 순서). 브리핑이 주의 3~5건을 맨 위에
+ *   올리려면 그때 이미 있어야 한다. 그 단계가 통째로 실패해도 브리핑은 돈다 — 대신
+ *   그 사실이 그룹 행의 맨 위 항목으로 남는다. **"주의가 없다"와 "주의를 못 쟀다"는 다르다.**
+ *   새 `audit_action`을 만들지 않는다 — 예외 생성은 기존 `night_job_completed` 줄의
+ *   `after`에 숫자로 남는다.
  *
  * ④ 카카오 발송은 맨 마지막이고, 실패해도 Job은 성공이다 (Phase 3-C). 카톡이 안 갔다고
  *   브리핑 행까지 Failed가 되면 아침에 /ai를 열어도 '어젯밤 실패'만 보인다 —
@@ -136,6 +145,13 @@ export async function runNightBrief(opts: {
     status: 'Done' | 'Failed'
     brief: AiBrief | null
     error?: string
+    /**
+     * 브리핑 **앞**에 붙는 항목들. 두 곳에서 온다.
+     *   · 그룹 행 — 주의 3~5건(§18 원문: "기존 브리핑은 attention 3~5건을 맨 위에").
+     *   · 회사 행 — 그 회사의 규칙 평가가 터진 사실.
+     * 둘 다 코드가 만든 항목이고 모델이 만든 것이 아니다. 앞에 두는 것이 곧 «맨 위»다.
+     */
+    leadItems?: AiBriefItem[]
   }) {
     const key = row.business_id ?? GROUP_KEY
     const output_id = `nb_${run_id}_${key}`
@@ -147,7 +163,7 @@ export async function runNightBrief(opts: {
       status: row.status,
       artifact_link: artifact(key),
       confidence: row.brief?.confidence ?? null,
-      items: row.brief?.items ?? ([] as AiBriefItem[]),
+      items: [...(row.leadItems ?? []), ...(row.brief?.items ?? [])] as AiBriefItem[],
       project_notes: row.brief?.project_notes ?? [],
       agent_name: 'AI Night Agent',
       completed_at: new Date().toISOString(),
@@ -181,22 +197,93 @@ export async function runNightBrief(opts: {
       console.error('[night-brief] read', readError)
     }
 
+    /**
+     * 블록 B-2 — 주의(ATTENTION) 단계. **브리핑보다 먼저 돈다**(§18의 화살표 순서이고,
+     * 브리핑이 주의를 맨 위에 올리려면 그때 이미 있어야 한다).
+     *
+     * 판단은 전부 `lib/attention/*`의 순수 함수에 있고 여기 있는 것은 배선뿐이다.
+     * 이 단계가 통째로 실패해도 브리핑은 돈다 — 규칙 평가를 못 했다고 아침 브리핑까지
+     * 없어지면 회장은 어제 무슨 일이 있었는지도 못 본다. 대신 **조용히 넘어가지 않는다**:
+     * 단계 실패는 그룹 행의 맨 위 항목으로, 회사별 실패는 그 회사 행의 맨 위 항목으로 남는다.
+     */
+    let attention: AttentionStageResult | null = null
+    let attentionStageError: string | undefined
+    if (snapshot) {
+      try {
+        attention = await runAttentionStage({
+          sb,
+          adapter: opts.adapter,
+          adapterError: opts.adapterError,
+          businesses,
+          financeKpis: snapshot.financeKpis,
+          ledger: snapshot.ledger,
+          runDate: run_date,
+        })
+      } catch (e) {
+        const msg = errorText(e)
+        console.error('[night-brief] attention', msg)
+        attention = null
+        attentionStageError = msg
+      }
+    }
+    if (attention?.error) attentionStageError = attention.error
+
+    /**
+     * 그룹 브리핑의 **맨 위**. 주의 3~5건을 코드가 세운다 — 순서를 모델에 맡기면 «맨 위»가
+     * 매일 달라지고, 그러면 그것은 맨 위가 아니다. 모델에게는 같은 목록을 입력으로도 넘겨
+     * 요약이 이 줄들과 어긋나지 않게 한다.
+     *
+     * 단계가 통째로 실패한 날은 그 사실이 맨 위에 선다. **"오늘 주의가 없다"와
+     * "오늘 주의를 못 쟀다"는 다른 사실이고**, 둘을 같은 화면(항목 0개)으로 접으면
+     * 규칙 엔진이 죽은 밤이 조용한 밤처럼 보인다.
+     */
+    function groupLeadItems(): AiBriefItem[] {
+      if (attentionStageError) {
+        return [
+          {
+            title: '[주의] 규칙 평가 단계 실패',
+            detail: `${attentionStageError} — 오늘 브리핑의 주의 목록은 비어 있지만 «주의가 없다»는 뜻이 아니다.`,
+            severity: 'critical',
+          },
+        ]
+      }
+      return attentionItems(attention?.headlines ?? [])
+    }
+
+    /** 감사 줄에 실을 숫자들. 단계가 못 돌았으면 그 사실이 `error`로 실린다(0건이 아니다). */
+    const attentionAudit = attentionStageError
+      ? { error: attentionStageError }
+      : {
+          evaluated: attention?.evaluated ?? 0,
+          created: attention?.created ?? 0,
+          deduped: attention?.deduped ?? 0,
+          without_analysis: attention?.withoutAnalysis ?? 0,
+          failed_companies: attention ? [...attention.failures.keys()] : [],
+        }
+
     const briefs: { business_id: string; name: string; brief: AiBrief }[] = []
     const failed: { business_id: string; name: string }[] = []
 
     // 회사끼리는 서로 기다릴 이유가 없다. 동시에 부르고, 각자 끝나는 대로 쓴다.
     await Promise.all(
       businesses.map(async (b) => {
+        // 그 회사의 규칙 평가가 터졌으면 그 사실이 그 회사 행에 남아야 한다.
+        // 브리핑 자체는 성공했을 수 있으므로 status를 Failed로 내리지 않는다 —
+        // 두 개의 다른 사실을 한 칸으로 접으면 어느 쪽이 실패한 것인지 읽을 수 없다.
+        const ruleFailure = attention?.failures.get(b.business_id)
+        const leadItems: AiBriefItem[] = ruleFailure
+          ? [{ title: `[주의] ${b.name} 규칙 평가 실패`, detail: ruleFailure, severity: 'critical' }]
+          : []
         try {
           if (!opts.adapter) throw new Error(opts.adapterError ?? 'AI 어댑터 없음')
           const brief = await opts.adapter.summarizeCompany(companyContext(b, snapshot!, run_date))
           briefs.push({ business_id: b.business_id, name: b.name, brief })
-          await write({ business_id: b.business_id, job_type: 'Company Brief', status: 'Done', brief })
+          await write({ business_id: b.business_id, job_type: 'Company Brief', status: 'Done', brief, leadItems })
         } catch (e) {
           const msg = errorText(e)
           console.error('[night-brief] company', b.business_id, msg)
           failed.push({ business_id: b.business_id, name: b.name })
-          await write({ business_id: b.business_id, job_type: 'Company Brief', status: 'Failed', brief: null, error: msg })
+          await write({ business_id: b.business_id, job_type: 'Company Brief', status: 'Failed', brief: null, error: msg, leadItems })
         }
       }),
     )
@@ -216,12 +303,19 @@ export async function runNightBrief(opts: {
       const finance = snapshot?.ledger
         ? financeBriefContext(snapshot.ledger, businesses.map((b) => b.business_id))
         : null
-      groupBrief = await opts.adapter.generateDailyBrief({ date: run_date, companies: briefs, failed, chairman, finance })
-      await write({ business_id: null, job_type: 'Daily Brief', status: 'Done', brief: groupBrief })
+      groupBrief = await opts.adapter.generateDailyBrief({
+        date: run_date,
+        companies: briefs,
+        failed,
+        chairman,
+        finance,
+        attentions: attentionBriefLines(attention?.headlines ?? []),
+      })
+      await write({ business_id: null, job_type: 'Daily Brief', status: 'Done', brief: groupBrief, leadItems: groupLeadItems() })
     } catch (e) {
       const msg = errorText(e)
       console.error('[night-brief] group', msg)
-      await write({ business_id: null, job_type: 'Daily Brief', status: 'Failed', brief: null, error: msg })
+      await write({ business_id: null, job_type: 'Daily Brief', status: 'Failed', brief: null, error: msg, leadItems: groupLeadItems() })
     }
 
     report.ok = report.failed === 0 && report.inserted > 0
@@ -239,6 +333,12 @@ export async function runNightBrief(opts: {
         inserted: report.inserted,
         done: report.done,
         failed: report.failed,
+        /**
+         * 블록 B-2. **새 감사 유형을 만들지 않는다** — 예외 생성은 이 줄의 숫자로 남는다.
+         * 개별 예외의 «누가 무엇을»은 `exceptions` 행 자체가 갖고 있고, 회장의 처리만
+         * `audit_log`에 따로 줄이 선다(그것이 0034의 개입 집계로 간다).
+         */
+        attention: attentionAudit,
       },
       note: `야간 브리핑 ${opts.trigger === 'manual' ? '수동 실행' : 'Cron'}${
         opts.requestedBy ? ` (요청: ${opts.requestedBy})` : ''

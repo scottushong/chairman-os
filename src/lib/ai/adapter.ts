@@ -1,5 +1,12 @@
 import type { FinanceBriefContext } from '@/lib/ledger/brief-context'
-import type { AiBriefItem, BusinessStatus, ChairmanCondition, IsoDate, ProjectNote } from '@/types'
+import type {
+  AiBriefItem,
+  AttentionLevel,
+  BusinessStatus,
+  ChairmanCondition,
+  IsoDate,
+  ProjectNote,
+} from '@/types'
 
 /**
  * AI Adapter — 야간 Job과 모델 사이의 유일한 계약(Port).
@@ -102,9 +109,29 @@ export interface ChairmanContext {
   activity: string | null
 }
 
+/**
+ * 블록 B-2. 브리핑 맨 위에 서는 주의 한 줄. **고르는 것도 순서도 코드가 정한다** —
+ * 모델에 맡기면 «맨 위»가 매일 달라지고, 그러면 그것은 맨 위가 아니다.
+ * 모델에게는 요약이 이 목록과 어긋나지 않게 하려고 같이 넘긴다.
+ */
+export interface AttentionBriefLine {
+  business_name: string
+  rule_name: string
+  /** RED=회장 결정 · YELLOW=회장 인지 · GREEN=CEO 처리(§19). **모델이 이것을 바꾸지 않는다.** */
+  level: AttentionLevel
+  /** 잰 값과 임계를 사람이 읽는 한 줄. 수동 규칙이면 null(잰 값이 없다). */
+  measured: string | null
+  chairman_action_required: boolean
+}
+
 export interface DailyBriefInput {
   date: IsoDate
   companies: { business_id: string; name: string; brief: AiBrief }[]
+  /**
+   * 열려 있는 주의 가운데 급한 것부터 최대 다섯(원문: "기존 브리핑은 attention 3~5건을
+   * 맨 위에"). **비어 있으면 주의를 아예 언급하지 않는다** — 없는 것을 채우지 않는다.
+   */
+  attentions: AttentionBriefLine[]
   /** 요약에 실패한 회사. 그룹 브리핑이 '다섯 곳 다 괜찮다'고 말하지 않게 같이 넘긴다. */
   failed: { business_id: string; name: string }[]
   /** 읽지 못했으면 null. 그때 모델은 project_notes를 비운다. */
@@ -113,9 +140,58 @@ export interface DailyBriefInput {
   finance: FinanceBriefContext | null
 }
 
+/**
+ * 예외 하나치. §18의 세 번째 화살표(`Rule Engine → AI Analysis`)가 받는 입력이다.
+ *
+ * **등급(severity)을 넘기지 않는다.** 모델이 판정에 대해 의견을 낼 입력을 애초에 주지
+ * 않는 것이 「AI는 결정하지 않는다」를 코드로 지키는 가장 싼 방법이다(§19). 프롬프트가
+ * 금지하는 것과 입력에 아예 없는 것은 다르다 — 앞의 것은 문장이고 뒤의 것은 구조다.
+ */
+export interface ExceptionContext {
+  date: IsoDate
+  business: { business_id: string; name: string }
+  rule: {
+    rule_key: string
+    /** 한국어 규칙 이름. 화면이 그리는 그 글자다. */
+    name: string
+    comparator: string
+    threshold: number
+    window_days: number | null
+    /** `value`가 무엇인지 한 줄. 단위가 규칙마다 달라서(%·%p·개월) 같이 넘긴다. */
+    value_means: string
+  }
+  measured: { period: string; value: number }
+  /** 원인 분해의 재료. CompanyContext와 같은 모양·같은 억 단위 문자열이다. */
+  kpis: CompanyContext['kpis']
+  /** 원장에서 온 재무 해석. 못 읽었으면 null — 그때 모델은 재무 해석을 지어내지 않는다. */
+  finance: FinanceBriefContext | null
+}
+
+/**
+ * 원문이 지시한 **셋이고 그 이상이 아니다** — 원인 분해 · CEO 대응 여부 · 권고 "관찰 N일".
+ *
+ * **`status`·`severity`·`chairman_action_required`가 이 모양에 없다.** DB의 restrictive
+ * 정책 둘이 이미 막고 있지만, 42501로 거절되는 것에 기대면 그 거절이 언제 어디서
+ * 삼켜지는지에 안전이 걸린다. 모델이 그 값을 돌려줄 칸 자체를 두지 않는다.
+ */
+export interface ExceptionAnalysis {
+  /** 원인 분해. 입력에 있는 수치로만 쓴다. */
+  cause: string
+  /** CEO가 이미 대응 중인지에 대한 **서술**. 판정이 아니다 — 표의 ceo_handling 칸은 코드가 넣는다. */
+  ceo_response: string
+  /** 권고 "관찰 N일"의 N. 이 값이 monitor_until을 정하지 않는다 — 그것은 회장의 일이다. */
+  monitor_days: number
+}
+
 export interface AiAdapter {
   /** 어느 모델이 썼는지. ai_night_outputs.model 에 남는다. */
   readonly model: string
   summarizeCompany(input: CompanyContext): Promise<AiBrief>
   generateDailyBrief(input: DailyBriefInput): Promise<AiBrief>
+  /**
+   * §18 · 블록 B-2. 예외 하나의 분석. **분석이지 결정이 아니다.**
+   * 실패하면 던진다 — 호출자가 `ai_analysis = null`로 두고 예외는 그대로 만든다.
+   * 분석이 없다고 감지를 버리지 않는다(규칙이 먼저고 AI는 그 위에 얹히는 층이다).
+   */
+  analyzeException(input: ExceptionContext): Promise<ExceptionAnalysis>
 }

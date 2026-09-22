@@ -1715,6 +1715,33 @@ export const dummyRepository: ChairmanRepository = {
     return { ...next }
   },
 
+  /* ---------------------------------------------------------------- 블록 B 주의 */
+
+  /**
+   * §18·§19. **셋 다 빈 배열이다. 그것이 오늘의 정직한 답이다.**
+   *
+   * 예외는 규칙이 실제로 걸려야 생기는 것이고(0035가 시드 행을 한 건도 두지 않은 이유),
+   * 그 규칙을 도는 것은 야간 Job이다 — 그 Job은 dummy 모드에서 돌지 않는다.
+   * **시드는 B-3이 화면을 세우며 정한다.** 여기서 미리 지어 넣으면 화면이 첫날부터
+   * 있지도 않은 위험을 빨갛게 그리고, 회장이 그 빨강을 한 번 열어 아무것도 없는 것을
+   * 확인하면 그 뒤로 진짜 빨강도 안 열어 본다.
+   *
+   * **live에만 있는 함수를 만들지 않는 것이 이 세 줄의 이유다**(HANDOVER 2절 ②) —
+   * 화면은 뒤에 무엇이 있는지 몰라야 하고, 한쪽에만 있는 함수는 dummy에서 화면을 터뜨린다.
+   * 빈 목록과 «못 보는 목록»을 화면이 같은 문장으로 그리지 않는 것은 B-3의 몫이다.
+   */
+  async listExceptionRules() {
+    return []
+  },
+
+  async listExceptions() {
+    return []
+  },
+
+  async listAttentionScores() {
+    return []
+  },
+
   async recordDecisionAction(entry: DecisionAuditEntry) {
     const decision = [...decisions, ...memoryDecisions].find(
       (item) => item.decision_id === entry.decision_id,
