@@ -182,8 +182,12 @@ RLS를 **우회하는** 함수는 이 저장소에 없다. definer 함수는 전
 
 ### `exceptions`의 restrictive 정책 — 오늘은 잴 것이 없는데도 둔 한 줄
 
-0035의 `exceptions`에는 permissive 정책 셋(읽기 · 처리 · 생성) 말고
-`exceptions_ai_agent_no_update`가 **restrictive**로 하나 더 걸려 있다. 0013이 `decisions`에
+0035의 `exceptions`에는 permissive 정책 셋(읽기 · 처리 · 생성) 말고 **restrictive가 둘**
+더 걸려 있다 — `exceptions_ai_agent_no_update`와 `exceptions_ai_agent_open_only`.
+앞의 것이 이 절이 말하는 «오늘은 잴 것이 없는» 줄이고, 뒤의 것은 오늘도 실제로 막는다
+(AIAgent가 넣는 예외는 `status='open'`이어야 한다 — 처음부터 닫힌 채로 들어오는 예외는
+"만들되 닫지 않는다"를 글자로만 지킨 것이고, `monitoring`으로 들어오는 것은 '언제까지 두고
+볼지'를 AI가 정한 것이 된다. 둘 다 결정이다). 0013이 `decisions`에
 건 것과 같은 모양이다. **오늘 그 줄은 아무것도 막지 않는다** — 그 표의 update 정책이
 `can_approve()`를 요구하고 그 함수는 Chairman·BusinessCEO뿐이라, AIAgent는 이미 통과하지
 못한다. 그래서 지우고 싶어진다(0034 4절은 똑같은 상황에서 실제로 **두지 않기로** 했다:
@@ -198,7 +202,7 @@ restrictive다. 그 한 줄이 §19의 경계를 코드로 붙잡고 있다 —
 AIAgent는 예외를 **만들고**(`exceptions_create`) 점수를 매기지만, 그것은 분석이지 결정이
 아니다 — `exceptions.ai_analysis` 칸의 주석과 화면의 «결정 아님» 라벨이 같은 말을 한다.
 `delete`는 grant도 정책도 없어 두 겹으로 막혀 있고(예외는 지우는 것이 아니라 닫는 것이다),
-그쪽에는 restrictive를 걸지 않았다 — 잴 것이 없다.
+그쪽에는 restrictive를 걸지 않았다 — permissive가 없으면 잴 것이 없다.
 
 ### 표를 새로 만들면
 

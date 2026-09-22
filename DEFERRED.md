@@ -1358,15 +1358,38 @@ production에서 같은 속도라는 보장이 없다.
   한다. 이력을 표로 쌓지 않는 것은 0001부터의 원칙이다(이력은 `audit_log`가 갖는다 —
   0033 `chairman_directions`가 같은 판단). **대가**: "어제는 RED였는데 오늘 YELLOW"를 이
   표만 보고 말할 수 없다. 그 질문이 필요해지면 감사 기록에서 낸다.
-- **RLS는 승계 표의 역할 게이트를 쓰지 않는다.** 읽기는 `has_business(business_id)` 하나다
-  (`alerts_read` 0002:307과 같은 자리). 승계는 "회사가 회장 없이 도는가"를 재는 값이라
-  역할로 잠갔지만(`can_read_succession`), **예외는 그 회사 사람들이 실제로 대응해야 하는
-  것**이고 화면이 "왜 DY가 yellow인가"를 설명하려면 그 회사 사람도 그 예외를 봐야 한다.
-  처리(status·monitor_until)는 `can_approve()`이고 `decisions_decide`와 같은 모양으로 회사
-  판정을 같이 건다 — VANA 대표가 DY의 예외를 닫는 길은 열지 않는다. GroupCFO는 예외를
-  만들 수는 있지만 닫지는 못한다(`can_approve()`가 정의하는 경계이고, 새 역할 목록을 여기서
-  만들지 않았다). `exception_rules`는 읽기가 활성 사용자 전부, **쓰기는 Chairman만**이다 —
-  잴 대상이 잣대를 고치면 지표가 지표가 아니게 된다.
+- **예외의 읽기는 `alerts_read`보다 한 겹 좁다: `has_business() and can_read_restricted()`.**
+  처음에는 `alerts_read`(0002:307)를 그대로 본떠 `has_business()` 하나로 두었다(브리프가
+  그것을 모델로 지목했다). **그러면 `[제한]` 꼬리표와 정책이 어긋난다** —
+  `exceptions.value`에 들어오는 값은 `cash_runway`·`revenue_variance`·`ebitda_margin_drop`
+  에서 **현금 잔액·매출·EBITDA 마진**이고, 그것은 `finance_kpis_read`가
+  `can_read_restricted()` 뒤에 잠가 둔 바로 그 숫자다. DY의 팀장은 `finance_kpis`를 한 줄도
+  못 읽는데 `exceptions`에서는 "현금 런웨이 2.1개월"을 읽게 된다.
+  **같은 사실이 표에 따라 다른 등급으로 잠기면 낮은 쪽이 그 표의 실제 등급이 된다.**
+  그래서 `exceptions`와 `attention_scores`의 읽기를 좁혔다. 독자는 Chairman · GroupCFO ·
+  BusinessCEO · Executive 넷이고, §19가 예외를 분류하는 사람으로 상정한 것이 정확히 그
+  넷이다(GREEN이 "CEO handles"인 모델에서 팀원이 예외를 분류하지 않는다). TeamLead·Member는
+  0행이고 화면은 그들에게 "0건"이라고 말하지 않는다.
+  **버린 선택지: 마스킹 뷰**(`finance_kpis_masked` 0002:358)**를 본뜨기.** 그 뷰는
+  `security_invoker = true`이고 아래 표의 정책이 이미 `can_read_restricted()`를 요구하므로
+  그 안의 `case when`은 **한 번도 돌지 않는 죽은 가지**다. 돌지 않는 것을 베끼면 검사가
+  초록인 채 아무것도 막지 않는 겹이 하나 늘 뿐이다.
+  **`exception_rules`는 반대로 넓게 둔다**(읽기 = 활성 사용자 전부, `threshold`에
+  `[제한]` 꼬리표 없음) — 임계는 회사 데이터가 아니라 그룹의 정책 상수이고, "매출 ±20%가
+  임계다"를 아는 것은 그 회사의 매출을 아는 것이 아니다. 화면이 "왜 DY가 yellow인가"를
+  설명하려면 그 회사 사람도 규칙은 봐야 한다. **쓰기는 Chairman만**이다 — 잴 대상이 잣대를
+  고치면 지표가 지표가 아니게 된다.
+  승계 표의 `can_read_succession()`은 쓰지 않는다 — 그것은 승계 전용 문이고, 여기서 필요한
+  겹은 '회사'와 '등급' 둘이다. 처리(status·monitor_until)는 `can_approve()`이고
+  `decisions_decide`와 같은 모양으로 회사 판정을 같이 건다 — VANA 대표가 DY의 예외를 닫는
+  길은 열지 않는다.
+- **`attention_scores`의 쓰기는 Chairman과 AIAgent뿐이다(`can_score_attention()`).**
+  처음에는 예외 insert와 점수 쓰기를 한 함수로 합쳤고, 그러면서 **원문에 없던 GroupCFO가
+  조용히 얹혔다**(원문: "쓰기는 규칙 엔진과 Chairman"). 예외를 **올리는** 것과 점수를
+  **매기는** 것은 다른 일이다 — 전자는 "이 회사에 이런 일이 있다"는 보고라 GroupCFO도 할
+  수 있고, 후자는 §19의 여섯 축으로 회장이 무엇을 볼지 정하는 일이다. 함수를 둘로 나누되
+  역할 목록이 두 벌이 되지 않게 뒤의 것이 앞의 것을 **부른다**(점수를 쓸 수 있으면 예외도
+  쓸 수 있다는 포함 관계).
 - **AIAgent에게도 `has_business()`를 요구했다 — 0002의 `night_outputs_write`보다 좁다.**
   그 정책은 역할만 봤지만 0002 원칙 3이 "Business Isolation은 이 함수 하나로만 판정한다"고
   못 박았다. **대가**: 야간 Job 계정에 `user_business_access` 행이 없으면 insert가 거부된다.
@@ -1381,6 +1404,31 @@ production에서 같은 속도라는 보장이 없다.
   규칙 엔진에게 열면, **의식적으로 지워야 하는 한 줄**이 이 restrictive다. §19의 "AI가
   CEO를 대신하지 않는다"가 코드로 남는 자리다. `delete`는 grant도 정책도 없다(두 겹) —
   예외는 지우는 것이 아니라 닫는 것이라 restrictive delete는 잴 것이 없다.
+  **insert 쪽에도 한 줄 건다(`exceptions_ai_agent_open_only`).** update만 막으면 AIAgent가
+  **처음부터 `status='closed'`인 예외를 넣는** 길이 남는다 — "만들되 닫지 않는다"를 글자로만
+  지키고 뜻으로는 어기는 경로다. `monitoring`도 같이 막힌다: '언제까지 두고 본다'를 정하는
+  것도 회장의 일이다. AIAgent가 넣는 줄은 `status='open'`이어야 한다.
+  이쪽은 오늘도 **실제로 막는 것이 있다**(위의 update 쪽과 달리 permissive insert 정책이
+  AIAgent를 통과시킨다).
+- **`exception_rules.sort_order`는 브리프의 칸 목록에 없던 것을 더한 것이다.**
+  §18의 13개는 **순서가 있는 목록**인데, insert 순서에 기대면 select가 그 순서를 돌려준다는
+  보장이 없고 화면이 이름순으로 그리면 문서와 대조가 안 된다. 0033
+  `dependency_areas.sort_order`와 같은 자리다.
+  **버린 선택지 ①**: 칸 없이 `rule_key` 알파벳순 — `capital_project_delay`가 §18의 10번인데
+  목록 맨 앞에 선다. **버린 선택지 ②**: `name` 가나다순 — 회장이 규칙 이름을 고치는 날
+  목록이 통째로 뒤섞인다.
+  **default는 0이 아니라 999다.** 0이면 나중에 값 없이 넣은 규칙이 §18의 1번 **앞**에
+  선다 — '아직 자리를 안 정했다'가 '제일 먼저'라는 값으로 채워지는 것이고, 이 파일이 여러
+  문단에 걸쳐 막는 것이 정확히 그 모양이다. 999면 목록 끝에 붙고 회장이 옮긴다.
+  (default를 아예 안 두는 쪽도 봤다. 오늘은 시드가 값을 다 주므로 같지만, B-2가 규칙을
+  하나 넣을 때마다 순서를 강제로 정하게 만든다.)
+- **등급이 세 칸에 나오므로 «어느 것이 지금 등급인가»를 못 박았다.**
+  `exception_rules.severity_base`(축이 없을 때의 출발점) → `attention_scores.level`(축이 나온
+  뒤 점수가 낸 등급) → **`exceptions.severity`(지금 등급 · 화면이 색을 고를 때 읽는 유일한
+  칸)**. B-2가 `level`로 `severity`를 갱신하고, 화면은 색 때문에 점수 표를 읽지 않는다 —
+  점수 표는 "왜 그 색인가"를 설명할 때 읽는다. 셋에 전부 `comment on column`으로 적었다.
+  이 파일이 머리 주석에서 "한 낱말이 두 뜻을 갖는 것"을 경계해 놓고 자기 안에 같은 함정을
+  두고 있었다(리뷰가 잡은 자리다).
 - **`force row level security`를 새로 걸지 않았다.** 오늘 이 표들을 읽는 definer 함수는
   없지만 예외를 **만드는** 문이 B-2에서 온다 — 그때 force가 남아 있으면 그 함수가 소유자
   권한으로 돌면서도 정책 아래로 내려가 **조용히 0행**을 준다(0023·0027·0029·0034에서 네 번
@@ -1396,5 +1444,5 @@ production에서 같은 속도라는 보장이 없다.
   (0027:60). staging 적용 뒤 실제 소유자에서 한 번 더 보는 것이 남았다.
 - **`check:attention`은 이 작업에 없다 — B-4가 만든다.** 0035의 표·시드·RLS를 재는 검사가
   아직 없고, 지금은 `check:migrations`(적용 + `LATEST_MIGRATION`)와
-  `check:dependency`(관찰이 개입에 들어가는가)만 이 파일을 밟는다. **RLS 여섯 정책과 check
+  `check:dependency`(관찰이 개입에 들어가는가)만 이 파일을 밟는다. **RLS 일곱 정책(permissive 다섯 + restrictive 둘)과 check
   제약들은 아직 검사가 없다** — B-4가 그것을 짝 맞춘 돌연변이와 함께 세운다.
