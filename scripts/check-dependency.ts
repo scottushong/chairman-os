@@ -122,6 +122,11 @@ const BREAKS = {
   'door-public': 'founder_dependency_rows()의 execute를 public에 준다',
   /** interventions가 위임을 빼고 센다 — 개입이 실제보다 적어 보인다. */
   'interventions-no-delegate': 'interventions에서 위임(delegate)을 뺀다',
+  /**
+   * 0035가 더한 다섯 번째 유형을 되돌린다 — `interventions_bump()`를 0034의 넷으로
+   * 갈아 끼운다. 관찰도 회장이 그 건을 손댄 것이고, 빼면 개입이 실제보다 적어 보인다.
+   */
+  'interventions-no-monitor': '0035가 더한 관찰(monitor)을 interventions_bump()에서 뺀다',
   /** TS 식이 null을 ceo로 접는다. */
   'ts-null-as-ceo': 'founderDependency()에 주는 고정 입력의 null을 ceo로 바꾼다',
   /** dummy 게이트를 없앤 것과 같은 상태를 만든다(회장이 아닌 세션에서도 전부 읽기). */
@@ -1132,6 +1137,65 @@ async function database() {
     `뷰 interventions에서 security_invoker가 꺼졌다 — 뷰가 intervention_counts의 정책을 지나간다(reloptions=${JSON.stringify(ivOpts)})`,
   )
 
+  /**
+   * ㉙ **0035가 더한 다섯 번째 유형 — 관찰(monitor)도 개입이다.**
+   *
+   *    근거는 위임을 넣은 것과 같다(㉕): 관찰은 회장이 그 건을 보고 «지금은 두고 본다»고
+   *    **정한 것**이라 손댄 것이 맞고, 빼면 개입이 실제보다 적어 보인다. 지표를 좋아
+   *    보이게 만드는 방향의 누락이 이 블록에서 가장 조심하는 것이다.
+   *
+   *    이 단언 하나가 세 가지를 같이 잰다 — 셋 다 0035가 한 일이다:
+   *      · `audit_action` enum에 `monitor`가 있다(없으면 아래 insert가 22P02로 터진다).
+   *      · 0035 8절이 `interventions_bump()`를 다시 써서 다섯을 센다.
+   *      · 그 집계가 `interventions` 뷰로 나온다(트리거는 0034의 것을 그대로 쓴다 —
+   *        `create or replace function`이라 트리거를 다시 만들 필요가 없었다).
+   *
+   *    **위 ㉖의 뒤에 둔다.** ㉖은 "개입 합계 == 회장 audit 줄 수"를 네 유형으로 재고,
+   *    관찰 줄을 그보다 먼저 넣으면 그 단언이 유형 목록의 차이 때문에 빨개진다 —
+   *    재려던 것(CEO가 닫은 건은 개입이 아니다)과 다른 이유로 빨개지는 단언은 쓸모가 없다.
+   */
+  if (broke('interventions-no-monitor')) {
+    await db.exec(`
+      create or replace function interventions_bump() returns trigger
+      language plpgsql volatile security definer set search_path = public as $fn$
+      begin
+        begin
+          if new.actor_role = 'Chairman'
+             and new.action::text in ('approve', 'reject', 'modify', 'delegate')
+             and new.business_id is not null then
+            insert into intervention_counts (business_id, period, kind, count, updated_at)
+            values (new.business_id,
+                    to_char(new.occurred_at at time zone 'Asia/Seoul', 'YYYY-MM'),
+                    new.action::text, 1, now())
+            on conflict (business_id, period, kind) do update
+              set count = intervention_counts.count + 1, updated_at = now();
+          end if;
+        exception when others then
+          raise warning '0035 interventions_bump: 개입 집계 실패 — business_id=% action=% sqlstate=% %',
+            new.business_id, new.action, sqlstate, sqlerrm;
+        end;
+        return null;
+      end;
+      $fn$;
+      alter function public.interventions_bump() owner to app_owner;
+    `)
+  }
+  await db.exec(`
+    insert into audit_log (actor_user_id, actor_role, action, entity_table, entity_id, business_id) values
+      ('${U.chair}', 'Chairman', 'monitor', 'exceptions', 't_iv_mon', 'biz_dy');
+  `)
+  const ivMonitor = Number(
+    await val(
+      U.chair,
+      `select coalesce(sum(count), 0)::int from interventions where business_id = 'biz_dy' and kind = 'monitor'`,
+    ),
+  )
+  assert.equal(
+    ivMonitor,
+    1,
+    `회장의 관찰(monitor) 한 줄이 개입으로 세어지지 않는다(${ivMonitor}건) — 0035 8절이 interventions_bump()를 다시 써서 다섯을 센다. 관찰은 회장이 그 건을 보고 "지금은 두고 본다"고 정한 것이라 손댄 것이 맞고, 빼면 개입이 실제보다 적어 보인다(위임을 넣은 것과 같은 논리)`,
+  )
+
   return { july }
 }
 
@@ -1647,7 +1711,7 @@ async function main() {
       'check 제약 셋 · force 없음 · security_invoker · ' +
       '0034 문 둘(decisions no force → 회장=CFO=CEO 같은 % · intervention_counts 칸 다섯 · ' +
       '쓰기 권한 0 · 트리거가 감사 줄을 죽이지 않는다 · backfill 합계 = 회장 audit 줄 수 · ' +
-      'audit_log force 유지) · interventions(위임 포함 · Chairman·GroupCFO·자기 회사 CEO) · ' +
+      'audit_log force 유지) · interventions(위임 포함 · **0035의 관찰 포함** · Chairman·GroupCFO·자기 회사 CEO) · ' +
       'DY 시드(영역 6 · 이양 7 · 부재 2 · 자율성 0) · TS 식 = SQL 식 · dummy 게이트 · 화면 문구',
   )
 }
