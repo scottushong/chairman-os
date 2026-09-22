@@ -106,6 +106,12 @@ alter type audit_action add value if not exists 'monitor';
 --      원문의 13개는 순서가 있는 목록이다(§18이 적은 그 순서). insert 순서에 기대면
 --      select가 그 순서를 돌려준다는 보장이 없고, 화면이 이름순으로 그리면 문서와
 --      대조가 안 된다. 0033의 `dependency_areas.sort_order`와 같은 자리다.
+--      **default가 0이 아니라 999인 이유**: 0이면 나중에 값을 안 주고 넣은 규칙이
+--      §18의 1번 **앞**에 선다. '아직 자리를 안 정했다'가 '제일 먼저'라는 값으로
+--      채워지는 것이고, 이 파일이 여러 문단에 걸쳐 막는 것이 바로 그 모양이다.
+--      999면 자리를 안 정한 규칙은 목록 끝에 붙고, 회장이 /attention/rules에서 옮긴다.
+--      버린 선택지: default 없이 not null — 시드가 값을 다 주므로 오늘은 같지만,
+--      B-2가 규칙을 하나 넣을 때마다 순서를 강제로 정하게 만든다.
 --
 --    ■ 네 칸이 nullable인 것이 이 표의 요점이다 ■
 --      `metric` · `comparator` · `threshold` · `window_days`. `manual` 규칙에는 그 칸들이
@@ -136,11 +142,11 @@ create table exception_rules (
   kind          text not null,                       -- [일반] metric(수치 자동)/manual(사람이 플래그)
   metric        finance_metric,                      -- [일반] manual이면 null. finance_kpis의 어휘 여덟
   comparator    text,                                -- [일반] >·<·>=·<=·abs>. manual이면 null
-  threshold     numeric,                             -- [제한] manual이면 null. 단위는 규칙마다 다르다(위 주석)
+  threshold     numeric,                             -- [일반] manual이면 null. 단위는 규칙마다 다르다(위 주석)
   window_days   integer,                             -- [일반] 재는 창. manual이면 null
-  severity_base attention_level not null,            -- [일반] 이 규칙이 걸렸을 때 시작 등급(§19)
+  severity_base attention_level not null,            -- [일반] exceptions.severity의 첫 값이 된다(§19)
   enabled       boolean not null default true,       -- [일반]
-  sort_order    integer not null default 0,          -- [일반] §18 목록 순서
+  sort_order    integer not null default 999,        -- [일반] §18 목록 순서. default가 999인 이유는 아래
   created_at    timestamptz not null default now(),
   updated_at    timestamptz not null default now(),
   constraint exception_rules_scope_check
@@ -167,7 +173,7 @@ comment on column exception_rules.kind is
 comment on column exception_rules.threshold is
   '임계값. **단위는 규칙마다 다르다** — %(매출 변동) · %p(EBITDA 마진 하락) · 개월(현금 런웨이). manual 규칙에는 이 칸이 없다(null). 값은 /attention/rules에서 회장이 고친다.';
 comment on column exception_rules.severity_base is
-  '이 규칙이 걸렸을 때 예외가 시작하는 등급(§19). 점수 여섯 축이 나오면 attention_scores.level이 그것을 갱신할 수 있다 — 이 칸은 «축이 아직 없을 때의 출발점»이다.';
+  '이 규칙이 걸렸을 때 **exceptions.severity의 첫 값**이 되는 등급(§19). 순서는 하나뿐이다: severity_base → exceptions.severity(지금 등급) ← attention_scores.level(축이 나온 뒤 B-2가 갱신한다). 이 칸은 «축이 아직 없을 때의 출발점»이고, 이 칸 자체는 예외가 생긴 뒤로는 그 예외의 등급을 더 이상 따라가지 않는다 — 회장이 /attention/rules에서 이것을 고쳐도 이미 생긴 예외의 색은 바뀌지 않는다.';
 comment on column exception_rules.scope is
   'company/group. 시드 13종은 전부 company다 — §18의 13개가 모두 회사 하나에서 걸리는 것이라, group 규칙(예: 그룹 현금 총액)은 칸만 두고 시드에는 없다. 없는 규칙을 미리 넣지 않는다.';
 
@@ -297,6 +303,8 @@ create table exceptions (
 
 comment on table exceptions is
   '§18. 규칙이 실제로 걸려서 생긴 예외. **시드 행이 한 건도 없다** — 예외는 규칙이 걸려야 생기는 것이고, 시드로 넣으면 화면이 첫날부터 있지도 않은 위험을 빨갛게 그린다. value·threshold는 manual 규칙에서 null이다(잰 값이 없다). status=monitoring이면 monitor_until이 반드시 있다.';
+comment on column exceptions.severity is
+  '§19. **이 예외의 «지금» 등급이고, 화면이 색을 고를 때 읽는 칸은 이것 하나다.** 등급이 세 칸에 나오므로 순서를 못 박는다: ① exception_rules.severity_base가 첫 값을 준다(축이 아직 없을 때의 출발점) ② 점수가 나오면 attention_scores.level이 나오고 **B-2가 그 값으로 이 칸을 갱신한다** ③ 화면은 attention_scores를 색 때문에 읽지 않는다 — 점수 표는 «왜 그 색인가»를 설명할 때 읽는다. 둘이 어긋난 행이 있으면 갱신이 아직 안 된 것이지, 화면이 고를 문제가 아니다.';
 comment on column exceptions.ai_analysis is
   '§19. AI의 원인 분해·권고. **분석이지 결정이 아니다** — 화면의 «결정 아님» 라벨이 이 칸에서 나온다. 이 칸에 무엇이 적혀 있어도 status를 바꾸는 것은 사람이고, exceptions_ai_agent_no_update가 그것을 DB에서 막는다.';
 comment on column exceptions.value is
@@ -449,6 +457,8 @@ comment on column attention_scores.unknown_axes is
   '여섯 축 중 값이 없는 칸의 수. check 제약이 이 숫자를 실제 null 개수에 묶는다 — 칸만 두면 조용히 «적게» 적히고, 그 방향의 거짓은 축이 다 있는 것처럼 보이게 한다. 화면이 이 숫자를 점수 옆에 그대로 적는다.';
 comment on column attention_scores.score is
   '0~100. 있는 축만으로 가중 평균을 내고 100점으로 환산한 값(없는 축을 0으로 채우지 않는다 — 채우면 축이 빈 행이 조용히 GREEN으로 내려간다). **DB가 계산하지 않는다** — 식은 B-2가 갖고, 이 칸은 그 결과를 받는다.';
+comment on column attention_scores.level is
+  '§19. 이 점수가 낸 등급. **화면이 색을 고를 때 읽는 칸이 아니다** — 그것은 exceptions.severity 하나다. 이 칸은 «왜 그 색인가»의 근거이고, B-2가 이 값으로 exceptions.severity를 갱신한다. 순서: severity_base(출발점) → level(축이 나온 뒤) → exceptions.severity(지금 등급).';
 comment on column attention_scores.business_id is
   'exceptions의 회사 칸을 복사한 것이다. 복합 FK(exception_id, business_id)가 원본과 어긋나지 못하게 묶는다. 복사하는 이유는 RLS다 — 정책에서 exceptions를 서브쿼리로 읽으면 그 표의 RLS가 한 겹 더 걸리고, 문이 둘이 되면 언젠가 한쪽만 고쳐진다.';
 
@@ -487,13 +497,39 @@ alter table attention_scores enable row level security;
 -- ---------------------------------------------------------------------
 -- 7. RLS — 원문 B에는 RLS 한 줄이 없다. 그래서 이 저장소의 기존 모양을 따른다.
 --
---    ■ 읽기: `has_business(business_id)` 하나다 ■
---      승계 표의 `can_read_succession()`(0033:412)을 **쓰지 않는다.** 승계는 "회사가 회장
---      없이 도는가"를 재는 값이라 역할로 잠갔지만, **예외는 그 회사 사람들이 실제로
---      대응해야 하는 것이다.** 화면이 "왜 DY가 yellow인가"를 설명하려면 그 회사 사람도
---      그 예외를 봐야 한다. `alerts_read`(0002:307)가 `has_business(business_id)` 하나인
---      것과 같은 자리다. `has_business()`가 `is_active()`를 먼저 보므로 `revoked_at`이
---      찍힌 계정은 한 줄도 못 읽는다(0002 원칙 8).
+--    ■ 읽기: `has_business(business_id) and can_read_restricted()` ■
+--      **`alerts_read`(0002:307)보다 한 겹 좁다. 그 차이가 이 절에서 가장 중요한 줄이라
+--      이유를 적는다.**
+--
+--      처음에는 `alerts_read`를 그대로 본떠 `has_business()` 하나로 두었다. 그러면
+--      `exceptions.value`가 새어 나간다 — `cash_runway`·`revenue_variance`·
+--      `ebitda_margin_drop` 세 규칙에서 그 칸에 들어오는 값은 **현금 잔액·매출·EBITDA
+--      마진**이고, 그것은 `finance_kpis_read`(0002)가 `can_read_restricted()` 뒤에
+--      잠가 둔 바로 그 숫자다. DY의 팀장은 `finance_kpis`를 한 줄도 못 읽는데
+--      `exceptions`에서는 "현금 런웨이 2.1개월"을 읽게 된다. **같은 사실이 표에 따라
+--      다른 등급으로 잠기면 낮은 쪽이 그 표의 실제 등급이 된다.**
+--      칸에 붙인 `[제한]` 꼬리표와 정책이 어긋난 채로 두지 않는다.
+--
+--      마스킹 뷰(`finance_kpis_masked`, 0002:358)를 본뜨는 길은 택하지 않았다. 그 뷰는
+--      `security_invoker = true`이고 아래 표의 정책이 이미 `can_read_restricted()`를
+--      요구하므로, 그 안의 `case when`은 **한 번도 돌지 않는 죽은 가지**다. 돌지 않는
+--      것을 베끼면 검사가 초록인 채 아무것도 막지 않는 겹이 하나 늘 뿐이다.
+--
+--      좁힌 뒤의 독자는 Chairman · GroupCFO · BusinessCEO · Executive 넷이다
+--      (`can_read_restricted()` 0002:142). §19가 예외를 분류하는 사람으로 상정한 것이
+--      정확히 그 넷이다 — GREEN이 "CEO handles"인 모델에서 팀원이 예외를 분류하지 않는다.
+--      TeamLead·Member는 0행이고, 화면은 그들에게 "0건"이라고 말하지 않는다.
+--      `has_business()`가 `is_active()`를 먼저 보므로 `revoked_at`이 찍힌 계정은 한 줄도
+--      못 읽는다(0002 원칙 8).
+--
+--      **`exception_rules`는 반대로 넓게 둔다** — 임계값은 회사 데이터가 아니라 그룹의
+--      정책 상수다. 화면이 "왜 DY가 yellow인가"를 설명하려면 그 회사 사람도 규칙을 봐야
+--      하고, "매출 ±20%가 임계다"를 아는 것은 그 회사의 매출을 아는 것이 아니다.
+--      그래서 그 표의 `threshold`에는 `[제한]` 꼬리표를 붙이지 않았다.
+--
+--      승계 표의 `can_read_succession()`(0033:412)은 쓰지 않는다. 그것은 역할만 보고
+--      회사를 `has_business()`로 다시 보는 승계 전용 문이고, 여기서 필요한 겹은
+--      '회사'와 '등급' 둘이다.
 --
 --    ■ 회장 액션(status · monitor_until): `can_approve()` ■ 0002:149. 승인권자
 --      (Chairman · BusinessCEO)다. `decisions_decide`와 **같은 모양**으로 회사 판정을
@@ -510,7 +546,16 @@ alter table attention_scores enable row level security;
 --      insert가 **거부된다.** 그것은 42501로 시끄럽게 실패하므로(조용한 0행이 아니다)
 --      B-2가 그 계정을 세우는 날 곧바로 드러난다.
 --
---    ■ AIAgent는 insert만 한다 — restrictive 한 줄로 못 박는다 ■
+--    ■ 점수를 쓰는 쪽은 한 역할 더 좁다 — `can_score_attention()` ■
+--      원문은 `attention_scores`의 쓰기를 "규칙 엔진과 Chairman"이라고 적었다.
+--      예외를 **올리는** 것과 점수를 **매기는** 것은 다른 일이다: 전자는 "이 회사에 이런
+--      일이 있다"는 보고라 GroupCFO도 할 수 있고, 후자는 §19의 여섯 축으로 **회장이
+--      무엇을 볼지 정하는 일**이다. 그래서 함수를 둘로 둔다 — 하나로 합치면 원문에 없던
+--      역할 하나가 조용히 얹힌다(처음에 실제로 그렇게 썼다가 되돌렸다).
+--      대가: 역할 목록이 두 곳에 있다. 둘이 갈라지는 것을 막으려고 뒤의 함수가 앞의
+--      함수를 **부른다** — 점수를 쓸 수 있으면 예외도 쓸 수 있다는 것이 그 포함 관계다.
+--
+--    ■ AIAgent는 insert만 한다 — restrictive 두 줄로 못 박는다 ■
 --      0013이 `decisions`에 `ai_agent_no_update`를 건 것과 같은 모양이다.
 --      **오늘 이 줄은 잴 것이 없다**: 위의 update 정책이 `can_approve()`를 요구하고 그
 --      함수는 Chairman · BusinessCEO뿐이라, AIAgent는 이미 못 바꾼다. 0034 4절은 같은
@@ -519,6 +564,11 @@ alter table attention_scores enable row level security;
 --      자동 종결을 들고 올 때 채워진다." 그날 누군가 이 표의 update를 규칙 엔진에게
 --      열면, 그 사람이 **의식적으로 지워야 하는 한 줄**이 이 restrictive다. 그것이 §19의
 --      "AI가 CEO를 대신하지 않는다"가 코드로 남는 자리다.
+--      **insert 쪽에도 한 줄 건다.** update만 막으면 AIAgent가 처음부터
+--      `status = 'closed'`인 예외를 넣는 길이 남는다 — 그것은 "만들고 닫지 않는다"를
+--      글자로만 지키고 뜻으로는 어기는 경로다(예외를 닫는 것은 결정이고, 결정은 AI가
+--      하지 않는다). AIAgent가 넣는 줄은 `status = 'open'`이어야 한다.
+--      `monitoring`도 막힌다 — '언제까지 두고 본다'를 정하는 것도 회장의 일이다.
 --
 --    ■ `exception_rules` 읽기는 로그인한 활성 사용자 전부다 ■ 임계를 아는 것이 위험하지
 --      않다 — 화면이 "왜 yellow인가"를 설명하려면 그 회사 사람도 규칙을 봐야 한다.
@@ -530,8 +580,7 @@ alter table attention_scores enable row level security;
 -- ---------------------------------------------------------------------
 
 /**
- * 규칙 엔진과 전사 역할의 쓰기 판정. 세 곳(예외 insert · 점수 쓰기)에서 같은 답을
- * 말해야 해서 한 자리에 둔다 — 두 곳이 각자 역할을 열거하면 언젠가 한쪽만 고쳐진다.
+ * 예외를 **올리는** 쪽의 판정. Chairman · GroupCFO · AIAgent.
  * 기존 함수 셋(`is_active` · `auth_role` · `has_business`)을 합치는 껍데기이고,
  * 새 판정을 만들지 않는다.
  */
@@ -545,13 +594,31 @@ language sql stable security definer set search_path = public as $fn$
 $fn$;
 
 comment on function can_write_attention(text) is
-  '§18·§19. 예외와 점수를 «만드는» 쪽의 판정. Chairman·GroupCFO·AIAgent이고 회사 판정은 has_business()에 맡긴다(0002 원칙 3 — Business Isolation은 그 함수 하나로만 판정한다). **닫는 것은 이 함수가 아니다** — status·monitor_until 변경은 can_approve()다.';
+  '§18. 예외를 «올리는» 쪽의 판정. Chairman·GroupCFO·AIAgent이고 회사 판정은 has_business()에 맡긴다(0002 원칙 3 — Business Isolation은 그 함수 하나로만 판정한다). **닫는 것도 점수를 매기는 것도 이 함수가 아니다** — status·monitor_until 변경은 can_approve()이고, 점수는 can_score_attention()이다.';
+
+/**
+ * 점수를 **매기는** 쪽의 판정. 원문이 "규칙 엔진과 Chairman"이라고 적었다 — GroupCFO는
+ * 예외를 올릴 수는 있어도 §19의 여섯 축으로 «회장이 무엇을 볼지»를 정하지는 않는다.
+ *
+ * 역할을 다시 열거하지 않고 `can_write_attention()`을 **부른다**. 점수를 쓸 수 있으면
+ * 예외도 쓸 수 있다는 포함 관계가 참이라 그렇게 쓸 수 있고, 두 목록이 각자 적혀 있으면
+ * 언젠가 한쪽만 고쳐진다.
+ */
+create or replace function can_score_attention(target text) returns boolean
+language sql stable security definer set search_path = public as $fn$
+  select can_write_attention(target) and auth_role() in ('Chairman', 'AIAgent');
+$fn$;
+
+comment on function can_score_attention(text) is
+  '§19. attention_scores의 쓰기 판정. **Chairman과 AIAgent뿐이다**(원문: "규칙 엔진과 Chairman"). GroupCFO는 예외를 올릴 수는 있어도 점수는 매기지 않는다 — 예외를 올리는 것은 "이런 일이 있다"는 보고이고, 점수는 회장이 무엇을 볼지 정하는 일이다. 역할 목록이 두 벌이 되지 않게 can_write_attention()을 부른다.';
 
 -- 0019 3절이 그 이유를 적어 뒀다: Postgres는 새 함수의 execute를 public에 기본으로 주고,
 -- security definer 함수에서 그 기본값은 곧 "anon도 RPC로 부를 수 있다"는 뜻이다.
 -- 몸통이 is_active()로 걸러 anon에게는 false지만, 기본 권한을 남겨 두지 않는다.
 revoke all on function can_write_attention(text) from public;
 grant execute on function can_write_attention(text) to authenticated;
+revoke all on function can_score_attention(text) from public;
+grant execute on function can_score_attention(text) to authenticated;
 
 -- ① exception_rules — 읽기는 활성 사용자 전부, 쓰기는 Chairman뿐
 create policy exception_rules_read on exception_rules
@@ -560,9 +627,10 @@ create policy exception_rules_write on exception_rules
   for all using (is_active() and auth_role() = 'Chairman')
   with check (is_active() and auth_role() = 'Chairman');
 
--- ② exceptions — 읽기는 그 회사 사람, 처리는 승인권자, 만드는 것은 규칙 엔진과 전사 역할
+-- ② exceptions — 읽기는 그 회사의 [제한] 독자, 처리는 승인권자, 올리는 것은 규칙 엔진과
+--    Chairman·GroupCFO. 읽기가 `alerts_read`보다 한 겹 좁은 이유는 위 주석에 있다.
 create policy exceptions_read on exceptions
-  for select using (has_business(business_id));
+  for select using (has_business(business_id) and can_read_restricted());
 create policy exceptions_triage on exceptions
   for update using (can_approve() and has_business(business_id))
   with check (can_approve() and has_business(business_id));
@@ -576,14 +644,23 @@ create policy exceptions_ai_agent_no_update on exceptions
   using (auth_role() is distinct from 'AIAgent')
   with check (auth_role() is distinct from 'AIAgent');
 
--- ③ attention_scores — 읽기는 exceptions와 같은 범위. 쓰기는 규칙 엔진과 전사 역할.
---    점수를 매기는 것은 «분석»이라 AIAgent가 update까지 한다(야간 Job이 다시 매긴다).
---    바꾸지 못하는 것은 `exceptions.status` — 그것이 결정이다.
+-- 그리고 insert 쪽. AIAgent가 넣는 예외는 `status = 'open'`이어야 한다 — 닫힌 채로
+-- 들어오는 예외는 "만들되 닫지 않는다"를 글자로만 지킨 것이고, `monitoring`으로
+-- 들어오는 예외는 '언제까지 두고 볼지'를 AI가 정한 것이 된다. 둘 다 결정이다.
+-- restrictive라 `exceptions_create`의 회사·역할 판정 **위에** 겹으로 걸린다.
+create policy exceptions_ai_agent_open_only on exceptions
+  as restrictive for insert
+  with check (auth_role() is distinct from 'AIAgent' or status = 'open');
+
+-- ③ attention_scores — 읽기는 exceptions와 **같은 범위**(그래서 같은 두 함수를 같은
+--    순서로 부른다). 쓰기는 Chairman과 규칙 엔진뿐이다 — 점수를 매기는 것은 «분석»이라
+--    AIAgent가 update까지 한다(야간 Job이 다시 매긴다). 바꾸지 못하는 것은
+--    `exceptions.status` — 그것이 결정이다.
 create policy attention_scores_read on attention_scores
-  for select using (has_business(business_id));
+  for select using (has_business(business_id) and can_read_restricted());
 create policy attention_scores_write on attention_scores
-  for all using (can_write_attention(business_id))
-  with check (can_write_attention(business_id));
+  for all using (can_score_attention(business_id))
+  with check (can_score_attention(business_id));
 
 -- ---------------------------------------------------------------------
 -- 8. 0034의 트리거 함수를 다시 쓴다 — `monitor`를 다섯 번째로 센다
@@ -653,6 +730,13 @@ comment on function interventions_bump() is
 
 -- 0034가 걷은 그대로 둔다. 사람이 부를 자리가 없는 함수다(0019 3절과 같은 이유).
 revoke all on function interventions_bump() from public;
+
+-- 0034:`kind` 칸 옆의 줄 주석이 "approve·reject·modify·delegate" 넷으로 남아 있다.
+-- 그 파일은 이미 적용돼서 못 고치므로, 다섯이 됐다는 사실을 **앞으로 나아가며** 적는다.
+-- DB에 올라간 주석이 파일의 줄 주석보다 뒤에 읽히는 자리라, 이 한 문장이 0034의 낡은
+-- 줄을 덮는다(`\d+ intervention_counts`가 이것을 보여 준다).
+comment on column intervention_counts.kind is
+  '§7·§34. audit_log.action의 텍스트. **0035부터 다섯이다: approve · reject · modify · delegate · monitor.** 0034 파일의 줄 주석에는 넷만 적혀 있다 — 그 파일은 이미 적용돼 고치지 않고 여기서 앞으로 나아가며 고친다. read·login 같은 열람 기록은 이 표에 들어오지 않는다(트리거가 회장의 처리 줄만 센다).';
 
 comment on view interventions is
   '§7·§34. 회장이 실제로 손댄 횟수. 회사 × 월(KST) × 유형. **0035부터 관찰(monitor)도 센다** — 회장이 그 건을 보고 "지금은 두고 본다"고 정한 것이라 손댄 것이 맞고, 빼면 개입이 실제보다 적게 보인다(위임을 넣은 것과 같은 논리). 그래서 **블록 B 출시일에 개입 수가 뛴다 — 사실이지 고장이 아니다.** audit_log가 아니라 intervention_counts를 읽는다: audit_log의 FORCE를 내리지 않고 원문의 가시성(Chairman·GroupCFO 전체 / CEO 자기 회사)을 주려고 집계 전용 표를 두었다. Executive·TeamLead·Member는 여전히 0행이고, 화면은 그것을 "0건"이라고 말하지 않는다.';
