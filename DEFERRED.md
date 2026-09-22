@@ -1389,6 +1389,21 @@ production에서 같은 속도라는 보장이 없다.
   **«그 회사의 [제한] 독자 또는 그 표에 쓰는 사람»**으로 고쳤다. 새로 내주는 것은 없다 —
   그 역할은 바로 그 값들을 집어넣는 쪽이고, 늘어나는 독자는 AIAgent 하나다.
   두 표의 최종 독자는 **Chairman · GroupCFO · BusinessCEO · Executive · AIAgent**로 같다.
+  **그 «쓰는 사람» 갈래는 행 단위가 아니다 — 기록해 둔다.** AIAgent는 자기가 넣은 줄만이
+  아니라 **자기가 insert할 수 있는 회사의 모든 예외**를 읽는다(회장·GroupCFO가 올린 것
+  포함). 자기가 쓴 것의 살짝 넓은 상위집합이고, 그 안에는 §7의 논리대로 `finance_kpis`가
+  AIAgent에게 잠가 둔 숫자(`exceptions.value`)가 들어 있다.
+  더 좁게 쓸 수가 없다: 이 표에 `created_by` 칸이 없어 "내가 넣은 줄"을 가리킬 술어가
+  없다. 칸을 새로 두는 것은 브리프의 칸 목록 밖이고, 야간 Job이 자기 줄을 도로 읽어야
+  한다는 요구(위)는 그대로 남는다. **쓰지 않는 역할은 이 갈래로 아무것도 얻지 못한다** —
+  TeamLead·Member는 여전히 0행이다. 더 좁히려면 `created_by` + 행 단위 술어가 필요하고,
+  그 판단은 B-2가 야간 Job을 세워 실제 쓰기 경로를 확정한 뒤가 맞다.
+- **두 표의 독자가 같다는 것은 오늘 `can_read_restricted()` 덕분이지, 갈래가 묶여 있어서가
+  아니다.** 두 표의 «쓰는 사람» 갈래는 서로 다른 함수를 부르고(`can_write_attention` ↔
+  `can_score_attention`) 그 둘이 갈리는 역할은 GroupCFO 하나인데, GroupCFO가 이미
+  `can_read_restricted()` 안에 있어서 결과가 같아진다. **GroupCFO가 그 함수에서 빠지는 날
+  두 표의 독자가 조용히 갈라지고**, 0035 §7의 "같은 사람들"이라는 주석이 거짓이 된다.
+  오늘 그 결합을 강제하는 것은 아무것도 없다 — 리뷰가 B-4의 단언으로 넘겼다.
 - **restrictive 두 줄의 이름을 0013의 관례(맨이름)로 맞췄다 — 그리고 그것만으로는 검사를
   사지 못한다는 것을 확인했다.** `check-migrations.ts`의 restrictive 카탈로그는
   `policyname like 'ai_agent_no_%'`로 긁지만 **표 이름 목록을 따로 들고 키로 찾는다.**
@@ -1421,7 +1436,7 @@ production에서 같은 속도라는 보장이 없다.
   규칙 엔진에게 열면, **의식적으로 지워야 하는 한 줄**이 이 restrictive다. §19의 "AI가
   CEO를 대신하지 않는다"가 코드로 남는 자리다. `delete`는 grant도 정책도 없다(두 겹) —
   예외는 지우는 것이 아니라 닫는 것이라 restrictive delete는 잴 것이 없다.
-  **insert 쪽에도 한 줄 건다(`exceptions_ai_agent_open_only`).** update만 막으면 AIAgent가
+  **insert 쪽에도 한 줄 건다(`ai_agent_no_closed_insert`).** update만 막으면 AIAgent가
   **처음부터 `status='closed'`인 예외를 넣는** 길이 남는다 — "만들되 닫지 않는다"를 글자로만
   지키고 뜻으로는 어기는 경로다. `monitoring`도 같이 막힌다: '언제까지 두고 본다'를 정하는
   것도 회장의 일이다. AIAgent가 넣는 줄은 `status='open'`이어야 한다.

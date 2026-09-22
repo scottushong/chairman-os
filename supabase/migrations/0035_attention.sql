@@ -30,13 +30,17 @@
 --   * **`severity` enum(Info/Warning/Critical)을 재사용하지 않는다.** RED/YELLOW/GREEN은
 --     '얼마나 나쁜가'가 아니라 **'누가 손대는가'**다(§19). 같은 낱말이 두 뜻을 갖는 순간이
 --     이 저장소가 반복해서 피해 온 '두 벌'이고, 새 enum 이름에 그 차이를 넣었다(1절).
---   * **판정을 새로 «만들지» 않는다 — 있는 것을 조합한다.** 읽기는
---     `has_business()` + `can_read_restricted()`, 회장 액션은 `can_approve()`다 —
---     셋 다 0002에 있다. 새로 짓는 함수는 쓰기 문 **둘**(`can_write_attention`
---     `can_score_attention`, 7절)뿐이고, 둘 다 그 기존 함수들을 합치는 껍데기이며
---     뒤의 것은 앞의 것을 부른다(역할 목록이 두 벌이 되지 않게).
---     읽기가 `can_read_restricted()`까지 요구하는 이유는 7절에 길게 적었다 —
---     `exceptions.value`에 들어오는 숫자가 `finance_kpis`가 잠가 둔 바로 그 숫자다.
+--   * **판정을 새로 «만들지» 않는다 — 있는 것을 조합한다.** 회장 액션은 `can_approve()`,
+--     회사 판정은 `has_business()`, 등급 판정은 `can_read_restricted()`다 — 셋 다 0002에
+--     있다. 새로 짓는 함수는 쓰기 문 **둘**(`can_write_attention` · `can_score_attention`,
+--     7절)뿐이고, 둘 다 그 기존 함수들을 합치는 껍데기이며 뒤의 것은 앞의 것을 부른다
+--     (역할 목록이 두 벌이 되지 않게).
+--     읽기는 그 회사 안에서 **갈래가 둘**이다:
+--       `has_business(target)` **and** ( `can_read_restricted()` **or** «그 표에 쓰는 사람» )
+--     앞 갈래가 등급을 지킨다 — `exceptions.value`에 들어오는 숫자가 `finance_kpis`가
+--     잠가 둔 바로 그 숫자다(7절에 길게 적었다). 뒤 갈래가 없으면 **야간 Job이 자기가
+--     방금 넣은 줄을 못 읽어** 점수를 붙일 id를 알 수 없다(7절 `exceptions_read` 주석).
+--     그래서 읽기가 `can_read_restricted()`를 **언제나** 요구하지는 않는다.
 --   * **예외 행을 한 건도 시드로 넣지 않는다.** 예외는 규칙이 실제로 걸려야 생기는 것이고,
 --     시드로 넣으면 화면이 첫날부터 **있지도 않은 위험을 빨갛게 그린다.** 회장이 그 빨강을
 --     한 번 열어 보고 아무것도 없는 것을 확인하면, 그 뒤로 진짜 빨강도 안 열어 본다.
@@ -519,9 +523,12 @@ alter table attention_scores enable row level security;
 --      요구하므로, 그 안의 `case when`은 **한 번도 돌지 않는 죽은 가지**다. 돌지 않는
 --      것을 베끼면 검사가 초록인 채 아무것도 막지 않는 겹이 하나 늘 뿐이다.
 --
---      좁힌 뒤의 독자는 Chairman · GroupCFO · BusinessCEO · Executive 넷이다
---      (`can_read_restricted()` 0002:142). §19가 예외를 분류하는 사람으로 상정한 것이
---      정확히 그 넷이다 — GREEN이 "CEO handles"인 모델에서 팀원이 예외를 분류하지 않는다.
+--      좁힌 뒤의 독자는 **다섯**이다: `can_read_restricted()`(0002:142)의 넷 —
+--      Chairman · GroupCFO · BusinessCEO · Executive — 에 **AIAgent**가 더해진다.
+--      §19가 예외를 «분류하는» 사람으로 상정한 것이 앞의 넷이고(GREEN이 "CEO handles"인
+--      모델에서 팀원이 예외를 분류하지 않는다), AIAgent는 분류하는 쪽이 아니라
+--      **자기가 넣은 줄을 도로 읽어야 하는** 쪽이다 — 그 갈래의 이유는 아래
+--      `exceptions_read` 바로 위에 적었다(`returning`과 `attention_scores.exception_id`).
 --      TeamLead·Member는 0행이고, 화면은 그들에게 "0건"이라고 말하지 않는다.
 --      `has_business()`가 `is_active()`를 먼저 보므로 `revoked_at`이 찍힌 계정은 한 줄도
 --      못 읽는다(0002 원칙 8).

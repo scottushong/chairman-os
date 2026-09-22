@@ -184,7 +184,11 @@ RLS를 **우회하는** 함수는 이 저장소에 없다. definer 함수는 전
 ### `exceptions`의 restrictive 정책 — 오늘은 잴 것이 없는데도 둔 한 줄
 
 0035의 `exceptions`에는 permissive 정책 셋(읽기 · 처리 · 생성) 말고 **restrictive가 둘**
-더 걸려 있다 — `exceptions_ai_agent_no_update`와 `exceptions_ai_agent_open_only`.
+더 걸려 있다 — **`ai_agent_no_update`와 `ai_agent_no_closed_insert`**. 이름에 표 이름을
+붙이지 않았다: 정책 이름은 표 안에서만 유일하면 되고, 0013이 표 열일곱에 건 것이 전부
+맨이름 `ai_agent_no_<op>`다. **그 관례를 지키는 것이 검사 한 줄을 산다** —
+`check-migrations.ts`의 restrictive 카탈로그가 `policyname like 'ai_agent_no_%'`로 긁고,
+그 아래 단언이 이 둘을 이름으로 찾는다(옛 이름이면 못 찾는다. 돌연변이로 확인했다).
 앞의 것이 이 절이 말하는 «오늘은 잴 것이 없는» 줄이고, 뒤의 것은 오늘도 실제로 막는다
 (AIAgent가 넣는 예외는 `status='open'`이어야 한다 — 처음부터 닫힌 채로 들어오는 예외는
 "만들되 닫지 않는다"를 글자로만 지킨 것이고, `monitoring`으로 들어오는 것은 '언제까지 두고
