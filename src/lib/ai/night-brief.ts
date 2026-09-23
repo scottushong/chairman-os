@@ -147,9 +147,13 @@ export async function runNightBrief(opts: {
     error?: string
     /**
      * 브리핑 **앞**에 붙는 항목들. 두 곳에서 온다.
-     *   · 그룹 행 — 주의 3~5건(§18 원문: "기존 브리핑은 attention 3~5건을 맨 위에").
-     *   · 회사 행 — 그 회사의 규칙 평가가 터진 사실.
-     * 둘 다 코드가 만든 항목이고 모델이 만든 것이 아니다. 앞에 두는 것이 곧 «맨 위»다.
+     *   · 그룹 행 — 주의 3~5건(§18 원문: "기존 브리핑은 attention 3~5건을 맨 위에"),
+     *     또는 규칙 평가 단계가 통째로 실패한 사실.
+     *   · 회사 행 — 그 회사의 주의 단계가 남긴 **실패와 경고 둘 다.**
+     *     실패는 «평가가 터졌거나 예외를 못 적었다»(critical)이고,
+     *     경고는 «재지 못했다 · 점수를 못 붙였다»(warning)다. **둘을 가르는 것이 요점이다** —
+     *     경고를 빼면 데이터가 끊긴 회사가 조용한 회사로 읽힌다.
+     * 전부 코드가 만든 항목이고 모델이 만든 것이 아니다. 앞에 두는 것이 곧 «맨 위»다.
      */
     leadItems?: AiBriefItem[]
   }) {
@@ -251,6 +255,22 @@ export async function runNightBrief(opts: {
     }
 
     /**
+     * 그룹 요약에 넘길 «재지 못한 회사» 목록. `warnings`에서 `unmeasured`만 걸러 낸다 —
+     * 목록을 따로 들고 있지 않는 이유는 `StageWarning`의 주석에 있다(두 벌이 되면 언젠가
+     * 한쪽만 채워진다).
+     */
+    function unmeasuredCompanies() {
+      const out: { business_id: string; name: string; facts: string[] }[] = []
+      for (const b of businesses) {
+        const facts = (attention?.warnings.get(b.business_id) ?? [])
+          .filter((w) => w.kind === 'unmeasured')
+          .map((w) => w.text)
+        if (facts.length > 0) out.push({ business_id: b.business_id, name: b.name, facts })
+      }
+      return out
+    }
+
+    /**
      * 감사 줄에 실을 숫자들. 단계가 못 돌았으면 그 사실이 `error`로 실린다(0건이 아니다).
      *
      * **`unmeasured`가 `evaluated`와 따로 실리는 것이 이 객체의 요점이다.**
@@ -298,9 +318,15 @@ export async function runNightBrief(opts: {
             detail,
             severity: 'critical' as const,
           })),
-          ...(attention?.warnings.get(b.business_id) ?? []).map((detail) => ({
-            title: `[주의] ${b.name} 재지 못함`,
-            detail: `${detail} — «이상 없음»이 아니라 «재지 못했다»이다.`,
+          ...(attention?.warnings.get(b.business_id) ?? []).map((w) => ({
+            title:
+              w.kind === 'unmeasured'
+                ? `[주의] ${b.name} 재지 못함`
+                : `[주의] ${b.name} 점수 미기록`,
+            detail:
+              w.kind === 'unmeasured'
+                ? `${w.text} — «이상 없음»이 아니라 «재지 못했다»이다.`
+                : w.text,
             severity: 'warning' as const,
           })),
         ]
@@ -337,6 +363,19 @@ export async function runNightBrief(opts: {
         date: run_date,
         companies: briefs,
         failed,
+        /**
+         * **«재지 못했다»를 회장이 읽는 자리까지 밀어 넣는다.**
+         *
+         * 이 줄이 없으면 이 블록이 지킨 구분이 마지막 한 걸음에서 끝난다 — 요약이 실패한
+         * 회사는 06:00 메시지에 한 문장으로 반드시 들어가는데, **재지 못한 회사는 아무
+         * 말도 없이 조용한 회사와 같아 보인다.** `items`는 카톡에 실리지 않고 회장이
+         * 받는 것은 `summary` 한 덩이뿐이라, 회사 행에 항목을 세운 것만으로는 그에게
+         * 닿지 않는다.
+         *
+         * **점수 미기록 경고는 넘기지 않는다** — 그것은 이 저장소가 고칠 내부 사정이고,
+         * 회장의 아침 다섯 문장에 들어갈 사실이 아니다. 그 가름을 `StageWarning.kind`가 한다.
+         */
+        unmeasured: unmeasuredCompanies(),
         chairman,
         finance,
         attentions: attentionBriefLines(attention?.headlines ?? []),

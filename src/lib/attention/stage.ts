@@ -83,15 +83,30 @@ export interface AttentionStageResult {
    */
   failures: Map<string, string[]>
   /**
-   * 회사별 **경고** — 실패는 아니지만 «조용히 넘어가면 그 회사가 멀쩡해 보이는» 것들:
-   * 못 잰 규칙, 점수를 못 붙인 예외. 이것이 없으면 데이터가 끊긴 회사가 그냥 조용한
-   * 회사로 읽힌다 — 그 회사의 브리핑은 KPI가 비어 있어도 성공하기 때문이다.
+   * 회사별 **경고** — 실패는 아니지만 «조용히 넘어가면 그 회사가 멀쩡해 보이는» 것들.
+   * 이것이 없으면 데이터가 끊긴 회사가 그냥 조용한 회사로 읽힌다 — 그 회사의 브리핑은
+   * KPI가 비어 있어도 성공하기 때문이다.
+   *
+   * **`kind`가 있는 이유**: 회사 행에는 둘 다 올라가지만 **그룹 요약에 가는 것은
+   * `unmeasured`뿐**이다. «재지 못했다»는 회장이 06:00에 알아야 하는 사실이고,
+   * «점수를 못 붙였다»는 이 저장소가 고칠 내부 사정이다. 목록을 두 벌로 두는 대신
+   * 한 벌에 꼬리표를 붙였다 — 두 벌이 되면 언젠가 한쪽만 채워진다.
    */
-  warnings: Map<string, string[]>
+  warnings: Map<string, StageWarning[]>
   /** 단계 전체가 못 돈 이유(규칙을 못 읽었다 등). 회사별 실패와 다르다. */
   error?: string
   /** 위의 것들을 사람이 읽는 한 줄로 모은 것. 감사 줄과 서버 로그가 같이 쓴다. */
   notes: string[]
+}
+
+/**
+ * 경고 한 줄. `kind`가 «어디까지 가는가»를 정한다 —
+ * `unmeasured`는 회사 행 **과** 그룹 요약(=회장의 06:00 카톡)까지,
+ * `score_not_recorded`는 회사 행까지.
+ */
+export interface StageWarning {
+  kind: 'unmeasured' | 'score_not_recorded'
+  text: string
 }
 
 function errorText(e: unknown): string {
@@ -145,9 +160,13 @@ export async function runAttentionStage(input: {
     warnings: new Map(),
     notes: [],
   }
-  const add = (map: Map<string, string[]>, businessId: string, text: string) => {
-    map.set(businessId, [...(map.get(businessId) ?? []), text])
+  const fail = (businessId: string, text: string) => {
+    result.failures.set(businessId, [...(result.failures.get(businessId) ?? []), text])
     result.notes.push(`${businessId}: ${text}`)
+  }
+  const warn = (businessId: string, w: StageWarning) => {
+    result.warnings.set(businessId, [...(result.warnings.get(businessId) ?? []), w])
+    result.notes.push(`${businessId}: ${w.text}`)
   }
 
   /**
@@ -206,11 +225,10 @@ export async function runAttentionStage(input: {
             result.unmeasured += 1
             result.unmeasuredReasons[outcome.reason] =
               (result.unmeasuredReasons[outcome.reason] ?? 0) + 1
-            add(
-              result.warnings,
-              b.business_id,
-              `${rule.name}(${rule.rule_key}) — ${UNMEASURED_REASON_KO[outcome.reason]}`,
-            )
+            warn(b.business_id, {
+              kind: 'unmeasured',
+              text: `${rule.name}(${rule.rule_key}) — ${UNMEASURED_REASON_KO[outcome.reason]}`,
+            })
             continue
           }
           result.evaluated += 1
@@ -243,24 +261,20 @@ export async function runAttentionStage(input: {
               finance,
               runDate: input.runDate,
               result,
-              warn: (id, text) => add(result.warnings, id, text),
+              warn,
             })
             if (row) created.push(row)
           } catch (e) {
             const msg = errorText(e)
             console.error('[attention] exception', b.business_id, rule.rule_key, msg)
-            add(
-              result.failures,
-              b.business_id,
-              `${rule.name}(${rule.rule_key}) 예외 기록 실패 — ${msg}`,
-            )
+            fail(b.business_id, `${rule.name}(${rule.rule_key}) 예외 기록 실패 — ${msg}`)
           }
         }
       } catch (e) {
         // 여기까지 오는 것은 «그 회사를 평가하는 일» 자체가 터진 것이다(수치 읽기·원장 해석).
         const msg = errorText(e)
         console.error('[attention] company', b.business_id, msg)
-        add(result.failures, b.business_id, `규칙 평가 실패 — ${msg}`)
+        fail(b.business_id, `규칙 평가 실패 — ${msg}`)
       }
     }),
   )
@@ -298,7 +312,7 @@ async function createException(a: {
   runDate: IsoDate
   result: AttentionStageResult
   /** 그 회사의 «경고»에 한 줄 남긴다. 단계가 회사별로 모아 야간 Job에 돌려준다. */
-  warn: (businessId: string, text: string) => void
+  warn: (businessId: string, w: StageWarning) => void
 }): Promise<ExceptionRecord | null> {
   /**
    * 축 여섯 중 **오늘 출처가 있는 것은 하나뿐이다.** 나머지 다섯은 null이고
@@ -428,10 +442,12 @@ async function createException(a: {
     // 예외는 이미 남았다(기록이 먼저). 점수를 못 붙인 사실은 **그 회사의 행에** 남긴다 —
     // 점수가 없는 예외는 «왜 그 색인가»와 «여섯 축 중 몇이 비었나»를 설명하지 못하는
     // 예외이고, 그것을 console에만 적으면 아무도 다시 붙이지 않는다.
-    a.warn(
-      a.business.business_id,
-      `${a.rule.name}(${a.rule.rule_key}) 점수 기록 실패 ${scoreError.code ?? '?'} — ${scoreError.message}`,
-    )
+    a.warn(a.business.business_id, {
+      // **그룹 요약에는 가지 않는다.** 이것은 회장이 아침에 알아야 할 사실이 아니라
+      // 이 저장소가 고칠 내부 사정이다 — 예외 자체는 이미 남았다.
+      kind: 'score_not_recorded',
+      text: `${a.rule.name}(${a.rule.rule_key}) 점수 기록 실패 ${scoreError.code ?? '?'} — ${scoreError.message}`,
+    })
   }
   return data
 }

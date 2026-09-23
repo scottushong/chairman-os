@@ -134,6 +134,17 @@ export interface DailyBriefInput {
   attentions: AttentionBriefLine[]
   /** 요약에 실패한 회사. 그룹 브리핑이 '다섯 곳 다 괜찮다'고 말하지 않게 같이 넘긴다. */
   failed: { business_id: string; name: string }[]
+  /**
+   * 블록 B-2. **규칙을 하나라도 «재지 못한» 회사.** `failed`와 **다른 사실이다** —
+   * 이 회사들은 요약에 성공했고, 못 한 것은 «수치로 재는 것»이다.
+   *
+   * `failed`와 나란히 두는 이유가 이 칸의 전부다. 요약이 실패한 회사는 그 사실이 회장의
+   * 06:00 메시지에 **한 문장으로 반드시** 들어가는데(아래 프롬프트), 재지 못한 회사는
+   * 아무 말도 없이 조용한 회사와 같아 보였다. 그 회사의 요약은 KPI가 비어 있어도
+   * 성공하고 예외가 0건이니 주의 목록에도 안 오른다 — **«재지 못했다»가 «이상 없다»로
+   * 읽히는 마지막 자리가 거기였다.**
+   */
+  unmeasured: { business_id: string; name: string; facts: string[] }[]
   /** 읽지 못했으면 null. 그때 모델은 project_notes를 비운다. */
   chairman: ChairmanContext | null
   /** 그룹 단순 합산의 재무 해석. 회사 요약을 묶을 때 그룹 Runway·공통 원가 드라이버의 근거다. 없으면 null */
