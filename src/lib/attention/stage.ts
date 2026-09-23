@@ -23,6 +23,7 @@ import {
   UNMEASURED_REASON_KO,
   type CompanyMeasurements,
   type RunwayReading,
+  type UnmeasuredReason,
 } from './rules'
 import { attentionScore, financialImpactAxis } from './score'
 
@@ -57,8 +58,17 @@ import { attentionScore, financialImpactAxis } from './score'
  */
 
 export interface AttentionStageResult {
-  /** 평가한 (회사 × 규칙) 수. */
+  /**
+   * **실제로 잰** (회사 × 규칙) 수 — `triggered` + `clear`.
+   * **`unmeasured`를 여기 더하지 않는다.** 더하면 다섯 회사가 전부 «수치가 없어 못 쟀다»인
+   * 밤과 다섯 회사가 전부 «재어 보니 멀쩡하다»인 밤이 **같은 숫자**로 기록되고, 그 둘은
+   * 이 블록이 처음부터 가르려고 한 바로 그 두 사실이다.
+   */
   evaluated: number
+  /** **못 잰** (회사 × 규칙) 수. «정상»이 아니다. */
+  unmeasured: number
+  /** 못 잰 이유별 건수. 「수치가 없다」와 「원장을 못 읽었다」는 다른 고장이다. */
+  unmeasuredReasons: Partial<Record<UnmeasuredReason, number>>
   /** 이번 회차가 실제로 만든 예외 수. */
   created: number
   /** 이미 있어서 건너뛴 수(조회 + 유니크 제약에 걸린 것). */
@@ -67,17 +77,33 @@ export interface AttentionStageResult {
   withoutAnalysis: number
   /** 브리핑 맨 위에 설 3~5건. 열린 예외 **전부**에서 고른다 — 오늘 만든 것만이 아니다. */
   headlines: AttentionHeadline[]
-  /** 회사별 실패 문구. 야간 Job이 그 회사의 행에 남긴다. */
-  failures: Map<string, string>
+  /**
+   * 회사별 **실패** — 평가가 터졌거나 예외를 기록하지 못했다. 야간 Job이 그 회사의 행
+   * 맨 위에 남긴다. 규칙 하나가 터져도 그 회사의 나머지 규칙은 계속 돈다.
+   */
+  failures: Map<string, string[]>
+  /**
+   * 회사별 **경고** — 실패는 아니지만 «조용히 넘어가면 그 회사가 멀쩡해 보이는» 것들:
+   * 못 잰 규칙, 점수를 못 붙인 예외. 이것이 없으면 데이터가 끊긴 회사가 그냥 조용한
+   * 회사로 읽힌다 — 그 회사의 브리핑은 KPI가 비어 있어도 성공하기 때문이다.
+   */
+  warnings: Map<string, string[]>
   /** 단계 전체가 못 돈 이유(규칙을 못 읽었다 등). 회사별 실패와 다르다. */
   error?: string
-  /** 건너뛴 규칙·못 잰 회사처럼 «조용히 넘어가면 안 되는» 사실들. 서버 로그로 나간다. */
+  /** 위의 것들을 사람이 읽는 한 줄로 모은 것. 감사 줄과 서버 로그가 같이 쓴다. */
   notes: string[]
 }
 
 function errorText(e: unknown): string {
   return (e instanceof Error ? e.message : String(e)).slice(0, 500)
 }
+
+/**
+ * 0035 4절의 중복 방지 제약 이름. **이 글자가 0035와 같아야 한다** —
+ * 달라지면 아래의 23505 판정이 «모르는 실패»로 떨어지고, 그것은 시끄러운 쪽이라 맞다
+ * (반대로 이름 없이 23505만 보면 다른 제약의 위반이 조용히 «중복»이 된다).
+ */
+const DEDUPE_CONSTRAINT = 'exceptions_dedupe_unique'
 
 /**
  * 그 회사의 런웨이. **정의는 `lib/ledger/analysis.ts`의 `runway()` 하나뿐이다** —
@@ -109,12 +135,19 @@ export async function runAttentionStage(input: {
 }): Promise<AttentionStageResult> {
   const result: AttentionStageResult = {
     evaluated: 0,
+    unmeasured: 0,
+    unmeasuredReasons: {},
     created: 0,
     deduped: 0,
     withoutAnalysis: 0,
     headlines: [],
     failures: new Map(),
+    warnings: new Map(),
     notes: [],
+  }
+  const add = (map: Map<string, string[]>, businessId: string, text: string) => {
+    map.set(businessId, [...(map.get(businessId) ?? []), text])
+    result.notes.push(`${businessId}: ${text}`)
   }
 
   /**
@@ -164,14 +197,23 @@ export async function runAttentionStage(input: {
             }
             continue
           }
-          result.evaluated += 1
           if (outcome.kind === 'unmeasured') {
-            // **«정상»이 아니라 «못 쟀다»다.** 이 줄이 없으면 데이터가 끊긴 회사가 조용히 초록이 된다.
-            result.notes.push(
-              `${b.business_id} ${rule.rule_key}: ${UNMEASURED_REASON_KO[outcome.reason]}`,
+            /**
+             * **«정상»이 아니라 «못 쟀다»다 — 그리고 그 사실이 여기서 끝나면 안 된다.**
+             * 이 회사의 브리핑은 KPI가 비어 있어도 성공하고, 예외가 0건이니 맨 위에도 안
+             * 오른다. 경고로 올리지 않으면 데이터가 끊긴 회사가 **그냥 조용한 회사**로 읽힌다.
+             */
+            result.unmeasured += 1
+            result.unmeasuredReasons[outcome.reason] =
+              (result.unmeasuredReasons[outcome.reason] ?? 0) + 1
+            add(
+              result.warnings,
+              b.business_id,
+              `${rule.name}(${rule.rule_key}) — ${UNMEASURED_REASON_KO[outcome.reason]}`,
             )
             continue
           }
+          result.evaluated += 1
           if (outcome.kind === 'clear') continue
 
           const key = `${b.business_id}\u0000${rule.rule_key}\u0000${outcome.period}`
@@ -181,26 +223,44 @@ export async function runAttentionStage(input: {
           }
           seen.add(key)
 
-          const row = await createException({
-            sb: input.sb,
-            adapter: input.adapter,
-            adapterError: input.adapterError,
-            business: b,
-            rule,
-            period: outcome.period,
-            value: outcome.value,
-            threshold: outcome.threshold,
-            kpis: input.financeKpis,
-            finance,
-            runDate: input.runDate,
-            result,
-          })
-          if (row) created.push(row)
+          /**
+           * **규칙 하나가 터져도 그 회사의 다음 규칙은 돈다.** 이 try가 없으면 현금 규칙의
+           * insert가 실패한 회사에서 매출·마진 규칙이 아예 평가되지 않고, 그 회사 행에는
+           * "규칙 평가 실패"라고만 남아 **평가 자체가 고장 난 것처럼** 읽힌다 — 실제로 고장
+           * 난 것은 기록 한 건이다. 회사 격리와 같은 이유를 한 겹 안쪽에 둔 것이다.
+           */
+          try {
+            const row = await createException({
+              sb: input.sb,
+              adapter: input.adapter,
+              adapterError: input.adapterError,
+              business: b,
+              rule,
+              period: outcome.period,
+              value: outcome.value,
+              threshold: outcome.threshold,
+              kpis: input.financeKpis,
+              finance,
+              runDate: input.runDate,
+              result,
+              warn: (id, text) => add(result.warnings, id, text),
+            })
+            if (row) created.push(row)
+          } catch (e) {
+            const msg = errorText(e)
+            console.error('[attention] exception', b.business_id, rule.rule_key, msg)
+            add(
+              result.failures,
+              b.business_id,
+              `${rule.name}(${rule.rule_key}) 예외 기록 실패 — ${msg}`,
+            )
+          }
         }
       } catch (e) {
+        // 여기까지 오는 것은 «그 회사를 평가하는 일» 자체가 터진 것이다(수치 읽기·원장 해석).
         const msg = errorText(e)
         console.error('[attention] company', b.business_id, msg)
-        result.failures.set(b.business_id, `규칙 평가 실패: ${msg}`)
+        add(result.failures, b.business_id, `규칙 평가 실패 — ${msg}`)
       }
     }),
   )
@@ -210,6 +270,8 @@ export async function runAttentionStage(input: {
     rules,
     businessNames: new Map(input.businesses.map((b) => [b.business_id, b.name])),
   })
+  // 로그에도 남긴다 — 다만 **이제 로그가 유일한 자리가 아니다.** 같은 사실이
+  // `failures`/`warnings`로 회사 행에, 건수로 감사 줄에 올라간다.
   for (const note of result.notes) console.warn('[attention]', note)
   return result
 }
@@ -235,6 +297,8 @@ async function createException(a: {
   finance: FinanceBriefContext | null
   runDate: IsoDate
   result: AttentionStageResult
+  /** 그 회사의 «경고»에 한 줄 남긴다. 단계가 회사별로 모아 야간 Job에 돌려준다. */
+  warn: (businessId: string, text: string) => void
 }): Promise<ExceptionRecord | null> {
   /**
    * 축 여섯 중 **오늘 출처가 있는 것은 하나뿐이다.** 나머지 다섯은 null이고
@@ -320,8 +384,18 @@ async function createException(a: {
     .single<ExceptionRecord>()
 
   if (error) {
-    // 23505 = 유니크 위반. **다른 틱이 먼저 넣은 것이고, 그것은 실패가 아니다.**
-    if (error.code === '23505') {
+    /**
+     * 23505 = 유니크 위반. **다른 틱이 먼저 넣은 것이고, 그것은 실패가 아니다.**
+     *
+     * 다만 «23505면 중복»이라고 읽지 않는다 — 이 표에는 유니크가 **둘**이고
+     * (`exceptions_dedupe_unique`와 `exceptions_id_business_unique`), 뒤의 것은 identity
+     * `id` 위에 있어 오늘은 사람 손으로도 부딪히기 어렵다. 그 «어렵다»에 기대면, 앞으로
+     * 유니크가 하나 더 붙는 날 **진짜 고장이 조용히 «중복»으로 세어진다.**
+     * 그래서 제약 이름을 확인한다. 이름이 안 실려 오거나 다른 제약이면 그대로 올린다 —
+     * 모르는 실패를 아는 실패인 척하지 않는다.
+     */
+    const detail = `${error.message} ${error.details ?? ''}`
+    if (error.code === '23505' && detail.includes(DEDUPE_CONSTRAINT)) {
       a.result.deduped += 1
       return null
     }
@@ -351,10 +425,12 @@ async function createException(a: {
     unknown_axes: scored.unknown_axes,
   })
   if (scoreError) {
-    // 예외는 이미 남았다(기록이 먼저). 점수를 못 붙인 사실은 로그와 회사 행에 남긴다 —
-    // 점수가 없는 예외는 «왜 그 색인가»를 설명하지 못할 뿐, 없던 일이 되지는 않는다.
-    a.result.notes.push(
-      `${a.business.business_id} ${a.rule.rule_key}: 점수 기록 실패 ${scoreError.code ?? '?'} — ${scoreError.message}`,
+    // 예외는 이미 남았다(기록이 먼저). 점수를 못 붙인 사실은 **그 회사의 행에** 남긴다 —
+    // 점수가 없는 예외는 «왜 그 색인가»와 «여섯 축 중 몇이 비었나»를 설명하지 못하는
+    // 예외이고, 그것을 console에만 적으면 아무도 다시 붙이지 않는다.
+    a.warn(
+      a.business.business_id,
+      `${a.rule.name}(${a.rule.rule_key}) 점수 기록 실패 ${scoreError.code ?? '?'} — ${scoreError.message}`,
     )
   }
   return data

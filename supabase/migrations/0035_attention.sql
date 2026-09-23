@@ -187,7 +187,7 @@ comment on column exception_rules.kind is
 comment on column exception_rules.threshold is
   '임계값. **단위는 규칙마다 다르다** — %(매출 변동) · %p(EBITDA 마진 하락) · 개월(현금 런웨이). manual 규칙에는 이 칸이 없다(null). 값은 /attention/rules에서 회장이 고친다.';
 comment on column exception_rules.severity_base is
-  '이 규칙이 걸렸을 때 **exceptions.severity의 첫 값**이 되는 등급(§19). 순서는 하나뿐이다: severity_base → exceptions.severity(지금 등급) ← attention_scores.level(축이 나온 뒤 B-2가 갱신한다). 이 칸은 «축이 아직 없을 때의 출발점»이고, 이 칸 자체는 예외가 생긴 뒤로는 그 예외의 등급을 더 이상 따라가지 않는다 — 회장이 /attention/rules에서 이것을 고쳐도 이미 생긴 예외의 색은 바뀌지 않는다.';
+  '이 규칙이 걸렸을 때 **exceptions.severity의 첫 값**이 되는 등급(§19). 순서는 하나뿐이다: severity_base → exceptions.severity(지금 등급) ← attention_scores.level(축이 충분할 때). **셋이 다 «예외를 만드는 그 순간»에 정해진다** — 야간 Job은 자기가 넣은 줄을 나중에 고치지 못한다(severity 칸 주석). 이 칸은 «축이 아직 없을 때의 출발점»이고, 이 칸 자체는 예외가 생긴 뒤로는 그 예외의 등급을 더 이상 따라가지 않는다 — 회장이 /attention/rules에서 이것을 고쳐도 이미 생긴 예외의 색은 바뀌지 않는다.';
 comment on column exception_rules.scope is
   'company/group. 시드 13종은 전부 company다 — §18의 13개가 모두 회사 하나에서 걸리는 것이라, group 규칙(예: 그룹 현금 총액)은 칸만 두고 시드에는 없다. 없는 규칙을 미리 넣지 않는다.';
 
@@ -349,7 +349,7 @@ create table exceptions (
 comment on table exceptions is
   '§18. 규칙이 실제로 걸려서 생긴 예외. **시드 행이 한 건도 없다** — 예외는 규칙이 걸려야 생기는 것이고, 시드로 넣으면 화면이 첫날부터 있지도 않은 위험을 빨갛게 그린다. value·threshold는 manual 규칙에서 null이다(잰 값이 없다). status=monitoring이면 monitor_until이 반드시 있다. **(business_id, rule_key, period)가 유일하다** — 야간 Job이 틱으로 여러 번 도는 날 같은 사실이 두 건이 되는 것을 DB가 막는다(period 칸 주석).';
 comment on column exceptions.severity is
-  '§19. **이 예외의 «지금» 등급이고, 화면이 색을 고를 때 읽는 칸은 이것 하나다.** 등급이 세 칸에 나오므로 순서를 못 박는다: ① exception_rules.severity_base가 첫 값을 준다(축이 아직 없을 때의 출발점) ② 점수가 나오면 attention_scores.level이 나오고 **B-2가 그 값으로 이 칸을 갱신한다** ③ 화면은 attention_scores를 색 때문에 읽지 않는다 — 점수 표는 «왜 그 색인가»를 설명할 때 읽는다. 둘이 어긋난 행이 있으면 갱신이 아직 안 된 것이지, 화면이 고를 문제가 아니다.';
+  '§19. **이 예외의 «지금» 등급이고, 화면이 색을 고를 때 읽는 칸은 이것 하나다.** 등급이 세 칸에 나오므로 순서를 못 박는다: ① exception_rules.severity_base가 첫 값을 준다(축이 아직 없을 때의 출발점) ② 축이 충분하면 attention_scores.level이 나오고 **야간 Job이 그 값을 예외를 «만드는 그 순간» 이 칸에 넣는다**(lib/attention/stage.ts) ③ 화면은 attention_scores를 색 때문에 읽지 않는다 — 점수 표는 «왜 그 색인가»를 설명할 때 읽는다. **이 칸은 만들어진 뒤로 규칙 엔진이 다시 손대지 않는다**: 이 표의 update는 can_approve()(Chairman·BusinessCEO)이고 restrictive ai_agent_no_update가 한 겹 더 막아, AIAgent는 자기가 넣은 줄도 고치지 못한다(7절). 그래서 등급도 점수도 AI 분석도 전부 insert 앞에서 계산되어 한 번에 들어간다. **둘이 어긋난 행은 «갱신을 기다리는 행»이 아니다** — 그 뒤에 점수만 다시 매겨진 행이고(attention_scores는 AIAgent가 update할 수 있다), 그 차이를 메우려면 이 표의 쓰기 문을 여는 판단이 먼저다(HANDOVER §3).';
 comment on column exceptions.ai_analysis is
   '§19. AI의 원인 분해·권고. **분석이지 결정이 아니다** — 화면의 «결정 아님» 라벨이 이 칸에서 나온다. 이 칸에 무엇이 적혀 있어도 status를 바꾸는 것은 사람이고, ai_agent_no_update가 그것을 DB에서 막는다.';
 comment on column exceptions.value is
@@ -505,7 +505,7 @@ comment on column attention_scores.unknown_axes is
 comment on column attention_scores.score is
   '0~100. 있는 축만으로 가중 평균을 내고 100점으로 환산한 값(없는 축을 0으로 채우지 않는다 — 채우면 축이 빈 행이 조용히 GREEN으로 내려간다). **DB가 계산하지 않는다** — 식은 B-2가 갖고, 이 칸은 그 결과를 받는다.';
 comment on column attention_scores.level is
-  '§19. 이 점수가 낸 등급. **화면이 색을 고를 때 읽는 칸이 아니다** — 그것은 exceptions.severity 하나다. 이 칸은 «왜 그 색인가»의 근거이고, B-2가 이 값으로 exceptions.severity를 갱신한다. 순서: severity_base(출발점) → level(축이 나온 뒤) → exceptions.severity(지금 등급).';
+  '§19. 이 점수가 낸 등급. **화면이 색을 고를 때 읽는 칸이 아니다** — 그것은 exceptions.severity 하나다. 이 칸은 «왜 그 색인가»의 근거이고, 야간 Job이 이 값을 **예외를 만드는 그 순간** exceptions.severity에 함께 넣는다(update가 아니다 — 그 표의 쓰기 문이 AIAgent에게 닫혀 있다). 순서: severity_base(출발점) → level(축이 충분할 때) → exceptions.severity(지금 등급). **이 표는 다시 매길 수 있고 저 칸은 못 고친다** — 그래서 나중에 둘이 갈릴 수 있고, 그때 맞는 색은 exceptions.severity다.';
 comment on column attention_scores.business_id is
   'exceptions의 회사 칸을 복사한 것이다. 복합 FK(exception_id, business_id)가 원본과 어긋나지 못하게 묶는다. 복사하는 이유는 RLS다 — 정책에서 exceptions를 서브쿼리로 읽으면 그 표의 RLS가 한 겹 더 걸리고, 문이 둘이 되면 언젠가 한쪽만 고쳐진다.';
 

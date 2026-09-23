@@ -6,6 +6,9 @@
  * 검사가 잴 수 없다.
  */
 import type { AttentionBriefLine, ExceptionAnalysis } from '@/lib/ai/adapter'
+// KST 날짜는 이 저장소에 이미 한 벌 있다(`night-brief.ts`의 `kstDate`가 같은 두 줄이다).
+// 저쪽을 부르면 `night-brief → brief → night-brief`로 도는 import가 되어 이쪽을 쓴다.
+import { kstToday } from '@/lib/chairman-project'
 import {
   levelRank,
   type AiBriefItem,
@@ -79,7 +82,13 @@ export function selectAttentions(input: {
       value: e.value,
       threshold: e.threshold,
       period: e.period,
-      detected_on: e.detected_at.slice(0, 10),
+      // **KST로 접는다.** `detected_at`은 timestamptz라 연결 시간대(Supabase에서는 UTC)로
+      // 실려 오고, 앞 열 글자를 자르면 그것은 **UTC 날짜**다. 이 Job은 회장 현지 06:00을
+      // 맞추려고 매시 깨어나고(0029) KST 00:00~09:00에 도는 회차가 예외가 아니라 보통이라,
+      // 자른 값은 그 창에서 **하루 전**으로 찍힌다. 이 값은 회장에게 그대로 그려지고
+      // (attentionItems) 같은 등급끼리의 **정렬 키**이기도 해서 순서까지 흔든다.
+      // 이 저장소의 '오늘'은 KST 하나다(0019 3절 · night-brief.ts kstDate).
+      detected_on: kstToday(new Date(e.detected_at)),
     }))
     .sort(
       (a, b) =>

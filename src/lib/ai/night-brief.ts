@@ -250,15 +250,28 @@ export async function runNightBrief(opts: {
       return attentionItems(attention?.headlines ?? [])
     }
 
-    /** 감사 줄에 실을 숫자들. 단계가 못 돌았으면 그 사실이 `error`로 실린다(0건이 아니다). */
+    /**
+     * 감사 줄에 실을 숫자들. 단계가 못 돌았으면 그 사실이 `error`로 실린다(0건이 아니다).
+     *
+     * **`unmeasured`가 `evaluated`와 따로 실리는 것이 이 객체의 요점이다.**
+     * 둘을 합치면 «다섯 회사가 전부 수치가 없어 못 쟀다»는 밤과 «다섯 회사를 다 재어 보니
+     * 멀쩡하다»는 밤이 **똑같은 감사 줄**을 남긴다. 예외가 0건인 것은 두 밤이 같지만
+     * 그 0은 전혀 다른 0이고, 나중에 "그날 밤 왜 아무것도 안 올라왔나"에 답할 자리가
+     * 이 줄 하나뿐이다. `notes`까지 싣는 이유도 같다 — 서버 로그는 지워지고 감사 줄은 남는다.
+     */
     const attentionAudit = attentionStageError
       ? { error: attentionStageError }
       : {
           evaluated: attention?.evaluated ?? 0,
+          unmeasured: attention?.unmeasured ?? 0,
+          unmeasured_reasons: attention?.unmeasuredReasons ?? {},
           created: attention?.created ?? 0,
           deduped: attention?.deduped ?? 0,
           without_analysis: attention?.withoutAnalysis ?? 0,
           failed_companies: attention ? [...attention.failures.keys()] : [],
+          warned_companies: attention ? [...attention.warnings.keys()] : [],
+          // 줄 수를 자른다 — 감사 줄 하나가 수백 줄짜리 JSON이 되면 아무도 안 읽는다.
+          notes: (attention?.notes ?? []).slice(0, 50),
         }
 
     const briefs: { business_id: string; name: string; brief: AiBrief }[] = []
@@ -267,13 +280,30 @@ export async function runNightBrief(opts: {
     // 회사끼리는 서로 기다릴 이유가 없다. 동시에 부르고, 각자 끝나는 대로 쓴다.
     await Promise.all(
       businesses.map(async (b) => {
-        // 그 회사의 규칙 평가가 터졌으면 그 사실이 그 회사 행에 남아야 한다.
-        // 브리핑 자체는 성공했을 수 있으므로 status를 Failed로 내리지 않는다 —
-        // 두 개의 다른 사실을 한 칸으로 접으면 어느 쪽이 실패한 것인지 읽을 수 없다.
-        const ruleFailure = attention?.failures.get(b.business_id)
-        const leadItems: AiBriefItem[] = ruleFailure
-          ? [{ title: `[주의] ${b.name} 규칙 평가 실패`, detail: ruleFailure, severity: 'critical' }]
-          : []
+        /**
+         * 그 회사의 주의 단계가 남긴 것을 그 회사 행 **맨 위**에 올린다.
+         *
+         * **실패와 경고를 가른다.** 앞의 것은 «평가가 터졌거나 예외를 못 적었다»이고,
+         * 뒤의 것은 «못 쟀다 · 점수를 못 붙였다»다. 뒤의 것을 안 올리면 **데이터가 끊긴
+         * 회사가 조용한 회사로 읽힌다** — 그 회사의 브리핑은 KPI가 비어 있어도 성공하고
+         * 예외가 0건이니 맨 위 목록에도 안 오른다. «주의가 없다»와 «주의를 못 쟀다»를
+         * 가르는 것이 이 블록의 규율이고, 그 규율이 회사 단위에서도 지켜져야 한다.
+         *
+         * 브리핑 자체는 성공했을 수 있으므로 status를 Failed로 내리지 않는다 —
+         * 두 개의 다른 사실을 한 칸으로 접으면 어느 쪽이 실패한 것인지 읽을 수 없다.
+         */
+        const leadItems: AiBriefItem[] = [
+          ...(attention?.failures.get(b.business_id) ?? []).map((detail) => ({
+            title: `[주의] ${b.name} 규칙 엔진 실패`,
+            detail,
+            severity: 'critical' as const,
+          })),
+          ...(attention?.warnings.get(b.business_id) ?? []).map((detail) => ({
+            title: `[주의] ${b.name} 재지 못함`,
+            detail: `${detail} — «이상 없음»이 아니라 «재지 못했다»이다.`,
+            severity: 'warning' as const,
+          })),
+        ]
         try {
           if (!opts.adapter) throw new Error(opts.adapterError ?? 'AI 어댑터 없음')
           const brief = await opts.adapter.summarizeCompany(companyContext(b, snapshot!, run_date))
