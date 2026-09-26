@@ -23,7 +23,8 @@
     "check:schedule": "tsx scripts/check-brief-schedule.ts",
     "check:migrations": "tsx scripts/check-migrations.ts",
     "check:activity": "tsx scripts/check-activity.ts",
-    "check:dependency": "tsx scripts/check-dependency.ts"
+    "check:dependency": "tsx scripts/check-dependency.ts",
+    "check:attention": "tsx scripts/check-attention.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",
