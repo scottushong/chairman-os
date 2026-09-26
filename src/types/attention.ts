@@ -175,6 +175,75 @@ export interface AttentionScore {
 export const AXIS_EMPTY_KO = '출처가 없어 재지 못함'
 export const LEVEL_EMPTY_KO = '축이 모자라 등급을 내지 않음'
 
+/* ------------------------------------------------------------------ 화면의 낱말 (B-3) */
+
+/**
+ * **«결정 아님» — 이 낱말은 상수이고, 이것을 끄는 prop은 없다.**
+ *
+ * §19: *"AI가 CEO를 대신하지 않는다. AI는 Chairman에게 «어디를 볼 것인가»를 알려준다."*
+ * `exceptions.ai_analysis`를 보이는 컴포넌트는 이 라벨을 **언제나** 같이 그린다
+ * (`components/attention/pieces.tsx`의 `AiAnalysis`). 라벨을 prop으로 열어 두면 어느
+ * 화면에서 «이 자리에는 좁아서 안 넣는다»가 한 번 일어나고, 그 화면에서 회장은 모델의
+ * 문장을 판정으로 읽는다. 0035 4절이 «화면의 «결정 아님» 라벨이 이 칸에서 나온다»고
+ * 적었고 컨트롤러가 plan-of-record에 그 판정을 적었다.
+ *
+ * 글 **안**에는 넣지 않는다 — 그것은 `brief.ts`의 `formatExceptionAnalysis`가 지키는
+ * 자리다(회장이 읽는 문장 셋이 넷이 되면 그 자리가 길어진다).
+ */
+export const AI_NOT_A_DECISION_KO = '결정 아님'
+
+/**
+ * **«없는 것»과 «못 보는 것»을 가르는 문장.** `exceptions_read`는
+ * `has_business() and (can_read_restricted() or 쓰는 사람)`이라 **TeamLead·Member에게는
+ * 0행**이다(0035 7절). 그들에게 «주의 0건»·«전 회사 정상»이라고 적으면 화면이 거짓을
+ * 말한다 — 블록 A가 `interventions`에서 «권한 밖이라 집계되지 않습니다»로 처리한 그 자리와
+ * 같은 모양이다.
+ */
+export const EXCEPTION_BLIND_KO = '이 목록은 열람 권한이 있는 계정에서만 집계됩니다'
+
+/** 분석이 없는 예외. **분석이 없다고 감지를 버리지 않는다**(stage.ts ②) — 그 사실을 적는다. */
+export const AI_ANALYSIS_EMPTY_KO = 'AI 원인 분석이 없습니다 (규칙은 걸렸습니다)'
+
+/**
+ * `ceo_handling = false`가 뜻하는 것. **«CEO가 손 놓고 있다»가 아니다** —
+ * 야간 Job은 CEO의 대응을 알 수 있는 표를 하나도 읽지 못한다(stage.ts의 그 칸 주석이
+ * «그 차이는 화면이 적는다(B-3)»고 남겼다). 회장이 «CEO에게 위임»을 누르면 true가 된다.
+ */
+export const CEO_HANDLING_UNKNOWN_KO = 'CEO 대응 여부는 아직 읽을 표가 없습니다'
+
+/* ------------------------------------------------------------------ §18 회장 액션 셋 */
+
+/**
+ * 원문의 세 버튼: **"승인 / 관찰 14일 / CEO에게 위임"**.
+ * 세 값이 그대로 `audit_log.action`의 이름이 된다(`monitor`는 0035가 더했다) —
+ * 0034의 트리거가 그것을 §7의 개입으로 센다.
+ */
+export const EXCEPTION_TRIAGE = ['approve', 'monitor', 'delegate'] as const
+export type ExceptionTriage = (typeof EXCEPTION_TRIAGE)[number]
+
+export const EXCEPTION_TRIAGE_LABEL_KO: Record<ExceptionTriage, string> = {
+  approve: '승인',
+  monitor: '관찰 14일',
+  delegate: 'CEO에게 위임',
+}
+
+/**
+ * 원문의 «관찰 **14**일». 0035의 check 제약이 `status='monitoring'`에 `monitor_until`을
+ * 요구하므로 둘은 **같이** 들어간다 — 기한 없는 관찰은 관찰이 아니라 조용히 잊는 것이다.
+ */
+export const MONITOR_DAYS = 14
+
+/**
+ * 버튼이 무엇을 바꾸는가. **화면이 누르기 전에 이 문장을 보여 준다** — 세 버튼이 status를
+ * 각각 다르게 다루므로, 이름만으로는 무엇이 남는지 알 수 없다.
+ */
+export const EXCEPTION_TRIAGE_EFFECT_KO: Record<ExceptionTriage, string> = {
+  approve: '이 건을 보고 처리를 승인합니다 — 상태가 «종료»가 되고 감사 기록에 «승인»이 남습니다.',
+  monitor: `상태가 «관찰 중»이 되고 ${MONITOR_DAYS}일 뒤가 관찰 종료 시점으로 함께 기록됩니다 — 기한 없는 관찰은 두지 않습니다.`,
+  delegate:
+    'CEO가 대응하는 건으로 표시합니다 — 상태는 «열림» 그대로입니다. 위임은 끝난 것이 아니라 손대는 사람이 바뀐 것입니다.',
+}
+
 /** 브리핑 맨 위에 서는 한 줄(§18 원문: "기존 브리핑은 attention 3~5건을 맨 위에"). */
 export interface AttentionHeadline {
   business_id: BusinessId

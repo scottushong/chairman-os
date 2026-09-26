@@ -35,6 +35,7 @@ import type {
   DocumentRecord,
   ExceptionRecord,
   ExceptionRule,
+  ExceptionTriage,
   FinanceKpi,
   FinanceLedger,
   Initiative,
@@ -537,6 +538,50 @@ export interface ChairmanRepository {
    * 이 표는 «왜 그 색인가»와 «여섯 축 중 몇 개가 비었나»를 설명할 때 읽는다.
    */
   listAttentionScores(): Promise<AttentionScore[]>
+
+  /**
+   * §18 회장 액션 셋 — 승인 · 관찰 14일 · CEO에게 위임.
+   *
+   * **권한은 DB가 판정한다**(0035 `exceptions_triage` = `can_approve() and has_business()`).
+   * 화면도 이 함수도 역할을 다시 보지 않는다 — 판정하는 자리가 둘이 되면 어긋나는 날
+   * 어느 쪽이 맞는지 알 수 없다(HANDOVER §2 ①).
+   *
+   * **감사 기록이 먼저다**(HANDOVER §2 ③). 그래서 «기록은 남고 상태는 안 바뀜»이 가능하고,
+   * 그쪽을 일부러 택했다 — «회장이 이 건을 처리하려 했다»는 사실 자체가 기록 대상이다.
+   */
+  triageException(input: ExceptionTriageInput, actor: AuditActor): Promise<ExceptionRecord>
+
+  /**
+   * §18 규칙 한 줄의 회장 편집(/attention/rules). **쓰기는 Chairman뿐이다**(0035
+   * `exception_rules_write`) — 잴 대상이 잣대를 고치면 지표가 지표가 아니다.
+   *
+   * **보낸 칸만 바꾼다.** `manual` 규칙에는 임계·창이 **없고**(0으로 채우면 «임계 0»이라는
+   * 없는 규칙이 생긴다), 그 규칙에서는 화면이 `enabled`만 보낸다.
+   */
+  saveExceptionRule(input: ExceptionRuleInput, actor: AuditActor): Promise<ExceptionRule>
+}
+
+/**
+ * 회장 액션 한 번. **`monitor_until`을 여기서 정하지 않는다** — 어댑터가 `action`에서
+ * 낸다(0035의 check가 `status='monitoring'`에 그 칸을 요구하고, 둘을 따로 받으면
+ * «관찰인데 기한이 없는» 입력이 계약에 존재하게 된다).
+ */
+export interface ExceptionTriageInput {
+  exception_id: number
+  /** 감사 줄의 회사 칸. 0034의 트리거가 이 값으로 §7의 개입을 센다 — 없으면 세지 않는다. */
+  business_id: string
+  action: ExceptionTriage
+  /** 회장이 남기는 한 줄. 감사 줄의 `note`가 된다. */
+  note?: string | null
+}
+
+/** 규칙 한 줄의 편집. **보내지 않은 칸은 그대로 둔다**(undefined ≠ null). */
+export interface ExceptionRuleInput {
+  rule_key: string
+  enabled?: boolean
+  /** `metric` 규칙만. 단위는 규칙마다 다르다(%·%p·개월 — `RULE_UNIT`). */
+  threshold?: number
+  window_days?: number | null
 }
 
 /** 0033 dependency_areas 한 줄의 입력. id가 없으면 신규다(business_id+area로 덮어쓴다). */

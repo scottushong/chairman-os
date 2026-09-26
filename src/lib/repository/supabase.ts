@@ -81,6 +81,8 @@ import type {
   TopGoal,
   WorkPriority,
 } from '@/types'
+// 값으로 쓰는 것 — 관찰 기한(0035의 check가 status와 함께 요구한다).
+import { MONITOR_DAYS } from '@/types'
 
 import type { CorrectionResult, NewCorrection, NewJournalEntry } from '@/lib/ledger/journal'
 import { STANDARD_CHART } from '@/lib/ledger/standard-chart'
@@ -96,6 +98,8 @@ import {
   type AutonomyAssessmentInput,
   type ChairmanDirectionInput,
   type DependencyAreaInput,
+  type ExceptionRuleInput,
+  type ExceptionTriageInput,
   type AuditEntityTable,
   type ChairmanCheckinInput,
   type ChairmanProjectInput,
@@ -4011,7 +4015,143 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       )
       return unwrap('attention_scores', data, error)
     },
+
+    /**
+     * §18 회장 액션 셋 — 승인 · 관찰 14일 · CEO에게 위임.
+     *
+     * ■ 권한을 여기서 보지 않는다 ■ 0035의 `exceptions_triage`가
+     * `can_approve() and has_business(business_id)`다. 못 바꾸는 사람의 update는 **0행**으로
+     * 돌아오고, 그 0행을 아래에서 실패로 말한다 — 조용히 «성공»으로 넘기지 않는다
+     * (`recordDecisionAction`과 같은 모양·같은 이유).
+     *
+     * ■ 감사 기록이 **먼저**다(HANDOVER §2 ③) ■ 그래서 «기록은 남고 상태는 안 바뀜»이
+     * 가능하고 그쪽을 일부러 택했다. 반대로 하면 «상태만 바뀌고 기록이 없는 순간»이 생기고
+     * 그것이 감사 구멍이다. `audit_log`는 append only라 그 줄을 지울 수도 없다 —
+     * **«회장이 이 건을 처리하려 했다»는 사실 자체가 기록 대상이다.**
+     *
+     * ■ 세 버튼이 status를 다르게 다룬다. 그 차이에 뜻이 있다 ■
+     *   · `approve`  → `closed`. 회장이 보고 처리를 승인한 건이다.
+     *   · `monitor`  → `monitoring` **과 `monitor_until`을 같이** 넣는다. 0035의 check가
+     *     둘을 묶었고, 그 제약의 이유가 «기한 없는 관찰은 관찰이 아니라 조용히 잊는 것»이다.
+     *     기한은 `now()`가 아니라 **DB의 now()**로 잡는다 — 이 저장소의 경계는 서버의
+     *     «오늘»에 기대지 않는다(0019 3절). `monitor_until`이 timestamptz라 ISO로 보낸다.
+     *   · `delegate` → **status를 바꾸지 않는다.** `ceo_handling`을 세우고
+     *     `chairman_action_required`를 내린다. 0035의 status 셋에 «위임»이 없고, 위임을
+     *     `closed`로 접으면 **아직 진행 중인 일이 종료로 기록된다** — 위임은 끝난 것이
+     *     아니라 손대는 사람이 바뀐 것이다. 그 판단은 DEFERRED에 적었다.
+     *
+     * ■ `ceo_handling`을 «위임»에서만 건드린다 ■ 야간 Job은 그 칸의 근거를 읽을 표가 없어
+     * 언제나 false를 넣는다(stage.ts). 회장의 위임은 **근거가 있는 true**다 —
+     * 모델의 문장을 이 칸에 옮기는 것과는 다른 일이다.
+     */
+    async triageException(input: ExceptionTriageInput, actor: AuditActor): Promise<ExceptionRecord> {
+      // 기록이 먼저. 0035가 `monitor`를 audit_action에 더했고 0034의 트리거가 그것을 센다.
+      const { error: auditError } = await sb.from('audit_log').insert({
+        action: input.action,
+        entity_table: 'exceptions',
+        entity_id: String(input.exception_id),
+        business_id: input.business_id,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        note: input.note ?? null,
+      })
+      if (auditError) {
+        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      }
+
+      const patch: Record<string, unknown> =
+        input.action === 'approve'
+          ? { status: 'closed', monitor_until: null, chairman_action_required: false }
+          : input.action === 'monitor'
+            ? {
+                status: 'monitoring',
+                monitor_until: monitorUntil(),
+                chairman_action_required: false,
+              }
+            : { ceo_handling: true, chairman_action_required: false }
+
+      const { data, error } = await sb
+        .from('exceptions')
+        .update(patch)
+        .eq('id', input.exception_id)
+        .select(EXCEPTION_COLUMNS)
+        .returns<ExceptionRecord[]>()
+
+      if (error || !data || data.length !== 1) {
+        throw new Error(
+          error
+            ? `Supabase exceptions ${error.code ?? '?'}: ${error.message} ` +
+              '(감사 기록은 남았고 예외의 상태만 바뀌지 않았다. 0035의 exceptions_triage 정책을 본다.)'
+            : `Supabase exceptions: mutation affected ${data?.length ?? 0} rows ` +
+              '(감사 기록은 남았고 예외의 상태만 바뀌지 않았다. 처리 권한이 없거나 그 회사가 아니다 — 0035 exceptions_triage.)',
+        )
+      }
+      return data[0]
+    },
+
+    /**
+     * §18 규칙 한 줄의 회장 편집. **쓰기는 Chairman뿐이다**(0035 `exception_rules_write`).
+     *
+     * 보낸 칸만 담는다 — `manual` 규칙에서 화면이 `enabled`만 보내므로, 여기서 임계·창을
+     * 기본값으로 채우면 0035의 `exception_rules_kind_shape_check`가 그 줄을 거절한다.
+     * 그 거절은 옳다: **수동 규칙에 임계는 «없는 것»이지 0인 것이 아니다.**
+     *
+     * 감사 기록이 먼저이고, 회사 칸은 **null**이다 — 규칙은 그룹의 잣대이고 회사의 값이
+     * 아니다. 그래서 이 줄은 §7의 개입으로도 세어지지 않는다(0034의 트리거가
+     * `business_id is not null`을 본다) — 규칙을 고친 것은 «그 회사를 손댄 것»이 아니다.
+     */
+    async saveExceptionRule(input: ExceptionRuleInput, actor: AuditActor): Promise<ExceptionRule> {
+      const patch: Record<string, unknown> = {}
+      if (input.enabled !== undefined) patch.enabled = input.enabled
+      if (input.threshold !== undefined) patch.threshold = input.threshold
+      if (input.window_days !== undefined) patch.window_days = input.window_days
+      if (Object.keys(patch).length === 0) {
+        throw new Error('바꿀 칸이 하나도 오지 않았다 — 빈 저장은 감사 줄만 남긴다.')
+      }
+
+      await writeAudit(sb, {
+        action: 'update',
+        entity_table: 'exception_rules',
+        entity_id: input.rule_key,
+        // 규칙은 그룹의 잣대다. 회사 칸을 채우면 §7의 개입 집계가 «회장이 그 회사를
+        // 손댔다»로 세고, 그것은 사실이 아니다(0034 트리거).
+        business_id: null,
+        actor,
+        before: null,
+        after: patch,
+      })
+
+      const { data, error } = await sb
+        .from('exception_rules')
+        .update(patch)
+        .eq('rule_key', input.rule_key)
+        .select(EXCEPTION_RULE_COLUMNS)
+        .returns<ExceptionRule[]>()
+
+      if (error || !data || data.length !== 1) {
+        throw new Error(
+          error
+            ? `Supabase exception_rules ${error.code ?? '?'}: ${error.message} ` +
+              '(감사 기록은 남았고 규칙만 바뀌지 않았다. 0035의 exception_rules_write는 Chairman뿐이다.)'
+            : `Supabase exception_rules: mutation affected ${data?.length ?? 0} rows ` +
+              '(감사 기록은 남았고 규칙만 바뀌지 않았다. 규칙을 고치는 것은 Chairman뿐이다 — 0035 exception_rules_write.)',
+        )
+      }
+      return data[0]
+    },
   }
+}
+
+/**
+ * 관찰 종료 시점. **`MONITOR_DAYS`를 두 벌로 두지 않는다** — 화면의 버튼 라벨(«관찰 14일»)과
+ * 이 값이 같은 상수에서 나온다. 서버 시계로 잡는 것이 아쉬운 자리이지만(0019 3절은 경계를
+ * DB의 `now()`로 잡으라고 한다) PostgREST의 update에 SQL 식을 실을 자리가 없고, 대안은
+ * RPC 함수를 하나 더 만드는 것이다 — 이 칸은 «언제까지 두고 볼지»라 초 단위 정확도가 뜻을
+ * 갖지 않아 그 비용을 지지 않았다. DEFERRED에 적었다.
+ */
+function monitorUntil(): string {
+  const until = new Date(Date.now() + MONITOR_DAYS * 24 * 60 * 60 * 1000)
+  return until.toISOString()
 }
 
 /** 야간 Job(lib/attention/stage.ts)이 insert의 `returning`에 같은 목록을 쓴다 — 두 벌이 되지 않게 내보낸다. */
@@ -4038,7 +4178,8 @@ async function writeAudit(
     action: 'create' | 'update'
     entity_table: string
     entity_id: string
-    business_id: string
+    /** null인 자리가 하나 있다 — 규칙 표는 그룹의 잣대라 회사가 없다(saveExceptionRule). */
+    business_id: string | null
     actor: AuditActor
     before: unknown
     after: unknown
@@ -4048,7 +4189,7 @@ async function writeAudit(
     action: entry.action,
     entity_table: entry.entity_table,
     entity_id: entry.entity_id,
-    business_id: entry.business_id,
+    business_id: entry.business_id ?? null,
     actor_user_id: entry.actor.user_id,
     actor_role: entry.actor.role,
     before: entry.before ?? null,

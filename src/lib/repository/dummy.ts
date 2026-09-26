@@ -23,6 +23,11 @@ import { kpisFromLedger } from '@/lib/ledger/cells'
 
 import { dummyActivitySeed } from './dummy-activity'
 import {
+  DUMMY_ATTENTION_SCORES,
+  DUMMY_EXCEPTION_RULES,
+  DUMMY_EXCEPTIONS,
+} from './dummy-attention'
+import {
   DUMMY_ABSENCE_TESTS,
   DUMMY_AUTONOMY,
   DUMMY_DEPENDENCY_AREAS,
@@ -49,9 +54,11 @@ import {
 } from './dummy-org'
 import { emptyStrategy } from '@/lib/strategy-fields'
 import type { SearchHit } from '@/lib/search'
-import { needsChairmanApproval } from '@/types'
+import { MONITOR_DAYS, needsChairmanApproval } from '@/types'
 import type {
   AppNotification,
+  ExceptionRecord,
+  ExceptionRule,
   Business,
   AbsenceTest,
   AutonomyAssessment,
@@ -110,6 +117,8 @@ import {
   type KeymanInput,
   type LogoUpload,
   type NewBusiness,
+  type ExceptionRuleInput,
+  type ExceptionTriageInput,
   type NewDecision,
   type NewDocument,
   type PhotoUpload,
@@ -257,6 +266,54 @@ function assertSuccessionWrite() {
     throw new Error('승계 자료는 Chairman·GroupCFO만 고칠 수 있다(0033 can_write_succession).')
   }
 }
+
+/**
+ * 0035 `exceptions_read`를 옮겨 적은 것 —
+ * `has_business(business_id) and (can_read_restricted() or can_write_attention())`.
+ *
+ * **이 함수의 요점은 TeamLead·Member가 0행을 받는다는 것이다.** 그것이 live에서 RLS가 하는
+ * 일이고, dummy가 그것을 흉내 내지 않으면 **화면의 가장 중요한 문장을 개발 중에 한 번도 볼
+ * 수 없다** — 「«주의 0건»이라고 말하지 않는다」가 그 문장이다(`EXCEPTION_BLIND_KO`).
+ * 화면은 이 판정을 스스로 하지 않는다. «왜 0행인가»를 적기 위해 역할을 읽을 뿐이다
+ * (`lib/attention/screen.ts`의 `canReadExceptions`).
+ */
+function canReadExceptions(businessId: string): boolean {
+  const viewer = dummyViewer()
+  if (!dummyHasBusiness(viewer, businessId)) return false
+  return (
+    viewer.role === 'Chairman' ||
+    viewer.role === 'GroupCFO' ||
+    viewer.role === 'BusinessCEO' ||
+    viewer.role === 'Executive' ||
+    viewer.role === 'AIAgent'
+  )
+}
+
+/** 0035 `exceptions_triage` = `can_approve() and has_business()`. 승인권자 둘뿐이다. */
+function assertTriage(businessId: string) {
+  const viewer = dummyViewer()
+  const ok =
+    dummyHasBusiness(viewer, businessId) &&
+    (viewer.role === 'Chairman' || viewer.role === 'BusinessCEO')
+  if (!ok) {
+    throw new Error('예외를 처리할 권한이 없습니다(0035 exceptions_triage — 회장·회사 대표).')
+  }
+}
+
+/** 0035 `exception_rules_write` = Chairman뿐. 잴 대상이 잣대를 고치면 지표가 지표가 아니다. */
+function assertRuleWrite() {
+  if (dummyViewer().role !== 'Chairman') {
+    throw new Error('규칙은 회장만 고칠 수 있습니다(0035 exception_rules_write).')
+  }
+}
+
+/**
+ * 화면에서 회장이 처리한 결과가 **그 세션 안에서는 남아야** 한다. 승계 표들이 같은 모양으로
+ * memory 배열을 쓰는 이유와 같다 — 버튼을 눌렀는데 새로 고치면 되돌아가는 화면은
+ * «눌러도 안 되는 버튼»과 구별되지 않는다.
+ */
+const memoryExceptions: ExceptionRecord[] = DUMMY_EXCEPTIONS.map((e) => ({ ...e }))
+const memoryExceptionRules: ExceptionRule[] = DUMMY_EXCEPTION_RULES.map((r) => ({ ...r }))
 
 const memoryPeople: UserAccount[] = DUMMY_PEOPLE.map((p) => ({ ...p }))
 const memoryTeams: Team[] = DUMMY_TEAMS.map((t) => ({ ...t }))
@@ -1731,15 +1788,71 @@ export const dummyRepository: ChairmanRepository = {
    * 빈 목록과 «못 보는 목록»을 화면이 같은 문장으로 그리지 않는 것은 B-3의 몫이다.
    */
   async listExceptionRules() {
-    return []
+    // 읽기는 **활성 사용자 전부**다(0035 `exception_rules_read` = `is_active()`).
+    // 임계는 회사 데이터가 아니라 그룹의 정책 상수다 — "왜 DY가 yellow인가"를 설명하려면
+    // 그 회사 사람도 규칙을 봐야 한다. 꺼진 규칙도 같이 온다(화면이 다시 켤 자리를 그린다).
+    return memoryExceptionRules.map((r) => ({ ...r })).sort((x, y) => x.sort_order - y.sort_order)
   },
 
   async listExceptions() {
-    return []
+    // 최신순. 권한 판정은 0035를 옮겨 적은 `canReadExceptions()`다 —
+    // **TeamLead·Member에게는 0행이고, 화면은 그것을 "0건"이라고 말하지 않는다.**
+    return memoryExceptions
+      .filter((e) => canReadExceptions(e.business_id))
+      .map((e) => ({ ...e }))
+      .sort((a2, b2) => b2.id - a2.id)
   },
 
   async listAttentionScores() {
-    return []
+    // `attention_scores_read`는 `exceptions_read`와 **같은 모양이고 같은 사람들**이다
+    // (0035 7절 ③). 그래서 같은 판정을 쓴다 — 두 벌로 두면 언젠가 한쪽만 고쳐진다.
+    return DUMMY_ATTENTION_SCORES.filter((r) => canReadExceptions(r.business_id)).map((r) => ({
+      ...r,
+    }))
+  },
+
+  /**
+   * §18 회장 액션 셋. **live 어댑터와 같은 순서·같은 규칙**이다 —
+   * 기록이 먼저(dummy의 기록은 `memoryAudit`가 아니라 서버 로그뿐이므로 그 사실을 적는다),
+   * 관찰은 `status`와 `monitor_until`을 **같이**, 위임은 `status`를 **바꾸지 않는다**.
+   */
+  async triageException(input: ExceptionTriageInput) {
+    assertTriage(input.business_id)
+    const at = memoryExceptions.findIndex((e) => e.id === input.exception_id)
+    if (at < 0) throw new Error('그 예외를 찾지 못했습니다.')
+    // 기록이 먼저다. dummy에는 audit_log가 없어 남길 자리가 로그뿐이고, **그 사실을 숨기지
+    // 않는다** — live에서는 이 자리가 append only 감사 줄이고 §7의 개입으로도 세어진다.
+    console.info(
+      `[dummy audit] exceptions#${input.exception_id} ${input.action} by ${dummyViewer().role}`,
+    )
+    const before = memoryExceptions[at]
+    const patch: Partial<ExceptionRecord> =
+      input.action === 'approve'
+        ? { status: 'closed', monitor_until: null, chairman_action_required: false }
+        : input.action === 'monitor'
+          ? {
+              status: 'monitoring',
+              monitor_until: new Date(Date.now() + MONITOR_DAYS * 86_400_000).toISOString(),
+              chairman_action_required: false,
+            }
+          : { ceo_handling: true, chairman_action_required: false }
+    const next: ExceptionRecord = { ...before, ...patch }
+    memoryExceptions[at] = next
+    return { ...next }
+  },
+
+  async saveExceptionRule(input: ExceptionRuleInput) {
+    assertRuleWrite()
+    const at = memoryExceptionRules.findIndex((r) => r.rule_key === input.rule_key)
+    if (at < 0) throw new Error('그 규칙을 찾지 못했습니다.')
+    const next = { ...memoryExceptionRules[at] }
+    // **보낸 칸만 바꾼다.** 수동 규칙에서 화면은 `enabled`만 보내고, 여기서 임계를
+    // 기본값으로 채우면 live의 `kind_shape_check`가 그 줄을 거절한다 — 그 거절이 옳다.
+    if (input.enabled !== undefined) next.enabled = input.enabled
+    if (input.threshold !== undefined) next.threshold = input.threshold
+    if (input.window_days !== undefined) next.window_days = input.window_days
+    memoryExceptionRules[at] = next
+    return { ...next }
   },
 
   async recordDecisionAction(entry: DecisionAuditEntry) {
