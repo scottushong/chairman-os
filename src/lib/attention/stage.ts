@@ -55,6 +55,12 @@ import { attentionScore, financialImpactAxis } from './score'
  * ④ **중복은 두 겹으로 막는다.** 조회로 한 번(같은 회사·규칙·기간이 이미 있으면 건너뛴다),
  *   0035의 유니크 제약으로 또 한 번. 앞의 것만으로는 두 틱이 겹치는 날 뚫린다 —
  *   조회와 insert 사이가 비어 있고, 이 Job은 회사들을 동시에 돈다.
+ *
+ * ⑤ **규칙을 0행 받은 회차는 «조용한 밤»이 아니다.** 읽기가 42501로 터지는 길만 막으면
+ *   부족하다 — `exception_rules_read`가 `is_active()`라서 **회수된 계정은 0행으로
+ *   «성공»한다.** 그 회차를 그냥 돌게 두면 `evaluated = 0`으로 깨끗하게 끝나고, 그것은
+ *   「13종이 전부 안 걸린 밤」과 **글자 하나 다르지 않은** 기록이 된다(규칙 읽기 아래의
+ *   긴 주석이 그 자리다 — B-4가 찾았다).
  */
 
 export interface AttentionStageResult {
@@ -188,6 +194,43 @@ export async function runAttentionStage(input: {
     result.error = `규칙·예외 읽기 실패: ${errorText(e)}`
     return result
   }
+  /**
+   * ■ 규칙을 **0행** 받은 회차 — 42501이 아니라 «조용한 0» ■ (B-4가 찾은 결함)
+   *
+   * `exception_rules_read`는 `is_active()`다. 그래서 야간 Job 계정에 `revoked_at`이 찍히면
+   * 읽기는 **거부되지 않고 0행으로 성공한다** — 위의 try는 통과하고, 아래 루프는 규칙이
+   * 없어 아무것도 돌지 않고, 단계는 `error` 없이 `evaluated = 0`으로 깨끗하게 끝난다.
+   * 그 결과 **「규칙 13종이 전부 안 걸린 조용한 밤」과 「아무것도 읽지 못한 밤」이 같은
+   * 브리핑·같은 감사 줄**이 된다. 이 저장소가 가장 나쁘다고 못 박은 방향의 거짓이고
+   * (B-2의 Important 2와 같은 부류), 조용하기 때문에 아무도 다시 세지 않는다.
+   *
+   * **구분할 수 있는 만큼만 구분한다.** 이 자리에서 쓸 수 있는 신호가 하나 있다 —
+   * `input.businesses`는 `businesses_read`(= `has_business()`, 0002:226)를 통과해서 온
+   * 목록이고 그 함수는 `is_active()`를 **먼저** 본다. 즉 회사가 한 곳이라도 실려 왔다면
+   * 이 세션은 **활성이다**(회수된 계정은 회사도 0행이다). 그러면 규칙 0행은 «못 읽었다»가
+   * 아니라 **규칙 표가 실제로 비어 있다**(0035 미적용 등)는 뜻이다. 회사까지 0행이면
+   * 둘을 가를 신호가 없고, 그때는 **모르는 것을 아는 것처럼 적지 않는다** —
+   * «읽지 못했을 수 있다»고 말한다.
+   *
+   * 남기는 자리도 둘이다. `error`는 감사 줄과 그룹 행 맨 위로 가고(night-brief.ts),
+   * 회사마다 `unmeasured` 경고를 하나 남겨 **그 회사 행과 06:00 요약**까지 닿게 한다 —
+   * `error`만 두면 회사 행에는 아무 흔적이 없어 회사별 브리핑이 여전히 «조용한 밤»이다.
+   */
+  if (rules.length === 0) {
+    const sessionProvenActive = input.businesses.length > 0
+    const why = sessionProvenActive
+      ? '회사 목록은 읽혔으므로 이 세션은 활성이다 — 규칙 표가 실제로 비어 있다(0035 미적용일 수 있다)'
+      : '회사 목록도 0행이라 «표가 비었다»와 «이 계정이 회수되어 읽지 못했다»를 가를 수 없다 — 규칙을 읽지 못했을 수 있다'
+    result.error = `규칙을 0행 받았다: ${why}. 이 회차는 규칙을 하나도 재지 못했다 — «예외 없음»이 아니다`
+    for (const b of input.businesses) {
+      warn(b.business_id, {
+        kind: 'unmeasured',
+        text: `규칙을 0행 받아 이 회사의 규칙을 하나도 재지 못했다 — ${why}`,
+      })
+    }
+    return result
+  }
+
   const seen = new Set(existing.map((e) => `${e.business_id}\u0000${e.rule_key}\u0000${e.period ?? ''}`))
 
   const created: ExceptionRecord[] = []

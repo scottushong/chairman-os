@@ -11,7 +11,16 @@ import type { UserId } from '@/types'
  * 업무에는 별도의 이력 테이블이 없다 — 감사 기록이 곧 이력이다.
  */
 
-/** 0001_init.sql의 audit_action enum. */
+/**
+ * 0001_init.sql의 `audit_action` enum. **0035가 `monitor`를 더했다**(§18 회장 액션 셋의
+ * «관찰 14일»). 0001 이후 이 enum에 값을 더한 마이그레이션이 여럿이고 이 목록은 그 가운데
+ * **화면이 이름을 붙일 수 있는 것**만 든다 — 야간 Job·카톡 전용 값
+ * (`night_job_completed` · `kakao_sent` · `kakao_failed`)은 사람의 처리 이력이 아니라
+ * 기계의 회차라 이력 타임라인에 올리지 않는다.
+ *
+ * `monitor`를 빠뜨리면 회장이 예외를 «관찰»로 옮긴 줄이 이력에서 **영문 그대로** 뜬다
+ * (`AUDIT_ACTION_LABEL_KO[record.action] ?? record.action`).
+ */
 export const AUDIT_ACTIONS = [
   'read',
   'create',
@@ -21,6 +30,7 @@ export const AUDIT_ACTIONS = [
   'reject',
   'modify',
   'delegate',
+  'monitor',
   'permission_change',
   'export',
   'login',
@@ -36,6 +46,9 @@ export const AUDIT_ACTION_LABEL_KO: Record<AuditAction, string> = {
   reject: '거절',
   modify: '수정요청',
   delegate: '위임',
+  // 0035. «관찰 N일»은 그 건을 고친 것이 아니라 «지금은 두고 본다»고 정한 것이다 —
+  // 그래서 update로 접지 않고 이름을 따로 갖는다(0035 1절 ②).
+  monitor: '관찰',
   permission_change: '권한 변경',
   export: '내보내기',
   login: '로그인',

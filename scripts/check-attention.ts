@@ -185,6 +185,9 @@ const BREAKS = {
   'score-plant-off': '점수 기록을 터뜨리던 심어 둔 제약을 걷는다',
   'severity-base-yellow': '회장이 RED로 올린 규칙을 YELLOW에 그대로 둔다',
   'rules-read-granted': '규칙 읽기를 막던 revoke를 걷는다',
+  'rules-table-not-empty': '규칙 표를 비우지 않는다 — 13종이 그대로 읽히는 회차가 된다',
+  'zero-rules-as-empty-table':
+    '회사를 0행으로 받은 회차에 회사 목록을 준다 — 가를 신호가 없는데 «표가 비었다»고 단정하는 모양이다',
   'other-unique-named-like-dedupe': '다른 유니크 제약의 이름에 중복 방지 제약 이름을 심는다',
   /* ---- E. 글자 ---- */
   'prompt-drop-key': '프롬프트에서 입력 키 하나(attentions·unmeasured)를 지운다',
@@ -2903,6 +2906,102 @@ async function stageWiring(db: PGlite) {
   if (!broke('rules-read-granted')) {
     await db.exec(`grant select on table exception_rules to authenticated`)
   }
+
+}
+
+/* =====================================================================
+ * D-a. 규칙을 «0행» 받은 밤 — **자기 DB에서 돈다**
+ *
+ * `stageWiring`의 DB는 그 절이 심어 둔 제약·걷어 낸 권한·하네스가 쓰고 간 세션 상태로
+ * 흔들려 있다. 이 절이 재려는 것은 «갓 적용된 0035에서 규칙만 0행일 때»라, 그 흔들림 위에서
+ * 재면 무엇이 빨개졌는지가 실행마다 달라진다(실제로 `delete`가 42501로, `grant`가 반영되지
+ * 않는 것으로 한 번씩 나타났다 — 원인은 PGlite 안에서 확인하지 못했고, 아는 척하지 않고
+ * 새 DB로 갈랐다). `stageWiring`이 자기 DB를 쓰는 것과 같은 판단이다.
+ * ===================================================================== */
+
+async function zeroRulesNight(db: PGlite) {
+  await ownedByNonBypassRole(db)
+  await seedPeople(db)
+  const sb = postgrestOverPglite(db, { uid: U.agent })
+
+  /**
+   * ㊸-a **규칙을 «0행» 받은 밤 — 42501이 아니라 조용한 0이다.** (B-4가 찾은 결함 · B-3이 고쳤다)
+   *
+   *    위 ㊸은 읽기가 **터지는** 길을 잰다. 그런데 `exception_rules_read`는 `is_active()`라서
+   *    `revoked_at`이 찍힌 계정은 거부당하지 않고 **0행으로 «성공»한다.** 고치기 전에는 그
+   *    회차가 `error` 없이 `evaluated = 0`으로 끝나 「13종이 전부 안 걸린 조용한 밤」과
+   *    **글자 하나 다르지 않은** 기록을 남겼다.
+   *
+   *    § 0행을 만드는 방법 § 계정을 회수하는 대신 **규칙 표를 비운다.** 두 길이 닿는 코드는
+   *    같은 한 줄(`rules.length === 0`)이고, 표를 비우는 쪽은 전제가 한 가지뿐이라 «무엇이
+   *    빨개졌는가»가 흔들리지 않는다. 회수된 계정에서 이 경로를 실제로 걷게 하려면 세션의
+   *    `revoked_at`을 찍어야 하는데, 이 하네스에서 그 상태 변경이 하네스 요청 직후에 반영되지
+   *    않는 것을 만났다 — 원인을 PGlite 안에서 확인하지 못했으므로 **원인을 아는 척하지 않고**
+   *    전제가 하나인 길로 잰다(그 사실은 DEFERRED에 적었다). 갓 적용된 0035에는 예외가
+   *    한 행도 없으므로(`rule_key` FK가 `on delete restrict`라 그 순서가 중요했을 자리다)
+   *    규칙만 지우면 된다.
+   *
+   *    § 두 문장이 갈리는 자리 § 회사 목록이 **읽혔다면** 그 세션은 활성이다
+   *    (`businesses_read` = `has_business()` → `is_active()`). 그때의 0행은 «못 읽었다»가
+   *    아니라 «표가 비어 있다»다. 회사까지 0행이면 가를 신호가 없고, 그때는
+   *    «읽지 못했을 수 있다»여야 한다 — **모르는 것을 아는 것처럼 적지 않는다.**
+   *    회수된 계정이 production에서 받는 것이 정확히 그 짝이다(회사도 0행).
+   */
+  if (!broke('rules-table-not-empty')) {
+    await db.query(`delete from exception_rules`)
+  }
+  // 전제를 **읽어서** 단언한다 — 표가 안 비워진 채 통과하는 단언이 여기서 가장 나쁘다.
+  assert.equal(
+    (await db.query<{ n: number }>(`select count(*)::int as n from exception_rules`)).rows[0].n,
+    broke('rules-table-not-empty') ? 13 : 0,
+    '이 단언의 전제가 깨졌다 — 규칙 표를 비우지 못했다',
+  )
+
+  /** 회사도 0행인 밤 = 회수된 계정이 받는 짝. 가를 신호가 없으니 단정하지 않는다. */
+  const blindZero = (await quietly(() =>
+    runAttentionStage({
+      sb,
+      adapter: null,
+      businesses: broke('zero-rules-as-empty-table') ? BIZ : [],
+      financeKpis: [],
+      ledger: null,
+      runDate: '2027-07-15',
+    }),
+  )).value
+  assert.ok(
+    (blindZero.error ?? '').includes('규칙을 0행 받았다'),
+    `규칙을 0행 받은 회차가 조용히 «예외 없음»으로 끝났다(error=${blindZero.error}) — 규칙 읽기는 42501이 아니라 0행으로도 «성공»하고, 그러면 「13종이 전부 안 걸린 밤」과 「아무것도 읽지 못한 밤」이 같은 브리핑·같은 감사 줄이 된다`,
+  )
+  assert.ok(
+    (blindZero.error ?? '').includes('읽지 못했을 수 있다'),
+    `회사 목록도 0행인데 «표가 비어 있다»고 단정했다(error=${blindZero.error}) — 그 둘을 가를 신호가 없는 자리라, 모르는 것을 아는 것처럼 적지 않는다`,
+  )
+  assert.equal(blindZero.evaluated, 0, '규칙을 0행 받은 회차가 무엇인가를 «쟀다»고 적었다')
+
+  /** 회사가 읽힌 밤 = 세션은 활성이고 표가 빈 것이다. 문장이 달라지고 회사 행에도 남는다. */
+  const emptyTable = (await quietly(() =>
+    runAttentionStage({
+      sb,
+      adapter: null,
+      businesses: BIZ,
+      financeKpis: [fk('biz_dy', '2027-07', 'Revenue', 100), fk('biz_dy', '2027-08', 'Revenue', 150)],
+      ledger: null,
+      runDate: '2027-08-15',
+    }),
+  )).value
+  assert.ok(
+    (emptyTable.error ?? '').includes('규칙 표가 실제로 비어 있다'),
+    `규칙 표가 빈 회차가 조용히 끝났거나 이유를 잘못 적었다(error=${emptyTable.error}) — 회사가 읽혔으므로 이 세션은 활성이고, 그 0행은 «표가 비었다»다`,
+  )
+  assert.deepEqual(
+    [...emptyTable.warnings.keys()].sort(),
+    BIZ.map((b) => b.business_id).sort(),
+    `규칙 0행이 회사 행에 남지 않았다(${[...emptyTable.warnings.keys()].join(',')}) — error만 두면 그룹 행에는 서지만 회사별 브리핑은 여전히 «조용한 밤»이다`,
+  )
+  assert.ok(
+    [...emptyTable.warnings.values()].flat().every((w) => w.kind === 'unmeasured'),
+    '규칙 0행을 «점수 미기록»으로 남겼다 — 그것은 회사 행에서 멈추는 내부 사정이고, 이 사실은 06:00 요약(그룹 행)까지 가야 한다',
+  )
 }
 
 /* =====================================================================
@@ -3077,6 +3176,12 @@ async function main() {
   await applyAll(jobDb)
   await stageWiring(jobDb)
   await jobDb.close()
+
+  // 규칙 0행의 밤도 **자기 DB**다(위 D-a절 머리 주석).
+  const zeroDb = new PGlite({ extensions: { pg_trgm } })
+  await applyAll(zeroDb)
+  await zeroRulesNight(zeroDb)
+  await zeroDb.close()
 
   texts()
 
