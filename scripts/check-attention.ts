@@ -106,6 +106,7 @@ const BREAKS = {
   'anon-select': 'anon에게 exceptions의 select를 준다',
   'grant-delete': 'authenticated에게 예외 delete를 준다(정책까지 열어서)',
   'door-public': '0035가 만든 문 둘의 execute를 public에 돌려준다',
+  'counts-write': 'intervention_counts의 쓰기를 모든 활성 사용자에게 연다',
   /* ---- A. 0035의 정책 ---- */
   'read-open-to-business':
     'exceptions_read에서 can_read_restricted()를 뗀다 — B-1이 좁힌 것을 되돌린다',
@@ -180,6 +181,7 @@ const BREAKS = {
   'drop-dedupe-tick': '틱 겹침을 재는 DB에서 중복 방지 unique를 지운다',
   'adapter-returns-analysis': '분석을 못 받는 자리에 멀쩡한 어댑터를 준다',
   'plant-all-rules': '심어 둔 기록 실패를 규칙 하나가 아니라 그 회사 전부로 넓힌다',
+  'plant-every-company': '심어 둔 기록 실패를 그 회사가 아니라 모든 회사로 넓힌다',
   'other-unique-named-like-dedupe': '다른 유니크 제약의 이름에 중복 방지 제약 이름을 심는다',
   /* ---- E. 글자 ---- */
   'prompt-drop-key': '프롬프트에서 입력 키 하나(attentions·unmeasured)를 지운다',
@@ -561,6 +563,9 @@ async function policies(db: PGlite) {
    *    0035가 그 표의 트리거 몸통을 다시 썼으므로 여기서 한 번 더 본다
    *    (check-dependency와 겹이다 — 0035를 통과한 뒤에도 그 사실이 참인가는 다른 질문이다).
    */
+  if (broke('counts-write')) {
+    await db.exec(`grant insert, update, delete on table intervention_counts to authenticated`)
+  }
   for (const priv of ['insert', 'update', 'delete']) {
     assert.equal(
       await val<boolean>(
@@ -2660,10 +2665,19 @@ async function stageWiring(db: PGlite) {
    *    (check-dependency ㉔-a가 같은 방법을 쓴다 — 스키마의 우연한 제약에 기대지 않는다.)
    */
   await db.exec(
-    broke('plant-all-rules')
-      ? `alter table exceptions add constraint att_plant check (period <> '2027-01')`
-      : `alter table exceptions add constraint att_plant
-           check (not (rule_key = 'revenue_variance' and period = '2027-01'))`,
+    broke('plant-every-company')
+      ? // DY는 그대로 두고 **다른 회사**의 기록만 같이 터뜨린다 — 그러면 아래 ㊴는
+        // 통과하고 ㊴-a(다른 회사의 예외가 생긴다)만 빨개진다.
+        `alter table exceptions add constraint att_plant
+           check (not (business_id = 'biz_dy' and rule_key = 'revenue_variance'
+                       and period = '2027-01')
+                  and not (business_id = 'biz_vana' and period = '2027-01'))`
+      : broke('plant-all-rules')
+        ? `alter table exceptions add constraint att_plant
+             check (business_id <> 'biz_dy' or period <> '2027-01')`
+        : `alter table exceptions add constraint att_plant
+             check (not (business_id = 'biz_dy' and rule_key = 'revenue_variance'
+                         and period = '2027-01'))`,
   )
   const twoRules = [
     ...['2026-08', '2026-09', '2026-10'].flatMap((p) => [
@@ -2673,12 +2687,15 @@ async function stageWiring(db: PGlite) {
     ...['2026-11', '2026-12'].flatMap((p) => [fk('biz_dy', p, 'Revenue', 100), fk('biz_dy', p, 'EBITDA', 5)]),
     fk('biz_dy', '2027-01', 'Revenue', 177),
     fk('biz_dy', '2027-01', 'EBITDA', 5),
+    // 같은 회차의 **다른 회사**. 심어 둔 실패는 DY의 규칙 하나에만 걸린다.
+    fk('biz_vana', '2026-12', 'Revenue', 100),
+    fk('biz_vana', '2027-01', 'Revenue', 200),
   ]
   const isolated = (await quietly(() =>
     runAttentionStage({
       sb,
       adapter: null,
-      businesses: [BIZ[0]],
+      businesses: BIZ,
       financeKpis: twoRules,
       ledger: null,
       runDate: '2027-01-15',
@@ -2688,7 +2705,8 @@ async function stageWiring(db: PGlite) {
   assert.equal(
     await s.count(
       U.chair,
-      `select count(*)::int from exceptions where rule_key = 'revenue_variance' and period = '2027-01'`,
+      `select count(*)::int from exceptions
+        where business_id = 'biz_dy' and rule_key = 'revenue_variance' and period = '2027-01'`,
     ),
     0,
     '이 실험의 전제가 깨졌다 — 심어 둔 제약을 뚫고 첫 규칙의 예외가 들어갔다면 아래 단언은 «격리»를 재고 있지 않다',
@@ -2696,7 +2714,8 @@ async function stageWiring(db: PGlite) {
   assert.equal(
     await s.count(
       U.chair,
-      `select count(*)::int from exceptions where rule_key = 'ebitda_margin_drop' and period = '2027-01'`,
+      `select count(*)::int from exceptions
+        where business_id = 'biz_dy' and rule_key = 'ebitda_margin_drop' and period = '2027-01'`,
     ),
     1,
     '앞 규칙의 기록이 실패한 뒤 그 회사의 다음 규칙이 돌지 않았다 — 고장 난 것은 기록 한 건인데 회사 행에는 "규칙 평가 실패"만 남아 평가 자체가 죽은 것처럼 읽힌다',
@@ -2705,6 +2724,24 @@ async function stageWiring(db: PGlite) {
     (isolated.failures.get('biz_dy') ?? []).length,
     1,
     `실패가 규칙 하나에 갇히지 않았다(${JSON.stringify(isolated.failures.get('biz_dy'))})`,
+  )
+  /**
+   * ㊴-a **한 회사가 터져도 다음 회사의 예외는 생긴다.** 실패는 그 회사에만 남는다 —
+   *    회사 하나의 기록 실패가 다른 회사의 감지를 삼키면, 그 밤에 회장은 나머지 회사에
+   *    대해서도 아무것도 못 본다.
+   */
+  assert.equal(
+    await s.count(
+      U.chair,
+      `select count(*)::int from exceptions where business_id = 'biz_vana' and period = '2027-01'`,
+    ),
+    1,
+    'DY의 기록이 실패한 회차에서 VANA의 예외가 생기지 않았다 — 회사마다 try로 가두는 것이 이 단계의 규율이고, 한 회사의 실패가 다른 회사의 감지를 삼키면 그 밤은 통째로 조용해진다',
+  )
+  assert.deepEqual(
+    [...isolated.failures.keys()],
+    ['biz_dy'],
+    `실패가 한 회사에 갇히지 않았다(${[...isolated.failures.keys()].join(',')})`,
   )
   await db.exec(`alter table exceptions drop constraint att_plant`)
 
