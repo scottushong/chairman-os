@@ -536,7 +536,9 @@ CLI 버전이 이 로컬 JWT 정보를 제공하지 않으면 검사는 실패�
 
 **2. staging에서 확인한다**
 
-7. typecheck/lint/build/diff, `npm run check:db-safety`·`check:boundaries`·`check:finance`가 통과해야 한다.
+7. typecheck/lint/build/diff, `npm run check:db-safety`·`check:boundaries`·`check:finance`·`check:attention`가 통과해야 한다.
+   `check:attention`은 0035의 정책·제약과 주의 엔진·야간 Job 배선을 PGlite(**BYPASSRLS 없는 소유자**)에서 잰다 —
+   0035를 담은 릴리스에서는 이것이 마지막 문이다. 음성 대조는 `ATT_BREAK=<key>`이고 키 목록은 스크립트 머리에 있다.
 8. staging Preview에서 배포 후 확인 4단계(1절)와 이번 변경에 해당하는 UAT를 돌린다.
    `/api/health`의 익명 `rows: 0` · `rls_closed: true`, 회사 격리, 문서 등급, 권한 회수를 본다.
    로컬 RLS·repository 검사(8절)는 Docker가 있는 환경에서만 선택적으로 추가한다.
