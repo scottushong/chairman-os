@@ -1,5 +1,6 @@
 import { AiNightPanel } from '@/components/dashboard/ai-night-panel'
 import { AlertPanel } from '@/components/dashboard/alert-panel'
+import { AttentionCard } from '@/components/dashboard/attention-card'
 import { ClockWeatherCard } from '@/components/dashboard/clock-weather-card'
 import { CriticalBanner } from '@/components/dashboard/critical-banner'
 import { DashboardBoard } from '@/components/dashboard/dashboard-board'
@@ -11,6 +12,7 @@ import { StrategicCoordinates } from '@/components/dashboard/strategic-coordinat
 import { WaitingOnMe } from '@/components/dashboard/waiting-on-me'
 import { Icon } from '@/components/ui/icon'
 import { recordScreenRead } from '@/lib/activity-record'
+import { summarizeAttention } from '@/lib/attention/screen'
 import { currentUser } from '@/lib/auth/session'
 import { kstToday } from '@/lib/chairman-project'
 import { summarizeDependency } from '@/lib/dependency'
@@ -100,6 +102,34 @@ export default async function DashboardPage() {
     tests: absenceRows,
   })
 
+  /**
+   * 블록 B. 최상단 CHAIRMAN ATTENTION 카드(§4). **여기서 한 번만 접는다** — /attention도 같은
+   * `summarizeAttention()`을 쓰고, 두 화면이 각자 접으면 같은 회사가 한 화면에서는 «정상»이고
+   * 다른 화면에서는 «재지 못함»이 된다.
+   *
+   * 원장을 같이 읽는 이유: «재지 못한 회사»의 판정에 `cash_runway`가 들어가고 그 규칙은
+   * 원장이 낸 런웨이로만 잰다(`readRunway`). 원장 없이 접으면 모든 회사가 «재지 못함»으로
+   * 떨어지고, 그 M은 회사의 사실이 아니라 이 화면이 덜 읽은 결과다.
+   *
+   * 예외가 0행인 것과 «못 보는 것»을 카드가 가를 수 있도록 역할을 같이 내려 준다 —
+   * 그 값으로 목록을 거르지 않는다(거르는 것은 RLS다).
+   */
+  const [exceptionRows, exceptionRules, attentionScores, ledger] = await Promise.all([
+    repo.listExceptions(),
+    repo.listExceptionRules(),
+    repo.listAttentionScores(),
+    repo.loadFinanceLedger(),
+  ])
+  const attention = summarizeAttention({
+    businesses: data.businesses.filter((b) => b.visible),
+    exceptions: exceptionRows,
+    rules: exceptionRules,
+    scores: attentionScores,
+    financeKpis: data.financeKpis,
+    ledger,
+    role: user?.role,
+  })
+
   return (
     <div id="dash-top" className="mx-auto max-w-[1600px] px-6 py-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -131,6 +161,17 @@ export default async function DashboardPage() {
       {/* 상단 탭. 앵커로 스크롤하거나 /ai로 간다 — 자리 안내지 화면 전환이 아니다.
           목록과 동작은 components/dashboard/dashboard-tabs.tsx 한 곳에 있다. */}
       <DashboardTabs />
+
+      {/*
+       * Phase 7 블록 B. §4의 최상단 CHAIRMAN ATTENTION. **기존 경보 배너·패널보다 위**이고
+       * 그 둘을 지우지 않는다 — Phase 7은 기존 화면을 삭제하지 않고, `alerts`와 `exceptions`를
+       * 합치는 것은 블록 E가 HOME을 다시 지을 때의 판단이다(0035 머리 주석과 같은 말).
+       * 그래서 오늘 이 화면에는 «위험을 말하는 자리»가 둘이다. 그 사실은 DEFERRED에 적었다.
+       */}
+      <AttentionCard
+        view={attention}
+        canTriage={user?.role === 'Chairman' || user?.role === 'BusinessCEO'}
+      />
 
       {/* CH-018 Acceptance는 'Critical rule 즉시 상단 노출'이다. 아래 결정·대기·알림 3장은
           히어로·KPI 8타일·12개월 차트를 지나야 나와 스크롤해야 보인다 —

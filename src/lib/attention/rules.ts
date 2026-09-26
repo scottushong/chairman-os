@@ -22,7 +22,15 @@
  *   전부 초록으로 보이고, 그것이 이 엔진이 막으려는 바로 그 그림이다.
  */
 import { addMonths } from '@/lib/ledger/basis'
-import { RULE_COMPARATOR, type ExceptionRule, type FinanceMetric, type PeriodKey } from '@/types'
+import { runway } from '@/lib/ledger/analysis'
+import { ledgerScope } from '@/lib/ledger/scope'
+import {
+  RULE_COMPARATOR,
+  type ExceptionRule,
+  type FinanceLedger,
+  type FinanceMetric,
+  type PeriodKey,
+} from '@/types'
 
 /** 0035가 허용한 다섯. 목록이 두 벌이 되지 않게 어휘 파일에서 가져온다. */
 const KNOWN_COMPARATORS: readonly string[] = RULE_COMPARATOR
@@ -58,6 +66,31 @@ export interface CompanyMeasurements {
   business_id: string
   kpis: MetricPoint[]
   runway: RunwayReading
+}
+
+/**
+ * 원장에서 그 회사의 런웨이를 읽는다. **정의는 `lib/ledger/analysis.ts`의 `runway()`
+ * 하나뿐이다** — 화면·브리핑·예외가 같은 함수를 부른다. 원장이 없으면 `unknown`이고,
+ * 그것은 «소진이 없다»가 아니라 **«못 쟀다»**다.
+ *
+ * **B-3이 `stage.ts`에서 여기로 옮겼다.** 야간 Job만 쓰던 함수인데 화면의 접기
+ * (`screen.ts`)가 같은 입력을 만들어야 하게 됐다 — 두 벌로 두면 회장이 화면에서 세는
+ * «재지 못한 회사»와 야간 Job이 브리핑에 적는 «재지 못한 회사»가 달라진다. 이 파일에 둔
+ * 이유는 `RunwayReading`이 여기 선언되어 있고, 부르는 것이 둘 다 **순수 함수**라 이
+ * 파일의 규율(«여기서 아무것도 읽지 않고 아무것도 쓰지 않는다»)이 깨지지 않기 때문이다.
+ * `stage.ts`에 두면 화면이 그 파일을 import하면서 Supabase 클라이언트까지 끌고 온다.
+ *
+ * **규칙의 `window_days`가 이 창을 바꾸지 못한다.** `runway()`의 창은 3개월 고정이고,
+ * 시드의 `cash_runway`가 90일이라 오늘은 둘이 같다. 회장이 그 값을 60일로 고치면
+ * 임계는 바뀌지만 평균을 내는 창은 그대로다 — DEFERRED에 적었다.
+ */
+export function readRunway(ledger: FinanceLedger | null, businessId: string): RunwayReading {
+  if (!ledger) return { months: null, status: 'unknown', period: null }
+  const scope = ledgerScope(ledger, [businessId])
+  const period = scope.periods.at(-1) ?? null
+  if (!period) return { months: null, status: 'unknown', period: null }
+  const r = runway(scope, period)
+  return { months: r.months?.value ?? null, status: r.status, period }
 }
 
 /* ------------------------------------------------------------------ 출력 */

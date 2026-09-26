@@ -2,9 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 import type { AiAdapter } from '@/lib/ai/adapter'
 import { formatEok } from '@/lib/format'
-import { runway } from '@/lib/ledger/analysis'
 import { financeBriefContext, type FinanceBriefContext } from '@/lib/ledger/brief-context'
-import { ledgerScope } from '@/lib/ledger/scope'
 import { createSupabaseRepository, EXCEPTION_COLUMNS } from '@/lib/repository/supabase'
 import type {
   AttentionHeadline,
@@ -19,10 +17,10 @@ import type {
 import { formatExceptionAnalysis, selectAttentions } from './brief'
 import {
   evaluateRules,
+  readRunway,
   SKIP_REASON_KO,
   UNMEASURED_REASON_KO,
   type CompanyMeasurements,
-  type RunwayReading,
   type UnmeasuredReason,
 } from './rules'
 import { attentionScore, financialImpactAxis } from './score'
@@ -125,24 +123,6 @@ function errorText(e: unknown): string {
  * (반대로 이름 없이 23505만 보면 다른 제약의 위반이 조용히 «중복»이 된다).
  */
 const DEDUPE_CONSTRAINT = 'exceptions_dedupe_unique'
-
-/**
- * 그 회사의 런웨이. **정의는 `lib/ledger/analysis.ts`의 `runway()` 하나뿐이다** —
- * 화면·브리핑·예외가 같은 함수를 부른다. 원장이 없으면 `unknown`이고, 그것은
- * «소진이 없다»가 아니라 «못 쟀다»다.
- *
- * **규칙의 `window_days`가 이 창을 바꾸지 못한다.** `runway()`의 창은 3개월 고정이고,
- * 시드의 `cash_runway`가 90일이라 오늘은 둘이 같다. 회장이 그 값을 60일로 고치면
- * 임계는 바뀌지만 평균을 내는 창은 그대로다 — DEFERRED에 적었다.
- */
-function readRunway(ledger: FinanceLedger | null, businessId: string): RunwayReading {
-  if (!ledger) return { months: null, status: 'unknown', period: null }
-  const scope = ledgerScope(ledger, [businessId])
-  const period = scope.periods.at(-1) ?? null
-  if (!period) return { months: null, status: 'unknown', period: null }
-  const r = runway(scope, period)
-  return { months: r.months?.value ?? null, status: r.status, period }
-}
 
 export async function runAttentionStage(input: {
   sb: SupabaseClient
