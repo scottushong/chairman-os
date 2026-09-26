@@ -72,6 +72,10 @@ export const NAV: readonly NavGroup[] = [
       // 이 저장소의 사이드바에 '관제'라는 제목의 그룹은 없고, 회장이 매일 보는 항목이 모인
       // 이 첫 묶음이 그 자리다. 블록 E가 사이드바를 10개로 갈아 끼울 때 06 SUCCESSION이 된다.
       { key: 'nav_dependency', label: '의존', href: '/dependency', icon: 'shield', ready: true },
+      // Phase 7 블록 B. §18 예외 엔진 · §19 주의 점수. 의존 바로 아래, 같은 관제 묶음이다 —
+      // 대시보드 최상단 카드의 «전체 보기»가 가는 곳이고, 회장이 매일 여는 항목이다.
+      // 블록 E가 사이드바를 10개로 갈아 끼울 때 «ATTENTION»이 된다.
+      { key: 'nav_attention', label: '주의', href: '/attention', icon: 'bell', badge: 'NEW', ready: true },
       {
         key: 'nav_projects', label: '프로젝트',
         href: '/projects',
