@@ -324,11 +324,26 @@ export async function officialStatementLines(statementId: number): Promise<Offic
 }
 
 // ---------------------------------------------------------------------
-// Phase 5-D — 프로세스차트(0021). 링크만 들고 있다.
-// dummy에도 DY 두 팀을 미리 넣어 둔다 — 0021 시드와 같은 게시 링크라
+// Phase 5-D — 프로세스차트(0021, 0036). 링크만 들고 있다.
+// dummy에도 DY 세 팀을 미리 넣어 둔다 — 0021·0036 시드와 같은 게시 링크라
 // 화면을 dummy로 검증한 모습이 live와 같다.
+//
+// 영업(0036)의 sort_order는 5다 — 경영지원·연구소보다 작아 목록 맨 앞에 온다
+// (listProcessCharts는 business_id, sort_order 순으로 정렬한다). 회장 지시대로
+// "제일 먼저 보이게" 하는 값이고, 나머지 두 행의 10·20은 그대로 둔다.
 // ---------------------------------------------------------------------
 const processCharts: ProcessChart[] = [
+  {
+    id: 3,
+    business_id: 'biz_dy',
+    team_name: '영업',
+    title: 'DY 영업 업무 프로세스',
+    embed_url:
+      'https://docs.google.com/spreadsheets/d/e/2PACX-1vTIW44d3lfRw9wIy61BL3u0y5Nfi2fdHEyOMzSfef1BP_NLus2WPez8PDB997sFq3iQ1RbYhh2FHZ2i/pubhtml',
+    sort_order: 5,
+    updated_by: 'dummy',
+    updated_at: MOCK_FETCHED_AT,
+  },
   {
     id: 1,
     business_id: 'biz_dy',
