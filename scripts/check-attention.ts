@@ -31,9 +31,12 @@
  * 것까지가 그 돌연변이가 증명하는 것이다). 키마다 «이름값 하는 그 단언»이 빨개지는 것을
  * 돌려서 확인한 문구가 블록 보고서에 있다.
  *
- * ■ 짓지 않은 것 ■ **화면 단언은 여기 없다.** `/attention` · `/attention/rules` · 대시보드
- * 주의 카드는 아직 없고(B-3), B-3이 자기 화면 단언을 이 파일에 더한다. 예외는 개입 막대
- * 하나다 — 그 화면(`/dependency/[id]`)은 이미 있다.
+ * ■ F. 화면 ■ **B-3이 더했다. 세 개뿐이다**(컨트롤러 판정 — 나머지 화면 단언은 DEFERRED).
+ * 대시보드 주의 카드를 `renderToStaticMarkup`으로 **실제로 그려서** 그 HTML을 읽는다:
+ * 읽기 집합 밖 역할에 «0건»·«정상»이라고 적지 않는가 · 등급 옆에 `unknown_axes`가 늘 있고
+ * 없는 등급이 GREEN으로 떨어지지 않는가 · «정상 N개사»가 «재지 못한» 회사를 세지 않는가.
+ * 글자로만 재는 단언은 «그 줄이 파일에 있다»까지만 증명하므로, 조건 아래의 줄은 그 조건이
+ * 뒤집혀도 초록으로 남는다 — 그래서 그려진 결과를 읽는다(`check-data-boundaries.ts` 선례).
  */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
@@ -42,6 +45,11 @@ import { join } from 'node:path'
 import { PGlite } from '@electric-sql/pglite'
 import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+
+import { AttentionCard } from '../src/components/dashboard/attention-card'
+import { summarizeAttention, type AttentionView } from '../src/lib/attention/screen'
 
 import type { AiAdapter, ExceptionContext } from '../src/lib/ai/adapter'
 import {
@@ -77,14 +85,18 @@ import {
 } from '../src/lib/attention/score'
 import { runAttentionStage } from '../src/lib/attention/stage'
 import {
+  AI_NOT_A_DECISION_KO,
   ATTENTION_AXES,
+  EXCEPTION_BLIND_KO,
   INTERVENTION_KINDS,
   INTERVENTION_LABEL_KO,
+  type AttentionScore,
   type Business,
   type ExceptionRecord,
   type ExceptionRule,
   type FinanceKpi,
   type InterventionRow,
+  type Role,
 } from '../src/types'
 import { applyAll, MIGRATIONS } from './pglite'
 
@@ -189,6 +201,13 @@ const BREAKS = {
   'zero-rules-as-empty-table':
     '회사를 0행으로 받은 회차에 회사 목록을 준다 — 가를 신호가 없는데 «표가 비었다»고 단정하는 모양이다',
   'other-unique-named-like-dedupe': '다른 유니크 제약의 이름에 중복 방지 제약 이름을 심는다',
+  /* ---- F. 화면 (B-3) ---- */
+  'screen-blind-as-zero':
+    '읽기 집합 밖 역할의 화면을 «읽을 수 있는 계정»으로 접는다 — 0행에 «정상»이라고 적는 모양이다',
+  'screen-level-null-as-green':
+    '등급이 없는 점수 줄을 GREEN 0점으로 바꾼다 — «등급 미산출»을 초록으로 떨어뜨리는 모양이다',
+  'screen-kpi-supply-missing':
+    '재지 못한 회사에 수치를 채운다 — 그 회사가 «정상»으로 넘어간다',
   /* ---- E. 글자 ---- */
   'prompt-drop-key': '프롬프트에서 입력 키 하나(attentions·unmeasured)를 지운다',
   'prompt-unmeasured-optional': '프롬프트에서 «이 순위를 빼는 것은 금지다»를 지운다',
@@ -3152,6 +3171,325 @@ function texts() {
   )
 }
 
+/* =====================================================================
+ * F. 화면 — 회장이 실제로 읽는 문장 (B-3)
+ *
+ * **세 개만 있다.** 컨트롤러의 판정이고, 셋은 이 블록이 반복해서 잡아 온 거짓 셋에 하나씩
+ * 대응한다(나머지 화면 단언은 DEFERRED에 적었다):
+ *   ① 읽기 집합 밖 역할(TeamLead·Member)의 화면에 «0건»·«정상»이라고 적지 않는다.
+ *   ② `level`이 보이는 자리에 `unknown_axes`가 늘 같이 있고, 없는 등급은 GREEN이 아니다.
+ *   ③ «정상 N개사» 줄이 «재지 못한» 회사를 정상으로 세지 않는다.
+ *
+ * ■ 글자가 아니라 **그려진 결과**를 잰다 ■ 대시보드 카드를 `renderToStaticMarkup`으로 실제로
+ * 그려서 그 HTML을 읽는다(`check-data-boundaries.ts`가 `WaitingOnMe`를 같은 방법으로 잰다).
+ * 소스에서 문구를 찾는 단언은 «그 줄이 파일에 있다»까지만 증명하고, 조건 아래에 있는 줄은
+ * 그 조건이 뒤집혀도 초록으로 남는다. 카드는 접힌 결과(`summarizeAttention`)만 받으므로
+ * 이 셋은 **접기와 그리기를 한 번에** 잰다.
+ *
+ * ■ 돌연변이의 종류와 한계 ■ 셋 다 **고정 입력을 깨뜨린다**(C절과 같은 자리·같은 한계 —
+ * 그 단언이 살아 있고 그 값을 실제로 읽는다는 것까지가 증명된다). 셋 다 «실제로 있었던
+ * 버그의 모양»이다: 역할을 잘못 접기 · 없는 등급을 초록으로 떨어뜨리기 · 못 잰 것을 정상으로
+ * 세기.
+ * ===================================================================== */
+
+/**
+ * 화면 소스에서 찾는 바늘. `texts()`의 것과 같은 키(`screen-text`)를 쓴다 — 그 키는 바늘
+ * 여러 개를 한 번에 뒤집고 **첫 바늘만** 빨개진다(그 한계는 DEFERRED에 적혀 있다).
+ * F절의 본단언은 그려진 HTML을 읽는 쪽이고, 이 바늘들은 «세 화면이 같은 조각을 지나는가»를
+ * 묶어 두는 보조다.
+ */
+const screenSourceNeedle = (t: string) => (broke('screen-text') ? '이 문구는 어디에도 없다' : t)
+
+/**
+ * 화면 단언이 쓰는 규칙. **`cash_runway`는 꺼 둔다** — 원장을 주지 않으므로 켜 두면 모든
+ * 회사가 `ledger_unknown`으로 떨어져 ③이 재려는 가름이 사라진다. 꺼진 규칙은 «못 쟀다»가
+ * 아니라 «평가하지 않았다»다(`SKIP_REASON_KO.disabled`).
+ */
+const SCREEN_RULES: ExceptionRule[] = [
+  screenRule('revenue_variance', '매출 변동', 'metric', 'YELLOW', 1, 'Revenue', 'abs>', 20, 30, true),
+  screenRule('ebitda_margin_drop', 'EBITDA 마진 하락', 'metric', 'YELLOW', 2, 'EBITDA', '<=', -5, 90, true),
+  screenRule('cash_runway', '현금 부족', 'metric', 'RED', 3, 'Cash', '<', 6, 90, false),
+  screenRule('quality_issue', '품질 이슈', 'manual', 'GREEN', 7),
+]
+
+function screenRule(
+  rule_key: string,
+  name: string,
+  kind: ExceptionRule['kind'],
+  severity_base: ExceptionRule['severity_base'],
+  sort_order: number,
+  metric: ExceptionRule['metric'] = null,
+  comparator: ExceptionRule['comparator'] = null,
+  threshold: number | null = null,
+  window_days: number | null = null,
+  enabled = true,
+): ExceptionRule {
+  return {
+    rule_key,
+    name,
+    scope: 'company',
+    kind,
+    metric,
+    comparator,
+    threshold,
+    window_days,
+    severity_base,
+    enabled,
+    sort_order,
+  }
+}
+
+function screenException(over: Partial<ExceptionRecord> & { id: number }): ExceptionRecord {
+  return {
+    business_id: 'biz_dy',
+    rule_key: 'ebitda_margin_drop',
+    detected_at: '2027-05-15T00:00:00Z',
+    period: '2027-04',
+    value: -6.4,
+    threshold: -5,
+    severity: 'YELLOW',
+    ai_analysis: '원인: 원가가 더 빨리 늘었다.\nCEO 대응: 단가 재협상.\n권고: 관찰 14일',
+    ceo_handling: false,
+    chairman_action_required: false,
+    status: 'open',
+    monitor_until: null,
+    ...over,
+  }
+}
+
+/** 축 여섯이 전부 빈 점수 줄. 채우는 축만 덮는다 — 빈 축은 null이고 0이 아니다. */
+function screenScore(over: Partial<AttentionScore> & { exception_id: number }): AttentionScore {
+  return {
+    business_id: 'biz_dy',
+    financial_impact: null,
+    financial_impact_source: null,
+    strategic_impact: null,
+    strategic_impact_source: null,
+    urgency: null,
+    urgency_source: null,
+    probability: null,
+    probability_source: null,
+    ceo_ability: null,
+    ceo_ability_source: null,
+    capital_requirement: null,
+    capital_requirement_source: null,
+    score: null,
+    level: null,
+    unknown_axes: 6,
+    scored_at: '2027-05-15T00:00:00Z',
+    ...over,
+  }
+}
+
+/** 회장이 실제로 보는 것 = 접힌 결과를 카드가 그린 HTML. 태그를 걷어 글자만 남긴다. */
+function cardText(input: {
+  exceptions: ExceptionRecord[]
+  scores: AttentionScore[]
+  financeKpis: FinanceKpi[]
+  role: Role
+}): { html: string; text: string; view: AttentionView } {
+  const view = summarizeAttention({
+    businesses: BIZ,
+    exceptions: input.exceptions,
+    rules: SCREEN_RULES,
+    scores: input.scores,
+    financeKpis: input.financeKpis,
+    // 원장은 주지 않는다 — 이 단언들이 재는 것은 화면이고, 원장 해석은 C절이 잰다.
+    ledger: null,
+    role: input.role,
+  })
+  const html = renderToStaticMarkup(createElement(AttentionCard, { view, canTriage: true }))
+  return { html, text: html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' '), view }
+}
+
+function screens() {
+  const card = src('components', 'dashboard', 'attention-card.tsx')
+  const list = src('app', '(dashboard)', 'attention', 'page.tsx')
+  const rulesScreen = src('app', '(dashboard)', 'attention', 'rules', 'page.tsx')
+
+  /**
+   * ㊺ **읽기 집합 밖 역할의 화면에 «0건»도 «정상»도 없다.** (거짓 ①)
+   *
+   *    `exceptions_read`가 `has_business() and (can_read_restricted() or 쓰는 사람)`이라
+   *    TeamLead·Member는 **0행**을 받는다(A절이 그 0을 숫자로 재고, 여기서는 그 0이 화면에서
+   *    무슨 말이 되는지를 잰다). 그 계정에 «주의 0건»·«전 회사 정상»이라고 적으면 화면이
+   *    거짓을 말한다 — 없는 것과 못 보는 것은 다른 사실이다.
+   *
+   *    **«재지 못한 M개사»도 적지 않는다.** 그 계정은 `finance_kpis`도 못 읽어서 모든 회사가
+   *    «재지 못함»으로 나오고, 그 M은 회사의 사실이 아니라 권한의 그림자다.
+   */
+  const blind = cardText({
+    exceptions: [],
+    scores: [],
+    financeKpis: [],
+    role: broke('screen-blind-as-zero') ? 'Chairman' : 'TeamLead',
+  })
+  assert.ok(
+    blind.text.includes(EXCEPTION_BLIND_KO),
+    `읽기 집합 밖 계정의 카드에 «${EXCEPTION_BLIND_KO}»가 없다 — 0행을 받은 이유를 적지 않으면 그 계정은 «주의가 없다»로 읽는다`,
+  )
+  for (const forbidden of ['0건', '정상', '이상 없']) {
+    assert.ok(
+      !blind.text.includes(forbidden),
+      `읽기 집합 밖 계정의 카드가 «${forbidden}»이라고 적는다(${blind.text.slice(0, 400)}) — 못 보는 것을 없는 것으로 그리는 바로 그 거짓이다`,
+    )
+  }
+  for (const [name, source] of [
+    ['카드', card],
+    ['/attention', list],
+  ] as const) {
+    assert.ok(
+      source.includes(screenSourceNeedle('BlindNote')),
+      `${name}이 «못 보는 계정»의 문장을 공통 조각(BlindNote)으로 그리지 않는다 — 화면마다 따로 쓰면 한 화면에서 그 문장이 빠진다`,
+    )
+  }
+
+  /**
+   * ㊻ **`level`이 보이는 자리에는 `unknown_axes`가 늘 같이 있고, 없는 등급은 GREEN이 아니다.**
+   *    (거짓 ③ · `score.ts`가 B-3에게 남긴 요구)
+   *
+   *    `MIN_AXES_FOR_LEVEL = 3`이고 축 셋이 닿는 가중치는 100 중 **45**다. 그 둘을 떼면
+   *    45의 근거가 100의 근거인 척한다. 오늘은 출처가 있는 축이 하나라 **대부분의 예외에서
+   *    `level`이 null**이고, 그 자리는 «등급 미산출»이어야 한다 — GREEN으로 떨어뜨리면
+   *    회장은 그것을 «CEO가 처리하는 건»으로 읽는다(§19의 GREEN 정의).
+   *
+   *    § 재는 방법 § 카드가 그린 HTML에서 `data-score-note` 칸을 **전부** 꺼내, 그 칸마다
+   *    «여섯 축 중 N개 없음»이 들어 있는지 본다. 등급만 적힌 칸이 하나라도 있으면 빨개진다.
+   */
+  const withLevel = cardText({
+    exceptions: [
+      screenException({ id: 11, rule_key: 'ebitda_margin_drop', period: '2027-04' }),
+      screenException({
+        id: 12,
+        rule_key: 'revenue_variance',
+        period: '2027-03',
+        value: 34.8,
+        threshold: 20,
+      }),
+    ],
+    scores: [
+      // 축 셋 → 등급이 난다. 옆에 3이 같이 적혀야 한다.
+      screenScore({
+        exception_id: 11,
+        financial_impact: 4,
+        financial_impact_source: '규칙 ebitda_margin_drop — 잰 값',
+        ceo_ability: 2,
+        ceo_ability_source: '블록 D',
+        capital_requirement: 1,
+        capital_requirement_source: '블록 C',
+        score: 42.2,
+        level: 'YELLOW',
+        unknown_axes: 3,
+      }),
+      // 축 하나 → 등급이 없다. **오늘의 보통이다.**
+      broke('screen-level-null-as-green')
+        ? screenScore({
+            exception_id: 12,
+            financial_impact: 8,
+            financial_impact_source: '규칙 revenue_variance — 잰 값',
+            score: 0,
+            level: 'GREEN',
+            unknown_axes: 5,
+          })
+        : screenScore({
+            exception_id: 12,
+            financial_impact: 8,
+            financial_impact_source: '규칙 revenue_variance — 잰 값',
+            unknown_axes: 5,
+          }),
+    ],
+    financeKpis: [],
+    role: 'Chairman',
+  })
+  const notes = [
+    ...withLevel.html.matchAll(/data-score-note="true"[^>]*>([\s\S]*?)<\/span>/g),
+  ].map((m) => m[1].replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim())
+  assert.equal(
+    notes.length,
+    2,
+    `카드의 등급 칸을 두 개 그리지 않았다(${notes.length}) — 이 단언의 전제가 깨졌다`,
+  )
+  for (const note of notes) {
+    assert.ok(
+      /여섯 축 중 \d+개 없음/.test(note),
+      `등급 칸에 빈 축의 수가 없다(«${note}») — 축 셋이 닿는 가중치는 100 중 45이고, 그 숫자를 떼면 45의 근거가 100의 근거인 척한다`,
+    )
+  }
+  assert.ok(
+    notes.some((n) => n.includes('등급 미산출')),
+    `등급이 없는 건을 «등급 미산출»로 적지 않았다(${JSON.stringify(notes)}) — 오늘은 축이 모자라 대부분의 예외에 등급이 없고, 그것을 GREEN으로 떨어뜨리면 회장은 «CEO가 처리하는 건»으로 읽는다`,
+  )
+  assert.ok(
+    !notes.some((n) => n.includes('등급 미산출') && n.includes('GREEN')),
+    `등급이 없는데 GREEN이 같이 적혔다(${JSON.stringify(notes)})`,
+  )
+  assert.ok(
+    list.includes(screenSourceNeedle('ScoreLevel')),
+    '/attention이 등급을 공통 조각(ScoreLevel)으로 그리지 않는다 — 등급과 빈 축을 떼어 놓을 수 있는 자리가 생긴다',
+  )
+  /** ㊻-a **«결정 아님»은 분석이 보이는 자리에 늘 붙고, 끄는 prop이 없다.** */
+  assert.ok(
+    withLevel.text.includes(AI_NOT_A_DECISION_KO),
+    `분석이 보이는 카드에 «${AI_NOT_A_DECISION_KO}» 라벨이 없다 — §19의 "AI가 CEO를 대신하지 않는다"가 화면에서 사라진 것이다`,
+  )
+  assert.ok(
+    !/AiAnalysis[^)]*(showLabel|hideLabel|withLabel|label=)/.test(card + list),
+    '«결정 아님» 라벨을 prop으로 끌 수 있게 열어 두었다 — 그 자리는 상수여야 한다',
+  )
+
+  /**
+   * ㊼ **«정상 N개사» 줄이 «재지 못한» 회사를 정상으로 세지 않는다.** (거짓 ②)
+   *
+   *    §4의 `"N companies operating normally"` 한 줄이 정확히 이 함정 위에 서 있다.
+   *    B-2가 `unmeasured`를 `failed`와 별개 칸으로 만들어 06:00 브리핑까지 밀어 넣었고,
+   *    화면에서 다시 뭉개면 그 작업이 마지막 걸음에서 무의미해진다.
+   *
+   *    고정 입력: DY에는 수치가 여섯 달 있고(잴 수 있다) VANA에는 **한 줄도 없다**(못 잰다).
+   *    열린 예외는 0건이라 둘 다 주의 목록에 없다 — 그러면 «정상 1 · 재지 못한 1»이어야 한다.
+   */
+  const months = ['2027-01', '2027-02', '2027-03', '2027-04', '2027-05', '2027-06']
+  const dyKpis = months.flatMap((p) => [
+    fk('biz_dy', p, 'Revenue', 100),
+    fk('biz_dy', p, 'EBITDA', 10),
+  ])
+  const vanaKpis = months.flatMap((p) => [
+    fk('biz_vana', p, 'Revenue', 100),
+    fk('biz_vana', p, 'EBITDA', 10),
+  ])
+  const counted = cardText({
+    exceptions: [],
+    scores: [],
+    // 돌연변이: 없다고 둔 수치를 채운다 — «못 쟀다»가 «쟀다»가 되고 그 회사가 정상으로 넘어간다.
+    financeKpis: broke('screen-kpi-supply-missing') ? [...dyKpis, ...vanaKpis] : dyKpis,
+    role: 'Chairman',
+  })
+  assert.deepEqual(
+    {
+      normal: counted.view.normal.map((n) => n.business_id),
+      unmeasured: counted.view.unmeasured.map((u) => u.business_id),
+    },
+    { normal: ['biz_dy'], unmeasured: ['biz_vana'] },
+    '수치가 없는 회사가 «정상»으로 넘어갔다 — 재지 못한 것을 정상으로 세는 것이 이 블록이 가장 조심하는 거짓이다',
+  )
+  assert.ok(
+    /정상 1 ?개사/.test(counted.text) && /재지 못한 1 ?개사/.test(counted.text),
+    `카드 하단이 «정상 1개사 · 재지 못한 1개사»로 적지 않았다(${counted.text.slice(-500)}) — 그 둘을 한 칸에 담으면 §4의 한 줄이 «재지 못한 회사»를 정상으로 센다`,
+  )
+  assert.ok(
+    counted.view.unmeasured.every((u) => u.reasons.length > 0),
+    '«재지 못한 회사»를 이유 없이 세었다 — 이유가 곧 그 사실의 근거이고, 이유 없는 M은 회장이 확인할 수 없다',
+  )
+  assert.ok(
+    list.includes(screenSourceNeedle('재지 못한 회사')) && list.includes(screenSourceNeedle('u.reasons')),
+    '/attention이 «재지 못한 회사»를 이유와 함께 그리지 않는다 — 카드의 숫자를 확인할 자리가 없어진다',
+  )
+  /** ㊼-a 규칙 화면이 수동 규칙의 빈 임계를 «없다»고 적는다(빈 칸으로 두면 채우라는 말이 된다). */
+  assert.ok(
+    rulesScreen.includes(screenSourceNeedle('수동 플래그 규칙')),
+    '/attention/rules가 수동 규칙의 임계 칸을 «수동 플래그 규칙»이라고 적지 않는다 — 빈 칸은 회장에게 «채우라»고 말하고, 채우면 0035의 kind_shape_check가 거절한다',
+  )
+}
+
 /* ===================================================================== */
 
 async function main() {
@@ -3184,6 +3522,8 @@ async function main() {
   await zeroDb.close()
 
   texts()
+  // F. 화면은 DB 없이 돈다 — 카드는 접힌 결과만 받는다.
+  screens()
 
   console.log(
     'PASS: 0035 주의 — 시드(규칙 13종 §18 순서 · metric 3/manual 10 · 수동 임계 0 · 예외·점수 0행) · ' +
@@ -3196,7 +3536,9 @@ async function main() {
       '배선(AIAgent 세션으로 예외·점수 생성 · 못 잰 것은 evaluated가 아니다 · 경고 ≠ 실패 · ' +
       '틱 겹침을 DB가 막는다 · 규칙별·회사별 격리 · 다른 유니크는 중복이 아니다 · ' +
       '점수만 못 붙인 회차 · RED면 회장 액션 · 규칙을 못 읽은 밤) · ' +
-      '프롬프트 입력 키와 필수 순위 · 배선 문구',
+      '프롬프트 입력 키와 필수 순위 · 배선 문구 · ' +
+      '화면(읽기 집합 밖에 «0건»·«정상» 없음 · 등급 옆 unknown_axes · 없는 등급은 GREEN이 아니다 · ' +
+      '정상 N개사가 «재지 못한» 회사를 세지 않는다 · «결정 아님»은 상수)',
   )
 }
 
