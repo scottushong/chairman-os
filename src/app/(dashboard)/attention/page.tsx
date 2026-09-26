@@ -89,6 +89,13 @@ export default async function AttentionPage(props: PageProps<'/attention'>) {
   const countOf = (status: ExceptionStatus | undefined) =>
     status === undefined ? rows.length : rows.filter((r) => r.exception.status === status).length
 
+  /**
+   * 탭에 건수를 적는가. **읽기 집합 밖이면 적지 않는다** — 그 계정에게 «열림 0»은
+   * «열린 예외가 없다»로 읽히고, 그것이 이 블록이 막는 첫 번째 거짓이다. 0행의 이유는
+   * 위의 `BlindNote`가 이미 말했으므로 여기서는 **숫자를 아예 두지 않는다.**
+   */
+  const countLabel = (status?: ExceptionStatus) => (view.readable ? ` ${countOf(status)}` : '')
+
   return (
     <div className="mx-auto max-w-[1280px] px-6 py-5">
       <PageHeader
@@ -168,7 +175,7 @@ export default async function AttentionPage(props: PageProps<'/attention'>) {
       {/* ───────── 탭과 필터. 전부 URL이다 ───────── */}
       <nav className="mt-4 flex flex-wrap items-center gap-1.5" aria-label="상태">
         <Tab href={withParams('/attention', { rule: filter.rule, biz: filter.biz })} on={!filter.status}>
-          전체 {countOf(undefined)}
+          전체{countLabel()}
         </Tab>
         {EXCEPTION_STATUS.map((s) => (
           <Tab
@@ -176,7 +183,8 @@ export default async function AttentionPage(props: PageProps<'/attention'>) {
             href={withParams('/attention', { status: s, rule: filter.rule, biz: filter.biz })}
             on={filter.status === s}
           >
-            {EXCEPTION_STATUS_LABEL_KO[s]} {countOf(s)}
+            {EXCEPTION_STATUS_LABEL_KO[s]}
+            {countLabel(s)}
           </Tab>
         ))}
       </nav>
