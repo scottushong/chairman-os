@@ -182,6 +182,9 @@ const BREAKS = {
   'adapter-returns-analysis': '분석을 못 받는 자리에 멀쩡한 어댑터를 준다',
   'plant-all-rules': '심어 둔 기록 실패를 규칙 하나가 아니라 그 회사 전부로 넓힌다',
   'plant-every-company': '심어 둔 기록 실패를 그 회사가 아니라 모든 회사로 넓힌다',
+  'score-plant-off': '점수 기록을 터뜨리던 심어 둔 제약을 걷는다',
+  'severity-base-yellow': '회장이 RED로 올린 규칙을 YELLOW에 그대로 둔다',
+  'rules-read-granted': '규칙 읽기를 막던 revoke를 걷는다',
   'other-unique-named-like-dedupe': '다른 유니크 제약의 이름에 중복 방지 제약 이름을 심는다',
   /* ---- E. 글자 ---- */
   'prompt-drop-key': '프롬프트에서 입력 키 하나(attentions·unmeasured)를 지운다',
@@ -1757,6 +1760,13 @@ function pureScore() {
     ceo_ability: axis(5),
     capital_requirement: axis(5),
   })
+  assert.equal(
+    attentionScore({
+      financial_impact: fi({ threshold: broke('planned-axes-nonzero') ? 6 : 0, value: 2 }),
+    }).unknown_axes,
+    6,
+    '임계가 0인 규칙의 예외에서 빈 축이 여섯으로 세어지지 않는다 — 재무 영향까지 null이면 이 행은 축을 하나도 갖지 못한 행이다',
+  )
   assert.deepEqual(
     [zeroThreshold.level, zeroThreshold.unknown_axes],
     [null, 4],
@@ -2781,6 +2791,118 @@ async function stageWiring(db: PGlite) {
     '다른 제약의 23505가 회사 행에 그 코드와 함께 남지 않았다 — 무엇이 터졌는지 모르는 실패는 다시 볼 근거가 되지 못한다',
   )
   await db.exec(`drop index ${otherName}`)
+
+  /* ---------------------------------------------------------------- 7. 점수만 못 붙인 회차 */
+
+  /**
+   * ㊶ **점수 insert가 실패해도 예외는 남고, 그 사실이 «경고»로 남는다.** 기록이 먼저다 —
+   *    점수가 없는 예외는 «왜 그 색인가»와 «여섯 축 중 몇이 비었나»를 설명하지 못하는
+   *    예외이고, 그것을 console에만 적으면 아무도 다시 붙이지 않는다.
+   *    **그리고 이 경고는 그룹 요약으로 가지 않는다**(`kind`가 `score_not_recorded`다) —
+   *    회장의 아침 다섯 문장에 들어갈 사실이 아니라 이 저장소가 고칠 내부 사정이다.
+   */
+  if (!broke('score-plant-off')) {
+    // not valid — 이미 있는 행은 건드리지 않고 **다음 insert만** 터뜨린다.
+    await db.exec(
+      `alter table attention_scores add constraint att_score_plant
+         check (unknown_axes <> 5) not valid`,
+    )
+  }
+  const scoreFail = (await quietly(() =>
+    runAttentionStage({
+      sb,
+      adapter: null,
+      businesses: [BIZ[0]],
+      financeKpis: [fk('biz_dy', '2027-03', 'Revenue', 100), fk('biz_dy', '2027-04', 'Revenue', 150)],
+      ledger: null,
+      runDate: '2027-04-15',
+    }),
+  )).value
+  assert.equal(
+    await s.count(U.chair, `select count(*)::int from exceptions where period = '2027-04'`),
+    1,
+    '점수를 못 붙인 회차에서 예외까지 사라졌다 — 기록이 먼저고 점수는 나중이다',
+  )
+  assert.ok(
+    (scoreFail.warnings.get('biz_dy') ?? []).some((w) => w.kind === 'score_not_recorded'),
+    `점수 기록 실패가 그 회사의 경고로 남지 않았다(${JSON.stringify(scoreFail.warnings.get('biz_dy'))}) — console에만 적으면 아무도 그 점수를 다시 붙이지 않는다`,
+  )
+  assert.deepEqual(
+    [...scoreFail.failures.keys()],
+    [],
+    '점수 기록 실패가 «실패»로 세어졌다 — 예외는 이미 남았고, 그 회차의 브리핑은 실패한 것이 아니다',
+  )
+  if (!broke('score-plant-off')) {
+    await db.exec(`alter table attention_scores drop constraint att_score_plant`)
+  }
+
+  /* ---------------------------------------------------------------- 8. RED이면 회장 액션 */
+
+  /**
+   * ㊷ **등급이 RED면 `chairman_action_required`가 참이다.** §19의 정의 그대로다
+   *    (RED=Chairman decision · YELLOW=Chairman awareness · GREEN=CEO handles) — 새 판정을
+   *    만든 것이 아니라 있는 등급을 읽은 것이고, 등급이 바뀌면 이 칸도 같이 움직인다.
+   *    **이 칸은 `not null default false`라 안 넣어도 들어간다** — 그러면 화면의
+   *    "회장 액션 필요" 건수가 첫날부터 실제보다 **적다.** 적게 세는 쪽의 거짓이다.
+   *
+   *    회장이 /attention/rules에서 등급을 올리는 것으로 이 자리를 만든다 — 그 편집이
+   *    다음 밤의 예외에 실제로 닿는지까지 같이 재는 셈이다.
+   */
+  if (!broke('severity-base-yellow')) {
+    await s.write(
+      U.chair,
+      `update exception_rules set severity_base = 'RED' where rule_key = 'revenue_variance'`,
+    )
+  }
+  await quietly(() =>
+    runAttentionStage({
+      sb,
+      adapter: null,
+      businesses: [BIZ[0]],
+      financeKpis: [fk('biz_dy', '2027-04', 'Revenue', 100), fk('biz_dy', '2027-05', 'Revenue', 150)],
+      ledger: null,
+      runDate: '2027-05-15',
+    }),
+  )
+  const red = await s.rows<{ severity: string; chairman_action_required: boolean }>(
+    U.chair,
+    `select severity, chairman_action_required from exceptions where period = '2027-05'`,
+  )
+  assert.deepEqual(
+    red,
+    [{ severity: 'RED', chairman_action_required: true }],
+    `RED 규칙의 예외에 «회장 액션 필요»가 서지 않았다(${JSON.stringify(red)}) — §19가 RED를 "Chairman decision"으로 정의했고, 이 칸이 비면 화면의 건수가 첫날부터 실제보다 적다`,
+  )
+
+  /* ---------------------------------------------------------------- 9. 규칙을 못 읽은 밤 */
+
+  /**
+   * ㊸ **규칙을 못 읽으면 단계가 «0건»으로 조용히 끝나지 않는다.** 그 밤의 결과는
+   *    «예외가 없다»가 아니라 «규칙을 읽지 못했다»여야 하고, 그 사실이 `result.error`로
+   *    올라가 그룹 행 맨 위에 선다(배선 쪽은 E절의 글자 단언이 본다).
+   *    § 실패 경로를 이 검사가 직접 만든다 § 표 권한을 걷어 42501을 만든다.
+   */
+  if (!broke('rules-read-granted')) {
+    await db.exec(`revoke select on table exception_rules from authenticated`)
+  }
+  const blind = (await quietly(() =>
+    runAttentionStage({
+      sb,
+      adapter: null,
+      businesses: BIZ,
+      financeKpis: [fk('biz_dy', '2027-05', 'Revenue', 100), fk('biz_dy', '2027-06', 'Revenue', 150)],
+      ledger: null,
+      runDate: '2027-06-15',
+    }),
+  )).value
+  assert.ok(
+    (blind.error ?? '').includes('규칙·예외 읽기 실패'),
+    `규칙을 못 읽은 회차가 조용히 0건으로 끝났다(error=${blind.error}) — «주의가 없다»와 «주의를 못 쟀다»는 다른 사실이고, 그 밤에 회장이 보는 화면은 전자와 구별되어야 한다`,
+  )
+  assert.equal(blind.created, 0, '규칙을 못 읽었는데 예외가 만들어졌다 — 그 예외는 무슨 규칙으로 걸린 것인가')
+  if (!broke('rules-read-granted')) {
+    await db.exec(`grant select on table exception_rules to authenticated`)
+  }
 }
 
 /* =====================================================================
@@ -2844,6 +2966,16 @@ function texts() {
     prompt.includes('«이상 없음»으로 읽지 마라'),
     'daily-brief.md가 «재지 못한 회사»를 «이상 없음»으로 읽지 말라고 말하지 않는다 — 그 둘을 한 문장으로 접는 것이 이 브리핑이 가장 조심하는 거짓이다',
   )
+  /**
+   * ㊷-a **상한과 요구가 부딪히지 않는다.** summary는 5문장 상한인데 순위 넷을 다 넣어야
+   *    한다 — 프롬프트가 그 산수를 **명시해야** 한다(1~3을 세 문장에 묶으면 4번에 두 문장이
+   *    남는다). 모순인 지시는 모델이 매일 다르게, 조용히 해소한다. 모델의 출력을 재는 것이
+   *    아니라 **지시가 모순인지**를 재는 단언이다.
+   */
+  assert.ok(
+    prompt.includes('1~3은 합쳐서 세 문장을 넘기지 않게 묶어 쓴다'),
+    'daily-brief.md가 summary 상한(5문장)과 순위 넷의 산수를 명시하지 않는다 — 상한과 요구가 부딪히면 모델이 매일 다르게 해소하고, 그때 빠지는 것은 대개 «모르는 것»이다',
+  )
   assert.ok(
     /순서를 바꾸지 않는다/.test(prompt) && /level을 바꾸지 않는다/.test(prompt),
     'daily-brief.md가 주의 목록의 순서와 등급을 «바꾸지 말라»고 말하지 않는다 — 고르는 것도 순서도 코드가 하고, 등급을 정하는 것은 모델이 아니다',
@@ -2881,6 +3013,20 @@ function texts() {
   assert.ok(
     nightBrief.includes(needle('재지 못함')) && nightBrief.includes(needle('«이상 없음»이 아니라')),
     '못 잰 회사의 행 맨 위에 «재지 못함» 항목이 서지 않는다 — 그 회사의 브리핑은 KPI가 비어 있어도 성공하므로, 이 항목이 없으면 조용한 회사로 읽힌다',
+  )
+  /** ㊸-a 회사 행에는 **둘 다** 오른다 — 못 잰 것과 점수를 못 붙인 것은 다른 제목이다. */
+  assert.ok(
+    nightBrief.includes(needle('점수 미기록')),
+    '«점수 미기록»이 회사 행에 서지 않는다 — 그룹 요약에는 가지 않지만 회사 행에는 남아야 한다. 점수가 없는 예외는 «왜 그 색인가»를 설명하지 못한다',
+  )
+  /**
+   * ㊸-b **모델에 넘기는 주의 목록과 화면 맨 위의 목록이 같은 원천이다.** 둘이 갈라지면
+   *    요약이 맨 위와 다른 말을 하고, 회장이 카톡으로 받는 것은 요약뿐이다.
+   */
+  assert.ok(
+    nightBrief.includes(needle('attentions: attentionBriefLines(attention?.headlines ?? [])')) &&
+      nightBrief.includes(needle('attentionItems(attention?.headlines ?? [])')),
+    '모델에 넘기는 주의 목록과 브리핑 맨 위의 목록이 같은 원천에서 나오지 않는다 — 둘이 갈라지면 요약이 맨 위와 어긋나고, 회장이 받는 것은 요약 한 덩이뿐이다',
   )
 
   /**
@@ -2943,8 +3089,9 @@ async function main() {
       '순수 함수(건너뛴 이유 여섯 · 못 쟀다 다섯 · 잰 값 여덟 · 0035 5절 ↔ TS 가중치·경계 · 바닥 3 ≤ 로드맵 3 · ' +
       '역방향 ceo_ability · 맨 위 3~5건 · KST 감지일 · 세 줄 분석 · 닫힌 스키마) · ' +
       '배선(AIAgent 세션으로 예외·점수 생성 · 못 잰 것은 evaluated가 아니다 · 경고 ≠ 실패 · ' +
-      '틱 겹침을 DB가 막는다 · 규칙별 격리 · 다른 유니크는 중복이 아니다) · ' +
-      '프롬프트 입력 키 · 배선 문구',
+      '틱 겹침을 DB가 막는다 · 규칙별·회사별 격리 · 다른 유니크는 중복이 아니다 · ' +
+      '점수만 못 붙인 회차 · RED면 회장 액션 · 규칙을 못 읽은 밤) · ' +
+      '프롬프트 입력 키와 필수 순위 · 배선 문구',
   )
 }
 
