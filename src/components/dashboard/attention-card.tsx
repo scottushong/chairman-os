@@ -156,16 +156,13 @@ export function AttentionCard({
  * 모든 회사가 «재지 못함»으로 나오고, 그 M은 회사의 사실이 아니라 권한의 그림자다.
  * 그림자를 숫자로 적는 것이 이 카드가 막는 첫 번째 거짓이다.
  *
- * 이 컴포넌트를 따로 둔 이유: `check:attention`이 이 한 줄만 떼어 렌더해 잰다.
+ * 이 컴포넌트를 따로 둔 이유: 이 한 줄이 §4의 그 줄이고, 카드 본문과 **다른 규칙**으로
+ * 비어야 하기 때문이다. 본문은 «보여 줄 건이 없다»를 말하고 이 줄은 «몇 개사인가»를 말한다.
  */
 export function AttentionFooter({ view }: { view: AttentionView }) {
-  if (!view.readable) {
-    return (
-      <div data-attention-footer className="mt-2.5 border-t border-line-soft pt-2">
-        <BlindNote />
-      </div>
-    )
-  }
+  // 읽기 집합 밖이면 **이 줄이 아예 없다.** 그 계정에는 셀 수 있는 것이 하나도 없고,
+  // 사실은 카드 본문의 `BlindNote`가 이미 말했다 — 같은 문장을 두 번 적지 않는다.
+  if (!view.readable) return null
   return (
     <div
       data-attention-footer
