@@ -22,3 +22,6 @@ supabase/.branches/
 .screenshots/
 supabase/bootstrap/0005_ready.sql
 supabase/bootstrap/0006_ready.sql
+
+# 그룹 시티 원본 (장당 ~10MB, 회장 머신에만). 앱은 gen/*.webp만 본다 — npm run city:assets
+/public/city/*.png

@@ -1880,3 +1880,12 @@ B-4가 찾은 결함 하나를 고쳤다. **리뷰 루프가 없는 작업이고
 - **staging 실증은 없다.** `npm run db:local`이 이 머신에서 못 돈다(Docker 없음). 0035는
   아직 어디에도 적용되지 않았고, 화면의 live 경로(회장 액션의 update·규칙 update)는
   PGlite 하네스가 아니라 **실제 PostgREST에서** 한 번 더 봐야 한다.
+
+## Phase 8 G-1 — 그룹 시티 배경 이미지 (2026-09-27)
+
+- **`sharp`는 직접 의존성이 아니다** — `next`가 끌고 오는 것(0.35.4)을 `scripts/city-assets.mjs`가
+  그대로 import한다. next가 sharp를 떼면 스크립트가 깨진다. devDependency로 박을 수도 있었지만
+  lockfile을 흔들지 않으려고 두었다(Minor).
+- **`dy,vana, sticky, hof, boram.png`는 변환하지 않는다.** 5개사 건물이 한 장에 그려진 참고
+  그림이라 화면에 올릴 자리가 아직 없다. 쓸 일이 생기면 STAGE_CROP처럼 자리를 정해 넣는다.
+- 원본 PNG는 `.gitignore`(`/public/city/*.png`)로 뺐고 `gen/*.webp` 10장(약 3MB)만 커밋한다.
