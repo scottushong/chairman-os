@@ -48,5 +48,15 @@
     "visible": true,
     "sort_order": 5,
     "pinned": false
+  },
+  {
+    "business_id": "biz_debutphoto",
+    "name": "DEBUT PHOTO",
+    "status": "Incubating",
+    "industry": "AI/소비자앱",
+    "owner_user_id": "user_001",
+    "visible": true,
+    "sort_order": 6,
+    "pinned": true
   }
 ]

@@ -48,5 +48,35 @@
     "status": "Doing",
     "progress_pct": 46,
     "deadline": "2026-11-09"
+  },
+  {
+    "project_id": "prj_006",
+    "business_id": "biz_debutphoto",
+    "name": "아이돌 데뷔",
+    "owner": "user_001",
+    "priority": "High",
+    "status": "Doing",
+    "progress_pct": 85,
+    "deadline": "2026-10-15"
+  },
+  {
+    "project_id": "prj_007",
+    "business_id": "biz_debutphoto",
+    "name": "PLAN A~Z",
+    "owner": "user_001",
+    "priority": "High",
+    "status": "Doing",
+    "progress_pct": 55,
+    "deadline": "2026-10-31"
+  },
+  {
+    "project_id": "prj_008",
+    "business_id": "biz_debutphoto",
+    "name": "커리어",
+    "owner": "user_001",
+    "priority": "Critical",
+    "status": "Doing",
+    "progress_pct": 5,
+    "deadline": "2026-11-15"
   }
 ]

@@ -93,6 +93,27 @@
       "title": "폴란드 1차 선적",
       "owner": "user_005",
       "deadline": "2026-09-23"
+    },
+    {
+      "milestone_id": "ms_004",
+      "business_id": "biz_debutphoto",
+      "title": "랭킹 3파전 구조 오픈 (career 카테고리)",
+      "owner": "user_001",
+      "deadline": "2026-10-10"
+    },
+    {
+      "milestone_id": "ms_005",
+      "business_id": "biz_debutphoto",
+      "title": "PLAN 진열대 A~Z 기반 교체",
+      "owner": "user_001",
+      "deadline": "2026-10-31"
+    },
+    {
+      "milestone_id": "ms_006",
+      "business_id": "biz_debutphoto",
+      "title": "커리어 서비스 오픈",
+      "owner": "user_001",
+      "deadline": "2026-11-15"
     }
   ],
   "business_coordinates": [

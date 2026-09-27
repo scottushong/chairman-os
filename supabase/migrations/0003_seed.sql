@@ -7,7 +7,7 @@
 --   값을 바꾸려면 JSON을 고치고 다시 생성한 뒤 둘을 같이 커밋한다.
 --
 -- 전부 Dummy다. 실적이 아니다(src/data/README.md).
--- 11개 테이블 / 519행.
+-- 11개 테이블 / 526행.
 --
 -- 넣지 않는 테이블
 --   documents      시드 JSON이 없다. Vault 판정이 걸린 표라 임의 행을 만들지 않는다.
@@ -34,13 +34,14 @@ alter table decisions no force row level security;
 alter table alerts no force row level security;
 alter table ai_night_outputs no force row level security;
 
--- businesses (5행) — CH-001~005. 5개사
+-- businesses (6행) — CH-001~005. 5개사
 insert into businesses (business_id, name, status, industry, owner_user_id, visible, sort_order, pinned) values
   ('biz_dy', 'DY (주)', 'Active', '제조/화학', '3d720a36-f18a-5182-85f4-a4b2da972b2b', true, 1, true),
   ('biz_vana', 'VANA AI', 'Active', 'AI/SaaS/플랫폼', '6989f700-c2de-5e70-8a56-40847a6fc94d', true, 2, false),
   ('biz_sticky', 'Sticky Alliance', 'Active', '글로벌 유통/화학', 'bc7f441e-0861-550f-986d-6f237144fc8d', true, 3, false),
   ('biz_hof', 'HOF Robotics', 'Incubating', '로봇/하드웨어', 'cbb145c3-4b5e-59c6-a2e6-83db5f06ad6e', true, 4, false),
-  ('biz_boram', 'Boram Life', 'Active', '생활/소비재', '58410dfc-5927-56f0-b194-21348f62647f', true, 5, false);
+  ('biz_boram', 'Boram Life', 'Active', '생활/소비재', '58410dfc-5927-56f0-b194-21348f62647f', true, 5, false),
+  ('biz_debutphoto', 'DEBUT PHOTO', 'Incubating', 'AI/소비자앱', '3d720a36-f18a-5182-85f4-a4b2da972b2b', true, 6, true);
 
 -- finance_kpis (480행) — 06_Dummy_Data Finance_KPI. 12개월 × 5개사 × 8지표
 insert into finance_kpis (period, business_id, metric, value, target, currency) values
@@ -542,19 +543,25 @@ insert into critical_risks (risk_id, business_id, title, detail, impact, urgency
   ('risk_002', 'biz_hof', 'Face actuator 후보 미확정', '부품 공급 지연 시 프로토타입 일정 전체가 밀린다.', 'Warning', 'Critical', 'Rule'),
   ('risk_003', 'biz_sticky', '폴란드 경쟁사 신규 진입', '판가 압박. 가격 전략 재검토 필요.', 'Warning', 'Warning', 'Rule');
 
--- milestones (3행) — CH-014. project_id는 시드에 연결 정보가 없어 비운다
+-- milestones (6행) — CH-014. project_id는 시드에 연결 정보가 없어 비운다
 insert into milestones (milestone_id, business_id, project_id, title, owner_user_id, deadline) values
   ('ms_001', 'biz_vana', null, '캐나다 파일럿 배포 완료', '6989f700-c2de-5e70-8a56-40847a6fc94d', '2026-09-30'),
   ('ms_002', 'biz_dy', null, 'EVA 자동화 라인 양산 전환', 'bc7f441e-0861-550f-986d-6f237144fc8d', '2026-10-13'),
-  ('ms_003', 'biz_sticky', null, '폴란드 1차 선적', 'bc7f441e-0861-550f-986d-6f237144fc8d', '2026-09-23');
+  ('ms_003', 'biz_sticky', null, '폴란드 1차 선적', 'bc7f441e-0861-550f-986d-6f237144fc8d', '2026-09-23'),
+  ('ms_004', 'biz_debutphoto', null, '랭킹 3파전 구조 오픈 (career 카테고리)', '3d720a36-f18a-5182-85f4-a4b2da972b2b', '2026-10-10'),
+  ('ms_005', 'biz_debutphoto', null, 'PLAN 진열대 A~Z 기반 교체', '3d720a36-f18a-5182-85f4-a4b2da972b2b', '2026-10-31'),
+  ('ms_006', 'biz_debutphoto', null, '커리어 서비스 오픈', '3d720a36-f18a-5182-85f4-a4b2da972b2b', '2026-11-15');
 
--- projects (5행) — CH-020
+-- projects (8행) — CH-020
 insert into projects (project_id, business_id, name, owner_user_id, priority, status, progress_pct, deadline) values
   ('prj_001', 'biz_vana', '캐나다 시장 진출', '6989f700-c2de-5e70-8a56-40847a6fc94d', 'High', 'Doing', 68, '2026-09-30'),
   ('prj_002', 'biz_dy', 'EVA 자동화 라인', 'bc7f441e-0861-550f-986d-6f237144fc8d', 'High', 'Doing', 74, '2026-10-13'),
   ('prj_003', 'biz_hof', 'Alpha Face Prototype', 'cbb145c3-4b5e-59c6-a2e6-83db5f06ad6e', 'Critical', 'Doing', 32, '2026-12-31'),
   ('prj_004', 'biz_sticky', '핫멜트 폴란드 수출', 'bc7f441e-0861-550f-986d-6f237144fc8d', 'High', 'Doing', 59, '2026-09-23'),
-  ('prj_005', 'biz_boram', '투자 유치 (시리즈 A)', '58410dfc-5927-56f0-b194-21348f62647f', 'Medium', 'Doing', 46, '2026-11-09');
+  ('prj_005', 'biz_boram', '투자 유치 (시리즈 A)', '58410dfc-5927-56f0-b194-21348f62647f', 'Medium', 'Doing', 46, '2026-11-09'),
+  ('prj_006', 'biz_debutphoto', '아이돌 데뷔', '3d720a36-f18a-5182-85f4-a4b2da972b2b', 'High', 'Doing', 85, '2026-10-15'),
+  ('prj_007', 'biz_debutphoto', 'PLAN A~Z', '3d720a36-f18a-5182-85f4-a4b2da972b2b', 'High', 'Doing', 55, '2026-10-31'),
+  ('prj_008', 'biz_debutphoto', '커리어', '3d720a36-f18a-5182-85f4-a4b2da972b2b', 'Critical', 'Doing', 5, '2026-11-15');
 
 -- tasks (5행) — CH-040 / CH-017. blocked_since는 DEFERRED D-02 결정 A로 들어온 열이다
 insert into tasks (task_id, project_id, title, owner_user_id, priority, status, blocked_since, deadline, chairman_needed) values

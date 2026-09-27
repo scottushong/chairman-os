@@ -7,9 +7,9 @@
 
 | 시트 | 파일 | 행 |
 |---|---|---|
-| Businesses | `businesses.json` | 5 |
+| Businesses | `businesses.json` | 6 |
 | Finance_KPI | `finance-kpi.json` | 480 |
-| Projects | `projects.json` | 5 |
+| Projects | `projects.json` | 8 |
 | Tasks | `tasks.json` | 5 |
 | Decisions | `decisions.json` | 4 |
 | Alerts | `alerts.json` | 4 |
@@ -40,6 +40,12 @@
    "이 업무가 지금 상태로 들어간 날"을 뜻하는 필수 필드를 5행 모두에 넣었다.
    값은 마감일과 우선순위에 맞춰 역산한 Dummy다 — 시트에 없던 열이므로
    02_데이터필드 Task 정의에도 같이 반영해야 한다.
+
+5. **DEBUT PHOTO 추가** (2026-09-27). 시트에 없는 6번째 회사다 — 회장이 직접 굴리는 신규 소비자
+   앱이라 `Incubating`/`pinned=true`로 둔다. 서비스 셋을 프로젝트로 걸었다(`prj_006` 아이돌,
+   `prj_007` PLAN A~Z, `prj_008` 커리어). 진행률은 리포지터리 실제 상태에서 읽은 값이다 —
+   아이돌은 랜딩·그룹방·초대·컨셉·랭킹이 붙어 85, PLAN은 엔진 26개가 있고 진열대가 비어 55,
+   커리어는 ComingSoon 한 장뿐이라 5. 마일스톤 셋(`ms_004`~`ms_006`)이 같은 회사에 걸린다.
 
 이 폴더는 읽기 전용이 원칙이다. 위 4번은 Chairman이 명시적으로 승인한 1회 예외이고,
 그 외의 값 변경은 시트를 먼저 고친 뒤 여기로 내린다.
