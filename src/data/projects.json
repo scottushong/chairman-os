@@ -76,7 +76,7 @@
     "owner": "user_001",
     "priority": "Critical",
     "status": "Doing",
-    "progress_pct": 5,
+    "progress_pct": 30,
     "deadline": "2026-11-15"
   }
 ]

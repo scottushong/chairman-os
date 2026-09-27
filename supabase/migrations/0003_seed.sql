@@ -561,7 +561,7 @@ insert into projects (project_id, business_id, name, owner_user_id, priority, st
   ('prj_005', 'biz_boram', '투자 유치 (시리즈 A)', '58410dfc-5927-56f0-b194-21348f62647f', 'Medium', 'Doing', 46, '2026-11-09'),
   ('prj_006', 'biz_debutphoto', '아이돌 데뷔', '3d720a36-f18a-5182-85f4-a4b2da972b2b', 'High', 'Doing', 85, '2026-10-15'),
   ('prj_007', 'biz_debutphoto', 'PLAN A~Z', '3d720a36-f18a-5182-85f4-a4b2da972b2b', 'High', 'Doing', 55, '2026-10-31'),
-  ('prj_008', 'biz_debutphoto', '커리어', '3d720a36-f18a-5182-85f4-a4b2da972b2b', 'Critical', 'Doing', 5, '2026-11-15');
+  ('prj_008', 'biz_debutphoto', '커리어', '3d720a36-f18a-5182-85f4-a4b2da972b2b', 'Critical', 'Doing', 30, '2026-11-15');
 
 -- tasks (5행) — CH-040 / CH-017. blocked_since는 DEFERRED D-02 결정 A로 들어온 열이다
 insert into tasks (task_id, project_id, title, owner_user_id, priority, status, blocked_since, deadline, chairman_needed) values
