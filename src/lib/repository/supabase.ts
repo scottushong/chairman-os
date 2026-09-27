@@ -72,6 +72,8 @@ import type {
   OfficialStatement,
   ProcessChart,
   ProcessChartInput,
+  CityLayout,
+  CityLayoutInput,
   NextMilestone,
   Project,
   SecurityClass,
@@ -1083,6 +1085,72 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       void actor
       const { error } = await sb.from('process_charts').delete().eq('id', id)
       if (error) throw new Error(`Supabase process_charts delete ${error.code ?? '?'}: ${error.message}`)
+    },
+
+    /**
+     * Phase 8 G-1 그룹 시티(0037). 줄의 주인을 볼 수 있는지는 can_read_city_layout()이 본다.
+     * numeric(5,2)는 PostgREST가 숫자로 준다 — 그래도 Number()로 한 번 더 맞춘다(문자열로 오는
+     * 설정이 있다).
+     */
+    async listCityLayout(): Promise<CityLayout[]> {
+      const { data, error } = await sb
+        .from('city_layout')
+        .select('id, business_id, initiative_id, x, y, w, h, stage_image')
+        .order('id', { ascending: true })
+      if (error) throw new Error(`Supabase city_layout ${error.code ?? '?'}: ${error.message}`)
+      return (data ?? []).map((r) => ({
+        ...(r as CityLayout),
+        id: Number(r.id),
+        x: Number(r.x),
+        y: Number(r.y),
+        w: Number(r.w),
+        h: Number(r.h),
+      }))
+    },
+
+    /**
+     * 지우기 → 고치기 → 넣기 순서. 지우기가 먼저여야 한 회사를 뺐다가 다른 상자로 다시
+     * 넣는 저장이 unique에 걸리지 않는다. 감사·updated_by는 트리거가 적는다.
+     *
+     * **한 트랜잭션이 아니다.** 중간에 실패하면 앞의 줄은 이미 저장돼 있다 — 배치는 되돌릴
+     * 수 있는 값이라(다시 옮기면 된다) RPC를 새로 만들지 않았다. 판단은 DEFERRED에 적었다.
+     */
+    async saveCityLayout(input: { upserts: CityLayoutInput[]; deletes: number[] }, actor: AuditActor): Promise<void> {
+      void actor // 행위자는 DB가 auth.uid()로 적는다.
+      const fail = (op: string, e: { code?: string; message: string; details?: string | null }) =>
+        new Error(`Supabase city_layout ${op} ${e.code ?? '?'}: ${e.message}${e.details ? ` — ${e.details}` : ''}`)
+      if (input.deletes.length > 0) {
+        const { error } = await sb.from('city_layout').delete().in('id', input.deletes)
+        if (error) throw fail('delete', error)
+      }
+      for (const row of input.upserts) {
+        const value = {
+          business_id: row.business_id,
+          initiative_id: row.initiative_id,
+          x: row.x,
+          y: row.y,
+          w: row.w,
+          h: row.h,
+          stage_image: row.stage_image,
+        }
+        const { error } = row.id
+          ? await sb.from('city_layout').update(value).eq('id', row.id)
+          : await sb.from('city_layout').insert(value)
+        if (error) throw fail(row.id ? 'update' : 'insert', error)
+      }
+    },
+
+    /** 한 줄 update — 터가 회사가 되는 사이에 두 줄이거나 빈 자리인 순간이 없다(0037 머리 주석). */
+    async promoteCityLot(id: number, businessId: string, actor: AuditActor): Promise<void> {
+      void actor
+      const { data, error } = await sb
+        .from('city_layout')
+        .update({ initiative_id: null, business_id: businessId, stage_image: 'foundation' })
+        .eq('id', id)
+        .not('initiative_id', 'is', null)
+        .select('id')
+      if (error) throw new Error(`Supabase city_layout promote ${error.code ?? '?'}: ${error.message}`)
+      if (!data || data.length === 0) throw new Error('city_layout: 승격할 터가 없다')
     },
 
     /** 블록 3. 감사 기록·결산·라인 closed가 0016 close_period() 한 트랜잭션이다. */

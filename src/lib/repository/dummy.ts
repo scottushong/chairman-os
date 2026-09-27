@@ -36,6 +36,7 @@ import {
   dummyInterventions,
 } from './dummy-succession'
 import * as books from './dummy-books'
+import * as city from './dummy-city'
 import { dummyLedger } from './dummy-books'
 import {
   DUMMY_DOCUMENTS,
@@ -465,6 +466,9 @@ export const dummyRepository: ChairmanRepository = {
   listProcessCharts: books.listProcessCharts,
   saveProcessChart: books.saveProcessChart,
   deleteProcessChart: books.deleteProcessChart,
+  listCityLayout: city.listCityLayout,
+  saveCityLayout: city.saveCityLayout,
+  promoteCityLot: city.promoteCityLot,
 
   async listKeymen() {
     return memoryKeymen.map((k) => ({ ...k }))

@@ -52,6 +52,8 @@ import type {
   OfficialStatement,
   ProcessChart,
   ProcessChartInput,
+  CityLayout,
+  CityLayoutInput,
   NextMilestone,
   Project,
   NewInvitation,
@@ -145,6 +147,19 @@ export interface ChairmanRepository {
 
   /** 삭제. 시트 자체는 그대로 남는다 — 여기서 지우는 것은 링크뿐이다. */
   deleteProcessChart(id: number, actor: AuditActor): Promise<void>
+
+  /**
+   * Phase 8 G-1 — 그룹 시티 배치(0037). 읽기는 줄의 주인을 볼 수 있는 사람(DB가 판정),
+   * 쓰기는 Chairman만. 권한 밖 줄은 아예 오지 않으므로 화면에서 다시 거르지 않는다.
+   */
+  listCityLayout(): Promise<CityLayout[]>
+
+  /** /group/edit의 저장 한 번. 옮기고 더하고 뺀 것을 한꺼번에 보낸다. */
+  saveCityLayout(input: { upserts: CityLayoutInput[]; deletes: number[] }, actor: AuditActor): Promise<void>
+
+  /** 이니셔티브 터를 회사로 승격한다. 같은 줄이 business_id를 받고 stage_image='foundation'. */
+  promoteCityLot(id: number, businessId: string, actor: AuditActor): Promise<void>
+
   listProjects(): Promise<Project[]>
   listTasks(): Promise<Task[]>
   listDecisions(): Promise<Decision[]>

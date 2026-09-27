@@ -44,6 +44,23 @@ const STAGE_CROP = {
   'stage-finishing.png': { name: 'finishing', left: 0.46, top: 0.03, width: 0.5, height: 0.92 },
   'lot.png': { name: 'lot', left: 0.42, top: 0.5, width: 0.48, height: 0.5 },
 }
+/**
+ * 5개사 클로즈업. 한 장(`dy,vana, sticky, hof, boram.png`)에 다섯 건물이 다 있고 영문 라벨이
+ * 그림에 박혀 있어서, **라벨을 피해** 건물만 잘라 낸다. 파일 이름은 business_id의 꼬리다
+ * (biz_dy → company-dy) — 화면은 lib/city.ts의 COMPANY_CLOSEUP으로 이 이름을 찾는다.
+ *
+ * Boram은 원본에 라벨이 없다(HOF 라벨이 두 번 찍혀 있다). 오른쪽 아래 계단식 건물을
+ * Boram으로 읽었다 — 넷이 라벨로 자리를 차지하고 남은 주인공 건물이 그것뿐이다.
+ */
+const COMPANY_SRC = 'dy,vana, sticky, hof, boram.png'
+const COMPANY_CROP = {
+  dy: { left: 0.13, top: 0.35, width: 0.3, height: 0.26 },
+  vana: { left: 0.36, top: 0.04, width: 0.14, height: 0.42 },
+  sticky: { left: 0.6, top: 0.15, width: 0.23, height: 0.35 },
+  hof: { left: 0.5, top: 0.592, width: 0.23, height: 0.19 },
+  boram: { left: 0.77, top: 0.62, width: 0.19, height: 0.24 },
+}
+
 const CLOSEUP_WIDTH = 900
 
 const kb = (p) => `${Math.round(statSync(p).size / 1024)}KB`
@@ -59,26 +76,38 @@ async function backgrounds() {
   }
 }
 
+/**
+ * 한 장에서 비율 상자 하나를 잘라 CLOSEUP_WIDTH로 맞춘다. 상자가 그보다 좁으면
+ * 늘리지 않는다 — VANA 탑은 원본에서 폭이 340px 남짓이라 900으로 늘리면 뭉개진다.
+ */
+async function crop(src, box, out) {
+  const meta = await sharp(src).metadata()
+  await sharp(src)
+    .extract({
+      left: Math.round(meta.width * box.left),
+      top: Math.round(meta.height * box.top),
+      width: Math.round(meta.width * box.width),
+      height: Math.round(meta.height * box.height),
+    })
+    .resize({ width: CLOSEUP_WIDTH, withoutEnlargement: true })
+    .webp({ quality: 80, effort: 6 })
+    .toFile(out)
+  console.log(`${out}  ${kb(out)}`)
+}
+
 async function closeups() {
-  for (const [file, crop] of Object.entries(STAGE_CROP)) {
-    const src = join(SRC, file)
-    const meta = await sharp(src).metadata()
-    const out = join(OUT, `stage-${crop.name}.webp`)
-    await sharp(src)
-      .extract({
-        left: Math.round(meta.width * crop.left),
-        top: Math.round(meta.height * crop.top),
-        width: Math.round(meta.width * crop.width),
-        height: Math.round(meta.height * crop.height),
-      })
-      .resize({ width: CLOSEUP_WIDTH })
-      .webp({ quality: 80, effort: 6 })
-      .toFile(out)
-    console.log(`${out}  ${kb(out)}`)
+  for (const [file, box] of Object.entries(STAGE_CROP)) {
+    await crop(join(SRC, file), box, join(OUT, `stage-${box.name}.webp`))
   }
 }
 
-const missing = [...BACKGROUNDS.map((b) => b.src), ...Object.keys(STAGE_CROP)].filter(
+async function companies() {
+  for (const [name, box] of Object.entries(COMPANY_CROP)) {
+    await crop(join(SRC, COMPANY_SRC), box, join(OUT, `company-${name}.webp`))
+  }
+}
+
+const missing = [...BACKGROUNDS.map((b) => b.src), ...Object.keys(STAGE_CROP), COMPANY_SRC].filter(
   (f) => !readdirSync(SRC).includes(f),
 )
 if (missing.length > 0) {
@@ -91,3 +120,4 @@ if (missing.length > 0) {
 mkdirSync(OUT, { recursive: true })
 await backgrounds()
 await closeups()
+await companies()

@@ -307,8 +307,8 @@ async function rls(db: Db) {
        where schemaname = 'public' and (policyname like 'ai_agent_no_%' or policyname like 'integration_no_%')`,
   )
   const policyKind = new Map(restrictivePolicies.map((r) => [`${r.tablename}.${r.policyname}`, r.permissive]))
-  const aiAgentBlockedTables = ['initiatives', 'initiative_keymen', 'initiative_docs', 'events']
-  const integrationBlockedTables = ['initiatives', 'initiative_keymen', 'initiative_docs', 'events', 'initiative_notes', 'chairman_checkins']
+  const aiAgentBlockedTables = ['initiatives', 'initiative_keymen', 'initiative_docs', 'events', 'city_layout']
+  const integrationBlockedTables = ['initiatives', 'initiative_keymen', 'initiative_docs', 'events', 'initiative_notes', 'chairman_checkins', 'city_layout']
   for (const t of aiAgentBlockedTables) {
     for (const op of ['insert', 'update', 'delete']) {
       assert.equal(
@@ -353,6 +353,8 @@ async function rls(db: Db) {
     policyKind.get('exceptions.ai_agent_no_insert'), undefined,
     '0035: exceptions에 ai_agent_no_insert가 생겼다 — 야간 Job이 예외를 만들지 못하면 블록 B의 규칙 엔진이 통째로 막힌다. AI가 못 하는 것은 «만드는 것»이 아니라 «정하는 것»이다',
   )
+
+  await cityLayout(db, as)
 
   // ── 0018 initiative-logos 버킷 ─────────────────────────────────────
   // 버킷이 비공개인가. as()는 첫 칸을 Number()로 바꾸는데 false가 0으로 둔갑하면
@@ -716,6 +718,131 @@ async function rls(db: Db) {
 }
 
 type As = (uid: string, sql: string, setup?: string) => Promise<'denied' | number>
+
+/**
+ * 0037 city_layout — 그룹 시티 배치.
+ *
+ * 읽기는 그 줄의 주인을 볼 수 있는 사람(회사 줄 = has_business, 터 줄 = can_read_initiatives),
+ * 쓰기는 Chairman만. 승격은 update 한 줄이고 감사에 «승격»으로 남는다. updated_by는
+ * 화면이 무엇을 보내든 DB가 auth.uid()로 덮는다.
+ *
+ * **시드는 여기서 다시 돌린다.** applyAll 시점엔 Chairman이 없어 0037의 시드가 빠져나갔다 —
+ * 0021이 production에서만 터졌던 길(0022)을 이 검사가 한 번 밟아 둔다.
+ */
+async function cityLayout(db: Db, as: As) {
+  // 읽기용 줄을 소유자 권한으로 심는다. 회사 둘 + 이니셔티브 터 하나.
+  await db.exec(`
+    insert into initiatives (initiative_id, title, kind) values ('ini_city', '시티 터', 'NewBiz');
+    insert into city_layout (business_id, initiative_id, x, y, w, h, updated_by) values
+      ('biz_dy', null, 10, 10, 10, 10, '${UID.chairman}'),
+      ('biz_vana', null, 30, 10, 10, 10, '${UID.chairman}'),
+      (null, 'ini_city', 50, 50, 10, 10, '${UID.chairman}');
+  `)
+  const count = `select count(*)::int from city_layout`
+
+  // 자물쇠는 revoke다(0035 규칙) — force를 걸지 않았고, anon은 표도 판정 함수도 못 쓴다.
+  const lock = await db.query<{ forced: boolean; anon_select: boolean; anon_truncate: boolean; anon_fn: boolean }>(`
+    select c.relforcerowsecurity as forced,
+           has_table_privilege('anon', 'city_layout', 'select') as anon_select,
+           has_table_privilege('anon', 'city_layout', 'truncate') as anon_truncate,
+           has_function_privilege('anon', 'can_read_city_layout(text, text)', 'execute') as anon_fn
+      from pg_class c where c.relname = 'city_layout'`)
+  assert.deepEqual(
+    lock.rows[0], { forced: false, anon_select: false, anon_truncate: false, anon_fn: false },
+    '0037: city_layout에 force가 걸렸거나 anon에게 무엇인가 열려 있다 — 0035의 자물쇠 규칙(revoke)',
+  )
+
+  // 읽기 — 회사 격리와 이니셔티브 가림.
+  assert.equal(await as(UID.chairman, count), 3, '0037: Chairman은 세 줄을 다 본다')
+  assert.equal(await as(UID.cfo, count), 3, '0037: GroupCFO는 그룹 범위 + 이니셔티브 열람이라 셋')
+  assert.equal(await as(UID.member, count), 1, '0037: Member(biz_dy)는 자기 회사 줄 하나만 — 남의 회사도 터도 안 보인다')
+  assert.equal(await as(UID.ceo, count), 1, '0037: BusinessCEO(biz_vana)는 자기 회사 줄 하나만 — 터가 보이면 회장이 무엇을 준비하는지 샌다')
+  assert.equal(
+    await as(UID.ceo, `select count(*)::int from city_layout where initiative_id is not null`),
+    0, '0037: BusinessCEO에게 이니셔티브 터가 보인다',
+  )
+
+  // 쓰기 — Chairman만.
+  const insertHof = `insert into city_layout (business_id, x, y, w, h) values ('biz_hof', 1, 1, 5, 5)`
+  assert.equal(await as(UID.chairman, insertHof), 1, '0037: Chairman이 배치를 못 만든다')
+  for (const [who, uid] of [['GroupCFO', UID.cfo], ['BusinessCEO', UID.ceo], ['Member', UID.member], ['AIAgent', UID.agent], ['Integration', UID.integration]] as const) {
+    assert.equal(await as(uid, insertHof), 'denied', `0037: ${who}가 도시 배치를 만든다`)
+  }
+  assert.equal(
+    await as(UID.cfo, `update city_layout set x = 20 where business_id = 'biz_dy'`),
+    0, '0037: GroupCFO가 도시를 옮긴다',
+  )
+  assert.equal(
+    await as(UID.cfo, `delete from city_layout where business_id = 'biz_dy'`),
+    0, '0037: GroupCFO가 도시에서 회사를 뺀다',
+  )
+  assert.equal(
+    await as(UID.chairman, `update city_layout set x = 20, y = 30 where business_id = 'biz_dy'`),
+    1, '0037: Chairman이 도시를 못 옮긴다',
+  )
+
+  // 모양 — DB가 막는다.
+  await assert.rejects(
+    as(UID.chairman, `insert into city_layout (x, y, w, h) values (1, 1, 5, 5)`),
+    /city_layout_target_check/, '0037: 주인 없는 줄이 들어간다',
+  )
+  await assert.rejects(
+    as(UID.chairman, `insert into city_layout (business_id, initiative_id, x, y, w, h) values ('biz_hof', 'ini_city', 1, 1, 5, 5)`),
+    /city_layout_target_check/, '0037: 회사이면서 터인 줄이 들어간다',
+  )
+  await assert.rejects(
+    as(UID.chairman, `insert into city_layout (business_id, x, y, w, h) values ('biz_hof', 95, 1, 10, 5)`),
+    /city_layout_box_check/, '0037: 그림 밖으로 나간 상자가 들어간다',
+  )
+  await assert.rejects(
+    as(UID.chairman, `insert into city_layout (business_id, x, y, w, h, stage_image) values ('biz_hof', 1, 1, 5, 5, 'rubble')`),
+    /city_layout_stage_check/, '0037: 없는 단계가 들어간다',
+  )
+  await assert.rejects(
+    as(UID.chairman, `insert into city_layout (business_id, x, y, w, h) values ('biz_dy', 1, 1, 5, 5)`),
+    /city_layout_business_unique/, '0037: 한 회사가 도시에 두 번 선다',
+  )
+
+  // updated_by는 DB가 적는다 — 남의 id를 적어 보내도 Chairman 자신이 남는다.
+  assert.equal(
+    await as(
+      UID.chairman,
+      `select count(*)::int from city_layout where business_id = 'biz_hof' and updated_by = '${UID.chairman}'`,
+      `insert into city_layout (business_id, x, y, w, h, updated_by) values ('biz_hof', 1, 1, 5, 5, '${UID.cfo}')`,
+    ),
+    1, '0037: updated_by를 남의 id로 적어 보내면 그대로 남는다 — 감사가 거짓말을 한다',
+  )
+
+  // 승격 — 같은 줄이 터에서 회사로. 감사에 «승격»이 남는다.
+  assert.equal(
+    await as(
+      UID.chairman,
+      `select count(*)::int from audit_log where entity_table = 'city_layout' and note like '그룹 시티 승격%'
+         and after->>'business_id' = 'biz_hof' and after->>'stage_image' = 'foundation'`,
+      `update city_layout set initiative_id = null, business_id = 'biz_hof', stage_image = 'foundation'
+         where initiative_id = 'ini_city'`,
+    ),
+    1, '0037: 승격이 감사에 «승격»으로 남지 않는다',
+  )
+
+  // 이니셔티브가 지워지면 터도 사라진다(on delete cascade).
+  await db.exec(`delete from initiatives where initiative_id = 'ini_city'`)
+  const left = await db.query<{ n: number }>(`select count(*)::int as n from city_layout where initiative_id is not null`)
+  assert.equal(left.rows[0].n, 0, '0037: 지워진 이니셔티브의 터가 남는다')
+
+  // 시드 — Chairman이 있는 지금 0037의 시드 블록을 다시 돌린다. 이미 있는 두 회사는 그대로,
+  // 나머지 셋이 들어와 다섯. 감사 트리거가 실제로 돈다(0022의 교훈).
+  const sql = readFileSync(join(__dirname, '..', 'supabase', 'migrations', '0037_city_layout.sql'), 'utf8')
+  const seed = sql.slice(sql.indexOf('do $seed$'))
+  await db.exec(seed)
+  const seeded = await db.query<{ n: number }>(`select count(*)::int as n from city_layout where business_id is not null`)
+  assert.equal(seeded.rows[0].n, 5, '0037: 시드가 다섯 회사를 다 세우지 않았다')
+  const dy = await db.query<{ x: string }>(`select x::text from city_layout where business_id = 'biz_dy'`)
+  assert.equal(Number(dy.rows[0].x), 10, '0037: 시드가 회장이 이미 둔 자리를 덮었다')
+
+  // 다음 검사가 빈 표를 전제할 수 있게 치운다.
+  await db.exec(`delete from city_layout`)
+}
 
 /** 0016 자체 장부. 역할별로 되는 것/막히는 것. */
 async function books(db: Db, as: As) {
