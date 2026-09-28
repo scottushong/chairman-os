@@ -37,6 +37,9 @@ function failure(e: unknown, fallback: string): string {
     : fallback
 }
 
+/** 0039 business_keymen_email_check와 같은 모양. */
+const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+
 export async function saveKeyman(input: {
   keymanId?: unknown
   businessId: unknown
@@ -44,6 +47,8 @@ export async function saveKeyman(input: {
   relation: unknown
   lastContactOn: unknown
   note: unknown
+  /** 0039. 비우면 null. */
+  email?: unknown
 }): Promise<KeymanState> {
   const business_id = text(input.businessId)
   const name = text(input.name)
@@ -51,6 +56,8 @@ export async function saveKeyman(input: {
   const note = text(input.note)
   const last = text(input.lastContactOn)
   const keymanId = text(input.keymanId)
+  const email = text(input.email).toLowerCase()
+  if (email && !EMAIL.test(email)) return { error: '이메일 형식이 맞지 않습니다.' }
 
   if (!business_id) return { error: '어느 회사의 키맨인지 알 수 없습니다.' }
   if (!name) return { error: '이름을 입력하세요.' }
@@ -79,6 +86,7 @@ export async function saveKeyman(input: {
         relation,
         last_contact_on: last || null,
         note,
+        email: email || null,
       },
       { user_id: user.user_id, role: user.role },
     )
@@ -131,6 +139,7 @@ export async function saveInitiativeKeymanAction(input: {
   channel: unknown
   lastContactOn: unknown
   note: unknown
+  email?: unknown
 }): Promise<InitiativeKeymanState> {
   const initiative_id = text(input.initiativeId)
   const name = text(input.name)
@@ -138,6 +147,8 @@ export async function saveInitiativeKeymanAction(input: {
   const note = text(input.note)
   const last = text(input.lastContactOn)
   const keymanId = text(input.keymanId)
+  const email = text(input.email).toLowerCase()
+  if (email && !EMAIL.test(email)) return { error: '이메일 형식이 맞지 않습니다.' }
 
   if (!initiative_id) return { error: '어느 건의 키맨인지 알 수 없습니다.' }
   if (!name) return { error: '이름을 입력하세요.' }
@@ -168,6 +179,7 @@ export async function saveInitiativeKeymanAction(input: {
         channel: input.channel as KeymanChannel,
         last_contact_on: last || null,
         note,
+        email: email || null,
       },
       { user_id: user.user_id, role: user.role },
     )

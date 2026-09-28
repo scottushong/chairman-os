@@ -52,9 +52,10 @@ interface Draft {
   channel: KeymanChannel
   lastContactOn: string
   note: string
+  email: string
 }
 
-const EMPTY: Draft = { name: '', relation: '', channel: 'Other', lastContactOn: '', note: '' }
+const EMPTY: Draft = { name: '', relation: '', channel: 'Other', lastContactOn: '', note: '', email: '' }
 
 export function KeymenPanel({
   scope,
@@ -93,6 +94,7 @@ export function KeymenPanel({
             relation: draft.relation,
             lastContactOn: draft.lastContactOn,
             note: draft.note,
+            email: draft.email,
           })
         : await saveInitiativeKeymanAction({
             keymanId: draft.keymanId,
@@ -102,6 +104,7 @@ export function KeymenPanel({
             channel: draft.channel,
             lastContactOn: draft.lastContactOn,
             note: draft.note,
+            email: draft.email,
           })
     setBusy(false)
     if (result.error || !result.keyman) {
@@ -176,6 +179,14 @@ export function KeymenPanel({
             placeholder="예: 주거래처 구매팀장"
             onChange={(relation) => setDraft({ ...draft, relation })}
             maxLength={300}
+          />
+          {/* 0039. 이 주소에서 온 메일이 아침 브리핑의 «중요 발신자»로 세어진다. */}
+          <Field
+            label="이메일"
+            value={draft.email}
+            placeholder="메일 발신자 매칭용"
+            onChange={(email) => setDraft({ ...draft, email })}
+            maxLength={200}
           />
           {scope.kind === 'initiative' ? (
             <label className="block text-[10px] font-semibold tracking-[0.08em] text-ink-muted">
@@ -266,6 +277,7 @@ export function KeymenPanel({
                           channel: scope.kind === 'initiative' ? (k as InitiativeKeyman).channel : 'Other',
                           lastContactOn: k.last_contact_on ?? '',
                           note: k.note,
+                          email: k.email ?? '',
                         })
                       }}
                       className="rounded p-1 text-ink-muted hover:text-accent"

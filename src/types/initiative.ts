@@ -88,6 +88,8 @@ export interface InitiativeKeyman {
   channel: KeymanChannel
   last_contact_on: IsoDate | null
   note: string
+  /** 0039. business_keymen.email과 같다. */
+  email?: string | null
 }
 
 export interface InitiativeDoc {

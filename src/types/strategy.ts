@@ -85,4 +85,6 @@ export interface BusinessKeyman {
   /** 최근 접촉일. 기록이 없으면 null — '오래 연락 안 함'과 '기록 안 함'은 다르다 */
   last_contact_on: IsoDate | null
   note: string
+  /** 0039. 이 주소에서 온 메일이 브리핑의 «중요 발신자»다. 소문자. 없으면 null. */
+  email?: string | null
 }

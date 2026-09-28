@@ -207,8 +207,8 @@ export const SYSTEM_LINKS: readonly NavItem[] = [
     key: 'sys_docs', label: '문서관리', href: '/documents', icon: 'file-text', ready: true,
   },
   {
-    key: 'sys_mail', label: '메일', href: '/mail', icon: 'mail', ready: false,
-    waitingFor: '사내 메일 주소가 정해지면 이 칸이 그리로 넘어갑니다.',
+    // Phase 9 블록 4 — 회장 Gmail 읽기 전용(0039). 직원 메일은 범위 밖.
+    key: 'sys_mail', label: '메일', href: '/mail', icon: 'mail', ready: true,
   },
   {
     key: 'sys_meet', label: '화상회의', href: '/meet', icon: 'video', ready: false,

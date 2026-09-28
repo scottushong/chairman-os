@@ -358,6 +358,7 @@ async function rls(db: Db) {
 
   await cityLayout(db, as)
   await groupware(db, as)
+  await googleToken(db, as)
 
   // ── 0018 initiative-logos 버킷 ─────────────────────────────────────
   // 버킷이 비공개인가. as()는 첫 칸을 Number()로 바꾸는데 false가 0으로 둔갑하면
@@ -845,6 +846,59 @@ async function cityLayout(db: Db, as: As) {
 
   // 다음 검사가 빈 표를 전제할 수 있게 치운다.
   await db.exec(`delete from city_layout`)
+}
+
+/**
+ * 0039 회장 Gmail 토큰 — 0023 카카오와 같은 자물쇠. 표는 아무에게도 열지 않고 definer 함수만.
+ * 읽기 토큰은 Chairman(자기 것)과 AIAgent(아침 브리핑). 보내기 범위가 섞이면 저장하지 않는다.
+ */
+async function googleToken(db: Db, as: As) {
+  // authenticated의 표 권한은 rls() 첫머리의 일괄 grant가 다시 연다(Supabase 기본값 흉내) —
+  // 그래서 여기서는 anon만 카탈로그로 재고, authenticated는 아래에서 행동(정책이 0행)으로 잰다.
+  const priv = await db.query<{ b: boolean }>(`select has_table_privilege('anon', 'chairman_google_token', 'select') as b`)
+  assert.equal(priv.rows[0].b, false, '0039: anon에게 토큰 표가 열려 있다')
+
+  const save = (scopes: string) =>
+    `select google_token_save('acc', 'ref', now() + interval '1 hour', '${scopes}', 'Chairman@X.com')::int`
+  assert.equal(await as(UID.chairman, save('https://www.googleapis.com/auth/gmail.readonly')), 1, '0039: 회장이 연결을 못 저장한다')
+  assert.equal(await as(UID.cfo, save('https://www.googleapis.com/auth/gmail.readonly')), 0, '0039: CFO가 회장 메일 토큰을 저장한다')
+  assert.equal(
+    await as(UID.chairman, save('https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send')),
+    0, '0039: 보내기 범위가 섞인 토큰이 저장된다 — «앱에서 보내지 않음»',
+  )
+  assert.equal(await as(UID.chairman, `select count(*)::int from google_token_status()`, save('https://www.googleapis.com/auth/gmail.readonly')), 1, '0039: 회장이 자기 연결 상태를 못 본다')
+
+  // 소유자 권한으로 한 줄 심고 역할별로 토큰을 읽어 본다.
+  await db.exec(`insert into chairman_google_token (user_id, email, access_token, refresh_token, expires_at, scopes)
+    values ('${UID.chairman}', 'ch@x.com', 'acc', 'ref', now() + interval '1 hour', 'https://www.googleapis.com/auth/gmail.readonly')`)
+  const read = `select count(*)::int from google_token_for_read()`
+  assert.equal(await as(UID.chairman, read), 1, '0039: 회장이 자기 토큰을 못 읽는다')
+  assert.equal(await as(UID.agent, read), 1, '0039: 아침 브리핑(AIAgent)이 토큰을 못 읽는다')
+  assert.equal(await as(UID.cfo, read), 0, '0039: CFO가 회장 메일 토큰을 읽는다')
+  assert.equal(await as(UID.member, read), 0, '0039: 직원이 회장 메일 토큰을 읽는다')
+  assert.equal(await as(UID.chairman2, read), 0, '0039: 다른 회장이 이 회장의 토큰을 읽는다')
+  assert.equal(await as(UID.cfo, `select count(*)::int from google_token_status()`), 0, '0039: CFO가 회장 연결 상태를 본다')
+  assert.equal(await as(UID.cfo, `select count(*)::int from chairman_google_token`), 0, '0039: CFO가 토큰 표를 직접 읽는다')
+  assert.equal(await as(UID.chairman, `select count(*)::int from chairman_google_token where user_id <> '${UID.chairman}'`), 0, '0039: 회장이 남의 토큰 줄을 본다')
+  assert.equal(
+    await as(UID.agent, `select google_token_refreshed('${UID.chairman}', 'acc2', now() + interval '1 hour')::int`),
+    1, '0039: 브리핑이 access token을 갱신하지 못한다',
+  )
+  assert.equal(
+    await as(UID.cfo, `select google_token_refreshed('${UID.chairman}', 'x', now())::int`),
+    0, '0039: CFO가 회장 토큰을 덮어쓴다',
+  )
+  await db.exec(`delete from chairman_google_token`)
+
+  // 키맨 email — 소문자로, 모양이 틀리면 거부.
+  await db.exec(`insert into business_keymen (business_id, name, email) values ('biz_dy', '메일 키맨', '  Kim.Lee@Partner.CO.kr ')`)
+  const kr = await db.query<{ email: string }>(`select email from business_keymen where name = '메일 키맨'`)
+  assert.equal(kr.rows[0].email, 'kim.lee@partner.co.kr', '0039: 키맨 email이 소문자로 정리되지 않는다')
+  await assert.rejects(
+    db.exec(`insert into business_keymen (business_id, name, email) values ('biz_dy', '틀린 메일', 'not-an-email')`),
+    /business_keymen_email_check/, '0039: 모양이 틀린 email이 들어간다',
+  )
+  await db.exec(`delete from business_keymen where name = '메일 키맨'`)
 }
 
 /**
@@ -1504,6 +1558,16 @@ async function kakaoRevokeSurvives(db: Db) {
               or has_table_privilege('anon','chairman_kakao_token','select')) as ok`,
   )
   assert.ok(g.rows[0].ok, '0023: chairman_kakao_token에 authenticated/anon 권한이 남아 있다')
+
+  // 0039 — 같은 자물쇠. 일괄 grant 전에 재야 revoke가 살아 있는지 알 수 있다.
+  const gg = await db.query<{ ok: boolean }>(
+    `select not (has_table_privilege('authenticated','chairman_google_token','select')
+              or has_table_privilege('authenticated','chairman_google_token','insert')
+              or has_table_privilege('authenticated','chairman_google_token','update')
+              or has_table_privilege('authenticated','chairman_google_token','delete')
+              or has_table_privilege('anon','chairman_google_token','select')) as ok`,
+  )
+  assert.ok(gg.rows[0].ok, '0039: chairman_google_token에 authenticated/anon 권한이 남아 있다')
 
   // 0029도 같은 자물쇠를 쓴다. 장부 표는 아무 역할도 직접 못 읽고, 문은 함수 셋뿐이다.
   const b = await db.query<{ ok: boolean }>(

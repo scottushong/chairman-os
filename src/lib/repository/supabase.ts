@@ -584,7 +584,7 @@ function oneAffectedRow<T>(
 }
 
 /** 0015 business_keymen에서 부르는 칸. 세 함수가 같은 모양을 돌려줘야 한다. */
-const KEYMAN_COLUMNS = 'keyman_id,business_id,name,relation,last_contact_on,note'
+const KEYMAN_COLUMNS = 'keyman_id,business_id,name,relation,last_contact_on,note,email'
 
 /** 0017 initiatives + 0018 logo_url. 읽기·쓰기가 같은 모양을 돌려줘야 한다. */
 const INITIATIVE_COLUMNS =
@@ -592,7 +592,7 @@ const INITIATIVE_COLUMNS =
   'next_action,next_action_date,next_action_owner,blocker,status,logo_url,updated_at'
 
 /** 0017 initiative_keymen. business_keymen과 같은 모양 + channel. */
-const INITIATIVE_KEYMAN_COLUMNS = 'keyman_id,initiative_id,name,relation,channel,last_contact_on,note'
+const INITIATIVE_KEYMAN_COLUMNS = 'keyman_id,initiative_id,name,relation,channel,last_contact_on,note,email'
 
 /** 0017 initiative_docs. 링크만 — 파일은 없다. */
 const INITIATIVE_DOC_COLUMNS = 'doc_id,initiative_id,title,url'

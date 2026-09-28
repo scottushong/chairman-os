@@ -1,3 +1,4 @@
+import { summarizeMail, todayMail } from '@/lib/google/gmail'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { attentionBriefLines, attentionItems } from '@/lib/attention/brief'
@@ -355,7 +356,7 @@ export async function runNightBrief(opts: {
       if (briefs.length === 0) throw new Error('요약에 성공한 회사가 없다.')
       const order = new Map(businesses.map((b, i) => [b.business_id, i]))
       briefs.sort((a, b) => (order.get(a.business_id) ?? 0) - (order.get(b.business_id) ?? 0))
-      chairman = await readChairmanContext(repo, run_date)
+      chairman = await readChairmanContext(repo, run_date, sb)
       const finance = snapshot?.ledger
         ? financeBriefContext(snapshot.ledger, businesses.map((b) => b.business_id))
         : null
@@ -505,6 +506,7 @@ export async function runNightBrief(opts: {
 async function readChairmanContext(
   repo: ReturnType<typeof createSupabaseRepository>,
   date: IsoDate,
+  sb: Parameters<typeof todayMail>[0],
 ): Promise<ChairmanContext | null> {
   let projects: Awaited<ReturnType<typeof repo.listChairmanProjects>>
   let manifesto: Awaited<ReturnType<typeof repo.getChairmanManifesto>>
@@ -556,6 +558,27 @@ async function readChairmanContext(
     activity = null
   }
 
+  /**
+   * Phase 9 블록 4. 오늘 받은 회장 메일 수와 키맨 발신 수(0039). 다른 칸과 같이 따로 감싼다.
+   * 연결이 없으면(disconnected · unconfigured) null — 브리핑이 메일을 아예 언급하지 않는다.
+   */
+  let mail: string | null = null
+  try {
+    const result = await todayMail(sb)
+    if (result.state === 'ok') {
+      const [keymen, initiativeKeymen] = await Promise.all([repo.listKeymen(), repo.listInitiativeKeymen()])
+      const emails = new Set([...keymen, ...initiativeKeymen].map((k) => k.email).filter((e): e is string => !!e))
+      const m = summarizeMail(result.items, emails)
+      mail =
+        `오늘 회장 메일 ${m.count}통, 중요 발신자(키맨) ${m.keyman}통` +
+        (m.keymanFrom.length > 0 ? ` — ${m.keymanFrom.join(', ')}` : '') +
+        (emails.size === 0 ? ' (키맨에 이메일이 없어 중요 발신자를 셀 수 없음)' : '')
+    }
+  } catch (e) {
+    console.error('[night-brief] mail', errorText(e))
+    mail = null
+  }
+
   return {
     projects: orderProjects(projects)
       .filter((p) => p.status === 'Active')
@@ -593,6 +616,7 @@ async function readChairmanContext(
     manifesto: manifesto.body || null,
     checkin,
     activity,
+    mail,
   }
 }
 
