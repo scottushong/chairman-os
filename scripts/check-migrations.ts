@@ -947,11 +947,23 @@ async function staffHome(db: Db, as: As) {
     select invitation_open('New.Hire@dy.example') as a, invitation_open('stranger@x.com') as b,
            has_function_privilege('anon', 'invitation_open(text)', 'execute') as anon`)
   assert.deepEqual(inv.rows[0], { a: true, b: false, anon: true }, '0042: 가입 확인이 초대 이메일만 참이 아니다')
+  // 0043 가입 Hook — 같은 판정을 Auth 서버 쪽에서. 초대면 {}, 아니면 403. Auth 서버만 부른다.
+  const hook = (email: string) => `select before_user_created_hook('{"user":{"email":"${email}"}}'::jsonb)::text as v`
+  const hookRows = await db.query<{ ok: string; no: string; blank: string; anon: boolean; authed: boolean; admin: boolean }>(`
+    select before_user_created_hook('{"user":{"email":" New.Hire@DY.example "}}'::jsonb)::text as ok,
+           before_user_created_hook('{"user":{"email":"stranger@x.com"}}'::jsonb) #>> '{error,http_code}' as no,
+           before_user_created_hook('{"user":{"phone":"+8210"}}'::jsonb) #>> '{error,http_code}' as blank,
+           has_function_privilege('anon', 'before_user_created_hook(jsonb)', 'execute') as anon,
+           has_function_privilege('authenticated', 'before_user_created_hook(jsonb)', 'execute') as authed,
+           has_function_privilege('supabase_auth_admin', 'before_user_created_hook(jsonb)', 'execute') as admin`)
+  assert.deepEqual(hookRows.rows[0], { ok: '{}', no: '403', blank: '403', anon: false, authed: false, admin: true }, '0043: 가입 Hook이 초대 이메일만 통과시키지 않는다')
   // 리뷰 C3 — 초대를 지우면(soft_delete = 회수) 가입 확인도 거짓이 된다.
   const invId = (await db.query<{ id: string }>(`select invitation_id::text as id from user_invitations where email = 'new.hire@dy.example'`)).rows[0].id
   await commitAs(UID.chairman, `select soft_delete('user_invitations', '${invId}')::text as v`)
   const gone = await db.query<{ a: boolean }>(`select invitation_open('new.hire@dy.example') as a`)
   assert.equal(gone.rows[0].a, false, '0042: 지운 초대로 가입할 수 있다')
+  const goneHook = await db.query<{ v: string }>(hook('new.hire@dy.example'))
+  assert.match(goneHook.rows[0].v, /"http_code": 403/, '0043: 지운 초대로 가입 Hook을 통과한다')
 
   // 새 기기 — 이전 로그인 기기와 다르면 본인 알림 + 회장 큐. 같은 기기면 아무것도.
   await db.exec(`insert into audit_log (action, entity_table, entity_id, actor_user_id, actor_role, after)

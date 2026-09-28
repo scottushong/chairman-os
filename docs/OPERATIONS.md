@@ -368,6 +368,11 @@ select tgname from pg_trigger where tgrelid = 'auth.users'::regclass;
    (Pro 이상). 앱도 같은 검사(`src/lib/password.ts`, HIBP k-익명성)를 하므로 플랜이 안 되면 앱 검사만으로 선다.
 5. **Authentication → Sessions**: Time-box user sessions = 7일(Pro 이상). 앱(proxy)과 DB(`is_active()`)도
    최초 로그인 7일로 끊으므로 이 설정은 겹 하나 더다.
+6. **Authentication → Hooks → Before User Created**: Postgres → `public.before_user_created_hook`(0043) **켬**.
+   앱은 `/signup`에서 초대를 먼저 보지만(`invitation_open`), anon 키로 `/auth/v1/signup`을 직접 부르면 화면을
+   건너뛴다. Hook은 Auth 서버가 계정을 만들기 전에 같은 판정을 해 초대 없는 이메일을 403으로 돌려보낸다 —
+   계정도 인증 메일도 생기지 않는다. 1번의 «Enable email signups»는 켜 둔 채다(끄면 초대된 사람도 못 들어온다).
+   **대시보드 «Add user» · 관리자 API에도 걸린다** — 초대 없이 계정을 만들려면(부트스트랩 계정) 그동안 Hook을 끈다.
 
 ### 메일 한도 — 기본 SMTP로는 모자란다
 

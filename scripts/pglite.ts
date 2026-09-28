@@ -26,6 +26,7 @@ export const SUPABASE_STUBS = `
     $$ select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
   create role anon;
   create role authenticated;
+  create role supabase_auth_admin;
 
   -- Supabase Storage 최소 흉내 (0018). 실제 storage 스키마에는 훨씬 많은 칸이 있지만
   -- 0018이 건드리는 것은 buckets의 public과 objects의 bucket_id뿐이다.
