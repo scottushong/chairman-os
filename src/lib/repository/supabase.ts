@@ -1097,7 +1097,19 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         .from('city_layout')
         .select('id, business_id, initiative_id, x, y, w, h, stage_image')
         .order('id', { ascending: true })
-      if (error) throw new Error(`Supabase city_layout ${error.code ?? '?'}: ${error.message}`)
+      if (error) {
+        /**
+         * **0037이 아직 없는 DB에서만** 빈 배치로 그린다. master push가 production 앱을 바로
+         * 배포해서(2026-09-28 실제로 그랬다) 앱이 DB보다 먼저 나가는 순간이 생긴다 — 그때
+         * HOME 전체가 이 한 줄 때문에 서지 못하면 안 된다. 표가 없다는 오류(PGRST205 ·
+         * 42P01)만 삼키고, RLS 거부 같은 다른 오류는 그대로 던진다(506행 원칙).
+         */
+        if (error.code === 'PGRST205' || error.code === '42P01') {
+          console.warn(`[listCityLayout] city_layout이 없다(${error.code}) — 0037 적용 전. 빈 배치로 그린다.`)
+          return []
+        }
+        throw new Error(`Supabase city_layout ${error.code ?? '?'}: ${error.message}`)
+      }
       return (data ?? []).map((r) => ({
         ...(r as CityLayout),
         id: Number(r.id),
