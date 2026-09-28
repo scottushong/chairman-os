@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { currentUser } from '@/lib/auth/session'
 import { clampBox } from '@/lib/city'
 import { getRepository } from '@/lib/repository'
-import { CITY_STAGE, type CityLayoutInput, type CityStage } from '@/types'
+import { CITY_ANCHOR, CITY_STAGE, type CityAnchorsInput, type CityLayoutInput, type CityStage } from '@/types'
 
 /**
  * 그룹 시티 배치 저장 · 승격 (Phase 8 G-1, 0037).
@@ -23,6 +23,24 @@ function stage(value: unknown): CityStage | null {
   return typeof value === 'string' && (CITY_STAGE as readonly string[]).includes(value) ? (value as CityStage) : null
 }
 
+/**
+ * 0044 길목. undefined = 건드리지 않음, null = 상자에서(되돌리기), 객체 = 있는 점만.
+ * 점은 그림 안(0~100)으로 가두고 소수 둘째 자리로 자른다 — 0044 city_anchors_ok와 같은 판정.
+ */
+function anchors(value: unknown): CityAnchorsInput | null | undefined {
+  if (value === undefined) return undefined
+  if (value === null || typeof value !== 'object') return null
+  const out: CityAnchorsInput = {}
+  const clamp = (v: number) => Math.round(Math.min(100, Math.max(0, v)) * 100) / 100
+  for (const name of CITY_ANCHOR) {
+    const p = (value as Record<string, unknown>)[name] as { x?: unknown; y?: unknown } | undefined
+    const x = Number(p?.x)
+    const y = Number(p?.y)
+    if (p && Number.isFinite(x) && Number.isFinite(y)) out[name] = { x: clamp(x), y: clamp(y) }
+  }
+  return Object.keys(out).length > 0 ? out : null
+}
+
 function text(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null
 }
@@ -37,6 +55,12 @@ function explain(e: unknown, fallback: string): CityActionState {
   }
   if (/city_layout_target_check/.test(message)) {
     return { error: '자리 하나에는 회사 하나 또는 이니셔티브 하나만 걸 수 있습니다.' }
+  }
+  if (/city_layout_anchors_check/.test(message)) {
+    return { error: '길목 점을 읽지 못했습니다. 점을 그림 안에 다시 놓아 주세요.' }
+  }
+  if (/42703|column [^ ]*anchors/.test(message)) {
+    return { error: '길목(입구·자리·길)은 DB 업데이트(0044) 뒤에 저장됩니다. 상자만 옮겼다면 길목을 «상자에서»로 되돌려 저장하세요.' }
   }
   if (/city_layout_box_check/.test(message)) {
     return { error: '상자가 그림 밖으로 나갔습니다. 안쪽으로 옮겨 주세요.' }
@@ -72,6 +96,7 @@ export async function saveCityLayout(input: { upserts: unknown; deletes: unknown
       ...clampBox({ x: box[0], y: box[1], w: box[2], h: box[3] }),
       // 이니셔티브 터는 단계를 갖지 않는다 — 늘 빈 터다(lib/city.ts effectiveStage).
       stage_image: initiative_id !== null ? null : stage(r.stage_image),
+      anchors: anchors(r.anchors),
     })
   }
 

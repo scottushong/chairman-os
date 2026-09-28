@@ -30,6 +30,29 @@ export interface CityLayout {
   h: number
   /** null = 완성도에서 자동. 값이 있으면 그 단계로 고정. */
   stage_image: CityStage | null
+  /** 0044 길목. null이거나 빠진 점은 상자에서 낸다(lib/city-live.ts anchorsOf). 0044 전 DB에서는 없다. */
+  anchors?: CityAnchorsInput | null
+}
+
+/* ------------------------------------------------------------------ 0044 길목 */
+
+/** 그림 위의 한 점(%). */
+export interface CityPoint {
+  x: number
+  y: number
+}
+
+/** 건물 하나의 길목 셋 — 입구 · 창가 자리 · 건물 앞 길. */
+export const CITY_ANCHOR = ['door', 'desk', 'road'] as const
+export type CityAnchorName = (typeof CITY_ANCHOR)[number]
+export type CityAnchors = Record<CityAnchorName, CityPoint>
+/** DB에 적힌 모양 — 있는 점만(0044 city_anchors_ok). */
+export type CityAnchorsInput = Partial<CityAnchors>
+
+export const CITY_ANCHOR_LABEL_KO: Record<CityAnchorName, string> = {
+  door: '입구',
+  desk: '창가 자리',
+  road: '앞 길',
 }
 
 /** 저장 한 건. id가 없으면 새 줄이다. */
@@ -42,4 +65,6 @@ export interface CityLayoutInput {
   w: number
   h: number
   stage_image: CityStage | null
+  /** 없으면(undefined) 칸을 건드리지 않는다 — 0044 전 DB에 저장이 막히지 않게. */
+  anchors?: CityAnchorsInput | null
 }

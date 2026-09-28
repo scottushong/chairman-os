@@ -848,6 +848,36 @@ async function cityLayout(db: Db, as: As) {
   const dy = await db.query<{ x: string }>(`select x::text from city_layout where business_id = 'biz_dy'`)
   assert.equal(Number(dy.rows[0].x), 10, '0037: 시드가 회장이 이미 둔 자리를 덮었다')
 
+  // 0044 길목 — 모양은 DB가 막고, 점을 옮긴 update는 감사에 before/after로 남는다.
+  const setAnchors = (json: string) => as(UID.chairman, `update city_layout set anchors = '${json}'::jsonb where business_id = 'biz_dy'`)
+  assert.equal(await setAnchors('{}'), 1, '0044: 빈 길목(= 전부 상자에서)이 막힌다')
+  assert.equal(await setAnchors('{"door":{"x":12.5,"y":80},"road":{"x":12,"y":99}}'), 1, '0044: 점 둘만 적은 길목이 막힌다')
+  for (const [bad, why] of [
+    ['{"gate":{"x":1,"y":1}}', '모르는 점 이름'],
+    ['{"door":{"x":101,"y":1}}', '그림 밖 좌표'],
+    ['{"door":{"x":"a","y":1}}', '문자열 좌표'],
+    ['{"door":{"x":1}}', 'y가 빠진 점'],
+    ['{"door":{"x":1,"y":1,"z":1}}', '키가 더 붙은 점'],
+    ['[1,2]', '객체가 아닌 길목'],
+  ] as const) {
+    await assert.rejects(setAnchors(bad), /city_layout_anchors_check/, `0044: ${why}이(가) 들어간다`)
+  }
+  assert.equal(
+    await as(UID.cfo, `update city_layout set anchors = '{}'::jsonb where business_id = 'biz_dy'`),
+    0, '0044: GroupCFO가 길목을 옮긴다',
+  )
+  assert.equal(
+    await as(
+      UID.chairman,
+      `select count(*)::int from audit_log where entity_table = 'city_layout'
+         and before->'anchors'->'door'->>'x' = '12.5' and after->'anchors'->'desk'->>'y' = '40'`,
+      // as()는 끝나면 되돌린다 — 앞 점과 옮긴 점을 한 트랜잭션에서 차례로 적는다.
+      `update city_layout set anchors = '{"door":{"x":12.5,"y":80}}'::jsonb where business_id = 'biz_dy';
+       update city_layout set anchors = '{"door":{"x":12.5,"y":80},"desk":{"x":14,"y":40}}'::jsonb where business_id = 'biz_dy';`,
+    ),
+    1, '0044: 길목을 옮긴 update가 감사 before/after에 안 보인다',
+  )
+
   // 다음 검사가 빈 표를 전제할 수 있게 치운다.
   await db.exec(`delete from city_layout`)
 }

@@ -1139,10 +1139,17 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
      * 설정이 있다).
      */
     async listCityLayout(): Promise<CityLayout[]> {
-      const { data, error } = await sb
-        .from('city_layout')
-        .select('id, business_id, initiative_id, x, y, w, h, stage_image')
-        .order('id', { ascending: true })
+      const cols = 'id, business_id, initiative_id, x, y, w, h, stage_image'
+      let { data, error }: { data: Record<string, unknown>[] | null; error: { code?: string; message: string } | null } =
+        await sb.from('city_layout').select(`${cols}, anchors`).order('id', { ascending: true })
+      /**
+       * **0044가 아직 없는 DB에서만** 길목 없이 다시 읽는다(칸이 없다는 42703 하나만). 길목이 없으면
+       * 화면이 상자에서 낸다 — 0037 때와 같은 이유(master push = production 배포)로 HOME을 지킨다.
+       */
+      if (error?.code === '42703') {
+        console.warn('[listCityLayout] city_layout.anchors가 없다(42703) — 0044 적용 전. 상자에서 길목을 낸다.')
+        ;({ data, error } = await sb.from('city_layout').select(cols).order('id', { ascending: true }))
+      }
       if (error) {
         /**
          * **0037이 아직 없는 DB에서만** 빈 배치로 그린다. master push가 production 앱을 바로
@@ -1157,7 +1164,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         throw new Error(`Supabase city_layout ${error.code ?? '?'}: ${error.message}`)
       }
       return (data ?? []).map((r) => ({
-        ...(r as CityLayout),
+        ...(r as unknown as CityLayout),
         id: Number(r.id),
         x: Number(r.x),
         y: Number(r.y),
@@ -1190,6 +1197,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
           w: row.w,
           h: row.h,
           stage_image: row.stage_image,
+          // 길목은 화면이 건드렸을 때만 보낸다 — 0044 전 DB에서도 상자 저장은 된다.
+          ...(row.anchors !== undefined ? { anchors: row.anchors } : {}),
         }
         const { error } = row.id
           ? await sb.from('city_layout').update(value).eq('id', row.id)

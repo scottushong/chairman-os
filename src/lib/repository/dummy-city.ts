@@ -57,6 +57,7 @@ export async function saveCityLayout(
       w: row.w,
       h: row.h,
       stage_image: row.stage_image,
+      anchors: row.anchors !== undefined ? row.anchors : at >= 0 ? next[at].anchors ?? null : null,
     }
     if (at >= 0) next[at] = value
     else next.push(value)
