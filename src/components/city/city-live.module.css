@@ -1,0 +1,324 @@
+/*
+ * 살아 있는 그룹 시티 — 그림 + 레이어의 움직임 (Phase 8 G-2b).
+ *
+ * 전부 transform · opacity만 흔든다(합성 단계에서 끝나 폰에서도 60fps). 사람의 «걸음»(자리 이동)만
+ * left/top을 Web Animations로 옮긴다 — 길목이 그림에 대한 %라서 그 좌표계를 그대로 써야 한다.
+ *
+ * .still을 레이어에 걸면 모든 애니메이션이 멈춘다(«동작 줄이기»). 멈춘 자세가 그 동작의 한 장면이라
+ * 무엇을 하는 사람인지는 그대로 읽힌다.
+ */
+
+/* ------------------------------------------------------------------ 사람 */
+
+.character {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.legL,
+.legR,
+.armL,
+.armR {
+  transform-box: fill-box;
+  transform-origin: 50% 8%;
+}
+
+.torso {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+.m_walk .legL,
+.m_carry .legL {
+  animation: swing 0.7s ease-in-out infinite alternate;
+}
+.m_walk .legR,
+.m_carry .legR {
+  animation: swing 0.7s ease-in-out infinite alternate-reverse;
+}
+.m_walk .armL {
+  animation: swing 0.7s ease-in-out infinite alternate-reverse;
+}
+.m_walk .armR {
+  animation: swing 0.7s ease-in-out infinite alternate;
+}
+.m_walk .torso,
+.m_carry .torso {
+  animation: bob 0.35s ease-in-out infinite alternate;
+}
+
+/* 서류를 가슴 앞에 받친다. */
+.m_carry .armR {
+  transform: rotate(-38deg);
+}
+.m_carry .armL {
+  transform: rotate(30deg);
+}
+
+/* 자판을 친다. */
+.m_desk .armR {
+  transform: rotate(-58deg);
+  animation: type 0.5s ease-in-out infinite alternate;
+}
+.m_desk .armL {
+  transform: rotate(52deg);
+  animation: type 0.45s ease-in-out infinite alternate-reverse;
+}
+.screen {
+  animation: flicker 3.2s ease-in-out infinite;
+}
+
+/* 손들기 — 오른팔을 머리 위로 올리고 흔든다. 멈춰도(.still) 팔은 위에 있다. */
+.m_raise .armR {
+  transform: rotate(-160deg);
+  animation: wave 0.5s ease-in-out infinite alternate;
+}
+
+.blink {
+  animation: blink 1.4s ease-in-out infinite;
+}
+
+@keyframes swing {
+  from {
+    transform: rotate(-18deg);
+  }
+  to {
+    transform: rotate(18deg);
+  }
+}
+@keyframes bob {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-0.6px);
+  }
+}
+@keyframes type {
+  from {
+    transform: rotate(-58deg);
+  }
+  to {
+    transform: rotate(-50deg);
+  }
+}
+@keyframes wave {
+  from {
+    transform: rotate(-150deg);
+  }
+  to {
+    transform: rotate(-175deg);
+  }
+}
+@keyframes flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.78;
+  }
+}
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* ------------------------------------------------------------------ 레이어 */
+
+.layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  container-type: inline-size;
+  overflow: hidden;
+}
+
+.still *,
+.still *::before,
+.still *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* 사람 하나. 발끝이 길목 점에 선다. 크기는 그림 폭을 따른다(1280px 그림에서 약 20px). */
+.actor {
+  position: absolute;
+  width: clamp(11px, 1.55cqw, 34px);
+  transform: translate(-50%, -100%);
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35));
+}
+
+.label {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  margin-bottom: 2px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.66);
+  padding: 1px 4px;
+  font-size: 10px;
+  line-height: 1.3;
+  color: #fff;
+}
+
+.bar {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 2px);
+  width: 170%;
+  height: 4px;
+  transform: translateX(-50%);
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.45);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+.barFill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #d8b46a, #f3dc9b);
+}
+.barFlow {
+  height: 100%;
+  width: 40%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, #f3dc9b, transparent);
+  animation: flow 1.6s linear infinite;
+}
+@keyframes flow {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
+/* 차량 — 작은 금색 차. */
+.vehicle {
+  position: absolute;
+  width: clamp(12px, 1.6cqw, 34px);
+  transform: translate(-50%, -80%);
+  filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.45));
+}
+
+/* ------------------------------------------------------------------ 하늘 · 물 */
+
+/* 밤 — 저녁 그림 위에 남색을 곱한다. */
+.night {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 60% 110%, rgba(40, 60, 120, 0.1), transparent 60%),
+    linear-gradient(180deg, rgba(6, 10, 34, 0.72), rgba(10, 16, 40, 0.58) 45%, rgba(8, 12, 30, 0.62));
+  mix-blend-mode: multiply;
+}
+.nightTint {
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 30, 70, 0.28);
+  mix-blend-mode: color;
+}
+
+.window {
+  position: absolute;
+  width: clamp(1.5px, 0.22cqw, 5px);
+  height: clamp(2px, 0.3cqw, 6px);
+  border-radius: 1px;
+  background: #ffd98a;
+  box-shadow: 0 0 clamp(2px, 0.35cqw, 8px) rgba(255, 200, 110, 0.9);
+  animation: twinkle 7s ease-in-out infinite;
+}
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.95;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.cloud {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 70%);
+  filter: blur(6px);
+  animation: drift linear infinite;
+}
+@keyframes drift {
+  from {
+    transform: translateX(-30cqw);
+  }
+  to {
+    transform: translateX(130cqw);
+  }
+}
+
+.river {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  mix-blend-mode: screen;
+}
+.riverLine {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.22);
+  stroke-linecap: round;
+  animation: current 9s linear infinite;
+}
+@keyframes current {
+  to {
+    stroke-dashoffset: -60;
+  }
+}
+
+/* ------------------------------------------------------------------ 오벨리스크 */
+
+.spire {
+  position: absolute;
+  width: 4cqw;
+  height: 4cqw;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 226, 150, 0.95), rgba(255, 196, 80, 0.35) 40%, transparent 70%);
+  mix-blend-mode: screen;
+  animation: glow 2.4s ease-in-out infinite alternate;
+}
+@keyframes glow {
+  from {
+    opacity: 0.75;
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.1);
+  }
+}
+
+.envelope {
+  position: absolute;
+  width: clamp(12px, 1.5cqw, 30px);
+  transform: translate(-50%, -100%);
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
+  animation: float 2.2s ease-in-out infinite alternate;
+}
+@keyframes float {
+  from {
+    translate: 0 0;
+  }
+  to {
+    translate: 0 -3px;
+  }
+}

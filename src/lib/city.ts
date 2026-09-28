@@ -130,6 +130,11 @@ export function citySrcSet(phase: CityPhase): string {
   return CITY_WIDTHS.map((w) => `${citySrc(phase, w)} ${w}w`).join(', ')
 }
 
+/** 하늘(낮 · 해질녘 · 밤, lib/city-live.ts) → 그림. 밤은 저녁 그림을 어둡게 깐다 — 밤 그림은 따로 없다. */
+export function imageOf(sky: 'day' | 'dusk' | 'night'): CityPhase {
+  return sky === 'day' ? 'day' : 'dusk'
+}
+
 /** 현지 시각 6시~17시는 낮, 나머지는 저녁. */
 export function phaseAt(hour: number): CityPhase {
   return hour >= 6 && hour < 18 ? 'day' : 'dusk'

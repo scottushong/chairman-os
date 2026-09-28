@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 
-import { saveNotifySwitch, saveTheme } from '@/app/actions/ui-prefs'
+import { saveCityMotion, saveNotifySwitch, saveTheme } from '@/app/actions/ui-prefs'
 import { THEME_CHOICE, THEME_LABEL_KO, type ThemeChoice } from '@/lib/ui-prefs'
 import {
   NOTIFICATION_KIND,
@@ -124,6 +124,55 @@ export function NotifySwitches({ value }: { value: NotificationSwitches }) {
       </p>
       {error ? (
         <p role="alert" className="text-t11 text-critical">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  )
+}
+
+/** 그룹 시티의 강물 · 구름 흐름(Phase 8 G-2b). 고르는 즉시 저장하고, 못 저장하면 되돌린다. */
+export function CityMotionSwitch({ value }: { value: boolean }) {
+  const router = useRouter()
+  const [on, setOn] = useState(value)
+  const [error, setError] = useState<string | null>(null)
+  const [pending, start] = useTransition()
+
+  const toggle = () => {
+    const next = !on
+    setOn(next)
+    setError(null)
+    start(async () => {
+      const result = await saveCityMotion(next)
+      if (result.error) {
+        setOn(!next)
+        setError(result.error)
+        return
+      }
+      router.refresh()
+    })
+  }
+
+  return (
+    <div className="mt-2">
+      <label className="flex cursor-pointer items-start gap-2.5 rounded-md px-2 py-1.5 transition-colors hover:bg-raised">
+        <input
+          type="checkbox"
+          checked={on}
+          disabled={pending}
+          onChange={toggle}
+          className="mt-0.5 size-3.5 shrink-0 accent-[var(--color-accent)]"
+        />
+        <span>
+          <span className="block text-t12 text-ink">그룹 시티 강물 · 구름 흐름</span>
+          <span className="mt-0.5 block text-t10 text-ink-muted">
+            끄면 배경만 멈춥니다. 사람 · 서류 · 차량은 실제 데이터라 그대로 움직입니다. 기기의 «동작 줄이기»가
+            켜져 있으면 이 설정과 무관하게 멈춥니다.
+          </span>
+        </span>
+      </label>
+      {error ? (
+        <p role="alert" className="mt-1 text-t11 text-critical">
           {error}
         </p>
       ) : null}

@@ -42,8 +42,10 @@ export function GlassCard({
    * as는 네 태그로 좁혀 두었지만 JSX는 유니언 태그에 스프레드를 붙이면 props를 합집합으로
    * 검사하려 든다. 넷 다 HTMLAttributes<HTMLElement>를 쓰는 평범한 블록 요소라
    * 여기서만 ElementType으로 넓힌다 — 밖에서 보이는 계약은 위 네 값 그대로다.
+   * props를 HTMLAttributes로 묶는다: @react-three/fiber(Phase 8 G-2a)가 JSX에 3D 태그(mesh 등)를
+   * 더한 뒤로 맨 ElementType은 그 태그들까지 품어 children 검사가 never로 무너진다.
    */
-  const Tag = as as ElementType
+  const Tag = as as ElementType<HTMLAttributes<HTMLElement>>
 
   return (
     // className을 스프레드 뒤에 두어 호출부가 .glass를 실수로 덮지 못하게 한다.

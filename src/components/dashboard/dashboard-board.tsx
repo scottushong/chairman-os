@@ -1,6 +1,5 @@
 'use client'
 
-import Link from 'next/link'
 import { useMemo, useState } from 'react'
 
 import { createBusiness } from '@/app/actions/businesses'
@@ -14,13 +13,12 @@ import { FinanceTrend } from '@/components/dashboard/finance-trend'
 import { KpiStrip } from '@/components/dashboard/kpi-strip'
 import { DependencyCard } from '@/components/dependency/dependency-card'
 import { ProcessChartCard } from '@/components/dashboard/process-chart-card'
-import { InitiativeCards } from '@/components/initiatives/initiative-cards'
 import { Icon } from '@/components/ui/icon'
 import { effectivePinned } from '@/lib/business-pins'
 import { groupFigure, hasFinanceData, latestPeriodOf, valueOf } from '@/lib/finance'
 import type { UserSettings } from '@/lib/repository'
 import type { DependencySummary } from '@/lib/dependency'
-import type { Business, FinanceKpi, Initiative, IsoDate, ProcessChart } from '@/types'
+import type { Business, FinanceKpi, IsoDate, ProcessChart } from '@/types'
 
 /**
  * Business 카드(CH-001~005)와 그룹 KPI(CH-006~010)를 한 상태 위에 올린다.
@@ -62,12 +60,6 @@ interface DashboardBoardProps {
    * 못 보는 회사와 프로젝트가 없는 회사는 null이다(카드가 '—'를 그린다).
    */
   companyProgress: Record<string, number | null>
-  /** item B. page.tsx가 이미 '진행 중 상위 6건'으로 고른 요약이다 — 여기서 다시 거르지 않는다. */
-  initiativeSummary: Initiative[]
-  /** signInitiativeLogos(paths)가 initiativeSummary 몫만 한 번에 서명한 맵. */
-  initiativeLogoUrls: Record<string, string>
-  /** 요약이 아닌 전체 '진행 중' 건수. 헤더 줄의 'N / M건'에 쓴다. */
-  initiativeCount: number
   /**
    * 블록 A. 회사별 의존도 요약. **여기서 계산하지 않는다** — /dependency와 같은
    * summarizeDependency()의 결과를 page.tsx가 내려 준다. 두 화면이 각자 접으면
@@ -77,11 +69,6 @@ interface DashboardBoardProps {
   /** 개입 건수를 볼 수 있는 세션인가. Chairman·GroupCFO·자기 회사 CEO다(0034 4절). */
   canSeeInterventions: boolean
   today: IsoDate
-  /**
-   * Phase 8 G-1. HOME의 회사 줄 자리에 서는 도시 띠. page.tsx가 서버에서 그려 넘긴다 —
-   * 핫스팟 계산(lib/city.ts)이 서버 원천을 쓰고, 이 컴포넌트는 그것을 자리에 놓기만 한다.
-   */
-  city: React.ReactNode
 }
 
 /**
@@ -102,13 +89,8 @@ export function DashboardBoard({
   settings,
   companyProgress,
   processCharts,
-  initiativeSummary,
-  initiativeLogoUrls,
-  initiativeCount,
   dependency,
   canSeeInterventions,
-  today,
-  city,
 }: DashboardBoardProps) {
   const [hidden, setHidden] = useState<string[]>(settings.hidden_businesses)
   const [pinned, setPinned] = useState<string[]>(() =>
@@ -209,40 +191,6 @@ export function DashboardBoard({
        * 줄마다 가로를 다 쓰면 둘 다 풀린다.
        */}
 
-      {/* 2줄 — 이니셔티브 */}
-      {/* item B. 진행 중인 이니셔티브 요약 — 목록 화면(/initiatives)의 전체 그리드를
-          복제하지 않는다. 0건이면 섹션째로 숨긴다(InitiativeStat과 같은 판단: 빈 카드 줄은
-          인사말 아래 이미 있는 요약과 겹쳐 의미 없이 자리만 차지한다).
-          이 헤더 줄은 카드 밖(맨 배경) 위다 — text-ink-dim만 쓴다(item D, globals.css
-          '유리 없이 글자를 놓지 마라'). text-ink-muted는 여기서 3.36:1로 AA 미달이다. */}
-      {initiativeSummary.length > 0 ? (
-        <section aria-label="이니셔티브">
-          <div className="mb-2 flex items-baseline gap-2">
-            <h2 className="text-t13 font-semibold">이니셔티브</h2>
-            <span className="text-t11 text-ink-dim tnum">
-              진행 중 {initiativeCount}건 중 {initiativeSummary.length}건
-            </span>
-            {/* 열 줄 위의 규칙이 이 링크에도 걸린다. 골드(.text-accent → #855a11)는 맨 배경에서
-                3.39:1이라 유리 없이는 못 쓴다(globals.css:284-286). 링크만 유리 한 장 위로
-                올리면 헤더 줄이 어긋나므로 색을 ink-dim(5.73:1)으로 내리고, 밑줄 hover로
-                '누를 수 있다'를 남긴다. */}
-            <Link
-              href="/initiatives"
-              className="ml-auto text-t11h text-ink-dim underline-offset-2 hover:text-ink hover:underline"
-            >
-              전체 보기
-            </Link>
-          </div>
-          <InitiativeCards
-            initiatives={initiativeSummary}
-            businesses={businesses}
-            logoUrls={initiativeLogoUrls}
-            today={today}
-            hasAny
-          />
-        </section>
-      ) : null}
-
       {/* 3줄 — 의존도 (블록 A · §7). 원문이 자리를 지정했다: 이니셔티브와 프로세스차트 사이, 전폭.
           회장이 하루에 처음 여는 화면에서 "내가 없으면 얼마나 도나"가 한 줄로 보여야 한다. */}
       <DependencyCard
@@ -254,15 +202,8 @@ export function DashboardBoard({
       {/* 4줄 — 프로세스차트. 높이는 카드가 스스로 확보한다(시트가 읽혀야 한다). */}
       <ProcessChartCard charts={processCharts} businesses={businesses} />
 
-      {/*
-       * 5줄 — 그룹 시티 (Phase 8 G-1). 원문: "회사 5개 카드 → 도시 띠(전경 크롭 260px + 핫스팟 5)
-       * + 전체 보기 →". 카드 줄 자리를 띠가 가져간다.
-       *
-       * **카드는 지우지 않고 띠 아래 접어 둔다.** 숨김·핀·기업 추가(CH-002·004·005)가 이 카드에만
-       * 붙어 있고, 숨김은 아래 재무 합계(FinanceTrend·KpiStrip)가 어느 회사를 셀지까지 정한다 —
-       * 카드를 없애면 그 스위치들이 HOME에서 통째로 사라진다. 판단은 DEFERRED에 적었다.
-       */}
-      {city}
+      {/* 그룹 시티 띠는 Phase 8 G-2b에서 2줄(브리핑 바로 아래)로 올라갔다 — page.tsx가 직접 그린다.
+          회사 카드는 여전히 이 자리에 접혀 있다(숨김 · 핀 · 기업 추가가 여기에만 붙어 있다). */}
 
       <details className="group/cards">
         <summary className="mb-2 flex cursor-pointer list-none items-baseline gap-2 text-ink-dim hover:text-ink">

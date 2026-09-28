@@ -114,6 +114,21 @@ export async function saveTheme(theme: unknown): Promise<UiPrefsState> {
   return { saved: true }
 }
 
+/** 그룹 시티의 강물 · 구름 흐름(Phase 8 G-2b). */
+export async function saveCityMotion(on: unknown): Promise<UiPrefsState> {
+  if (typeof on !== 'boolean') return { error: '잘못된 요청입니다.' }
+  try {
+    const repo = await getRepository()
+    const current = readAppPrefs((await repo.getUserSettings()).app_prefs)
+    await repo.saveUserSettings({ app_prefs: { ...current, city_motion: on } })
+  } catch (e) {
+    console.error('[ui-prefs]', e)
+    return FAILED
+  }
+  revalidatePath('/', 'layout')
+  return { saved: true }
+}
+
 /** 알림 종류 하나를 켜고 끈다. 끈 종류는 헤더의 뱃지와 목록에서 빠진다. */
 export async function saveNotifySwitch(kind: unknown, on: unknown): Promise<UiPrefsState> {
   if (!NOTIFICATION_KIND.includes(kind as NotificationKind) || typeof on !== 'boolean') {

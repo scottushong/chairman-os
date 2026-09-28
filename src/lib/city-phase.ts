@@ -4,6 +4,7 @@ import { headers } from 'next/headers'
 
 import { DEFAULT_TIMEZONE, isValidTimezone, localHourIn } from '@/lib/chairman-timezone'
 import { phaseAt, type CityPhase } from '@/lib/city'
+import { skyAt, type CitySky } from '@/lib/city-live'
 
 /**
  * 전경을 낮으로 걸지 저녁으로 걸지 — **보는 사람의 현지 시각**으로 정한다(원문 "현지 시각으로
@@ -20,4 +21,12 @@ export async function cityPhase(now = new Date()): Promise<CityPhase> {
   const tz = isValidTimezone(raw) ? raw : DEFAULT_TIMEZONE
   const hour = localHourIn(tz, now)
   return Number.isFinite(hour) ? phaseAt(hour) : 'day'
+}
+
+/** 살아 있는 도시(Phase 8 G-2)의 하늘 — 같은 현지 시각으로 낮 · 해질녘 · 밤. 브라우저가 1분마다 다시 잰다. */
+export async function citySky(now = new Date()): Promise<CitySky> {
+  const raw = (await headers()).get('x-vercel-ip-timezone')
+  const tz = isValidTimezone(raw) ? raw : DEFAULT_TIMEZONE
+  const hour = localHourIn(tz, now)
+  return Number.isFinite(hour) ? skyAt(hour) : 'day'
 }

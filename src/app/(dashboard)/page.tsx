@@ -9,6 +9,7 @@ import { DashboardTabs } from '@/components/dashboard/dashboard-tabs'
 import { DdayHero } from '@/components/dashboard/dday-hero'
 import { DecisionPanel } from '@/components/dashboard/decision-panel'
 import { InitiativeStat } from '@/components/dashboard/initiative-stat'
+import { InitiativeSummaryRow } from '@/components/dashboard/initiative-summary-row'
 import { StrategicCoordinates } from '@/components/dashboard/strategic-coordinates'
 import { WaitingOnMe } from '@/components/dashboard/waiting-on-me'
 import { Icon } from '@/components/ui/icon'
@@ -17,11 +18,13 @@ import { summarizeAttention } from '@/lib/attention/screen'
 import { currentUser } from '@/lib/auth/session'
 import { kstToday } from '@/lib/chairman-project'
 import { buildCityItems } from '@/lib/city'
-import { cityPhase } from '@/lib/city-phase'
+import { loadCityLive } from '@/lib/city-live-load'
+import { citySky } from '@/lib/city-phase'
 import { summarizeDependency } from '@/lib/dependency'
 import { orderInitiatives } from '@/lib/initiative'
 import { resolveLocation } from '@/lib/geo'
 import { getRepository, loadDashboard } from '@/lib/repository'
+import { loadUiPrefs } from '@/lib/ui-prefs-server'
 import { getCurrentLocationWeather } from '@/lib/weather'
 
 /**
@@ -122,7 +125,7 @@ export default async function DashboardPage() {
    * 배치 줄만 더 읽어 /group과 같은 buildCityItems()로 접는다(같은 회사가 두 화면에서 같은 %).
    */
   // 공지 띠는 Phase 6-2에서 직원 홈(/me)으로 옮겼다. 공지 전체는 /groupware에 있다.
-  const [cityLayout, phase] = await Promise.all([repo.listCityLayout(), cityPhase()])
+  const [cityLayout, sky, uiPrefs] = await Promise.all([repo.listCityLayout(), citySky(), loadUiPrefs()])
   const cityItems = buildCityItems({
     layout: cityLayout,
     businesses: data.businesses,
@@ -130,6 +133,8 @@ export default async function DashboardPage() {
     dependency,
     kpis: data.financeKpis,
   })
+  // G-3. 도시 위 사람 · 서류 · 차량의 첫 장. 이후는 띠의 레이어가 1분마다 스스로 읽는다.
+  const cityLive = await loadCityLive(repo, user?.role ?? null, cityLayout, initiatives)
 
   const [exceptionRows, exceptionRules, attentionScores, ledger] = await Promise.all([
     repo.listExceptions(),
@@ -224,6 +229,26 @@ export default async function DashboardPage() {
         </div>
       </div>
 
+      {/*
+       * 2줄 — 그룹 시티 (Phase 8 G-2b). 브리핑 바로 아래 560px(폰은 폭 기준 4:3).
+       * 회장이 아침에 브리핑을 읽고 곧바로 «오늘 도시에서 누가 무엇을 하는가»를 본다.
+       * 회사 카드는 아래 DashboardBoard에 접혀 그대로 있다(숨김 · 핀 · 기업 추가).
+       */}
+      <div className="mt-5">
+        <CityStrip sky={sky} items={cityItems} live={cityLive} flow={uiPrefs.app.city_motion} />
+      </div>
+
+      {/* 3줄 — 이니셔티브. 도시 띠 아래로 내려왔다(G-2b). */}
+      <div className="mt-5">
+        <InitiativeSummaryRow
+          initiatives={initiativeSummary}
+          count={activeInitiatives.length}
+          businesses={data.businesses}
+          logoUrls={initiativeLogoUrls}
+          today={todayIso}
+        />
+      </div>
+
       <div className="mt-5 space-y-5">
         {/* 이니셔티브 카드 위다. 좌표(어디로·뭘·뭐가 막고·언제)를 먼저 읽고
             그 아래에서 실제로 굴러가는 이니셔티브를 본다 — 순서가 뒤집히면
@@ -242,15 +267,11 @@ export default async function DashboardPage() {
           settings={data.userSettings}
           companyProgress={companyProgress}
           processCharts={processCharts}
-          initiativeSummary={initiativeSummary}
-          initiativeLogoUrls={initiativeLogoUrls}
-          initiativeCount={activeInitiatives.length}
           dependency={dependency}
           canSeeInterventions={
             user?.role === 'Chairman' || user?.role === 'GroupCFO' || user?.role === 'BusinessCEO'
           }
           today={todayIso}
-          city={<CityStrip phase={phase} items={cityItems} />}
         />
       </div>
 

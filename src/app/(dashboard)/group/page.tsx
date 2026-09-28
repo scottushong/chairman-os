@@ -1,25 +1,28 @@
 import Link from 'next/link'
 
-import { CityHotspotList, CityMap } from '@/components/city/city-map'
+import { CityHotspotList } from '@/components/city/city-map'
 import { CityPanel } from '@/components/city/city-panel'
 import { CityScroller } from '@/components/city/city-scroller'
+import { CityStage } from '@/components/city/city-stage'
 import { PageHeader } from '@/components/layout/page-header'
 import { Icon } from '@/components/ui/icon'
 import { recordScreenRead } from '@/lib/activity-record'
 import { currentUser } from '@/lib/auth/session'
-import { cityPhase } from '@/lib/city-phase'
 import { loadCity } from '@/lib/city-load'
+import { loadCityLive } from '@/lib/city-live-load'
+import { citySky } from '@/lib/city-phase'
 import { getRepository } from '@/lib/repository'
+import { loadUiPrefs } from '@/lib/ui-prefs-server'
 
 /**
  * `/group` — 그룹 시티 (Phase 8 G-1).
  *
- * 전경 한 장(현지 시각으로 낮/저녁) 위에 회사와 이니셔티브 터를 핫스팟으로 올린다.
- * 핫스팟을 누르면 우측 패널에 클로즈업 · 요약 · 상세 링크.
+ * PC는 3D 씬(G-2a), 폰 · 저사양 · «동작 줄이기»는 전경 그림 + 살아 있는 레이어(G-2b) — CityStage가 고른다.
+ * 회사는 건물로, 이니셔티브는 빈 터로 서고, 1분마다 사람 · 서류 · 차량이 움직인다(G-3).
+ * 건물을 누르면 우측 패널에 클로즈업 · 요약 · 상세 링크.
  *
  * **고른 줄은 주소(?focus=)에 싣는다.** 클라이언트 상태로 두면 패널을 서버가 못 그리고,
- * 새로고침하거나 링크를 보내면 고른 것이 사라진다. 서버가 그대로 그리므로 이 화면에는
- * 'use client'가 한 줄도 없다.
+ * 새로고침하거나 링크를 보내면 고른 것이 사라진다. 도시(CityStage)만 클라이언트고 패널은 서버가 그린다.
  *
  * 배치가 없는 회사는 지도 아래에 따로 적는다. 조용히 빼면 «도시에 없는 회사»가 «없는 회사»로
  * 읽힌다.
@@ -32,8 +35,10 @@ export default async function GroupPage({ searchParams }: PageProps<'/group'>) {
   const focus = Number(rawFocus)
 
   const repo = await getRepository()
-  const [user, phase, city] = await Promise.all([currentUser(), cityPhase(), loadCity(repo)])
+  const [user, sky, city, prefs] = await Promise.all([currentUser(), citySky(), loadCity(repo), loadUiPrefs()])
   const { items, businesses } = city
+  // G-3. 첫 장은 서버가 접는다 — 이후는 CityStage가 1분마다 /api/city/live를 읽는다.
+  const live = await loadCityLive(repo, user?.role ?? null, city.layout, city.initiatives)
 
   const selected = items.find((i) => i.layout.id === focus) ?? null
   const placed = new Set(items.filter((i) => i.kind === 'business').map((i) => i.id))
@@ -71,11 +76,11 @@ export default async function GroupPage({ searchParams }: PageProps<'/group'>) {
       <div className="mt-4 grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="min-w-0">
           <CityScroller focusX={focusX}>
-            <CityMap
-              phase={phase}
-              items={items}
+            <CityStage
+              initial={{ items, live }}
+              sky={sky}
+              flow={prefs.app.city_motion}
               selectedId={selected?.layout.id ?? null}
-              focusHref={(id) => `/group?focus=${id}`}
               sizes="(min-width: 1024px) 70vw, (min-width: 768px) 100vw, 200vw"
             />
           </CityScroller>

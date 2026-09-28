@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 
 import { PageHeader } from '@/components/layout/page-header'
 import { AccountSecurity } from '@/components/settings/account-security'
-import { NotifySwitches, ThemePicker } from '@/components/settings/display-prefs'
+import { CityMotionSwitch, NotifySwitches, ThemePicker } from '@/components/settings/display-prefs'
 import { Icon, type IconName } from '@/components/ui/icon'
 import { canEditChairmanRoutine, canManageUsers } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
@@ -145,6 +145,7 @@ export default async function SettingsHubPage() {
       <Section icon="grid" title="화면" scope="전 사용자 공통">
         <p className="text-t11 text-ink-dim">테마</p>
         <ThemePicker value={prefs.app.theme} />
+        <CityMotionSwitch value={prefs.app.city_motion} />
 
         <div className="mt-3 space-y-1.5">
           <Row

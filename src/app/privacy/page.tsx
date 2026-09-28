@@ -135,11 +135,14 @@ export default function PrivacyPage() {
 
         {/* ───────── 3. 업무 데이터 ───────── */}
         {/* Phase 6-2 블록 2 · 3 — 그룹 시티 표시 · 새 기기 알림 · 원격 로그아웃 · 삭제 방식. */}
-        <Article title="2-1. 그룹 시티 · 새 기기 · 세션" badge="Phase 6-2 · 0042">
+        <Article title="2-1. 그룹 시티 · 새 기기 · 세션" badge="Phase 6-2 · 8 G-3">
           <Ul>
             <li>
               <b className="font-semibold text-ink">접속 · 활동은 그룹 시티에 표시됩니다.</b> 그룹 시티는
-              회사별 현황을 건물로 보여 주는 화면이고, 활동은 회사 단위로만 그립니다. 누가 무엇을 열었는지는 그리지 않습니다.
+              회사별 현황을 건물로 보여 주는 화면입니다. 최근 5분 안에 접속한 사람은 소속 회사 건물 앞에 작은 사람으로,
+              진행 중인 업무는 창가 자리와 진행바로, 결재는 서류를 든 사람으로 그려집니다. 접속한 사람의 모습은
+              회장만 볼 수 있고, <b className="font-semibold text-ink">이름표도 회장 화면에만</b> 붙습니다. 누가 어떤
+              화면 · 문서를 열었는지는 그리지 않습니다.
             </li>
             <li>
               지난 90일 동안 쓴 적 없는 기기로 로그인하면 <b className="font-semibold text-ink">본인에게 알림</b>이
@@ -217,7 +220,7 @@ export default function PrivacyPage() {
             로그인으로
           </Link>
           <span className="text-t10 text-ink-muted">
-            마지막 개정: 블록 7(열람 기록 항목 추가)
+            마지막 개정: Phase 8 G-3(그룹 시티에 사람 · 업무 · 결재 표시)
           </span>
         </div>
 

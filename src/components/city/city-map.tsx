@@ -18,6 +18,7 @@ export function CityMap({
   selectedId,
   focusHref,
   sizes = '(min-width: 1024px) 70vw, 100vw',
+  overlay,
 }: {
   phase: CityPhase
   items: CityItem[]
@@ -26,6 +27,8 @@ export function CityMap({
   /** 핫스팟을 누르면 갈 주소. layout.id를 받는다. */
   focusHref: (layoutId: number) => string
   sizes?: string
+  /** 그림과 핫스팟 사이에 까는 살아 있는 레이어(city-live-layer.tsx). 같은 상자라 %가 맞는다. */
+  overlay?: React.ReactNode
 }) {
   return (
     <div className="relative w-full overflow-hidden rounded-glass" style={{ aspectRatio: `${1 / CITY_ASPECT}` }}>
@@ -37,6 +40,7 @@ export function CityMap({
         alt={phase === 'day' ? '그룹 시티 전경 — 낮' : '그룹 시티 전경 — 저녁'}
         className="absolute inset-0 size-full object-cover"
       />
+      {overlay}
       {items.map((item) => (
         <Hotspot
           key={item.layout.id}

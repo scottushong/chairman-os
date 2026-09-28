@@ -64,11 +64,17 @@ export interface AppPrefs {
   theme: ThemeChoice
   /** 종류별 알림 on/off. 꺼 둔 종류는 헤더의 뱃지와 목록에서 빠진다. */
   notify: NotificationSwitches
+  /**
+   * 그룹 시티의 강물 · 구름 흐름(Phase 8 G-2b). 끄면 배경만 멈춘다 — 사람 · 서류는 데이터라 그대로 선다.
+   * 기기가 «동작 줄이기»(prefers-reduced-motion)를 켜 두었으면 이 값과 무관하게 멈춘다.
+   */
+  city_motion: boolean
 }
 
 export const APP_PREFS_DEFAULT: AppPrefs = {
   theme: 'light',
   notify: NOTIFICATION_SWITCHES_DEFAULT,
+  city_motion: true,
 }
 
 /* ------------------------------------------------------------------ 읽기 */
@@ -112,7 +118,7 @@ export function readAppPrefs(raw: PrefsBag): AppPrefs {
   const notify = Object.fromEntries(
     NOTIFICATION_KIND.map((k) => [k, rawNotify[k] !== false]),
   ) as NotificationSwitches
-  return { theme, notify }
+  return { theme, notify, city_motion: b.city_motion !== false }
 }
 
 /* ------------------------------------------------------------------ 판정 */

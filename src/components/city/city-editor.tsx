@@ -6,7 +6,17 @@ import { useRef, useState, useTransition } from 'react'
 import { promoteCityLot, saveCityLayout } from '@/app/actions/city'
 import { Icon } from '@/components/ui/icon'
 import { CITY_ASPECT, citySrc, citySrcSet, clampBox, type CityPhase } from '@/lib/city'
-import { CITY_STAGE, CITY_STAGE_LABEL_KO, type CityLayout, type CityStage } from '@/types'
+import { anchorsOf } from '@/lib/city-live'
+import {
+  CITY_ANCHOR,
+  CITY_ANCHOR_LABEL_KO,
+  CITY_STAGE,
+  CITY_STAGE_LABEL_KO,
+  type CityAnchorName,
+  type CityAnchorsInput,
+  type CityLayout,
+  type CityStage,
+} from '@/types'
 
 /**
  * /group/edit — 회장이 핫스팟을 드래그로 옮기고 모서리로 크기를 바꾼다 (Phase 8 G-1).
@@ -27,11 +37,18 @@ type Row = CityLayout
 
 type Drag = {
   id: number
-  mode: 'move' | 'resize'
+  mode: 'move' | 'resize' | CityAnchorName
   startX: number
   startY: number
   box: { x: number; y: number; w: number; h: number }
+  /** 끌기 시작할 때의 길목(0044). 상자를 옮기면 적힌 점도 같이 옮긴다. */
+  anchors: CityAnchorsInput | null
 }
+
+/** 길목 점 표식의 한 글자 — 입구 · 자리 · 길. */
+const ANCHOR_MARK: Record<CityAnchorName, string> = { door: '입', desk: '자', road: '길' }
+
+const clampPct = (v: number) => Math.round(Math.min(100, Math.max(0, v)) * 100) / 100
 
 const NEW_BOX = { x: 44, y: 40, w: 10, h: 16 }
 
@@ -51,6 +68,8 @@ export function CityEditor({
   const [deletes, setDeletes] = useState<number[]>([])
   const [selected, setSelected] = useState<number | null>(layout[0]?.id ?? null)
   const [dirty, setDirty] = useState(false)
+  // 길목을 건드린 줄. 저장 때 이 줄만 anchors를 보낸다 — 0044 전 DB에서도 상자 저장은 된다.
+  const [touched, setTouched] = useState<Set<number>>(() => new Set())
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
   const [promoteTo, setPromoteTo] = useState('')
@@ -75,12 +94,24 @@ export function CityEditor({
     setDirty(true)
   }
 
+  function patchAnchors(id: number, anchors: CityAnchorsInput | null) {
+    patch(id, { anchors })
+    setTouched((t) => new Set(t).add(id))
+  }
+
   function onPointerDown(e: React.PointerEvent, row: Row, mode: Drag['mode']) {
     e.preventDefault()
     e.stopPropagation()
     setSelected(row.id)
     ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-    drag.current = { id: row.id, mode, startX: e.clientX, startY: e.clientY, box: { x: row.x, y: row.y, w: row.w, h: row.h } }
+    drag.current = {
+      id: row.id,
+      mode,
+      startX: e.clientX,
+      startY: e.clientY,
+      box: { x: row.x, y: row.y, w: row.w, h: row.h },
+      anchors: row.anchors ?? null,
+    }
   }
 
   function onPointerMove(e: React.PointerEvent) {
@@ -89,11 +120,29 @@ export function CityEditor({
     if (!d || !rect) return
     const dx = ((e.clientX - d.startX) / rect.width) * 100
     const dy = ((e.clientY - d.startY) / rect.height) * 100
+    if (d.mode !== 'move' && d.mode !== 'resize') {
+      // 길목 점 하나를 끈다. 시작점은 적힌 점, 없으면 상자에서 낸 점이다.
+      const start = anchorsOf({ id: d.id, business_id: null, initiative_id: null, stage_image: null, ...d.box, anchors: d.anchors })[d.mode]
+      patchAnchors(d.id, { ...(d.anchors ?? {}), [d.mode]: { x: clampPct(start.x + dx), y: clampPct(start.y + dy) } })
+      return
+    }
     const next =
       d.mode === 'move'
         ? { ...d.box, x: d.box.x + dx, y: d.box.y + dy }
         : { ...d.box, w: d.box.w + dx, h: d.box.h + dy }
-    patch(d.id, clampBox(next))
+    const box = clampBox(next)
+    patch(d.id, box)
+    // 상자를 옮기면 적힌 길목도 같이 옮긴다 — 건물만 가고 입구가 제자리에 남으면 사람이 빈 땅으로 걷는다.
+    if (d.mode === 'move' && d.anchors) {
+      const mx = box.x - d.box.x
+      const my = box.y - d.box.y
+      const moved: CityAnchorsInput = {}
+      for (const name of CITY_ANCHOR) {
+        const p = d.anchors[name]
+        if (p) moved[name] = { x: clampPct(p.x + mx), y: clampPct(p.y + my) }
+      }
+      patchAnchors(d.id, moved)
+    }
   }
 
   function onPointerUp() {
@@ -118,7 +167,11 @@ export function CityEditor({
     setError(null)
     startTransition(async () => {
       const result = await saveCityLayout({
-        upserts: rows.map((r) => ({ ...r, id: r.id > 0 ? r.id : undefined })),
+        upserts: rows.map((r) => ({
+          ...r,
+          id: r.id > 0 ? r.id : undefined,
+          anchors: touched.has(r.id) ? (r.anchors ?? null) : undefined,
+        })),
         deletes,
       })
       if (result.error) {
@@ -127,6 +180,7 @@ export function CityEditor({
       }
       setDirty(false)
       setDeletes([])
+      setTouched(new Set())
       router.refresh()
     })
   }
@@ -199,6 +253,28 @@ export function CityEditor({
             </div>
           )
         })}
+        {/* 고른 줄의 길목 셋(0044) — 끌어서 옮긴다. 점선 테두리는 «상자에서 낸 점»(아직 안 적힘)이다. */}
+        {current
+          ? CITY_ANCHOR.map((name) => {
+              const p = anchorsOf(current)[name]
+              const own = current.anchors?.[name] !== undefined
+              return (
+                <span
+                  key={name}
+                  role="button"
+                  tabIndex={-1}
+                  aria-label={`${nameOf(current)} ${CITY_ANCHOR_LABEL_KO[name]} — 끌어서 옮긴다`}
+                  onPointerDown={(e) => onPointerDown(e, current, name)}
+                  className={`absolute z-10 flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-grab items-center justify-center rounded-full text-[10px] font-bold shadow-lg ${
+                    own ? 'border-2 border-white bg-accent text-white' : 'border-2 border-dashed border-white bg-black/60 text-white'
+                  }`}
+                  style={{ left: `${p.x}%`, top: `${p.y}%` }}
+                >
+                  {ANCHOR_MARK[name]}
+                </span>
+              )
+            })
+          : null}
       </div>
 
       <aside className="glass space-y-4 rounded-glass p-4 text-t12h">
@@ -231,6 +307,31 @@ export function CityEditor({
             <p className="text-t11 text-ink-muted tnum">
               x {current.x} · y {current.y} · 폭 {current.w} · 높이 {current.h} (%)
             </p>
+            <div className="space-y-1 rounded-md bg-panel px-2 py-1.5">
+              <p className="text-t11 text-ink-dim">
+                길목 — 그림 위 <b>입</b> · <b>자</b> · <b>길</b> 점을 끌어 사람이 서고 걷는 자리를 정합니다.
+              </p>
+              <ul className="text-t11 text-ink-muted tnum">
+                {CITY_ANCHOR.map((name) => {
+                  const p = anchorsOf(current)[name]
+                  return (
+                    <li key={name}>
+                      {CITY_ANCHOR_LABEL_KO[name]} {p.x.toFixed(1)}, {p.y.toFixed(1)}
+                      {current.anchors?.[name] ? '' : ' (상자에서)'}
+                    </li>
+                  )
+                })}
+              </ul>
+              {current.anchors ? (
+                <button
+                  type="button"
+                  onClick={() => patchAnchors(current.id, null)}
+                  className="text-t11h text-ink-dim underline underline-offset-2 hover:text-ink"
+                >
+                  길목을 상자에서 다시 내기
+                </button>
+              ) : null}
+            </div>
             {current.business_id !== null ? (
               <label className="block">
                 <span className="text-t11 text-ink-dim">단계 그림</span>
