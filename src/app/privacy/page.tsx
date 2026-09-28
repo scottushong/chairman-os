@@ -134,6 +134,28 @@ export default function PrivacyPage() {
         </Article>
 
         {/* ───────── 3. 업무 데이터 ───────── */}
+        {/* Phase 6-2 블록 2 · 3 — 그룹 시티 표시 · 새 기기 알림 · 원격 로그아웃 · 삭제 방식. */}
+        <Article title="2-1. 그룹 시티 · 새 기기 · 세션" badge="Phase 6-2 · 0042">
+          <Ul>
+            <li>
+              <b className="font-semibold text-ink">접속 · 활동은 그룹 시티에 표시됩니다.</b> 그룹 시티는
+              회사별 현황을 건물로 보여 주는 화면이고, 활동은 회사 단위로만 그립니다. 누가 무엇을 열었는지는 그리지 않습니다.
+            </li>
+            <li>
+              지난 90일 동안 쓴 적 없는 기기로 로그인하면 <b className="font-semibold text-ink">본인에게 알림</b>이
+              가고, 회장에게도 보안 알림(카카오톡)이 갑니다. 알림에 담기는 것은 기기 요약과 도시뿐입니다.
+            </li>
+            <li>
+              로그인은 7일 동안 유지되고 그 뒤에는 다시 로그인합니다. 회장은 특정 사용자의 모든 기기를 한 번에
+              로그아웃시킬 수 있습니다. 임원 이상은 2단계 인증(인증 앱)이 필수입니다.
+            </li>
+            <li>
+              업무 기록(결재 · 문서 · 할 일 등)은 <b className="font-semibold text-ink">지워도 행이 남습니다</b> —
+              지운 표시가 붙어 화면에서 사라질 뿐 감사를 위해 보존됩니다.
+            </li>
+          </Ul>
+        </Article>
+
         <Article title="3. 업무 데이터와 개인 설정">
           <P>
             이 시스템은 그룹의 업무 데이터(회사·재무·업무·문서·결정)를 다룹니다. 무엇이 누구에게
@@ -210,7 +232,10 @@ export default function PrivacyPage() {
             {ACTIVITY_RETENTION_DAYS} days, after which no one — not even the Chairman — can read
             them; the rows are not deleted because the audit log is append-only by design. The
             activity screen is Chairman-only. You can always see your own records. Failed sign-ins
-            are recorded for existing accounts only; passwords never are. There is no data export
+            are recorded for existing accounts only; passwords never are. Your presence and activity
+            appear in the Group City at company level only (never who opened what). Signing in from a device
+            unused for 90 days notifies you and the Chairman. Sessions last 7 days; Executives and above
+            must use two-step verification. Deleted work records are hidden, not erased. There is no data export
             from this system.
           </p>
         </section>

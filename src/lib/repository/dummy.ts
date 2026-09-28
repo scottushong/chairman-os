@@ -1203,6 +1203,11 @@ export const dummyRepository: ChairmanRepository = {
    * 회장 지시의 검증 f("영업팀장 회수 → 임원이 영업팀 자동 승계")를 화면에서 보려면
    * 그 트리거가 하는 일을 여기서도 해야 한다(0026 5절을 옮겨 적은 것이다).
    */
+  /** dummy에는 세션이 없다 — 대상이 있는지만 본다. */
+  async forceLogout(userId: string): Promise<boolean> {
+    return memoryPeople.some((p) => p.user_id === userId)
+  },
+
   async revokeUser(target: RevokeTarget, actor: AuditActor): Promise<void> {
     if (target.kind === 'invitation') {
       const found = memoryInvitations.find((i) => i.invitation_id === target.invitation_id)

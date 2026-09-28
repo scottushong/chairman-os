@@ -232,6 +232,26 @@ export async function revokeUser(input: {
 }
 
 /**
+ * Phase 6-2 블록 3 — 회장의 «모든 기기 로그아웃». 권한 판정은 DB(force_logout)가 한다.
+ * 다음 요청부터 proxy가 그 사람을 로그인 화면으로 보낸다(?reason=revoked).
+ */
+export async function forceLogoutUser(input: { userId: unknown }): Promise<RevokeUserState> {
+  const id = typeof input.userId === 'string' ? input.userId.trim() : ''
+  if (!id) return { error: '대상을 알 수 없습니다.' }
+  const user = await currentUser()
+  if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  if (user.role !== 'Chairman') return { error: '회장만 할 수 있습니다.' }
+  try {
+    const repo = await getRepository()
+    if (!(await repo.forceLogout(id))) return { error: '로그아웃시키지 못했습니다(대상이 없거나 권한이 없습니다).' }
+  } catch (e) {
+    console.error('[forceLogoutUser]', e)
+    return { error: '로그아웃시키지 못했습니다. 잠시 뒤 다시 시도하세요.' }
+  }
+  return {}
+}
+
+/**
  * Phase 6-1 블록 B-3 — 조직도 우측 패널의 세 가지(역할 변경 · 팀 이동 · 상사 변경).
  *
  * 셋을 한 함수로 받는다. 화면에서 셋이 같은 패널의 같은 줄들이고, audit_log에도 전부

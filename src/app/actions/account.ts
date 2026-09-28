@@ -1,5 +1,6 @@
 'use server'
 
+import { passwordProblem } from '@/lib/password'
 import { supabaseConfig } from '@/lib/supabase/config'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
 
@@ -33,7 +34,9 @@ export async function changePassword(
 
   // 길이만 여기서 본다. 나머지 규칙(유출된 비밀번호 차단 등)은 Supabase 프로젝트 설정이 갖고,
   // 그 판정을 화면이 흉내 내면 두 곳이 갈라진다 — lib/auth/roles.ts가 적어 둔 것과 같은 원칙이다.
-  if (next.length < 8) return { error: '새 비밀번호는 8자 이상이어야 합니다.' }
+  // Phase 6-2 블록 3 — 12자 이상 + 유출 목록(HIBP k-익명성) 검사. lib/password.ts 한 곳.
+  const problem = await passwordProblem(next)
+  if (problem) return { error: problem }
   if (next !== again) return { error: '새 비밀번호와 확인이 다릅니다.' }
 
   const sb = await createSupabaseServerClient()

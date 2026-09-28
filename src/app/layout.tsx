@@ -22,6 +22,9 @@ const notoSerifKR = Noto_Serif_KR({
 export const metadata: Metadata = {
   title: 'Chairman OS',
   description: '그룹 통합 관제 + Business 전용 OS 연동 + AI Overnight Workforce',
+  // Phase 6-2 PWA — iOS는 manifest 아이콘을 안 읽고 apple-touch-icon을 본다.
+  icons: { apple: '/icons/apple-touch-icon.png' },
+  appleWebApp: { capable: true, title: 'Chairman OS', statusBarStyle: 'black-translucent' },
 }
 
 /**

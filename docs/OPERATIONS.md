@@ -23,10 +23,10 @@
 ### 지금 상태
 
 **D-17 부분 준비:** 로컬 격리·합성 시드·검증 명령과 복구 절차는 저장소에 있다(8~9절).
-**외부 staging 프로젝트가 생겼다**(2026-09-18, Seoul `itpenmxyracfhyormcep`). 0001~0016이 들어가 있고
+**외부 staging 프로젝트가 생겼다**(2026-09-18, Seoul `itpenmxyracfhyormcep`). 0001~0036이 들어가 있고
 `npm run db:push:staging`으로 적용한다. 아직 남은 것은 staging 부트스트랩 계정, Vercel Preview 연결,
 staging UAT, **실제 복원 리허설**이다.
-TC-023·024를 Pass로 바꾸거나 production 배포를 승인한 상태는 아니다.
+production DB는 2026-09-27에 0023~0036을 받아 0036이고, 앱은 `55c2edd`다(9절 릴리스). TC-023·024는 아직 Pass가 아니다.
 
 ### 나가기 전에 반드시 통과해야 하는 것
 
@@ -348,6 +348,38 @@ select tgname from pg_trigger where tgrelid = 'auth.users'::regclass;
 
 ---
 
+## 3-1. 직원 가입 · 인증 설정 (Phase 6-2)
+
+직원은 초대(3절)된 뒤 스스로 가입한다: `/login` «처음이세요?» → `/signup`에 이메일 → **초대된 이메일만**
+인증 메일 → `/auth/confirm` → `/auth/set-password`(12자 이상 · 유출 목록 검사) → Member·TeamLead는 `/me`.
+초대되지 않은 이메일은 «관리자에게 문의»에서 멈추고 메일이 나가지 않는다(0042 `invitation_open`).
+
+### Supabase 대시보드 — 프로젝트마다 한 번 (staging · production 둘 다)
+
+1. **Authentication → Providers → Email**: Enable email signups **켬**, Confirm email **켬**.
+   가입을 끄면 «처음이세요?»가 `signup_disabled`로 실패한다 — 초대가 문지기이므로 켜 두어도 된다.
+2. **Authentication → URL Configuration**: Site URL = 앱 주소, Redirect URLs에 `https://<앱 주소>/auth/confirm`
+   (Preview를 쓰면 그 주소도). 빠지면 인증 링크가 Site URL 루트로 떨어진다.
+3. **Authentication → Multi-Factor**: TOTP **Enabled**. 꺼져 있으면 `/mfa`가 «시작하지 못했습니다»를 띄우고
+   **Executive 이상은 앱에 못 들어간다**(proxy가 aal2를 요구한다). 이 설정을 먼저 켜고 앱을 배포한다.
+4. **Authentication → Policies(Passwords)**: Minimum length 12, **Prevent use of leaked passwords 켬**
+   (Pro 이상). 앱도 같은 검사(`src/lib/password.ts`, HIBP k-익명성)를 하므로 플랜이 안 되면 앱 검사만으로 선다.
+5. **Authentication → Sessions**: Time-box user sessions = 7일(Pro 이상). 앱(proxy)과 DB(`is_active()`)도
+   최초 로그인 7일로 끊으므로 이 설정은 겹 하나 더다.
+
+### 메일 한도 — 기본 SMTP로는 모자란다
+
+Supabase 기본 메일 서버는 **시간당 2통 안팎**이고 운영용이 아니다(Supabase 문서의 값, 바뀔 수 있다).
+직원 여러 명이 같은 날 가입하면 `over_email_send_rate_limit`가 나고 화면은 «한 시간쯤 뒤 다시»를 띄운다.
+직원 파일럿 전에 **Resend SMTP**로 바꾼다:
+
+1. Resend에서 발신 도메인을 추가하고 DNS(SPF · DKIM)를 넣어 Verified가 될 때까지 기다린다.
+2. Resend API key를 만든다(Sending access만).
+3. Supabase **Project Settings → Authentication → SMTP Settings**: Enable custom SMTP,
+   Host `smtp.resend.com`, Port `465`, Username `resend`, Password = API key, Sender = `no-reply@<도메인>`.
+4. **Authentication → Rate Limits**에서 이메일 한도를 파일럿 인원에 맞게 올린다(예: 시간당 30).
+5. 초대된 테스트 이메일로 `/signup`을 한 번 끝까지 지나 본다 — 메일 도착 · `/auth/confirm` · 비밀번호 · `/me`.
+
 ## 4. 권한 회수
 
 **퇴사·계약 종료 즉시 회수** (05_Architecture 원칙 8).
@@ -552,6 +584,12 @@ CLI 버전이 이 로컬 JWT 정보를 제공하지 않으면 검사는 실패�
     (2절 — 전용 npm 스크립트를 두지 않았다). 0015·0016처럼 **스키마가 코드보다 먼저** 가야 하는 변경은 순서를 지킨다.
 12. 앱을 배포하고 배포 후 확인 4단계를 다시 돌린다. 끝났으면 작업 디렉터리의 link를
     `npm run db:push:staging`으로 staging에 되돌려 둔다 — 다음 사람이 production에 link된 채로 시작하지 않게.
+
+### 되돌리는 길 — 한 줄
+
+**승인된 복원 지점으로 production DB를 복원한 뒤, 기록된 직전 정상 SHA를 앱에 배포한다** — 넣은 순서(DB → 앱)의 역순이고, 앱만 되돌리는 것은 스키마를 되돌리는 것이 아니다.
+
+릴리스마다 그 두 값을 미리 적어 둔다. 2026-09-27 릴리스(0023~0036 · `55c2edd`)의 값은 복원 지점 `2026-09-26 22:33 KST`(= `13:33 UTC`, production 0022)와 직전 SHA `0e1069f`였다.
 
 ### 앱 릴리스 실패
 

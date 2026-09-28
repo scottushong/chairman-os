@@ -97,6 +97,10 @@ export async function signIn(_prev: SignInState, formData: FormData): Promise<Si
   // ② 새 기기·새 도시 판정이 로그인 줄에서도 선다. **IP는 넣지 않는다** —
   // readActivityOrigin()은 x-forwarded-for를 읽지 않는다. 도시까지다.
   const { device, city } = await readActivityOrigin()
+  // Phase 6-2 블록 3. 새 기기면 본인 알림 + 회장 카톡 큐(0042 report_login_device). 로그인 줄을 적기
+  // **전에** 부른다 — 적은 뒤에 부르면 방금 그 줄 때문에 늘 «본 적 있는 기기»가 된다. 실패해도 로그인은 간다.
+  const { error: deviceError } = await sb.rpc('report_login_device', { p_device: device ?? '', p_city: city ?? '' })
+  if (deviceError) console.error(`[security] report_login_device ${deviceError.code ?? '?'}: ${deviceError.message}`)
   const { error: auditError } = await sb.from('audit_log').insert({
     actor_user_id: profile.user_id,
     actor_role: profile.role,
@@ -109,8 +113,11 @@ export async function signIn(_prev: SignInState, formData: FormData): Promise<Si
     console.error(`[audit] login 기록 실패 ${auditError.code ?? '?'}: ${auditError.message}`)
   }
 
+  // Phase 6-2 블록 1. Member · TeamLead의 기본은 직원 홈(/me). 다른 곳을 보려던 참이면(next) 그리로.
+  const landing = next === '/' && (profile.role === 'Member' || profile.role === 'TeamLead') ? '/me' : next
+
   // redirect()는 예외를 던져 흐름을 끊는다. try 안에 두면 안 된다.
-  redirect(next)
+  redirect(landing)
 }
 
 export async function signOut(): Promise<void> {

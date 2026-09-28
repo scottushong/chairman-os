@@ -2652,6 +2652,13 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
      * 아직 계정이 없는 사람은 자를 권한이 없다. 취소할 것은 초대장뿐이고,
      * 취소하면 0011의 부분 유니크에서 빠져 같은 이메일로 다시 초대할 수 있게 된다.
      */
+    /** 0042 force_logout — sessions_revoked_at을 찍고 감사 한 줄. is_active()가 그보다 앞선 토큰을 끊는다. */
+    async forceLogout(userId: string): Promise<boolean> {
+      const { data, error } = await sb.rpc('force_logout', { p_user: userId })
+      if (error) throw new Error(`Supabase force_logout ${error.code ?? '?'}: ${error.message}`)
+      return data === true
+    },
+
     async revokeUser(target: RevokeTarget, actor: AuditActor): Promise<void> {
       const now = new Date().toISOString()
       const table = target.kind === 'account' ? 'user_profiles' : 'user_invitations'

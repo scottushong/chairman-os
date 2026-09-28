@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react'
 
 import { saveTeam, updateUserProfile } from '@/app/actions/users'
 import { ProfilePhoto } from '@/components/settings/profile-photo'
+import { ForceLogoutButton } from '@/components/settings/force-logout-button'
 import { RevokeButton } from '@/components/settings/revoke-button'
 import { Icon } from '@/components/ui/icon'
 import { businessName } from '@/lib/lookup'
@@ -720,7 +721,10 @@ function PersonPanel({
                   : '회수하면 아래 사람과 팀장 자리가 상사에게 승계됩니다.'}
             </span>
             {!person.revoked_at && !self ? (
-              <RevokeButton kind="account" id={person.user_id} label={person.display_name} />
+              <span className="flex flex-wrap items-center gap-1.5">
+                <ForceLogoutButton userId={person.user_id} label={person.display_name} />
+                <RevokeButton kind="account" id={person.user_id} label={person.display_name} />
+              </span>
             ) : null}
           </div>
         </div>

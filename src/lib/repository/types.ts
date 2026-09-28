@@ -295,6 +295,8 @@ export interface ChairmanRepository {
   inviteUser(input: NewInvitation, actor: AuditActor): Promise<UserInvitation>
   /** 이미 들어온 사람은 user_profiles.revoked_at, 아직 안 온 사람은 초대를 취소한다. */
   revokeUser(target: RevokeTarget, actor: AuditActor): Promise<void>
+  /** Phase 6-2 — «모든 기기 로그아웃»(0042 force_logout). Chairman만. 대상이 없거나 권한이 없으면 false. */
+  forceLogout(userId: string): Promise<boolean>
 
   /**
    * Phase 6-1 블록 B — 조직도(회사 > 팀 > 사람).

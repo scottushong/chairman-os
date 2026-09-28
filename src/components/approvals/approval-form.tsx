@@ -20,12 +20,15 @@ export function ApprovalForm({
   businesses,
   defaultDeadline,
   lang,
+  afterSubmit,
 }: {
   templates: ApprovalTemplate[]
   lead: ApprovalLead | null
   businesses: { id: string; name: string }[]
   defaultDeadline: string
   lang: Lang
+  /** 올린 뒤 갈 곳. 없으면 그 결재의 상세(/approvals?id=). 직원 홈은 /me?tab=requests로 돌아간다. */
+  afterSubmit?: string
 }) {
   const router = useRouter()
   const [key, setKey] = useState(templates[0]?.template_key ?? 'expense')
@@ -54,7 +57,7 @@ export function ApprovalForm({
         form,
       })
       if (result.error) setError(result.error)
-      else if (result.decisionId) router.push(`/approvals?id=${result.decisionId}`)
+      else if (result.decisionId) router.push(afterSubmit ?? `/approvals?id=${result.decisionId}`)
     })
   }
 

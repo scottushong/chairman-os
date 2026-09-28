@@ -26,7 +26,8 @@ import { resolveSession } from '@/lib/supabase/proxy'
  * 로그인하기 **전에** 무엇이 기록되는지 읽을 수 있어야 그 문장이 뜻을 가진다.
  * 이 문서에는 회사 데이터가 한 줄도 없다(무엇을 남기고 얼마나 두는지의 설명뿐이다).
  */
-const PUBLIC_PATHS = ['/login', '/privacy']
+// Phase 6-2 — 가입(/signup) · 메일 인증 착지(/auth/confirm)는 로그인 전이다.
+const PUBLIC_PATHS = ['/login', '/privacy', '/signup', '/auth/confirm']
 
 function isPublic(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`))
@@ -37,8 +38,26 @@ export async function proxy(request: NextRequest) {
   // 이때 막아 세우면 아무도 앱을 못 연다. 대신 live 모드는 getRepository()가 따로 막는다.
   if (!supabaseConfig()) return NextResponse.next()
 
-  const { response, user } = await resolveSession(request)
+  const { response, user, gate, signOut } = await resolveSession(request)
   const { pathname } = request.nextUrl
+
+  // Phase 6-2 블록 3. 만료 · 원격 로그아웃은 세션을 끊고 로그인으로, 2단계 인증이 필요하면 /mfa로.
+  if (user && (gate === 'expired' || gate === 'revoked')) {
+    await signOut()
+    const to = request.nextUrl.clone()
+    to.pathname = '/login'
+    to.search = `?reason=${gate}`
+    const out = NextResponse.redirect(to)
+    // signOut이 지운 쿠키를 리다이렉트에도 싣는다.
+    response.cookies.getAll().forEach((c) => out.cookies.set(c))
+    return out
+  }
+  if (user && gate === 'mfa' && pathname !== '/mfa' && pathname !== '/auth/set-password' && !pathname.startsWith('/api/') && !isPublic(pathname)) {
+    const to = request.nextUrl.clone()
+    to.pathname = '/mfa'
+    to.search = `?next=${encodeURIComponent(pathname)}`
+    return NextResponse.redirect(to)
+  }
 
   if (!user && !isPublic(pathname)) {
     const to = request.nextUrl.clone()
@@ -48,7 +67,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(to)
   }
 
-  if (user && pathname === '/login') {
+  if (user && (pathname === '/login' || pathname === '/signup')) {
     const to = request.nextUrl.clone()
     to.pathname = '/'
     to.search = ''
@@ -65,6 +84,6 @@ export const config = {
    * /api/cron/*은 Vercel Cron이 쿠키 없이 부른다. 인증은 route가 CRON_SECRET / Chairman 세션으로 직접 한다.
    */
   matcher: [
-    '/((?!_next/static|_next/image|api/health|api/cron|favicon.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)$).*)',
+    '/((?!_next/static|_next/image|api/health|api/cron|favicon.ico|manifest\.webmanifest|.*\.(?:svg|png|jpg|jpeg|gif|webp|ico|woff2?)$).*)',
   ],
 }

@@ -23,6 +23,9 @@ export default async function LoginPage({ searchParams }: PageProps<'/login'>) {
   // 열린 리다이렉트를 막는다. 서버 액션 쪽에서 한 번 더 검사한다.
   const next = candidate?.startsWith('/') && !candidate.startsWith('//') ? candidate : '/'
   const phase = await cityPhase()
+  // Phase 6-2 블록 3 — proxy가 세션을 끊고 보낸 까닭(7일 만료 · 회장의 원격 로그아웃).
+  const reasonRaw = Array.isArray(params.reason) ? params.reason[0] : params.reason
+  const reason = reasonRaw === 'expired' ? '로그인한 지 7일이 지나 다시 로그인해야 합니다.' : reasonRaw === 'revoked' ? '관리자가 모든 기기에서 로그아웃했습니다. 다시 로그인하세요.' : reasonRaw === 'confirm' ? '인증 링크가 만료되었거나 이미 쓰였습니다. «가입하기»에서 메일을 다시 받으세요.' : null
 
   return (
     <main className="relative flex min-h-full items-center justify-center bg-app px-5 py-10">
@@ -55,7 +58,22 @@ export default async function LoginPage({ searchParams }: PageProps<'/login'>) {
             Supabase Auth로 인증합니다. 접근 범위는 로그인한 계정의 역할이 정합니다.
           </p>
 
+          {reason ? (
+            <p role="status" className="mt-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-[11.5px] text-ink">
+              {reason}
+            </p>
+          ) : null}
+
           <LoginForm next={next} />
+
+          {/* Phase 6-2 블록 2 — 가입. 초대(등록)된 이메일만 인증 메일을 받는다. */}
+          <p className="mt-4 text-center text-[11.5px] text-ink-dim">
+            처음이세요?{' '}
+            <Link href="/signup" className="font-semibold text-accent underline underline-offset-2">
+              가입하기
+            </Link>
+            <span className="text-ink-muted"> · First time? Sign up</span>
+          </p>
         </div>
 
         {/*
@@ -74,12 +92,12 @@ export default async function LoginPage({ searchParams }: PageProps<'/login'>) {
           <p className="text-[10.5px] leading-relaxed text-ink-dim">
             로그인하면 접속 기록이 남습니다. 남기는 것은 계정 · 시각 · 열어 본 화면 · 기기 요약 ·
             도시까지이고, IP 주소 원본은 남기지 않습니다. 기록은 {ACTIVITY_RETENTION_DAYS}일 뒤
-            아무도 볼 수 없게 됩니다.
+            아무도 볼 수 없게 됩니다. 접속 · 활동은 그룹 시티에 표시됩니다.
           </p>
           <p className="mt-1.5 text-[10.5px] leading-relaxed text-ink-muted">
             Signing in is recorded: your account, the time, the screens you open, a short device
             summary and the city — never the raw IP address. Records become unreadable to everyone
-            after {ACTIVITY_RETENTION_DAYS} days.
+            after {ACTIVITY_RETENTION_DAYS} days. Your presence and activity appear in the Group City.
           </p>
           <Link
             href="/privacy"
