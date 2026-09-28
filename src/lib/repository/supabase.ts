@@ -457,6 +457,9 @@ interface DocumentRow {
   version: number
   uploaded_by: string | null
   created_at: string
+  folder_id: number | string | null
+  tags: string[] | null
+  supersedes: string | null
 }
 
 interface UserSettingsRow {
@@ -1542,7 +1545,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
           sb
             .from('documents')
             .select(
-              'document_id,business_id,title,doc_type,security_class,storage_url,version,uploaded_by,created_at',
+              'document_id,business_id,title,doc_type,security_class,storage_url,version,uploaded_by,created_at,folder_id,tags,supersedes',
               { count: 'exact' },
             )
             .order('created_at', { ascending: false })
@@ -1563,6 +1566,9 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         version: r.version,
         uploaded_by: ownerName(names, r.uploaded_by),
         created_at: r.created_at,
+        folder_id: r.folder_id === null ? null : Number(r.folder_id),
+        tags: r.tags ?? [],
+        supersedes: r.supersedes,
       }))
     },
 
@@ -2121,9 +2127,12 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
           security_class: input.security_class,
           storage_url: input.storage_url,
           uploaded_by: actor.user_id,
+          // 0038. 판 번호 · 직전 판은 트리거가 정한다(같은 회사 · 폴더 · 제목 · 유형 · 등급).
+          folder_id: input.folder_id ?? null,
+          tags: input.tags ?? [],
         })
         .select(
-          'document_id,business_id,title,doc_type,security_class,storage_url,version,uploaded_by,created_at',
+          'document_id,business_id,title,doc_type,security_class,storage_url,version,uploaded_by,created_at,folder_id,tags,supersedes',
         )
         .single<DocumentRow>()
 
@@ -2166,6 +2175,9 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         // 이 칸은 표시 이름이다. uuid를 그대로 넣으면 목록에서 읽어 온 행들과 다른 값이 섞인다.
         uploaded_by: ownerName(await ownerNames(), actor.user_id),
         created_at: data.created_at,
+        folder_id: data.folder_id === null ? null : Number(data.folder_id),
+        tags: data.tags ?? [],
+        supersedes: data.supersedes,
       }
     },
 

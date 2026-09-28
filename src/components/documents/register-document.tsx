@@ -8,6 +8,7 @@ import {
   SECURITY_CLASS,
   SECURITY_CLASS_LABEL_KO,
   type Business,
+  type DocFolder,
   type SecurityClass,
 } from '@/types'
 
@@ -24,13 +25,25 @@ import {
 
 const GROUP = 'group'
 
-export function RegisterDocument({ businesses }: { businesses: Business[] }) {
+export function RegisterDocument({
+  businesses,
+  folders = [],
+  folderPaths = {},
+}: {
+  businesses: Business[]
+  /** 0038. 고른 소속의 폴더만 보여 준다(트리거가 같은 회사인지 한 번 더 본다). */
+  folders?: DocFolder[]
+  /** folder_id → «팀 / 폴더 / 하위» 경로. 서버가 만든다(함수는 클라이언트로 못 넘긴다). */
+  folderPaths?: Record<number, string>
+}) {
   const [open, setOpen] = useState(false)
   const [title, setTitle] = useState('')
   const [businessId, setBusinessId] = useState<string>(GROUP)
   const [docType, setDocType] = useState('')
   const [securityClass, setSecurityClass] = useState<SecurityClass>('Normal')
   const [storageUrl, setStorageUrl] = useState('')
+  const [folderId, setFolderId] = useState('')
+  const [tags, setTags] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -48,6 +61,8 @@ export function RegisterDocument({ businesses }: { businesses: Business[] }) {
       docType,
       securityClass,
       storageUrl,
+      folderId,
+      tags,
     })
     setBusy(false)
 
@@ -61,6 +76,8 @@ export function RegisterDocument({ businesses }: { businesses: Business[] }) {
     setDocType('')
     setStorageUrl('')
     setSecurityClass('Normal')
+    setFolderId('')
+    setTags('')
     setOpen(false)
   }
 
@@ -114,7 +131,10 @@ export function RegisterDocument({ businesses }: { businesses: Business[] }) {
           <span className="text-[11px] text-ink-dim">소속</span>
           <select
             value={businessId}
-            onChange={(e) => setBusinessId(e.target.value)}
+            onChange={(e) => {
+              setBusinessId(e.target.value)
+              setFolderId('')
+            }}
             disabled={busy}
             className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
           >
@@ -137,6 +157,37 @@ export function RegisterDocument({ businesses }: { businesses: Business[] }) {
             onChange={(e) => setDocType(e.target.value)}
             placeholder="예: Contract / IR / TDS / Meeting"
             maxLength={40}
+            disabled={busy}
+            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
+          />
+        </label>
+
+        {/* 0038. 같은 소속 · 폴더 · 제목 · 유형 · 등급으로 다시 올리면 v2가 된다(트리거). */}
+        <label className="block">
+          <span className="text-[11px] text-ink-dim">폴더</span>
+          <select
+            value={folderId}
+            onChange={(e) => setFolderId(e.target.value)}
+            disabled={busy || businessId === GROUP}
+            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
+          >
+            <option value="">(폴더 없음)</option>
+            {folders
+              .filter((f) => f.business_id === businessId)
+              .map((f) => (
+                <option key={f.folder_id} value={f.folder_id}>
+                  {folderPaths[f.folder_id] ?? f.name}
+                </option>
+              ))}
+          </select>
+        </label>
+
+        <label className="block">
+          <span className="text-[11px] text-ink-dim">태그 (쉼표로 구분)</span>
+          <input
+            value={tags}
+            onChange={(e) => setTags(e.target.value)}
+            placeholder="예: 계약, 2026, 폴란드"
             disabled={busy}
             className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
           />

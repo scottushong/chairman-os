@@ -1,10 +1,12 @@
 import Link from 'next/link'
 
 import { PageHeader } from '@/components/layout/page-header'
+import { FolderCreate } from '@/components/documents/folder-create'
 import { RegisterDocument } from '@/components/documents/register-document'
 import { FilterChips, type FilterOption } from '@/components/ui/filter-chips'
 import { Icon } from '@/components/ui/icon'
 import { recordScreenRead } from '@/lib/activity-record'
+import { companyTree, descendantIds, folderPaths, type FolderNode } from '@/lib/doc-folders'
 import { formatDateTime } from '@/lib/format'
 import { businessName } from '@/lib/lookup'
 import { firstParam, oneOf, withParams } from '@/lib/query'
@@ -46,13 +48,33 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
   const params = await props.searchParams
   const classFilter = oneOf(firstParam(params.class), SECURITY_CLASS)
   const businessFilter = firstParam(params.business)
+  // Phase 9 블록 3. 폴더(하위 포함) · 태그 · 검색어(제목 또는 태그).
+  const folderFilter = Number(firstParam(params.folder)) || null
+  const tagFilter = firstParam(params.tag)?.toLowerCase() || null
+  const q = firstParam(params.q)?.trim().toLowerCase() || ''
 
   // 블록 7. 페이지 진입. 필터(쿼리)는 경로에 싣지 않는다 — 등급 칩을 눌러 볼 때마다
   // 줄이 하나씩 늘면 목록 화면 하나가 하루에 수십 줄이 된다.
   await recordScreenRead({ path: '/documents', kind: 'page' })
 
   const repo = await getRepository()
-  const [documents, businesses] = await Promise.all([repo.listDocuments(), repo.listBusinesses()])
+  const [allDocuments, businesses, folders, teams] = await Promise.all([
+    repo.listDocuments(),
+    repo.listBusinesses(),
+    repo.listDocFolders(),
+    repo.listTeams(),
+  ])
+  const paths = folderPaths(folders, teams)
+  const inFolder = folderFilter ? descendantIds(folders, folderFilter) : null
+  // 폴더 · 태그 · 검색어를 먼저 거르고, 아래의 등급 · 소속 칩은 그 결과 위에서 센다.
+  const documents = allDocuments.filter(
+    (d) =>
+      (!inFolder || (d.folder_id != null && inFolder.has(d.folder_id))) &&
+      (!tagFilter || (d.tags ?? []).includes(tagFilter)) &&
+      (!q || d.title.toLowerCase().includes(q) || (d.tags ?? []).some((t) => t.includes(q))),
+  )
+  const allTags = [...new Set(allDocuments.flatMap((d) => d.tags ?? []))].sort()
+  const byId = new Map(allDocuments.map((d) => [d.document_id, d]))
 
   const byBusiness = businessFilter
     ? documents.filter((d) => d.business_id === businessFilter)
@@ -107,10 +129,73 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
         code="CH-042"
         description="사내 스토리지에 있는 문서의 링크와 보안등급을 모아 둔다. 파일 자체는 여기 없다."
       >
-        <RegisterDocument businesses={businesses} />
+        <RegisterDocument businesses={businesses} folders={folders} folderPaths={paths} />
       </PageHeader>
 
-      <div className="mt-4 space-y-2 rounded-xl border border-line-soft bg-panel px-3.5 py-3">
+      <div className="mt-4 grid grid-cols-1 items-start gap-3 lg:grid-cols-[250px_minmax(0,1fr)]">
+      {/* 폴더 트리(회사 > 팀 > 폴더). 폴더를 누르면 하위 폴더의 문서까지 보인다. */}
+      <aside className="rounded-xl border border-line-soft bg-panel px-3 py-3 text-[12px]" aria-label="폴더">
+        <div className="mb-1.5 flex items-center justify-between">
+          <span className="text-[11px] font-semibold text-ink-dim">폴더</span>
+          <FolderCreate
+            businesses={businesses.map((b) => ({ id: b.business_id, name: b.name }))}
+            teams={teams.map((t) => ({ id: t.team_id, business_id: t.business_id, name: t.name }))}
+            folders={folders}
+            paths={paths}
+          />
+        </div>
+        <Link href={withParams(BASE, { tag: tagFilter ?? undefined, q: q || undefined })} className={`block rounded px-1.5 py-0.5 ${!folderFilter ? 'bg-raised font-semibold' : 'text-ink-dim hover:text-ink'}`}>
+          전체
+        </Link>
+        {businesses.map((b) => {
+          const tree = companyTree(b.business_id, folders, teams)
+          if (tree.length === 0) return null
+          return (
+            <div key={b.business_id} className="mt-2">
+              <p className="px-1.5 text-[11px] font-semibold text-ink-muted">{b.name}</p>
+              {tree.map((node) => (
+                <div key={node.team?.team_id ?? 'loose'} className="ml-1.5">
+                  {node.team ? <p className="px-1.5 text-[10.5px] text-ink-muted">{node.team.name}</p> : null}
+                  <FolderLinks nodes={node.folders} active={folderFilter} tag={tagFilter} q={q} />
+                </div>
+              ))}
+            </div>
+          )
+        })}
+
+        {allTags.length > 0 ? (
+          <div className="mt-3 border-t border-line-soft pt-2">
+            <span className="text-[11px] font-semibold text-ink-dim">태그</span>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {allTags.map((t) => (
+                <Link
+                  key={t}
+                  href={withParams(BASE, { folder: folderFilter ? String(folderFilter) : undefined, tag: tagFilter === t ? undefined : t })}
+                  className={`rounded px-1.5 py-0.5 text-[10.5px] ${tagFilter === t ? 'bg-accent text-white' : 'bg-raised text-ink-dim hover:text-ink'}`}
+                >
+                  #{t}
+                </Link>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </aside>
+
+      <div className="min-w-0">
+      <div className="space-y-2 rounded-xl border border-line-soft bg-panel px-3.5 py-3">
+        {/* 검색어는 제목과 태그를 본다. GET 폼이라 주소에 남는다(링크로 보낼 수 있다). */}
+        <form action={BASE} className="flex gap-2">
+          {folderFilter ? <input type="hidden" name="folder" value={folderFilter} /> : null}
+          <input
+            name="q"
+            defaultValue={q}
+            placeholder="제목 · 태그 검색"
+            className="w-full rounded-md border border-line bg-raised px-2.5 py-1.5 text-[12px]"
+          />
+          <button type="submit" className="shrink-0 rounded-md border border-line bg-raised px-3 py-1.5 text-[12px]">
+            검색
+          </button>
+        </form>
         <FilterChips label="등급" options={classOptions} />
         <FilterChips label="소속" options={businessOptions} />
       </div>
@@ -143,6 +228,8 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
                   <DocumentRow
                     key={d.document_id}
                     doc={d}
+                    folderPath={d.folder_id != null ? paths[d.folder_id] : undefined}
+                    previous={d.supersedes ? byId.get(d.supersedes) : undefined}
                     scopeName={
                       d.business_id === GROUP
                         ? '그룹 공통'
@@ -160,11 +247,42 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
         {shown.length}건 표시 중. 열람 등급이 모자란 문서는 이 목록에 오지 않는다 — 필터를
         Vault로 놓아도 없는 것이 보이지는 않는다(0002 documents_read).
       </p>
+      </div>
+      </div>
     </div>
   )
 }
 
-function DocumentRow({ doc, scopeName }: { doc: DocumentRecord; scopeName: string }) {
+function FolderLinks({ nodes, active, tag, q }: { nodes: FolderNode[]; active: number | null; tag: string | null; q: string }) {
+  return (
+    <ul className="ml-1">
+      {nodes.map((n) => (
+        <li key={n.folder.folder_id}>
+          <Link
+            href={withParams(BASE, { folder: String(n.folder.folder_id), tag: tag ?? undefined, q: q || undefined })}
+            className={`block truncate rounded px-1.5 py-0.5 ${active === n.folder.folder_id ? 'bg-raised font-semibold' : 'text-ink-dim hover:text-ink'}`}
+          >
+            📁 {n.folder.name}
+          </Link>
+          {n.children.length > 0 ? <FolderLinks nodes={n.children} active={active} tag={tag} q={q} /> : null}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function DocumentRow({
+  doc,
+  scopeName,
+  folderPath,
+  previous,
+}: {
+  doc: DocumentRecord
+  scopeName: string
+  folderPath?: string
+  /** 0038. 이 판이 대신하는 직전 판(보이는 경우만). */
+  previous?: DocumentRecord
+}) {
   return (
     <tr className="border-t border-line-soft">
       <td className="px-3 py-2">
@@ -176,7 +294,19 @@ function DocumentRow({ doc, scopeName }: { doc: DocumentRecord; scopeName: strin
         >
           {doc.title}
         </Link>
-        <p className="mt-0.5 text-[10px] text-ink-muted tnum">{doc.document_id}</p>
+        <p className="mt-0.5 text-[10px] text-ink-muted tnum">
+          {doc.document_id}
+          {folderPath ? <span className="ml-1.5">📁 {folderPath}</span> : null}
+        </p>
+        {doc.tags && doc.tags.length > 0 ? (
+          <p className="mt-0.5 flex flex-wrap gap-1">
+            {doc.tags.map((t) => (
+              <Link key={t} href={withParams(BASE, { tag: t })} className="rounded bg-raised px-1 text-[10px] text-ink-dim hover:text-ink">
+                #{t}
+              </Link>
+            ))}
+          </p>
+        ) : null}
       </td>
       <td className="px-3 py-2 text-[11.5px] text-ink-dim">{scopeName}</td>
       <td className="px-3 py-2 text-[11.5px] text-ink-dim">{doc.doc_type}</td>
@@ -187,7 +317,14 @@ function DocumentRow({ doc, scopeName }: { doc: DocumentRecord; scopeName: strin
           {SECURITY_CLASS_LABEL_KO[doc.security_class]}
         </span>
       </td>
-      <td className="px-3 py-2 text-right text-[11.5px] text-ink-dim tnum">v{doc.version}</td>
+      <td className="px-3 py-2 text-right text-[11.5px] text-ink-dim tnum">
+        v{doc.version}
+        {previous ? (
+          <Link href={`/documents/${encodeURIComponent(previous.document_id)}`} className="block text-[10px] text-ink-muted hover:text-ink hover:underline">
+            ← v{previous.version}
+          </Link>
+        ) : null}
+      </td>
       <td className="px-3 py-2 text-[11px] text-ink-muted tnum">
         {formatDateTime(doc.created_at)}
         <span className="block text-ink-muted">{doc.uploaded_by}</span>

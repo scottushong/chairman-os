@@ -46,6 +46,10 @@ export async function createDocument(input: {
   docType: unknown
   securityClass: unknown
   storageUrl: unknown
+  /** 0038. '' = 폴더 없음. */
+  folderId?: unknown
+  /** 0038. 쉼표로 가른 태그. */
+  tags?: unknown
 }): Promise<CreateDocumentState> {
   const title = typeof input.title === 'string' ? input.title.trim() : ''
   const businessId = typeof input.businessId === 'string' ? input.businessId : ''
@@ -72,6 +76,11 @@ export async function createDocument(input: {
         doc_type: docType || '기타',
         security_class: input.securityClass,
         storage_url: storageUrl,
+        folder_id: Number(input.folderId) > 0 ? Number(input.folderId) : null,
+        tags:
+          typeof input.tags === 'string'
+            ? input.tags.split(',').map((t) => t.trim()).filter(Boolean)
+            : [],
       },
       { user_id: user.user_id, role: user.role },
     )
@@ -81,10 +90,41 @@ export async function createDocument(input: {
       error:
         e instanceof Error && /documents_write|42501|PGRST301/.test(e.message)
           ? '이 소속에 문서를 등록할 권한이 없습니다.'
-          : '문서를 등록하지 못했습니다. 잠시 후 다시 시도하세요.',
+          : e instanceof Error && /document_folder_mismatch/.test(e.message)
+            ? '고른 폴더가 이 소속의 폴더가 아닙니다.'
+            : '문서를 등록하지 못했습니다. 잠시 후 다시 시도하세요.',
     }
   }
 
+  revalidatePath('/documents')
+  return {}
+}
+
+/** 0038 폴더 하나 만들기. 같은 회사 · 팀 · 부모 아래 같은 이름은 DB가 막는다(doc_folders_name_unique). */
+export async function createDocFolder(input: {
+  businessId: unknown
+  teamId?: unknown
+  parentId?: unknown
+  name: unknown
+}): Promise<CreateDocumentState> {
+  const name = typeof input.name === 'string' ? input.name.trim() : ''
+  const businessId = typeof input.businessId === 'string' ? input.businessId.trim() : ''
+  if (!name) return { error: '폴더 이름을 넣으세요.' }
+  if (!businessId || businessId === 'group') return { error: '폴더는 회사 아래에만 만듭니다.' }
+  const user = await currentUser()
+  if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  const teamId = typeof input.teamId === 'string' && input.teamId.trim() ? input.teamId.trim() : null
+  const parentId = Number(input.parentId) > 0 ? Number(input.parentId) : null
+  try {
+    const repo = await getRepository()
+    await repo.saveDocFolder({ business_id: businessId, team_id: teamId, parent_id: parentId, name }, { user_id: user.user_id, role: user.role })
+  } catch (e) {
+    console.error('[createDocFolder]', e)
+    const message = e instanceof Error ? e.message : ''
+    if (/duplicate|unique|23505/.test(message)) return { error: '같은 자리에 같은 이름의 폴더가 있습니다.' }
+    if (/42501|PGRST301|row-level security/.test(message)) return { error: '이 회사에 폴더를 만들 권한이 없습니다.' }
+    return { error: '폴더를 만들지 못했습니다.' }
+  }
   revalidatePath('/documents')
   return {}
 }

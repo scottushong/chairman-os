@@ -55,6 +55,19 @@ export default async function DocumentDetailPage(props: PageProps<'/documents/[i
 
   const scope = doc.business_id === 'group' ? '그룹 공통' : businessName(businesses, doc.business_id)
 
+  /**
+   * 0038 버전 이력 — supersedes 사슬을 앞뒤로 따라간다. **보이는 판만** 이어진다: 못 보는 판이
+   * 사슬 중간에 있으면 거기서 끊긴다(등급이 모자란 판의 존재를 여기서 말하지 않는다).
+   */
+  const byId = new Map(documents.map((d) => [d.document_id, d]))
+  const chain = [doc]
+  for (let p = doc.supersedes ? byId.get(doc.supersedes) : undefined; p && !chain.includes(p); p = p.supersedes ? byId.get(p.supersedes) : undefined) {
+    chain.push(p)
+  }
+  for (let n = documents.find((d) => d.supersedes === chain[0].document_id); n && !chain.includes(n); n = documents.find((d) => d.supersedes === n!.document_id)) {
+    chain.unshift(n)
+  }
+
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-5">
       <PageHeader icon="book" title={doc.title} code="CH-042" description={`${scope} · ${doc.document_id}`}>
@@ -87,7 +100,30 @@ export default async function DocumentDetailPage(props: PageProps<'/documents/[i
               <Field label="버전">v{doc.version}</Field>
               <Field label="등록자">{doc.uploaded_by}</Field>
               <Field label="등록">{formatDateTime(doc.created_at)}</Field>
+              {doc.tags && doc.tags.length > 0 ? (
+                <Field label="태그">{doc.tags.map((t) => `#${t}`).join(' ')}</Field>
+              ) : null}
             </dl>
+            {chain.length > 1 ? (
+              <div className="mt-3 border-t border-line-soft pt-2.5">
+                <p className="text-[11px] font-semibold text-ink-dim">버전 이력</p>
+                <ol className="mt-1 space-y-0.5">
+                  {chain.map((v) => (
+                    <li key={v.document_id} className="flex items-baseline gap-2 text-[12px]">
+                      <span className="w-8 shrink-0 font-semibold tnum">v{v.version}</span>
+                      {v.document_id === doc.document_id ? (
+                        <span className="text-ink">지금 보는 판</span>
+                      ) : (
+                        <Link href={`/documents/${encodeURIComponent(v.document_id)}`} className="text-ink-dim hover:text-ink hover:underline">
+                          {v.document_id}
+                        </Link>
+                      )}
+                      <span className="text-[10.5px] text-ink-muted tnum">{formatDateTime(v.created_at)} · {v.uploaded_by}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            ) : null}
             <p className="mt-3 text-[11px] leading-relaxed text-ink-muted">
               파일은 이 시스템에 없습니다. 사내 스토리지의 주소만 보관합니다 — Vault 등급일수록
               실체가 여기 없어야 합니다.

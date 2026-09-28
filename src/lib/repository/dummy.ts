@@ -793,6 +793,22 @@ export const dummyRepository: ChairmanRepository = {
 
   /** CH-042. id는 live에서 DB 시퀀스가 준다. 여기서는 같은 모양(doc_001)을 흉내 낸다. */
   async createDocument(input: NewDocument, actor: AuditActor): Promise<DocumentRecord> {
+    // 0038 documents_version 트리거의 거울 — 보이는 판 가운데 같은 회사 · 폴더 · 제목 · 유형 · 등급.
+    const visible = await this.listDocuments()
+    const folder = input.folder_id ?? null
+    if (folder !== null && !(await groupware.listDocFolders()).some((f) => f.folder_id === folder && f.business_id === input.business_id)) {
+      throw new Error('document_folder_mismatch')
+    }
+    const prev = visible
+      .filter(
+        (d) =>
+          d.business_id === input.business_id &&
+          (d.folder_id ?? null) === folder &&
+          d.title.trim().toLowerCase() === input.title.trim().toLowerCase() &&
+          d.doc_type === input.doc_type &&
+          d.security_class === input.security_class,
+      )
+      .sort((a, b) => b.version - a.version)[0]
     const created: DocumentRecord = {
       document_id: `doc_${String(memoryDocuments.length + 1).padStart(3, '0')}`,
       business_id: input.business_id,
@@ -800,9 +816,12 @@ export const dummyRepository: ChairmanRepository = {
       doc_type: input.doc_type,
       security_class: input.security_class,
       storage_url: input.storage_url,
-      version: 1,
+      version: prev ? prev.version + 1 : 1,
       uploaded_by: '미지정',
       created_at: new Date().toISOString(),
+      folder_id: folder,
+      tags: [...new Set((input.tags ?? []).map((t) => t.trim().toLowerCase()).filter(Boolean))].sort(),
+      supersedes: prev?.document_id ?? null,
     }
     memoryDocuments.push(created)
 

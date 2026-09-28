@@ -856,6 +856,9 @@ export interface NewDocument {
   doc_type: string
   security_class: SecurityClass
   storage_url: string
+  /** 0038. 폴더는 같은 회사여야 한다(트리거가 본다). */
+  folder_id?: number | null
+  tags?: string[]
 }
 
 /**

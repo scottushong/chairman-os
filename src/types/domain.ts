@@ -199,6 +199,12 @@ export interface DocumentRecord {
   /** 등록자의 표시 이름. 프로필을 못 찾으면 '미지정'이다(DEFERRED D-09 결정 B). */
   uploaded_by: string
   created_at: IsoDateTime
+  /** 0038. null = 회사(또는 그룹) 바로 밑. */
+  folder_id?: number | null
+  /** 0038. 소문자 · 중복 없음(트리거가 정리한다). */
+  tags?: string[]
+  /** 0038. 이 판이 대신하는 직전 판. */
+  supersedes?: string | null
 }
 
 /** CH-034. 생산 실적/수율/비가동. */
