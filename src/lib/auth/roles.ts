@@ -60,3 +60,28 @@ export function canKeepBooks(user: SessionUser | null): boolean {
 export function canCloseBooks(user: SessionUser | null): boolean {
   return user?.role === 'Chairman' || user?.role === 'GroupCFO'
 }
+
+/**
+ * 0026 role_rank()의 거울. Chairman 5 … Member 0, 시스템 역할 -1.
+ * 화면이 «이 사람에게 이 버튼을 그릴까»만 가른다 — 판정은 DB 정책이 한다.
+ */
+export const ROLE_RANK: Record<string, number> = {
+  Chairman: 5,
+  GroupCFO: 4,
+  BusinessCEO: 3,
+  Executive: 2,
+  TeamLead: 1,
+  Member: 0,
+}
+
+export function roleRank(user: SessionUser | null): number {
+  return user ? (ROLE_RANK[user.role] ?? -1) : -1
+}
+
+/** 공지 쓰기(0038 can_write_notice): Executive 이상. 그룹 전체 공지는 그룹 범위(회장 · 그룹 CFO)만. */
+export function canWriteNotice(user: SessionUser | null): boolean {
+  return roleRank(user) >= 2
+}
+export function canWriteGroupNotice(user: SessionUser | null): boolean {
+  return user?.role === 'Chairman' || user?.role === 'GroupCFO'
+}

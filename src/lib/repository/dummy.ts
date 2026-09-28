@@ -37,6 +37,7 @@ import {
 } from './dummy-succession'
 import * as books from './dummy-books'
 import * as city from './dummy-city'
+import * as groupware from './dummy-groupware'
 import { dummyLedger } from './dummy-books'
 import {
   DUMMY_DOCUMENTS,
@@ -469,6 +470,16 @@ export const dummyRepository: ChairmanRepository = {
   listCityLayout: city.listCityLayout,
   saveCityLayout: city.saveCityLayout,
   promoteCityLot: city.promoteCityLot,
+  // 0038. dummy는 세션 한 사람뿐이라 viewerId 없이 dummyViewer()로 자기 읽음 줄을 고른다.
+  listNotices: () => groupware.listNotices(),
+  saveNotice: groupware.saveNotice,
+  deleteNotice: groupware.deleteNotice,
+  markNoticeRead: groupware.markNoticeRead,
+  listNoticeReads: groupware.listNoticeReads,
+  listApprovalTemplates: groupware.listApprovalTemplates,
+  myApprovalLead: groupware.myApprovalLead,
+  listDocFolders: groupware.listDocFolders,
+  saveDocFolder: groupware.saveDocFolder,
 
   async listKeymen() {
     return memoryKeymen.map((k) => ({ ...k }))

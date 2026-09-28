@@ -26,6 +26,8 @@ interface ProfileRow {
   title_ko: string | null
   /** 0017이 만든 칸. Chairman 행에는 이미 값이 들어 있다. 비어 있을 수 있다. */
   display_name_en: string | null
+  /** 0028. 'ko' | 'en'. */
+  language: string | null
 }
 
 /**
@@ -51,7 +53,7 @@ export const currentUser = cache(async function currentUser(): Promise<SessionUs
   const { data } = await sb
     .from('user_profiles')
     // display_name_en은 0017이 만든 뒤로 읽는 쪽이 없었다. 사이드바 하단 프로필이 쓴다(Phase 5).
-    .select('user_id,role,display_name,title_ko,display_name_en')
+    .select('user_id,role,display_name,title_ko,display_name_en,language')
     .eq('user_id', user.id)
     .is('revoked_at', null)
     .maybeSingle<ProfileRow>()
@@ -64,6 +66,7 @@ export const currentUser = cache(async function currentUser(): Promise<SessionUs
     role: data.role,
     title_ko: data.title_ko ?? '',
     display_name_en: data.display_name_en ?? null,
+    language: data.language === 'en' ? 'en' : 'ko',
   }
 })
 
@@ -96,5 +99,6 @@ function dummyUser(): SessionUser | null {
     role: person.role,
     title_ko: person.title_ko,
     display_name_en: person.display_name_en,
+    language: person.language === 'en' ? 'en' : 'ko',
   }
 }

@@ -197,8 +197,8 @@ export const SYSTEM_LINKS: readonly NavItem[] = [
     waitingFor: 'CH-053 미래소프트 연동이 선행되어야 합니다.',
   },
   {
-    key: 'sys_groupware', label: '그룹웨어', href: '/groupware', icon: 'layers', ready: false,
-    waitingFor: '사내 그룹웨어 주소와 SSO 방식이 정해지면 이 칸이 그리로 넘어갑니다.',
+    // Phase 9 블록 1 — 사내 허브(/groupware). 외부 그룹웨어로 넘기지 않고 이 앱이 네 칸을 모은다.
+    key: 'sys_groupware', label: '그룹웨어', href: '/groupware', icon: 'layers', ready: true,
   },
   {
     key: 'sys_eapproval', label: '전자결재', href: '/approvals', icon: 'stamp', ready: true,

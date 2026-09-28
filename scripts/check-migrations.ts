@@ -307,8 +307,8 @@ async function rls(db: Db) {
        where schemaname = 'public' and (policyname like 'ai_agent_no_%' or policyname like 'integration_no_%')`,
   )
   const policyKind = new Map(restrictivePolicies.map((r) => [`${r.tablename}.${r.policyname}`, r.permissive]))
-  const aiAgentBlockedTables = ['initiatives', 'initiative_keymen', 'initiative_docs', 'events', 'city_layout']
-  const integrationBlockedTables = ['initiatives', 'initiative_keymen', 'initiative_docs', 'events', 'initiative_notes', 'chairman_checkins', 'city_layout']
+  const aiAgentBlockedTables = ['initiatives', 'initiative_keymen', 'initiative_docs', 'events', 'city_layout', 'notices', 'doc_folders']
+  const integrationBlockedTables = ['initiatives', 'initiative_keymen', 'initiative_docs', 'events', 'initiative_notes', 'chairman_checkins', 'city_layout', 'notices', 'doc_folders']
   for (const t of aiAgentBlockedTables) {
     for (const op of ['insert', 'update', 'delete']) {
       assert.equal(
@@ -355,6 +355,7 @@ async function rls(db: Db) {
   )
 
   await cityLayout(db, as)
+  await groupware(db, as)
 
   // ── 0018 initiative-logos 버킷 ─────────────────────────────────────
   // 버킷이 비공개인가. as()는 첫 칸을 Number()로 바꾸는데 false가 0으로 둔갑하면
@@ -842,6 +843,193 @@ async function cityLayout(db: Db, as: As) {
 
   // 다음 검사가 빈 표를 전제할 수 있게 치운다.
   await db.exec(`delete from city_layout`)
+}
+
+/**
+ * 0038 그룹웨어 — 공지 · 결재 양식 · 결재선 첫 칸 · 문서 폴더/버전.
+ *
+ * 공지는 회사 단위 공개(그 회사 사람 전원), 그룹 공지는 활성 사용자 전원. 쓰기는 Executive 이상,
+ * 그룹 공지는 그룹 범위만. 읽음 줄은 본인 · 작성자 · 회장만 본다.
+ */
+async function groupware(db: Db, as: As) {
+  const lock = await db.query<{ t: string; forced: boolean; anon: boolean }>(`
+    select c.relname as t, c.relforcerowsecurity as forced, has_table_privilege('anon', c.oid, 'select') as anon
+      from pg_class c where c.relname in ('notices', 'notice_reads', 'approval_templates', 'doc_folders') order by 1`)
+  for (const r of lock.rows) {
+    assert.deepEqual([r.forced, r.anon], [false, false], `0038: ${r.t}에 force가 걸렸거나 anon에게 열려 있다(0035 자물쇠 규칙)`)
+  }
+
+  // ── 공지 ──
+  await db.exec(`
+    insert into notices (notice_id, business_id, title, created_by) overriding system value values
+      (9001, 'biz_dy', 'DY 공지', '${UID.chairman}'),
+      (9002, 'biz_vana', 'VANA 공지', '${UID.ceo}'),
+      (9003, null, '그룹 공지', '${UID.chairman}');
+    insert into notice_reads (notice_id, user_id) values (9001, '${UID.member}');
+  `)
+  const notices = `select count(*)::int from notices where notice_id between 9001 and 9003`
+  assert.equal(await as(UID.member, notices), 2, '0038: Member(biz_dy)는 DY 공지 + 그룹 공지 둘')
+  assert.equal(await as(UID.ceo, notices), 2, '0038: CEO(biz_vana)는 VANA 공지 + 그룹 공지 둘 — 다른 회사 공지가 보인다')
+  assert.equal(await as(UID.chairman, notices), 3, '0038: 회장은 셋')
+
+  assert.equal(await as(UID.ceo, `insert into notices (business_id, title) values ('biz_vana', 'x')`), 1, '0038: CEO가 자기 회사 공지를 못 쓴다')
+  assert.equal(await as(UID.ceo, `insert into notices (business_id, title) values ('biz_dy', 'x')`), 'denied', '0038: CEO가 남의 회사 공지를 쓴다')
+  assert.equal(await as(UID.ceo, `insert into notices (business_id, title) values (null, 'x')`), 'denied', '0038: 한 회사 CEO가 그룹 전체 공지를 쓴다')
+  assert.equal(await as(UID.member, `insert into notices (business_id, title) values ('biz_dy', 'x')`), 'denied', '0038: Member가 공지를 쓴다(Executive 이상만)')
+  assert.equal(await as(UID.cfo, `insert into notices (business_id, title) values (null, 'x')`), 1, '0038: GroupCFO가 그룹 공지를 못 쓴다')
+  assert.equal(await as(UID.agent, `insert into notices (business_id, title) values (null, 'x')`), 'denied', '0038: AIAgent가 공지를 쓴다')
+  assert.equal(await as(UID.ceo, `update notices set title = 'y' where notice_id = 9001`), 0, '0038: CEO가 남의 회사 공지를 고친다')
+
+  // 읽음 — 자기 줄만, 읽을 수 있는 공지에만.
+  assert.equal(await as(UID.member, `insert into notice_reads (notice_id) values (9003)`), 1, '0038: 그룹 공지에 읽음을 못 찍는다')
+  assert.equal(await as(UID.member, `insert into notice_reads (notice_id) values (9002)`), 'denied', '0038: 못 보는 공지에 읽음을 찍는다')
+  assert.equal(
+    await as(UID.member, `insert into notice_reads (notice_id, user_id) values (9003, '${UID.ceo}')`),
+    'denied', '0038: 남의 이름으로 읽음을 찍는다',
+  )
+  const reads9001 = `select count(*)::int from notice_reads where notice_id = 9001`
+  assert.equal(await as(UID.member, reads9001), 1, '0038: 본인이 자기 읽음 줄을 못 본다')
+  assert.equal(await as(UID.chairman, reads9001), 1, '0038: 회장(작성자)이 읽음 줄을 못 본다')
+  assert.equal(await as(UID.cfo, reads9001), 0, '0038: 작성자도 회장도 아닌 CFO가 남의 읽음 줄을 본다 — 공지가 출석부가 된다')
+  assert.equal(await as(UID.member, `delete from notice_reads where notice_id = 9001`), 0, '0038: 읽음을 지운다')
+
+  // ── 결재 양식 ──
+  assert.equal(await as(UID.member, `select count(*)::int from approval_templates`), 5, '0038: 양식 다섯이 안 보인다')
+  assert.equal(await as(UID.member, `update approval_templates set chairman_over = 1 where template_key = 'expense'`), 0, '0038: Member가 회장 규칙을 고친다')
+  assert.equal(await as(UID.chairman, `update approval_templates set chairman_over = 1 where template_key = 'expense'`), 1, '0038: 회장이 규칙을 못 고친다')
+  assert.equal(
+    await as(UID.chairman, `insert into approval_templates (template_key, name_ko, name_en, fields) values ('gift', 'x', 'x', '[]')`),
+    'denied', '0038: 양식이 여섯이 된다',
+  )
+
+  // ── 결재선 첫 칸 — 팀장, 공석·본인이면 reports_to ──
+  await db.exec(`
+    insert into teams (team_id, business_id, name, name_en, lead_user_id) values ('team_gw', 'biz_dy', '결재', 'Approval', '${UID.ceo}');
+    update user_profiles set team_id = 'team_gw', reports_to = '${UID.cfo}' where user_id = '${UID.member}';
+  `)
+  assert.equal(
+    await as(UID.member, `select count(*)::int from my_approval_lead() where user_id = '${UID.ceo}' and via = 'team_lead'`),
+    1, '0038: 결재선 첫 칸이 팀장이 아니다',
+  )
+  await db.exec(`update teams set lead_user_id = '${UID.member}' where team_id = 'team_gw'`)
+  assert.equal(
+    await as(UID.member, `select count(*)::int from my_approval_lead() where user_id = '${UID.cfo}' and via = 'reports_to'`),
+    1, '0038: 본인이 팀장이면 직속 상위(reports_to)로 가야 한다',
+  )
+  // 팀장이 떠났는데 팀장 칸이 그 사람을 가리킨 채면 — 고르기 전에 빼서 reports_to로 간다(리뷰 지적 3).
+  await db.exec(`
+    update teams set lead_user_id = '${UID.ceo}' where team_id = 'team_gw';
+    update user_profiles set status = 'left' where user_id = '${UID.ceo}';
+  `)
+  assert.equal(
+    await as(UID.member, `select count(*)::int from my_approval_lead() where user_id = '${UID.cfo}' and via = 'reports_to'`),
+    1, '0038: 떠난 팀장이 팀장 칸에 남아 있으면 결재선이 빈다 — reports_to로 넘어가야 한다',
+  )
+  await db.exec(`
+    update user_profiles set status = 'active' where user_id = '${UID.ceo}';
+    update teams set lead_user_id = '${UID.ceo}' where team_id = 'team_gw';
+  `)
+
+  // ── 결재선은 DB가 만든다(리뷰 지적 4) ──
+  // 기안자(member)에게 결재 모듈 쓰기를 연다. 팀장은 ceo, 직속 상위는 cfo.
+  await db.exec(`insert into user_module_access (user_id, module, can_write) values ('${UID.member}', '/chairman/decisions', true)`)
+  // 화면이 보낸 결재선(«위조» 한 칸)은 트리거가 버리고 새로 적어야 한다.
+  const draft = (tpl: string, form: string) =>
+    `insert into decisions (decision_id, business_id, title, template_key, form, attachment_url, approval_line)
+       values ('dec_gw', 'biz_dy', '결재', '${tpl}', '${form}'::jsonb, 'https://x/att',
+               '[{"step":"lead","user_id":null,"name":"위조","why":"x"}]'::jsonb)`
+  assert.equal(
+    await as(UID.member,
+      `select count(*)::int from decisions where decision_id = 'dec_gw'
+         and approval_line->0->>'user_id' = '${UID.ceo}' and approval_line->2->>'step' = 'chairman'
+         and jsonb_array_length(approval_line) = 3`,
+      draft('expense', '{"amount":"6,000,000","purpose":"장비","spent_on":"2026-09-28"}')),
+    1, '0038: 600만 원 지출이 팀장 → 규칙 → 회장으로 서지 않는다(또는 위조한 결재선이 남았다)',
+  )
+  assert.equal(
+    await as(UID.member,
+      `select count(*)::int from decisions where decision_id = 'dec_gw' and jsonb_array_length(approval_line) = 2`,
+      draft('expense', '{"amount":"100000","purpose":"다과","spent_on":"2026-09-28"}')),
+    1, '0038: 10만 원 지출이 회장까지 간다(기준 500만 원)',
+  )
+  assert.equal(
+    await as(UID.member,
+      `select count(*)::int from decisions where decision_id = 'dec_gw' and approval_line->2->>'step' = 'chairman'`,
+      draft('contract', '{"counterparty":"A사","amount":"1","term":"1년","summary":"x"}')),
+    1, '0038: 계약이 금액과 상관없이 회장까지 가지 않는다',
+  )
+  await assert.rejects(
+    as(UID.member, `select 1`, draft('expense', '{"amount":"1000"}')),
+    /approval_form_missing:purpose/, '0038: 필수 항목이 빈 지출이 들어간다',
+  )
+  await db.exec(`
+    insert into decisions (decision_id, business_id, title, template_key, form, attachment_url, created_by)
+      values ('dec_gw2', 'biz_dy', '결재', 'leave', '{"starts_on":"2026-10-01","ends_on":"2026-10-02"}', null, '${UID.chairman}');
+  `)
+  await assert.rejects(
+    as(UID.chairman, `update decisions set approval_line = '[]' where decision_id = 'dec_gw2'`),
+    /approval_line_frozen/, '0038: 결재선이 나중에 고쳐진다',
+  )
+  assert.equal(
+    await as(UID.chairman, `update decisions set status = 'Approved' where decision_id = 'dec_gw2'`),
+    1, '0038: 결재선이 얼어 있어도 결정 기록은 되어야 한다',
+  )
+  await db.exec(`
+    delete from decisions where decision_id = 'dec_gw2';
+    delete from user_module_access where user_id = '${UID.member}' and module = '/chairman/decisions';
+    update user_profiles set team_id = null, reports_to = null where user_id = '${UID.member}';
+    delete from teams where team_id = 'team_gw';
+  `)
+
+  // ── 문서 폴더 · 버전 ──
+  assert.equal(await as(UID.chairman, `insert into doc_folders (business_id, name) values ('biz_dy', '계약')`), 1, '0038: 회장이 폴더를 못 만든다')
+  assert.equal(await as(UID.ceo, `insert into doc_folders (business_id, name) values ('biz_dy', '계약')`), 'denied', '0038: 남의 회사에 폴더를 만든다')
+  await assert.rejects(
+    as(UID.chairman, `insert into doc_folders (business_id, team_id, name) select 'biz_vana', team_id, 'x' from teams where business_id = 'biz_dy' limit 1`),
+    /doc_folder_team_business_mismatch/, '0038: 다른 회사 팀 밑에 폴더가 선다',
+  )
+  assert.equal(
+    await as(
+      UID.chairman,
+      `select count(*)::int from documents d join documents p on p.document_id = d.supersedes
+        where d.document_id = 'doc_v2' and d.version = p.version + 1 and d.tags = '{q3,계약}'`,
+      `insert into documents (document_id, business_id, title, doc_type, security_class, storage_url, uploaded_by)
+         values ('doc_v1', 'biz_vana', '사업 계획', 'Plan', 'Normal', 'https://x/v1', '${UID.chairman}');
+       insert into documents (document_id, business_id, title, doc_type, security_class, storage_url, uploaded_by, tags)
+         values ('doc_v2', 'biz_vana', ' 사업 계획 ', 'Plan', 'Normal', 'https://x/v2', '${UID.chairman}', '{" Q3","계약","q3",""}');`,
+    ),
+    1, '0038: 같은 제목 재등록이 v2가 되지 않거나 태그가 정리되지 않는다',
+  )
+  // 제목이 같아도 유형이 다르면 판으로 잇지 않는다(리뷰 지적 1).
+  assert.equal(
+    await as(
+      UID.chairman,
+      `select count(*)::int from documents where document_id = 'doc_m2' and version = 1 and supersedes is null`,
+      `insert into documents (document_id, business_id, title, doc_type, security_class, storage_url, uploaded_by)
+         values ('doc_m1', 'biz_vana', '회의록', 'Minutes', 'Normal', 'https://x/m1', '${UID.chairman}');
+       insert into documents (document_id, business_id, title, doc_type, security_class, storage_url, uploaded_by)
+         values ('doc_m2', 'biz_vana', '회의록', 'Report', 'Normal', 'https://x/m2', '${UID.chairman}');`,
+    ),
+    1, '0038: 유형이 다른 같은 제목 문서가 판으로 이어진다',
+  )
+  // 직전 판 · 폴더를 호출자가 적어 보내면 같은 회사인지 본다(리뷰 지적 2).
+  await assert.rejects(
+    as(UID.chairman, `select 1`,
+      `insert into documents (document_id, business_id, title, doc_type, security_class, storage_url, uploaded_by)
+         values ('doc_x1', 'biz_dy', 'x', 'Plan', 'Normal', 'https://x/x1', '${UID.chairman}');
+       insert into documents (document_id, business_id, title, doc_type, security_class, storage_url, uploaded_by, supersedes)
+         values ('doc_x2', 'biz_vana', 'y', 'Plan', 'Normal', 'https://x/x2', '${UID.chairman}', 'doc_x1');`),
+    /document_supersedes_mismatch/, '0038: 다른 회사 문서 위에 판이 붙는다',
+  )
+  await assert.rejects(
+    as(UID.chairman, `select 1`,
+      `insert into doc_folders (folder_id, business_id, name) overriding system value values (9101, 'biz_dy', 'DY 폴더');
+       insert into documents (document_id, business_id, title, doc_type, security_class, storage_url, uploaded_by, folder_id)
+         values ('doc_f1', 'biz_vana', 'z', 'Plan', 'Normal', 'https://x/f1', '${UID.chairman}', 9101);`),
+    /document_folder_mismatch/, '0038: VANA 문서가 DY 폴더에 들어간다',
+  )
+
+  await db.exec(`delete from notice_reads; delete from notices; update approval_templates set chairman_over = 5000000 where template_key = 'expense';`)
 }
 
 /** 0016 자체 장부. 역할별로 되는 것/막히는 것. */

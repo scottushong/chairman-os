@@ -11,6 +11,7 @@ import { DecisionPanel } from '@/components/dashboard/decision-panel'
 import { InitiativeStat } from '@/components/dashboard/initiative-stat'
 import { StrategicCoordinates } from '@/components/dashboard/strategic-coordinates'
 import { WaitingOnMe } from '@/components/dashboard/waiting-on-me'
+import { NoticeStrip } from '@/components/groupware/notice-strip'
 import { Icon } from '@/components/ui/icon'
 import { recordScreenRead } from '@/lib/activity-record'
 import { summarizeAttention } from '@/lib/attention/screen'
@@ -121,7 +122,12 @@ export default async function DashboardPage() {
    * Phase 8 G-1. 회사 줄 자리의 도시 띠. 의존 요약과 재무 원천은 위에서 이미 읽었다 —
    * 배치 줄만 더 읽어 /group과 같은 buildCityItems()로 접는다(같은 회사가 두 화면에서 같은 %).
    */
-  const [cityLayout, phase] = await Promise.all([repo.listCityLayout(), cityPhase()])
+  const [cityLayout, phase, notices] = await Promise.all([
+    repo.listCityLayout(),
+    cityPhase(),
+    // Phase 9 블록 1. 상단 공지 띠 — 이 화면이 모든 역할의 첫 화면이다(notice-strip.tsx).
+    repo.listNotices(user?.user_id ?? ''),
+  ])
   const cityItems = buildCityItems({
     layout: cityLayout,
     businesses: data.businesses,
@@ -177,6 +183,8 @@ export default async function DashboardPage() {
       {/* 상단 탭. 앵커로 스크롤하거나 /ai로 간다 — 자리 안내지 화면 전환이 아니다.
           목록과 동작은 components/dashboard/dashboard-tabs.tsx 한 곳에 있다. */}
       <DashboardTabs />
+
+      <NoticeStrip notices={notices} today={todayIso} lang={user?.language ?? 'ko'} />
 
       {/*
        * Phase 7 블록 B. §4의 최상단 CHAIRMAN ATTENTION. **기존 경보 배너·패널보다 위**이고

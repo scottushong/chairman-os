@@ -103,4 +103,9 @@ export interface SessionUser {
    * 읽는 쪽은 '없으면 영문 줄을 아예 안 그린다'로 떨어진다. 한글을 로마자로 지어내지 않는다.
    */
   display_name_en: string | null
+  /**
+   * 화면 언어(0028 user_profiles.language). Phase 9부터 새 화면이 이 값으로 ko/en을 고른다
+   * (lib/i18n.ts). 값이 없거나 읽지 못하면 'ko'다.
+   */
+  language: 'ko' | 'en'
 }

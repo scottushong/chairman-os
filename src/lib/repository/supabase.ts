@@ -74,6 +74,12 @@ import type {
   ProcessChartInput,
   CityLayout,
   CityLayoutInput,
+  ApprovalLead,
+  ApprovalTemplate,
+  DocFolder,
+  Notice,
+  NoticeInput,
+  NoticeRead,
   NextMilestone,
   Project,
   SecurityClass,
@@ -1163,6 +1169,115 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         .select('id')
       if (error) throw new Error(`Supabase city_layout promote ${error.code ?? '?'}: ${error.message}`)
       if (!data || data.length === 0) throw new Error('city_layout: 승격할 터가 없다')
+    },
+
+    /* ---------------------------------------------------- Phase 9 그룹웨어(0038) */
+
+    /** 공지. 보이는 범위는 0038 notices_read가 정한다. 읽음은 이 세션의 줄만 골라 붙인다. */
+    async listNotices(viewerId: string): Promise<Notice[]> {
+      const [{ data, error }, mine, names] = await Promise.all([
+        sb
+          .from('notices')
+          .select('notice_id,business_id,title,body,title_en,body_en,pinned,expires_on,created_by,created_at')
+          .order('pinned', { ascending: false })
+          .order('created_at', { ascending: false })
+          .limit(200),
+        sb.from('notice_reads').select('notice_id').eq('user_id', viewerId),
+        ownerNames(),
+      ])
+      if (error) throw new Error(`Supabase notices ${error.code ?? '?'}: ${error.message}`)
+      if (mine.error) throw new Error(`Supabase notice_reads ${mine.error.code ?? '?'}: ${mine.error.message}`)
+      const read = new Set((mine.data ?? []).map((r) => Number(r.notice_id)))
+      return (data ?? []).map((r) => ({
+        ...(r as Omit<Notice, 'created_by_name' | 'read_by_me'>),
+        notice_id: Number(r.notice_id),
+        created_by_name: names.get(r.created_by) ?? '미지정',
+        read_by_me: read.has(Number(r.notice_id)),
+      }))
+    },
+
+    async saveNotice(input: NoticeInput & { id?: number }, actor: AuditActor): Promise<number> {
+      void actor // 작성자는 DB가 auth.uid()로 적고 정책이 확인한다.
+      const row = {
+        business_id: input.business_id,
+        title: input.title.trim(),
+        body: input.body,
+        title_en: input.title_en?.trim() || null,
+        body_en: input.body_en?.trim() || null,
+        pinned: input.pinned,
+        expires_on: input.expires_on,
+      }
+      const { data, error } = input.id
+        ? await sb.from('notices').update(row).eq('notice_id', input.id).select('notice_id').single()
+        : await sb.from('notices').insert(row).select('notice_id').single()
+      if (error) throw new Error(`Supabase notices save ${error.code ?? '?'}: ${error.message}`)
+      return Number((data as { notice_id: number }).notice_id)
+    },
+
+    async deleteNotice(id: number, actor: AuditActor): Promise<void> {
+      void actor
+      const { data, error } = await sb.from('notices').delete().eq('notice_id', id).select('notice_id')
+      if (error) throw new Error(`Supabase notices delete ${error.code ?? '?'}: ${error.message}`)
+      if (!data || data.length === 0) throw new Error('row-level security: notices delete affected 0 rows')
+    },
+
+    async markNoticeRead(id: number, actor: AuditActor): Promise<void> {
+      void actor
+      const { error } = await sb.from('notice_reads').insert({ notice_id: id })
+      // 이미 읽었다(같은 줄) — 한 번 찍으면 끝이라 조용히 넘어간다.
+      if (error && error.code !== '23505') {
+        throw new Error(`Supabase notice_reads ${error.code ?? '?'}: ${error.message}`)
+      }
+    },
+
+    async listNoticeReads(id: number): Promise<NoticeRead[]> {
+      const [{ data, error }, names] = await Promise.all([
+        sb.from('notice_reads').select('user_id,read_at').eq('notice_id', id).order('read_at'),
+        ownerNames(),
+      ])
+      if (error) throw new Error(`Supabase notice_reads ${error.code ?? '?'}: ${error.message}`)
+      return (data ?? []).map((r) => ({ user_id: r.user_id, name: names.get(r.user_id) ?? '미지정', read_at: r.read_at }))
+    },
+
+    async listApprovalTemplates(): Promise<ApprovalTemplate[]> {
+      const { data, error } = await sb.from('approval_templates').select('*').order('sort_order')
+      if (error) throw new Error(`Supabase approval_templates ${error.code ?? '?'}: ${error.message}`)
+      return (data ?? []).map((r) => ({
+        ...(r as ApprovalTemplate),
+        chairman_over: r.chairman_over === null ? null : Number(r.chairman_over),
+      }))
+    },
+
+    async myApprovalLead(): Promise<ApprovalLead | null> {
+      const { data, error } = await sb.rpc('my_approval_lead')
+      if (error) throw new Error(`Supabase my_approval_lead ${error.code ?? '?'}: ${error.message}`)
+      const row = (data as ApprovalLead[] | null)?.[0]
+      return row ?? null
+    },
+
+    async listDocFolders(): Promise<DocFolder[]> {
+      const { data, error } = await sb
+        .from('doc_folders')
+        .select('folder_id,business_id,team_id,parent_id,name')
+        .order('business_id')
+        .order('name')
+      if (error) throw new Error(`Supabase doc_folders ${error.code ?? '?'}: ${error.message}`)
+      return (data ?? []).map((r) => ({
+        ...(r as DocFolder),
+        folder_id: Number(r.folder_id),
+        parent_id: r.parent_id === null ? null : Number(r.parent_id),
+      }))
+    },
+
+    async saveDocFolder(input: Omit<DocFolder, 'folder_id'>, actor: AuditActor): Promise<number> {
+      void actor
+      const { data, error } = await sb
+        .from('doc_folders')
+        .insert({ business_id: input.business_id, team_id: input.team_id, parent_id: input.parent_id, name: input.name.trim() })
+        .select('folder_id')
+        .single()
+      if (error) throw new Error(`Supabase doc_folders ${error.code ?? '?'}: ${error.message}`)
+      return Number((data as { folder_id: number }).folder_id)
     },
 
     /** 블록 3. 감사 기록·결산·라인 closed가 0016 close_period() 한 트랜잭션이다. */

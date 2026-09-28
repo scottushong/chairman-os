@@ -54,6 +54,12 @@ import type {
   ProcessChartInput,
   CityLayout,
   CityLayoutInput,
+  ApprovalLead,
+  ApprovalTemplate,
+  DocFolder,
+  Notice,
+  NoticeInput,
+  NoticeRead,
   NextMilestone,
   Project,
   NewInvitation,
@@ -159,6 +165,27 @@ export interface ChairmanRepository {
 
   /** 이니셔티브 터를 회사로 승격한다. 같은 줄이 business_id를 받고 stage_image='foundation'. */
   promoteCityLot(id: number, businessId: string, actor: AuditActor): Promise<void>
+
+  /**
+   * Phase 9 블록 1 — 공지(0038). 읽기는 회사 단위 공개 + 그룹 공지(DB가 판정).
+   * read_by_me는 이 세션의 읽음 줄에서 낸다 — viewerId는 그 줄을 고르는 데만 쓴다.
+   */
+  listNotices(viewerId: string): Promise<Notice[]>
+  /** 등록 · 수정. id가 있으면 수정이다. 쓰기는 Executive 이상(DB). */
+  saveNotice(input: NoticeInput & { id?: number }, actor: AuditActor): Promise<number>
+  deleteNotice(id: number, actor: AuditActor): Promise<void>
+  /** 읽음 한 번. 이미 읽었으면 아무 일도 없다. */
+  markNoticeRead(id: number, actor: AuditActor): Promise<void>
+  /** 읽음 확인. 작성자 · 회장은 전원, 그 밖에는 자기 줄만 온다(DB). */
+  listNoticeReads(id: number): Promise<NoticeRead[]>
+
+  /** 블록 2 — 결재 양식 다섯과 결재선 첫 칸(0038 my_approval_lead). */
+  listApprovalTemplates(): Promise<ApprovalTemplate[]>
+  myApprovalLead(): Promise<ApprovalLead | null>
+
+  /** 블록 3 — 문서 폴더(회사 > 팀 > 폴더). */
+  listDocFolders(): Promise<DocFolder[]>
+  saveDocFolder(input: Omit<DocFolder, 'folder_id'>, actor: AuditActor): Promise<number>
 
   listProjects(): Promise<Project[]>
   listTasks(): Promise<Task[]>
