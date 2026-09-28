@@ -95,7 +95,7 @@ export default async function ActivityPage() {
       >
         <Link
           href="/settings"
-          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           설정으로
         </Link>
@@ -103,11 +103,11 @@ export default async function ActivityPage() {
 
       {/* ───────── 이 화면이 남기는 것과 남기지 않는 것 ───────── */}
       <section className="mt-4 rounded-xl border border-line-soft bg-panel p-3.5">
-        <h2 className="flex items-baseline gap-1.5 text-[13px] font-semibold">
+        <h2 className="flex items-baseline gap-1.5 text-t13 font-semibold">
           <Icon name="shield" className="size-4 text-ink-dim" />
           이 기록에 무엇이 들어 있나
         </h2>
-        <ul className="mt-1.5 space-y-1 text-[10.5px] leading-relaxed text-ink-muted">
+        <ul className="mt-1.5 space-y-1 text-t10h leading-relaxed text-ink-muted">
           <li>
             · 남기는 것: <b className="font-semibold text-ink-dim">사람 · 시각 · 경로 · 문서 id ·
             기기 요약 · 도시 · 시간대</b>.
@@ -133,7 +133,7 @@ export default async function ActivityPage() {
         </ul>
         <Link
           href="/privacy"
-          className="mt-2 inline-flex items-center gap-1 rounded-md border border-line px-2.5 py-1 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="mt-2 inline-flex items-center gap-1 rounded-md border border-line px-2.5 py-1 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           개인정보 처리방침의 열람 기록 항목
           <Icon name="chevron-right" className="size-3.5" />
@@ -149,13 +149,13 @@ export default async function ActivityPage() {
             {online.map((o) => (
               <li
                 key={o.user_id}
-                className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-lg bg-raised px-3 py-2 text-[11.5px]"
+                className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-lg bg-raised px-3 py-2 text-t11h"
               >
                 <span className="size-1.5 shrink-0 rounded-full bg-ok" aria-hidden />
                 <b className="font-semibold text-ink">{who(o.user_id)}</b>
                 <span className="text-ink-dim">{roleLabel(roleOf.get(o.user_id))}</span>
-                <code className="text-[10.5px] text-ink-dim">{o.path ?? '—'}</code>
-                <span className="ml-auto text-[10.5px] text-ink-muted">
+                <code className="text-t10h text-ink-dim">{o.path ?? '—'}</code>
+                <span className="ml-auto text-t10h text-ink-muted">
                   {formatDateTime(o.last_seen)} · {o.device ?? '—'} · {o.city ?? '—'}
                 </span>
               </li>
@@ -173,10 +173,10 @@ export default async function ActivityPage() {
             {todayLogins.map((e, i) => (
               <li
                 key={`${e.occurred_at}-${e.actor_user_id}-${i}`}
-                className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-lg bg-raised px-3 py-2 text-[11.5px]"
+                className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-lg bg-raised px-3 py-2 text-t11h"
               >
                 <span
-                  className={`rounded px-1.5 py-0.5 text-[9.5px] ${
+                  className={`rounded px-1.5 py-0.5 text-t9h ${
                     e.ok === false ? 'bg-critical/15 text-critical' : 'bg-panel text-ink-dim'
                   }`}
                 >
@@ -184,7 +184,7 @@ export default async function ActivityPage() {
                 </span>
                 <b className="font-semibold text-ink">{who(e.actor_user_id)}</b>
                 <span className="text-ink-dim">{roleLabel(roleOf.get(e.actor_user_id ?? ''))}</span>
-                <span className="ml-auto text-[10.5px] text-ink-muted">
+                <span className="ml-auto text-t10h text-ink-muted">
                   {formatDateTime(e.occurred_at)} · {e.device ?? '—'} · {e.city ?? '—'}
                 </span>
               </li>
@@ -204,17 +204,17 @@ export default async function ActivityPage() {
             const hits = anomalies.filter((a) => a.kind === kind)
             return (
               <div key={kind} className="rounded-lg bg-raised px-3 py-2">
-                <dt className="flex flex-wrap items-baseline gap-1.5 text-[11.5px] font-semibold text-ink">
+                <dt className="flex flex-wrap items-baseline gap-1.5 text-t11h font-semibold text-ink">
                   {ANOMALY_LABEL_KO[kind]}
                   <span
-                    className={`rounded px-1.5 py-0.5 text-[9.5px] font-normal ${
+                    className={`rounded px-1.5 py-0.5 text-t9h font-normal ${
                       hits.length > 0 ? 'bg-warning/15 text-warning' : 'bg-panel text-ink-dim'
                     }`}
                   >
                     {hits.length}건
                   </span>
                 </dt>
-                <dd className="mt-0.5 text-[10.5px] leading-relaxed text-ink-muted">
+                <dd className="mt-0.5 text-t10h leading-relaxed text-ink-muted">
                   판정 기준: {ANOMALY_BASIS_KO[kind]}
                 </dd>
                 {hits.length > 0 ? (
@@ -222,7 +222,7 @@ export default async function ActivityPage() {
                     {hits.map((a, i) => (
                       <li
                         key={`${a.kind}-${a.user_id}-${a.at}-${i}`}
-                        className="rounded-md bg-panel px-2.5 py-1.5 text-[11px]"
+                        className="rounded-md bg-panel px-2.5 py-1.5 text-t11"
                       >
                         <b className="font-semibold text-ink">{who(a.user_id)}</b>{' '}
                         <span className="text-ink-dim">{a.reason}</span>
@@ -234,7 +234,7 @@ export default async function ActivityPage() {
             )
           })}
         </dl>
-        <p className="text-[10px] leading-relaxed text-ink-muted">
+        <p className="text-t10 leading-relaxed text-ink-muted">
           태그는 사실의 요약이지 판단이 아닙니다. 새 도시는 출장일 수 있고, 심야 접속은
           시차일 수 있으며, 문서를 몰아 보는 것은 감사 준비일 수 있습니다 — 그래서 태그마다
           숫자와 시각을 같이 적어 두었습니다. 태그만 보고 사람을 부르지 않는 것이 이 화면의
@@ -257,11 +257,11 @@ export default async function ActivityPage() {
           <div className="space-y-2">
             {timelineRows.map(([userId, list]) => (
               <details key={userId} className="rounded-lg bg-raised px-3 py-2">
-                <summary className="flex cursor-pointer flex-wrap items-baseline gap-x-2 text-[11.5px]">
+                <summary className="flex cursor-pointer flex-wrap items-baseline gap-x-2 text-t11h">
                   <b className="font-semibold text-ink">{who(userId)}</b>
                   <span className="text-ink-dim">{roleLabel(roleOf.get(userId))}</span>
-                  <span className="text-[10.5px] text-ink-muted">{list.length}줄</span>
-                  <span className="ml-auto text-[10.5px] text-ink-muted">
+                  <span className="text-t10h text-ink-muted">{list.length}줄</span>
+                  <span className="ml-auto text-t10h text-ink-muted">
                     마지막 {formatDateTime(list[0].occurred_at)}
                   </span>
                 </summary>
@@ -269,7 +269,7 @@ export default async function ActivityPage() {
                   {list.map((e, i) => (
                     <li
                       key={`${userId}-${e.occurred_at}-${i}`}
-                      className="flex flex-wrap items-baseline gap-x-2 border-t border-line-soft py-1 text-[10.5px] first:border-0"
+                      className="flex flex-wrap items-baseline gap-x-2 border-t border-line-soft py-1 text-t10h first:border-0"
                     >
                       <span className="tnum text-ink-dim">{formatDateTime(e.occurred_at)}</span>
                       <span className="text-ink-muted">
@@ -326,10 +326,10 @@ function Section({
 }) {
   return (
     <section className="mt-3.5 rounded-xl border border-line-soft bg-panel p-3.5">
-      <h2 className="mb-2 flex flex-wrap items-baseline gap-1.5 text-[13px] font-semibold">
+      <h2 className="mb-2 flex flex-wrap items-baseline gap-1.5 text-t13 font-semibold">
         <Icon name={icon} className="size-4 text-ink-dim" />
         {title}
-        <span className="rounded bg-raised px-1.5 py-0.5 text-[9.5px] font-normal text-ink-dim">
+        <span className="rounded bg-raised px-1.5 py-0.5 text-t9h font-normal text-ink-dim">
           {note}
         </span>
       </h2>
@@ -340,5 +340,5 @@ function Section({
 
 /** 비어 있는 것은 고장이 아니다. 왜 비었는지를 같이 적는다. */
 function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="rounded-lg bg-raised px-3 py-2.5 text-[11px] text-ink-muted">{children}</p>
+  return <p className="rounded-lg bg-raised px-3 py-2.5 text-t11 text-ink-muted">{children}</p>
 }

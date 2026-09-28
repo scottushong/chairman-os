@@ -190,7 +190,7 @@ export function StrategicCoordinates({
        radius가 없으면 그 칠이 네 모서리를 직각으로 채워 밝은 화면에 어두운 사각이 남는다. */
     <div data-theme="dark" className="overflow-hidden rounded-glass">
       <GlassCard as="section" padding="p-4" aria-label="Strategic Coordinates">
-        <h2 className="mb-3 text-[13px] font-semibold">Strategic Coordinates</h2>
+        <h2 className="mb-3 text-t13 font-semibold">Strategic Coordinates</h2>
 
         {/*
          * 1024px 이하는 2×2다 — 알약 넷을 한 줄에 세우면 한 칸이 140px 밑으로 내려가
@@ -224,9 +224,9 @@ export function StrategicCoordinates({
                 ].join(' ')}
               >
                 <Icon name={s.icon} className="size-3.5 shrink-0" />
-                <span className="min-w-0 flex-1 truncate text-[11.5px]">{s.label}</span>
+                <span className="min-w-0 flex-1 truncate text-t11h">{s.label}</span>
                 <span
-                  className={`shrink-0 text-[11px] font-semibold tnum ${
+                  className={`shrink-0 text-t11 font-semibold tnum ${
                     step === s.key ? 'text-app' : 'text-ink-muted'
                   }`}
                 >
@@ -283,15 +283,15 @@ function GoalPanel({ goal }: { goal: TopGoal | undefined }) {
   if (!goal) return <Empty />
   return (
     <div>
-      <p className="text-[17px] leading-snug font-semibold">{goal.title}</p>
-      <p className="mt-1.5 text-[12px] text-ink-dim tnum">
+      <p className="text-t17 leading-snug font-semibold">{goal.title}</p>
+      <p className="mt-1.5 text-t12 text-ink-dim tnum">
         현재 {goal.current_value} / 목표 {goal.target_value} · 기한 {goal.due}
       </p>
       {/* 진행바 폭은 progress_pct 그대로다. 다른 값에서 다시 계산하지 않는다. */}
       <div className="mt-4 max-w-xl">
         <div className="flex items-baseline justify-between">
-          <span className="text-[11px] text-ink-muted">진행률</span>
-          <span className="text-[15px] font-semibold tnum">{goal.progress_pct}%</span>
+          <span className="text-t11 text-ink-muted">진행률</span>
+          <span className="text-t15 font-semibold tnum">{goal.progress_pct}%</span>
         </div>
         <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-accent/15">
           <div className="h-full rounded-full bg-accent" style={{ width: `${goal.progress_pct}%` }} />
@@ -306,13 +306,13 @@ function PriorityPanel({ priority }: { priority: MonthlyPriority | undefined }) 
   return (
     <div>
       <div className="flex items-start gap-2">
-        <p className="flex-1 text-[17px] leading-snug font-semibold">{priority.title}</p>
-        <span className="mt-0.5 shrink-0 rounded bg-raised px-2 py-0.5 text-[11px] text-ink-dim">
+        <p className="flex-1 text-t17 leading-snug font-semibold">{priority.title}</p>
+        <span className="mt-0.5 shrink-0 rounded bg-raised px-2 py-0.5 text-t11 text-ink-dim">
           {WORK_PRIORITY_LABEL_KO[priority.weight]}
         </span>
       </div>
-      <p className="mt-2 max-w-3xl text-[12.5px] leading-relaxed text-ink-dim">{priority.detail}</p>
-      <p className="mt-3 text-[11px] text-ink-muted">담당 {priority.owner}</p>
+      <p className="mt-2 max-w-3xl text-t12h leading-relaxed text-ink-dim">{priority.detail}</p>
+      <p className="mt-3 text-t11 text-ink-muted">담당 {priority.owner}</p>
     </div>
   )
 }
@@ -325,16 +325,16 @@ function RiskPanel({ risks, businesses }: { risks: CriticalRisk[]; businesses: B
       {risks.map((r, i) => (
         <li key={r.risk_id} className={i > 0 ? 'border-t border-line-soft pt-2.5' : undefined}>
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <p className={`${i === 0 ? 'text-[17px]' : 'text-[14px]'} leading-snug font-semibold`}>
+            <p className={`${i === 0 ? 'text-t17' : 'text-t14'} leading-snug font-semibold`}>
               {r.title}
             </p>
-            <span className="text-[11px] text-ink-muted">{businessName(businesses, r.business_id)}</span>
+            <span className="text-t11 text-ink-muted">{businessName(businesses, r.business_id)}</span>
             <span className="ml-auto flex shrink-0 gap-1.5">
               <SeverityChip label="영향도" value={r.impact} />
               <SeverityChip label="긴급도" value={r.urgency} />
             </span>
           </div>
-          <p className="mt-1 max-w-3xl text-[12.5px] leading-relaxed text-ink-dim">{r.detail}</p>
+          <p className="mt-1 max-w-3xl text-t12h leading-relaxed text-ink-dim">{r.detail}</p>
         </li>
       ))}
     </ul>
@@ -359,15 +359,15 @@ function MilestonePanel({
           className={`flex items-baseline gap-3 ${i > 0 ? 'border-t border-line-soft pt-2.5' : ''}`}
         >
           <div className="min-w-0 flex-1">
-            <p className={`${i === 0 ? 'text-[17px]' : 'text-[14px]'} leading-snug font-semibold`}>
+            <p className={`${i === 0 ? 'text-t17' : 'text-t14'} leading-snug font-semibold`}>
               {m.title}
             </p>
-            <p className="mt-1 text-[11px] text-ink-muted tnum">
+            <p className="mt-1 text-t11 text-ink-muted tnum">
               {businessName(businesses, m.business_id)} · 담당 {m.owner} · {m.deadline}
             </p>
           </div>
           <span
-            className={`shrink-0 font-semibold text-gold tnum ${i === 0 ? 'text-[22px]' : 'text-[15px]'}`}
+            className={`shrink-0 font-semibold text-gold tnum ${i === 0 ? 'text-t22' : 'text-t15'}`}
           >
             {formatDDay(m.deadline, todayDate)}
           </span>
@@ -380,7 +380,7 @@ function MilestonePanel({
 /** 값이 없을 때. 알약은 남는다 — 네 축이 사라지면 '그 축이 없다'가 아니라 '안 봤다'가 된다. */
 function Empty() {
   return (
-    <p className="flex h-[164px] items-center justify-center text-[12px] text-ink-muted">
+    <p className="flex h-[164px] items-center justify-center text-t12 text-ink-muted">
       표시할 항목이 없습니다.
     </p>
   )
@@ -389,7 +389,7 @@ function Empty() {
 /** 색만으로 읽히지 않게 한글 등급명을 항상 같이 쓴다. */
 function SeverityChip({ label, value }: { label: string; value: Severity }) {
   return (
-    <span className="flex items-center gap-1 text-[10px] text-ink-muted">
+    <span className="flex items-center gap-1 text-t10 text-ink-muted">
       {label}
       <span className={`rounded px-1.5 py-0.5 font-semibold ${SEVERITY_TONE[value]}`}>
         {SEVERITY_LABEL_KO[value]}

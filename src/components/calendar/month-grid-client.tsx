@@ -49,7 +49,7 @@ export function MonthGridClient({
 
   return (
     <div className="rounded-xl border border-line-soft bg-panel p-3">
-      <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold text-ink-muted">
+      <div className="grid grid-cols-7 gap-1 text-center text-t10 font-semibold text-ink-muted">
         {WEEKDAY_KO.map((w) => (
           <div key={w} className="py-1">
             {w}
@@ -80,7 +80,7 @@ export function MonthGridClient({
                   그 안의 text-critical까지 40%로 죽어 가장 위험한 칸에서 신호가 가장 약해진다. */}
               <div
                 className={[
-                  'text-[11px] tnum',
+                  'text-t11 tnum',
                   isToday ? 'font-bold text-ink' : 'text-ink-dim',
                   inMonth ? '' : 'opacity-40',
                 ].join(' ')}
@@ -96,7 +96,7 @@ export function MonthGridClient({
                       key={`${it.kind}-${it.source_id}-${day}`}
                       title={CALENDAR_ITEM_LABEL_KO[it.kind]}
                       className={[
-                        'flex items-center gap-1 truncate text-[10.5px] leading-tight',
+                        'flex items-center gap-1 truncate text-t10h leading-tight',
                         risk ? 'text-critical' : 'text-ink-dim',
                         !risk && !inMonth ? 'opacity-40' : '',
                       ].join(' ')}
@@ -109,7 +109,7 @@ export function MonthGridClient({
                   )
                 })}
                 {overflow > 0 ? (
-                  <div className={['text-[10px] text-ink-muted', inMonth ? '' : 'opacity-40'].join(' ')}>
+                  <div className={['text-t10 text-ink-muted', inMonth ? '' : 'opacity-40'].join(' ')}>
                     +{overflow}
                   </div>
                 ) : null}

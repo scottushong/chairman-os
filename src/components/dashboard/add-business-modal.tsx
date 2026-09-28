@@ -91,15 +91,15 @@ export function AddBusinessModal({ onClose, onCreate }: AddBusinessModalProps) {
         className="w-full max-w-[400px] rounded-xl border border-line bg-panel p-5 shadow-2xl"
       >
         <div className="flex items-baseline justify-between">
-          <h2 className="text-[15px] font-semibold">기업 추가</h2>
-          <span className="text-[9px] text-ink-muted tnum">CH-002</span>
+          <h2 className="text-t15 font-semibold">기업 추가</h2>
+          <span className="text-t9 text-ink-muted tnum">CH-002</span>
         </div>
-        <p className="mt-1 text-[11px] text-ink-muted">
+        <p className="mt-1 text-t11 text-ink-muted">
           모든 사람에게 보이는 조직 데이터가 만들어집니다. 생성 기록은 감사 로그에 남습니다.
         </p>
 
         <label className="mt-4 block">
-          <span className="text-[11px] text-ink-dim">회사명</span>
+          <span className="text-t11 text-ink-dim">회사명</span>
           <input
             ref={nameRef}
             value={name}
@@ -107,15 +107,15 @@ export function AddBusinessModal({ onClose, onCreate }: AddBusinessModalProps) {
             placeholder="예: Newco Materials"
             maxLength={40}
             disabled={busy}
-            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
+            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
           />
         </label>
 
         {/* 발급 규칙을 화면에 그대로 보여 준다. 한번 만들면 바꿀 수 없는 값이라 저장 전에 봐야 한다. */}
         <label className="mt-3 block">
-          <span className="text-[11px] text-ink-dim">기업 ID</span>
+          <span className="text-t11 text-ink-dim">기업 ID</span>
           <span className="mt-1 flex items-center rounded-lg border border-line bg-raised focus-within:border-accent">
-            <span className="pl-3 text-[13px] text-ink-muted tnum">{BUSINESS_ID_PREFIX}</span>
+            <span className="pl-3 text-t13 text-ink-muted tnum">{BUSINESS_ID_PREFIX}</span>
             <input
               value={slug}
               onChange={(e) => {
@@ -126,30 +126,30 @@ export function AddBusinessModal({ onClose, onCreate }: AddBusinessModalProps) {
               maxLength={30}
               disabled={busy}
               aria-invalid={slugBad}
-              className="w-full bg-transparent py-2 pr-3 pl-0.5 text-[13px] text-ink outline-none placeholder:text-ink-muted disabled:opacity-50"
+              className="w-full bg-transparent py-2 pr-3 pl-0.5 text-t13 text-ink outline-none placeholder:text-ink-muted disabled:opacity-50"
             />
           </span>
           <span
-            className={`mt-1 block text-[10px] leading-snug ${slugBad ? 'text-critical' : 'text-ink-muted'}`}
+            className={`mt-1 block text-t10 leading-snug ${slugBad ? 'text-critical' : 'text-ink-muted'}`}
           >
             {SLUG_RULE_KO} 나중에 바꿀 수 없습니다.
           </span>
         </label>
 
         <label className="mt-3 block">
-          <span className="text-[11px] text-ink-dim">업종</span>
+          <span className="text-t11 text-ink-dim">업종</span>
           <input
             value={industry}
             onChange={(e) => setIndustry(e.target.value)}
             placeholder="예: 제조 / 화학"
             maxLength={40}
             disabled={busy}
-            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
+            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
           />
         </label>
 
         <fieldset className="mt-3">
-          <legend className="text-[11px] text-ink-dim">상태</legend>
+          <legend className="text-t11 text-ink-dim">상태</legend>
           {/* 06_상태코드의 BusinessStatus만 쓴다. 임의 상태명을 만들지 않는다. */}
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {BUSINESS_STATUS.map((s) => (
@@ -159,7 +159,7 @@ export function AddBusinessModal({ onClose, onCreate }: AddBusinessModalProps) {
                 onClick={() => setStatus(s)}
                 disabled={busy}
                 aria-pressed={status === s}
-                className={`rounded-md border px-2.5 py-1 text-[11px] transition-colors disabled:opacity-50 ${
+                className={`rounded-md border px-2.5 py-1 text-t11 transition-colors disabled:opacity-50 ${
                   status === s
                     ? 'border-accent bg-accent/15 text-ink'
                     : 'border-line text-ink-muted hover:text-ink-dim'
@@ -174,7 +174,7 @@ export function AddBusinessModal({ onClose, onCreate }: AddBusinessModalProps) {
         {error ? (
           <p
             role="alert"
-            className="mt-3 rounded-md border border-critical/40 bg-critical/10 px-2 py-1.5 text-[11px] leading-snug text-critical"
+            className="mt-3 rounded-md border border-critical/40 bg-critical/10 px-2 py-1.5 text-t11 leading-snug text-critical"
           >
             {error}
           </p>
@@ -185,14 +185,14 @@ export function AddBusinessModal({ onClose, onCreate }: AddBusinessModalProps) {
             type="button"
             onClick={onClose}
             disabled={busy}
-            className="rounded-lg border border-line px-3 py-1.5 text-[12px] text-ink-dim transition-colors hover:text-ink disabled:opacity-50"
+            className="rounded-lg border border-line px-3 py-1.5 text-t12 text-ink-dim transition-colors hover:text-ink disabled:opacity-50"
           >
             취소
           </button>
           <button
             type="submit"
             disabled={!canSave}
-            className="flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-ink transition-opacity disabled:opacity-40"
+            className="flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-t12 font-semibold text-ink transition-opacity disabled:opacity-40"
           >
             <Icon name="plus" className="size-3.5" />
             {busy ? '추가하는 중…' : '추가'}

@@ -30,7 +30,7 @@ export function DdayHero({ projects }: { projects: ChairmanProject[] }) {
         className="flex h-full min-h-[220px] flex-col items-center justify-center text-center"
       >
         <Icon name="target" className="size-6 text-ink-muted" />
-        <p className="mt-2 text-[13px] text-ink-muted">진행 중인 장기 프로젝트가 없습니다.</p>
+        <p className="mt-2 text-t13 text-ink-muted">진행 중인 장기 프로젝트가 없습니다.</p>
       </GlassCard>
     )
   }
@@ -48,7 +48,7 @@ export function DdayHero({ projects }: { projects: ChairmanProject[] }) {
       }}
     >
       <Link href="/ai" className="group block">
-        <p className="flex items-center gap-1.5 text-[12px] font-semibold text-ink">
+        <p className="flex items-center gap-1.5 text-t12 font-semibold text-ink">
           <Icon name="target" className="size-3.5" />
           장기 프로젝트
           <Icon
@@ -56,13 +56,13 @@ export function DdayHero({ projects }: { projects: ChairmanProject[] }) {
             className="size-3.5 transition-transform group-hover:translate-x-0.5"
           />
         </p>
-        <p className="mt-1 truncate text-[15px] font-semibold text-ink" title={project.title}>
+        <p className="mt-1 truncate text-t15 font-semibold text-ink" title={project.title}>
           {project.title}
         </p>
 
         {/* 큰 D-day 숫자. 명조는 전역 기본 폰트(--font-sans)라 별도 클래스가 필요 없다. */}
-        <p className="mt-2 text-[56px] leading-none font-bold text-ink tnum">{clock.label}</p>
-        <p className="mt-1.5 text-[12px] text-ink tnum">
+        <p className="mt-2 text-t56 leading-none font-bold text-ink tnum">{clock.label}</p>
+        <p className="mt-1.5 text-t12 text-ink tnum">
           {clock.elapsed}/{clock.total}일 경과 · {clock.pct}%
         </p>
       </Link>
@@ -80,7 +80,7 @@ export function DdayHero({ projects }: { projects: ChairmanProject[] }) {
         </div>
 
         {project.this_month_action ? (
-          <p className="mt-2.5 text-[11.5px] leading-relaxed text-ink">
+          <p className="mt-2.5 text-t11h leading-relaxed text-ink">
             <span className="font-semibold">이번 달 행동 · </span>
             {project.this_month_action}
           </p>

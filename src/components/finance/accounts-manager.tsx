@@ -37,7 +37,7 @@ interface Draft {
 const EMPTY: Draft = { code: '', name: '', section: 'sga', category: 'other', cashFlow: '' }
 
 const input =
-  'w-full rounded border border-line bg-panel px-2 py-1 text-[12px] text-ink outline-none focus:border-accent disabled:opacity-50'
+  'w-full rounded border border-line bg-panel px-2 py-1 text-t12 text-ink outline-none focus:border-accent disabled:opacity-50'
 
 export function AccountsManager({
   businessId,
@@ -122,7 +122,7 @@ export function AccountsManager({
   return (
     <div className="mt-4 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[11.5px] text-ink-muted">
+        <p className="text-t11h text-ink-muted">
           <span className="tnum">{list.length - inactiveCount}</span>개 사용 중
           {inactiveCount > 0 ? (
             <>
@@ -146,7 +146,7 @@ export function AccountsManager({
               setError(null)
               setAdding(EMPTY)
             }}
-            className="flex items-center gap-1 rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+            className="flex items-center gap-1 rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
           >
             <Icon name="plus" className="size-3" />
             계정 추가
@@ -155,19 +155,19 @@ export function AccountsManager({
       </div>
 
       {error ? (
-        <p role="alert" className="rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-[11.5px] text-critical">
+        <p role="alert" className="rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-t11h text-critical">
           {error}
         </p>
       ) : null}
       {notice ? (
-        <p role="status" className="rounded-md border border-line-soft bg-raised/60 px-2.5 py-1.5 text-[11.5px] text-ink-dim">
+        <p role="status" className="rounded-md border border-line-soft bg-raised/60 px-2.5 py-1.5 text-t11h text-ink-dim">
           {notice}
         </p>
       ) : null}
 
       {adding ? (
         <section className="rounded-xl border border-line-soft bg-panel p-3">
-          <h2 className="text-[12.5px] font-semibold">새 계정</h2>
+          <h2 className="text-t12h font-semibold">새 계정</h2>
           <AccountFields draft={adding} onChange={setAdding} withCode disabled={busy} />
           <FormButtons busy={busy} onSave={submitNew} onCancel={() => setAdding(null)} />
         </section>
@@ -175,15 +175,15 @@ export function AccountsManager({
 
       {list.length === 0 ? (
         <section className="rounded-xl border border-line-soft bg-panel px-4 py-10 text-center">
-          <p className="text-[13px] text-ink-dim">이 회사에는 계정과목이 없습니다.</p>
+          <p className="text-t13 text-ink-dim">이 회사에는 계정과목이 없습니다.</p>
           {usesEcountCodes ? (
-            <p className="mt-1 text-[11.5px] text-ink-muted">ECOUNT 엑셀 업로드 때 계정이 코드 그대로 들어옵니다.</p>
+            <p className="mt-1 text-t11h text-ink-muted">ECOUNT 엑셀 업로드 때 계정이 코드 그대로 들어옵니다.</p>
           ) : canEdit ? (
             <button
               type="button"
               onClick={standard}
               disabled={busy}
-              className="mt-3 rounded-md bg-accent px-3 py-1.5 text-[12px] font-semibold text-ink disabled:opacity-40"
+              className="mt-3 rounded-md bg-accent px-3 py-1.5 text-t12 font-semibold text-ink disabled:opacity-40"
             >
               {busy ? '적용 중…' : '표준 계정과목표 적용 (한국 중소기업)'}
             </button>
@@ -191,9 +191,9 @@ export function AccountsManager({
         </section>
       ) : (
         <section className="overflow-x-auto rounded-xl border border-line-soft bg-panel">
-          <table className="w-full min-w-[760px] text-[12px]">
+          <table className="w-full min-w-[760px] text-t12">
             <thead>
-              <tr className="border-b border-line-soft text-left text-[10.5px] text-ink-muted">
+              <tr className="border-b border-line-soft text-left text-t10h text-ink-muted">
                 <th className="px-3 py-2 font-normal">코드</th>
                 <th className="px-3 py-2 font-normal">계정명</th>
                 <th className="px-3 py-2 font-normal">대분류</th>
@@ -208,7 +208,7 @@ export function AccountsManager({
               return (
                 <tbody key={section}>
                   <tr>
-                    <th colSpan={6} className="bg-raised/50 px-3 py-1 text-left text-[10.5px] font-semibold text-ink-dim">
+                    <th colSpan={6} className="bg-raised/50 px-3 py-1 text-left text-t10h font-semibold text-ink-dim">
                       {ACCOUNT_SECTION_LABEL_KO[section]}
                     </th>
                   </tr>
@@ -216,7 +216,7 @@ export function AccountsManager({
                     editing?.code === a.account_code ? (
                       <tr key={a.account_code} className="border-t border-line-soft">
                         <td colSpan={6} className="px-3 py-2">
-                          <p className="text-[11px] text-ink-muted">
+                          <p className="text-t11 text-ink-muted">
                             <span className="tnum font-semibold text-ink">{a.account_code}</span> 수정 — 코드는 바뀌지 않습니다
                           </p>
                           <AccountFields draft={editing} onChange={setEditing} disabled={busy} />
@@ -228,16 +228,16 @@ export function AccountsManager({
                         <td className="px-3 py-1.5 tnum">{a.account_code}</td>
                         <td className="px-3 py-1.5">
                           {a.name}
-                          {!a.active ? <span className="ml-1.5 rounded border border-line px-1 text-[9.5px]">비활성</span> : null}
+                          {!a.active ? <span className="ml-1.5 rounded border border-line px-1 text-t9h">비활성</span> : null}
                           {used.has(a.account_code) ? (
-                            <span className="ml-1.5 text-[9.5px] text-ink-muted" title="전표가 이 계정을 쓰고 있어 지울 수 없습니다">
+                            <span className="ml-1.5 text-t9h text-ink-muted" title="전표가 이 계정을 쓰고 있어 지울 수 없습니다">
                               전표 있음
                             </span>
                           ) : null}
                         </td>
                         <td className="px-3 py-1.5 text-ink-dim">{ACCOUNT_CATEGORY_LABEL_KO[a.category]}</td>
                         <td className="px-3 py-1.5 text-ink-dim">{a.cash_flow ? CASH_FLOW_CLASS_LABEL_KO[a.cash_flow] : '—'}</td>
-                        <td className="px-3 py-1.5 text-[11px] text-ink-muted">{a.source === 'ecount' ? 'ECOUNT' : '자체'}</td>
+                        <td className="px-3 py-1.5 text-t11 text-ink-muted">{a.source === 'ecount' ? 'ECOUNT' : '자체'}</td>
                         <td className="px-3 py-1.5 text-right whitespace-nowrap">
                           {canEdit ? (
                             <>
@@ -255,7 +255,7 @@ export function AccountsManager({
                                     cashFlow: a.cash_flow ?? '',
                                   })
                                 }}
-                                className="rounded px-1.5 py-0.5 text-[11px] text-ink-dim hover:text-ink disabled:opacity-40"
+                                className="rounded px-1.5 py-0.5 text-t11 text-ink-dim hover:text-ink disabled:opacity-40"
                               >
                                 수정
                               </button>
@@ -263,7 +263,7 @@ export function AccountsManager({
                                 type="button"
                                 disabled={busy}
                                 onClick={() => toggle(a)}
-                                className="rounded px-1.5 py-0.5 text-[11px] text-ink-dim hover:text-ink disabled:opacity-40"
+                                className="rounded px-1.5 py-0.5 text-t11 text-ink-dim hover:text-ink disabled:opacity-40"
                               >
                                 {a.active ? '비활성화' : '다시 사용'}
                               </button>
@@ -298,7 +298,7 @@ function AccountFields({
   return (
     <div className={`mt-2 grid gap-2 ${withCode ? 'md:grid-cols-5' : 'md:grid-cols-4'}`}>
       {withCode ? (
-        <label className="text-[10.5px] text-ink-muted">
+        <label className="text-t10h text-ink-muted">
           계정코드
           <input
             className={`${input} mt-0.5 tnum`}
@@ -310,7 +310,7 @@ function AccountFields({
           />
         </label>
       ) : null}
-      <label className="text-[10.5px] text-ink-muted">
+      <label className="text-t10h text-ink-muted">
         계정명
         <input
           className={`${input} mt-0.5`}
@@ -320,7 +320,7 @@ function AccountFields({
           onChange={(e) => onChange({ ...draft, name: e.target.value })}
         />
       </label>
-      <label className="text-[10.5px] text-ink-muted">
+      <label className="text-t10h text-ink-muted">
         구분 (재무제표 줄)
         <select
           className={`${input} mt-0.5`}
@@ -339,7 +339,7 @@ function AccountFields({
           ))}
         </select>
       </label>
-      <label className="text-[10.5px] text-ink-muted">
+      <label className="text-t10h text-ink-muted">
         대분류 (원가 구조)
         <select
           className={`${input} mt-0.5`}
@@ -354,7 +354,7 @@ function AccountFields({
           ))}
         </select>
       </label>
-      <label className="text-[10.5px] text-ink-muted">
+      <label className="text-t10h text-ink-muted">
         현금흐름
         <select
           className={`${input} mt-0.5`}
@@ -381,7 +381,7 @@ function FormButtons({ busy, onSave, onCancel }: { busy: boolean; onSave: () => 
         type="button"
         onClick={onSave}
         disabled={busy}
-        className="rounded bg-accent px-2.5 py-1 text-[11.5px] font-semibold text-ink disabled:opacity-40"
+        className="rounded bg-accent px-2.5 py-1 text-t11h font-semibold text-ink disabled:opacity-40"
       >
         {busy ? '저장 중…' : '저장'}
       </button>
@@ -389,7 +389,7 @@ function FormButtons({ busy, onSave, onCancel }: { busy: boolean; onSave: () => 
         type="button"
         onClick={onCancel}
         disabled={busy}
-        className="rounded px-2 py-1 text-[11.5px] text-ink-muted hover:text-ink disabled:opacity-40"
+        className="rounded px-2 py-1 text-t11h text-ink-muted hover:text-ink disabled:opacity-40"
       >
         취소
       </button>

@@ -61,13 +61,13 @@ export function BriefTimezone({
   return (
     <div>
       <div className="flex flex-wrap items-center gap-2">
-        <label className="text-[11.5px] text-ink-dim">
+        <label className="text-t11h text-ink-dim">
           시간대
           <select
             value={selected}
             disabled={busy}
             onChange={(e) => void choose(e.target.value)}
-            className="ml-1.5 rounded-md border border-line bg-panel px-2 py-1 text-[11.5px] text-ink outline-none focus:border-accent disabled:cursor-wait disabled:opacity-60"
+            className="ml-1.5 rounded-md border border-line bg-panel px-2 py-1 text-t11h text-ink outline-none focus:border-accent disabled:cursor-wait disabled:opacity-60"
           >
             <option value="">자동</option>
             {options
@@ -80,19 +80,19 @@ export function BriefTimezone({
           </select>
         </label>
 
-        <span className="text-[11px] text-ink-muted">
+        <span className="text-t11 text-ink-muted">
           지금 판정: <span className="text-ink-dim tnum">{decided}</span> ({TIMEZONE_SOURCE_LABEL_KO[source]}
           {source === 'trip' && tripTitle ? ` · ${tripTitle}` : ''})
         </span>
 
         {error ? (
-          <span role="status" className="text-[11.5px] text-critical">
+          <span role="status" className="text-t11h text-critical">
             {error}
           </span>
         ) : null}
       </div>
 
-      <p className="mt-1 text-[10.5px] text-ink-muted">
+      <p className="mt-1 text-t10h text-ink-muted">
         자동일 때는 출장 일정의 현지 시간대를 먼저 보고, 없으면 마지막으로 앱을 연 기기의 시간대를 씁니다.
         둘 다 없으면 서울입니다.
       </p>

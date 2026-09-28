@@ -17,7 +17,7 @@ import {
  */
 
 const INPUT =
-  'mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50'
+  'mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50'
 
 export function ChairmanProjectEditor({ project }: { project?: ChairmanProject }) {
   const [open, setOpen] = useState(false)
@@ -64,7 +64,7 @@ export function ChairmanProjectEditor({ project }: { project?: ChairmanProject }
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-ink-muted transition-colors hover:bg-raised hover:text-ink"
+        className="flex items-center gap-1 rounded-md px-2 py-1 text-t11 text-ink-muted transition-colors hover:bg-raised hover:text-ink"
       >
         <Icon name="pencil" className="size-3.5" />
         편집
@@ -73,7 +73,7 @@ export function ChairmanProjectEditor({ project }: { project?: ChairmanProject }
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 rounded-md border border-line bg-panel px-3 py-1.5 text-[12px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+        className="flex items-center gap-1.5 rounded-md border border-line bg-panel px-3 py-1.5 text-t12 text-ink-dim transition-colors hover:border-accent hover:text-ink"
       >
         <Icon name="plus" className="size-3.5" />
         장기 프로젝트 추가
@@ -89,19 +89,19 @@ export function ChairmanProjectEditor({ project }: { project?: ChairmanProject }
     >
       <div className="grid gap-3 md:grid-cols-2">
         <label className="block md:col-span-2">
-          <span className="text-[11px] text-ink-dim">제목</span>
+          <span className="text-t11 text-ink-dim">제목</span>
           <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={200} disabled={busy} className={INPUT} />
         </label>
         <label className="block">
-          <span className="text-[11px] text-ink-dim">시작일</span>
+          <span className="text-t11 text-ink-dim">시작일</span>
           <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} disabled={busy} className={INPUT} />
         </label>
         <label className="block">
-          <span className="text-[11px] text-ink-dim">목표일</span>
+          <span className="text-t11 text-ink-dim">목표일</span>
           <input type="date" value={targetDate} onChange={(e) => setTargetDate(e.target.value)} disabled={busy} className={INPUT} />
         </label>
         <label className="block md:col-span-2">
-          <span className="text-[11px] text-ink-dim">이번 달 액션</span>
+          <span className="text-t11 text-ink-dim">이번 달 액션</span>
           <input
             value={thisMonthAction}
             onChange={(e) => setThisMonthAction(e.target.value)}
@@ -111,11 +111,11 @@ export function ChairmanProjectEditor({ project }: { project?: ChairmanProject }
           />
         </label>
         <label className="block md:col-span-2">
-          <span className="text-[11px] text-ink-dim">메모</span>
+          <span className="text-t11 text-ink-dim">메모</span>
           <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} maxLength={2000} disabled={busy} className={INPUT} />
         </label>
         <label className="block">
-          <span className="text-[11px] text-ink-dim">상태</span>
+          <span className="text-t11 text-ink-dim">상태</span>
           <select
             value={status}
             onChange={(e) => setStatus(e.target.value as ChairmanProjectStatus)}
@@ -132,7 +132,7 @@ export function ChairmanProjectEditor({ project }: { project?: ChairmanProject }
       </div>
 
       {error ? (
-        <p role="alert" className="mt-3 text-[11.5px] text-critical">
+        <p role="alert" className="mt-3 text-t11h text-critical">
           {error}
         </p>
       ) : null}
@@ -142,14 +142,14 @@ export function ChairmanProjectEditor({ project }: { project?: ChairmanProject }
           type="button"
           onClick={() => setOpen(false)}
           disabled={busy}
-          className="rounded-md px-3 py-1.5 text-[12px] text-ink-muted transition-colors hover:text-ink"
+          className="rounded-md px-3 py-1.5 text-t12 text-ink-muted transition-colors hover:text-ink"
         >
           취소
         </button>
         <button
           type="submit"
           disabled={busy || !title.trim() || !startDate || !targetDate}
-          className="rounded-md bg-accent px-3 py-1.5 text-[12px] font-semibold text-app transition-opacity disabled:opacity-40"
+          className="rounded-md bg-accent px-3 py-1.5 text-t12 font-semibold text-app transition-opacity disabled:opacity-40"
         >
           {busy ? '저장 중…' : '저장'}
         </button>

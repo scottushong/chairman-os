@@ -21,7 +21,7 @@ function pct(now: Figure | null, before: Figure | null): Figure | null {
 
 const ROW_TONE: Record<StatementRow['kind'], string> = {
   account: 'text-ink-dim',
-  section: 'text-[10px] font-semibold tracking-[0.08em] text-ink-muted',
+  section: 'text-t10 font-semibold tracking-[0.08em] text-ink-muted',
   subtotal: 'font-semibold text-ink border-t border-line-soft',
   total: 'font-bold text-ink border-t border-line bg-raised/40',
   note: 'text-warning',
@@ -46,9 +46,9 @@ export function StatementTable({
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[640px] text-[12px]">
+      <table className="w-full min-w-[640px] text-t12">
         <thead>
-          <tr className="border-b border-line text-[10.5px] text-ink-muted">
+          <tr className="border-b border-line text-t10h text-ink-muted">
             <th className="w-16 py-1.5 pr-2 text-left font-normal">코드</th>
             <th className="py-1.5 pr-2 text-left font-normal">계정 · 항목</th>
             {columns.map((c) => (
@@ -69,7 +69,7 @@ export function StatementTable({
                   : [r.current, r.ytd]
             return (
               <tr key={r.key} id={r.key} className={`fin-row scroll-mt-24 ${ROW_TONE[r.kind]}`}>
-                <td className="py-1.5 pr-2 text-[10.5px] text-ink-muted tnum">{r.account_code ?? ''}</td>
+                <td className="py-1.5 pr-2 text-t10h text-ink-muted tnum">{r.account_code ?? ''}</td>
                 <td className={`py-1.5 pr-2 ${r.kind === 'account' && r.account_code ? 'pl-2' : ''}`}>
                   {r.label}
                 </td>

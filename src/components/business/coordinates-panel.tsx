@@ -55,10 +55,10 @@ export function CoordinatesPanel({
   if (!shown) {
     return (
       <section className="rounded-xl border border-line-soft bg-panel px-4 py-8 text-center">
-        <p className="text-[12.5px] text-ink-muted">
+        <p className="text-t12h text-ink-muted">
           이 회사의 전략 좌표가 아직 등록되지 않았습니다.
         </p>
-        <p className="mt-1 text-[11px] text-ink-muted">
+        <p className="mt-1 text-t11 text-ink-muted">
           채우는 일은 Chairman / Business CEO만 할 수 있습니다(0008 business_strategy_write).
         </p>
       </section>
@@ -110,36 +110,36 @@ export function CoordinatesPanel({
   return (
     <section className="rounded-xl border border-line-soft bg-panel p-4">
       <div className="flex items-baseline justify-between">
-        <h2 className="text-[13px] font-semibold">전략 좌표</h2>
+        <h2 className="text-t13 font-semibold">전략 좌표</h2>
         <span className="flex items-center gap-2">
           {canEdit ? (
-            <span className="text-[10.5px] text-ink-muted">칸을 누르면 고칠 수 있습니다</span>
+            <span className="text-t10h text-ink-muted">칸을 누르면 고칠 수 있습니다</span>
           ) : null}
-          <span className="text-[9px] text-ink-muted tnum">CH-024</span>
+          <span className="text-t9 text-ink-muted tnum">CH-024</span>
         </span>
       </div>
 
       {error ? (
         <p
           role="alert"
-          className="mt-2.5 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-[11.5px] text-critical"
+          className="mt-2.5 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-t11h text-critical"
         >
           {error}
         </p>
       ) : null}
 
       {/* Mission만 카드 밖에 둔다. 나머지 열 칸이 답하는 질문의 전제라 위에 하나로 선다. */}
-      <div className="mt-2.5 border-l-2 border-gold/60 pl-3 text-[14px] leading-snug font-semibold">
+      <div className="mt-2.5 border-l-2 border-gold/60 pl-3 text-t14 leading-snug font-semibold">
         {body('mission')}
       </div>
 
       <div className="mt-3.5 grid gap-2.5 md:grid-cols-2 xl:grid-cols-4">
         {(['goal_1y', 'goal_3y', 'current_position', 'target_position'] as const).map((f) => (
           <div key={f} className="rounded-lg bg-raised/60 px-3 py-2.5">
-            <p className="text-[10px] font-semibold tracking-[0.08em] text-ink-muted">
+            <p className="text-t10 font-semibold tracking-[0.08em] text-ink-muted">
               {meta(f).label}
             </p>
-            <div className="mt-1 text-[12.5px] leading-snug text-ink-dim">{body(f)}</div>
+            <div className="mt-1 text-t12h leading-snug text-ink-dim">{body(f)}</div>
           </div>
         ))}
       </div>
@@ -155,11 +155,11 @@ export function CoordinatesPanel({
           ] as const
         ).map(({ f, icon, tone }) => (
           <div key={f} className={`rounded-lg border px-3 py-2.5 ${tone}`}>
-            <p className="flex items-center gap-1.5 text-[10px] font-semibold tracking-[0.08em] text-ink-muted">
+            <p className="flex items-center gap-1.5 text-t10 font-semibold tracking-[0.08em] text-ink-muted">
               <Icon name={icon} className="size-3.5" />
               {meta(f).label}
             </p>
-            <div className="mt-1 text-[12.5px] leading-relaxed text-ink">{body(f)}</div>
+            <div className="mt-1 text-t12h leading-relaxed text-ink">{body(f)}</div>
           </div>
         ))}
       </div>
@@ -167,17 +167,17 @@ export function CoordinatesPanel({
       <div className="mt-2.5 grid gap-2.5 md:grid-cols-2">
         {(['top_kpi', 'current_priority'] as const).map((f) => (
           <div key={f} className="rounded-lg bg-raised/60 px-3 py-2.5">
-            <p className="text-[10px] font-semibold tracking-[0.08em] text-ink-muted">
+            <p className="text-t10 font-semibold tracking-[0.08em] text-ink-muted">
               {meta(f).label}
             </p>
-            <div className="mt-1 text-[12.5px] leading-snug text-ink-dim">{body(f)}</div>
+            <div className="mt-1 text-t12h leading-snug text-ink-dim">{body(f)}</div>
           </div>
         ))}
       </div>
 
       {/* 메모는 비어 있으면 읽기 전용에서 아예 뺀다. 고칠 수 있는 사람에게만 빈 자리를 남긴다. */}
       {valueOf('chairman_comment') || canEdit ? (
-        <div className="mt-3 flex items-start gap-2 rounded-lg bg-raised px-3 py-2.5 text-[12px] leading-relaxed text-ink-dim">
+        <div className="mt-3 flex items-start gap-2 rounded-lg bg-raised px-3 py-2.5 text-t12 leading-relaxed text-ink-dim">
           <Icon name="crown" className="mt-0.5 size-3.5 shrink-0 text-gold" filled />
           <div className="min-w-0 flex-1">{body('chairman_comment')}</div>
         </div>
@@ -278,7 +278,7 @@ function FieldEditor({
   }
 
   const shared =
-    'w-full rounded-md border border-accent bg-raised px-2 py-1.5 text-[12.5px] font-normal text-ink outline-none placeholder:text-ink-muted disabled:opacity-50'
+    'w-full rounded-md border border-accent bg-raised px-2 py-1.5 text-t12h font-normal text-ink outline-none placeholder:text-ink-muted disabled:opacity-50'
 
   return (
     <div>
@@ -313,7 +313,7 @@ function FieldEditor({
           type="button"
           onClick={commit}
           disabled={busy}
-          className="rounded bg-accent px-2 py-1 text-[11px] font-semibold text-ink transition-opacity disabled:opacity-40"
+          className="rounded bg-accent px-2 py-1 text-t11 font-semibold text-ink transition-opacity disabled:opacity-40"
         >
           {busy ? '저장 중…' : '저장'}
         </button>
@@ -321,11 +321,11 @@ function FieldEditor({
           type="button"
           onClick={onCancel}
           disabled={busy}
-          className="rounded px-2 py-1 text-[11px] font-normal text-ink-muted transition-colors hover:text-ink disabled:opacity-40"
+          className="rounded px-2 py-1 text-t11 font-normal text-ink-muted transition-colors hover:text-ink disabled:opacity-40"
         >
           취소
         </button>
-        <span className="text-[10px] font-normal text-ink-muted">
+        <span className="text-t10 font-normal text-ink-muted">
           {meta.multiline ? 'Ctrl+Enter 저장 · Esc 취소' : 'Enter 저장 · Esc 취소'}
         </span>
       </div>

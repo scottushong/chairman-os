@@ -59,14 +59,14 @@ export function TaskControls({ task }: { task: Task }) {
   return (
     <div className={`space-y-3 transition-opacity ${pending ? 'opacity-50' : ''}`}>
       <label className="block">
-        <span className="text-[11px] text-ink-dim">상태</span>
+        <span className="text-t11 text-ink-dim">상태</span>
         {/* 06_상태코드의 4개만 고를 수 있다. 자유 입력을 두면 임의 상태명이 생긴다. */}
         <select
           value={status}
           disabled={pending}
           aria-label="업무 상태"
           onChange={(e) => changeStatus(e.target.value as TaskStatus)}
-          className="mt-1 w-full rounded-lg border border-line bg-raised px-2.5 py-2 text-[12.5px] text-ink outline-none focus:border-accent disabled:opacity-50"
+          className="mt-1 w-full rounded-lg border border-line bg-raised px-2.5 py-2 text-t12h text-ink outline-none focus:border-accent disabled:opacity-50"
         >
           {TASK_STATUS.map((s) => (
             <option key={s} value={s} className="bg-panel text-ink">
@@ -77,14 +77,14 @@ export function TaskControls({ task }: { task: Task }) {
       </label>
 
       <div>
-        <span className="text-[11px] text-ink-dim">회장 확인</span>
+        <span className="text-t11 text-ink-dim">회장 확인</span>
         {/* CH-017. 이 플래그 하나가 그 업무를 회장 화면으로 올리는 유일한 조건이다. */}
         <button
           type="button"
           onClick={toggleNeeded}
           disabled={pending}
           aria-pressed={needed}
-          className={`mt-1 flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-[12.5px] transition-colors disabled:opacity-50 ${
+          className={`mt-1 flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-t12h transition-colors disabled:opacity-50 ${
             needed
               ? 'border-gold/50 bg-gold/15 text-gold'
               : 'border-line bg-raised text-ink-muted hover:text-ink-dim'
@@ -98,14 +98,14 @@ export function TaskControls({ task }: { task: Task }) {
       {error ? (
         <p
           role="alert"
-          className="flex items-start gap-1.5 rounded-lg border border-critical/40 bg-critical/10 px-2.5 py-2 text-[11.5px] leading-snug text-critical"
+          className="flex items-start gap-1.5 rounded-lg border border-critical/40 bg-critical/10 px-2.5 py-2 text-t11h leading-snug text-critical"
         >
           <Icon name="shield" className="mt-px size-3.5 shrink-0" />
           {error}
         </p>
       ) : null}
 
-      <p className="text-[10.5px] leading-relaxed text-ink-muted">
+      <p className="text-t10h leading-relaxed text-ink-muted">
         바꾼 값은 감사 기록(audit_log)에 남고 지워지지 않는다(CH-051). 제목·담당자·마감은
         여기서 고치지 않는다 — 그건 Business OS(Layer 1)가 갖는 칸이다.
       </p>

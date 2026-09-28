@@ -96,14 +96,14 @@ export function ChatRoom({
     <div className="flex h-[70vh] min-h-[420px] flex-col">
       <ul className="flex-1 space-y-2 overflow-y-auto px-1 py-2">
         {messages.length === 0 ? (
-          <li className="py-8 text-center text-[12px] text-ink-muted">{tr(lang, '아직 대화가 없습니다.', 'No messages yet.')}</li>
+          <li className="py-8 text-center text-t12 text-ink-muted">{tr(lang, '아직 대화가 없습니다.', 'No messages yet.')}</li>
         ) : null}
         {messages.map((m) => {
           const mine = m.sender_id === me
           return (
             <li key={m.message_id} className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
-              {!mine ? <span className="px-1 text-[10.5px] text-ink-muted">{m.sender_name}</span> : null}
-              <div className={`max-w-[78%] rounded-xl px-3 py-2 text-[12.5px] leading-relaxed ${mine ? 'bg-accent text-white' : 'bg-raised'}`}>
+              {!mine ? <span className="px-1 text-t10h text-ink-muted">{m.sender_name}</span> : null}
+              <div className={`max-w-[78%] rounded-xl px-3 py-2 text-t12h leading-relaxed ${mine ? 'bg-accent text-white' : 'bg-raised'}`}>
                 {m.body ? <p className="whitespace-pre-wrap break-words">{m.body}</p> : null}
                 {m.link ? (
                   m.link.startsWith('/') ? (
@@ -120,7 +120,7 @@ export function ChatRoom({
                   )
                 ) : null}
               </div>
-              <span className="px-1 text-[10px] text-ink-muted tnum">
+              <span className="px-1 text-t10 text-ink-muted tnum">
                 {time(m.created_at)}
                 {mine && myLast?.message_id === m.message_id && readersOfMyLast > 0
                   ? ` · ${kind === 'dm' ? tr(lang, '읽음', 'Read') : tr(lang, `읽음 ${readersOfMyLast}`, `Read by ${readersOfMyLast}`)}`
@@ -134,7 +134,7 @@ export function ChatRoom({
 
       <div className="border-t border-line-soft pt-2">
         {error ? (
-          <p role="alert" className="mb-1 text-[11.5px] text-critical">
+          <p role="alert" className="mb-1 text-t11h text-critical">
             {error}
           </p>
         ) : null}
@@ -144,9 +144,9 @@ export function ChatRoom({
               value={link}
               onChange={(e) => setLink(e.target.value)}
               placeholder={tr(lang, '링크 (https://… 또는 /…)', 'Link (https://… or /…)')}
-              className="rounded-md border border-line bg-panel px-2 py-1.5 text-[12px]"
+              className="rounded-md border border-line bg-panel px-2 py-1.5 text-t12"
             />
-            <select value={doc} onChange={(e) => setDoc(e.target.value)} className="rounded-md border border-line bg-panel px-2 py-1.5 text-[12px]">
+            <select value={doc} onChange={(e) => setDoc(e.target.value)} className="rounded-md border border-line bg-panel px-2 py-1.5 text-t12">
               <option value="">{tr(lang, '문서 첨부 (선택)', 'Attach document')}</option>
               {documents.map((d) => (
                 <option key={d.id} value={d.id}>
@@ -161,7 +161,7 @@ export function ChatRoom({
             type="button"
             onClick={() => setExtra((x) => !x)}
             aria-label={tr(lang, '링크 · 문서 첨부', 'Attach')}
-            className="rounded-md border border-line bg-raised px-2.5 py-2 text-[12px] text-ink-dim"
+            className="rounded-md border border-line bg-raised px-2.5 py-2 text-t12 text-ink-dim"
           >
             📎
           </button>
@@ -176,13 +176,13 @@ export function ChatRoom({
             }}
             rows={1}
             placeholder={tr(lang, '메시지 (Enter 보내기, Shift+Enter 줄바꿈)', 'Message (Enter to send)')}
-            className="min-h-[38px] flex-1 resize-none rounded-md border border-line bg-panel px-2.5 py-2 text-[12.5px]"
+            className="min-h-[38px] flex-1 resize-none rounded-md border border-line bg-panel px-2.5 py-2 text-t12h"
           />
           <button
             type="button"
             onClick={send}
             disabled={pending || (!body.trim() && !link.trim() && !doc)}
-            className="rounded-md bg-accent px-3 py-2 text-[12.5px] font-semibold text-white disabled:opacity-40"
+            className="rounded-md bg-accent px-3 py-2 text-t12h font-semibold text-white disabled:opacity-40"
           >
             {tr(lang, '보내기', 'Send')}
           </button>

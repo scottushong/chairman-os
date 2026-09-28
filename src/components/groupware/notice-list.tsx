@@ -50,13 +50,13 @@ export function NoticeList({
   }
 
   if (notices.length === 0) {
-    return <p className="text-[12px] text-ink-muted">{tr(lang, '올라온 공지가 없습니다.', 'No notices yet.')}</p>
+    return <p className="text-t12 text-ink-muted">{tr(lang, '올라온 공지가 없습니다.', 'No notices yet.')}</p>
   }
 
   return (
     <ul className="divide-y divide-line-soft">
       {error ? (
-        <li role="alert" className="py-1.5 text-[11.5px] text-critical">
+        <li role="alert" className="py-1.5 text-t11h text-critical">
           {error}
         </li>
       ) : null}
@@ -67,24 +67,24 @@ export function NoticeList({
           <li key={n.notice_id} className="py-2">
             <button type="button" onClick={() => toggle(n)} className="flex w-full items-baseline gap-2 text-left">
               {unread ? <span aria-label={tr(lang, '안 읽음', 'Unread')} className="size-1.5 shrink-0 rounded-full bg-accent" /> : null}
-              {n.pinned ? <span className="shrink-0 text-[10.5px] font-semibold text-accent">{tr(lang, '고정', 'Pinned')}</span> : null}
-              <span className={`min-w-0 flex-1 truncate text-[12.5px] ${unread ? 'font-semibold' : ''}`}>
+              {n.pinned ? <span className="shrink-0 text-t10h font-semibold text-accent">{tr(lang, '고정', 'Pinned')}</span> : null}
+              <span className={`min-w-0 flex-1 truncate text-t12h ${unread ? 'font-semibold' : ''}`}>
                 {pickText(lang, n.title, n.title_en)}
               </span>
-              <span className="shrink-0 text-[10.5px] text-ink-muted">
+              <span className="shrink-0 text-t10h text-ink-muted">
                 {n.business_id ? (businessNames[n.business_id] ?? n.business_id) : tr(lang, '그룹 전체', 'Group-wide')} ·{' '}
                 {n.created_at.slice(5, 10)}
               </span>
             </button>
             {open === n.notice_id ? (
               <div className="mt-1.5 space-y-2 rounded-lg bg-raised px-3 py-2">
-                <p className="whitespace-pre-wrap text-[12px] leading-relaxed text-ink-dim">{pickText(lang, n.body, n.body_en)}</p>
-                <p className="text-[10.5px] text-ink-muted">
+                <p className="whitespace-pre-wrap text-t12 leading-relaxed text-ink-dim">{pickText(lang, n.body, n.body_en)}</p>
+                <p className="text-t10h text-ink-muted">
                   {n.created_by_name}
                   {n.expires_on ? ` · ${tr(lang, '게시 종료', 'Until')} ${n.expires_on}` : ''}
                 </p>
                 {who ? (
-                  <details className="text-[11px] text-ink-dim">
+                  <details className="text-t11 text-ink-dim">
                     <summary className="cursor-pointer">
                       {tr(lang, `읽음 ${who.length}명`, `Read by ${who.length}`)}
                       <span className="ml-1 text-ink-muted">{tr(lang, '(작성자 · 회장만 봅니다)', '(author and Chairman only)')}</span>
@@ -97,7 +97,7 @@ export function NoticeList({
                     type="button"
                     disabled={pending}
                     onClick={() => remove(n.notice_id)}
-                    className="text-[11px] text-ink-muted hover:text-critical"
+                    className="text-t11 text-ink-muted hover:text-critical"
                   >
                     {tr(lang, '공지 내리기', 'Remove')}
                   </button>

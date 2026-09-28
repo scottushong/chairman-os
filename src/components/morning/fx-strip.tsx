@@ -23,7 +23,7 @@ export function FxStrip({ data }: { data: FxStripData | null }) {
       className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-line-soft bg-raised/50 px-4 py-2.5"
     >
       {data.chips.map((chip) => (
-        <span key={chip.code} className="flex items-baseline gap-1.5 text-[12px]">
+        <span key={chip.code} className="flex items-baseline gap-1.5 text-t12">
           <span className="font-semibold text-ink-dim">{chip.code}</span>
           <span className="font-semibold text-ink tnum">
             {chip.krw.toLocaleString('ko-KR', {
@@ -40,7 +40,7 @@ export function FxStrip({ data }: { data: FxStripData | null }) {
        * 금요일 숫자가 그대로 서 있다 — 날짜가 없으면 회장이 '왜 안 변하지'를 묻게 된다.
        * 그 물음은 화면이 미리 답해야 한다.
        */}
-      <span className="ml-auto text-[11px] text-ink-muted">
+      <span className="ml-auto text-t11 text-ink-muted">
         {data.asOf} 고시 · 전일({data.comparedTo}) 대비
       </span>
     </section>
@@ -54,14 +54,14 @@ export function FxStrip({ data }: { data: FxStripData | null }) {
 function DeltaMark({ chip }: { chip: FxStripData['chips'][number] }) {
   if (chip.direction === 'flat') {
     return (
-      <span className="text-[11px] text-ink-muted tnum">— 0.00%</span>
+      <span className="text-t11 text-ink-muted tnum">— 0.00%</span>
     )
   }
 
   const up = chip.direction === 'up'
   const sign = up ? '+' : '−'
   return (
-    <span className={`text-[11px] tnum ${up ? 'text-critical' : 'text-ok'}`}>
+    <span className={`text-t11 tnum ${up ? 'text-critical' : 'text-ok'}`}>
       {/* 원화 기준 상승은 '원화가 약해졌다'는 뜻이라 빨강이다. 주가와 반대 방향이 아니다 —
           회장이 보는 것은 수입 원가이고, 환율이 오르면 그쪽이 나빠진다. */}
       {up ? '▲' : '▼'} {sign}

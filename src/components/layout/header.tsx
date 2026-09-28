@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { signOut } from '@/app/actions/auth'
 import { DataModeBadge } from '@/components/layout/data-mode-badge'
 import { GlobalSearch } from '@/components/layout/global-search'
+import { MenuButton } from '@/components/layout/menu-button'
 import { NotificationBell } from '@/components/layout/notification-bell'
 import { Icon } from '@/components/ui/icon'
 import { getFxStrip } from '@/lib/fx'
@@ -53,12 +54,19 @@ export async function Header({ user }: { user: SessionUser | null }) {
 
   return (
     // glass-nav = --color-nav 면 + backdrop-blur. 사이드바·시스템바와 같은 면이라 같은 클래스를 쓴다.
-    <header className="glass-nav flex h-14 shrink-0 items-center gap-4 border-b border-line-soft px-5">
+    // 폰(768px 미만)은 로고 · 검색 돋보기 · 알림 · 프로필만(회장 지시 2026-09-28). 1024px 미만은 햄버거로 서랍을 연다.
+    // 노치 자리만큼 위를 비운다(safe-top) — iOS 홈 화면 앱은 상태 막대가 비치는 black-translucent다.
+    <header className="glass-nav safe-top box-content flex h-14 shrink-0 items-center gap-1 border-b border-line-soft px-2 md:gap-4 md:px-5">
+      <MenuButton />
+      <Link href="/" aria-label="대시보드" className="flex min-h-11 items-center gap-1.5 px-1 lg:hidden">
+        <Icon name="crown" className="size-5 text-gold" filled />
+        <span className="hidden text-t13 font-bold tracking-[0.04em] text-ink min-[400px]:inline">CHAIRMAN OS</span>
+      </Link>
       {/* CH-043. 이 헤더는 서버 컴포넌트로 두고 검색창만 클라이언트로 떼어 낸다 —
           세션(user)은 여기서 그리고, 입력·드롭다운만 브라우저로 내려간다. */}
       <GlobalSearch />
 
-      <div className="flex shrink-0 items-center gap-1">
+      <div className="flex shrink-0 items-center gap-0.5 md:gap-1">
         {/* USD 칩. 못 불러오면 자리표시자를 남기지 않고 통째로 뺀다 —
             회장이 매일 보는 화면에서 em 대시는 '값이 없다'가 아니라 '고장'으로 읽힌다.
             title에 기준일을 넣는 이유는 주말 아침에 숫자가 안 바뀌는 것이 고장이 아님을
@@ -66,7 +74,7 @@ export async function Header({ user }: { user: SessionUser | null }) {
         {usd ? (
           <span
             title={`USD/KRW · ${usd.asOf} 고시 · 전일(${usd.comparedTo}) 대비 ${usd.deltaKrw >= 0 ? '+' : '−'}${Math.abs(usd.deltaKrw).toFixed(2)}원`}
-            className="flex shrink-0 items-center gap-1 px-1 text-[11px] text-ink-muted"
+            className="hidden shrink-0 items-center gap-1 px-1 text-t11 text-ink-muted md:flex"
           >
             <span>USD</span>
             <span className="text-ink-dim tnum">{Math.round(usd.krw).toLocaleString('ko-KR')}</span>
@@ -77,7 +85,9 @@ export async function Header({ user }: { user: SessionUser | null }) {
             ) : null}
           </span>
         ) : null}
-        <DataModeBadge />
+        <span className="hidden md:contents">
+          <DataModeBadge />
+        </span>
         <NotificationBell unread={unread} items={items} />
         {/* 설정 톱니. Phase 5-E 4절이 /settings 허브를 세우기 전까지 이 버튼은 onClick도
             href도 없었다 — 갈 곳이 없어서 아무 데도 안 갔다. */}
@@ -85,7 +95,7 @@ export async function Header({ user }: { user: SessionUser | null }) {
           href="/settings"
           aria-label="설정"
           title="설정"
-          className="rounded-md p-2 text-ink-dim transition-colors hover:bg-raised hover:text-ink"
+          className="hidden rounded-md p-2 text-ink-dim transition-colors hover:bg-raised hover:text-ink md:block"
         >
           <Icon name="settings" className="size-[18px]" />
         </Link>
@@ -93,37 +103,37 @@ export async function Header({ user }: { user: SessionUser | null }) {
         {/* Phase 5-E 2절. 이름+직함이 /settings/profile로 가는 링크가 됐다.
             세션이 없으면 링크가 아니라 글자다 — 누를 프로필이 없는데 누르는 자리를
             만들면 그것이 곧 죽은 버튼이다. */}
-        <div className="ml-2 flex items-center gap-2.5 border-l border-line pl-3">
+        <div className="flex items-center gap-2.5 md:ml-2 md:border-l md:border-line md:pl-3">
           {user ? (
             <Link
               href="/settings/profile"
               title={`${user.name} · 프로필 설정`}
-              className="flex items-center gap-2.5 rounded-md px-1 py-0.5 transition-colors hover:bg-raised"
+              className="flex min-h-11 min-w-11 items-center justify-center gap-2.5 rounded-md px-1 py-0.5 transition-colors hover:bg-raised"
             >
-              <span className="flex size-8 items-center justify-center rounded-full bg-accent-soft text-[12px] font-bold text-ink">
+              <span className="flex size-8 items-center justify-center rounded-full bg-accent-soft text-t12 font-bold text-ink">
                 {user.name.slice(0, 1)}
               </span>
-              <span className="leading-tight">
-                <span className="block text-[13px] font-semibold">{user.name}</span>
-                <span className="block text-[11px] text-ink-muted">
+              <span className="hidden leading-tight md:block">
+                <span className="block text-t13 font-semibold">{user.name}</span>
+                <span className="block text-t11 text-ink-muted">
                   {user.title_ko || ROLE_LABEL_KO[user.role]}
                 </span>
               </span>
             </Link>
           ) : (
             <span className="flex items-center gap-2.5">
-              <span className="flex size-8 items-center justify-center rounded-full bg-accent-soft text-[12px] font-bold text-ink">
+              <span className="flex size-8 items-center justify-center rounded-full bg-accent-soft text-t12 font-bold text-ink">
                 ?
               </span>
-              <span className="leading-tight">
-                <span className="block text-[13px] font-semibold">알 수 없음</span>
-                <span className="block text-[11px] text-ink-muted">세션 없음</span>
+              <span className="hidden leading-tight md:block">
+                <span className="block text-t13 font-semibold">알 수 없음</span>
+                <span className="block text-t11 text-ink-muted">세션 없음</span>
               </span>
             </span>
           )}
 
           {/* 로그아웃은 Server Action이다. 쿠키를 지우는 건 서버만 할 수 있다. */}
-          <form action={signOut}>
+          <form action={signOut} className="hidden md:block">
             <button
               type="submit"
               aria-label="로그아웃"

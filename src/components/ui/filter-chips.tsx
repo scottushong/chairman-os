@@ -18,14 +18,14 @@ export interface FilterOption {
 export function FilterChips({ label, options }: { label: string; options: FilterOption[] }) {
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <span className="text-[10px] font-semibold tracking-[0.08em] text-ink-muted">{label}</span>
+      <span className="text-t10 font-semibold tracking-[0.08em] text-ink-muted">{label}</span>
       {options.map((o) => (
         <Link
           key={o.href}
           href={o.href}
           aria-current={o.active ? 'true' : undefined}
           className={[
-            'rounded-md border px-2.5 py-1 text-[11px] transition-colors',
+            'rounded-md border px-2.5 py-1 text-t11 transition-colors',
             o.active
               ? 'border-accent bg-accent/15 font-semibold text-ink'
               : 'border-line text-ink-muted hover:text-ink-dim',

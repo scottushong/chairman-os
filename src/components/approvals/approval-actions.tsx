@@ -42,7 +42,7 @@ export function ApprovalActions({
             type="button"
             disabled={pending}
             onClick={() => act(action)}
-            className={`rounded-lg border py-2 text-[12px] font-semibold transition-colors disabled:opacity-40 ${
+            className={`rounded-lg border py-2 text-t12 font-semibold transition-colors disabled:opacity-40 ${
               action === 'Approved'
                 ? 'border-accent/60 text-ink-dim hover:bg-accent hover:text-ink'
                 : 'border-line text-ink-muted hover:bg-raised hover:text-ink-dim'
@@ -53,14 +53,14 @@ export function ApprovalActions({
         ))}
       </div>
 
-      <p className="mt-2 text-[10.5px] text-ink-muted">
+      <p className="mt-2 text-t10h text-ink-muted">
         누른 결과는 되돌릴 수 없습니다. 처리 기록은 감사 로그에 남고 지워지지 않습니다(CH-051).
       </p>
 
       {error ? (
         <p
           role="alert"
-          className="mt-2 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-[11.5px] text-critical"
+          className="mt-2 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-t11h text-critical"
         >
           {error}
         </p>

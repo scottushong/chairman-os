@@ -38,13 +38,13 @@ export default async function ProcessChartPage(props: PageProps<'/process/[id]'>
           href={chart.embed_url}
           target="_blank"
           rel="noreferrer noopener"
-          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           시트에서 편집
         </a>
         <Link
           href="/"
-          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           대시보드로
         </Link>

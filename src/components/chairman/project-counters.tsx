@@ -15,7 +15,7 @@ export function ProjectCounters({ projects, today }: { projects: ChairmanProject
         const c = projectClock(p, today)
         return (
           <div key={p.project_id} className="rounded-xl border border-accent/30 bg-panel px-4 py-3.5">
-            <p className="flex flex-wrap items-baseline gap-x-2 text-[14px] leading-snug tnum">
+            <p className="flex flex-wrap items-baseline gap-x-2 text-t14 leading-snug tnum">
               <span className="font-semibold text-ink">{p.title}</span>
               <span className="text-ink-muted">·</span>
               <span className="font-semibold text-accent">{c.label}</span>
@@ -35,7 +35,7 @@ export function ProjectCounters({ projects, today }: { projects: ChairmanProject
               <div className="h-full rounded-full bg-accent" style={{ width: `${c.pct}%` }} />
             </div>
             {p.this_month_action ? (
-              <p className="mt-2 text-[11.5px] leading-relaxed text-ink-dim">
+              <p className="mt-2 text-t11h leading-relaxed text-ink-dim">
                 <span className="text-ink-muted">이번 달 · </span>
                 {p.this_month_action}
               </p>

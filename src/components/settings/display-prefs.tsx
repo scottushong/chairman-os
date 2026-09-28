@@ -52,7 +52,7 @@ export function ThemePicker({ value }: { value: ThemeChoice }) {
             onClick={() => choose(t)}
             aria-pressed={theme === t}
             className={[
-              'rounded-md border px-2.5 py-1.5 text-[11.5px] transition-colors disabled:opacity-50',
+              'rounded-md border px-2.5 py-1.5 text-t11h transition-colors disabled:opacity-50',
               theme === t
                 ? 'border-accent bg-accent-soft font-semibold text-ink'
                 : 'border-line bg-raised text-ink-dim hover:border-accent hover:text-ink',
@@ -62,12 +62,12 @@ export function ThemePicker({ value }: { value: ThemeChoice }) {
           </button>
         ))}
       </div>
-      <p className="mt-1.5 text-[10.5px] text-ink-muted">
+      <p className="mt-1.5 text-t10h text-ink-muted">
         아침 루틴(<code>/ai</code>)은 이 설정과 무관하게 언제나 다크입니다 — 그 화면은 어두운
         방에서 읽는 것을 전제로 짜여 있습니다. 로그인 화면도 늘 라이트입니다.
       </p>
       {error ? (
-        <p role="alert" className="mt-1 text-[11px] text-critical">
+        <p role="alert" className="mt-1 text-t11 text-critical">
           {error}
         </p>
       ) : null}
@@ -111,19 +111,19 @@ export function NotifySwitches({ value }: { value: NotificationSwitches }) {
             className="mt-0.5 size-3.5 shrink-0 accent-[var(--color-accent)]"
           />
           <span>
-            <span className="block text-[12px] text-ink">{NOTIFICATION_KIND_LABEL_KO[kind]}</span>
-            <span className="mt-0.5 block text-[10px] text-ink-muted">
+            <span className="block text-t12 text-ink">{NOTIFICATION_KIND_LABEL_KO[kind]}</span>
+            <span className="mt-0.5 block text-t10 text-ink-muted">
               {NOTIFICATION_KIND_HINT_KO[kind]}
             </span>
           </span>
         </label>
       ))}
-      <p className="pt-1 text-[10.5px] text-ink-muted">
+      <p className="pt-1 text-t10h text-ink-muted">
         꺼 둔 종류는 헤더의 종에서 건수와 목록 모두 빠집니다. 저장만 되고 아무 데서도
         쓰이지 않는 스위치를 두지 않습니다.
       </p>
       {error ? (
-        <p role="alert" className="text-[11px] text-critical">
+        <p role="alert" className="text-t11 text-critical">
           {error}
         </p>
       ) : null}

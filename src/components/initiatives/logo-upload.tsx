@@ -68,7 +68,7 @@ export function LogoUpload({
               type="button"
               onClick={() => inputRef.current?.click()}
               disabled={pending}
-              className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-50"
+              className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-50"
             >
               {pending ? '올리는 중…' : path ? '로고 바꾸기' : '로고 올리기'}
             </button>
@@ -77,7 +77,7 @@ export function LogoUpload({
                 type="button"
                 onClick={onRemove}
                 disabled={pending}
-                className="rounded-md px-2 py-1.5 text-[11.5px] text-critical transition-colors hover:underline disabled:cursor-not-allowed"
+                className="rounded-md px-2 py-1.5 text-t11h text-critical transition-colors hover:underline disabled:cursor-not-allowed"
               >
                 삭제
               </button>
@@ -90,15 +90,15 @@ export function LogoUpload({
               onChange={onPick}
             />
           </div>
-          <p className="mt-1 text-[10.5px] text-ink-muted">PNG · JPG · WebP, 2MB까지</p>
+          <p className="mt-1 text-t10h text-ink-muted">PNG · JPG · WebP, 2MB까지</p>
           {error ? (
-            <p role="alert" className="mt-1 text-[11px] text-critical">
+            <p role="alert" className="mt-1 text-t11 text-critical">
               {error}
             </p>
           ) : null}
         </div>
       ) : (
-        <span className="text-[12.5px] font-semibold text-ink">{title}</span>
+        <span className="text-t12h font-semibold text-ink">{title}</span>
       )}
     </GlassCard>
   )

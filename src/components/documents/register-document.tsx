@@ -86,7 +86,7 @@ export function RegisterDocument({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 rounded-md border border-line bg-panel px-3 py-1.5 text-[12px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+        className="flex items-center gap-1.5 rounded-md border border-line bg-panel px-3 py-1.5 text-t12 text-ink-dim transition-colors hover:border-accent hover:text-ink"
       >
         <Icon name="plus" className="size-3.5" />
         링크 등록
@@ -101,34 +101,34 @@ export function RegisterDocument({
       className="w-full rounded-xl border border-line bg-panel p-4"
     >
       <div className="flex items-baseline justify-between">
-        <h2 className="text-[13px] font-semibold">사내 스토리지 링크 등록</h2>
+        <h2 className="text-t13 font-semibold">사내 스토리지 링크 등록</h2>
         <button
           type="button"
           onClick={() => setOpen(false)}
-          className="text-[11px] text-ink-muted transition-colors hover:text-ink"
+          className="text-t11 text-ink-muted transition-colors hover:text-ink"
         >
           닫기
         </button>
       </div>
-      <p className="mt-1 text-[11px] text-ink-muted">
+      <p className="mt-1 text-t11 text-ink-muted">
         파일은 올리지 않습니다. Chairman OS는 문서의 주소만 보관합니다.
       </p>
 
       <div className="mt-3 grid gap-3 md:grid-cols-2">
         <label className="block md:col-span-2">
-          <span className="text-[11px] text-ink-dim">문서명</span>
+          <span className="text-t11 text-ink-dim">문서명</span>
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="예: 2026 Sticky Alliance 공급계약서"
             maxLength={120}
             disabled={busy}
-            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
+            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
           />
         </label>
 
         <label className="block">
-          <span className="text-[11px] text-ink-dim">소속</span>
+          <span className="text-t11 text-ink-dim">소속</span>
           <select
             value={businessId}
             onChange={(e) => {
@@ -136,7 +136,7 @@ export function RegisterDocument({
               setFolderId('')
             }}
             disabled={busy}
-            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
+            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none focus:border-accent disabled:opacity-50"
           >
             {/* DB에서는 NULL이 그룹 공통이다. 화면에서는 'group'으로 부른다(어댑터가 옮긴다). */}
             <option value={GROUP} className="bg-panel">
@@ -151,25 +151,25 @@ export function RegisterDocument({
         </label>
 
         <label className="block">
-          <span className="text-[11px] text-ink-dim">문서 유형</span>
+          <span className="text-t11 text-ink-dim">문서 유형</span>
           <input
             value={docType}
             onChange={(e) => setDocType(e.target.value)}
             placeholder="예: Contract / IR / TDS / Meeting"
             maxLength={40}
             disabled={busy}
-            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
+            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
           />
         </label>
 
         {/* 0038. 같은 소속 · 폴더 · 제목 · 유형 · 등급으로 다시 올리면 v2가 된다(트리거). */}
         <label className="block">
-          <span className="text-[11px] text-ink-dim">폴더</span>
+          <span className="text-t11 text-ink-dim">폴더</span>
           <select
             value={folderId}
             onChange={(e) => setFolderId(e.target.value)}
             disabled={busy || businessId === GROUP}
-            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
+            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none focus:border-accent disabled:opacity-50"
           >
             <option value="">(폴더 없음)</option>
             {folders
@@ -183,30 +183,30 @@ export function RegisterDocument({
         </label>
 
         <label className="block">
-          <span className="text-[11px] text-ink-dim">태그 (쉼표로 구분)</span>
+          <span className="text-t11 text-ink-dim">태그 (쉼표로 구분)</span>
           <input
             value={tags}
             onChange={(e) => setTags(e.target.value)}
             placeholder="예: 계약, 2026, 폴란드"
             disabled={busy}
-            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
+            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
           />
         </label>
 
         <label className="block md:col-span-2">
-          <span className="text-[11px] text-ink-dim">사내 스토리지 링크</span>
+          <span className="text-t11 text-ink-dim">사내 스토리지 링크</span>
           <input
             value={storageUrl}
             onChange={(e) => setStorageUrl(e.target.value)}
             placeholder="https://storage.example.co.kr/contracts/2026/..."
             inputMode="url"
             disabled={busy}
-            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
+            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
           />
         </label>
 
         <fieldset className="md:col-span-2">
-          <legend className="text-[11px] text-ink-dim">보안등급</legend>
+          <legend className="text-t11 text-ink-dim">보안등급</legend>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {SECURITY_CLASS.map((c) => (
               <button
@@ -215,7 +215,7 @@ export function RegisterDocument({
                 onClick={() => setSecurityClass(c)}
                 disabled={busy}
                 aria-pressed={securityClass === c}
-                className={`rounded-md border px-2.5 py-1 text-[11px] transition-colors disabled:opacity-50 ${
+                className={`rounded-md border px-2.5 py-1 text-t11 transition-colors disabled:opacity-50 ${
                   securityClass === c
                     ? 'border-accent bg-accent/15 text-ink'
                     : 'border-line text-ink-muted hover:text-ink-dim'
@@ -226,7 +226,7 @@ export function RegisterDocument({
             ))}
           </div>
           {/* 등급을 올리면 자기도 못 보게 될 수 있다. 저장 전에 말해 준다. */}
-          <p className="mt-1.5 text-[10.5px] text-ink-muted">
+          <p className="mt-1.5 text-t10h text-ink-muted">
             등급이 자기 열람 등급보다 높으면 등록한 본인에게도 목록에 뜨지 않습니다(0002
             documents_read).
           </p>
@@ -236,7 +236,7 @@ export function RegisterDocument({
       {error ? (
         <p
           role="alert"
-          className="mt-3 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-[11.5px] text-critical"
+          className="mt-3 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-t11h text-critical"
         >
           {error}
         </p>
@@ -246,7 +246,7 @@ export function RegisterDocument({
         <button
           type="submit"
           disabled={!canSave}
-          className="flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-ink transition-opacity disabled:opacity-40"
+          className="flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-t12 font-semibold text-ink transition-opacity disabled:opacity-40"
         >
           <Icon name="plus" className="size-3.5" />
           {busy ? '등록하는 중…' : '등록'}

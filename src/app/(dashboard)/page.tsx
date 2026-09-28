@@ -152,13 +152,13 @@ export default async function DashboardPage() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex flex-wrap items-end gap-x-5 gap-y-2">
           <div>
-            <h1 className="flex items-center gap-2 text-[22px] font-bold tracking-tight">
+            <h1 className="flex items-center gap-2 text-t22 font-bold tracking-tight">
               {/* 이름은 user_profiles.display_name. 세션이 없는 dummy 개발에서만 역할명으로 부른다. */}
               안녕하세요, {user?.name ?? 'Chairman'}님
               <Icon name="crown" className="size-5 text-gold" filled />
             </h1>
             {/* 표시 개수는 카드 줄 머리에서 말한다. 여기서 또 세면 숨김 후 두 숫자가 어긋난다. */}
-            <p className="mt-1 text-[12px] text-ink-dim">오늘도 성공적인 하루 되세요.</p>
+            <p className="mt-1 text-t12 text-ink-dim">오늘도 성공적인 하루 되세요.</p>
           </div>
           {/* Task 9. P5-2 리뷰 1라운드로 ChairmanDdayCard(장기 프로젝트 D-day 알약)를 이 줄에서 뺐다 —
               같은 프로젝트가 바로 아래 DdayHero에 히어로 크기로 다시 뜨는데, 인사말 두 줄 아래에
@@ -171,7 +171,7 @@ export default async function DashboardPage() {
             CH-027이 붙을 때 오는 것이다. 누르면 아무 일도 없는 드롭다운 표식은
             '이 화면은 눌러도 안 된다'를 매일 가르친다. */}
         <div className="flex items-center gap-3">
-          <span className="text-[12px] text-ink-dim tnum">{today}</span>
+          <span className="text-t12 text-ink-dim tnum">{today}</span>
         </div>
       </div>
 

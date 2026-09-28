@@ -39,25 +39,25 @@ export function KpiCards({
               className="group block"
               aria-label={`${meta.label} — 손익계산서 해당 줄로`}
             >
-              <p className="flex items-center justify-between text-[11px] text-ink-dim">
+              <p className="flex items-center justify-between text-t11 text-ink-dim">
                 {meta.label}
-                <span className="text-[9.5px] text-ink-muted group-hover:text-accent">계정 보기 →</span>
+                <span className="text-t9h text-ink-muted group-hover:text-accent">계정 보기 →</span>
               </p>
-              <p className="mt-1 text-[19px] leading-tight font-semibold group-hover:underline">
+              <p className="mt-1 text-t19 leading-tight font-semibold group-hover:underline">
                 <FigureText figure={c.month} unit="eok" />
               </p>
             </Link>
-            <p className="mt-0.5 text-[11px] text-ink-muted">
+            <p className="mt-0.5 text-t11 text-ink-muted">
               전년동월{' '}
               <FigureText figure={c.yoyPct} unit="pct" compact signTone={{ upIsGood: meta.upIsGood }} />
             </p>
-            <dl className="mt-2 grid grid-cols-2 gap-1 border-t border-line-soft pt-2 text-[11px]">
+            <dl className="mt-2 grid grid-cols-2 gap-1 border-t border-line-soft pt-2 text-t11">
               <div>
-                <dt className="text-[10px] text-ink-muted">YTD</dt>
+                <dt className="text-t10 text-ink-muted">YTD</dt>
                 <dd><FigureText figure={c.ytd} unit="eok" compact /></dd>
               </div>
               <div>
-                <dt className="text-[10px] text-ink-muted">TTM</dt>
+                <dt className="text-t10 text-ink-muted">TTM</dt>
                 <dd><FigureText figure={c.ttm} unit="eok" compact /></dd>
               </div>
             </dl>
@@ -67,18 +67,18 @@ export function KpiCards({
 
       <article className="rounded-xl border border-line-soft bg-panel px-3.5 py-3">
         <Link href={hrefFor('Cash')} className="group block" aria-label="현금 — 재무상태표 해당 줄로">
-          <p className="flex items-center justify-between text-[11px] text-ink-dim">
+          <p className="flex items-center justify-between text-t11 text-ink-dim">
             현금 (월말)
-            <span className="text-[9.5px] text-ink-muted group-hover:text-accent">계정 보기 →</span>
+            <span className="text-t9h text-ink-muted group-hover:text-accent">계정 보기 →</span>
           </p>
-          <p className="mt-1 text-[19px] leading-tight font-semibold group-hover:underline">
+          <p className="mt-1 text-t19 leading-tight font-semibold group-hover:underline">
             <FigureText figure={runway.cash} unit="eok" />
           </p>
         </Link>
-        <p className="mt-0.5 text-[11px] text-ink-muted">최근 3개월 평균 순소진 기준</p>
-        <dl className="mt-2 grid grid-cols-2 gap-1 border-t border-line-soft pt-2 text-[11px]">
+        <p className="mt-0.5 text-t11 text-ink-muted">최근 3개월 평균 순소진 기준</p>
+        <dl className="mt-2 grid grid-cols-2 gap-1 border-t border-line-soft pt-2 text-t11">
           <div>
-            <dt className="text-[10px] text-ink-muted">Runway</dt>
+            <dt className="text-t10 text-ink-muted">Runway</dt>
             <dd
               className={
                 runway.status === 'burning' && runway.months && runway.months.value < 12
@@ -97,7 +97,7 @@ export function KpiCards({
           </div>
           <div>
             {/* 소진이 음수면 들어오는 돈이다. '순소진 -0.2억'을 빨갛게 쓰면 좋은 소식이 경고로 읽힌다. */}
-            <dt className="text-[10px] text-ink-muted">
+            <dt className="text-t10 text-ink-muted">
               {runway.burn && runway.burn.value < 0 ? '월 순유입' : '월 순소진'}
             </dt>
             <dd>

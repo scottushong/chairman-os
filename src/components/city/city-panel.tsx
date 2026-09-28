@@ -30,7 +30,7 @@ export function CityPanel({ item }: { item: CityItem }) {
             <img src={stageThumb} alt="" className="h-16 w-20 object-cover" />
           </span>
         ) : null}
-        <span className="absolute top-2 left-2 rounded-md bg-black/65 px-2 py-0.5 text-[11px] font-semibold text-white">
+        <span className="absolute top-2 left-2 rounded-md bg-black/65 px-2 py-0.5 text-t11 font-semibold text-white">
           {CITY_STAGE_LABEL_KO[item.stage]}
           {!lot && item.layout.stage_image ? <span className="ml-1 font-normal text-white/75">(고정)</span> : null}
         </span>
@@ -38,12 +38,12 @@ export function CityPanel({ item }: { item: CityItem }) {
 
       <div className="space-y-3 p-4">
         <div>
-          <p className="text-[11px] text-ink-muted">{lot ? '이니셔티브 · 빈 터' : '회사'}</p>
-          <h2 className="text-[17px] font-bold tracking-tight">{item.name}</h2>
+          <p className="text-t11 text-ink-muted">{lot ? '이니셔티브 · 빈 터' : '회사'}</p>
+          <h2 className="text-t17 font-bold tracking-tight">{item.name}</h2>
         </div>
 
         {lot ? (
-          <p className="text-[12px] leading-relaxed text-ink-dim">
+          <p className="text-t12 leading-relaxed text-ink-dim">
             아직 회사가 아닌 자리입니다. 회장님이 /group/edit에서 이 터를 회사로 승격하면 같은 자리에
             기초 공사가 섭니다.
           </p>
@@ -59,11 +59,11 @@ export function CityPanel({ item }: { item: CityItem }) {
             </dl>
 
             <div>
-              <p className="mb-1.5 text-[11px] font-semibold text-ink-dim">완성도는 어디서 왔나</p>
+              <p className="mb-1.5 text-t11 font-semibold text-ink-dim">완성도는 어디서 왔나</p>
               <Part label="자율성 (L ÷ 5)" weight={COMPLETION_WEIGHTS.autonomy} value={parts.autonomy} empty="평가 없음" />
               <Part label="매출 목표 달성" weight={COMPLETION_WEIGHTS.revenue} value={parts.revenue} empty="목표 없음" />
               <Part label="이양률" weight={COMPLETION_WEIGHTS.transfer} value={parts.transfer} empty="이양 계획 없음" />
-              <p className="mt-1.5 text-[10.5px] leading-relaxed text-ink-muted">
+              <p className="mt-1.5 text-t10h leading-relaxed text-ink-muted">
                 없는 항목은 0으로 넣지 않고 빼고 계산합니다. 0~25 기초 · ~60 골조 · ~90 마감 · 100 완공.
               </p>
             </div>
@@ -72,7 +72,7 @@ export function CityPanel({ item }: { item: CityItem }) {
 
         <Link
           href={item.href}
-          className="flex items-center justify-center gap-1 rounded-lg border border-line bg-raised px-3 py-2 text-[12.5px] font-semibold transition-colors hover:border-accent"
+          className="flex items-center justify-center gap-1 rounded-lg border border-line bg-raised px-3 py-2 text-t12h font-semibold transition-colors hover:border-accent"
         >
           {lot ? '이니셔티브 상세' : '회사 상세'}
           <Icon name="chevron-right" className="size-4" />
@@ -85,8 +85,8 @@ export function CityPanel({ item }: { item: CityItem }) {
 function Fact({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="rounded-lg border border-line-soft bg-raised px-2 py-2" title={hint}>
-      <dt className="text-[10.5px] text-ink-muted">{label}</dt>
-      <dd className="mt-0.5 text-[15px] font-bold tnum">{value}</dd>
+      <dt className="text-t10h text-ink-muted">{label}</dt>
+      <dd className="mt-0.5 text-t15 font-bold tnum">{value}</dd>
     </div>
   )
 }
@@ -94,7 +94,7 @@ function Fact({ label, value, hint }: { label: string; value: string; hint?: str
 function Part({ label, weight, value, empty }: { label: string; weight: number; value: number | null; empty: string }) {
   const pct = value === null ? null : Math.round(Math.min(1, Math.max(0, value)) * 100)
   return (
-    <div className="flex items-center gap-2 py-0.5 text-[11.5px]">
+    <div className="flex items-center gap-2 py-0.5 text-t11h">
       <span className="w-[108px] shrink-0 text-ink-dim">
         {label} <span className="text-ink-muted tnum">×{weight}</span>
       </span>

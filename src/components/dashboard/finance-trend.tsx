@@ -106,13 +106,13 @@ export function FinanceTrend({ kpis: all, businessIds, title, scopeNote }: Finan
   return (
     <GlassCard as="section" padding="p-3.5" className="h-full">
       <div className="flex items-baseline justify-between gap-2">
-        <h2 className="flex min-w-0 items-baseline gap-2 text-[13px] font-semibold">
+        <h2 className="flex min-w-0 items-baseline gap-2 text-t13 font-semibold">
           {title ?? '그룹 전체 재무 현황'}
-          <span className="truncate text-[11px] font-normal text-ink-muted tnum">
+          <span className="truncate text-t11 font-normal text-ink-muted tnum">
             최근 {periods.length}개월 · {scopeNote ?? `표시 중인 ${businessIds.length}개사 합계`}
           </span>
         </h2>
-        <span className="shrink-0 text-[9px] text-ink-muted tnum">CH-025~026</span>
+        <span className="shrink-0 text-t9 text-ink-muted tnum">CH-025~026</span>
       </div>
 
       {/*
@@ -129,7 +129,7 @@ export function FinanceTrend({ kpis: all, businessIds, title, scopeNote }: Finan
               type="button"
               onClick={() => selectMetric(m.metric)}
               aria-pressed={on}
-              className={`rounded-md px-2.5 py-1 text-[12px] transition-colors ${
+              className={`rounded-md px-2.5 py-1 text-t12 transition-colors ${
                 on
                   ? 'bg-accent/15 font-semibold text-accent'
                   : 'text-ink-dim hover:bg-raised hover:text-ink'
@@ -143,7 +143,7 @@ export function FinanceTrend({ kpis: all, businessIds, title, scopeNote }: Finan
 
       <div className="mt-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <p
-          className={`text-[30px] leading-none font-semibold tnum ${
+          className={`text-t30 leading-none font-semibold tnum ${
             current < 0 ? 'text-critical' : 'text-ink'
           }`}
         >
@@ -152,10 +152,10 @@ export function FinanceTrend({ kpis: all, businessIds, title, scopeNote }: Finan
         {figure ? <BasisTag basis={figure.basis} /> : null}
         {/* 네 지표 모두 오르는 게 좋은 축이라 부호와 색이 같이 간다. */}
         {delta === null ? (
-          <span className="text-[11px] text-ink-muted">전월 대비 —</span>
+          <span className="text-t11 text-ink-muted">전월 대비 —</span>
         ) : (
           <span
-            className={`flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[11px] ${
+            className={`flex items-center gap-0.5 rounded-md px-1.5 py-0.5 text-t11 ${
               delta > 0 ? 'bg-ok/15 text-ok' : 'bg-critical/15 text-critical'
             }`}
           >

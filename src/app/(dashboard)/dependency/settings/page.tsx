@@ -71,7 +71,7 @@ export default async function DependencySettingsPage() {
       >
         <Link
           href="/dependency"
-          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           의존으로
         </Link>
@@ -79,10 +79,10 @@ export default async function DependencySettingsPage() {
 
       {/* ───────── 식 ───────── */}
       <Section icon="target" title="Founder Dependency는 이렇게 셉니다 (§7)">
-        <p className="rounded-lg bg-raised px-3 py-2.5 text-[12px] leading-relaxed text-ink">
+        <p className="rounded-lg bg-raised px-3 py-2.5 text-t12 leading-relaxed text-ink">
           회장이 관여한 중요한 의사결정 ÷ 전체 중요한 의사결정 × 100
         </p>
-        <p className="mt-2 text-[11px] leading-relaxed text-ink-dim">
+        <p className="mt-2 text-t11 leading-relaxed text-ink-dim">
           목표는 {DEPENDENCY_LADDER.map((v, i) => (i === DEPENDENCY_LADDER.length - 1 ? `<${v}%` : `${v}% → `)).join('')}
           입니다. 마지막 {DEPENDENCY_TARGET}%가 §7이 적은 TARGET이고, 첫 칸 37%는 문서 §35의 예시
           화면 숫자입니다 — 이 저장소가 잰 값이 아닙니다.
@@ -91,10 +91,10 @@ export default async function DependencySettingsPage() {
 
       {/* ───────── '중요한 결정'의 정의 ───────── */}
       <Section icon="book" title="무엇을 «중요한 의사결정»으로 세는가">
-        <p className="rounded-lg bg-raised px-3 py-2.5 text-[11.5px] leading-relaxed text-ink">
+        <p className="rounded-lg bg-raised px-3 py-2.5 text-t11h leading-relaxed text-ink">
           {IMPORTANT_DECISION_RULE_KO}
         </p>
-        <p className="mt-2 text-[10.5px] leading-relaxed text-ink-muted">
+        <p className="mt-2 text-t10h leading-relaxed text-ink-muted">
           아직 처리되지 않은 결정(결재 대기)은 세지 않습니다 — «누가 정했나»가 아직 없는 건이라,
           세면 처리 전에 이미 의존도가 움직입니다.
         </p>
@@ -105,15 +105,15 @@ export default async function DependencySettingsPage() {
         <dl className="space-y-1">
           {DECIDED_BY_KIND.map((k) => (
             <div key={k} className="rounded-lg bg-raised px-3 py-2">
-              <dt className="text-[11.5px] font-semibold text-ink">{DECIDED_BY_KIND_LABEL_KO[k]}</dt>
-              <dd className="mt-0.5 text-[10.5px] leading-relaxed text-ink-muted">
+              <dt className="text-t11h font-semibold text-ink">{DECIDED_BY_KIND_LABEL_KO[k]}</dt>
+              <dd className="mt-0.5 text-t10h leading-relaxed text-ink-muted">
                 {DECIDED_BY_KIND_HINT_KO[k]}
               </dd>
             </div>
           ))}
           <div className="rounded-lg bg-raised px-3 py-2">
-            <dt className="text-[11.5px] font-semibold text-ink">비어 있음 (역산 미도달)</dt>
-            <dd className="mt-0.5 text-[10.5px] leading-relaxed text-ink-muted">
+            <dt className="text-t11h font-semibold text-ink">비어 있음 (역산 미도달)</dt>
+            <dd className="mt-0.5 text-t10h leading-relaxed text-ink-muted">
               이 셋 중 무엇인지 알아낼 근거가 없는 건입니다. **값이 아니라 «모른다»는 사실입니다.**
               분자에서도 분모에서도 빠집니다.
             </dd>
@@ -123,34 +123,34 @@ export default async function DependencySettingsPage() {
 
       {/* ───────── 역산 ───────── */}
       <Section icon="clock" title="옛 결정은 이렇게 역산했습니다" note="0033 3절과 같은 규칙">
-        <p className="text-[10.5px] leading-relaxed text-ink-muted">
+        <p className="text-t10h leading-relaxed text-ink-muted">
           0033 이전의 결정에는 «회장이 정했는가»를 말해 주는 칸이 없었습니다. 그래서 이미 남아 있는
           기록으로 되짚었고, 되짚을 수 없는 건은 비워 두었습니다.
         </p>
         <ol className="mt-2 space-y-1">
           {BACKFILL_RULES_KO.map((rule) => (
-            <li key={rule} className="rounded-lg bg-raised px-3 py-2 text-[11px] leading-relaxed text-ink-dim">
+            <li key={rule} className="rounded-lg bg-raised px-3 py-2 text-t11 leading-relaxed text-ink-dim">
               {rule}
             </li>
           ))}
         </ol>
-        <p className="mt-2 text-[10.5px] leading-relaxed text-ink-muted">{BACKFILL_UNREACHED_KO}</p>
+        <p className="mt-2 text-t10h leading-relaxed text-ink-muted">{BACKFILL_UNREACHED_KO}</p>
 
         <div className="mt-2 rounded-lg bg-raised px-3 py-2.5">
-          <p className="text-[10.5px] text-ink-dim">최근 12개월 역산 도달률</p>
+          <p className="text-t10h text-ink-dim">최근 12개월 역산 도달률</p>
           {reach === null ? (
-            <p className="mt-0.5 text-[11px] text-ink-muted">
+            <p className="mt-0.5 text-t11 text-ink-muted">
               처리된 결정이 아직 한 건도 없어 도달률을 낼 수 없습니다. (0건 중 0건)
             </p>
           ) : (
             <>
-              <p className="mt-0.5 text-[20px] font-bold leading-none text-ink tnum">{reach}%</p>
-              <p className="mt-1 text-[10.5px] text-ink-muted tnum">
+              <p className="mt-0.5 text-t20 font-bold leading-none text-ink tnum">{reach}%</p>
+              <p className="mt-1 text-t10h text-ink-muted tnum">
                 처리된 결정 {known + unknown}건 중 {known}건을 분류했고 {unknown}건은 비어 있습니다.
               </p>
             </>
           )}
-          <p className="mt-1.5 text-[10px] leading-relaxed text-ink-muted">
+          <p className="mt-1.5 text-t10 leading-relaxed text-ink-muted">
             0033 이후에 처리되는 결정은 DB가 곧바로 분류하므로, 이 비율은 시간이 지나면 저절로
             올라갑니다. 지금 낮다면 그것은 고장이 아니라 «옛 기록이 그만큼밖에 안 남아 있다»는 뜻입니다.
           </p>
@@ -162,15 +162,15 @@ export default async function DependencySettingsPage() {
         <dl className="space-y-1">
           {AUTONOMY_LEVEL.map((l) => (
             <div key={l} className="flex gap-3 rounded-lg bg-raised px-3 py-2">
-              <dt className="w-8 shrink-0 text-[12px] font-bold text-ink tnum">{l}</dt>
-              <dd className="text-[11px] leading-relaxed text-ink-dim">
+              <dt className="w-8 shrink-0 text-t12 font-bold text-ink tnum">{l}</dt>
+              <dd className="text-t11 leading-relaxed text-ink-dim">
                 {AUTONOMY_CRITERIA_KO[l]}
-                <span className="mt-0.5 block text-[10px] text-ink-muted">{AUTONOMY_TAG_EN[l]}</span>
+                <span className="mt-0.5 block text-t10 text-ink-muted">{AUTONOMY_TAG_EN[l]}</span>
               </dd>
             </div>
           ))}
         </dl>
-        <p className="mt-2 text-[10.5px] leading-relaxed text-ink-muted">
+        <p className="mt-2 text-t10h leading-relaxed text-ink-muted">
           §12의 부재 테스트가 365일을 통과하기 전에는 CEO를 진짜 L5로 보지 않습니다. 등급과 부재
           테스트는 같은 질문의 두 측면입니다.
         </p>
@@ -183,16 +183,16 @@ export default async function DependencySettingsPage() {
         ) : (
           <ul className="space-y-1">
             {missing.map((b) => (
-              <li key={b.business_id} className="rounded-lg bg-raised px-3 py-2 text-[11.5px]">
+              <li key={b.business_id} className="rounded-lg bg-raised px-3 py-2 text-t11h">
                 <Link href={`/dependency/${b.business_id}`} className="font-semibold text-ink underline-offset-2 hover:underline">
                   {b.name}
                 </Link>
-                <span className="ml-2 text-[10.5px] text-ink-muted">평가하러 가기</span>
+                <span className="ml-2 text-t10h text-ink-muted">평가하러 가기</span>
               </li>
             ))}
           </ul>
         )}
-        <p className="mt-2 text-[10px] leading-relaxed text-ink-muted">
+        <p className="mt-2 text-t10 leading-relaxed text-ink-muted">
           알림을 켜고 끄는 스위치를 두지 않았습니다. 알림을 만들어 보내는 코드가 이 저장소에 아직
           없어서(야간 Job은 블록 B가 들고 옵니다), 스위치를 두면 켜 놓고도 아무것도 오지 않습니다.
         </p>

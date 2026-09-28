@@ -68,25 +68,25 @@ export default async function CalendarPage(props: PageProps<'/calendar'>) {
       >
         <Link
           href={`/calendar?month=${shiftMonth(month, -1)}`}
-          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           지난달
         </Link>
         <Link
           href="/calendar"
-          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           이번달
         </Link>
         <Link
           href={`/calendar?month=${shiftMonth(month, 1)}`}
-          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           다음달
         </Link>
       </PageHeader>
 
-      <p className="mt-1 text-[12px] text-ink-dim tnum">
+      <p className="mt-1 text-t12 text-ink-dim tnum">
         {y}년 {Number(m)}월
       </p>
 

@@ -12,7 +12,7 @@ export function DataModeBadge() {
   return (
     <span
       title="개발용 더미 데이터입니다. 실적이 아닙니다."
-      className="flex shrink-0 items-center gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1 text-[10px] font-bold tracking-[0.08em] text-warning"
+      className="flex shrink-0 items-center gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1 text-t10 font-bold tracking-[0.08em] text-warning"
     >
       <span className="size-1.5 rounded-full bg-warning" />
       DUMMY DATA

@@ -32,7 +32,7 @@ export function InitiativeCards({
 }) {
   if (initiatives.length === 0) {
     return (
-      <p className="mt-4 rounded-xl border border-dashed border-line bg-panel p-6 text-center text-[12px] text-ink-muted">
+      <p className="mt-4 rounded-xl border border-dashed border-line bg-panel p-6 text-center text-t12 text-ink-muted">
         {hasAny ? '이 조건에 맞는 건이 없습니다.' : '아직 등록된 이니셔티브가 없습니다. 위에서 새 건을 만들어 보세요.'}
       </p>
     )
@@ -56,19 +56,19 @@ export function InitiativeCards({
                   url={i.logo_url ? logoUrls[i.logo_url] : undefined}
                 />
                 <div className="min-w-0">
-                  <p className={`truncate text-[13px] font-semibold text-ink ${dim}`}>{i.title}</p>
-                  <p className={`truncate text-[11px] text-ink-muted ${dim}`}>
+                  <p className={`truncate text-t13 font-semibold text-ink ${dim}`}>{i.title}</p>
+                  <p className={`truncate text-t11 text-ink-muted ${dim}`}>
                     {INITIATIVE_KIND_LABEL_KO[i.kind]} · {INITIATIVE_STAGE_LABEL_KO[i.stage]}
                     {i.business_id ? ` · ${nameOf.get(i.business_id) ?? i.business_id}` : ''}
                   </p>
                 </div>
               </div>
 
-              <p className={`line-clamp-2 min-h-[2.75em] flex-1 text-[12px] leading-snug text-ink-dim ${dim}`}>
+              <p className={`line-clamp-2 min-h-[2.75em] flex-1 text-t12 leading-snug text-ink-dim ${dim}`}>
                 {i.goal || '목표 없음'}
               </p>
 
-              <div className="flex items-center justify-between gap-2 text-[11px]">
+              <div className="flex items-center justify-between gap-2 text-t11">
                 {i.next_action ? (
                   <span className="truncate text-ink-dim">{i.next_action}</span>
                 ) : (
@@ -82,7 +82,7 @@ export function InitiativeCards({
               </div>
 
               {stale ? (
-                <span className="text-[10px] text-ink-muted tnum">{stalenessDays(i, today)}일째 갱신 없음</span>
+                <span className="text-t10 text-ink-muted tnum">{stalenessDays(i, today)}일째 갱신 없음</span>
               ) : null}
             </Link>
           </GlassCard>

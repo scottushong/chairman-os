@@ -58,13 +58,13 @@ export default async function BusinessFinancePage(props: PageProps<'/finance/[bu
         <BooksNav businessId={business_id} current="statements" />
         <Link
           href="/finance"
-          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           그룹 재무
         </Link>
         <Link
           href={`/business/${encodeURIComponent(business_id)}`}
-          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           회사 상세
         </Link>

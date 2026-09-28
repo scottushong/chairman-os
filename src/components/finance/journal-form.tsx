@@ -38,7 +38,7 @@ interface Row {
 const EMPTY_ROW: Row = { account_code: '', debit: '', credit: '' }
 
 const input =
-  'w-full rounded border border-line bg-panel px-2 py-1 text-[12px] text-ink outline-none focus:border-accent disabled:opacity-50'
+  'w-full rounded border border-line bg-panel px-2 py-1 text-t12 text-ink outline-none focus:border-accent disabled:opacity-50'
 
 /** '1,000,000' → 1000000. 비었거나 숫자가 아니면 0 — 합계에서만 쓴다. 저장 검증은 서버가 한다. */
 function won(value: string): number {
@@ -176,31 +176,31 @@ export function JournalForm({
   return (
     <section className="rounded-xl border border-line-soft bg-panel p-3.5" aria-label="전표 입력">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="flex items-center gap-1.5 text-[13px] font-semibold">
+        <h2 className="flex items-center gap-1.5 text-t13 font-semibold">
           <Icon name="pencil" className="size-4 text-ink-dim" />
           {correcting ? (
             <>
               정정 전표 — 원 전표 <span className="tnum">{correcting.slip_no}</span>
-              <span className="text-[11px] font-normal text-ink-muted tnum">({correcting.entry_date})</span>
+              <span className="text-t11 font-normal text-ink-muted tnum">({correcting.entry_date})</span>
             </>
           ) : (
             '전표 입력'
           )}
         </h2>
-        <p className="text-[10.5px] text-ink-muted">
+        <p className="text-t10h text-ink-muted">
           {lockedThrough ? `${lockedThrough.replace('-', '년 ')}월까지 마감 — 그 이전 날짜는 입력할 수 없습니다` : '마감된 달 없음'}
         </p>
       </div>
 
       {correcting ? (
-        <p className="mt-2 rounded-md border border-line-soft bg-raised/60 px-2.5 py-1.5 text-[11.5px] text-ink-dim">
+        <p className="mt-2 rounded-md border border-line-soft bg-raised/60 px-2.5 py-1.5 text-t11h text-ink-dim">
           원 전표는 고치지 않습니다. 저장하면 이 날짜에 ① 원 전표를 뒤집은 <b>역분개</b>와 ② 아래 내용의{' '}
           <b>정정분개</b>가 들어갑니다. 라인을 모두 비우면 역분개만 넣어 원 전표를 취소합니다.
         </p>
       ) : null}
 
       <div className={`mt-2.5 flex flex-wrap items-end gap-1.5 ${correcting ? 'hidden' : ''}`}>
-        <label className="text-[10.5px] text-ink-muted">
+        <label className="text-t10h text-ink-muted">
           템플릿 금액
           <input
             className={`${input} mt-0.5 w-32 text-right tnum`}
@@ -217,7 +217,7 @@ export function JournalForm({
             type="button"
             disabled={busy}
             onClick={() => applyTemplate(t)}
-            className="rounded-md border border-line px-2 py-1 text-[11px] text-ink-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-40"
+            className="rounded-md border border-line px-2 py-1 text-t11 text-ink-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-40"
           >
             {t.label}
           </button>
@@ -225,11 +225,11 @@ export function JournalForm({
       </div>
 
       <div className="mt-2.5 grid gap-2 md:grid-cols-[150px_1fr_1fr]">
-        <label className="text-[10.5px] text-ink-muted">
+        <label className="text-t10h text-ink-muted">
           일자
           <input type="date" className={`${input} mt-0.5`} value={date} disabled={busy} onChange={(e) => setDate(e.target.value)} />
         </label>
-        <label className="text-[10.5px] text-ink-muted">
+        <label className="text-t10h text-ink-muted">
           적요
           <input
             className={`${input} mt-0.5`}
@@ -240,7 +240,7 @@ export function JournalForm({
             onChange={(e) => setMemo(e.target.value)}
           />
         </label>
-        <label className="text-[10.5px] text-ink-muted">
+        <label className="text-t10h text-ink-muted">
           증빙 링크 (선택)
           <input
             className={`${input} mt-0.5`}
@@ -252,9 +252,9 @@ export function JournalForm({
         </label>
       </div>
 
-      <table className="mt-2.5 w-full text-[12px]">
+      <table className="mt-2.5 w-full text-t12">
         <thead>
-          <tr className="text-left text-[10.5px] text-ink-muted">
+          <tr className="text-left text-t10h text-ink-muted">
             <th className="w-8 py-1 font-normal">#</th>
             <th className="py-1 font-normal">계정</th>
             <th className="w-40 py-1 text-right font-normal">차변</th>
@@ -265,7 +265,7 @@ export function JournalForm({
         <tbody>
           {rows.map((r, i) => (
             <tr key={i} className="border-t border-line-soft">
-              <td className="py-1 text-[11px] text-ink-muted tnum">{i + 1}</td>
+              <td className="py-1 text-t11 text-ink-muted tnum">{i + 1}</td>
               <td className="py-1 pr-2">
                 <select
                   aria-label={`${i + 1}번째 줄 계정`}
@@ -313,7 +313,7 @@ export function JournalForm({
                     aria-label={`${i + 1}번째 줄 지우기`}
                     disabled={busy}
                     onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))}
-                    className="rounded px-1.5 text-[12px] text-ink-muted hover:text-critical disabled:opacity-40"
+                    className="rounded px-1.5 text-t12 text-ink-muted hover:text-critical disabled:opacity-40"
                   >
                     ×
                   </button>
@@ -328,7 +328,7 @@ export function JournalForm({
                 type="button"
                 disabled={busy}
                 onClick={() => setRows((rs) => [...rs, EMPTY_ROW])}
-                className="flex items-center gap-1 text-[11px] text-ink-dim hover:text-ink disabled:opacity-40"
+                className="flex items-center gap-1 text-t11 text-ink-dim hover:text-ink disabled:opacity-40"
               >
                 <Icon name="plus" className="size-3" />줄 추가
               </button>
@@ -345,38 +345,38 @@ export function JournalForm({
           type="button"
           onClick={submit}
           disabled={busy || locked || !(balanced || cancelOnly)}
-          className="rounded bg-accent px-3 py-1.5 text-[12px] font-semibold text-ink disabled:opacity-40"
+          className="rounded bg-accent px-3 py-1.5 text-t12 font-semibold text-ink disabled:opacity-40"
         >
           {busy ? '저장 중…' : correcting ? (cancelOnly ? '역분개만 저장 (취소)' : '정정 전표 저장') : '전표 저장'}
         </button>
         {correcting ? (
-          <Link href={correcting.doneHref} className="rounded px-2 py-1.5 text-[11.5px] text-ink-muted hover:text-ink">
+          <Link href={correcting.doneHref} className="rounded px-2 py-1.5 text-t11h text-ink-muted hover:text-ink">
             정정 그만두기
           </Link>
         ) : null}
         {locked ? (
-          <span role="alert" className="text-[11.5px] text-critical">
+          <span role="alert" className="text-t11h text-critical">
             {CLOSED_PERIOD_MESSAGE}
           </span>
         ) : cancelOnly ? (
-          <span className="text-[11.5px] text-ink-dim">라인 없음 — 원 전표를 역분개로 취소합니다.</span>
+          <span className="text-t11h text-ink-dim">라인 없음 — 원 전표를 역분개로 취소합니다.</span>
         ) : debit === 0 && credit === 0 ? (
-          <span className="text-[11.5px] text-ink-muted">금액을 입력하세요.</span>
+          <span className="text-t11h text-ink-muted">금액을 입력하세요.</span>
         ) : balanced ? (
-          <span className="text-[11.5px] text-ok">차대 일치</span>
+          <span className="text-t11h text-ok">차대 일치</span>
         ) : (
-          <span className="text-[11.5px] text-critical tnum">
+          <span className="text-t11h text-critical tnum">
             차대 불일치 — 차이 {Math.abs(debit - credit).toLocaleString('ko-KR')}원
           </span>
         )}
         {saved ? (
-          <span role="status" className="text-[11.5px] text-ink-dim">
+          <span role="status" className="text-t11h text-ink-dim">
             저장했습니다: <span className="tnum font-semibold text-ink">{saved}</span> · 잠정
           </span>
         ) : null}
       </div>
       {error ? (
-        <p role="alert" className="mt-2 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-[11.5px] text-critical">
+        <p role="alert" className="mt-2 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-t11h text-critical">
           {error}
         </p>
       ) : null}

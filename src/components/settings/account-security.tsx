@@ -20,7 +20,7 @@ import {
 export function AccountSecurity({ live }: { live: boolean }) {
   if (!live) {
     return (
-      <p className="mt-2 rounded-lg bg-raised px-3 py-2.5 text-[11px] text-ink-dim">
+      <p className="mt-2 rounded-lg bg-raised px-3 py-2.5 text-t11 text-ink-dim">
         지금은 dummy 모드라 로그인이라는 개념이 없습니다. 비밀번호 변경과 기기 로그아웃은
         실제 계정으로 접속했을 때 이 자리에 나타납니다.
       </p>
@@ -39,7 +39,7 @@ function PasswordForm() {
 
   return (
     <form action={action} className="rounded-lg bg-raised px-3 py-2.5">
-      <p className="text-[11.5px] font-semibold text-ink">비밀번호 변경</p>
+      <p className="text-t11h font-semibold text-ink">비밀번호 변경</p>
       <div className="mt-1.5 flex flex-wrap items-center gap-2">
         <input
           type="password"
@@ -62,13 +62,13 @@ function PasswordForm() {
         <button
           type="submit"
           disabled={pending}
-          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-50"
+          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-50"
         >
           {pending ? '바꾸는 중…' : '바꾸기'}
         </button>
       </div>
       <Result state={state} />
-      <p className="mt-1 text-[10px] text-ink-muted">
+      <p className="mt-1 text-t10 text-ink-muted">
         지금 비밀번호를 다시 묻지 않습니다 — 이 세션이 이미 본인 것임을 Supabase가 확인한
         상태이고, 재확인 여부는 앱이 아니라 프로젝트의 인증 설정이 정합니다.
       </p>
@@ -82,15 +82,15 @@ function OtherDevices() {
 
   return (
     <div className="rounded-lg bg-raised px-3 py-2.5">
-      <p className="text-[11.5px] font-semibold text-ink">다른 기기 모두 로그아웃</p>
-      <p className="mt-0.5 text-[10.5px] text-ink-muted">
+      <p className="text-t11h font-semibold text-ink">다른 기기 모두 로그아웃</p>
+      <p className="mt-0.5 text-t10h text-ink-muted">
         지금 보고 있는 이 창은 그대로 남고, 다른 기기·다른 브라우저의 로그인만 끊깁니다.
       </p>
       <button
         type="button"
         disabled={pending}
         onClick={() => start(async () => setState(await signOutOtherDevices()))}
-        className="mt-1.5 rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-critical hover:text-critical disabled:opacity-50"
+        className="mt-1.5 rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-critical hover:text-critical disabled:opacity-50"
       >
         {pending ? '끊는 중…' : '다른 기기 모두 로그아웃'}
       </button>
@@ -102,14 +102,14 @@ function OtherDevices() {
 function Result({ state }: { state: AccountState }) {
   if (state.error) {
     return (
-      <p role="alert" className="mt-1.5 text-[11px] text-critical">
+      <p role="alert" className="mt-1.5 text-t11 text-critical">
         {state.error}
       </p>
     )
   }
-  if (state.done) return <p className="mt-1.5 text-[11px] text-ok">{state.done}</p>
+  if (state.done) return <p className="mt-1.5 text-t11 text-ok">{state.done}</p>
   return null
 }
 
 const INPUT =
-  'w-[190px] rounded-md border border-line bg-panel px-2.5 py-1.5 text-[12px] text-ink outline-none transition-colors focus:border-accent'
+  'w-[190px] rounded-md border border-line bg-panel px-2.5 py-1.5 text-t12 text-ink outline-none transition-colors focus:border-accent'

@@ -96,13 +96,13 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
       >
         <Link
           href={`/finance/${encodeURIComponent(id)}`}
-          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           재무제표
         </Link>
         <Link
           href="/"
-          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           대시보드로
         </Link>
@@ -112,7 +112,7 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
         {/* 이 회사 숫자가 어느 층에서 왔는가. 둘 다 없으면 줄을 그리지 않는다 —
             "기준: 없음"은 회장에게 아무것도 말해 주지 않는다. */}
         {basis ? (
-          <p className="flex items-center gap-1.5 rounded-md border border-line-soft bg-panel px-3 py-1.5 text-[11.5px] text-ink-dim">
+          <p className="flex items-center gap-1.5 rounded-md border border-line-soft bg-panel px-3 py-1.5 text-t11h text-ink-dim">
             <Icon name="file-text" className="size-3.5 shrink-0 text-ink-muted" />
             {basis}
           </p>
@@ -228,15 +228,15 @@ function Card({
   return (
     <section className={`${className} rounded-xl border border-line-soft bg-panel p-3.5`}>
       <div className="flex items-baseline justify-between">
-        <h2 className="flex items-center gap-1.5 text-[13px] font-semibold">
+        <h2 className="flex items-center gap-1.5 text-t13 font-semibold">
           <Icon name={icon} className="size-4 text-ink-dim" />
           {title}
-          <span className="text-[11px] font-normal text-ink-muted tnum">{count}건</span>
+          <span className="text-t11 font-normal text-ink-muted tnum">{count}건</span>
         </h2>
         {more ? (
           <Link
             href={more.href}
-            className="text-[11px] text-ink-muted transition-colors hover:text-ink"
+            className="text-t11 text-ink-muted transition-colors hover:text-ink"
           >
             {more.label}
           </Link>
@@ -244,7 +244,7 @@ function Card({
       </div>
 
       {count === 0 ? (
-        <p className="py-6 text-center text-[12px] text-ink-muted">{empty}</p>
+        <p className="py-6 text-center text-t12 text-ink-muted">{empty}</p>
       ) : (
         <ul className="mt-2 space-y-1">{children}</ul>
       )}
@@ -257,9 +257,9 @@ function ProjectItem({ project }: { project: Project }) {
   return (
     <li className="rounded-lg px-1.5 py-1.5 transition-colors hover:bg-raised/60">
       <div className="flex items-center gap-1.5">
-        <p className="min-w-0 flex-1 truncate text-[12.5px] font-semibold">{project.name}</p>
+        <p className="min-w-0 flex-1 truncate text-t12h font-semibold">{project.name}</p>
         <span
-          className={`shrink-0 text-[11px] font-semibold tnum ${
+          className={`shrink-0 text-t11 font-semibold tnum ${
             overdue ? 'text-critical' : 'text-ink-dim'
           }`}
         >
@@ -270,10 +270,10 @@ function ProjectItem({ project }: { project: Project }) {
         <div className="h-1 flex-1 overflow-hidden rounded-full bg-raised">
           <div className="h-full rounded-full bg-accent" style={{ width: `${project.progress_pct}%` }} />
         </div>
-        <span className="shrink-0 text-[10.5px] text-ink-muted tnum">
+        <span className="shrink-0 text-t10h text-ink-muted tnum">
           {formatPct(project.progress_pct)}
         </span>
-        <span className="shrink-0 text-[10.5px] text-ink-muted">{project.owner}</span>
+        <span className="shrink-0 text-t10h text-ink-muted">{project.owner}</span>
       </div>
     </li>
   )
@@ -283,20 +283,20 @@ function TaskItem({ task, projectName }: { task: Task; projectName: string }) {
   return (
     <li className="rounded-lg px-1.5 py-1.5 transition-colors hover:bg-raised/60">
       <div className="flex items-center gap-1.5">
-        <p className="min-w-0 flex-1 truncate text-[12.5px] font-semibold">{task.title}</p>
+        <p className="min-w-0 flex-1 truncate text-t12h font-semibold">{task.title}</p>
         {/* CH-017로 올라가 있는 업무는 표식을 준다. 회장 화면에 이미 떠 있다는 뜻이다. */}
         {task.chairman_needed && task.status !== 'Done' ? (
           <Icon name="crown" className="size-3.5 shrink-0 text-gold" filled />
         ) : null}
         <span
-          className={`shrink-0 rounded bg-raised px-1.5 py-0.5 text-[10px] ${
+          className={`shrink-0 rounded bg-raised px-1.5 py-0.5 text-t10 ${
             task.status === 'Blocked' ? 'text-critical' : 'text-ink-muted'
           }`}
         >
           {TASK_STATUS_LABEL_KO[task.status]}
         </span>
       </div>
-      <p className="mt-0.5 truncate text-[10.5px] text-ink-muted">
+      <p className="mt-0.5 truncate text-t10h text-ink-muted">
         {projectName} · {task.owner} · {formatDDay(task.deadline)}
       </p>
     </li>
@@ -308,16 +308,16 @@ function DecisionItem({ decision }: { decision: Decision }) {
   return (
     <li className="rounded-lg px-1.5 py-1.5 transition-colors hover:bg-raised/60">
       <div className="flex items-center gap-1.5">
-        <p className="min-w-0 flex-1 truncate text-[12.5px] font-semibold">{decision.title}</p>
+        <p className="min-w-0 flex-1 truncate text-t12h font-semibold">{decision.title}</p>
         <span
-          className={`shrink-0 text-[11px] font-semibold ${
+          className={`shrink-0 text-t11 font-semibold ${
             open && dDay(decision.deadline) < 0 ? 'text-critical' : 'text-ink-dim'
           }`}
         >
           {open ? formatDDay(decision.deadline) : DECISION_STATUS_LABEL_KO[decision.status]}
         </span>
       </div>
-      <p className="mt-0.5 text-[10.5px] text-ink-muted">
+      <p className="mt-0.5 text-t10h text-ink-muted">
         {WORK_PRIORITY_LABEL_KO[decision.impact]} · {decision.ai_recommendation || '추천 없음'}
       </p>
     </li>
@@ -335,12 +335,12 @@ function AlertItem({ alert }: { alert: Alert }) {
   return (
     <li className="rounded-lg px-1.5 py-1.5 transition-colors hover:bg-raised/60">
       <div className="flex items-center gap-1.5">
-        <span className={`shrink-0 text-[10px] font-semibold ${SEVERITY_TONE[alert.severity]}`}>
+        <span className={`shrink-0 text-t10 font-semibold ${SEVERITY_TONE[alert.severity]}`}>
           {SEVERITY_LABEL_KO[alert.severity]}
         </span>
-        <p className="min-w-0 flex-1 truncate text-[12.5px]">{alert.message}</p>
+        <p className="min-w-0 flex-1 truncate text-t12h">{alert.message}</p>
       </div>
-      <p className="mt-0.5 text-[10.5px] text-ink-muted">
+      <p className="mt-0.5 text-t10h text-ink-muted">
         {alert.category} · {alert.source === 'AI' ? 'AI 탐지' : '룰 탐지'}
       </p>
     </li>

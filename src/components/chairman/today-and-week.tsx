@@ -48,20 +48,20 @@ export function TodayAndWeek({
     >
       {todayItems.length > 0 ? (
         <div>
-          <h2 className="text-[13px] font-semibold">오늘</h2>
+          <h2 className="text-t13 font-semibold">오늘</h2>
           <ul className="mt-2 space-y-1.5">
             {todayItems.map((it) => (
               <li key={`${it.kind}-${it.source_id}`} className="flex items-center gap-2">
                 <Link
                   href={it.href}
-                  className="block min-w-0 flex-1 truncate text-[12.5px] text-ink-dim hover:text-ink hover:underline"
+                  className="block min-w-0 flex-1 truncate text-t12h text-ink-dim hover:text-ink hover:underline"
                 >
                   <span className="text-ink-muted">{CALENDAR_ITEM_LABEL_KO[it.kind]}</span> · {it.title}
                 </Link>
                 {it.kind === 'event' && videoRooms[it.source_id] ? (
                   <Link
                     href={`/meet?room=${videoRooms[it.source_id]}`}
-                    className="shrink-0 rounded bg-accent px-2 py-0.5 text-[11px] font-semibold text-white"
+                    className="shrink-0 rounded bg-accent px-2 py-0.5 text-t11 font-semibold text-white"
                   >
                     화상
                   </Link>
@@ -74,7 +74,7 @@ export function TodayAndWeek({
 
       {orderedUpcoming.length > 0 ? (
         <div>
-          <h2 className="text-[13px] font-semibold">이번 주 행동</h2>
+          <h2 className="text-t13 font-semibold">이번 주 행동</h2>
           <ul className="mt-2 space-y-1.5">
             {orderedUpcoming.map((i) => {
               const clock = initiativeClock(i, today)
@@ -82,7 +82,7 @@ export function TodayAndWeek({
                 <li key={i.initiative_id}>
                   <Link
                     href={`/initiatives/${i.initiative_id}`}
-                    className="flex items-baseline gap-2 text-[12.5px] hover:underline"
+                    className="flex items-baseline gap-2 text-t12h hover:underline"
                   >
                     <span className="min-w-0 flex-1 truncate text-ink-dim">{i.title}</span>
                     {clock ? (
@@ -102,7 +102,7 @@ export function TodayAndWeek({
 
       {stale.length > 0 ? (
         <div>
-          <h2 className="text-[13px] font-semibold">멈춰 있는 건</h2>
+          <h2 className="text-t13 font-semibold">멈춰 있는 건</h2>
           <ul className="mt-2 space-y-1.5">
             {stale.map((i) => {
               const clock = initiativeClock(i, today)
@@ -110,7 +110,7 @@ export function TodayAndWeek({
                 <li key={i.initiative_id}>
                   <Link
                     href={`/initiatives/${i.initiative_id}`}
-                    className="flex items-baseline gap-2 text-[12.5px] hover:underline"
+                    className="flex items-baseline gap-2 text-t12h hover:underline"
                   >
                     {/* 흐리게는 제목·부가 문구에만. D-day 배지·정체 일수는 조상에서 opacity를 물려받지 않는다. */}
                     <span className="min-w-0 flex-1 truncate text-ink-dim opacity-55">{i.title}</span>

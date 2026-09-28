@@ -53,13 +53,13 @@ export function TriageButtons({
           disabled={busy !== null}
           title={EXCEPTION_TRIAGE_EFFECT_KO[action]}
           onClick={() => run(action)}
-          className="rounded-md border border-line px-2 py-1 text-[10.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-40"
+          className="rounded-md border border-line px-2 py-1 text-t10h text-ink-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-40"
         >
           {busy === action ? '기록 중…' : EXCEPTION_TRIAGE_LABEL_KO[action]}
         </button>
       ))}
       {error ? (
-        <span role="alert" className="text-[10.5px] leading-relaxed text-critical">
+        <span role="alert" className="text-t10h leading-relaxed text-critical">
           {error}
         </span>
       ) : null}

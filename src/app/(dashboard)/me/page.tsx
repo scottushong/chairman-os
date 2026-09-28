@@ -77,7 +77,7 @@ export default async function MePage({ searchParams }: PageProps<'/me'>) {
 
   return (
     <div className="mx-auto max-w-[720px] px-4 py-4">
-      <h1 className="text-[18px] font-bold tracking-tight">{tr(lang, `${user?.name ?? ''}님의 홈`, `${user?.display_name_en ?? user?.name ?? ''}’s home`)}</h1>
+      <h1 className="text-t18 font-bold tracking-tight">{tr(lang, `${user?.name ?? ''}님의 홈`, `${user?.display_name_en ?? user?.name ?? ''}’s home`)}</h1>
       <NoticeStrip notices={notices} today={today} lang={lang} />
       <InstallHint lang={lang} />
 
@@ -88,13 +88,13 @@ export default async function MePage({ searchParams }: PageProps<'/me'>) {
             key={t.key}
             href={`/me?tab=${t.key}`}
             aria-current={tab === t.key ? 'page' : undefined}
-            className={`shrink-0 rounded-lg px-3 py-1.5 text-[12.5px] font-semibold ${tab === t.key ? 'bg-accent text-white' : 'border border-line bg-raised'}`}
+            className={`shrink-0 rounded-lg px-3 py-1.5 text-t12h font-semibold ${tab === t.key ? 'bg-accent text-white' : 'border border-line bg-raised'}`}
           >
             {t.label}
             {t.badge ? <span className="ml-1 tnum">{t.badge}</span> : null}
           </Link>
         ))}
-        <Link href="/chat" className="shrink-0 rounded-lg border border-line bg-raised px-3 py-1.5 text-[12.5px] font-semibold">
+        <Link href="/chat" className="shrink-0 rounded-lg border border-line bg-raised px-3 py-1.5 text-t12h font-semibold">
           {tr(lang, '채팅', 'Chat')}
         </Link>
       </nav>
@@ -102,14 +102,14 @@ export default async function MePage({ searchParams }: PageProps<'/me'>) {
       <section className="glass mt-3 rounded-glass p-3">
         {tab === 'tasks' ? (
           myTasks.length === 0 ? (
-            <p className="py-6 text-center text-[12.5px] text-ink-muted">{tr(lang, '맡은 열린 업무가 없습니다.', 'No open tasks.')}</p>
+            <p className="py-6 text-center text-t12h text-ink-muted">{tr(lang, '맡은 열린 업무가 없습니다.', 'No open tasks.')}</p>
           ) : (
             <ul className="divide-y divide-line-soft">
               {myTasks.map((t) => (
                 <li key={t.task_id}>
-                  <Link href={`/tasks/${t.task_id}`} className="flex items-baseline gap-2 py-2.5 text-[13px]">
+                  <Link href={`/tasks/${t.task_id}`} className="flex items-baseline gap-2 py-2.5 text-t13">
                     <span className="min-w-0 flex-1 truncate">{t.title}</span>
-                    <span className={`shrink-0 text-[11px] tnum ${t.deadline && t.deadline < today ? 'font-semibold text-critical' : 'text-ink-muted'}`}>
+                    <span className={`shrink-0 text-t11 tnum ${t.deadline && t.deadline < today ? 'font-semibold text-critical' : 'text-ink-muted'}`}>
                       {TASK_STATUS_LABEL_KO[t.status]}
                       {t.deadline ? ` · ${t.deadline.slice(5)}` : ''}
                     </span>
@@ -132,18 +132,18 @@ export default async function MePage({ searchParams }: PageProps<'/me'>) {
             />
           ) : (
             <>
-              <Link href="/me?tab=requests&new=1" className="mb-2 block rounded-lg bg-accent px-3 py-3 text-center text-[14px] font-semibold text-white">
+              <Link href="/me?tab=requests&new=1" className="mb-2 block rounded-lg bg-accent px-3 py-3 text-center text-t14 font-semibold text-white">
                 + {tr(lang, '요청 올리기', 'New request')}
               </Link>
               {myRequests.length === 0 ? (
-                <p className="py-4 text-center text-[12.5px] text-ink-muted">{tr(lang, '올린 요청이 없습니다.', 'No requests yet.')}</p>
+                <p className="py-4 text-center text-t12h text-ink-muted">{tr(lang, '올린 요청이 없습니다.', 'No requests yet.')}</p>
               ) : (
                 <ul className="divide-y divide-line-soft">
                   {myRequests.map((d) => (
                     <li key={d.decision_id}>
-                      <Link href={`/approvals?id=${d.decision_id}`} className="flex items-baseline gap-2 py-2.5 text-[13px]">
+                      <Link href={`/approvals?id=${d.decision_id}`} className="flex items-baseline gap-2 py-2.5 text-t13">
                         <span className="min-w-0 flex-1 truncate">{d.title}</span>
-                        <span className="shrink-0 text-[11px] font-semibold text-ink-dim">{requestState(d, lang)}</span>
+                        <span className="shrink-0 text-t11 font-semibold text-ink-dim">{requestState(d, lang)}</span>
                       </Link>
                     </li>
                   ))}
@@ -155,20 +155,20 @@ export default async function MePage({ searchParams }: PageProps<'/me'>) {
 
         {tab === 'team' ? (
           <div className="space-y-3">
-            <Link href="/chat" className="block rounded-lg border border-line bg-raised px-3 py-2 text-[12.5px] font-semibold">
+            <Link href="/chat" className="block rounded-lg border border-line bg-raised px-3 py-2 text-t12h font-semibold">
               💬 {tr(lang, '팀 채팅방으로', 'Open team chat')}
             </Link>
             <div>
-              <p className="mb-1 text-[11px] font-semibold text-ink-muted">{tr(lang, '팀 문서', 'Team documents')}</p>
+              <p className="mb-1 text-t11 font-semibold text-ink-muted">{tr(lang, '팀 문서', 'Team documents')}</p>
               {documents.length === 0 ? (
-                <p className="text-[12px] text-ink-muted">{tr(lang, '볼 수 있는 문서가 없습니다.', 'No documents.')}</p>
+                <p className="text-t12 text-ink-muted">{tr(lang, '볼 수 있는 문서가 없습니다.', 'No documents.')}</p>
               ) : (
                 <ul className="divide-y divide-line-soft">
                   {documents.slice(0, 15).map((d) => (
                     <li key={d.document_id}>
-                      <Link href={`/documents/${encodeURIComponent(d.document_id)}`} className="block truncate py-2 text-[12.5px]">
+                      <Link href={`/documents/${encodeURIComponent(d.document_id)}`} className="block truncate py-2 text-t12h">
                         {d.title}
-                        {d.version > 1 ? <span className="ml-1 text-[10.5px] text-ink-muted">v{d.version}</span> : null}
+                        {d.version > 1 ? <span className="ml-1 text-t10h text-ink-muted">v{d.version}</span> : null}
                       </Link>
                     </li>
                   ))}

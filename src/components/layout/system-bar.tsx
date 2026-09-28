@@ -24,7 +24,7 @@ export function SystemBar() {
           key={s.key}
           href={navHref(s)}
           className={[
-            'flex items-center gap-2 rounded-md px-3.5 py-1.5 text-[12px] transition-colors hover:bg-raised hover:text-ink',
+            'flex items-center gap-2 rounded-md px-3.5 py-1.5 text-t12 transition-colors hover:bg-raised hover:text-ink',
             // 아직 주소가 없는 칸은 글자를 한 단계 죽인다. 사이드바의 준비 중 항목과 같은 규칙이다.
             s.ready ? 'text-ink-dim' : 'text-ink-dim opacity-60',
           ].join(' ')}

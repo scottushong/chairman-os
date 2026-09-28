@@ -93,10 +93,10 @@ export function SidebarMenuForm({
           className="mt-0.5 size-3.5 shrink-0 accent-[var(--color-accent)]"
         />
         <span>
-          <span className="block text-[12px] font-semibold text-ink">
+          <span className="block text-t12 font-semibold text-ink">
             준비 중 항목을 기본으로 숨기기
           </span>
-          <span className="mt-0.5 block text-[10.5px] text-ink-muted">
+          <span className="mt-0.5 block text-t10h text-ink-muted">
             아직 화면이 없는 메뉴를 한 번에 감춥니다. 켜 두는 동안 준비 중 항목은 아래에서
             따로 켤 수 없고(줄이 흐려집니다), 이 스위치를 끄면 개별로 고른 설정이 그대로
             살아납니다 — 이 스위치가 그 설정을 지우지는 않습니다.
@@ -108,7 +108,7 @@ export function SidebarMenuForm({
         {groups.map((g, i) => (
           <div key={g.title || `g${i}`}>
             {g.title ? (
-              <p className="mb-1 px-1 text-[10px] font-semibold tracking-[0.12em] text-ink-muted">
+              <p className="mb-1 px-1 text-t10 font-semibold tracking-[0.12em] text-ink-muted">
                 {g.title.toUpperCase()}
               </p>
             ) : null}
@@ -127,11 +127,11 @@ export function SidebarMenuForm({
                         className="size-3.5 shrink-0 accent-[var(--color-accent)]"
                       />
                       <Icon name={row.icon} className="size-4 shrink-0 text-ink-muted" />
-                      <span className={`text-[12.5px] ${off ? 'text-ink-muted' : 'text-ink'}`}>
+                      <span className={`text-t12h ${off ? 'text-ink-muted' : 'text-ink'}`}>
                         {row.label}
                       </span>
                       {!row.ready ? (
-                        <span className="ml-auto rounded bg-raised px-1.5 py-0.5 text-[9.5px] text-ink-muted">
+                        <span className="ml-auto rounded bg-raised px-1.5 py-0.5 text-t9h text-ink-muted">
                           {notReady && !checked.includes(row.key) ? '준비 중 · 기본 숨김' : '준비 중'}
                         </span>
                       ) : null}
@@ -144,12 +144,12 @@ export function SidebarMenuForm({
         ))}
       </div>
 
-      <p className="mt-3 text-[10.5px] text-ink-muted">
+      <p className="mt-3 text-t10h text-ink-muted">
         지금 보고 있는 화면의 메뉴는 숨겨 두어도 사이드바에 남습니다 — 길을 잃지 않게 하기
         위해서입니다. 저장은 고르는 즉시 됩니다.
       </p>
       {error ? (
-        <p role="alert" className="mt-1.5 text-[11.5px] text-critical">
+        <p role="alert" className="mt-1.5 text-t11h text-critical">
           {error}
         </p>
       ) : null}

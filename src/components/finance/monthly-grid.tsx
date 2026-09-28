@@ -152,7 +152,7 @@ export function MonthlyGrid({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[11px] text-ink-muted">항목 숨김:</span>
+        <span className="text-t11 text-ink-muted">항목 숨김:</span>
         {allRows.map((r) => (
           <button
             key={r.key}
@@ -166,7 +166,7 @@ export function MonthlyGrid({
               })
             }
             aria-pressed={hidden.has(r.key)}
-            className={`rounded px-1.5 py-0.5 text-[10.5px] transition-colors ${
+            className={`rounded px-1.5 py-0.5 text-t10h transition-colors ${
               hidden.has(r.key)
                 ? 'bg-raised text-ink-muted line-through'
                 : 'bg-accent/10 text-ink-dim hover:text-ink'
@@ -176,11 +176,11 @@ export function MonthlyGrid({
           </button>
         ))}
         {/* 숨김은 화면 설정이지 계정 삭제가 아니다. 숨긴 항목은 저장에도 빠진다. */}
-        <span className="text-[10.5px] text-ink-muted">— 숨긴 항목은 저장에서도 빠집니다.</span>
+        <span className="text-t10h text-ink-muted">— 숨긴 항목은 저장에서도 빠집니다.</span>
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-line">
-        <table className="w-full border-collapse text-[11.5px]">
+        <table className="w-full border-collapse text-t11h">
           <thead>
             <tr className="border-b border-line bg-panel">
               {/* 첫 열은 폭을 못 박는다. 좁으면 '현금잔액 월말잔액'이 세 줄로 깨진다. */}
@@ -204,7 +204,7 @@ export function MonthlyGrid({
                   >
                     {m.slice(5)}월
                     {locked ? (
-                      <span className="block text-[9px] font-normal text-ok">확정</span>
+                      <span className="block text-t9 font-normal text-ok">확정</span>
                     ) : null}
                   </th>
                 )
@@ -218,7 +218,7 @@ export function MonthlyGrid({
                   {r.label}
                   {!r.flow ? (
                     // 잔액 항목이라는 사실을 적는다. 발생액과 잔액을 섞어 넣으면 전표가 어긋난다.
-                    <span className="ml-1 text-[9.5px] text-ink-muted">월말잔액</span>
+                    <span className="ml-1 text-t9h text-ink-muted">월말잔액</span>
                   ) : null}
                 </td>
                 {months.map((m) => {
@@ -250,7 +250,7 @@ export function MonthlyGrid({
 
       {/* 미분류 차액 — 저장 전에 보여 준다. 숨기면 회장이 자기 숫자가 안 맞는 걸 모른다. */}
       {dirtyMonths.some((p) => p.residual !== 0) ? (
-        <div className="rounded-md bg-warning/10 px-3 py-2 text-[11.5px] text-warning">
+        <div className="rounded-md bg-warning/10 px-3 py-2 text-t11h text-warning">
           <p className="flex items-center gap-1.5 font-semibold">
             <Icon name="shield" className="size-3.5 shrink-0" />
             숫자가 서로 맞지 않는 달이 있습니다 — 그만큼 미분류로 들어갑니다.
@@ -264,30 +264,30 @@ export function MonthlyGrid({
                 </li>
               ))}
           </ul>
-          <p className="mt-1 text-[10.5px]">
+          <p className="mt-1 text-t10h">
             매출·비용의 상대는 현금·매출채권·매입채무입니다. 그 셋을 채우면 차액이 줄어듭니다.
           </p>
         </div>
       ) : null}
 
       {notice ? (
-        <p className="rounded-md bg-raised px-3 py-2 text-[11.5px] text-ink-dim">{notice}</p>
+        <p className="rounded-md bg-raised px-3 py-2 text-t11h text-ink-dim">{notice}</p>
       ) : null}
       {error ? (
-        <p className="rounded-md bg-critical/10 px-3 py-2 text-[12px] text-critical">{error}</p>
+        <p className="rounded-md bg-critical/10 px-3 py-2 text-t12 text-critical">{error}</p>
       ) : null}
-      {result ? <p className="rounded-md bg-ok/10 px-3 py-2 text-[12px] text-ok">{result}</p> : null}
+      {result ? <p className="rounded-md bg-ok/10 px-3 py-2 text-t12 text-ok">{result}</p> : null}
 
       <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={submit}
           disabled={!canEdit || pending || dirtyMonths.length === 0}
-          className="rounded-md bg-accent px-4 py-2 text-[12.5px] font-semibold text-app transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-md bg-accent px-4 py-2 text-t12h font-semibold text-app transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
         >
           {pending ? '저장 중…' : `${dirtyMonths.length}개월 전표로 넣기`}
         </button>
-        <span className="text-[11px] text-ink-muted">
+        <span className="text-t11 text-ink-muted">
           저장하면 달마다 요약 전표가 <strong className="font-semibold">잠정</strong>으로 들어갑니다. 마감은
           전표 화면의 월 마감 버튼이 합니다.
         </span>

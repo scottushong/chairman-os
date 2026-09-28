@@ -1,6 +1,10 @@
+import { MobileTabs } from '@/components/layout/mobile-tabs'
+import { NavDrawer } from '@/components/layout/nav-drawer'
 import { RailSidebar } from '@/components/layout/rail-sidebar'
+import { Sidebar } from '@/components/layout/sidebar'
 import { TimezoneBeacon } from '@/components/settings/timezone-beacon'
 import { currentUser } from '@/lib/auth/session'
+import { loadUiPrefs } from '@/lib/ui-prefs-server'
 
 /**
  * 아침 루틴(/ai) 전용 셸. (dashboard) 셸의 형제다 — 그쪽은 한 줄도 건드리지 않았다.
@@ -25,14 +29,20 @@ import { currentUser } from '@/lib/auth/session'
  * currentUser()는 요청 단위로 캐시되므로 page.tsx가 다시 불러도 왕복이 늘지 않는다.
  */
 export default async function MorningLayout({ children }: LayoutProps<'/'>) {
-  const user = await currentUser()
+  const [user, prefs] = await Promise.all([currentUser(), loadUiPrefs()])
 
   return (
-    <div data-theme="dark" className="flex h-full">
+    <div data-theme="dark" className="safe-x flex h-full">
       {/* (dashboard) 셸과 같은 이유로 여기에도 선다 — 회장이 아침에 여는 화면이 /ai라
           이 셸을 빼면 ①이 며칠씩 낡은 값으로 남는다(Phase 3-C 현지 시간). */}
       <TimezoneBeacon />
-      <RailSidebar user={user} />
+      {/* 폰 · 태블릿(1024px 미만)은 레일 대신 (dashboard)와 같은 하단 탭 + 서랍 — 레일 76px가 폰 폭의 1/5을 먹었다. */}
+      <div className="hidden lg:flex">
+        <RailSidebar user={user} />
+      </div>
+      <NavDrawer>
+        <Sidebar user={user} prefs={prefs.sidebar} drawer />
+      </NavDrawer>
       {/* 세로 칸을 한 겹 둔다. 지금은 main 하나뿐이지만 (dashboard)와 같은 골격이라야
           나중에 이 셸에 바가 붙을 때 자리가 분명하고, 그때 아래 높이 계산도 여기서부터 다시 센다. */}
       <div className="flex min-w-0 flex-1 flex-col">
@@ -42,9 +52,11 @@ export default async function MorningLayout({ children }: LayoutProps<'/'>) {
          * 이 요소의 높이를 기준으로 붙잡힌다. 이 셸에는 헤더도 푸터도 없으므로
          * 지금 <main>의 높이는 100vh 그대로다 — /ai의 max-h-[calc(100vh-2rem)]이 그 숫자다.
          * **이 칸 위아래에 바를 하나라도 붙이면 그 높이만큼 page.tsx의 max-h도 같이 줄여야 한다.**
+         * 하단 탭(MobileTabs)은 1024px 미만에서만 선다 — 그 폭에서 /ai는 한 줄(세로)이라 sticky가 없다.
          * 안 줄이면 sticky 칸이 <main>보다 커져 스크롤 끝에서 조용히 고정이 풀린다.
          */}
         <main className="flex-1 overflow-y-auto">{children}</main>
+        <MobileTabs />
       </div>
     </div>
   )

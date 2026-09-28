@@ -44,7 +44,7 @@ export function RevokeButton({
 
   if (error) {
     return (
-      <span role="alert" className="text-[10.5px] text-critical">
+      <span role="alert" className="text-t10h text-critical">
         {error}
       </span>
     )
@@ -56,7 +56,7 @@ export function RevokeButton({
         type="button"
         onClick={() => setArmed(true)}
         aria-label={`${label} 권한 회수`}
-        className="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[10.5px] text-ink-muted transition-colors hover:border-critical/50 hover:text-critical"
+        className="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-t10h text-ink-muted transition-colors hover:border-critical/50 hover:text-critical"
       >
         <Icon name="user-minus" className="size-3" />
         {kind === 'account' ? '권한 회수' : '초대 취소'}
@@ -71,7 +71,7 @@ export function RevokeButton({
         onClick={confirm}
         disabled={busy}
         aria-label={`${label} 권한 회수 확인`}
-        className="rounded-md bg-critical/20 px-2 py-1 text-[10.5px] font-semibold text-critical transition-opacity disabled:opacity-40"
+        className="rounded-md bg-critical/20 px-2 py-1 text-t10h font-semibold text-critical transition-opacity disabled:opacity-40"
       >
         {busy ? '회수 중…' : '정말로 회수'}
       </button>
@@ -79,7 +79,7 @@ export function RevokeButton({
         type="button"
         onClick={() => setArmed(false)}
         disabled={busy}
-        className="rounded-md px-1.5 py-1 text-[10.5px] text-ink-muted transition-colors hover:text-ink disabled:opacity-40"
+        className="rounded-md px-1.5 py-1 text-t10h text-ink-muted transition-colors hover:text-ink disabled:opacity-40"
       >
         취소
       </button>

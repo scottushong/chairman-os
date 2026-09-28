@@ -35,16 +35,16 @@ export function AiNightPanel({ outputs, businesses }: AiNightPanelProps) {
   return (
     <GlassCard as="section" padding="p-3.5" className="flex h-full flex-col">
       <div className="flex items-baseline justify-between">
-        <h2 className="flex items-center gap-1.5 text-[13px] font-semibold">
+        <h2 className="flex items-center gap-1.5 text-t13 font-semibold">
           <Icon name="sparkles" className="size-4 text-gold" />
           AI Did Last Night
-          <span className="text-[11px] font-normal text-ink-muted tnum">{items.length}건</span>
+          <span className="text-t11 font-normal text-ink-muted tnum">{items.length}건</span>
         </h2>
-        <Link href="/ai" className="text-[10px] text-ink-muted transition-colors hover:text-ink">
+        <Link href="/ai" className="text-t10 text-ink-muted transition-colors hover:text-ink">
           전문 보기
         </Link>
       </div>
-      <p className="mt-0.5 text-[11px] text-ink-muted tnum">
+      <p className="mt-0.5 text-t11 text-ink-muted tnum">
         마지막 실행 {lastRun ? formatRunTime(lastRun) : '—'}
       </p>
 
@@ -84,17 +84,17 @@ function NightItem({ item, businesses }: { item: AiNightOutput; businesses: Busi
     <>
       <div className="flex items-center gap-1.5">
         <span
-          className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold ${
+          className={`shrink-0 rounded px-1.5 py-0.5 text-t9 font-semibold ${
             isGroup ? 'bg-accent-soft text-gold' : 'bg-raised text-ink-dim'
           }`}
         >
           {item.job_type}
         </span>
-        <span className="truncate text-[11px] text-ink-muted">
+        <span className="truncate text-t11 text-ink-muted">
           {outputName(businesses, item.business_id)}
         </span>
         {item.status !== 'Done' ? (
-          <span className={`shrink-0 text-[9px] ${failed ? 'text-critical' : 'text-warning'}`}>
+          <span className={`shrink-0 text-t9 ${failed ? 'text-critical' : 'text-warning'}`}>
             {failed ? '실패' : '진행 중'}
           </span>
         ) : null}
@@ -102,7 +102,7 @@ function NightItem({ item, businesses }: { item: AiNightOutput; businesses: Busi
         {failed ? null : (
           <span
             title="AI 신뢰도"
-            className={`ml-auto shrink-0 text-[11px] font-semibold tnum ${
+            className={`ml-auto shrink-0 text-t11 font-semibold tnum ${
               low ? 'text-ink-muted' : 'text-ink'
             }`}
           >
@@ -112,14 +112,14 @@ function NightItem({ item, businesses }: { item: AiNightOutput; businesses: Busi
       </div>
 
       <p
-        className={`mt-0.5 line-clamp-2 text-[12px] leading-snug ${
+        className={`mt-0.5 line-clamp-2 text-t12 leading-snug ${
           failed ? 'text-ink-muted' : 'text-ink-dim'
         }`}
       >
         {item.result_summary}
       </p>
 
-      <p className="mt-0.5 flex items-center gap-1 text-[10px] text-ink-muted tnum">
+      <p className="mt-0.5 flex items-center gap-1 text-t10 text-ink-muted tnum">
         {formatRunTime(item.completed_at)}
         <Icon name="file-text" className="size-3" />
         {kind !== 'none' ? '결과물 열기' : `결과물 경로 ${item.artifact_link || '없음'}`}

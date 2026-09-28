@@ -134,9 +134,9 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
 
       <div className="mt-4 grid grid-cols-1 items-start gap-3 lg:grid-cols-[250px_minmax(0,1fr)]">
       {/* 폴더 트리(회사 > 팀 > 폴더). 폴더를 누르면 하위 폴더의 문서까지 보인다. */}
-      <aside className="rounded-xl border border-line-soft bg-panel px-3 py-3 text-[12px]" aria-label="폴더">
+      <aside className="rounded-xl border border-line-soft bg-panel px-3 py-3 text-t12" aria-label="폴더">
         <div className="mb-1.5 flex items-center justify-between">
-          <span className="text-[11px] font-semibold text-ink-dim">폴더</span>
+          <span className="text-t11 font-semibold text-ink-dim">폴더</span>
           <FolderCreate
             businesses={businesses.map((b) => ({ id: b.business_id, name: b.name }))}
             teams={teams.map((t) => ({ id: t.team_id, business_id: t.business_id, name: t.name }))}
@@ -152,10 +152,10 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
           if (tree.length === 0) return null
           return (
             <div key={b.business_id} className="mt-2">
-              <p className="px-1.5 text-[11px] font-semibold text-ink-muted">{b.name}</p>
+              <p className="px-1.5 text-t11 font-semibold text-ink-muted">{b.name}</p>
               {tree.map((node) => (
                 <div key={node.team?.team_id ?? 'loose'} className="ml-1.5">
-                  {node.team ? <p className="px-1.5 text-[10.5px] text-ink-muted">{node.team.name}</p> : null}
+                  {node.team ? <p className="px-1.5 text-t10h text-ink-muted">{node.team.name}</p> : null}
                   <FolderLinks nodes={node.folders} active={folderFilter} tag={tagFilter} q={q} />
                 </div>
               ))}
@@ -165,13 +165,13 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
 
         {allTags.length > 0 ? (
           <div className="mt-3 border-t border-line-soft pt-2">
-            <span className="text-[11px] font-semibold text-ink-dim">태그</span>
+            <span className="text-t11 font-semibold text-ink-dim">태그</span>
             <div className="mt-1 flex flex-wrap gap-1">
               {allTags.map((t) => (
                 <Link
                   key={t}
                   href={withParams(BASE, { folder: folderFilter ? String(folderFilter) : undefined, tag: tagFilter === t ? undefined : t })}
-                  className={`rounded px-1.5 py-0.5 text-[10.5px] ${tagFilter === t ? 'bg-accent text-white' : 'bg-raised text-ink-dim hover:text-ink'}`}
+                  className={`rounded px-1.5 py-0.5 text-t10h ${tagFilter === t ? 'bg-accent text-white' : 'bg-raised text-ink-dim hover:text-ink'}`}
                 >
                   #{t}
                 </Link>
@@ -190,9 +190,9 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
             name="q"
             defaultValue={q}
             placeholder="제목 · 태그 검색"
-            className="w-full rounded-md border border-line bg-raised px-2.5 py-1.5 text-[12px]"
+            className="w-full rounded-md border border-line bg-raised px-2.5 py-1.5 text-t12"
           />
-          <button type="submit" className="shrink-0 rounded-md border border-line bg-raised px-3 py-1.5 text-[12px]">
+          <button type="submit" className="shrink-0 rounded-md border border-line bg-raised px-3 py-1.5 text-t12">
             검색
           </button>
         </form>
@@ -203,7 +203,7 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
       <div className="mt-3 rounded-xl border border-line-soft bg-panel">
         {shown.length === 0 ? (
           <div className="px-4 py-10 text-center">
-            <p className="text-[12.5px] text-ink-muted">
+            <p className="text-t12h text-ink-muted">
               {allDocuments.length === 0
                 ? '등록된 문서가 없습니다. 오른쪽 위 «링크 등록»으로 첫 문서를 올립니다.'
                 : '조건에 맞는 문서가 없습니다.'}
@@ -213,7 +213,7 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[880px] border-collapse">
               <thead>
-                <tr className="text-[10px] tracking-[0.08em] text-ink-muted">
+                <tr className="text-t10 tracking-[0.08em] text-ink-muted">
                   <th className="px-3 py-2 text-left font-semibold">문서</th>
                   <th className="px-3 py-2 text-left font-semibold">소속</th>
                   <th className="px-3 py-2 text-left font-semibold">유형</th>
@@ -243,7 +243,7 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
         )}
       </div>
 
-      <p className="mt-3 pb-6 text-[11px] text-ink-dim">
+      <p className="mt-3 pb-6 text-t11 text-ink-dim">
         {shown.length}건 표시 중. 열람 등급이 모자란 문서는 이 목록에 오지 않는다 — 필터를
         Vault로 놓아도 없는 것이 보이지는 않는다(0002 documents_read).
       </p>
@@ -290,42 +290,42 @@ function DocumentRow({
             목록 줄에 공유를 달지 않은 이유는 그 화면 주석에 적었다. */}
         <Link
           href={`/documents/${encodeURIComponent(doc.document_id)}`}
-          className="text-[12.5px] leading-snug font-semibold transition-colors hover:text-accent"
+          className="text-t12h leading-snug font-semibold transition-colors hover:text-accent"
         >
           {doc.title}
         </Link>
-        <p className="mt-0.5 text-[10px] text-ink-muted tnum">
+        <p className="mt-0.5 text-t10 text-ink-muted tnum">
           {doc.document_id}
           {folderPath ? <span className="ml-1.5">📁 {folderPath}</span> : null}
         </p>
         {doc.tags && doc.tags.length > 0 ? (
           <p className="mt-0.5 flex flex-wrap gap-1">
             {doc.tags.map((t) => (
-              <Link key={t} href={withParams(BASE, { tag: t })} className="rounded bg-raised px-1 text-[10px] text-ink-dim hover:text-ink">
+              <Link key={t} href={withParams(BASE, { tag: t })} className="rounded bg-raised px-1 text-t10 text-ink-dim hover:text-ink">
                 #{t}
               </Link>
             ))}
           </p>
         ) : null}
       </td>
-      <td className="px-3 py-2 text-[11.5px] text-ink-dim">{scopeName}</td>
-      <td className="px-3 py-2 text-[11.5px] text-ink-dim">{doc.doc_type}</td>
+      <td className="px-3 py-2 text-t11h text-ink-dim">{scopeName}</td>
+      <td className="px-3 py-2 text-t11h text-ink-dim">{doc.doc_type}</td>
       <td className="px-3 py-2">
         <span
-          className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${CLASS_TONE[doc.security_class]}`}
+          className={`rounded px-1.5 py-0.5 text-t10 font-semibold ${CLASS_TONE[doc.security_class]}`}
         >
           {SECURITY_CLASS_LABEL_KO[doc.security_class]}
         </span>
       </td>
-      <td className="px-3 py-2 text-right text-[11.5px] text-ink-dim tnum">
+      <td className="px-3 py-2 text-right text-t11h text-ink-dim tnum">
         v{doc.version}
         {previous ? (
-          <Link href={`/documents/${encodeURIComponent(previous.document_id)}`} className="block text-[10px] text-ink-muted hover:text-ink hover:underline">
+          <Link href={`/documents/${encodeURIComponent(previous.document_id)}`} className="block text-t10 text-ink-muted hover:text-ink hover:underline">
             ← v{previous.version}
           </Link>
         ) : null}
       </td>
-      <td className="px-3 py-2 text-[11px] text-ink-muted tnum">
+      <td className="px-3 py-2 text-t11 text-ink-muted tnum">
         {formatDateTime(doc.created_at)}
         <span className="block text-ink-muted">{doc.uploaded_by}</span>
       </td>
@@ -337,7 +337,7 @@ function DocumentRow({
           target="_blank"
           rel="noreferrer noopener"
           title={doc.storage_url}
-          className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-t11 text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           <Icon name="file-text" className="size-3.5" />
           열기

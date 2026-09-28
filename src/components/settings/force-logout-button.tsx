@@ -27,19 +27,19 @@ export function ForceLogoutButton({ userId, label }: { userId: string; label: st
 
   if (error) {
     return (
-      <span role="alert" className="text-[10.5px] text-critical">
+      <span role="alert" className="text-t10h text-critical">
         {error}
       </span>
     )
   }
-  if (state === 'done') return <span className="text-[10.5px] text-ok">모든 기기에서 로그아웃했습니다</span>
+  if (state === 'done') return <span className="text-t10h text-ok">모든 기기에서 로그아웃했습니다</span>
   if (state === 'idle') {
     return (
       <button
         type="button"
         onClick={() => setState('armed')}
         aria-label={`${label} 모든 기기 로그아웃`}
-        className="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[10.5px] text-ink-muted transition-colors hover:border-warning/50 hover:text-warning"
+        className="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-t10h text-ink-muted transition-colors hover:border-warning/50 hover:text-warning"
       >
         <Icon name="log-out" className="size-3" />
         모든 기기 로그아웃
@@ -53,7 +53,7 @@ export function ForceLogoutButton({ userId, label }: { userId: string; label: st
         onClick={confirm}
         disabled={state === 'busy'}
         aria-label={`${label} 모든 기기 로그아웃 확인`}
-        className="rounded-md bg-warning/20 px-2 py-1 text-[10.5px] font-semibold text-warning transition-opacity disabled:opacity-40"
+        className="rounded-md bg-warning/20 px-2 py-1 text-t10h font-semibold text-warning transition-opacity disabled:opacity-40"
       >
         {state === 'busy' ? '처리 중…' : '정말로 로그아웃'}
       </button>
@@ -61,7 +61,7 @@ export function ForceLogoutButton({ userId, label }: { userId: string; label: st
         type="button"
         onClick={() => setState('idle')}
         disabled={state === 'busy'}
-        className="rounded-md px-1.5 py-1 text-[10.5px] text-ink-muted transition-colors hover:text-ink disabled:opacity-40"
+        className="rounded-md px-1.5 py-1 text-t10h text-ink-muted transition-colors hover:text-ink disabled:opacity-40"
       >
         취소
       </button>

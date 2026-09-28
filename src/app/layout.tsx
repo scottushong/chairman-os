@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Noto_Serif_KR } from 'next/font/google'
 
 import './globals.css'
@@ -25,6 +25,16 @@ export const metadata: Metadata = {
   // Phase 6-2 PWA — iOS는 manifest 아이콘을 안 읽고 apple-touch-icon을 본다.
   icons: { apple: '/icons/apple-touch-icon.png' },
   appleWebApp: { capable: true, title: 'Chairman OS', statusBarStyle: 'black-translucent' },
+}
+
+/**
+ * 모바일 전면 점검(2026-09-28). viewport-fit=cover로 노치 · 홈바 밑까지 화면을 깔고, 셸이 safe-area만큼 물러선다
+ * (globals.css safe-*). 확대는 막지 않는다 — 글자를 키워 보는 것은 읽는 사람의 권리다.
+ */
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
 }
 
 /**

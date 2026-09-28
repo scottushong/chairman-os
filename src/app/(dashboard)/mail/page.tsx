@@ -103,13 +103,13 @@ export default async function MailPage({ searchParams }: PageProps<'/mail'>) {
       </PageHeader>
 
       {notice ? (
-        <p className={`mt-3 rounded-lg border px-3 py-2 text-[12px] ${notice.tone === 'ok' ? 'border-ok/40 bg-raised' : 'border-warning/50 bg-raised'}`}>
+        <p className={`mt-3 rounded-lg border px-3 py-2 text-t12 ${notice.tone === 'ok' ? 'border-ok/40 bg-raised' : 'border-warning/50 bg-raised'}`}>
           {notice.ko}
         </p>
       ) : null}
 
       {result.state === 'unconfigured' || (!googleConfig() && DATA_MODE !== 'dummy') ? (
-        <section className="glass mt-4 rounded-glass p-5 text-[12.5px] leading-relaxed text-ink-dim">
+        <section className="glass mt-4 rounded-glass p-5 text-t12h leading-relaxed text-ink-dim">
           <p className="font-semibold text-ink">Google OAuth 설정이 아직 없습니다.</p>
           <p className="mt-1">
             환경변수 <code>GOOGLE_CLIENT_ID</code> · <code>GOOGLE_CLIENT_SECRET</code>를 넣으면 이 자리에 «Gmail 연결» 버튼이
@@ -118,36 +118,36 @@ export default async function MailPage({ searchParams }: PageProps<'/mail'>) {
           </p>
         </section>
       ) : result.state === 'disconnected' ? (
-        <section className="glass mt-4 rounded-glass p-5 text-[12.5px] text-ink-dim">
+        <section className="glass mt-4 rounded-glass p-5 text-t12h text-ink-dim">
           <p className="font-semibold text-ink">Gmail이 연결되어 있지 않습니다.</p>
           <p className="mt-1">읽기 전용으로 연결합니다. 보내기 · 수정 권한은 요청하지 않습니다.</p>
           {/* 라우트 핸들러로 가는 전체 이동이다(OAuth 리디렉션) — next/link가 아니다. */}
-          <a href="/api/google/auth" className="mt-3 inline-block rounded-lg bg-accent px-3 py-2 text-[12.5px] font-semibold text-white">
+          <a href="/api/google/auth" className="mt-3 inline-block rounded-lg bg-accent px-3 py-2 text-t12h font-semibold text-white">
             Gmail 연결
           </a>
         </section>
       ) : result.state === 'error' ? (
-        <section className="glass mt-4 rounded-glass p-5 text-[12.5px] text-ink-dim">
+        <section className="glass mt-4 rounded-glass p-5 text-t12h text-ink-dim">
           <p className="font-semibold text-ink">메일을 읽지 못했습니다.</p>
           <p className="mt-1 text-ink-muted">사유: {result.reason}</p>
-          <a href="/api/google/auth" className="mt-3 inline-block text-[12px] underline">다시 연결</a>
+          <a href="/api/google/auth" className="mt-3 inline-block text-t12 underline">다시 연결</a>
         </section>
       ) : (
         <section className="glass mt-4 rounded-glass p-4">
           <div className="mb-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <h2 className="text-[13.5px] font-semibold">오늘 받은 메일 {summary.count}통</h2>
-            <span className="text-[12px] text-ink-dim">
+            <h2 className="text-t13h font-semibold">오늘 받은 메일 {summary.count}통</h2>
+            <span className="text-t12 text-ink-dim">
               중요 발신자(키맨) <span className="font-semibold text-ink">{summary.keyman}</span>통
             </span>
-            <span className="ml-auto text-[11px] text-ink-muted">{result.email}</span>
+            <span className="ml-auto text-t11 text-ink-muted">{result.email}</span>
           </div>
           {keymanEmails.size === 0 ? (
-            <p className="mb-2 rounded-md bg-raised px-2.5 py-1.5 text-[11px] text-ink-dim">
+            <p className="mb-2 rounded-md bg-raised px-2.5 py-1.5 text-t11 text-ink-dim">
               키맨에 이메일이 한 명도 없어 «중요 발신자»를 셀 수 없습니다. 회사 · 이니셔티브의 키맨 칸에 이메일을 넣어 주세요.
             </p>
           ) : null}
           {ordered.length === 0 ? (
-            <p className="py-4 text-center text-[12px] text-ink-muted">오늘 받은 메일이 없습니다.</p>
+            <p className="py-4 text-center text-t12 text-ink-muted">오늘 받은 메일이 없습니다.</p>
           ) : (
             <ul className="divide-y divide-line-soft">
               {ordered.map((m) => {
@@ -155,12 +155,12 @@ export default async function MailPage({ searchParams }: PageProps<'/mail'>) {
                 return (
                   <li key={m.id}>
                     <a href={m.url} target="_blank" rel="noreferrer noopener" className="flex items-baseline gap-3 py-2 hover:text-accent">
-                      <span className="w-12 shrink-0 text-[11px] text-ink-muted tnum">{time.format(new Date(m.receivedAt))}</span>
-                      <span className="w-[180px] shrink-0 truncate text-[12px]">
-                        {keyman ? <span className="mr-1 rounded bg-gold/20 px-1 text-[10px] font-semibold text-gold">키맨</span> : null}
+                      <span className="w-12 shrink-0 text-t11 text-ink-muted tnum">{time.format(new Date(m.receivedAt))}</span>
+                      <span className="w-[180px] shrink-0 truncate text-t12">
+                        {keyman ? <span className="mr-1 rounded bg-gold/20 px-1 text-t10 font-semibold text-gold">키맨</span> : null}
                         {m.from}
                       </span>
-                      <span className={`min-w-0 flex-1 truncate text-[12.5px] ${keyman ? 'font-semibold' : ''}`}>{m.subject}</span>
+                      <span className={`min-w-0 flex-1 truncate text-t12h ${keyman ? 'font-semibold' : ''}`}>{m.subject}</span>
                     </a>
                   </li>
                 )

@@ -30,14 +30,14 @@ export function FolderCreate({
 
   if (!open) {
     return (
-      <button type="button" onClick={() => setOpen(true)} className="text-[11px] text-ink-dim hover:text-ink hover:underline">
+      <button type="button" onClick={() => setOpen(true)} className="text-t11 text-ink-dim hover:text-ink hover:underline">
         + 폴더
       </button>
     )
   }
 
   const parentFolder = folders.find((f) => String(f.folder_id) === parent)
-  const input = 'w-full rounded-md border border-line bg-panel px-2 py-1 text-[11.5px]'
+  const input = 'w-full rounded-md border border-line bg-panel px-2 py-1 text-t11h'
 
   function submit() {
     setError(null)
@@ -97,7 +97,7 @@ export function FolderCreate({
       )}
       <input value={name} onChange={(e) => setName(e.target.value)} placeholder="폴더 이름" className={input} />
       {error ? (
-        <p role="alert" className="text-[11px] text-critical">
+        <p role="alert" className="text-t11 text-critical">
           {error}
         </p>
       ) : null}
@@ -106,11 +106,11 @@ export function FolderCreate({
           type="button"
           onClick={submit}
           disabled={pending || !name.trim()}
-          className="rounded-md bg-accent px-2 py-1 text-[11px] font-semibold text-white disabled:opacity-40"
+          className="rounded-md bg-accent px-2 py-1 text-t11 font-semibold text-white disabled:opacity-40"
         >
           만들기
         </button>
-        <button type="button" onClick={() => setOpen(false)} className="rounded-md border border-line px-2 py-1 text-[11px] text-ink-dim">
+        <button type="button" onClick={() => setOpen(false)} className="rounded-md border border-line px-2 py-1 text-t11 text-ink-dim">
           취소
         </button>
       </div>

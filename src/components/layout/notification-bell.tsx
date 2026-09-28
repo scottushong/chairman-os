@@ -80,7 +80,7 @@ export function NotificationBell({
         {/* 0건일 때는 뱃지를 아예 그리지 않는다. '0'이 적힌 동그라미는 읽는 순간
             "뭔가 있나?"로 한 번 더 보게 만든다 — 없는 것은 없는 모양이어야 한다. */}
         {unread > 0 ? (
-          <span className="absolute top-0.5 right-0.5 flex min-w-4 items-center justify-center rounded-full bg-critical px-1 text-[9px] font-bold text-white tnum">
+          <span className="absolute top-0.5 right-0.5 flex min-w-4 items-center justify-center rounded-full bg-critical px-1 text-t9 font-bold text-white tnum">
             {unread > 99 ? '99+' : unread}
           </span>
         ) : null}
@@ -89,13 +89,13 @@ export function NotificationBell({
       {open ? (
         <div className="absolute top-full right-0 z-30 mt-1 w-[320px] rounded-xl border border-line-soft bg-panel p-2 shadow-lg">
           <div className="flex items-baseline justify-between px-1.5 pb-1.5">
-            <span className="text-[12px] font-semibold">알림</span>
+            <span className="text-t12 font-semibold">알림</span>
             {unreadIds.length > 0 ? (
               <button
                 type="button"
                 onClick={markAll}
                 disabled={pending}
-                className="rounded px-1.5 py-0.5 text-[10.5px] text-ink-dim transition-colors hover:bg-raised hover:text-ink disabled:opacity-50"
+                className="rounded px-1.5 py-0.5 text-t10h text-ink-dim transition-colors hover:bg-raised hover:text-ink disabled:opacity-50"
               >
                 {pending ? '표시하는 중…' : '모두 읽음으로'}
               </button>
@@ -103,7 +103,7 @@ export function NotificationBell({
           </div>
 
           {items.length === 0 ? (
-            <p className="px-1.5 py-6 text-center text-[11.5px] text-ink-muted">
+            <p className="px-1.5 py-6 text-center text-t11h text-ink-muted">
               새 알림이 없습니다.
             </p>
           ) : (
@@ -120,7 +120,7 @@ export function NotificationBell({
             <Link
               href="/settings"
               onClick={() => setOpen(false)}
-              className="block rounded px-1.5 py-1 text-[10.5px] text-ink-dim transition-colors hover:bg-raised hover:text-ink"
+              className="block rounded px-1.5 py-1 text-t10h text-ink-dim transition-colors hover:bg-raised hover:text-ink"
             >
               알림 설정
             </Link>
@@ -143,13 +143,13 @@ function NotificationRow({
     <>
       <span className="flex items-baseline gap-1.5">
         {n.read_at === null ? <span className="size-1.5 shrink-0 rounded-full bg-accent" /> : null}
-        <span className="text-[11.5px] font-semibold text-ink">{n.title}</span>
-        <span className="ml-auto shrink-0 text-[9.5px] text-ink-muted">
+        <span className="text-t11h font-semibold text-ink">{n.title}</span>
+        <span className="ml-auto shrink-0 text-t9h text-ink-muted">
           {NOTIFICATION_KIND_LABEL_KO[n.kind]}
         </span>
       </span>
-      {n.body ? <span className="mt-0.5 block text-[10.5px] text-ink-dim">{n.body}</span> : null}
-      <span className="mt-0.5 block text-[9.5px] text-ink-muted tnum">
+      {n.body ? <span className="mt-0.5 block text-t10h text-ink-dim">{n.body}</span> : null}
+      <span className="mt-0.5 block text-t9h text-ink-muted tnum">
         {formatDateTime(n.created_at)}
       </span>
     </>

@@ -39,7 +39,7 @@ export function CloseMonth({ businessId, period }: { businessId: string; period:
   return (
     <div className="flex flex-col items-end gap-1">
       {confirming ? (
-        <div className="flex items-center gap-1.5 rounded-md border border-warning/50 bg-warning/10 px-2 py-1 text-[11.5px] text-warning">
+        <div className="flex items-center gap-1.5 rounded-md border border-warning/50 bg-warning/10 px-2 py-1 text-t11h text-warning">
           <span>
             {y}년 {label}을 마감합니다. 해제할 수 없고, 이후엔 정정 전표로만 바로잡습니다.
           </span>
@@ -47,7 +47,7 @@ export function CloseMonth({ businessId, period }: { businessId: string; period:
             type="button"
             onClick={close}
             disabled={busy}
-            className="rounded bg-warning px-2 py-0.5 text-[11px] font-semibold text-ink disabled:opacity-40"
+            className="rounded bg-warning px-2 py-0.5 text-t11 font-semibold text-ink disabled:opacity-40"
           >
             {busy ? '마감 중…' : '마감 확정'}
           </button>
@@ -55,7 +55,7 @@ export function CloseMonth({ businessId, period }: { businessId: string; period:
             type="button"
             onClick={() => setConfirming(false)}
             disabled={busy}
-            className="rounded px-1.5 py-0.5 text-[11px] text-ink-dim hover:text-ink disabled:opacity-40"
+            className="rounded px-1.5 py-0.5 text-t11 text-ink-dim hover:text-ink disabled:opacity-40"
           >
             취소
           </button>
@@ -68,18 +68,18 @@ export function CloseMonth({ businessId, period }: { businessId: string; period:
             setDone(null)
             setConfirming(true)
           }}
-          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] font-semibold text-ink transition-colors hover:border-accent"
+          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h font-semibold text-ink transition-colors hover:border-accent"
         >
           {label} 마감
         </button>
       )}
       {error ? (
-        <p role="alert" className="text-[11px] text-critical">
+        <p role="alert" className="text-t11 text-critical">
           {error}
         </p>
       ) : null}
       {done ? (
-        <p role="status" className="text-[11px] text-ink-dim">
+        <p role="status" className="text-t11 text-ink-dim">
           {done}
         </p>
       ) : null}

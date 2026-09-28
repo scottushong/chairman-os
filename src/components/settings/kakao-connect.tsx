@@ -103,7 +103,7 @@ export function KakaoConnect({
   return (
     <div>
       {banner ? (
-        <p role="status" className={`mb-2 text-[11.5px] ${tone(banner.tone)}`}>
+        <p role="status" className={`mb-2 text-t11h ${tone(banner.tone)}`}>
           {banner.text}
         </p>
       ) : null}
@@ -111,23 +111,23 @@ export function KakaoConnect({
       <div className="flex flex-wrap items-center gap-2">
         {healthy ? (
           <>
-            <span className="flex items-center gap-1.5 text-[12px] text-ok">
+            <span className="flex items-center gap-1.5 text-t12 text-ok">
               연결됨
             </span>
-            <span className="text-[11px] text-ink-muted tnum">
+            <span className="text-t11 text-ink-muted tnum">
               {formatDay(connection!.refresh_expires_at)}까지
             </span>
             <button
               type="button"
               onClick={test}
               disabled={sending}
-              className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink disabled:cursor-wait disabled:opacity-60"
+              className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink disabled:cursor-wait disabled:opacity-60"
             >
               {sending ? '보내는 중…' : '테스트 발송'}
             </button>
             <a
               href="/api/kakao/auth"
-              className="text-[11px] text-ink-muted underline-offset-2 hover:text-ink hover:underline"
+              className="text-t11 text-ink-muted underline-offset-2 hover:text-ink hover:underline"
             >
               다시 연결
             </a>
@@ -135,13 +135,13 @@ export function KakaoConnect({
         ) : (
           <>
             {connection ? (
-              <span className={`text-[12px] ${tone('warn')}`}>
+              <span className={`text-t12 ${tone('warn')}`}>
                 {expired ? '연결이 만료됐습니다.' : '메시지 전송 동의가 없습니다.'}
               </span>
             ) : null}
             <a
               href="/api/kakao/auth"
-              className="rounded-md bg-accent px-3 py-1.5 text-[12px] font-semibold text-app transition-opacity hover:opacity-90"
+              className="rounded-md bg-accent px-3 py-1.5 text-t12 font-semibold text-app transition-opacity hover:opacity-90"
             >
               {connection ? '다시 연결' : '카카오 연결'}
             </a>
@@ -149,7 +149,7 @@ export function KakaoConnect({
         )}
 
         {result ? (
-          <span role="status" className={`text-[11.5px] ${tone(result.tone)}`}>
+          <span role="status" className={`text-t11h ${tone(result.tone)}`}>
             {result.text}
           </span>
         ) : null}

@@ -103,10 +103,10 @@ export function EventPanel({
   return (
     <section className="rounded-xl border border-line-soft bg-panel p-4">
       <div className="flex items-baseline justify-between">
-        <h2 className="flex items-center gap-1.5 text-[13px] font-semibold">
+        <h2 className="flex items-center gap-1.5 text-t13 font-semibold">
           <Icon name="calendar" className="size-4 text-ink-dim" />
           일정
-          <span className="text-[11px] font-normal text-ink-muted tnum">{list.length}건</span>
+          <span className="text-t11 font-normal text-ink-muted tnum">{list.length}건</span>
         </h2>
         {canEdit && !draft ? (
           <button
@@ -115,7 +115,7 @@ export function EventPanel({
               setError(null)
               setDraft(EMPTY)
             }}
-            className="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+            className="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-t11 text-ink-dim transition-colors hover:border-accent hover:text-ink"
           >
             <Icon name="plus" className="size-3" />
             추가
@@ -124,7 +124,7 @@ export function EventPanel({
       </div>
 
       {error ? (
-        <p role="alert" className="mt-2.5 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-[11.5px] text-critical">
+        <p role="alert" className="mt-2.5 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-t11h text-critical">
           {error}
         </p>
       ) : null}
@@ -132,12 +132,12 @@ export function EventPanel({
       {draft ? (
         <div className="mt-2.5 grid gap-2 rounded-lg bg-raised/60 p-2.5 md:grid-cols-5">
           <Field label="제목" value={draft.title} onChange={(title) => setDraft({ ...draft, title })} maxLength={500} />
-          <label className="block text-[10px] font-semibold tracking-[0.08em] text-ink-muted">
+          <label className="block text-t10 font-semibold tracking-[0.08em] text-ink-muted">
             종류
             <select
               value={draft.kind}
               onChange={(e) => setDraft({ ...draft, kind: e.target.value as EventKind })}
-              className="mt-1 w-full rounded-md border border-line bg-panel px-2 py-1.5 text-[12px] font-normal text-ink outline-none focus:border-accent"
+              className="mt-1 w-full rounded-md border border-line bg-panel px-2 py-1.5 text-t12 font-normal text-ink outline-none focus:border-accent"
             >
               {EVENT_KIND.map((k) => (
                 <option key={k} value={k}>
@@ -162,12 +162,12 @@ export function EventPanel({
           {/* 출장일 때만 묻는다. 이 칸이 비면 아침 알림의 ②(출장 시간대)는 건너뛴다 —
               '뉴욕'이라는 장소 문자열에서 시간대를 추측하지 않는다(0029 2절). */}
           {draft.kind === 'Trip' ? (
-            <label className="block text-[10px] font-semibold tracking-[0.08em] text-ink-muted">
+            <label className="block text-t10 font-semibold tracking-[0.08em] text-ink-muted">
               현지 시간대
               <select
                 value={draft.timezone}
                 onChange={(e) => setDraft({ ...draft, timezone: e.target.value })}
-                className="mt-1 w-full rounded-md border border-line bg-panel px-2 py-1.5 text-[12px] font-normal text-ink outline-none focus:border-accent"
+                className="mt-1 w-full rounded-md border border-line bg-panel px-2 py-1.5 text-t12 font-normal text-ink outline-none focus:border-accent"
               >
                 <option value="">정하지 않음</option>
                 {BRIEF_TIMEZONE_OPTIONS.map((t) => (
@@ -183,7 +183,7 @@ export function EventPanel({
               type="button"
               onClick={submit}
               disabled={busy}
-              className="rounded bg-accent px-2 py-1 text-[11px] font-semibold text-ink disabled:opacity-40"
+              className="rounded bg-accent px-2 py-1 text-t11 font-semibold text-ink disabled:opacity-40"
             >
               {busy ? '저장 중…' : '저장'}
             </button>
@@ -191,7 +191,7 @@ export function EventPanel({
               type="button"
               onClick={() => setDraft(null)}
               disabled={busy}
-              className="rounded px-2 py-1 text-[11px] text-ink-muted hover:text-ink disabled:opacity-40"
+              className="rounded px-2 py-1 text-t11 text-ink-muted hover:text-ink disabled:opacity-40"
             >
               취소
             </button>
@@ -200,7 +200,7 @@ export function EventPanel({
       ) : null}
 
       {sorted.length === 0 && !draft ? (
-        <p className="py-5 text-center text-[12px] text-ink-muted">
+        <p className="py-5 text-center text-t12 text-ink-muted">
           등록된 일정이 없습니다.
           {canEdit ? '' : ' 등록은 회장 / 그룹 CFO만 할 수 있습니다.'}
         </p>
@@ -209,13 +209,13 @@ export function EventPanel({
           {sorted.map((e) => (
             <li key={e.event_id} className="flex items-center gap-3 py-2">
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[12.5px] font-semibold">
+                <p className="truncate text-t12h font-semibold">
                   {e.title}
-                  <span className="ml-1.5 text-[11px] font-normal text-ink-muted">{EVENT_KIND_LABEL_KO[e.kind]}</span>
+                  <span className="ml-1.5 text-t11 font-normal text-ink-muted">{EVENT_KIND_LABEL_KO[e.kind]}</span>
                 </p>
-                {e.location ? <p className="truncate text-[11px] text-ink-muted">{e.location}</p> : null}
+                {e.location ? <p className="truncate text-t11 text-ink-muted">{e.location}</p> : null}
               </div>
-              <span className="shrink-0 text-[11px] text-ink-dim tnum">
+              <span className="shrink-0 text-t11 text-ink-dim tnum">
                 {e.starts_on}
                 {e.ends_on && e.ends_on !== e.starts_on ? ` ~ ${e.ends_on}` : ''}
               </span>
@@ -225,7 +225,7 @@ export function EventPanel({
                   aria-label={`${e.title} 지우기`}
                   onClick={() => remove(e)}
                   disabled={busy}
-                  className="shrink-0 rounded px-1 text-[11px] text-ink-muted hover:text-critical disabled:opacity-40"
+                  className="shrink-0 rounded px-1 text-t11 text-ink-muted hover:text-critical disabled:opacity-40"
                 >
                   삭제
                 </button>
@@ -254,7 +254,7 @@ function Field({
   maxLength?: number
 }) {
   return (
-    <label className="block text-[10px] font-semibold tracking-[0.08em] text-ink-muted">
+    <label className="block text-t10 font-semibold tracking-[0.08em] text-ink-muted">
       {label}
       <input
         type={type}
@@ -262,7 +262,7 @@ function Field({
         placeholder={placeholder}
         maxLength={maxLength}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded-md border border-line bg-panel px-2 py-1.5 text-[12px] font-normal text-ink outline-none placeholder:text-ink-muted focus:border-accent"
+        className="mt-1 w-full rounded-md border border-line bg-panel px-2 py-1.5 text-t12 font-normal text-ink outline-none placeholder:text-ink-muted focus:border-accent"
       />
     </label>
   )

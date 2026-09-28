@@ -70,7 +70,7 @@ export default async function JournalPage(props: PageProps<'/finance/[business_i
         <BooksNav businessId={business_id} current="journal" />
         <Link
           href="/finance"
-          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           그룹 재무
         </Link>
@@ -107,7 +107,7 @@ export default async function JournalPage(props: PageProps<'/finance/[business_i
 
         <section className="rounded-xl border border-line-soft bg-panel p-3.5">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line-soft pb-2">
-            <p className="text-[12px]">
+            <p className="text-t12">
               <span className="font-semibold">{period.replace('-', '년 ')}월</span>{' '}
               <span className="text-ink-muted">
                 · 전표 <span className="tnum">{slips.length}</span>장 · {locked ? '마감됨 (확정)' : '마감 전 (잠정)'}
@@ -126,7 +126,7 @@ export default async function JournalPage(props: PageProps<'/finance/[business_i
               bookkeeper && s.own && s.correction?.kind !== 'reversal' && s.corrected_by.length === 0 ? (
                 <Link
                   href={withParams(basePath, { month: period === today.slice(0, 7) ? undefined : period, correct: s.slip_no })}
-                  className="rounded border border-line px-1.5 py-0.5 text-[11px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+                  className="rounded border border-line px-1.5 py-0.5 text-t11 text-ink-dim transition-colors hover:border-accent hover:text-ink"
                 >
                   정정
                 </Link>

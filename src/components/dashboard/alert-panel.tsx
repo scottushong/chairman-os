@@ -48,25 +48,25 @@ export function AlertPanel({ alerts, decisions, businesses }: AlertPanelProps) {
   return (
     <GlassCard as="section" padding="p-3.5" className="flex h-full flex-col">
       <div className="flex items-baseline justify-between">
-        <h2 className="flex items-center gap-1.5 text-[13px] font-semibold">
+        <h2 className="flex items-center gap-1.5 text-t13 font-semibold">
           <Icon
             name="bell"
             className={`size-4 ${critical.length > 0 ? 'text-critical' : 'text-ink-dim'}`}
           />
           알림 / 리스크
-          <span className="text-[11px] font-normal text-ink-muted tnum">
+          <span className="text-t11 font-normal text-ink-muted tnum">
             {critical.length}건
           </span>
         </h2>
-        <span className="text-[9px] text-ink-muted tnum">CH-018</span>
+        <span className="text-t9 text-ink-muted tnum">CH-018</span>
       </div>
       {/* 경고는 패널에 올리지 않고 여기서 숫자로만 알린다. 열어 보는 건 다음 단계다. */}
-      <p className="mt-0.5 text-[11px] text-ink-muted tnum">
+      <p className="mt-0.5 text-t11 text-ink-muted tnum">
         {SEVERITY_LABEL_KO.Warning} {warningCount}건은 목록에 올리지 않음
       </p>
 
       {critical.length === 0 ? (
-        <p className="flex flex-1 items-center justify-center text-[12px] text-ink-muted">
+        <p className="flex flex-1 items-center justify-center text-t12 text-ink-muted">
           긴급 알림이 없습니다.
         </p>
       ) : (
@@ -98,18 +98,18 @@ function AlertItem({
     <>
       <div className="flex items-center gap-1.5">
         <Icon name={CATEGORY_ICON[alert.category] ?? 'bell'} className="size-3.5 text-critical" />
-        <span className="shrink-0 rounded bg-critical/15 px-1.5 py-0.5 text-[9px] font-semibold text-critical">
+        <span className="shrink-0 rounded bg-critical/15 px-1.5 py-0.5 text-t9 font-semibold text-critical">
           {SEVERITY_LABEL_KO[alert.severity]}
         </span>
-        <span className="truncate text-[11px] text-ink-muted">
+        <span className="truncate text-t11 text-ink-muted">
           {businessName(businesses, alert.business_id)}
         </span>
-        <span className="ml-auto shrink-0 text-[9px] text-ink-muted">{alert.source}</span>
+        <span className="ml-auto shrink-0 text-t9 text-ink-muted">{alert.source}</span>
       </div>
 
-      <p className="mt-0.5 text-[12px] leading-snug font-semibold">{alert.message}</p>
+      <p className="mt-0.5 text-t12 leading-snug font-semibold">{alert.message}</p>
 
-      <p className="mt-0.5 flex items-center gap-1 text-[10px] text-ink-dim">
+      <p className="mt-0.5 flex items-center gap-1 text-t10 text-ink-dim">
         <Icon name="chevron-right" className="size-3" />
         {linkedTitle ? `관련 결정: ${linkedTitle}` : '열린 결정이 없습니다'}
       </p>

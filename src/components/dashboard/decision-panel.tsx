@@ -84,31 +84,31 @@ export function DecisionPanel({ decisions, businesses, audit }: DecisionPanelPro
   return (
     <GlassCard as="section" padding="p-3.5" className="flex h-full flex-col">
       <div className="flex items-baseline justify-between">
-        <h2 className="flex items-center gap-1.5 text-[13px] font-semibold">
+        <h2 className="flex items-center gap-1.5 text-t13 font-semibold">
           <Icon name="stamp" className="size-4 text-gold" />내 결정 사항
-          <span className="text-[11px] font-normal text-ink-muted tnum">{open.length}건</span>
+          <span className="text-t11 font-normal text-ink-muted tnum">{open.length}건</span>
         </h2>
         {/* CH-041로 넘긴다. 여기서는 제목과 선택안까지, 저기서는 첨부와 처리 이력까지 본다. */}
         <Link
           href="/approvals"
-          className="text-[11px] text-ink-muted transition-colors hover:text-ink"
+          className="text-t11 text-ink-muted transition-colors hover:text-ink"
         >
           전체 보기
         </Link>
       </div>
-      <p className="mt-0.5 text-[11px] text-ink-muted tnum">오늘 처리 {countOn(audit, today)}건</p>
+      <p className="mt-0.5 text-t11 text-ink-muted tnum">오늘 처리 {countOn(audit, today)}건</p>
 
       {error ? (
         <p
           role="alert"
-          className="mt-1.5 rounded-md border border-critical/40 bg-critical/10 px-2 py-1 text-[11px] leading-snug text-critical"
+          className="mt-1.5 rounded-md border border-critical/40 bg-critical/10 px-2 py-1 text-t11 leading-snug text-critical"
         >
           {error}
         </p>
       ) : null}
 
       {open.length === 0 ? (
-        <p className="flex flex-1 items-center justify-center text-[12px] text-ink-muted">
+        <p className="flex flex-1 items-center justify-center text-t12 text-ink-muted">
           오늘 결정할 항목이 없습니다.
         </p>
       ) : (
@@ -146,15 +146,15 @@ function DecisionItem({
     <li className="rounded-lg px-1.5 py-1.5 transition-colors hover:bg-raised/60">
       <div className="flex items-center gap-1.5">
         <span
-          className={`shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold ${IMPACT_TONE[decision.impact]}`}
+          className={`shrink-0 rounded px-1.5 py-0.5 text-t9 font-semibold ${IMPACT_TONE[decision.impact]}`}
         >
           {WORK_PRIORITY_LABEL_KO[decision.impact]}
         </span>
-        <span className="truncate text-[11px] text-ink-muted">
+        <span className="truncate text-t11 text-ink-muted">
           {businessName(businesses, decision.business_id)}
         </span>
         <span
-          className={`ml-auto shrink-0 text-[11px] font-semibold tnum ${
+          className={`ml-auto shrink-0 text-t11 font-semibold tnum ${
             overdue ? 'text-critical' : 'text-ink-dim'
           }`}
         >
@@ -162,10 +162,10 @@ function DecisionItem({
         </span>
       </div>
 
-      <p className="mt-0.5 text-[12px] leading-snug font-semibold">{decision.title}</p>
+      <p className="mt-0.5 text-t12 leading-snug font-semibold">{decision.title}</p>
 
       {/* 선택안과 AI 추천을 한 줄에 둔다. 추천안만 테두리를 줘서 어느 쪽인지 바로 보이게. */}
-      <p className="mt-1 flex flex-wrap items-center gap-1 text-[10px] text-ink-muted">
+      <p className="mt-1 flex flex-wrap items-center gap-1 text-t10 text-ink-muted">
         {decision.options.map((opt) => (
           <span
             key={opt}
@@ -191,7 +191,7 @@ function DecisionItem({
             type="button"
             disabled={busy}
             onClick={() => onAct(decision, action)}
-            className={`flex-1 rounded border py-1 text-[10px] transition-colors disabled:opacity-40 ${
+            className={`flex-1 rounded border py-1 text-t10 transition-colors disabled:opacity-40 ${
               action === 'Approved'
                 ? 'border-accent/60 text-ink-dim hover:bg-accent hover:text-ink'
                 : 'border-line text-ink-muted hover:border-line hover:bg-raised hover:text-ink-dim'

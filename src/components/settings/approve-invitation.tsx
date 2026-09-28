@@ -28,7 +28,7 @@ export function ApproveInvitation({ invitationId, label }: { invitationId: strin
 
   if (error) {
     return (
-      <span role="alert" className="text-[10.5px] text-critical">
+      <span role="alert" className="text-t10h text-critical">
         {error}
       </span>
     )
@@ -40,7 +40,7 @@ export function ApproveInvitation({ invitationId, label }: { invitationId: strin
       onClick={approve}
       disabled={busy}
       aria-label={`${label} 초대 승인`}
-      className="flex items-center gap-1 rounded-md border border-accent/50 bg-accent/10 px-2 py-1 text-[10.5px] font-semibold text-ink transition-opacity hover:bg-accent/20 disabled:opacity-40"
+      className="flex items-center gap-1 rounded-md border border-accent/50 bg-accent/10 px-2 py-1 text-t10h font-semibold text-ink transition-opacity hover:bg-accent/20 disabled:opacity-40"
     >
       <Icon name="stamp" className="size-3" />
       {busy ? '승인 중…' : '결재 승인'}

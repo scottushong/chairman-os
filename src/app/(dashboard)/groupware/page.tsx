@@ -75,9 +75,9 @@ export default async function GroupwarePage() {
             <ul className="divide-y divide-line-soft">
               {myTasks.slice(0, 6).map((t) => (
                 <li key={t.task_id}>
-                  <Link href={`/tasks/${t.task_id}`} className="flex items-baseline gap-2 py-1.5 text-[12.5px] hover:text-accent">
+                  <Link href={`/tasks/${t.task_id}`} className="flex items-baseline gap-2 py-1.5 text-t12h hover:text-accent">
                     <span className="min-w-0 flex-1 truncate">{t.title}</span>
-                    <span className="shrink-0 text-[10.5px] text-ink-muted">
+                    <span className="shrink-0 text-t10h text-ink-muted">
                       {TASK_STATUS_LABEL_KO[t.status]}
                       {t.deadline ? ` · ${t.deadline.slice(5)}` : ''}
                     </span>
@@ -95,9 +95,9 @@ export default async function GroupwarePage() {
             <ul className="divide-y divide-line-soft">
               {openDecisions.slice(0, 6).map((d) => (
                 <li key={d.decision_id}>
-                  <Link href={`/approvals?id=${d.decision_id}`} className="flex items-baseline gap-2 py-1.5 text-[12.5px] hover:text-accent">
+                  <Link href={`/approvals?id=${d.decision_id}`} className="flex items-baseline gap-2 py-1.5 text-t12h hover:text-accent">
                     <span className="min-w-0 flex-1 truncate">{d.title}</span>
-                    <span className="shrink-0 text-[10.5px] text-ink-muted">
+                    <span className="shrink-0 text-t10h text-ink-muted">
                       {businessNames[d.business_id] ?? d.business_id}
                       {d.deadline ? ` · ${d.deadline.slice(5)}` : ''}
                     </span>
@@ -115,12 +115,12 @@ export default async function GroupwarePage() {
             <ul className="divide-y divide-line-soft">
               {recentDocs.slice(0, 6).map((d) => (
                 <li key={d.document_id}>
-                  <Link href={`/documents/${d.document_id}`} className="flex items-baseline gap-2 py-1.5 text-[12.5px] hover:text-accent">
+                  <Link href={`/documents/${d.document_id}`} className="flex items-baseline gap-2 py-1.5 text-t12h hover:text-accent">
                     <span className="min-w-0 flex-1 truncate">
                       {d.title}
-                      {d.version > 1 ? <span className="ml-1 text-[10.5px] text-ink-muted">v{d.version}</span> : null}
+                      {d.version > 1 ? <span className="ml-1 text-t10h text-ink-muted">v{d.version}</span> : null}
                     </span>
-                    <span className="shrink-0 text-[10.5px] text-ink-muted">
+                    <span className="shrink-0 text-t10h text-ink-muted">
                       {SECURITY_CLASS_LABEL_KO[d.security_class]} · {d.created_at.slice(5, 10)}
                     </span>
                   </Link>
@@ -173,12 +173,12 @@ function Panel({
   return (
     <section className="glass rounded-glass p-4" aria-label={title}>
       <div className="mb-2 flex items-center gap-2">
-        <h2 className="text-[13.5px] font-semibold">{title}</h2>
-        <span className="text-[11px] text-ink-muted tnum">{count}</span>
+        <h2 className="text-t13h font-semibold">{title}</h2>
+        <span className="text-t11 text-ink-muted tnum">{count}</span>
         <div className="ml-auto flex items-center gap-2">
           {action}
           {href ? (
-            <Link href={href} className="text-[11.5px] text-ink-dim underline-offset-2 hover:text-ink hover:underline">
+            <Link href={href} className="text-t11h text-ink-dim underline-offset-2 hover:text-ink hover:underline">
               {tr(lang, '전체 보기 →', 'View all →')}
             </Link>
           ) : null}
@@ -190,5 +190,5 @@ function Panel({
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="py-2 text-[12px] text-ink-muted">{children}</p>
+  return <p className="py-2 text-t12 text-ink-muted">{children}</p>
 }

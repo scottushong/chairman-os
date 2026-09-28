@@ -24,7 +24,7 @@ export function BasisTag({ basis, compact = false }: { basis: FigureBasis; compa
   return (
     <span
       title={`출처: ${label}`}
-      className={`inline-flex shrink-0 items-center rounded border px-1 align-middle text-[9px] leading-[14px] font-semibold tracking-normal ${TAG_TONE[basis]}`}
+      className={`inline-flex shrink-0 items-center rounded border px-1 align-middle text-t9 leading-[14px] font-semibold tracking-normal ${TAG_TONE[basis]}`}
     >
       {compact ? label.slice(0, 1) : label}
     </span>

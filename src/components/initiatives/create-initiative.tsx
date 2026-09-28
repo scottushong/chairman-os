@@ -27,7 +27,7 @@ export function CreateInitiative() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mt-4 flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-[12px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+        className="mt-4 flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1.5 text-t12 text-ink-dim transition-colors hover:border-accent hover:text-ink"
       >
         <Icon name="plus" className="size-3.5" />새 건 만들기
       </button>
@@ -54,11 +54,11 @@ export function CreateInitiative() {
 
   return (
     <div className="mt-4 flex flex-wrap items-end gap-2 rounded-xl border border-line-soft bg-panel p-3">
-      <label className="text-[10.5px] text-ink-muted">
+      <label className="text-t10h text-ink-muted">
         제목
         <input
           autoFocus
-          className="mt-0.5 block w-64 rounded border border-line bg-panel px-2 py-1 text-[12px] text-ink outline-none focus:border-accent disabled:opacity-50"
+          className="mt-0.5 block w-64 rounded border border-line bg-panel px-2 py-1 text-t12 text-ink outline-none focus:border-accent disabled:opacity-50"
           value={title}
           maxLength={500}
           placeholder="예: OO사 지분 인수"
@@ -69,10 +69,10 @@ export function CreateInitiative() {
           }}
         />
       </label>
-      <label className="text-[10.5px] text-ink-muted">
+      <label className="text-t10h text-ink-muted">
         유형
         <select
-          className="mt-0.5 block rounded border border-line bg-panel px-2 py-1 text-[12px] text-ink outline-none focus:border-accent disabled:opacity-50"
+          className="mt-0.5 block rounded border border-line bg-panel px-2 py-1 text-t12 text-ink outline-none focus:border-accent disabled:opacity-50"
           value={kind}
           disabled={busy}
           onChange={(e) => setKind(e.target.value as InitiativeKind)}
@@ -88,7 +88,7 @@ export function CreateInitiative() {
         type="button"
         onClick={submit}
         disabled={busy}
-        className="rounded bg-accent px-3 py-1.5 text-[12px] font-semibold text-ink disabled:opacity-40"
+        className="rounded bg-accent px-3 py-1.5 text-t12 font-semibold text-ink disabled:opacity-40"
       >
         {busy ? '만드는 중…' : '만들기'}
       </button>
@@ -100,12 +100,12 @@ export function CreateInitiative() {
           setTitle('')
           setError(null)
         }}
-        className="rounded px-2 py-1.5 text-[11.5px] text-ink-muted hover:text-ink disabled:opacity-40"
+        className="rounded px-2 py-1.5 text-t11h text-ink-muted hover:text-ink disabled:opacity-40"
       >
         취소
       </button>
       {error ? (
-        <p role="alert" className="w-full text-[11.5px] text-critical">
+        <p role="alert" className="w-full text-t11h text-critical">
           {error}
         </p>
       ) : null}

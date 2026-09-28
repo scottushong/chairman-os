@@ -49,7 +49,7 @@ export default async function GroupPage({ searchParams }: PageProps<'/group'>) {
         {user?.role === 'Chairman' ? (
           <Link
             href="/group/edit"
-            className="flex items-center gap-1.5 rounded-lg border border-line bg-raised px-3 py-1.5 text-[12px] font-semibold transition-colors hover:border-accent"
+            className="flex items-center gap-1.5 rounded-lg border border-line bg-raised px-3 py-1.5 text-t12 font-semibold transition-colors hover:border-accent"
           >
             <Icon name="pencil" className="size-3.5" />
             배치 편집
@@ -66,7 +66,7 @@ export default async function GroupPage({ searchParams }: PageProps<'/group'>) {
             focusHref={(id) => `/group?focus=${id}`}
           />
           {unplaced.length > 0 ? (
-            <p className="mt-2 rounded-lg border border-line-soft bg-raised px-3 py-2 text-[11.5px] text-ink-dim">
+            <p className="mt-2 rounded-lg border border-line-soft bg-raised px-3 py-2 text-t11h text-ink-dim">
               도시에 아직 자리가 없는 회사: {unplaced.map((b) => b.name).join(', ')}
               {user?.role === 'Chairman' ? (
                 <Link href="/group/edit" className="ml-2 underline underline-offset-2 hover:text-ink">
@@ -80,7 +80,7 @@ export default async function GroupPage({ searchParams }: PageProps<'/group'>) {
         {selected ? (
           <CityPanel item={selected} />
         ) : (
-          <aside className="glass rounded-glass p-5 text-[12.5px] leading-relaxed text-ink-dim">
+          <aside className="glass rounded-glass p-5 text-t12h leading-relaxed text-ink-dim">
             <p className="font-semibold text-ink">건물을 눌러 보세요.</p>
             <p className="mt-1">
               회사를 누르면 클로즈업과 매출 · 자율성 · 완성도가, 빈 터를 누르면 그 이니셔티브가 열립니다.

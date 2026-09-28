@@ -114,7 +114,7 @@ export function RailSidebar({ user }: { user: SessionUser | null }) {
       >
         <Icon name="crown" className="size-5 shrink-0 text-gold" filled />
         {expanded ? (
-          <span className="truncate text-[15px] font-bold tracking-[0.04em] text-ink">
+          <span className="truncate text-t15 font-bold tracking-[0.04em] text-ink">
             CHAIRMAN OS
           </span>
         ) : null}
@@ -147,7 +147,7 @@ export function RailSidebar({ user }: { user: SessionUser | null }) {
           aria-label={expanded ? '메뉴 접기' : '메뉴 펼치기'}
           title={expanded ? '메뉴 접기' : '메뉴 펼치기'}
           className={`flex items-center rounded-lg text-ink-muted transition-colors hover:bg-raised hover:text-ink ${
-            expanded ? 'gap-2 px-2.5 py-2 text-[12px]' : 'size-9 justify-center'
+            expanded ? 'gap-2 px-2.5 py-2 text-t12' : 'size-9 justify-center'
           }`}
         >
           <Icon
@@ -160,14 +160,14 @@ export function RailSidebar({ user }: { user: SessionUser | null }) {
         {user ? (
           expanded ? (
             <span className="flex items-center gap-2.5 px-1.5 py-1">
-              <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent-soft text-[12px] font-bold text-ink">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent-soft text-t12 font-bold text-ink">
                 {user.name.slice(0, 1)}
               </span>
               <span className="min-w-0 leading-tight">
-                <span className="block truncate text-[12.5px] font-semibold text-ink">
+                <span className="block truncate text-t12h font-semibold text-ink">
                   {user.name}
                 </span>
-                <span className="block truncate text-[10.5px] text-ink-muted">
+                <span className="block truncate text-t10h text-ink-muted">
                   {user.title_ko || ROLE_LABEL_KO[user.role]}
                 </span>
               </span>
@@ -177,7 +177,7 @@ export function RailSidebar({ user }: { user: SessionUser | null }) {
             // 레일에는 글자가 들어갈 폭이 없고, 어느 계정으로 보고 있는지는 알 수 있어야 한다.
             <span
               title={`${user.name} · ${user.title_ko || ROLE_LABEL_KO[user.role]}`}
-              className="flex size-8 items-center justify-center rounded-full bg-accent-soft text-[12px] font-bold text-ink"
+              className="flex size-8 items-center justify-center rounded-full bg-accent-soft text-t12 font-bold text-ink"
             >
               {user.name.slice(0, 1)}
             </span>
@@ -192,7 +192,7 @@ export function RailSidebar({ user }: { user: SessionUser | null }) {
             aria-label="로그아웃"
             title="로그아웃"
             className={`flex items-center rounded-lg text-ink-muted transition-colors hover:bg-raised hover:text-ink ${
-              expanded ? 'w-full gap-2 px-2.5 py-2 text-[12px]' : 'size-9 justify-center'
+              expanded ? 'w-full gap-2 px-2.5 py-2 text-t12' : 'size-9 justify-center'
             }`}
           >
             <Icon name="log-out" className="size-[17px] shrink-0" />
@@ -249,7 +249,7 @@ function ExpandedMenu({ pathname }: { pathname: string }) {
       {NAV.map((group, i) => (
         <div key={group.title ?? i} className={i > 0 ? 'mt-4' : ''}>
           {group.title ? (
-            <p className="px-2.5 pb-1.5 text-[10px] font-semibold tracking-[0.12em] text-ink-muted">
+            <p className="px-2.5 pb-1.5 text-t10 font-semibold tracking-[0.12em] text-ink-muted">
               {group.title.toUpperCase()}
             </p>
           ) : null}
@@ -260,7 +260,7 @@ function ExpandedMenu({ pathname }: { pathname: string }) {
                   href={navHref(item)}
                   aria-current={active(item) ? 'page' : undefined}
                   className={[
-                    'group flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-[13px] transition-colors',
+                    'group flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-t13 transition-colors',
                     active(item)
                       ? 'bg-white/90 font-semibold text-app shadow-sm'
                       : 'text-ink-dim hover:bg-raised hover:text-ink',
@@ -271,7 +271,7 @@ function ExpandedMenu({ pathname }: { pathname: string }) {
                   <Icon name={item.icon} className="size-[17px] shrink-0" />
                   <span className="truncate">{item.label}</span>
                   {item.badge ? (
-                    <span className="ml-auto rounded bg-ok/15 px-1.5 py-px text-[9px] font-bold text-ok">
+                    <span className="ml-auto rounded bg-ok/15 px-1.5 py-px text-t9 font-bold text-ok">
                       {item.badge}
                     </span>
                   ) : null}

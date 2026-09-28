@@ -94,7 +94,7 @@ export function DraftDecision({ businesses }: { businesses: Business[] }) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex items-center gap-1.5 rounded-md border border-line bg-panel px-3 py-1.5 text-[12px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+        className="flex items-center gap-1.5 rounded-md border border-line bg-panel px-3 py-1.5 text-t12 text-ink-dim transition-colors hover:border-accent hover:text-ink"
       >
         <Icon name="plus" className="size-3.5" />
         결재 올리기
@@ -109,39 +109,39 @@ export function DraftDecision({ businesses }: { businesses: Business[] }) {
       className="w-full rounded-xl border border-line bg-panel p-4"
     >
       <div className="flex items-baseline justify-between">
-        <h2 className="text-[13px] font-semibold">결재 올리기</h2>
+        <h2 className="text-t13 font-semibold">결재 올리기</h2>
         <button
           type="button"
           onClick={() => setOpen(false)}
-          className="text-[11px] text-ink-muted transition-colors hover:text-ink"
+          className="text-t11 text-ink-muted transition-colors hover:text-ink"
         >
           닫기
         </button>
       </div>
-      <p className="mt-1 text-[11px] text-ink-muted">
+      <p className="mt-1 text-t11 text-ink-muted">
         올린 결재는 대기 상태로 들어가고, 올린 사실이 감사 기록에 한 줄 남습니다(CH-051).
       </p>
 
       <div className="mt-3 grid gap-3 md:grid-cols-2">
         <label className="block md:col-span-2">
-          <span className="text-[11px] text-ink-dim">제목</span>
+          <span className="text-t11 text-ink-dim">제목</span>
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="예: Hot-melt 판매가 조정 — 원료 단가 +12% 반영 시점"
             maxLength={200}
             disabled={busy}
-            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
+            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
           />
         </label>
 
         <label className="block">
-          <span className="text-[11px] text-ink-dim">회사</span>
+          <span className="text-t11 text-ink-dim">회사</span>
           <select
             value={businessId}
             onChange={(e) => setBusinessId(e.target.value)}
             disabled={busy}
-            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
+            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none focus:border-accent disabled:opacity-50"
           >
             {/* 그룹 공통 선택지가 없다. 0001의 decisions.business_id는 not null이다 —
                 결재는 언제나 어느 회사의 일이고, 그게 권한 범위를 정한다. */}
@@ -154,18 +154,18 @@ export function DraftDecision({ businesses }: { businesses: Business[] }) {
         </label>
 
         <label className="block">
-          <span className="text-[11px] text-ink-dim">마감일</span>
+          <span className="text-t11 text-ink-dim">마감일</span>
           <input
             type="date"
             value={deadline}
             onChange={(e) => setDeadline(e.target.value)}
             disabled={busy}
-            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
+            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none focus:border-accent disabled:opacity-50"
           />
         </label>
 
         <label className="block md:col-span-2">
-          <span className="text-[11px] text-ink-dim">내용 — 선택안</span>
+          <span className="text-t11 text-ink-dim">내용 — 선택안</span>
           <textarea
             value={options}
             onChange={(e) => setOptions(e.target.value)}
@@ -173,31 +173,31 @@ export function DraftDecision({ businesses }: { businesses: Business[] }) {
             rows={4}
             maxLength={1000}
             disabled={busy}
-            className="mt-1 w-full resize-y rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
+            className="mt-1 w-full resize-y rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
           />
           {/* 왜 자유 서술이 아닌지 적어 둔다. 02_데이터필드에서 options는 필수 배열이다. */}
-          <span className="mt-1 block text-[10.5px] text-ink-muted">
+          <span className="mt-1 block text-t10h text-ink-muted">
             줄마다 선택안 하나로 저장됩니다. 고를 것이 없으면 결재가 아니라 보고입니다.
           </span>
         </label>
 
         <label className="block md:col-span-2">
-          <span className="text-[11px] text-ink-dim">첨부 — 사내 스토리지 링크 (선택)</span>
+          <span className="text-t11 text-ink-dim">첨부 — 사내 스토리지 링크 (선택)</span>
           <input
             value={attachmentUrl}
             onChange={(e) => setAttachmentUrl(e.target.value)}
             placeholder="https://storage.example.co.kr/decisions/2026/..."
             inputMode="url"
             disabled={busy}
-            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
+            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
           />
-          <span className="mt-1 block text-[10.5px] text-ink-muted">
+          <span className="mt-1 block text-t10h text-ink-muted">
             파일은 올리지 않습니다. Chairman OS는 문서의 주소만 보관합니다.
           </span>
         </label>
 
         <fieldset className="md:col-span-2">
-          <legend className="text-[11px] text-ink-dim">긴급도</legend>
+          <legend className="text-t11 text-ink-dim">긴급도</legend>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {WORK_PRIORITY.map((p) => (
               <button
@@ -206,7 +206,7 @@ export function DraftDecision({ businesses }: { businesses: Business[] }) {
                 onClick={() => setImpact(p)}
                 disabled={busy}
                 aria-pressed={impact === p}
-                className={`rounded-md border px-2.5 py-1 text-[11px] transition-colors disabled:opacity-50 ${
+                className={`rounded-md border px-2.5 py-1 text-t11 transition-colors disabled:opacity-50 ${
                   impact === p
                     ? 'border-accent bg-accent/15 text-ink'
                     : 'border-line text-ink-muted hover:text-ink-dim'
@@ -222,7 +222,7 @@ export function DraftDecision({ businesses }: { businesses: Business[] }) {
       {error ? (
         <p
           role="alert"
-          className="mt-3 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-[11.5px] text-critical"
+          className="mt-3 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-t11h text-critical"
         >
           {error}
         </p>
@@ -232,7 +232,7 @@ export function DraftDecision({ businesses }: { businesses: Business[] }) {
         <button
           type="submit"
           disabled={!canSave}
-          className="flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-ink transition-opacity disabled:opacity-40"
+          className="flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-t12 font-semibold text-ink transition-opacity disabled:opacity-40"
         >
           <Icon name="stamp" className="size-3.5" />
           {busy ? '올리는 중…' : '결재 올리기'}

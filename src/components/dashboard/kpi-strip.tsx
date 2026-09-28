@@ -56,8 +56,8 @@ export function KpiStrip({ kpis: all, businessIds, title, scopeNote }: KpiStripP
     <section aria-label={title ?? '그룹 재무 KPI'}>
       <div className="mb-2 flex items-baseline gap-2">
         {/* '그룹 전체 재무 현황'은 아래 추이 카드(CH-025~026)가 쓴다. 같은 제목을 두 번 걸지 않는다. */}
-        <h2 className="text-[13px] font-semibold">{title ?? '그룹 KPI (당월)'}</h2>
-        <span className="text-[11px] text-ink-muted tnum">
+        <h2 className="text-t13 font-semibold">{title ?? '그룹 KPI (당월)'}</h2>
+        <span className="text-t11 text-ink-muted tnum">
           {period ? `${period.replace('-', '년 ')}월` : '기간 없음'} ·{' '}
           {scopeNote ?? `표시 중인 ${businessIds.length}개사 합계`}
         </span>
@@ -94,13 +94,13 @@ function KpiTile({
   return (
     <GlassCard as="article" padding="px-3.5 py-3">
       <div className="flex items-center justify-between">
-        <span className="text-[11px] text-ink-dim">{kpi.label}</span>
-        <span className="text-[9px] text-ink-muted tnum">{kpi.spec}</span>
+        <span className="text-t11 text-ink-dim">{kpi.label}</span>
+        <span className="text-t9 text-ink-muted tnum">{kpi.spec}</span>
       </div>
 
       <p
         className={[
-          'mt-1 text-[19px] leading-tight font-semibold',
+          'mt-1 text-t19 leading-tight font-semibold',
           current < 0 ? 'text-critical' : 'text-ink',
         ].join(' ')}
       >
@@ -112,7 +112,7 @@ function KpiTile({
         ) : null}
       </p>
 
-      <div className={`mt-0.5 flex items-center gap-0.5 text-[11px] ${deltaTone}`}>
+      <div className={`mt-0.5 flex items-center gap-0.5 text-t11 ${deltaTone}`}>
         {delta === null ? (
           <span className="text-ink-muted">전월 대비 —</span>
         ) : (

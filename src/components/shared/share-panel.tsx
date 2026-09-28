@@ -129,10 +129,10 @@ export function SharePanel({
   return (
     <section className="rounded-xl border border-line-soft bg-panel p-3.5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="flex items-baseline gap-1.5 text-[13px] font-semibold">
+        <h2 className="flex items-baseline gap-1.5 text-t13 font-semibold">
           <Icon name="users" className="size-4 text-ink-dim" />
           공유
-          <span className="text-[11px] font-normal text-ink-muted tnum">{rows.length}건</span>
+          <span className="text-t11 font-normal text-ink-muted tnum">{rows.length}건</span>
         </h2>
         <button
           type="button"
@@ -141,7 +141,7 @@ export function SharePanel({
             setDone(null)
             setError(null)
           }}
-          className="flex items-center gap-1 rounded-md border border-line px-2.5 py-1 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="flex items-center gap-1 rounded-md border border-line px-2.5 py-1 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           <Icon name="user-plus" className="size-3.5" />
           {open ? '닫기' : '공유'}
@@ -150,7 +150,7 @@ export function SharePanel({
 
       {open ? (
         <div className="mt-3 rounded-lg border border-line bg-raised/40 p-3">
-          <p className="text-[11px] leading-relaxed text-ink-muted">
+          <p className="text-t11 leading-relaxed text-ink-muted">
             같은 회사 사람에게 <span className="text-ink-dim">{SHARE_ENTITY_LABEL_KO[entityTable]}</span>{' '}
             &lsquo;{title}&rsquo;을(를) 엽니다. 공유는 회사를 넘지 못하고, 자기가 볼 수 있는 것만
             공유할 수 있습니다 — 그 판정은 DB가 합니다.
@@ -163,12 +163,12 @@ export function SharePanel({
               placeholder="이름으로 찾기 (예: 영업)"
               maxLength={40}
               disabled={busy}
-              className="min-w-[180px] flex-1 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-[12px] text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
+              className="min-w-[180px] flex-1 rounded-lg border border-line bg-panel px-2.5 py-1.5 text-t12 text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
             />
             <button
               type="submit"
               disabled={busy || query.trim().length === 0}
-              className="flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-40"
+              className="flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-40"
             >
               <Icon name="search" className="size-3.5" />
               찾기
@@ -177,7 +177,7 @@ export function SharePanel({
 
           {people !== null ? (
             people.length === 0 ? (
-              <p className="mt-2 text-[11px] text-ink-muted">
+              <p className="mt-2 text-t11 text-ink-muted">
                 같은 회사에서 그 이름을 찾지 못했습니다. 이름(한글 또는 영문)의 일부로 찾습니다.
               </p>
             ) : (
@@ -188,7 +188,7 @@ export function SharePanel({
                       type="button"
                       onClick={() => setPicked(p)}
                       aria-pressed={picked?.user_id === p.user_id}
-                      className={`rounded-md border px-2.5 py-1 text-[11px] transition-colors ${
+                      className={`rounded-md border px-2.5 py-1 text-t11 transition-colors ${
                         picked?.user_id === p.user_id
                           ? 'border-accent bg-accent/15 text-ink'
                           : 'border-line text-ink-muted hover:text-ink-dim'
@@ -206,7 +206,7 @@ export function SharePanel({
           ) : null}
 
           <div className="mt-3">
-            <p className="text-[11px] text-ink-dim">기간</p>
+            <p className="text-t11 text-ink-dim">기간</p>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               {PRESETS.map((p) => (
                 <button
@@ -215,7 +215,7 @@ export function SharePanel({
                   onClick={() => setPreset(p.key)}
                   aria-pressed={preset === p.key}
                   disabled={busy}
-                  className={`rounded-md border px-2.5 py-1 text-[11px] transition-colors disabled:opacity-50 ${
+                  className={`rounded-md border px-2.5 py-1 text-t11 transition-colors disabled:opacity-50 ${
                     preset === p.key
                       ? 'border-accent bg-accent/15 text-ink'
                       : 'border-line text-ink-muted hover:text-ink-dim'
@@ -230,25 +230,25 @@ export function SharePanel({
                   onChange={(e) => setUntil(e.target.value)}
                   type="date"
                   disabled={busy}
-                  className="rounded-lg border border-line bg-panel px-2.5 py-1 text-[12px] text-ink outline-none focus:border-accent disabled:opacity-50"
+                  className="rounded-lg border border-line bg-panel px-2.5 py-1 text-t12 text-ink outline-none focus:border-accent disabled:opacity-50"
                 />
               ) : null}
             </div>
-            <p className="mt-1.5 text-[10.5px] text-ink-muted">
+            <p className="mt-1.5 text-t10h text-ink-muted">
               기간이 끝나면 사람이 회수를 잊어도 닫힙니다. 기간을 바꾸려면 회수하고 다시
               공유합니다 — 연장 버튼이 없는 이유입니다.
             </p>
           </div>
 
           <div className="mt-3 flex items-center justify-between gap-2">
-            <span className="text-[10.5px] text-ink-muted">
+            <span className="text-t10h text-ink-muted">
               {picked ? `${picked.display_name}님에게 엽니다.` : '받는 사람을 고르세요.'}
             </span>
             <button
               type="button"
               onClick={share}
               disabled={busy || !picked}
-              className="rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-ink transition-opacity disabled:opacity-40"
+              className="rounded-lg bg-accent px-3 py-1.5 text-t12 font-semibold text-ink transition-opacity disabled:opacity-40"
             >
               {busy ? '여는 중…' : '공유'}
             </button>
@@ -257,29 +257,29 @@ export function SharePanel({
       ) : null}
 
       {error ? (
-        <p role="alert" className="mt-2.5 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-[11.5px] text-critical">
+        <p role="alert" className="mt-2.5 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-t11h text-critical">
           {error}
         </p>
       ) : null}
       {done ? (
-        <p className="mt-2.5 rounded-md border border-ok/40 bg-ok/10 px-2.5 py-1.5 text-[11.5px] text-ink-dim">
+        <p className="mt-2.5 rounded-md border border-ok/40 bg-ok/10 px-2.5 py-1.5 text-t11h text-ink-dim">
           {done}
         </p>
       ) : null}
 
       {rows.length === 0 ? (
-        <p className="py-4 text-center text-[11.5px] text-ink-muted">
+        <p className="py-4 text-center text-t11h text-ink-muted">
           아직 아무에게도 열려 있지 않습니다.
         </p>
       ) : (
         <ul className="mt-2 space-y-1">
           {rows.map((s) => (
             <li key={s.share_id} className="flex flex-wrap items-center gap-1.5 rounded-lg px-2 py-1.5 hover:bg-raised/60">
-              <span className="text-[12px] font-semibold">{s.shared_with_name ?? '이름 없음'}</span>
-              <span className="rounded bg-raised px-1.5 py-0.5 text-[10px] text-ink-dim">
+              <span className="text-t12 font-semibold">{s.shared_with_name ?? '이름 없음'}</span>
+              <span className="rounded bg-raised px-1.5 py-0.5 text-t10 text-ink-dim">
                 {remainingText(s.expires_at)}
               </span>
-              <span className="text-[10.5px] text-ink-muted tnum">
+              <span className="text-t10h text-ink-muted tnum">
                 {formatDateTime(s.created_at)} · {s.shared_by_name ?? '이름 없음'}이(가) 열었습니다
               </span>
               {s.shared_by === viewerId ? (
@@ -287,12 +287,12 @@ export function SharePanel({
                   type="button"
                   onClick={() => revoke(s)}
                   disabled={busy}
-                  className="ml-auto rounded-md border border-line px-2 py-1 text-[10.5px] text-ink-muted transition-colors hover:border-critical/50 hover:text-critical disabled:opacity-40"
+                  className="ml-auto rounded-md border border-line px-2 py-1 text-t10h text-ink-muted transition-colors hover:border-critical/50 hover:text-critical disabled:opacity-40"
                 >
                   회수
                 </button>
               ) : (
-                <span className="ml-auto text-[10.5px] text-ink-muted">
+                <span className="ml-auto text-t10h text-ink-muted">
                   나에게 열린 공유 — 회수는 연 사람만 합니다
                 </span>
               )}

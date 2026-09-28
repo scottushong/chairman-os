@@ -1,4 +1,5 @@
 import { MobileTabs } from '@/components/layout/mobile-tabs'
+import { NavDrawer } from '@/components/layout/nav-drawer'
 import { Header } from '@/components/layout/header'
 import { Sidebar } from '@/components/layout/sidebar'
 import { SystemBar } from '@/components/layout/system-bar'
@@ -37,7 +38,7 @@ export default async function DashboardLayout({ children }: LayoutProps<'/'>) {
 
   return (
     // 셸은 화면에 고정하고 본문만 스크롤한다. 관제 화면에서 헤더가 밀리면 안 된다.
-    <div id="app-shell" data-theme={theme} className="flex h-full">
+    <div id="app-shell" data-theme={theme} className="safe-x flex h-full">
       {auto ? (
         <script
           // 파싱 시점에 동기로 돌아야 번쩍임이 없다. 값은 이 파일의 상수 문자열이고 바깥에서 오지 않는다.
@@ -51,12 +52,18 @@ export default async function DashboardLayout({ children }: LayoutProps<'/'>) {
       {/* 그려지는 것이 없다. 이 기기의 시간대를 하루 한 번 서버에 남긴다 —
           아침 알림의 ①이 그 값이다(Phase 3-C 현지 시간). */}
       <TimezoneBeacon />
-      <Sidebar user={user} prefs={prefs.sidebar} />
+      {/* 1024px 이상은 붙박이 사이드바, 그 아래는 같은 사이드바를 서랍으로(햄버거 · 하단 탭 «더보기»). */}
+      <div className="hidden lg:flex">
+        <Sidebar user={user} prefs={prefs.sidebar} />
+      </div>
+      <NavDrawer>
+        <Sidebar user={user} prefs={prefs.sidebar} drawer />
+      </NavDrawer>
       <div className="flex min-w-0 flex-1 flex-col">
         <Header user={user} />
         <main className="flex-1 overflow-y-auto">{children}</main>
-        {/* 넓은 화면은 시스템 바, 폰은 하단 탭(Phase 9 블록 6). 둘은 서로의 breakpoint에서 숨는다. */}
-        <div className="hidden md:block">
+        {/* 넓은 화면은 시스템 바, 폰은 하단 탭(Phase 9 블록 6). 둘은 서로의 breakpoint(lg)에서 숨는다. */}
+        <div className="hidden lg:block">
           <SystemBar />
         </div>
         <MobileTabs />

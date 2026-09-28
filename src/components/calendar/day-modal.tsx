@@ -204,9 +204,9 @@ export function DayModal({
         className="glass w-full max-w-lg rounded-glass border border-line p-4 outline-none"
       >
         <div className="flex items-baseline justify-between">
-          <h2 className="text-[14px] font-semibold tnum">
+          <h2 className="text-t14 font-semibold tnum">
             {Number(m)}월 {Number(d)}일
-            <span className="ml-2 text-[11px] font-normal text-ink-muted">
+            <span className="ml-2 text-t11 font-normal text-ink-muted">
               {/* items(연 시점의 정적 prop)가 아니라 list/others — 목록과 같은 상태에서 세야
                   추가·삭제 직후에도 헤더 건수와 아래 목록이 어긋나지 않는다. */}
               {list.length + others.length}건
@@ -216,14 +216,14 @@ export function DayModal({
             type="button"
             onClick={onClose}
             aria-label="닫기"
-            className="rounded px-1.5 py-0.5 text-[12px] text-ink-muted hover:text-ink"
+            className="rounded px-1.5 py-0.5 text-t12 text-ink-muted hover:text-ink"
           >
             ✕
           </button>
         </div>
 
         {error ? (
-          <p role="alert" className="mt-2.5 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-[11.5px] text-critical">
+          <p role="alert" className="mt-2.5 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-t11h text-critical">
             {error}
           </p>
         ) : null}
@@ -243,14 +243,14 @@ export function DayModal({
                 />
               ) : confirming === e.event_id ? (
                 <div className="flex items-center gap-2">
-                  <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-dim">
+                  <span className="min-w-0 flex-1 truncate text-t12h text-ink-dim">
                     «{e.title}» 을(를) 지웁니다.
                   </span>
                   <button
                     type="button"
                     onClick={() => remove(e)}
                     disabled={busy}
-                    className="shrink-0 rounded bg-critical px-2 py-1 text-[11px] font-semibold text-ink disabled:opacity-40"
+                    className="shrink-0 rounded bg-critical px-2 py-1 text-t11 font-semibold text-ink disabled:opacity-40"
                   >
                     {busy ? '지우는 중…' : '지운다'}
                   </button>
@@ -258,7 +258,7 @@ export function DayModal({
                     type="button"
                     onClick={() => setConfirming(null)}
                     disabled={busy}
-                    className="shrink-0 rounded px-2 py-1 text-[11px] text-ink-muted hover:text-ink disabled:opacity-40"
+                    className="shrink-0 rounded px-2 py-1 text-t11 text-ink-muted hover:text-ink disabled:opacity-40"
                   >
                     취소
                   </button>
@@ -276,17 +276,17 @@ export function DayModal({
                     aria-label={canEdit ? `${e.title} 고치기` : undefined}
                     className="min-w-0 flex-1 rounded px-1 py-0.5 text-left transition-colors enabled:hover:bg-raised"
                   >
-                    <p className="truncate text-[12.5px] font-semibold">
+                    <p className="truncate text-t12h font-semibold">
                       {e.title}
-                      <span className="ml-1.5 text-[11px] font-normal text-ink-muted">
+                      <span className="ml-1.5 text-t11 font-normal text-ink-muted">
                         {EVENT_KIND_LABEL_KO[e.kind]}
                       </span>
                     </p>
                     {e.location ? (
-                      <p className="truncate text-[11px] text-ink-muted">{e.location}</p>
+                      <p className="truncate text-t11 text-ink-muted">{e.location}</p>
                     ) : null}
                   </button>
-                  <span className="shrink-0 text-[11px] text-ink-dim tnum">
+                  <span className="shrink-0 text-t11 text-ink-dim tnum">
                     {e.ends_on && e.ends_on !== e.starts_on ? `${e.starts_on} ~ ${e.ends_on}` : ''}
                   </span>
                   {/* 0040. 미팅에만. 링크가 있으면 입장, 없으면(쓰기 권한이 있을 때) 만들기. */}
@@ -294,7 +294,7 @@ export function DayModal({
                     <>
                       <Link
                         href={`/meet?room=${roomOf(e.video_url)}`}
-                        className="shrink-0 rounded bg-accent px-2 py-0.5 text-[11px] font-semibold text-white"
+                        className="shrink-0 rounded bg-accent px-2 py-0.5 text-t11 font-semibold text-white"
                       >
                         화상 입장
                       </Link>
@@ -304,7 +304,7 @@ export function DayModal({
                           onClick={() => makeVideo(e, true)}
                           disabled={busy}
                           title="방 이름을 새로 만들고 지금 참석자 전원에게 다시 알립니다. 이전 링크는 쓸 수 없게 됩니다."
-                          className="shrink-0 rounded px-1 text-[11px] text-ink-muted hover:text-ink disabled:opacity-40"
+                          className="shrink-0 rounded px-1 text-t11 text-ink-muted hover:text-ink disabled:opacity-40"
                         >
                           다시 만들기
                         </button>
@@ -316,7 +316,7 @@ export function DayModal({
                       onClick={() => makeVideo(e)}
                       disabled={busy}
                       title={`참석자 ${e.attendee_ids?.length ?? 0}명에게 알림이 갑니다`}
-                      className="shrink-0 rounded border border-accent px-2 py-0.5 text-[11px] text-ink-dim hover:text-ink disabled:opacity-40"
+                      className="shrink-0 rounded border border-accent px-2 py-0.5 text-t11 text-ink-dim hover:text-ink disabled:opacity-40"
                     >
                       화상 링크 생성
                     </button>
@@ -326,7 +326,7 @@ export function DayModal({
                       type="button"
                       onClick={() => setConfirming(e.event_id)}
                       aria-label={`${e.title} 지우기`}
-                      className="shrink-0 rounded px-1 text-[11px] text-ink-muted hover:text-critical"
+                      className="shrink-0 rounded px-1 text-t11 text-ink-muted hover:text-critical"
                     >
                       삭제
                     </button>
@@ -344,7 +344,7 @@ export function DayModal({
               <li key={`${it.kind}-${it.source_id}`}>
                 <Link
                   href={it.href}
-                  className="block truncate text-[11.5px] text-ink-dim hover:text-ink hover:underline"
+                  className="block truncate text-t11h text-ink-dim hover:text-ink hover:underline"
                 >
                   <span className="text-ink-muted">{CALENDAR_ITEM_LABEL_KO[it.kind]}</span> · {it.title}
                 </Link>
@@ -354,7 +354,7 @@ export function DayModal({
         ) : null}
 
         {sorted.length === 0 && others.length === 0 ? (
-          <p className="py-6 text-center text-[12px] text-ink-muted">이 날에는 아무것도 없습니다.</p>
+          <p className="py-6 text-center text-t12 text-ink-muted">이 날에는 아무것도 없습니다.</p>
         ) : null}
 
         {/* 새 일정 */}
@@ -378,7 +378,7 @@ export function DayModal({
               setConfirming(null)
               setDraft(emptyDraft(day))
             }}
-            className="mt-3 flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+            className="mt-3 flex items-center gap-1 rounded-md border border-line px-2 py-1 text-t11 text-ink-dim transition-colors hover:border-accent hover:text-ink"
           >
             <Icon name="plus" className="size-3" />
             추가
@@ -406,8 +406,8 @@ function EventForm({
   busy: boolean
 }) {
   const field =
-    'mt-1 w-full rounded-md border border-line bg-panel px-2 py-1.5 text-[12px] font-normal text-ink outline-none placeholder:text-ink-muted focus:border-accent'
-  const label = 'block text-[10px] font-semibold tracking-[0.08em] text-ink-muted'
+    'mt-1 w-full rounded-md border border-line bg-panel px-2 py-1.5 text-t12 font-normal text-ink outline-none placeholder:text-ink-muted focus:border-accent'
+  const label = 'block text-t10 font-semibold tracking-[0.08em] text-ink-muted'
 
   return (
     <div className="grid gap-2 sm:grid-cols-2">
@@ -499,7 +499,7 @@ function EventForm({
                       attendeeIds: on ? draft.attendeeIds.filter((x) => x !== p.id) : [...draft.attendeeIds, p.id],
                     })
                   }
-                  className={`rounded-md border px-2 py-0.5 text-[11px] font-normal tracking-normal ${
+                  className={`rounded-md border px-2 py-0.5 text-t11 font-normal tracking-normal ${
                     on ? 'border-accent bg-accent/15 text-ink' : 'border-line text-ink-muted hover:text-ink-dim'
                   }`}
                 >
@@ -515,7 +515,7 @@ function EventForm({
           type="button"
           onClick={onSubmit}
           disabled={busy}
-          className="rounded bg-accent px-2 py-1 text-[11px] font-semibold text-ink disabled:opacity-40"
+          className="rounded bg-accent px-2 py-1 text-t11 font-semibold text-ink disabled:opacity-40"
         >
           {busy ? '저장 중…' : '저장'}
         </button>
@@ -523,7 +523,7 @@ function EventForm({
           type="button"
           onClick={onCancel}
           disabled={busy}
-          className="rounded px-2 py-1 text-[11px] text-ink-muted hover:text-ink disabled:opacity-40"
+          className="rounded px-2 py-1 text-t11 text-ink-muted hover:text-ink disabled:opacity-40"
         >
           취소
         </button>

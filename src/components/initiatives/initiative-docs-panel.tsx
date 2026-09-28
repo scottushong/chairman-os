@@ -77,10 +77,10 @@ export function InitiativeDocsPanel({
   return (
     <section className="rounded-xl border border-line-soft bg-panel p-4">
       <div className="flex items-baseline justify-between">
-        <h2 className="flex items-center gap-1.5 text-[13px] font-semibold">
+        <h2 className="flex items-center gap-1.5 text-t13 font-semibold">
           <Icon name="file-text" className="size-4 text-ink-dim" />
           문서
-          <span className="text-[11px] font-normal text-ink-muted tnum">{list.length}건</span>
+          <span className="text-t11 font-normal text-ink-muted tnum">{list.length}건</span>
         </h2>
         {canEdit && !draft ? (
           <button
@@ -89,7 +89,7 @@ export function InitiativeDocsPanel({
               setError(null)
               setDraft(EMPTY)
             }}
-            className="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+            className="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-t11 text-ink-dim transition-colors hover:border-accent hover:text-ink"
           >
             <Icon name="plus" className="size-3" />
             추가
@@ -98,7 +98,7 @@ export function InitiativeDocsPanel({
       </div>
 
       {error ? (
-        <p role="alert" className="mt-2.5 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-[11.5px] text-critical">
+        <p role="alert" className="mt-2.5 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-t11h text-critical">
           {error}
         </p>
       ) : null}
@@ -122,7 +122,7 @@ export function InitiativeDocsPanel({
               type="button"
               onClick={submit}
               disabled={busy}
-              className="rounded bg-accent px-2 py-1 text-[11px] font-semibold text-ink disabled:opacity-40"
+              className="rounded bg-accent px-2 py-1 text-t11 font-semibold text-ink disabled:opacity-40"
             >
               {busy ? '저장 중…' : '저장'}
             </button>
@@ -130,7 +130,7 @@ export function InitiativeDocsPanel({
               type="button"
               onClick={() => setDraft(null)}
               disabled={busy}
-              className="rounded px-2 py-1 text-[11px] text-ink-muted hover:text-ink disabled:opacity-40"
+              className="rounded px-2 py-1 text-t11 text-ink-muted hover:text-ink disabled:opacity-40"
             >
               취소
             </button>
@@ -139,7 +139,7 @@ export function InitiativeDocsPanel({
       ) : null}
 
       {sorted.length === 0 && !draft ? (
-        <p className="py-5 text-center text-[12px] text-ink-muted">
+        <p className="py-5 text-center text-t12 text-ink-muted">
           등록된 문서가 없습니다.
           {canEdit ? '' : ' 등록은 회장 / 그룹 CFO만 할 수 있습니다.'}
         </p>
@@ -152,11 +152,11 @@ export function InitiativeDocsPanel({
                   href={d.url}
                   target="_blank"
                   rel="noreferrer"
-                  className="block truncate text-[12.5px] font-semibold text-ink underline-offset-2 hover:underline"
+                  className="block truncate text-t12h font-semibold text-ink underline-offset-2 hover:underline"
                 >
                   {d.title}
                 </a>
-                <p className="truncate text-[10.5px] text-ink-muted">{d.url}</p>
+                <p className="truncate text-t10h text-ink-muted">{d.url}</p>
               </div>
               {canEdit ? (
                 <button
@@ -164,7 +164,7 @@ export function InitiativeDocsPanel({
                   aria-label={`${d.title} 지우기`}
                   onClick={() => remove(d)}
                   disabled={busy}
-                  className="shrink-0 rounded px-1 text-[11px] text-ink-muted hover:text-critical disabled:opacity-40"
+                  className="shrink-0 rounded px-1 text-t11 text-ink-muted hover:text-critical disabled:opacity-40"
                 >
                   삭제
                 </button>
@@ -191,14 +191,14 @@ function Field({
   maxLength?: number
 }) {
   return (
-    <label className="block text-[10px] font-semibold tracking-[0.08em] text-ink-muted">
+    <label className="block text-t10 font-semibold tracking-[0.08em] text-ink-muted">
       {label}
       <input
         value={value}
         placeholder={placeholder}
         maxLength={maxLength}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded-md border border-line bg-panel px-2 py-1.5 text-[12px] font-normal text-ink outline-none placeholder:text-ink-muted focus:border-accent"
+        className="mt-1 w-full rounded-md border border-line bg-panel px-2 py-1.5 text-t12 font-normal text-ink outline-none placeholder:text-ink-muted focus:border-accent"
       />
     </label>
   )

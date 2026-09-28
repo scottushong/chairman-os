@@ -30,11 +30,11 @@ export function CityStrip({ phase, items }: { phase: CityPhase; items: CityItem[
   return (
     <section aria-label="그룹 시티">
       <div className="mb-2 flex items-baseline gap-2">
-        <h2 className="text-[13px] font-semibold">그룹 시티</h2>
-        <span className="text-[11px] text-ink-dim tnum">회사 {companies.length}곳</span>
+        <h2 className="text-t13 font-semibold">그룹 시티</h2>
+        <span className="text-t11 text-ink-dim tnum">회사 {companies.length}곳</span>
         <Link
           href="/group"
-          className="ml-auto text-[11.5px] text-ink-dim underline-offset-2 hover:text-ink hover:underline"
+          className="ml-auto text-t11h text-ink-dim underline-offset-2 hover:text-ink hover:underline"
         >
           전체 보기 →
         </Link>
@@ -59,7 +59,7 @@ export function CityStrip({ phase, items }: { phase: CityPhase; items: CityItem[
               key={item.layout.id}
               href={`/group?focus=${item.layout.id}`}
               aria-label={`${item.name} — ${hotspotFacts(item).join(' · ')}`}
-              className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-md bg-black/60 px-2 py-1 text-[11px] leading-tight text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-black/80"
+              className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-md bg-black/60 px-2 py-1 text-t11 leading-tight text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-black/80"
               style={{
                 left: `clamp(64px, ${cx}%, calc(100% - 64px))`,
                 // 건물의 세로 가운데. 창 밖이면 띠의 위·아래 끝에 붙인다 — 가로는 건물 그대로라
@@ -75,7 +75,7 @@ export function CityStrip({ phase, items }: { phase: CityPhase; items: CityItem[
       </div>
 
       {companies.length === 0 ? (
-        <p className="mt-1.5 text-[11px] text-ink-dim">도시에 아직 배치된 회사가 없습니다. 그룹 화면에서 배치합니다.</p>
+        <p className="mt-1.5 text-t11 text-ink-dim">도시에 아직 배치된 회사가 없습니다. 그룹 화면에서 배치합니다.</p>
       ) : null}
     </section>
   )

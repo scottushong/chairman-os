@@ -83,7 +83,7 @@ function Hotspot({ item, selected, href }: { item: CityItem; selected: boolean; 
       />
       {/* 라벨은 상자 위 가운데. 그림 위에 글자를 바로 놓지 않는다 — 어두운 유리 한 장을 깐다. */}
       <span
-        className={`pointer-events-none absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded-md px-2 py-1 text-[11px] leading-tight text-white shadow-lg backdrop-blur-sm ${
+        className={`pointer-events-none absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded-md px-2 py-1 text-t11 leading-tight text-white shadow-lg backdrop-blur-sm ${
           selected ? 'bg-black/80 ring-1 ring-gold' : 'bg-black/60'
         }`}
       >

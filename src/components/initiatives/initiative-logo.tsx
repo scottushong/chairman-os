@@ -35,7 +35,7 @@ export function InitiativeLogo({
   return (
     <span
       style={style}
-      className="flex shrink-0 items-center justify-center rounded-full border border-line-soft bg-raised text-[13px] font-semibold text-ink-dim"
+      className="flex shrink-0 items-center justify-center rounded-full border border-line-soft bg-raised text-t13 font-semibold text-ink-dim"
     >
       {logoInitial(title)}
     </span>

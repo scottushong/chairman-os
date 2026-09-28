@@ -218,8 +218,8 @@ export function DashboardBoard({
       {initiativeSummary.length > 0 ? (
         <section aria-label="이니셔티브">
           <div className="mb-2 flex items-baseline gap-2">
-            <h2 className="text-[13px] font-semibold">이니셔티브</h2>
-            <span className="text-[11px] text-ink-dim tnum">
+            <h2 className="text-t13 font-semibold">이니셔티브</h2>
+            <span className="text-t11 text-ink-dim tnum">
               진행 중 {initiativeCount}건 중 {initiativeSummary.length}건
             </span>
             {/* 열 줄 위의 규칙이 이 링크에도 걸린다. 골드(.text-accent → #855a11)는 맨 배경에서
@@ -228,7 +228,7 @@ export function DashboardBoard({
                 '누를 수 있다'를 남긴다. */}
             <Link
               href="/initiatives"
-              className="ml-auto text-[11.5px] text-ink-dim underline-offset-2 hover:text-ink hover:underline"
+              className="ml-auto text-t11h text-ink-dim underline-offset-2 hover:text-ink hover:underline"
             >
               전체 보기
             </Link>
@@ -267,7 +267,7 @@ export function DashboardBoard({
       <details className="group/cards">
         <summary className="mb-2 flex cursor-pointer list-none items-baseline gap-2 text-ink-dim hover:text-ink">
           <Icon name="chevron-right" className="size-3.5 self-center transition-transform group-open/cards:rotate-90" />
-          <span className="text-[12px] font-semibold">회사 카드 · 숨김 · 핀 · 기업 추가</span>
+          <span className="text-t12 font-semibold">회사 카드 · 숨김 · 핀 · 기업 추가</span>
         </summary>
       <section aria-label="내 비즈니스">
         {/* 이 줄도 카드 밖(맨 배경)이다 — 아래 이니셔티브 헤더와 같은 규칙을 받는다.
@@ -277,14 +277,14 @@ export function DashboardBoard({
             bg-raised(흰 72%)를 깔면 최악점에서 5.08:1이 된다 — globals.css가 허용 면으로
             적어 둔 넷(.glass / .glass-nav / bg-panel / bg-raised) 중 하나다. */}
         <div className="mb-2 flex items-baseline gap-2">
-          <h2 className="text-[13px] font-semibold">내 비즈니스 (A,B,C)</h2>
-          <span className="text-[11px] text-ink-dim tnum">
+          <h2 className="text-t13 font-semibold">내 비즈니스 (A,B,C)</h2>
+          <span className="text-t11 text-ink-dim tnum">
             {shown.length} / {ordered.length}개 표시 중
           </span>
           {error ? (
             <span
               role="alert"
-              className="rounded-md border border-critical/40 bg-raised px-2 py-0.5 text-[11px] text-critical"
+              className="rounded-md border border-critical/40 bg-raised px-2 py-0.5 text-t11 text-critical"
             >
               {error}
             </span>
@@ -328,13 +328,13 @@ export function DashboardBoard({
             className="flex min-h-[120px] flex-col items-center justify-center gap-1.5 rounded-xl border border-dashed border-line text-ink-dim transition-colors hover:border-accent hover:text-ink"
           >
             <Icon name="plus" className="size-5" />
-            <span className="text-center text-[11px] leading-tight break-keep">기업 추가</span>
+            <span className="text-center text-t11 leading-tight break-keep">기업 추가</span>
           </button>
         </div>
 
         {hiddenList.length > 0 ? (
           <div className="mt-2.5 flex flex-wrap items-center gap-2 rounded-lg border border-line-soft bg-panel px-3 py-2">
-            <span className="flex items-center gap-1.5 text-[11px] text-ink-muted">
+            <span className="flex items-center gap-1.5 text-t11 text-ink-muted">
               <Icon name="eye-off" className="size-3.5" />
               숨김 {hiddenList.length}개 (데이터는 그대로 있습니다)
             </span>
@@ -343,7 +343,7 @@ export function DashboardBoard({
                 key={b.business_id}
                 type="button"
                 onClick={() => toggle(b.business_id)}
-                className="flex items-center gap-1 rounded-md bg-raised px-2 py-1 text-[11px] text-ink-dim transition-colors hover:text-ink"
+                className="flex items-center gap-1 rounded-md bg-raised px-2 py-1 text-t11 text-ink-dim transition-colors hover:text-ink"
               >
                 {b.name}
                 <span className="text-ink-muted">다시 표시</span>

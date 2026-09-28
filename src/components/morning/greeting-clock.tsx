@@ -84,11 +84,11 @@ export function GreetingClock({ name, dateLabel }: { name: string | null; dateLa
     <GlassCard as="section" aria-label="인사와 시각" className="flex flex-col justify-between">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="flex items-center gap-2 text-[17px] font-semibold text-ink">
+          <h1 className="flex items-center gap-2 text-t17 font-semibold text-ink">
             좋은 아침입니다, {name ?? 'Chairman'}님
             <Icon name="crown" className="size-4 text-gold" filled />
           </h1>
-          <p className="mt-0.5 text-[12px] text-ink-dim tnum">{dateLabel}</p>
+          <p className="mt-0.5 text-t12 text-ink-dim tnum">{dateLabel}</p>
         </div>
         {/* 더미 표식. (morning) 셸에는 헤더가 없어 이 칸이 그 표식을 다시 다는 자리다 —
             화면을 여는 순간 눈이 먼저 닿는 곳이 인사말이고, 회장이 아침에 제일 먼저 보는 이 화면에서
@@ -98,8 +98,8 @@ export function GreetingClock({ name, dateLabel }: { name: string | null; dateLa
       </div>
 
       <p className="mt-4 flex items-baseline gap-1.5 text-ink">
-        <span className="text-[52px] leading-none font-bold tnum">{reading?.local ?? '--:--'}</span>
-        <span className="text-[18px] leading-none font-semibold text-ink-dim tnum">
+        <span className="text-t52 leading-none font-bold tnum">{reading?.local ?? '--:--'}</span>
+        <span className="text-t18 leading-none font-semibold text-ink-dim tnum">
           {reading?.seconds ?? '--'}
         </span>
       </p>
@@ -107,8 +107,8 @@ export function GreetingClock({ name, dateLabel }: { name: string | null; dateLa
       <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-line-soft pt-3">
         {CITIES.map((c, i) => (
           <span key={c.tz} className="leading-tight">
-            <span className="block text-[10px] text-ink-muted">{c.label}</span>
-            <span className="block text-[13px] text-ink-dim tnum">
+            <span className="block text-t10 text-ink-muted">{c.label}</span>
+            <span className="block text-t13 text-ink-dim tnum">
               {reading ? reading.cities[i] : '--:--'}
             </span>
           </span>
@@ -117,7 +117,7 @@ export function GreetingClock({ name, dateLabel }: { name: string | null; dateLa
 
       {/* 이 화면이 명세의 어느 줄인지 남긴다. PageHeader를 걷어 내면서 이 표기까지
           같이 사라지면, 보는 사람과 만드는 사람이 이 화면을 같은 이름으로 못 부른다. */}
-      <p className="mt-3 text-[9px] text-ink-muted tnum">아침 루틴 · Phase 3-B · CH-019 · CH-045~048</p>
+      <p className="mt-3 text-t9 text-ink-muted tnum">아침 루틴 · Phase 3-B · CH-019 · CH-045~048</p>
     </GlassCard>
   )
 }

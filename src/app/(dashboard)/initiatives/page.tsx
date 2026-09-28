@@ -132,13 +132,13 @@ export default async function InitiativesPage(props: PageProps<'/initiatives'>) 
             '누를 수 있다'를 남긴다 — PageHeader의 코드·설명 줄과 같은 처방이다. */}
         <Link
           href={withParams(BASE, { kind, status, business, stage, view: view === 'table' ? undefined : 'table' })}
-          className="text-[12px] text-ink-dim underline-offset-2 hover:text-ink hover:underline"
+          className="text-t12 text-ink-dim underline-offset-2 hover:text-ink hover:underline"
         >
           {view === 'table' ? '카드로 보기' : '단계별 표로 보기'}
         </Link>
         <Link
           href="/calendar"
-          className="text-[12px] text-ink-dim underline-offset-2 hover:text-ink hover:underline"
+          className="text-t12 text-ink-dim underline-offset-2 hover:text-ink hover:underline"
         >
           캘린더에서 보기
         </Link>
@@ -173,7 +173,7 @@ export default async function InitiativesPage(props: PageProps<'/initiatives'>) 
         />
       )}
 
-      <p className="mt-6 text-[11px] text-ink-dim">
+      <p className="mt-6 text-t11 text-ink-dim">
         보이는 범위는 이 화면이 아니라 0017의 RLS가 정합니다. 회장과 그룹 CFO만 읽습니다.
       </p>
     </div>

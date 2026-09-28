@@ -33,11 +33,11 @@ export default function PrivacyPage() {
       <div className="mx-auto w-full max-w-[760px]">
         <Link href="/login" className="flex items-center gap-2">
           <Icon name="crown" className="size-5 text-gold" filled />
-          <span className="text-[16px] font-bold tracking-tight">CHAIRMAN OS</span>
+          <span className="text-t16 font-bold tracking-tight">CHAIRMAN OS</span>
         </Link>
 
-        <h1 className="mt-6 text-[22px] font-bold tracking-tight">개인정보 처리방침</h1>
-        <p className="mt-1.5 text-[12px] leading-relaxed text-ink-dim">
+        <h1 className="mt-6 text-t22 font-bold tracking-tight">개인정보 처리방침</h1>
+        <p className="mt-1.5 text-t12 leading-relaxed text-ink-dim">
           Chairman OS는 그룹 내부 업무 시스템입니다. 이 문서는 이 시스템이 무엇을 남기고,
           왜 남기며, 누가 보고, 얼마나 두는지를 적습니다. 지키지 않을 문장은 적지
           않았습니다 — 아래의 모든 항목은 코드와 데이터베이스 정책이 그대로 집행합니다.
@@ -212,19 +212,19 @@ export default function PrivacyPage() {
         <div className="mt-8 flex items-center gap-3 border-t border-line-soft pt-4">
           <Link
             href="/login"
-            className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+            className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
           >
             로그인으로
           </Link>
-          <span className="text-[10px] text-ink-muted">
+          <span className="text-t10 text-ink-muted">
             마지막 개정: 블록 7(열람 기록 항목 추가)
           </span>
         </div>
 
         {/* ───────── 영문 요약 ───────── */}
         <section className="mt-6 rounded-xl border border-line-soft bg-panel p-4">
-          <h2 className="text-[13px] font-semibold">Privacy notice (English summary)</h2>
-          <p className="mt-1.5 text-[11px] leading-relaxed text-ink-dim">
+          <h2 className="text-t13 font-semibold">Privacy notice (English summary)</h2>
+          <p className="mt-1.5 text-t11 leading-relaxed text-ink-dim">
             Chairman OS records which screens you open: your account, the time, the path, the
             document id if any, a short device summary (e.g. &quot;Chrome · Windows&quot;), the city
             (never the raw IP address) and your time zone. Repeat visits to the same screen within{' '}
@@ -259,10 +259,10 @@ function Article({
 }) {
   return (
     <section className="mt-5 rounded-xl border border-line-soft bg-panel p-4">
-      <h2 className="flex flex-wrap items-baseline gap-1.5 text-[14px] font-semibold">
+      <h2 className="flex flex-wrap items-baseline gap-1.5 text-t14 font-semibold">
         {title}
         {badge ? (
-          <span className="rounded bg-raised px-1.5 py-0.5 text-[9.5px] font-normal text-ink-dim">
+          <span className="rounded bg-raised px-1.5 py-0.5 text-t9h font-normal text-ink-dim">
             {badge}
           </span>
         ) : null}
@@ -273,21 +273,21 @@ function Article({
 }
 
 function H({ children }: { children: React.ReactNode }) {
-  return <h3 className="mt-2.5 text-[11.5px] font-semibold text-ink">{children}</h3>
+  return <h3 className="mt-2.5 text-t11h font-semibold text-ink">{children}</h3>
 }
 
 function P({ children }: { children: React.ReactNode }) {
-  return <p className="text-[11.5px] leading-relaxed text-ink-dim">{children}</p>
+  return <p className="text-t11h leading-relaxed text-ink-dim">{children}</p>
 }
 
 function Ul({ children }: { children: React.ReactNode }) {
   return (
-    <ul className="ml-4 list-disc space-y-1 text-[11.5px] leading-relaxed text-ink-dim marker:text-ink-muted">
+    <ul className="ml-4 list-disc space-y-1 text-t11h leading-relaxed text-ink-dim marker:text-ink-muted">
       {children}
     </ul>
   )
 }
 
 function Code({ children }: { children: React.ReactNode }) {
-  return <code className="rounded bg-raised px-1 py-0.5 text-[10.5px] text-ink-dim">{children}</code>
+  return <code className="rounded bg-raised px-1 py-0.5 text-t10h text-ink-dim">{children}</code>
 }

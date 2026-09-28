@@ -90,7 +90,7 @@ export function BusinessCard({
           한 줄에 같이 두면 다섯 장이 한 줄에 설 때 명조 회사명이 두세 글자만 남는다. */}
       <div className="flex items-center gap-0.5">
         <span
-          className={`mr-auto flex size-7 shrink-0 items-center justify-center rounded-lg text-[12px] font-bold ${tone.badge}`}
+          className={`mr-auto flex size-7 shrink-0 items-center justify-center rounded-lg text-t12 font-bold ${tone.badge}`}
         >
           {letter}
         </span>
@@ -127,15 +127,15 @@ export function BusinessCard({
       {/* 회사명은 자르지 않고 두 줄까지 접는다. 두 줄 높이를 늘 잡아 둬야 다섯 장의 숫자 줄이 맞는다. */}
       <h3
         title={business.name}
-        className="mt-2 line-clamp-2 min-h-[2.5em] text-[13px] leading-[1.25] font-semibold break-keep"
+        className="mt-2 line-clamp-2 min-h-[2.5em] text-t13 leading-[1.25] font-semibold break-keep"
       >
         {business.name}
       </h3>
       {/* 상태는 업종 옆에 붙인다. 줄을 하나 더 만들면 카드 다섯 장의 키가 어긋난다. */}
-      <p className="mt-0.5 flex items-center gap-1.5 text-[11px] text-ink-muted">
+      <p className="mt-0.5 flex items-center gap-1.5 text-t11 text-ink-muted">
         <span className="truncate">{business.industry}</span>
         {business.status !== 'Active' ? (
-          <span className="shrink-0 rounded bg-raised px-1 py-px text-[9px] text-ink-dim">
+          <span className="shrink-0 rounded bg-raised px-1 py-px text-t9 text-ink-dim">
             {STATUS_LABEL_KO[business.status]}
           </span>
         ) : null}
@@ -164,7 +164,7 @@ export function BusinessCard({
       {/* CH-023~024. 카드가 숫자 셋만 올리는 건 나머지를 이 화면으로 내렸기 때문이다. */}
       <Link
         href={`/business/${encodeURIComponent(business.business_id)}`}
-        className="mt-3 block w-full rounded-lg border border-line py-1.5 text-center text-[12px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+        className="mt-3 block w-full rounded-lg border border-line py-1.5 text-center text-t12 text-ink-dim transition-colors hover:border-accent hover:text-ink"
       >
         상세 보기
       </Link>
@@ -186,9 +186,9 @@ function Metric({
   return (
     <div className="min-w-0">
       {/* 두 줄까지 접힐 수 있어 높이를 고정한다. 아니면 세 칸의 숫자 밑줄이 서로 어긋난다. */}
-      <dt className="min-h-[24px] text-[10px] leading-tight text-ink-muted">{label}</dt>
+      <dt className="min-h-[24px] text-t10 leading-tight text-ink-muted">{label}</dt>
       <dd
-        className={`mt-0.5 text-[13px] font-semibold whitespace-nowrap @[200px]:text-[15px] ${
+        className={`mt-0.5 text-t13 font-semibold whitespace-nowrap @[200px]:text-t15 ${
           negative ? 'text-critical' : 'text-ink'
         }`}
       >

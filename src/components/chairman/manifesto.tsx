@@ -10,7 +10,7 @@ export function Manifesto({ body }: { body: string }) {
   return (
     <article
       aria-label="선언문"
-      className="mx-auto max-w-[720px] text-[15px] leading-[1.95] break-keep whitespace-pre-wrap text-ink"
+      className="mx-auto max-w-[720px] text-t15 leading-[1.95] break-keep whitespace-pre-wrap text-ink"
     >
       {body}
     </article>

@@ -23,7 +23,7 @@ export function LoginForm({ next }: { next: string }) {
       <input type="hidden" name="next" value={next} />
 
       <label className="block">
-        <span className="text-[11px] text-ink-dim">이메일</span>
+        <span className="text-t11 text-ink-dim">이메일</span>
         <input
           name="email"
           type="email"
@@ -31,18 +31,18 @@ export function LoginForm({ next }: { next: string }) {
           required
           autoFocus
           placeholder="chairman@example.com"
-          className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2.5 text-[13px] text-ink outline-none placeholder:text-ink-muted focus:border-accent"
+          className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2.5 text-t13 text-ink outline-none placeholder:text-ink-muted focus:border-accent"
         />
       </label>
 
       <label className="block">
-        <span className="text-[11px] text-ink-dim">비밀번호</span>
+        <span className="text-t11 text-ink-dim">비밀번호</span>
         <input
           name="password"
           type="password"
           autoComplete="current-password"
           required
-          className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2.5 text-[13px] text-ink outline-none focus:border-accent"
+          className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2.5 text-t13 text-ink outline-none focus:border-accent"
         />
       </label>
 
@@ -50,7 +50,7 @@ export function LoginForm({ next }: { next: string }) {
       {state.error ? (
         <p
           role="alert"
-          className="flex items-start gap-1.5 rounded-lg border border-critical/40 bg-critical/10 px-3 py-2 text-[12px] leading-snug text-critical"
+          className="flex items-start gap-1.5 rounded-lg border border-critical/40 bg-critical/10 px-3 py-2 text-t12 leading-snug text-critical"
         >
           <Icon name="shield" className="mt-px size-3.5 shrink-0" />
           {state.error}
@@ -70,7 +70,7 @@ function SubmitButton() {
     <button
       type="submit"
       disabled={pending}
-      className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-lg bg-accent py-2.5 text-[13px] font-semibold text-white transition-opacity disabled:opacity-50"
+      className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-lg bg-accent py-2.5 text-t13 font-semibold text-white transition-opacity disabled:opacity-50"
     >
       {pending ? '확인 중…' : '로그인'}
     </button>

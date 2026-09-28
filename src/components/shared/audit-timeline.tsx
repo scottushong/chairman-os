@@ -19,7 +19,7 @@ export function AuditTimeline({
   emptyMessage: string
 }) {
   if (records.length === 0) {
-    return <p className="text-[12px] text-ink-muted">{emptyMessage}</p>
+    return <p className="text-t12 text-ink-muted">{emptyMessage}</p>
   }
 
   return (
@@ -32,7 +32,7 @@ export function AuditTimeline({
             <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-line" aria-hidden />
 
             <div className="min-w-0 flex-1">
-              <p className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[11.5px]">
+              <p className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-t11h">
                 <span className="font-semibold text-ink-dim">
                   {AUDIT_ACTION_LABEL_KO[record.action] ?? record.action}
                 </span>
@@ -40,7 +40,7 @@ export function AuditTimeline({
                   {record.actor_name}
                   {record.actor_role ? ` · ${record.actor_role}` : ''}
                 </span>
-                <span className="ml-auto shrink-0 text-[10.5px] text-ink-muted tnum">
+                <span className="ml-auto shrink-0 text-t10h text-ink-muted tnum">
                   {formatDateTime(record.occurred_at)}
                 </span>
               </p>
@@ -50,7 +50,7 @@ export function AuditTimeline({
                   {changes.map((c) => (
                     <li
                       key={c.field}
-                      className="flex flex-wrap items-center gap-1.5 text-[11px] text-ink-muted"
+                      className="flex flex-wrap items-center gap-1.5 text-t11 text-ink-muted"
                     >
                       <span className="rounded bg-raised px-1.5 py-px text-ink-dim">{c.label}</span>
                       <span className="tnum">{c.before}</span>
@@ -62,7 +62,7 @@ export function AuditTimeline({
               ) : null}
 
               {record.note ? (
-                <p className="mt-1 text-[11px] leading-snug text-ink-muted">{record.note}</p>
+                <p className="mt-1 text-t11 leading-snug text-ink-muted">{record.note}</p>
               ) : null}
             </div>
           </li>

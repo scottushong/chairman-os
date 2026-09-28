@@ -62,7 +62,7 @@ export default async function SettingsHubPage() {
 
       {/* ───────── 프로필 ───────── */}
       <Section icon="users" title="프로필" scope="전 사용자 공통">
-        <p className="text-[11px] text-ink-dim">
+        <p className="text-t11 text-ink-dim">
           {profile ? (
             <>
               <span className="font-semibold text-ink">{profile.display_name}</span>
@@ -79,7 +79,7 @@ export default async function SettingsHubPage() {
 
       {/* ───────── 계정·보안 ───────── */}
       <Section icon="shield" title="계정·보안" scope="전 사용자 공통">
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-[11.5px] sm:grid-cols-4">
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-t11h sm:grid-cols-4">
           <Cell label="마지막 로그인" value={session.lastSignInAt ? formatDateTime(session.lastSignInAt) : null} />
           <Cell label="지금 이 기기" value={session.device} />
           <Cell label="접속 위치" value={session.place} />
@@ -90,7 +90,7 @@ export default async function SettingsHubPage() {
          * 비어 있는 칸의 이유를 화면이 스스로 말한다. '—'만 남겨 두면 고장으로 읽힌다.
          * 여기 적힌 것이 실제 사정 그대로다(lib/session-info.ts 머리 주석).
          */}
-        <ul className="mt-2 space-y-1 text-[10.5px] text-ink-muted">
+        <ul className="mt-2 space-y-1 text-t10h text-ink-muted">
           <li>
             · <b className="font-semibold">지난 로그인 목록</b>을 보여 주는 화면은 아직
             없습니다. 블록 7부터 로그인 줄에 기기 요약과 도시가 같이 남지만(IP 원본은 남기지
@@ -110,13 +110,13 @@ export default async function SettingsHubPage() {
         <AccountSecurity live={session.live} />
 
         <div className="mt-2.5 rounded-lg bg-raised px-3 py-2.5">
-          <p className="flex items-center gap-1.5 text-[11.5px] font-semibold text-ink">
+          <p className="flex items-center gap-1.5 text-t11h font-semibold text-ink">
             2단계 인증
-            <span className="rounded bg-panel px-1.5 py-0.5 text-[9.5px] font-normal text-ink-dim">
+            <span className="rounded bg-panel px-1.5 py-0.5 text-t9h font-normal text-ink-dim">
               준비 중
             </span>
           </p>
-          <p className="mt-0.5 text-[10.5px] text-ink-muted">
+          <p className="mt-0.5 text-t10h text-ink-muted">
             Phase 6-3에서 붙습니다. 켜는 버튼을 미리 놓아 두지 않았습니다 — 눌러도 아무 일이
             없는 스위치는 보안 설정에서 특히 나쁜 종류의 거짓말입니다.
           </p>
@@ -125,14 +125,14 @@ export default async function SettingsHubPage() {
 
       {/* ───────── 알림 ───────── */}
       <Section icon="bell" title="알림" scope="전 사용자 공통">
-        <p className="text-[11px] text-ink-dim">앱 안의 알림(헤더 종)에서 무엇을 받을지 고릅니다.</p>
+        <p className="text-t11 text-ink-dim">앱 안의 알림(헤더 종)에서 무엇을 받을지 고릅니다.</p>
         <NotifySwitches value={prefs.app.notify} />
         {isChairman ? (
           <div className="mt-2.5 rounded-lg bg-raised px-3 py-2.5">
-            <p className="text-[11.5px] font-semibold text-ink">
+            <p className="text-t11h font-semibold text-ink">
               카카오 아침 브리핑 06:00 (현지 시간 자동)
             </p>
-            <p className="mt-0.5 text-[10.5px] text-ink-muted">
+            <p className="mt-0.5 text-t10h text-ink-muted">
               연결·해제와 시간대 지정은 회장 루틴 화면에 있습니다. 같은 설정을 두 화면에서
               고칠 수 있게 하면 한쪽이 언젠가 낡은 값을 보여 줍니다.
             </p>
@@ -143,7 +143,7 @@ export default async function SettingsHubPage() {
 
       {/* ───────── 화면 ───────── */}
       <Section icon="grid" title="화면" scope="전 사용자 공통">
-        <p className="text-[11px] text-ink-dim">테마</p>
+        <p className="text-t11 text-ink-dim">테마</p>
         <ThemePicker value={prefs.app.theme} />
 
         <div className="mt-3 space-y-1.5">
@@ -186,7 +186,7 @@ export default async function SettingsHubPage() {
 
       {/* ───────── 데이터 ───────── */}
       <Section icon="book" title="데이터" scope="전 사용자 공통">
-        <p className="text-[11px] text-ink-dim">
+        <p className="text-t11 text-ink-dim">
           문서·업무·결정의 변경 이력은 각 화면의 기록 줄에서 그 행만 시간 역순으로 볼 수
           있습니다.
         </p>
@@ -205,7 +205,7 @@ export default async function SettingsHubPage() {
             />
           </div>
         ) : null}
-        <p className="mt-2 rounded-lg bg-raised px-3 py-2.5 text-[10.5px] text-ink-muted">
+        <p className="mt-2 rounded-lg bg-raised px-3 py-2.5 text-t10h text-ink-muted">
           <b className="font-semibold text-ink-dim">내보내기는 없습니다.</b> 이 시스템에 나가는
           통로를 만들지 않는다는 것이 회장님 지시입니다. 파일로 받아 가는 버튼도, 그 코드도
           두지 않았습니다.
@@ -250,13 +250,13 @@ export default async function SettingsHubPage() {
 
       {/* ───────── 이 웹에 대해 ───────── */}
       <Section icon="file-text" title="이 웹에 대해" scope="전 사용자 공통">
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-[11.5px] sm:grid-cols-4">
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-t11h sm:grid-cols-4">
           <Cell label="커밋" value={version.commit} />
           <Cell label="환경" value={version.environment} />
           <Cell label="빌드 일시" value={version.builtAt ? formatDateTime(version.builtAt) : null} />
           <Cell label="마이그레이션" value={version.migration} />
         </dl>
-        <p className="mt-1.5 text-[10px] text-ink-muted">
+        <p className="mt-1.5 text-t10 text-ink-muted">
           커밋과 환경은 Vercel이 배포할 때 채웁니다 — 로컬에서 열면 비어 있는 것이 정상입니다.
           마이그레이션 번호는 <b className="font-semibold">이 코드가 전제하는</b> 마지막
           번호이고, 그것이 실제 DB에 적용됐는지는 이 화면이 알 수 없습니다(운영 적용은 사람이
@@ -276,16 +276,16 @@ export default async function SettingsHubPage() {
             note="아직 문서가 없습니다. 링크만 먼저 걸면 누르는 순간 404가 되고, 그것이 법적 문구에서는 가장 나쁜 모양입니다."
           />
           <div className="rounded-lg bg-raised px-3 py-2.5">
-            <p className="text-[11.5px] font-semibold text-ink">오픈소스</p>
-            <p className="mt-0.5 text-[10.5px] text-ink-muted">
+            <p className="text-t11h font-semibold text-ink">오픈소스</p>
+            <p className="mt-0.5 text-t10h text-ink-muted">
               Next.js · React · Supabase · Tailwind CSS를 씁니다. 전체 목록과 각 라이선스는
               저장소의 <code>package.json</code>과 <code>node_modules</code>에 있습니다 —
               화면이 그 목록을 손으로 옮겨 적으면 의존성이 바뀌는 날 조용히 틀린 말이 됩니다.
             </p>
           </div>
           <div className="rounded-lg bg-raised px-3 py-2.5">
-            <p className="text-[11.5px] font-semibold text-ink">문의</p>
-            <p className="mt-0.5 text-[10.5px] text-ink-muted">
+            <p className="text-t11h font-semibold text-ink">문의</p>
+            <p className="mt-0.5 text-t10h text-ink-muted">
               화면이 이상하면 회장님께 직접 말씀해 주세요. 별도의 문의 창구(메일 주소·티켓)는
               아직 정해지지 않았습니다 — 없는 주소를 적어 두지 않았습니다.
             </p>
@@ -314,10 +314,10 @@ function Section({
 }) {
   return (
     <section className="mt-3.5 rounded-xl border border-line-soft bg-panel p-3.5">
-      <h2 className="mb-2 flex items-baseline gap-1.5 text-[13px] font-semibold">
+      <h2 className="mb-2 flex items-baseline gap-1.5 text-t13 font-semibold">
         <Icon name={icon} className="size-4 text-ink-dim" />
         {title}
-        <span className="rounded bg-raised px-1.5 py-0.5 text-[9.5px] font-normal text-ink-dim">
+        <span className="rounded bg-raised px-1.5 py-0.5 text-t9h font-normal text-ink-dim">
           {scope}
         </span>
       </h2>
@@ -330,7 +330,7 @@ function Section({
 function Cell({ label, value }: { label: string; value: string | null }) {
   return (
     <div>
-      <dt className="text-[10.5px] text-ink-muted">{label}</dt>
+      <dt className="text-t10h text-ink-muted">{label}</dt>
       <dd className={value ? 'mt-0.5 font-semibold text-ink' : 'mt-0.5 text-ink-muted'}>
         {value ?? '—'}
       </dd>
@@ -352,12 +352,12 @@ function Row({
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg bg-raised px-3 py-2.5">
       <span className="min-w-0 flex-1">
-        <span className="block text-[11.5px] font-semibold text-ink">{title}</span>
-        <span className="mt-0.5 block text-[10.5px] text-ink-muted">{note}</span>
+        <span className="block text-t11h font-semibold text-ink">{title}</span>
+        <span className="mt-0.5 block text-t10h text-ink-muted">{note}</span>
       </span>
       <Link
         href={href}
-        className="shrink-0 rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+        className="shrink-0 rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
       >
         {cta}
       </Link>
@@ -369,13 +369,13 @@ function Row({
 function Waiting({ title, note }: { title: string; note: string }) {
   return (
     <div className="rounded-lg bg-raised px-3 py-2.5">
-      <p className="flex items-center gap-1.5 text-[11.5px] font-semibold text-ink">
+      <p className="flex items-center gap-1.5 text-t11h font-semibold text-ink">
         {title}
-        <span className="rounded bg-panel px-1.5 py-0.5 text-[9.5px] font-normal text-ink-dim">
+        <span className="rounded bg-panel px-1.5 py-0.5 text-t9h font-normal text-ink-dim">
           준비 중
         </span>
       </p>
-      <p className="mt-0.5 text-[10.5px] text-ink-muted">{note}</p>
+      <p className="mt-0.5 text-t10h text-ink-muted">{note}</p>
     </div>
   )
 }
@@ -385,7 +385,7 @@ function Go({ href, children }: { href: string; children: React.ReactNode }) {
   return (
     <Link
       href={href}
-      className="mt-2 inline-flex items-center gap-1 rounded-md border border-line px-2.5 py-1 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+      className="mt-2 inline-flex items-center gap-1 rounded-md border border-line px-2.5 py-1 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
     >
       {children}
       <Icon name="chevron-right" className="size-3.5" />

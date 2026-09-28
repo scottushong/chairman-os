@@ -61,14 +61,14 @@ export default async function ProfileSettingsPage() {
       >
         <Link
           href="/settings"
-          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           설정으로
         </Link>
       </PageHeader>
 
       <section className="mt-4 rounded-xl border border-line-soft bg-panel p-3.5">
-        <h2 className="flex items-baseline gap-1.5 text-[13px] font-semibold">
+        <h2 className="flex items-baseline gap-1.5 text-t13 font-semibold">
           <Icon name="pencil" className="size-4 text-ink-dim" />
           기본 정보
         </h2>
@@ -76,15 +76,15 @@ export default async function ProfileSettingsPage() {
       </section>
 
       <section className="mt-3.5 rounded-xl border border-line-soft bg-panel p-3.5">
-        <h2 className="flex items-baseline gap-1.5 text-[13px] font-semibold">
+        <h2 className="flex items-baseline gap-1.5 text-t13 font-semibold">
           <Icon name="shield" className="size-4 text-ink-dim" />
           바꿀 수 없는 것
         </h2>
-        <p className="mt-1 mb-2 text-[10.5px] text-ink-muted">
+        <p className="mt-1 mb-2 text-t10h text-ink-muted">
           역할과 보안등급은 권한 그 자체입니다. 본인이 올릴 수 있으면 권한 체계가 아니게
           되므로, 이 두 칸은 회장님의 사용자·권한 화면에서만 바뀝니다.
         </p>
-        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-[12px] sm:grid-cols-4">
+        <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-t12 sm:grid-cols-4">
           <Readonly label="역할" value={ROLE_LABEL_KO[profile.role]} />
           <Readonly label="보안등급" value={SECURITY_CLASS_LABEL_KO[profile.max_security_class]} />
           <Readonly label="계정 생성" value={formatDateTime(profile.created_at)} />
@@ -93,12 +93,12 @@ export default async function ProfileSettingsPage() {
       </section>
 
       <section className="mt-3.5 rounded-xl border border-line-soft bg-panel p-3.5">
-        <h2 className="flex items-baseline gap-1.5 text-[13px] font-semibold">
+        <h2 className="flex items-baseline gap-1.5 text-t13 font-semibold">
           <Icon name="clock" className="size-4 text-ink-dim" />
           시간대
-          <span className="text-[11px] font-normal text-ink-muted">{tz.timezone}</span>
+          <span className="text-t11 font-normal text-ink-muted">{tz.timezone}</span>
         </h2>
-        <p className="mt-1 text-[10.5px] text-ink-muted">
+        <p className="mt-1 text-t10h text-ink-muted">
           {chairman
             ? '아침 브리핑이 갈 시간대입니다. 수동으로 지정하거나 자동(출장 → 마지막 접속 기기)으로 둘 수 있고, 그 설정은 회장 루틴 화면에 있습니다 — 같은 값을 두 화면에서 고칠 수 있게 하면 한쪽이 낡습니다.'
             : '지금 이 기기가 보낸 시간대입니다. 아침 브리핑의 시각 판정은 회장님 설정만 씁니다.'}
@@ -106,7 +106,7 @@ export default async function ProfileSettingsPage() {
         {chairman ? (
           <Link
             href="/settings/chairman"
-            className="mt-2 inline-block rounded-md border border-line px-2.5 py-1 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+            className="mt-2 inline-block rounded-md border border-line px-2.5 py-1 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
           >
             회장 루틴에서 시간대 설정
           </Link>
@@ -115,28 +115,28 @@ export default async function ProfileSettingsPage() {
 
       {/* Phase 6-2 블록 3 — 2단계 인증. MFA_ENFORCE=true면 임원 이상은 proxy가 필수로 보낸다. 나머지는 여기서 켠다. */}
       <section className="mt-3.5 rounded-xl border border-line-soft bg-panel p-3.5">
-        <h2 className="flex items-baseline gap-1.5 text-[13px] font-semibold">
+        <h2 className="flex items-baseline gap-1.5 text-t13 font-semibold">
           <Icon name="shield" className="size-4 text-ink-dim" />
           2단계 인증
         </h2>
-        <p className="mt-1 text-[10.5px] leading-relaxed text-ink-muted">
+        <p className="mt-1 text-t10h leading-relaxed text-ink-muted">
           인증 앱(Google Authenticator 등)의 6자리 코드로 한 번 더 확인합니다.
           {mfaEnforced() ? ' 임원 이상은 필수이고, 그 밖의 역할은 선택입니다.' : ''} 비밀번호는 12자 이상이어야 하며 유출된 비밀번호 목록에 있으면 쓸 수 없습니다.
         </p>
         <Link
           href="/mfa?next=/settings/profile"
-          className="mt-2 inline-block rounded-md border border-line px-2.5 py-1 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="mt-2 inline-block rounded-md border border-line px-2.5 py-1 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           2단계 인증 설정 · 확인
         </Link>
       </section>
 
       <section className="mt-3.5 mb-6 rounded-xl border border-line-soft bg-panel p-3.5">
-        <h2 className="flex items-baseline gap-1.5 text-[13px] font-semibold">
+        <h2 className="flex items-baseline gap-1.5 text-t13 font-semibold">
           <Icon name="eye" className="size-4 text-ink-dim" />
           프로필 사진
         </h2>
-        <p className="mt-1 text-[10.5px] leading-relaxed text-ink-muted">
+        <p className="mt-1 text-t10h leading-relaxed text-ink-muted">
           조직도와 사람 목록에 이 사진이 뜹니다. <b className="font-semibold text-ink-dim">보이는
           범위는 이름이 보이는 범위와 같습니다</b> — 조직도에 이름이 안 보이는 사람에게는 얼굴도
           보이지 않고, 그 판정은 화면이 아니라 데이터베이스가 합니다.
@@ -152,7 +152,7 @@ export default async function ProfileSettingsPage() {
 function Readonly({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-[10.5px] text-ink-muted">{label}</dt>
+      <dt className="text-t10h text-ink-muted">{label}</dt>
       <dd className="mt-0.5 font-semibold text-ink">{value}</dd>
     </div>
   )

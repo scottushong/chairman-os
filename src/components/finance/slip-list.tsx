@@ -19,13 +19,13 @@ export function SlipList({
   actions?: (slip: SlipView) => React.ReactNode
 }) {
   if (slips.length === 0) {
-    return <p className="px-1 py-6 text-center text-[12px] text-ink-muted">이 달에는 전표가 없습니다.</p>
+    return <p className="px-1 py-6 text-center text-t12 text-ink-muted">이 달에는 전표가 없습니다.</p>
   }
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[820px] text-[12px]">
+      <table className="w-full min-w-[820px] text-t12">
         <thead>
-          <tr className="border-b border-line-soft text-left text-[10.5px] text-ink-muted">
+          <tr className="border-b border-line-soft text-left text-t10h text-ink-muted">
             <th className="px-2 py-1.5 font-normal">일자 · 전표번호</th>
             <th className="px-2 py-1.5 font-normal">계정</th>
             <th className="px-2 py-1.5 text-right font-normal">차변</th>
@@ -38,20 +38,20 @@ export function SlipList({
             <tr className="bg-raised/40">
               <td className="px-2 py-1.5 whitespace-nowrap">
                 <span className="tnum">{s.entry_date}</span>{' '}
-                <span className="tnum text-[11px] text-ink-muted">{s.slip_no}</span>
+                <span className="tnum text-t11 text-ink-muted">{s.slip_no}</span>
               </td>
               <td className="px-2 py-1.5" colSpan={3}>
                 <span className="flex flex-wrap items-center gap-1.5">
                   <span className="font-semibold">{s.memo || '(적요 없음)'}</span>
                   <BasisTag basis={s.closed ? 'confirmed' : 'provisional'} />
-                  <span className="rounded border border-line px-1 text-[9.5px] text-ink-muted">{s.own ? '자체' : 'ECOUNT'}</span>
+                  <span className="rounded border border-line px-1 text-t9h text-ink-muted">{s.own ? '자체' : 'ECOUNT'}</span>
                   {s.correction ? (
-                    <span className="rounded border border-warning/40 px-1 text-[9.5px] text-warning">
+                    <span className="rounded border border-warning/40 px-1 text-t9h text-warning">
                       {s.correction.kind === 'reversal' ? '역분개' : '정정'} ← <span className="tnum">{s.correction.corrects_id}</span>
                     </span>
                   ) : null}
                   {s.corrected_by.length > 0 ? (
-                    <span className="rounded border border-line px-1 text-[9.5px] text-ink-muted">
+                    <span className="rounded border border-line px-1 text-t9h text-ink-muted">
                       정정됨 → <span className="tnum">{s.corrected_by.join(', ')}</span>
                     </span>
                   ) : null}
@@ -60,7 +60,7 @@ export function SlipList({
                       href={s.evidence_url}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-[11px] text-ink-dim underline-offset-2 hover:text-ink hover:underline"
+                      className="text-t11 text-ink-dim underline-offset-2 hover:text-ink hover:underline"
                     >
                       증빙
                     </a>
@@ -79,7 +79,7 @@ export function SlipList({
                   </td>
                   <td className="px-2 py-1 text-right tnum">{l.side === 'debit' ? l.amount.toLocaleString('ko-KR') : ''}</td>
                   <td className="px-2 py-1 text-right tnum">{l.side === 'credit' ? l.amount.toLocaleString('ko-KR') : ''}</td>
-                  <td className="px-2 py-1 text-[11px] text-ink-muted">{l.memo !== s.memo ? l.memo : ''}</td>
+                  <td className="px-2 py-1 text-t11 text-ink-muted">{l.memo !== s.memo ? l.memo : ''}</td>
                 </tr>
               )
             })}

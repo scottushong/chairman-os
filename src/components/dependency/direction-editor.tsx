@@ -51,10 +51,10 @@ export function DirectionEditor({
         canWrite={canWrite}
       />
 
-      <p className="pt-1.5 text-[11px] font-semibold text-ink">
+      <p className="pt-1.5 text-t11 font-semibold text-ink">
         Chairman Letter (§21) — CEO의 operating constitution
       </p>
-      <p className="text-[10.5px] leading-relaxed text-ink-muted">
+      <p className="text-t10h leading-relaxed text-ink-muted">
         문서 §21이 일곱 칸을 요구합니다. 아래 순서가 그 목록입니다 — 비어 있는 칸은 비어 있는
         대로 둡니다. 시스템이 대신 적어 두면 CEO는 그것을 지시로 읽습니다.
       </p>
@@ -162,26 +162,26 @@ function Field({
 
   return (
     <form onSubmit={submit} className="rounded-lg bg-raised p-2.5" aria-label={label}>
-      <label className="block text-[10.5px] text-ink-dim">
+      <label className="block text-t10h text-ink-dim">
         {label}
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={rows}
           placeholder={placeholder}
-          className="mt-0.5 block w-full rounded-md border border-line bg-panel px-2 py-1.5 text-[11.5px] leading-relaxed text-ink outline-none placeholder:text-ink-muted focus:border-accent"
+          className="mt-0.5 block w-full rounded-md border border-line bg-panel px-2 py-1.5 text-t11h leading-relaxed text-ink outline-none placeholder:text-ink-muted focus:border-accent"
         />
       </label>
       <div className="mt-1 flex items-center justify-end gap-2">
         {error ? (
-          <span role="alert" className="text-[11px] text-critical">
+          <span role="alert" className="text-t11 text-critical">
             {error}
           </span>
         ) : null}
         <button
           type="submit"
           disabled={busy || text.trim() === saved.trim()}
-          className="rounded-md bg-accent px-2.5 py-1 text-[11px] font-semibold text-app disabled:opacity-40"
+          className="rounded-md bg-accent px-2.5 py-1 text-t11 font-semibold text-app disabled:opacity-40"
         >
           {busy ? '저장 중…' : '저장'}
         </button>
@@ -237,25 +237,25 @@ function ListField({
 
   return (
     <form onSubmit={submit} className="rounded-lg bg-raised p-2.5" aria-label={label}>
-      <label className="block text-[10.5px] text-ink-dim">
+      <label className="block text-t10h text-ink-dim">
         {label} — 한 줄에 하나
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={Math.max(2, value.length + 1)}
-          className="mt-0.5 block w-full rounded-md border border-line bg-panel px-2 py-1.5 text-[11.5px] leading-relaxed text-ink outline-none focus:border-accent"
+          className="mt-0.5 block w-full rounded-md border border-line bg-panel px-2 py-1.5 text-t11h leading-relaxed text-ink outline-none focus:border-accent"
         />
       </label>
       <div className="mt-1 flex items-center justify-end gap-2">
         {error ? (
-          <span role="alert" className="text-[11px] text-critical">
+          <span role="alert" className="text-t11 text-critical">
             {error}
           </span>
         ) : null}
         <button
           type="submit"
           disabled={busy || text.trim() === saved.trim()}
-          className="rounded-md bg-accent px-2.5 py-1 text-[11px] font-semibold text-app disabled:opacity-40"
+          className="rounded-md bg-accent px-2.5 py-1 text-t11 font-semibold text-app disabled:opacity-40"
         >
           {busy ? '저장 중…' : '저장'}
         </button>
@@ -268,8 +268,8 @@ function ListField({
 function Readonly({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="rounded-lg bg-raised p-2.5">
-      <p className="text-[10.5px] text-ink-dim">{label}</p>
-      <div className="mt-0.5 text-[11.5px] leading-relaxed text-ink">{children}</div>
+      <p className="text-t10h text-ink-dim">{label}</p>
+      <div className="mt-0.5 text-t11h leading-relaxed text-ink">{children}</div>
     </div>
   )
 }

@@ -61,9 +61,9 @@ export function ApprovalForm({
     })
   }
 
-  const input = 'w-full rounded-md border border-line bg-panel px-2.5 py-1.5 text-[12.5px]'
+  const input = 'w-full rounded-md border border-line bg-panel px-2.5 py-1.5 text-t12h'
   const label = (ko: string, en: string, required = false) => (
-    <span className="mb-1 block text-[11px] text-ink-dim">
+    <span className="mb-1 block text-t11 text-ink-dim">
       {tr(lang, ko, en)}
       {required ? <span className="ml-0.5 text-critical">*</span> : null}
     </span>
@@ -83,7 +83,7 @@ export function ApprovalForm({
                 setKey(t.template_key)
                 setForm({})
               }}
-              className={`rounded-lg border px-3 py-1.5 text-[12.5px] font-semibold ${
+              className={`rounded-lg border px-3 py-1.5 text-t12h font-semibold ${
                 t.template_key === key ? 'border-accent bg-accent text-white' : 'border-line bg-raised hover:border-accent'
               }`}
             >
@@ -147,30 +147,30 @@ export function ApprovalForm({
       </section>
 
       <aside className="glass space-y-3 rounded-glass p-4">
-        <h2 className="text-[13px] font-semibold">{tr(lang, '결재선 미리보기', 'Approval line preview')}</h2>
+        <h2 className="text-t13 font-semibold">{tr(lang, '결재선 미리보기', 'Approval line preview')}</h2>
         <ol className="space-y-2">
           {line.map((s, i) => (
             <li key={s.step} className="flex items-start gap-2">
               <span
-                className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-[10.5px] font-bold ${
+                className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-t10h font-bold ${
                   s.step === 'chairman' ? 'bg-gold text-white' : s.step === 'rule' ? 'bg-line-soft text-ink-dim' : 'bg-accent text-white'
                 }`}
               >
                 {i + 1}
               </span>
               <span className="min-w-0">
-                <span className="block text-[12.5px] font-semibold">{s.name}</span>
-                <span className="block text-[11px] text-ink-dim">{s.why}</span>
+                <span className="block text-t12h font-semibold">{s.name}</span>
+                <span className="block text-t11 text-ink-dim">{s.why}</span>
               </span>
             </li>
           ))}
         </ol>
         {line.every((s) => s.step !== 'chairman') ? (
-          <p className="rounded-md bg-raised px-2 py-1.5 text-[11px] text-ink-dim">
+          <p className="rounded-md bg-raised px-2 py-1.5 text-t11 text-ink-dim">
             {tr(lang, '회장까지 올라가지 않는 결재입니다.', 'This does not go up to the Chairman.')}
           </p>
         ) : null}
-        <p className="text-[10.5px] leading-relaxed text-ink-muted">
+        <p className="text-t10h leading-relaxed text-ink-muted">
           {tr(
             lang,
             '올리는 순간 서버가 같은 규칙으로 결재선을 다시 만들어 고정합니다. 이후 조직이 바뀌어도 이 결재의 결재선은 바뀌지 않습니다.',
@@ -179,7 +179,7 @@ export function ApprovalForm({
         </p>
 
         {error ? (
-          <p role="alert" className="rounded-md border border-critical/40 bg-raised px-2 py-1.5 text-[11.5px] text-critical">
+          <p role="alert" className="rounded-md border border-critical/40 bg-raised px-2 py-1.5 text-t11h text-critical">
             {error}
           </p>
         ) : null}
@@ -187,12 +187,12 @@ export function ApprovalForm({
           type="button"
           onClick={submit}
           disabled={pending || missing.length > 0 || (template.attachment_required && !attachment.trim())}
-          className="w-full rounded-lg bg-accent px-3 py-2 text-[13px] font-semibold text-white disabled:opacity-40"
+          className="w-full rounded-lg bg-accent px-3 py-2 text-t13 font-semibold text-white disabled:opacity-40"
         >
           {pending ? tr(lang, '올리는 중…', 'Submitting…') : tr(lang, '결재 올리기', 'Submit')}
         </button>
         {missing.length > 0 ? (
-          <p className="text-[11px] text-ink-muted">
+          <p className="text-t11 text-ink-muted">
             {tr(lang, '필수 항목을 채우면 올릴 수 있습니다.', 'Fill the required fields to submit.')}
           </p>
         ) : null}

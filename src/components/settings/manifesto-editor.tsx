@@ -43,21 +43,21 @@ export function ManifestoEditor({ initial }: { initial: string }) {
         rows={24}
         disabled={busy}
         placeholder="선언문 전문을 붙여 넣으세요. 줄바꿈과 문단이 그대로 /ai에 표시됩니다."
-        className="w-full rounded-lg border border-line bg-raised px-4 py-3 text-[14px] leading-[1.9] text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
+        className="w-full rounded-lg border border-line bg-raised px-4 py-3 text-t14 leading-[1.9] text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
       />
       <div className="mt-2 flex items-center justify-end gap-3">
         {error ? (
-          <span role="alert" className="text-[11.5px] text-critical">
+          <span role="alert" className="text-t11h text-critical">
             {error}
           </span>
         ) : done ? (
-          <span className="text-[11.5px] text-ok">저장했습니다. 감사 기록에 남았습니다.</span>
+          <span className="text-t11h text-ok">저장했습니다. 감사 기록에 남았습니다.</span>
         ) : null}
-        <span className="text-[11px] text-ink-muted tnum">{body.trim().length.toLocaleString()}자</span>
+        <span className="text-t11 text-ink-muted tnum">{body.trim().length.toLocaleString()}자</span>
         <button
           type="submit"
           disabled={busy || !dirty}
-          className="rounded-md bg-accent px-3 py-1.5 text-[12px] font-semibold text-app transition-opacity disabled:opacity-40"
+          className="rounded-md bg-accent px-3 py-1.5 text-t12 font-semibold text-app transition-opacity disabled:opacity-40"
         >
           {busy ? '저장 중…' : '선언문 저장'}
         </button>

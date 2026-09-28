@@ -29,21 +29,21 @@ export function TaskTable({ items }: { items: TaskListItem[] }) {
       {error ? (
         <p
           role="alert"
-          className="m-3 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-[11.5px] text-critical"
+          className="m-3 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-t11h text-critical"
         >
           {error}
         </p>
       ) : null}
 
       {items.length === 0 ? (
-        <p className="px-4 py-10 text-center text-[12.5px] text-ink-muted">
+        <p className="px-4 py-10 text-center text-t12h text-ink-muted">
           조건에 맞는 업무가 없습니다.
         </p>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full min-w-[860px] border-collapse">
             <thead>
-              <tr className="text-[10px] tracking-[0.08em] text-ink-muted">
+              <tr className="text-t10 tracking-[0.08em] text-ink-muted">
                 <th className="px-3 py-2 text-left font-semibold">업무</th>
                 <th className="px-3 py-2 text-left font-semibold">담당</th>
                 <th className="px-3 py-2 text-left font-semibold">중요도</th>

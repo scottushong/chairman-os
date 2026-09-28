@@ -90,13 +90,13 @@ export function SheetFrame({
     <div className={`relative overflow-hidden ${className}`}>
       {/* 불러오는 동안만 덮는다. 덮는 것은 '아직 아무것도 없다'가 참일 때뿐이다. */}
       {state === 'loading' ? (
-        <p className="absolute inset-0 z-10 flex items-center justify-center bg-panel px-4 text-center text-[11.5px] text-ink-muted">
+        <p className="absolute inset-0 z-10 flex items-center justify-center bg-panel px-4 text-center text-t11h text-ink-muted">
           시트를 불러오는 중…
         </p>
       ) : null}
       {/* 늦으면 아래 한 줄. 시트가 떠 있으면 그 위를 가리지 않는다. */}
       {state === 'slow' ? (
-        <p className="pointer-events-none absolute right-0 bottom-0 left-0 z-10 bg-warning/15 px-3 py-1 text-center text-[11px] text-warning">
+        <p className="pointer-events-none absolute right-0 bottom-0 left-0 z-10 bg-warning/15 px-3 py-1 text-center text-t11 text-warning">
           시트가 늦게 뜹니다 — 비어 있으면 게시 설정을 확인하거나 전체 화면으로 여세요.
         </p>
       ) : null}

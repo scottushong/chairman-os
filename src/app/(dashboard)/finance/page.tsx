@@ -30,7 +30,7 @@ export default async function GroupFinancePage(props: PageProps<'/finance'>) {
             <Link
               key={b.business_id}
               href={`/finance/${encodeURIComponent(b.business_id)}`}
-              className="rounded-md border border-line bg-panel px-2 py-1 text-[11px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+              className="rounded-md border border-line bg-panel px-2 py-1 text-t11 text-ink-dim transition-colors hover:border-accent hover:text-ink"
             >
               {b.name}
             </Link>

@@ -60,7 +60,7 @@ export function RunNightBrief() {
   return (
     <div className="flex items-center gap-2">
       {message ? (
-        <span role="status" className={`text-[11px] tnum ${tone}`}>
+        <span role="status" className={`text-t11 tnum ${tone}`}>
           {message.text}
         </span>
       ) : null}
@@ -69,7 +69,7 @@ export function RunNightBrief() {
         onClick={run}
         disabled={busy}
         title="테스트용. 매일 07:00 KST Cron과 같은 Job을 지금 한 번 돌립니다."
-        className="flex items-center gap-1.5 rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink disabled:cursor-wait disabled:opacity-60"
+        className="flex items-center gap-1.5 rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink disabled:cursor-wait disabled:opacity-60"
       >
         <Icon name="sparkles" className={`size-3.5 text-gold ${busy ? 'animate-pulse' : ''}`} />
         {running ? '실행 중… (1분 안팎)' : refreshing ? '불러오는 중…' : '수동 실행'}

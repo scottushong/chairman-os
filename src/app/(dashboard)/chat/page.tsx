@@ -62,16 +62,16 @@ export default async function ChatPage({ searchParams }: PageProps<'/chat'>) {
       />
 
       <div className="mt-3 flex gap-1.5" role="tablist">
-        <Link href="/chat" role="tab" aria-selected={tab === 'chat'} className={`rounded-lg px-3 py-1.5 text-[12.5px] font-semibold ${tab === 'chat' ? 'bg-accent text-white' : 'border border-line bg-raised'}`}>
+        <Link href="/chat" role="tab" aria-selected={tab === 'chat'} className={`rounded-lg px-3 py-1.5 text-t12h font-semibold ${tab === 'chat' ? 'bg-accent text-white' : 'border border-line bg-raised'}`}>
           {tr(lang, '메신저', 'Messenger')}
         </Link>
-        <Link href="/chat?tab=ai" role="tab" aria-selected={tab === 'ai'} className={`rounded-lg px-3 py-1.5 text-[12.5px] font-semibold ${tab === 'ai' ? 'bg-accent text-white' : 'border border-line bg-raised'}`}>
+        <Link href="/chat?tab=ai" role="tab" aria-selected={tab === 'ai'} className={`rounded-lg px-3 py-1.5 text-t12h font-semibold ${tab === 'ai' ? 'bg-accent text-white' : 'border border-line bg-raised'}`}>
           {tr(lang, 'AI에게 묻기', 'Ask AI')}
         </Link>
       </div>
 
       <div className="mt-3 grid grid-cols-1 items-start gap-3 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <aside className="glass rounded-glass p-3 text-[12.5px]">
+        <aside className="glass rounded-glass p-3 text-t12h">
           {tab === 'chat' ? (
             <>
               {groups.map((g) => {
@@ -79,7 +79,7 @@ export default async function ChatPage({ searchParams }: PageProps<'/chat'>) {
                 if (list.length === 0 && g.key !== 'dm') return null
                 return (
                   <div key={g.key} className="mb-2">
-                    <p className="px-1 text-[10.5px] font-semibold tracking-wide text-ink-muted">{g.label}</p>
+                    <p className="px-1 text-t10h font-semibold tracking-wide text-ink-muted">{g.label}</p>
                     <ul>
                       {list.map((c) => (
                         <li key={c.channel_id}>
@@ -107,10 +107,10 @@ export default async function ChatPage({ searchParams }: PageProps<'/chat'>) {
             </>
           ) : (
             <>
-              <Link href="/chat?tab=ai" className="mb-2 block rounded-md border border-line bg-raised px-2 py-1.5 text-center text-[12px] font-semibold hover:border-accent">
+              <Link href="/chat?tab=ai" className="mb-2 block rounded-md border border-line bg-raised px-2 py-1.5 text-center text-t12 font-semibold hover:border-accent">
                 + {tr(lang, '새 질문', 'New question')}
               </Link>
-              <p className="px-1 text-[10.5px] font-semibold text-ink-muted">{tr(lang, '내 대화 (나만 봅니다)', 'My chats (only you)')}</p>
+              <p className="px-1 text-t10h font-semibold text-ink-muted">{tr(lang, '내 대화 (나만 봅니다)', 'My chats (only you)')}</p>
               <ul>
                 {aiChats.map((c) => (
                   <li key={c.chat_id}>
@@ -132,7 +132,7 @@ export default async function ChatPage({ searchParams }: PageProps<'/chat'>) {
             <AiPanel chatId={aiId} messages={aiMessages} lang={lang} />
           ) : selected ? (
             <>
-              <h2 className="mb-1 text-[13.5px] font-semibold">
+              <h2 className="mb-1 text-t13h font-semibold">
                 {selected.kind === 'dm' ? '👤 ' : '# '}
                 {selected.title}
               </h2>
@@ -148,7 +148,7 @@ export default async function ChatPage({ searchParams }: PageProps<'/chat'>) {
               />
             </>
           ) : (
-            <p className="py-10 text-center text-[12.5px] text-ink-muted">
+            <p className="py-10 text-center text-t12h text-ink-muted">
               {tr(lang, '들어갈 수 있는 방이 없습니다.', 'No rooms available.')}
             </p>
           )}

@@ -16,22 +16,22 @@ export function TwoWeekList({ items, range }: { items: CalendarItem[]; range: { 
 
   return (
     <div>
-      <h2 className="text-[13px] font-semibold">앞으로 2주</h2>
-      <p className="mt-1 text-[11px] text-ink-muted">보고 있는 달과 무관하게 오늘부터 14일입니다.</p>
+      <h2 className="text-t13 font-semibold">앞으로 2주</h2>
+      <p className="mt-1 text-t11 text-ink-muted">보고 있는 달과 무관하게 오늘부터 14일입니다.</p>
 
       {rows.length === 0 ? (
-        <p className="mt-3 text-[11.5px] text-ink-muted">2주 안에 예정된 항목이 없습니다.</p>
+        <p className="mt-3 text-t11h text-ink-muted">2주 안에 예정된 항목이 없습니다.</p>
       ) : (
         <div className="mt-3 space-y-3">
           {rows.map(({ day, items: dayItems }) => (
             <div key={day}>
-              <h3 className="text-[11px] font-semibold text-ink-dim">{formatDay(day)}</h3>
+              <h3 className="text-t11 font-semibold text-ink-dim">{formatDay(day)}</h3>
               <ul className="mt-1 space-y-1">
                 {dayItems.map((it) => (
                   <li key={`${it.kind}-${it.source_id}-${day}`}>
                     <Link
                       href={it.href}
-                      className="block truncate text-[11.5px] text-ink-dim hover:text-ink hover:underline"
+                      className="block truncate text-t11h text-ink-dim hover:text-ink hover:underline"
                     >
                       <span className="text-ink-muted">{CALENDAR_ITEM_LABEL_KO[it.kind]}</span> · {it.title}
                     </Link>

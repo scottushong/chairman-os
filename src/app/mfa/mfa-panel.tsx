@@ -89,27 +89,27 @@ export function MfaPanel({ next }: { next: string }) {
 
   if (mode.kind === "off")
     return (
-      <p className="mt-4 text-[12px] text-ink-muted">
+      <p className="mt-4 text-t12 text-ink-muted">
         이 환경(dummy)에는 로그인이 없어 2단계 인증도 없습니다.
       </p>
     );
   if (mode.kind === "loading")
     return (
-      <p className="mt-4 text-[12px] text-ink-muted">{error ?? "준비 중…"}</p>
+      <p className="mt-4 text-t12 text-ink-muted">{error ?? "준비 중…"}</p>
     );
 
   return (
     <div className="mt-4 space-y-3">
       {mode.kind === "enroll" ? (
         <div className="space-y-2 text-center">
-          <p className="text-[12px] text-ink-dim">인증 앱으로 QR을 찍으세요.</p>
+          <p className="text-t12 text-ink-dim">인증 앱으로 QR을 찍으세요.</p>
           {/* eslint-disable-next-line @next/next/no-img-element -- Supabase가 준 data: URL(SVG) 한 장. */}
           <img
             src={mode.qr}
             alt="2단계 인증 QR 코드"
             className="mx-auto size-44 rounded-lg bg-white p-2"
           />
-          <p className="text-[10.5px] text-ink-muted">
+          <p className="text-t10h text-ink-muted">
             QR을 못 찍으면 이 키를 직접 넣으세요:{" "}
             <code className="break-all">{mode.secret}</code>
           </p>
@@ -121,10 +121,10 @@ export function MfaPanel({ next }: { next: string }) {
         inputMode="numeric"
         autoComplete="one-time-code"
         placeholder="6자리 코드"
-        className="w-full rounded-lg border border-line bg-panel px-3 py-2 text-center text-[18px] tracking-[0.3em] tnum"
+        className="w-full rounded-lg border border-line bg-panel px-3 py-2 text-center text-t18 tracking-[0.3em] tnum"
       />
       {error ? (
-        <p role="alert" className="text-[12px] text-critical">
+        <p role="alert" className="text-t12 text-critical">
           {error}
         </p>
       ) : null}
@@ -132,7 +132,7 @@ export function MfaPanel({ next }: { next: string }) {
         type="button"
         onClick={submit}
         disabled={busy || code.length !== 6}
-        className="w-full rounded-lg bg-accent px-3 py-2 text-[13px] font-semibold text-white disabled:opacity-40"
+        className="w-full rounded-lg bg-accent px-3 py-2 text-t13 font-semibold text-white disabled:opacity-40"
       >
         {busy ? "확인 중…" : mode.kind === "enroll" ? "등록하고 계속" : "확인"}
       </button>

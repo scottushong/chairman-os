@@ -106,7 +106,7 @@ export default async function AttentionPage(props: PageProps<'/attention'>) {
       >
         <Link
           href="/attention/rules"
-          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           규칙 · 임계값
         </Link>
@@ -147,21 +147,21 @@ export default async function AttentionPage(props: PageProps<'/attention'>) {
 
       {view.readable && view.unmeasured.length > 0 ? (
         <section className="mt-3 rounded-xl border border-line-soft bg-panel p-3.5">
-          <h2 className="flex items-center gap-1.5 text-[13px] font-semibold">
+          <h2 className="flex items-center gap-1.5 text-t13 font-semibold">
             <Icon name="shield" className="size-4 text-ink-dim" />
             재지 못한 회사
-            <span className="rounded bg-raised px-1.5 py-0.5 text-[9.5px] font-normal text-ink-dim">
+            <span className="rounded bg-raised px-1.5 py-0.5 text-t9h font-normal text-ink-dim">
               정상과 다른 칸입니다
             </span>
           </h2>
           <ul className="mt-2 space-y-1.5">
             {view.unmeasured.map((u) => (
               <li key={u.business_id} className="rounded-lg bg-raised px-3 py-2">
-                <p className="text-[11.5px] font-semibold text-ink">{u.name}</p>
+                <p className="text-t11h font-semibold text-ink">{u.name}</p>
                 {/* 이유 없이는 세지 않는다 — «못 쟀다»는 이유가 곧 그 사실의 근거다. */}
                 <ul className="mt-0.5 space-y-0.5">
                   {u.reasons.map((r) => (
-                    <li key={r} className="text-[10.5px] leading-relaxed text-ink-muted">
+                    <li key={r} className="text-t10h leading-relaxed text-ink-muted">
                       · {r}
                     </li>
                   ))}
@@ -225,7 +225,7 @@ export default async function AttentionPage(props: PageProps<'/attention'>) {
       {/* ───────── 목록 ───────── */}
       <section className="mt-3 space-y-2">
         {shown.length === 0 ? (
-          <p className="rounded-lg bg-raised px-3 py-2.5 text-[11px] leading-relaxed text-ink-muted">
+          <p className="rounded-lg bg-raised px-3 py-2.5 text-t11 leading-relaxed text-ink-muted">
             {view.readable
               ? '이 조건에 해당하는 예외가 없습니다. (필터를 지우면 전체가 보입니다)'
               : /* 못 보는 계정에게는 «없다»고 말하지 않는다. */
@@ -236,7 +236,7 @@ export default async function AttentionPage(props: PageProps<'/attention'>) {
         )}
       </section>
 
-      <p className="mt-3 text-[10px] leading-relaxed text-ink-muted">
+      <p className="mt-3 text-t10 leading-relaxed text-ink-muted">
         이 목록의 등급은 «얼마나 나쁜가»가 아니라 «누가 손대는가»입니다(§19 — RED 회장 결정
         · YELLOW 회장 인지 · GREEN CEO 처리). 점수 옆의 «여섯 축 중 N개 없음»은 그 등급이 몇
         개의 축으로 난 것인지를 말합니다 — 오늘 출처가 있는 축은 재무 하나뿐입니다.
@@ -254,13 +254,13 @@ function Row({ row, canTriage }: { row: AttentionRow; canTriage: boolean }) {
       <div className="flex flex-wrap items-baseline gap-2">
         <SeverityChip level={row.exception.severity} />
         <StatusChip status={row.exception.status} until={row.exception.monitor_until} />
-        <span className="text-[12.5px] font-semibold text-ink">{row.business_name}</span>
-        <span className="text-[11.5px] text-ink-dim">{row.rule_name}</span>
+        <span className="text-t12h font-semibold text-ink">{row.business_name}</span>
+        <span className="text-t11h text-ink-dim">{row.rule_name}</span>
         <Measured row={row} />
         {row.exception.period ? (
-          <span className="text-[10px] text-ink-muted tnum">기간 {row.exception.period}</span>
+          <span className="text-t10 text-ink-muted tnum">기간 {row.exception.period}</span>
         ) : null}
-        <span className="ml-auto text-[10px] text-ink-muted tnum">
+        <span className="ml-auto text-t10 text-ink-muted tnum">
           감지 {row.exception.detected_at.slice(0, 10)}
         </span>
       </div>
@@ -269,7 +269,7 @@ function Row({ row, canTriage }: { row: AttentionRow; canTriage: boolean }) {
         <ScoreLevel row={row} />
         <CeoHandling handling={row.exception.ceo_handling} />
         {row.exception.chairman_action_required ? (
-          <span className="rounded bg-critical/15 px-1.5 py-0.5 text-[9.5px] font-bold text-critical">
+          <span className="rounded bg-critical/15 px-1.5 py-0.5 text-t9h font-bold text-critical">
             회장 결정 필요
           </span>
         ) : null}
@@ -285,17 +285,17 @@ function Row({ row, canTriage }: { row: AttentionRow; canTriage: boolean }) {
        * «이력을 못 읽었다»와 «처음 걸렸다»가 구별되지 않는다.
        */}
       <details className="mt-1.5">
-        <summary className="cursor-pointer text-[10.5px] text-ink-dim">
+        <summary className="cursor-pointer text-t10h text-ink-dim">
           이력 {row.history.length}건 (같은 회사 · 같은 규칙의 지난 기간)
         </summary>
         {row.history.length === 0 ? (
-          <p className="mt-1 text-[10.5px] text-ink-muted">
+          <p className="mt-1 text-t10h text-ink-muted">
             이 규칙이 이 회사에서 걸린 것은 이번이 처음입니다.
           </p>
         ) : (
           <ul className="mt-1 space-y-0.5">
             {row.history.map((h) => (
-              <li key={h.id} className="text-[10.5px] text-ink-muted tnum">
+              <li key={h.id} className="text-t10h text-ink-muted tnum">
                 {h.period ?? '기간 없음'} · {h.severity} · {EXCEPTION_STATUS_LABEL_KO[h.status]} ·
                 감지 {h.detected_at.slice(0, 10)}
               </li>
@@ -317,12 +317,12 @@ function Row({ row, canTriage }: { row: AttentionRow; canTriage: boolean }) {
 function Tile({ label, value, note }: { label: string; value: string; note: string }) {
   return (
     <div className="rounded-xl border border-line-soft bg-panel p-3.5">
-      <p className="flex items-center gap-1.5 text-[11px] text-ink-dim">
+      <p className="flex items-center gap-1.5 text-t11 text-ink-dim">
         <Icon name="target" className="size-3.5" />
         {label}
       </p>
-      <p className="mt-1 text-[22px] font-bold leading-none text-ink tnum">{value}</p>
-      <p className="mt-1.5 text-[10.5px] leading-relaxed text-ink-muted">{note}</p>
+      <p className="mt-1 text-t22 font-bold leading-none text-ink tnum">{value}</p>
+      <p className="mt-1.5 text-t10h leading-relaxed text-ink-muted">{note}</p>
     </div>
   )
 }
@@ -332,7 +332,7 @@ function Tab({ href, on, children }: { href: string; on: boolean; children: Reac
     <Link
       href={href}
       aria-current={on ? 'page' : undefined}
-      className={`rounded-md px-2.5 py-1.5 text-[11.5px] tnum transition-colors ${
+      className={`rounded-md px-2.5 py-1.5 text-t11h tnum transition-colors ${
         on ? 'bg-accent text-app font-semibold' : 'border border-line text-ink-dim hover:text-ink'
       }`}
     >
@@ -354,7 +354,7 @@ function FilterRow({
 }) {
   return (
     <div className="flex flex-wrap items-baseline gap-1">
-      <span className="mr-0.5 text-[10.5px] text-ink-dim">{label}</span>
+      <span className="mr-0.5 text-t10h text-ink-dim">{label}</span>
       <Chip href={all} on={allOn}>
         전체
       </Chip>
@@ -371,7 +371,7 @@ function Chip({ href, on, children }: { href: string; on: boolean; children: Rea
   return (
     <Link
       href={href}
-      className={`rounded px-1.5 py-0.5 text-[10.5px] transition-colors ${
+      className={`rounded px-1.5 py-0.5 text-t10h transition-colors ${
         on ? 'bg-raised font-semibold text-ink' : 'text-ink-muted hover:text-ink'
       }`}
     >

@@ -91,13 +91,13 @@ export default async function ProjectDetailPage(props: PageProps<'/projects/[id]
       >
         <Link
           href={`/tasks?business=${encodeURIComponent(project.business_id)}`}
-          className="rounded-lg border border-line px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="rounded-lg border border-line px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           업무 목록
         </Link>
         <Link
           href={`/business/${encodeURIComponent(project.business_id)}`}
-          className="rounded-lg border border-line px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="rounded-lg border border-line px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           {company}
         </Link>
@@ -106,13 +106,13 @@ export default async function ProjectDetailPage(props: PageProps<'/projects/[id]
       <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
         <div className="space-y-4">
           <section className="rounded-xl border border-line-soft bg-panel p-4">
-            <h2 className="text-[13px] font-semibold">프로젝트</h2>
+            <h2 className="text-t13 font-semibold">프로젝트</h2>
 
             <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 md:grid-cols-4">
               <Field label="담당자">{project.owner}</Field>
               <Field label="중요도">
                 <span
-                  className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${PRIORITY_TONE[project.priority]}`}
+                  className={`rounded px-1.5 py-0.5 text-t10 font-semibold ${PRIORITY_TONE[project.priority]}`}
                 >
                   {WORK_PRIORITY_LABEL_KO[project.priority]}
                 </span>
@@ -130,9 +130,9 @@ export default async function ProjectDetailPage(props: PageProps<'/projects/[id]
             </dl>
 
             <div className="mt-4">
-              <p className="flex items-baseline justify-between text-[11px]">
+              <p className="flex items-baseline justify-between text-t11">
                 <span className="text-ink-muted">진행률</span>
-                <span className="text-[14px] font-semibold tnum">
+                <span className="text-t14 font-semibold tnum">
                   {formatPct(project.progress_pct)}
                 </span>
               </p>
@@ -143,7 +143,7 @@ export default async function ProjectDetailPage(props: PageProps<'/projects/[id]
                 />
               </div>
               {/* 진행률은 프로젝트가 들고 있는 값이다. 업무 완료 수와 자동으로 맞물리지 않는다. */}
-              <p className="mt-1.5 text-[10.5px] text-ink-muted tnum">
+              <p className="mt-1.5 text-t10h text-ink-muted tnum">
                 업무 {own.length}건 중 완료 {done}건
                 {waiting > 0 ? ` · 회장 확인 대기 ${waiting}건` : ''}
               </p>
@@ -151,14 +151,14 @@ export default async function ProjectDetailPage(props: PageProps<'/projects/[id]
           </section>
 
           <section className="rounded-xl border border-line-soft bg-panel p-4">
-            <h2 className="flex items-baseline gap-2 text-[13px] font-semibold">
+            <h2 className="flex items-baseline gap-2 text-t13 font-semibold">
               이 프로젝트의 업무
-              <span className="text-[9px] font-normal text-ink-muted tnum">CH-040</span>
-              <span className="text-[11px] font-normal text-ink-muted tnum">{own.length}건</span>
+              <span className="text-t9 font-normal text-ink-muted tnum">CH-040</span>
+              <span className="text-t11 font-normal text-ink-muted tnum">{own.length}건</span>
             </h2>
 
             {ordered.length === 0 ? (
-              <p className="mt-3 text-[12px] text-ink-muted">이 프로젝트에 등록된 업무가 없습니다.</p>
+              <p className="mt-3 text-t12 text-ink-muted">이 프로젝트에 등록된 업무가 없습니다.</p>
             ) : (
               <ul className="mt-3 space-y-1">
                 {ordered.map((t) => (
@@ -170,13 +170,13 @@ export default async function ProjectDetailPage(props: PageProps<'/projects/[id]
                       {t.chairman_needed && t.status !== 'Done' ? (
                         <Icon name="crown" className="size-3.5 shrink-0 text-gold" filled />
                       ) : null}
-                      <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold">
+                      <span className="min-w-0 flex-1 truncate text-t12h font-semibold">
                         {t.title}
                       </span>
-                      <span className={`shrink-0 text-[11px] ${STATUS_TONE[t.status]}`}>
+                      <span className={`shrink-0 text-t11 ${STATUS_TONE[t.status]}`}>
                         {TASK_STATUS_LABEL_KO[t.status]}
                       </span>
-                      <span className="shrink-0 text-[11px] text-ink-muted tnum">
+                      <span className="shrink-0 text-t11 text-ink-muted tnum">
                         {t.status === 'Done'
                           ? '—'
                           : waitingDays(t) > 0
@@ -184,7 +184,7 @@ export default async function ProjectDetailPage(props: PageProps<'/projects/[id]
                             : '오늘'}
                       </span>
                       <span
-                        className={`w-12 shrink-0 text-right text-[11px] font-semibold tnum ${
+                        className={`w-12 shrink-0 text-right text-t11 font-semibold tnum ${
                           isOverdue(t.deadline) && t.status !== 'Done'
                             ? 'text-critical'
                             : 'text-ink-dim'
@@ -212,10 +212,10 @@ export default async function ProjectDetailPage(props: PageProps<'/projects/[id]
           />
 
           <section className="rounded-xl border border-line-soft bg-panel p-4">
-            <h2 className="text-[13px] font-semibold">상태별</h2>
+            <h2 className="text-t13 font-semibold">상태별</h2>
             <ul className="mt-2.5 space-y-1.5">
               {TASK_STATUS.map((s) => (
-                <li key={s} className="flex items-baseline justify-between text-[12px]">
+                <li key={s} className="flex items-baseline justify-between text-t12">
                   <span className={STATUS_TONE[s]}>{TASK_STATUS_LABEL_KO[s]}</span>
                   <span className="text-ink-dim tnum">
                     {own.filter((t) => t.status === s).length}
@@ -226,9 +226,9 @@ export default async function ProjectDetailPage(props: PageProps<'/projects/[id]
           </section>
 
           <section className="rounded-xl border border-line-soft bg-panel p-4">
-            <h2 className="flex items-baseline gap-2 text-[13px] font-semibold">
+            <h2 className="flex items-baseline gap-2 text-t13 font-semibold">
               이력
-              <span className="text-[9px] font-normal text-ink-muted tnum">CH-051</span>
+              <span className="text-t9 font-normal text-ink-muted tnum">CH-051</span>
             </h2>
             <div className="mt-3">
               <AuditTimeline
@@ -246,8 +246,8 @@ export default async function ProjectDetailPage(props: PageProps<'/projects/[id]
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[10.5px] text-ink-muted">{label}</dt>
-      <dd className="mt-0.5 truncate text-[12.5px] text-ink-dim tnum">{children}</dd>
+      <dt className="text-t10h text-ink-muted">{label}</dt>
+      <dd className="mt-0.5 truncate text-t12h text-ink-dim tnum">{children}</dd>
     </div>
   )
 }

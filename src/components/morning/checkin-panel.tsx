@@ -67,20 +67,20 @@ export function CheckinPanel({ date, initial }: { date: IsoDate; initial: Chairm
   }
 
   const field =
-    'w-full rounded-md border border-line bg-raised px-2.5 py-1.5 text-[13px] text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50'
+    'w-full rounded-md border border-line bg-raised px-2.5 py-1.5 text-t13 text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50'
 
   return (
     <GlassCard as="section" aria-label="오늘 체크인">
       <form onSubmit={submit}>
         <fieldset disabled={busy}>
-          <legend className="text-[13px] font-semibold text-ink">오늘 체크인</legend>
+          <legend className="text-t13 font-semibold text-ink">오늘 체크인</legend>
 
           <div role="radiogroup" aria-label="컨디션" className="mt-2.5 flex gap-1.5">
             {CONDITIONS.map((c) => (
               <label
                 key={c}
                 className={[
-                  'flex h-9 flex-1 cursor-pointer items-center justify-center rounded-md border text-[14px] font-semibold tnum transition-colors',
+                  'flex h-9 flex-1 cursor-pointer items-center justify-center rounded-md border text-t14 font-semibold tnum transition-colors',
                   // 고른 칸은 골드 필이다. bg-accent 위의 글자색은 globals.css가 다크에서
                   // #161412로 내려 준다(황동 위 흰 글자는 2.23:1이라 못 읽는다).
                   condition === c
@@ -103,11 +103,11 @@ export function CheckinPanel({ date, initial }: { date: IsoDate; initial: Chairm
               </label>
             ))}
           </div>
-          <p className="mt-1 text-[10px] text-ink-muted">1 나쁨 · 5 좋음</p>
+          <p className="mt-1 text-t10 text-ink-muted">1 나쁨 · 5 좋음</p>
 
           <div className="mt-3 grid grid-cols-2 gap-2">
             <label className="block">
-              <span className="block text-[11px] text-ink-muted">수면(시간)</span>
+              <span className="block text-t11 text-ink-muted">수면(시간)</span>
               <input
                 type="number"
                 inputMode="decimal"
@@ -124,7 +124,7 @@ export function CheckinPanel({ date, initial }: { date: IsoDate; initial: Chairm
               />
             </label>
             <label className="block">
-              <span className="block text-[11px] text-ink-muted">체중(kg)</span>
+              <span className="block text-t11 text-ink-muted">체중(kg)</span>
               <input
                 type="number"
                 inputMode="decimal"
@@ -143,7 +143,7 @@ export function CheckinPanel({ date, initial }: { date: IsoDate; initial: Chairm
           </div>
 
           <label className="mt-2.5 block">
-            <span className="block text-[11px] text-ink-muted">식사 메모</span>
+            <span className="block text-t11 text-ink-muted">식사 메모</span>
             {/* maxLength는 서버(actions/checkin.ts)가 거절하는 그 숫자다 — 상수 하나를
                 양쪽이 같이 본다(lib/checkin.ts). 화면에만 없으면 회장이 다 적고 저장을
                 누른 다음에야 "500자까지입니다"를 본다. */}
@@ -162,16 +162,16 @@ export function CheckinPanel({ date, initial }: { date: IsoDate; initial: Chairm
 
           <div className="mt-3 flex items-center justify-end gap-2.5">
             {error ? (
-              <span role="alert" className="text-[11px] text-critical">
+              <span role="alert" className="text-t11 text-critical">
                 {error}
               </span>
             ) : done ? (
-              <span className="text-[11px] text-ok">기록했습니다.</span>
+              <span className="text-t11 text-ok">기록했습니다.</span>
             ) : null}
             <button
               type="submit"
               disabled={condition === null}
-              className="rounded-md bg-accent px-3 py-1.5 text-[12px] font-semibold text-ink transition-opacity disabled:opacity-40"
+              className="rounded-md bg-accent px-3 py-1.5 text-t12 font-semibold text-ink transition-opacity disabled:opacity-40"
             >
               {busy ? '저장 중…' : initial ? '다시 기록' : '기록'}
             </button>

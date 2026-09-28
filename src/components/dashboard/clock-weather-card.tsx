@@ -25,7 +25,7 @@ export function ClockWeatherCard({
   return (
     <GlassCard as="section" padding="p-3.5" aria-label="날씨와 세계시간" className="flex h-full flex-col justify-between">
       <div>
-        <p className="flex items-center gap-1.5 text-[12px] font-semibold text-ink">
+        <p className="flex items-center gap-1.5 text-t12 font-semibold text-ink">
           <Icon name="pin" className="size-3.5 shrink-0 text-ink-muted" />
           <span className="truncate">{city}</span>
         </p>
@@ -37,14 +37,14 @@ export function ClockWeatherCard({
               className="size-8 shrink-0 text-ink-dim"
             />
             <span className="flex items-baseline gap-1.5">
-              <span className="text-[34px] leading-none font-bold tnum">
+              <span className="text-t34 leading-none font-bold tnum">
                 {Math.round(weather.temperatureC)}°
               </span>
-              <span className="text-[12px] text-ink-dim">{weather.labelKo}</span>
+              <span className="text-t12 text-ink-dim">{weather.labelKo}</span>
             </span>
           </p>
         ) : (
-          <p className="mt-2.5 text-[12px] text-ink-muted">날씨를 불러오지 못했습니다.</p>
+          <p className="mt-2.5 text-t12 text-ink-muted">날씨를 불러오지 못했습니다.</p>
         )}
       </div>
 

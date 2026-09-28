@@ -143,7 +143,7 @@ export function MetricTrendChart({
     <div>
       <div className="flex gap-2" style={{ height }}>
         {/* y축. justify-between으로 눈금 간격을 플롯 높이에 그대로 맞춘다. */}
-        <div className="flex w-11 shrink-0 flex-col justify-between py-px text-right text-[9px] text-ink-muted tnum">
+        <div className="flex w-11 shrink-0 flex-col justify-between py-px text-right text-t9 text-ink-muted tnum">
           {[...scale.ticks].reverse().map((t) => (
             <span key={t}>{formatY(t)}</span>
           ))}
@@ -227,7 +227,7 @@ export function MetricTrendChart({
            */}
           <span
             data-theme="dark"
-            className={`pointer-events-none absolute z-10 -translate-x-1/2 rounded-md bg-app px-1.5 py-0.5 text-[10px] font-semibold whitespace-nowrap text-ink shadow-sm ring-1 ring-white/15 tnum ${
+            className={`pointer-events-none absolute z-10 -translate-x-1/2 rounded-md bg-app px-1.5 py-0.5 text-t10 font-semibold whitespace-nowrap text-ink shadow-sm ring-1 ring-white/15 tnum ${
               bubbleBelow ? 'translate-y-2' : '-translate-y-[calc(100%+0.5rem)]'
             }`}
             style={{ left: `${cx(lastIndex)}%`, top: `${lastY}%` }}
@@ -244,7 +244,7 @@ export function MetricTrendChart({
           {xTicks.map(({ label, i }) => (
             <span
               key={label}
-              className="absolute top-0 -translate-x-1/2 text-[9px] whitespace-nowrap text-ink-muted tnum"
+              className="absolute top-0 -translate-x-1/2 text-t9 whitespace-nowrap text-ink-muted tnum"
               style={{ left: `${cx(i)}%` }}
             >
               {label}

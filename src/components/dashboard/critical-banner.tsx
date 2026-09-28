@@ -42,13 +42,13 @@ export function CriticalBanner({
         const body = (
           <>
             <Icon name="bell" className="size-4 shrink-0 text-critical" filled />
-            <span className="shrink-0 rounded bg-critical/20 px-1.5 py-0.5 text-[9px] font-bold text-critical">
+            <span className="shrink-0 rounded bg-critical/20 px-1.5 py-0.5 text-t9 font-bold text-critical">
               긴급
             </span>
-            <span className="shrink-0 text-[11px] text-ink-muted">
+            <span className="shrink-0 text-t11 text-ink-muted">
               {businessName(businesses, a.business_id)}
             </span>
-            <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink">
+            <span className="min-w-0 flex-1 truncate text-t13 font-semibold text-ink">
               {a.message}
             </span>
           </>
@@ -62,7 +62,7 @@ export function CriticalBanner({
             className="flex items-center gap-2 rounded-lg px-1.5 py-1 transition-colors hover:bg-critical/10"
           >
             {body}
-            <span className="flex shrink-0 items-center gap-0.5 text-[10.5px] text-critical">
+            <span className="flex shrink-0 items-center gap-0.5 text-t10h text-critical">
               결정하러 가기
               <Icon name="chevron-right" className="size-3" />
             </span>

@@ -43,7 +43,7 @@ export function SeverityChip({ level }: { level: AttentionLevel }) {
         ? 'bg-warning/20 text-warning'
         : 'bg-raised text-ink-dim'
   return (
-    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[9.5px] font-bold tracking-wide ${tone}`}>
+    <span className={`shrink-0 rounded px-1.5 py-0.5 text-t9h font-bold tracking-wide ${tone}`}>
       {level} · {ATTENTION_LEVEL_LABEL_KO[level]}
     </span>
   )
@@ -62,7 +62,7 @@ export function ScoreLevel({ row }: { row: AttentionRow }) {
   return (
     <span
       data-score-note
-      className="inline-flex items-baseline gap-1 text-[10.5px] leading-relaxed text-ink-muted tnum"
+      className="inline-flex items-baseline gap-1 text-t10h leading-relaxed text-ink-muted tnum"
     >
       <Icon name="target" className="size-3 shrink-0 translate-y-0.5" />
       {row.scoreNote}
@@ -87,7 +87,7 @@ export function ScoreLevel({ row }: { row: AttentionRow }) {
 export function AiAnalysis({ analysis }: { analysis: string | null }) {
   if (analysis === null) {
     return (
-      <p className="text-[10.5px] leading-relaxed text-ink-muted">
+      <p className="text-t10h leading-relaxed text-ink-muted">
         <Icon name="sparkles" className="mr-1 inline size-3 -translate-y-px" />
         {AI_ANALYSIS_EMPTY_KO}
       </p>
@@ -95,19 +95,19 @@ export function AiAnalysis({ analysis }: { analysis: string | null }) {
   }
   return (
     <div className="space-y-0.5">
-      <p className="flex flex-wrap items-baseline gap-1.5 text-[10px] text-ink-muted">
+      <p className="flex flex-wrap items-baseline gap-1.5 text-t10 text-ink-muted">
         <Icon name="sparkles" className="size-3 shrink-0 translate-y-0.5 text-gold" />
         AI 분석
         {/* 상수다. 이 자리를 prop으로 만들지 않는다. */}
         <span
           data-ai-not-a-decision
-          className="rounded bg-raised px-1.5 py-0.5 text-[9.5px] font-bold text-ink-dim"
+          className="rounded bg-raised px-1.5 py-0.5 text-t9h font-bold text-ink-dim"
         >
           {AI_NOT_A_DECISION_KO}
         </span>
       </p>
       {analysis.split('\n').map((line, i) => (
-        <p key={i} className="text-[11px] leading-relaxed text-ink-dim">
+        <p key={i} className="text-t11 leading-relaxed text-ink-dim">
           {line}
         </p>
       ))}
@@ -126,7 +126,7 @@ export function BlindNote() {
   return (
     <p
       data-attention-blind
-      className="flex items-baseline gap-1.5 text-[11px] leading-relaxed text-ink-muted"
+      className="flex items-baseline gap-1.5 text-t11 leading-relaxed text-ink-muted"
     >
       <Icon name="shield" className="size-3.5 shrink-0 translate-y-0.5" />
       {EXCEPTION_BLIND_KO}
@@ -138,7 +138,7 @@ export function BlindNote() {
 
 export function StatusChip({ status, until }: { status: ExceptionStatus; until: string | null }) {
   return (
-    <span className="shrink-0 rounded bg-raised px-1.5 py-0.5 text-[9.5px] text-ink-dim tnum">
+    <span className="shrink-0 rounded bg-raised px-1.5 py-0.5 text-t9h text-ink-dim tnum">
       {EXCEPTION_STATUS_LABEL_KO[status]}
       {/* 관찰에는 «언제까지»가 반드시 있다(0035의 check). 그 날짜를 같이 적는다 —
           기한을 안 보여 주면 화면에서 관찰과 «조용히 잊기»가 구별되지 않는다. */}
@@ -154,7 +154,7 @@ export function StatusChip({ status, until }: { status: ExceptionStatus; until: 
  */
 export function CeoHandling({ handling }: { handling: boolean }) {
   return (
-    <span className="text-[10.5px] text-ink-muted">
+    <span className="text-t10h text-ink-muted">
       {handling ? 'CEO 대응 중' : CEO_HANDLING_UNKNOWN_KO}
     </span>
   )
@@ -164,10 +164,10 @@ export function CeoHandling({ handling }: { handling: boolean }) {
 export function Measured({ row }: { row: AttentionRow }) {
   if (row.measured === null) {
     return (
-      <span className="text-[10.5px] text-ink-muted">
+      <span className="text-t10h text-ink-muted">
         잰 값 없음 — {row.rule?.kind === 'manual' ? '사람이 세운 수동 플래그' : '수치가 실리지 않음'}
       </span>
     )
   }
-  return <span className="text-[11px] text-ink tnum">{row.measured}</span>
+  return <span className="text-t11 text-ink tnum">{row.measured}</span>
 }

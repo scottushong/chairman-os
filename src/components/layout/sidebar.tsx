@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useState, useTransition } from 'react'
 
+import { signOut } from '@/app/actions/auth'
 import { saveGroupCollapsed } from '@/app/actions/ui-prefs'
 import { Icon } from '@/components/ui/icon'
 import { NAV, navHref, type NavItem } from '@/lib/nav'
@@ -28,7 +29,7 @@ import { ROLE_LABEL_KO, type SessionUser } from '@/types'
  * 아무 항목과도 맞지 않아 조용히 무시되고, 새 항목은 키가 목록에 없으니 그냥 보인다.
  * 판정 규칙은 lib/ui-prefs.ts 한 곳에만 있다 — 여기에 복사하면 두 벌이 된다.
  */
-export function Sidebar({ user, prefs }: { user: SessionUser | null; prefs: SidebarPrefs }) {
+export function Sidebar({ user, prefs, drawer = false }: { user: SessionUser | null; prefs: SidebarPrefs; drawer?: boolean }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -69,14 +70,14 @@ export function Sidebar({ user, prefs }: { user: SessionUser | null; prefs: Side
   return (
     // glass-nav = --color-nav 면 + backdrop-blur. 셸은 배경 그라데이션 위에 얹힌 유리 틀이고,
     // 그림자는 주지 않는다 — 고정된 틀이 떠 보이면 그 위의 카드가 뜨지 못한다.
-    <aside className="glass-nav flex w-[212px] shrink-0 flex-col border-r border-line-soft">
+    <aside className={`glass-nav flex shrink-0 flex-col border-r border-line-soft ${drawer ? 'h-full w-[min(84vw,320px)]' : 'w-[212px]'}`}>
       {/* 워드마크. 대시보드로 간다. 높이 14는 헤더와 같아야 한다. 다르면 셸 두 장의 아랫선이 어긋난다. */}
       <Link
         href="/"
         className="flex h-14 items-center gap-2 border-b border-line-soft px-4 rounded-md transition-colors hover:bg-raised focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-accent"
       >
         <Icon name="crown" className="size-5 text-gold" filled />
-        <span className="text-[15px] font-bold tracking-[0.04em] text-ink">CHAIRMAN OS</span>
+        <span className="text-t15 font-bold tracking-[0.04em] text-ink">CHAIRMAN OS</span>
       </Link>
 
       <nav className="flex-1 overflow-y-auto px-2.5 pb-3">
@@ -100,7 +101,7 @@ export function Sidebar({ user, prefs }: { user: SessionUser | null; prefs: Side
                   type="button"
                   onClick={() => toggleGroup(groupKey)}
                   aria-expanded={!folded}
-                  className="flex w-full items-center gap-1 rounded px-2.5 pb-1.5 text-[10px] font-semibold tracking-[0.12em] text-ink-muted transition-colors hover:text-ink-dim"
+                  className="flex w-full items-center gap-1 rounded px-2.5 pb-1.5 text-t10 font-semibold tracking-[0.12em] text-ink-muted transition-colors hover:text-ink-dim"
                 >
                   <Icon
                     name="chevron-down"
@@ -108,11 +109,11 @@ export function Sidebar({ user, prefs }: { user: SessionUser | null; prefs: Side
                   />
                   <span>{group.title.toUpperCase()}</span>
                   {folded ? (
-                    <span className="ml-auto text-[9px] font-normal tnum">{items.length}</span>
+                    <span className="ml-auto text-t9 font-normal tnum">{items.length}</span>
                   ) : null}
                 </button>
               ) : group.title ? (
-                <p className="px-2.5 pb-1.5 text-[10px] font-semibold tracking-[0.12em] text-ink-muted">
+                <p className="px-2.5 pb-1.5 text-t10 font-semibold tracking-[0.12em] text-ink-muted">
                   {group.title.toUpperCase()}
                 </p>
               ) : null}
@@ -127,7 +128,7 @@ export function Sidebar({ user, prefs }: { user: SessionUser | null; prefs: Side
                           href={navHref(item)}
                           aria-current={active ? 'page' : undefined}
                           className={[
-                            'group flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-[13px] transition-colors',
+                            'group flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-t13 transition-colors',
                             // 활성 메뉴는 골드 필이 아니라 흰 필이다. 라이트 글래스에서는
                             // 유리가 한 겹 더 두꺼워진 것이 곧 '여기 있다'로 읽히고,
                             // 골드 배경 위 흰 글자(2.23:1)를 보정하던 문제도 같이 사라진다.
@@ -141,7 +142,7 @@ export function Sidebar({ user, prefs }: { user: SessionUser | null; prefs: Side
                           <Icon name={item.icon} className="size-[17px] shrink-0" />
                           <span className="truncate">{item.label}</span>
                           {item.badge ? (
-                            <span className="ml-auto rounded bg-ok/15 px-1.5 py-px text-[9px] font-bold text-ok">
+                            <span className="ml-auto rounded bg-ok/15 px-1.5 py-px text-t9 font-bold text-ok">
                               {item.badge}
                             </span>
                           ) : null}
@@ -174,11 +175,23 @@ export function Sidebar({ user, prefs }: { user: SessionUser | null; prefs: Side
         <ProfileBlock user={user} />
         <Link
           href="/settings/sidebar"
-          className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-line py-2 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-line py-2 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           <Icon name="settings" className="size-3.5" />
           메뉴 설정
         </Link>
+        {/* 폰 헤더에는 로그아웃이 없다(로고 · 검색 · 알림 · 프로필만) — 서랍 맨 아래로 옮긴다. */}
+        {drawer && user ? (
+          <form action={signOut} className="mt-2">
+            <button
+              type="submit"
+              className="flex w-full items-center justify-center gap-1.5 rounded-md border border-line py-2 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
+            >
+              <Icon name="log-out" className="size-3.5" />
+              로그아웃
+            </button>
+          </form>
+        ) : null}
       </div>
     </aside>
   )
@@ -205,12 +218,12 @@ function ProfileBlock({ user }: { user: SessionUser | null }) {
       href="/settings/profile"
       className="mb-2.5 flex items-center gap-2.5 rounded-lg px-1.5 py-1.5 transition-colors hover:bg-raised"
     >
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent-soft text-[12px] font-bold text-ink">
+      <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent-soft text-t12 font-bold text-ink">
         {user.name.slice(0, 1)}
       </span>
       <span className="min-w-0 leading-tight">
-        <span className="block truncate text-[12.5px] font-semibold text-ink">{user.name}</span>
-        <span className="block truncate text-[10.5px] text-ink-muted">
+        <span className="block truncate text-t12h font-semibold text-ink">{user.name}</span>
+        <span className="block truncate text-t10h text-ink-muted">
           {en ? `${title} · ${en}` : title}
         </span>
       </span>

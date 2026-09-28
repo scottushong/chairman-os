@@ -127,11 +127,11 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
         {/* Phase 9 블록 2. 양식(지출 · 구매 · 휴가 · 계약 · 채용)과 결재선 미리보기. */}
         <Link
           href="/approvals/new"
-          className="rounded-md border border-accent bg-accent px-2.5 py-1.5 text-[11.5px] font-semibold text-white"
+          className="rounded-md border border-accent bg-accent px-2.5 py-1.5 text-t11h font-semibold text-white"
         >
           + 양식으로 올리기
         </Link>
-        <span className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim tnum">
+        <span className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim tnum">
           오늘 처리 <span className="font-semibold text-ink">{countOn(audit, dayKey())}</span>건
         </span>
       </PageHeader>
@@ -152,7 +152,7 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
       <div className="mt-3 grid grid-cols-12 gap-3.5 pb-6">
         <div className="col-span-12 xl:col-span-5">
           {ordered.length === 0 ? (
-            <p className="rounded-xl border border-line-soft bg-panel px-4 py-10 text-center text-[12.5px] text-ink-muted">
+            <p className="rounded-xl border border-line-soft bg-panel px-4 py-10 text-center text-t12h text-ink-muted">
               {tab === 'open' ? '대기 중인 결재가 없습니다.' : '처리한 결재가 없습니다.'}
             </p>
           ) : (
@@ -170,15 +170,15 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
                   >
                     <span className="flex items-center gap-1.5">
                       <span
-                        className={`rounded px-1.5 py-0.5 text-[9px] font-semibold ${IMPACT_TONE[d.impact]}`}
+                        className={`rounded px-1.5 py-0.5 text-t9 font-semibold ${IMPACT_TONE[d.impact]}`}
                       >
                         {WORK_PRIORITY_LABEL_KO[d.impact]}
                       </span>
-                      <span className="truncate text-[11px] text-ink-muted">
+                      <span className="truncate text-t11 text-ink-muted">
                         {businessName(businesses, d.business_id)}
                       </span>
                       <span
-                        className={`ml-auto shrink-0 text-[11px] font-semibold tnum ${
+                        className={`ml-auto shrink-0 text-t11 font-semibold tnum ${
                           dDay(d.deadline) < 0 && d.status === 'Open'
                             ? 'text-critical'
                             : 'text-ink-dim'
@@ -189,11 +189,11 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
                           : DECISION_STATUS_LABEL_KO[d.status]}
                       </span>
                     </span>
-                    <span className="mt-1 block text-[13px] leading-snug font-semibold">
+                    <span className="mt-1 block text-t13 leading-snug font-semibold">
                       {d.title}
                     </span>
                     {d.attachment_url ? (
-                      <span className="mt-1 flex items-center gap-1 text-[10.5px] text-ink-muted">
+                      <span className="mt-1 flex items-center gap-1 text-t10h text-ink-muted">
                         <Icon name="file-text" className="size-3" />
                         첨부 있음
                       </span>
@@ -213,7 +213,7 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
               history={history}
             />
           ) : (
-            <p className="rounded-xl border border-line-soft bg-panel px-4 py-10 text-center text-[12.5px] text-ink-muted">
+            <p className="rounded-xl border border-line-soft bg-panel px-4 py-10 text-center text-t12h text-ink-muted">
               왼쪽에서 결재를 고르면 내용과 처리 이력이 여기 열립니다.
             </p>
           )}

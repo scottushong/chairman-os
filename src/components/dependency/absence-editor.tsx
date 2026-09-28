@@ -68,7 +68,7 @@ export function AbsenceEditor({
   return (
     <div>
       {tests.length === 0 ? (
-        <p className="rounded-lg bg-raised px-3 py-2.5 text-[11px] text-ink-muted">
+        <p className="rounded-lg bg-raised px-3 py-2.5 text-t11 text-ink-muted">
           아직 부재 테스트를 치르거나 예정한 적이 없습니다. §12는 7 · 30 · 90 · 365일 넷을 봅니다.
         </p>
       ) : (
@@ -76,26 +76,26 @@ export function AbsenceEditor({
           {tests.map((t) => (
             <li
               key={`${t.days}-${t.scheduled_on}`}
-              className="flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-lg bg-raised px-3 py-2 text-[11.5px]"
+              className="flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-lg bg-raised px-3 py-2 text-t11h"
             >
               <b className="font-semibold text-ink tnum">{t.days}일</b>
               <span className="text-ink-dim tnum">{t.scheduled_on}</span>
               <span
-                className={`rounded px-1.5 py-0.5 text-[10px] ${
+                className={`rounded px-1.5 py-0.5 text-t10 ${
                   // 색은 예외를 가리킨다(§32). 실패만 색이 붙는다 — 통과는 정상이다.
                   t.result === 'fail' ? 'bg-critical/15 text-critical' : 'bg-panel text-ink-dim'
                 }`}
               >
                 {ABSENCE_RESULT_LABEL_KO[t.result]}
               </span>
-              {t.note ? <span className="text-[10.5px] text-ink-muted">{t.note}</span> : null}
+              {t.note ? <span className="text-t10h text-ink-muted">{t.note}</span> : null}
               {canWrite ? (
                 <select
                   value={t.result}
                   disabled={busy}
                   onChange={(e) => setResult(t, e.target.value)}
                   aria-label={`${t.days}일 테스트 결과`}
-                  className="ml-auto rounded-md border border-line bg-panel px-1.5 py-0.5 text-[10.5px] text-ink outline-none focus:border-accent"
+                  className="ml-auto rounded-md border border-line bg-panel px-1.5 py-0.5 text-t10h text-ink outline-none focus:border-accent"
                 >
                   {ABSENCE_RESULT.map((r) => (
                     <option key={r} value={r}>
@@ -111,12 +111,12 @@ export function AbsenceEditor({
 
       {canWrite ? (
         <form onSubmit={add} className="mt-2 flex flex-wrap items-end gap-2" aria-label="부재 테스트 예정">
-          <label className="text-[10.5px] text-ink-dim">
+          <label className="text-t10h text-ink-dim">
             기간
             <select
               value={days}
               onChange={(e) => setDays(Number(e.target.value))}
-              className="mt-0.5 block rounded-md border border-line bg-panel px-2 py-1 text-[11.5px] text-ink outline-none focus:border-accent"
+              className="mt-0.5 block rounded-md border border-line bg-panel px-2 py-1 text-t11h text-ink outline-none focus:border-accent"
             >
               {ABSENCE_DAYS.map((d) => (
                 <option key={d} value={d}>
@@ -125,32 +125,32 @@ export function AbsenceEditor({
               ))}
             </select>
           </label>
-          <label className="text-[10.5px] text-ink-dim">
+          <label className="text-t10h text-ink-dim">
             시작 예정일
             <input
               type="date"
               value={on}
               onChange={(e) => setOn(e.target.value)}
-              className="mt-0.5 block rounded-md border border-line bg-panel px-2 py-1 text-[11.5px] text-ink outline-none focus:border-accent"
+              className="mt-0.5 block rounded-md border border-line bg-panel px-2 py-1 text-t11h text-ink outline-none focus:border-accent"
             />
           </label>
-          <label className="min-w-[180px] flex-1 text-[10.5px] text-ink-dim">
+          <label className="min-w-[180px] flex-1 text-t10h text-ink-dim">
             메모
             <input
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              className="mt-0.5 block w-full rounded-md border border-line bg-panel px-2 py-1 text-[11.5px] text-ink outline-none focus:border-accent"
+              className="mt-0.5 block w-full rounded-md border border-line bg-panel px-2 py-1 text-t11h text-ink outline-none focus:border-accent"
             />
           </label>
           {error ? (
-            <span role="alert" className="text-[11px] text-critical">
+            <span role="alert" className="text-t11 text-critical">
               {error}
             </span>
           ) : null}
           <button
             type="submit"
             disabled={busy}
-            className="rounded-md bg-accent px-3 py-1.5 text-[11.5px] font-semibold text-app disabled:opacity-40"
+            className="rounded-md bg-accent px-3 py-1.5 text-t11h font-semibold text-app disabled:opacity-40"
           >
             예정 등록
           </button>
@@ -190,7 +190,7 @@ export function AutonomyEditor({
 
   return (
     <form onSubmit={submit} className="mt-2 rounded-lg bg-raised p-2.5" aria-label="분기 자율성 평가">
-      <p className="text-[10.5px] text-ink-dim">
+      <p className="text-t10h text-ink-dim">
         {quarter} 평가 — 등급 기준은{' '}
         <Link href="/dependency/settings" className="underline underline-offset-2">
           세는 규칙
@@ -202,7 +202,7 @@ export function AutonomyEditor({
           value={level}
           onChange={(e) => setLevel(e.target.value)}
           aria-label="자율성 등급"
-          className="rounded-md border border-line bg-panel px-2 py-1 text-[11.5px] text-ink outline-none focus:border-accent"
+          className="rounded-md border border-line bg-panel px-2 py-1 text-t11h text-ink outline-none focus:border-accent"
         >
           <option value="">— 고르세요</option>
           {AUTONOMY_LEVEL.map((l) => (
@@ -215,27 +215,27 @@ export function AutonomyEditor({
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="이 등급으로 본 근거"
-          className="min-w-[200px] flex-1 rounded-md border border-line bg-panel px-2 py-1 text-[11.5px] text-ink outline-none placeholder:text-ink-muted focus:border-accent"
+          className="min-w-[200px] flex-1 rounded-md border border-line bg-panel px-2 py-1 text-t11h text-ink outline-none placeholder:text-ink-muted focus:border-accent"
         />
         <button
           type="submit"
           disabled={busy || level === ''}
-          className="rounded-md bg-accent px-3 py-1.5 text-[11.5px] font-semibold text-app disabled:opacity-40"
+          className="rounded-md bg-accent px-3 py-1.5 text-t11h font-semibold text-app disabled:opacity-40"
         >
           {busy ? '저장 중…' : '평가 저장'}
         </button>
       </div>
       {level ? (
-        <p className="mt-1.5 text-[10.5px] leading-relaxed text-ink-muted">
+        <p className="mt-1.5 text-t10h leading-relaxed text-ink-muted">
           {AUTONOMY_CRITERIA_KO[level as keyof typeof AUTONOMY_CRITERIA_KO]}
         </p>
       ) : null}
       {error ? (
-        <p role="alert" className="mt-1 text-[11px] text-critical">
+        <p role="alert" className="mt-1 text-t11 text-critical">
           {error}
         </p>
       ) : done ? (
-        <p className="mt-1 text-[11px] text-ok">저장했습니다. 감사 기록에 남았습니다.</p>
+        <p className="mt-1 text-t11 text-ok">저장했습니다. 감사 기록에 남았습니다.</p>
       ) : null}
     </form>
   )

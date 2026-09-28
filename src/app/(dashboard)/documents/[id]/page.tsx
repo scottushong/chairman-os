@@ -73,7 +73,7 @@ export default async function DocumentDetailPage(props: PageProps<'/documents/[i
       <PageHeader icon="book" title={doc.title} code="CH-042" description={`${scope} · ${doc.document_id}`}>
         <Link
           href="/documents"
-          className="rounded-lg border border-line px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="rounded-lg border border-line px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           문서 목록
         </Link>
@@ -82,7 +82,7 @@ export default async function DocumentDetailPage(props: PageProps<'/documents/[i
           target="_blank"
           rel="noreferrer noopener"
           title={doc.storage_url}
-          className="flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           <Icon name="file-text" className="size-3.5" />
           열기
@@ -92,7 +92,7 @@ export default async function DocumentDetailPage(props: PageProps<'/documents/[i
       <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-4">
           <section className="rounded-xl border border-line-soft bg-panel p-4">
-            <h2 className="text-[13px] font-semibold">문서</h2>
+            <h2 className="text-t13 font-semibold">문서</h2>
             <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 md:grid-cols-4">
               <Field label="소속">{scope}</Field>
               <Field label="유형">{doc.doc_type}</Field>
@@ -106,10 +106,10 @@ export default async function DocumentDetailPage(props: PageProps<'/documents/[i
             </dl>
             {chain.length > 1 ? (
               <div className="mt-3 border-t border-line-soft pt-2.5">
-                <p className="text-[11px] font-semibold text-ink-dim">버전 이력</p>
+                <p className="text-t11 font-semibold text-ink-dim">버전 이력</p>
                 <ol className="mt-1 space-y-0.5">
                   {chain.map((v) => (
-                    <li key={v.document_id} className="flex items-baseline gap-2 text-[12px]">
+                    <li key={v.document_id} className="flex items-baseline gap-2 text-t12">
                       <span className="w-8 shrink-0 font-semibold tnum">v{v.version}</span>
                       {v.document_id === doc.document_id ? (
                         <span className="text-ink">지금 보는 판</span>
@@ -118,13 +118,13 @@ export default async function DocumentDetailPage(props: PageProps<'/documents/[i
                           {v.document_id}
                         </Link>
                       )}
-                      <span className="text-[10.5px] text-ink-muted tnum">{formatDateTime(v.created_at)} · {v.uploaded_by}</span>
+                      <span className="text-t10h text-ink-muted tnum">{formatDateTime(v.created_at)} · {v.uploaded_by}</span>
                     </li>
                   ))}
                 </ol>
               </div>
             ) : null}
-            <p className="mt-3 text-[11px] leading-relaxed text-ink-muted">
+            <p className="mt-3 text-t11 leading-relaxed text-ink-muted">
               파일은 이 시스템에 없습니다. 사내 스토리지의 주소만 보관합니다 — Vault 등급일수록
               실체가 여기 없어야 합니다.
               {doc.security_class === 'Public'
@@ -134,10 +134,10 @@ export default async function DocumentDetailPage(props: PageProps<'/documents/[i
           </section>
 
           <section className="rounded-xl border border-line-soft bg-panel p-4">
-            <h2 className="flex items-baseline gap-2 text-[13px] font-semibold">
+            <h2 className="flex items-baseline gap-2 text-t13 font-semibold">
               이력
-              <span className="text-[9px] font-normal text-ink-muted tnum">CH-051</span>
-              <span className="text-[11px] font-normal text-ink-muted tnum">{audit.length}건</span>
+              <span className="text-t9 font-normal text-ink-muted tnum">CH-051</span>
+              <span className="text-t11 font-normal text-ink-muted tnum">{audit.length}건</span>
             </h2>
             <div className="mt-3">
               <AuditTimeline records={audit} emptyMessage="아직 이 문서를 고친 기록이 없습니다." />
@@ -162,8 +162,8 @@ export default async function DocumentDetailPage(props: PageProps<'/documents/[i
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[10.5px] text-ink-muted">{label}</dt>
-      <dd className="mt-0.5 truncate text-[12.5px] text-ink-dim tnum">{children}</dd>
+      <dt className="text-t10h text-ink-muted">{label}</dt>
+      <dd className="mt-0.5 truncate text-t12h text-ink-dim tnum">{children}</dd>
     </div>
   )
 }

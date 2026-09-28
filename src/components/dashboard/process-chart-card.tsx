@@ -44,8 +44,8 @@ export function ProcessChartCard({
   if (withCharts.length === 0) {
     return (
       <GlassCard as="section" padding="p-3.5" className="flex h-full flex-col">
-        <h2 className="text-[13px] font-semibold">프로세스차트</h2>
-        <p className="mt-3 text-[12px] text-ink-dim">
+        <h2 className="text-t13 font-semibold">프로세스차트</h2>
+        <p className="mt-3 text-t12 text-ink-dim">
           등록된 프로세스차트가 없습니다.{' '}
           <Link href="/settings/process-charts" className="text-accent underline">
             등록 화면
@@ -59,11 +59,11 @@ export function ProcessChartCard({
   return (
     <GlassCard as="section" padding="p-3.5" className="flex h-full min-h-0 flex-col">
       <div className="flex items-baseline justify-between gap-2">
-        <h2 className="text-[13px] font-semibold">프로세스차트</h2>
+        <h2 className="text-t13 font-semibold">프로세스차트</h2>
         {current ? (
           <Link
             href={`/process/${current.id}`}
-            className="shrink-0 rounded-md border border-line bg-panel px-2 py-0.5 text-[11px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+            className="shrink-0 rounded-md border border-line bg-panel px-2 py-0.5 text-t11 text-ink-dim transition-colors hover:border-accent hover:text-ink"
           >
             전체 화면
           </Link>
@@ -84,7 +84,7 @@ export function ProcessChartCard({
                 setTeamId(null)
               }}
               aria-pressed={b.business_id === businessId}
-              className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
+              className={`rounded px-2 py-0.5 text-t11 transition-colors ${
                 b.business_id === businessId
                   ? 'bg-accent/15 font-semibold text-accent'
                   : 'text-ink-dim hover:bg-raised hover:text-ink'
@@ -105,7 +105,7 @@ export function ProcessChartCard({
             type="button"
             onClick={() => setTeamId(t.id)}
             aria-pressed={t.id === current?.id}
-            className={`rounded px-2 py-0.5 text-[11px] transition-colors ${
+            className={`rounded px-2 py-0.5 text-t11 transition-colors ${
               t.id === current?.id
                 ? 'bg-white/80 font-semibold text-ink shadow-sm'
                 : 'text-ink-dim hover:bg-raised hover:text-ink'
@@ -125,7 +125,7 @@ export function ProcessChartCard({
             title={current.title}
             className="mt-2 min-h-[700px] flex-1 rounded-md border border-line-soft"
           />
-          <p className="mt-1.5 flex items-center justify-between gap-2 text-[10.5px] text-ink-muted">
+          <p className="mt-1.5 flex items-center justify-between gap-2 text-t10h text-ink-muted">
             <span className="truncate">{current.title}</span>
             <a
               href={current.embed_url}

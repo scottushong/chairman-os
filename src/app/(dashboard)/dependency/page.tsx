@@ -89,7 +89,7 @@ export default async function DependencyPage() {
       >
         <Link
           href="/dependency/settings"
-          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           세는 규칙
         </Link>
@@ -127,7 +127,7 @@ export default async function DependencyPage() {
       </section>
 
       {unknownTotal > 0 ? (
-        <p className="mt-2 rounded-lg bg-raised px-3 py-2 text-[11px] leading-relaxed text-ink-dim">
+        <p className="mt-2 rounded-lg bg-raised px-3 py-2 text-t11 leading-relaxed text-ink-dim">
           {BACKFILL_UNREACHED_KO}{' '}
           <Link href="/dependency/settings" className="underline underline-offset-2">
             역산 규칙 보기
@@ -141,9 +141,9 @@ export default async function DependencyPage() {
           <Missing>볼 수 있는 회사가 없습니다.</Missing>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[880px] border-collapse text-[11.5px]">
+            <table className="w-full min-w-[880px] border-collapse text-t11h">
               <thead>
-                <tr className="border-b border-line-soft text-left text-[10.5px] text-ink-dim">
+                <tr className="border-b border-line-soft text-left text-t10h text-ink-dim">
                   <th className="py-1.5 pr-3 font-normal">회사</th>
                   <th className="py-1.5 pr-3 font-normal">의존도</th>
                   <th className="py-1.5 pr-3 font-normal">12개월</th>
@@ -163,7 +163,7 @@ export default async function DependencyPage() {
                       </td>
                       <td className="py-2 pr-3">
                         {r.current === null ? (
-                          <span className="text-[10.5px] text-ink-muted">
+                          <span className="text-t10h text-ink-muted">
                             아직 계산할 수 없습니다
                             <br />
                             (처리된 결정 0건)
@@ -171,9 +171,9 @@ export default async function DependencyPage() {
                         ) : (
                           <>
                             <Percent value={r.current} />
-                            <span className="ml-1 text-[10px] text-ink-muted tnum">{r.currentPeriod}</span>
+                            <span className="ml-1 text-t10 text-ink-muted tnum">{r.currentPeriod}</span>
                             {r.unknown > 0 ? (
-                              <span className="block text-[10px] text-ink-muted">
+                              <span className="block text-t10 text-ink-muted">
                                 역산 미도달 {r.unknown}건 제외
                               </span>
                             ) : null}
@@ -185,7 +185,7 @@ export default async function DependencyPage() {
                         {spark.length >= 2 ? (
                           <Sparkline data={spark} className="h-[22px] w-[120px]" />
                         ) : (
-                          <span className="text-[10px] text-ink-muted">
+                          <span className="text-t10 text-ink-muted">
                             표시할 달이 부족합니다 ({spark.length}개월)
                           </span>
                         )}
@@ -197,26 +197,26 @@ export default async function DependencyPage() {
                         {canSeeInterventions ? (
                           <>
                             {r.interventions}건
-                            <span className="ml-1 text-[10px] text-ink-muted">{thisMonth}</span>
+                            <span className="ml-1 text-t10 text-ink-muted">{thisMonth}</span>
                           </>
                         ) : (
-                          <span className="text-[10.5px] text-ink-muted">권한 밖이라 집계되지 않습니다</span>
+                          <span className="text-t10h text-ink-muted">권한 밖이라 집계되지 않습니다</span>
                         )}
                       </td>
                       <td className="py-2 pr-3">
                         {r.nextTransfer ? (
                           <>
                             <span className="text-ink">{r.nextTransfer.area}</span>
-                            <span className="block text-[10px] text-ink-muted">
+                            <span className="block text-t10 text-ink-muted">
                               {TRANSFER_STATUS_LABEL_KO[r.nextTransfer.transfer_status ?? 'not_started']}
                               {r.nextTransfer.target_date ? ` · ${r.nextTransfer.target_date}` : ' · 목표일 없음'}
                             </span>
                           </>
                         ) : (
-                          <span className="text-[10.5px] text-ink-muted">이양 계획 없음</span>
+                          <span className="text-t10h text-ink-muted">이양 계획 없음</span>
                         )}
                         {r.transfer ? (
-                          <span className="block text-[10px] text-ink-muted tnum">
+                          <span className="block text-t10 text-ink-muted tnum">
                             이양 {r.transfer.done}/{r.transfer.planned}
                           </span>
                         ) : null}
@@ -225,12 +225,12 @@ export default async function DependencyPage() {
                         {r.nextAbsence ? (
                           <>
                             <span className="text-ink tnum">{r.nextAbsence.days}일</span>
-                            <span className="block text-[10px] text-ink-muted tnum">
+                            <span className="block text-t10 text-ink-muted tnum">
                               {r.nextAbsence.scheduled_on} 시작 예정
                             </span>
                           </>
                         ) : (
-                          <span className="text-[10.5px] text-ink-muted">예정된 테스트 없음</span>
+                          <span className="text-t10h text-ink-muted">예정된 테스트 없음</span>
                         )}
                       </td>
                     </tr>
@@ -242,7 +242,7 @@ export default async function DependencyPage() {
         )}
       </Section>
 
-      <p className="mt-3 text-[10px] leading-relaxed text-ink-muted">
+      <p className="mt-3 text-t10 leading-relaxed text-ink-muted">
         이 값은 회사의 값입니다. 같은 회사·같은 달이면 어느 계정에서 보아도 같은 수치입니다 —
         집계는 회사 전체의 결정으로 하고, 계정에 따라 달라지는 것은 «어느 회사가 목록에
         보이는가»뿐입니다.
@@ -256,12 +256,12 @@ export default async function DependencyPage() {
 function Tile({ label, value, note }: { label: string; value: string; note: string }) {
   return (
     <div className="rounded-xl border border-line-soft bg-panel p-3.5">
-      <p className="flex items-center gap-1.5 text-[11px] text-ink-dim">
+      <p className="flex items-center gap-1.5 text-t11 text-ink-dim">
         <Icon name="target" className="size-3.5" />
         {label}
       </p>
-      <p className="mt-1 text-[22px] font-bold leading-none text-ink tnum">{value}</p>
-      <p className="mt-1.5 text-[10.5px] leading-relaxed text-ink-muted">{note}</p>
+      <p className="mt-1 text-t22 font-bold leading-none text-ink tnum">{value}</p>
+      <p className="mt-1.5 text-t10h leading-relaxed text-ink-muted">{note}</p>
     </div>
   )
 }

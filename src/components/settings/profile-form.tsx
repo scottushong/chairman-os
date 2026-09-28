@@ -74,17 +74,17 @@ export function ProfileForm({ profile }: { profile: MyProfile }) {
         <button
           type="submit"
           disabled={pending}
-          className="rounded-md bg-accent px-3 py-1.5 text-[12px] font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
+          className="rounded-md bg-accent px-3 py-1.5 text-t12 font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
         >
           {pending ? '저장하는 중…' : '저장'}
         </button>
         {state.error ? (
-          <span role="alert" className="text-[11.5px] text-critical">
+          <span role="alert" className="text-t11h text-critical">
             {state.error}
           </span>
         ) : null}
         {state.saved && !state.error ? (
-          <span className="text-[11.5px] text-ok">저장했습니다.</span>
+          <span className="text-t11h text-ok">저장했습니다.</span>
         ) : null}
       </div>
     </form>
@@ -92,7 +92,7 @@ export function ProfileForm({ profile }: { profile: MyProfile }) {
 }
 
 const INPUT =
-  'w-full rounded-md border border-line bg-raised px-2.5 py-1.5 text-[12.5px] text-ink outline-none transition-colors focus:border-accent'
+  'w-full rounded-md border border-line bg-raised px-2.5 py-1.5 text-t12h text-ink outline-none transition-colors focus:border-accent'
 
 function Field({
   label,
@@ -105,9 +105,9 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-[11.5px] font-semibold text-ink-dim">{label}</span>
+      <span className="mb-1 block text-t11h font-semibold text-ink-dim">{label}</span>
       {children}
-      <span className="mt-1 block text-[10px] text-ink-muted">{hint}</span>
+      <span className="mt-1 block text-t10 text-ink-muted">{hint}</span>
     </label>
   )
 }

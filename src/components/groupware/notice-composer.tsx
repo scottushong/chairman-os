@@ -29,7 +29,7 @@ export function NoticeComposer({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="rounded-md border border-line bg-raised px-2.5 py-1 text-[11.5px] font-semibold hover:border-accent"
+        className="rounded-md border border-line bg-raised px-2.5 py-1 text-t11h font-semibold hover:border-accent"
       >
         + {tr(lang, '공지 쓰기', 'New notice')}
       </button>
@@ -53,7 +53,7 @@ export function NoticeComposer({
     })
   }
 
-  const input = 'w-full rounded-md border border-line bg-panel px-2 py-1.5 text-[12px]'
+  const input = 'w-full rounded-md border border-line bg-panel px-2 py-1.5 text-t12'
   return (
     <form action={submit} className="space-y-2 rounded-lg border border-line-soft bg-raised p-3">
       <select name="business" className={input} defaultValue={canGroup ? '' : (businesses[0]?.id ?? '')}>
@@ -66,14 +66,14 @@ export function NoticeComposer({
       </select>
       <input name="title" required placeholder={tr(lang, '제목', 'Title')} className={input} />
       <textarea name="body" rows={3} placeholder={tr(lang, '내용', 'Body')} className={input} />
-      <details className="text-[11px] text-ink-dim">
+      <details className="text-t11 text-ink-dim">
         <summary className="cursor-pointer">{tr(lang, '영문 (선택)', 'English (optional)')}</summary>
         <div className="mt-1.5 space-y-1.5">
           <input name="title_en" placeholder="Title (EN)" className={input} />
           <textarea name="body_en" rows={2} placeholder="Body (EN)" className={input} />
         </div>
       </details>
-      <div className="flex flex-wrap items-center gap-3 text-[11.5px] text-ink-dim">
+      <div className="flex flex-wrap items-center gap-3 text-t11h text-ink-dim">
         <label className="flex items-center gap-1">
           <input type="checkbox" name="pinned" /> {tr(lang, '맨 앞에 고정', 'Pin')}
         </label>
@@ -82,15 +82,15 @@ export function NoticeComposer({
         </label>
       </div>
       {error ? (
-        <p role="alert" className="text-[11.5px] text-critical">
+        <p role="alert" className="text-t11h text-critical">
           {error}
         </p>
       ) : null}
       <div className="flex gap-2">
-        <button type="submit" disabled={pending} className="rounded-md bg-accent px-3 py-1.5 text-[12px] font-semibold text-white disabled:opacity-50">
+        <button type="submit" disabled={pending} className="rounded-md bg-accent px-3 py-1.5 text-t12 font-semibold text-white disabled:opacity-50">
           {pending ? tr(lang, '올리는 중…', 'Posting…') : tr(lang, '올리기', 'Post')}
         </button>
-        <button type="button" onClick={() => setOpen(false)} className="rounded-md border border-line px-3 py-1.5 text-[12px] text-ink-dim">
+        <button type="button" onClick={() => setOpen(false)} className="rounded-md border border-line px-3 py-1.5 text-t12 text-ink-dim">
           {tr(lang, '취소', 'Cancel')}
         </button>
       </div>

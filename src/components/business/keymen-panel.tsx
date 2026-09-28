@@ -135,10 +135,10 @@ export function KeymenPanel({
   return (
     <section className="rounded-xl border border-line-soft bg-panel p-4">
       <div className="flex items-baseline justify-between">
-        <h2 className="flex items-center gap-1.5 text-[13px] font-semibold">
+        <h2 className="flex items-center gap-1.5 text-t13 font-semibold">
           <Icon name="users" className="size-4 text-ink-dim" />
           키맨
-          <span className="text-[11px] font-normal text-ink-muted tnum">{list.length}명</span>
+          <span className="text-t11 font-normal text-ink-muted tnum">{list.length}명</span>
         </h2>
         <span className="flex items-center gap-2">
           {canEdit && !draft ? (
@@ -148,20 +148,20 @@ export function KeymenPanel({
                 setError(null)
                 setDraft(EMPTY)
               }}
-              className="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+              className="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-t11 text-ink-dim transition-colors hover:border-accent hover:text-ink"
             >
               <Icon name="plus" className="size-3" />
               추가
             </button>
           ) : null}
           {scope.kind === 'business' ? (
-            <span className="text-[9px] text-ink-muted tnum">CH-024</span>
+            <span className="text-t9 text-ink-muted tnum">CH-024</span>
           ) : null}
         </span>
       </div>
 
       {error ? (
-        <p role="alert" className="mt-2.5 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-[11.5px] text-critical">
+        <p role="alert" className="mt-2.5 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-t11h text-critical">
           {error}
         </p>
       ) : null}
@@ -189,12 +189,12 @@ export function KeymenPanel({
             maxLength={200}
           />
           {scope.kind === 'initiative' ? (
-            <label className="block text-[10px] font-semibold tracking-[0.08em] text-ink-muted">
+            <label className="block text-t10 font-semibold tracking-[0.08em] text-ink-muted">
               채널
               <select
                 value={draft.channel}
                 onChange={(e) => setDraft({ ...draft, channel: e.target.value as KeymanChannel })}
-                className="mt-1 w-full rounded-md border border-line bg-panel px-2 py-1.5 text-[12px] font-normal text-ink outline-none focus:border-accent"
+                className="mt-1 w-full rounded-md border border-line bg-panel px-2 py-1.5 text-t12 font-normal text-ink outline-none focus:border-accent"
               >
                 {KEYMAN_CHANNEL.map((c) => (
                   <option key={c} value={c}>
@@ -216,7 +216,7 @@ export function KeymenPanel({
               type="button"
               onClick={submit}
               disabled={busy}
-              className="rounded bg-accent px-2 py-1 text-[11px] font-semibold text-ink disabled:opacity-40"
+              className="rounded bg-accent px-2 py-1 text-t11 font-semibold text-ink disabled:opacity-40"
             >
               {busy ? '저장 중…' : '저장'}
             </button>
@@ -224,7 +224,7 @@ export function KeymenPanel({
               type="button"
               onClick={() => setDraft(null)}
               disabled={busy}
-              className="rounded px-2 py-1 text-[11px] text-ink-muted hover:text-ink disabled:opacity-40"
+              className="rounded px-2 py-1 text-t11 text-ink-muted hover:text-ink disabled:opacity-40"
             >
               취소
             </button>
@@ -233,7 +233,7 @@ export function KeymenPanel({
       ) : null}
 
       {sorted.length === 0 && !draft ? (
-        <p className="py-5 text-center text-[12px] text-ink-muted">
+        <p className="py-5 text-center text-t12 text-ink-muted">
           등록된 키맨이 없습니다.
           {canEdit ? '' : ` 등록은 ${roleHint}만 할 수 있습니다.`}
         </p>
@@ -244,19 +244,19 @@ export function KeymenPanel({
             return (
               <li key={k.keyman_id} className="flex items-center gap-3 py-2">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[12.5px] font-semibold">
+                  <p className="truncate text-t12h font-semibold">
                     {k.name}
-                    <span className="ml-1.5 text-[11px] font-normal text-ink-muted">{k.relation}</span>
+                    <span className="ml-1.5 text-t11 font-normal text-ink-muted">{k.relation}</span>
                   </p>
-                  {k.note ? <p className="truncate text-[11px] text-ink-muted">{k.note}</p> : null}
+                  {k.note ? <p className="truncate text-t11 text-ink-muted">{k.note}</p> : null}
                 </div>
                 {scope.kind === 'initiative' ? (
-                  <span className="shrink-0 text-[11px] text-ink-muted">
+                  <span className="shrink-0 text-t11 text-ink-muted">
                     {KEYMAN_CHANNEL_LABEL_KO[(k as InitiativeKeyman).channel]}
                   </span>
                 ) : null}
                 <span
-                  className={`shrink-0 text-[11px] tnum ${
+                  className={`shrink-0 text-t11 tnum ${
                     days !== null && days > STALE_DAYS ? 'font-semibold text-critical' : 'text-ink-dim'
                   }`}
                   title={k.last_contact_on ?? '기록 없음'}
@@ -289,7 +289,7 @@ export function KeymenPanel({
                       aria-label={`${k.name} 지우기`}
                       onClick={() => remove(k)}
                       disabled={busy}
-                      className="rounded px-1 text-[11px] text-ink-muted hover:text-critical disabled:opacity-40"
+                      className="rounded px-1 text-t11 text-ink-muted hover:text-critical disabled:opacity-40"
                     >
                       삭제
                     </button>
@@ -320,7 +320,7 @@ function Field({
   maxLength?: number
 }) {
   return (
-    <label className="block text-[10px] font-semibold tracking-[0.08em] text-ink-muted">
+    <label className="block text-t10 font-semibold tracking-[0.08em] text-ink-muted">
       {label}
       <input
         type={type}
@@ -328,7 +328,7 @@ function Field({
         placeholder={placeholder}
         maxLength={maxLength}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded-md border border-line bg-panel px-2 py-1.5 text-[12px] font-normal text-ink outline-none placeholder:text-ink-muted focus:border-accent"
+        className="mt-1 w-full rounded-md border border-line bg-panel px-2 py-1.5 text-t12 font-normal text-ink outline-none placeholder:text-ink-muted focus:border-accent"
       />
     </label>
   )

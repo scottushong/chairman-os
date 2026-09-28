@@ -89,14 +89,14 @@ export default async function TaskDetailPage(props: PageProps<'/tasks/[id]'>) {
         {/* 돌아갈 자리를 두 개 준다. 이 업무가 있던 목록과, 이 업무가 속한 회사다. */}
         <Link
           href={`/tasks?business=${encodeURIComponent(businessId)}`}
-          className="rounded-lg border border-line px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="rounded-lg border border-line px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           업무 목록
         </Link>
         {businessId ? (
           <Link
             href={`/business/${encodeURIComponent(businessId)}`}
-            className="rounded-lg border border-line px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+            className="rounded-lg border border-line px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
           >
             {company}
           </Link>
@@ -106,14 +106,14 @@ export default async function TaskDetailPage(props: PageProps<'/tasks/[id]'>) {
       <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
         <div className="space-y-4">
           <section className="rounded-xl border border-line-soft bg-panel p-4">
-            <h2 className="text-[13px] font-semibold">업무</h2>
+            <h2 className="text-t13 font-semibold">업무</h2>
 
             <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 md:grid-cols-3">
               <Field label="담당자">{task.owner}</Field>
 
               <Field label="중요도">
                 <span
-                  className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${PRIORITY_TONE[task.priority]}`}
+                  className={`rounded px-1.5 py-0.5 text-t10 font-semibold ${PRIORITY_TONE[task.priority]}`}
                 >
                   {WORK_PRIORITY_LABEL_KO[task.priority]}
                 </span>
@@ -141,28 +141,28 @@ export default async function TaskDetailPage(props: PageProps<'/tasks/[id]'>) {
             {project ? (
               <Link
                 href={`/projects/${encodeURIComponent(project.project_id)}`}
-                className="mt-4 flex items-center gap-1.5 rounded-lg border border-line-soft bg-raised px-3 py-2 text-[12px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+                className="mt-4 flex items-center gap-1.5 rounded-lg border border-line-soft bg-raised px-3 py-2 text-t12 text-ink-dim transition-colors hover:border-accent hover:text-ink"
               >
                 <Icon name="folder" className="size-4 shrink-0 text-ink-muted" />
                 <span className="min-w-0 flex-1 truncate">{project.name}</span>
-                <span className="shrink-0 text-[11px] text-ink-muted">프로젝트 보기</span>
+                <span className="shrink-0 text-t11 text-ink-muted">프로젝트 보기</span>
                 <Icon name="chevron-right" className="size-3.5 shrink-0" />
               </Link>
             ) : (
               /* project_id는 있는데 프로젝트가 안 보이는 경우다. 지워졌거나 RLS가 가렸다. */
-              <p className="mt-4 text-[11.5px] text-ink-muted">
+              <p className="mt-4 text-t11h text-ink-muted">
                 이 업무가 속한 프로젝트({task.project_id})를 볼 수 없습니다.
               </p>
             )}
           </section>
 
           <section className="rounded-xl border border-line-soft bg-panel p-4">
-            <h2 className="flex items-baseline gap-2 text-[13px] font-semibold">
+            <h2 className="flex items-baseline gap-2 text-t13 font-semibold">
               이력
-              <span className="text-[9px] font-normal text-ink-muted tnum">CH-051</span>
-              <span className="text-[11px] font-normal text-ink-muted tnum">{audit.length}건</span>
+              <span className="text-t9 font-normal text-ink-muted tnum">CH-051</span>
+              <span className="text-t11 font-normal text-ink-muted tnum">{audit.length}건</span>
             </h2>
-            <p className="mt-1 mb-3 text-[11px] text-ink-muted">
+            <p className="mt-1 mb-3 text-t11 text-ink-muted">
               감사 기록(audit_log)을 이 업무로 되짚은 것이다. 지워지지 않는다.
             </p>
             <AuditTimeline
@@ -173,9 +173,9 @@ export default async function TaskDetailPage(props: PageProps<'/tasks/[id]'>) {
         </div>
 
         <aside className="rounded-xl border border-line-soft bg-panel p-4 xl:sticky xl:top-4 xl:self-start">
-          <h2 className="flex items-baseline gap-2 text-[13px] font-semibold">
+          <h2 className="flex items-baseline gap-2 text-t13 font-semibold">
             바꾸기
-            <span className="text-[9px] font-normal text-ink-muted tnum">CH-040</span>
+            <span className="text-t9 font-normal text-ink-muted tnum">CH-040</span>
           </h2>
           <div className="mt-3">
             <TaskControls task={task} />
@@ -197,8 +197,8 @@ export default async function TaskDetailPage(props: PageProps<'/tasks/[id]'>) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[10.5px] text-ink-muted">{label}</dt>
-      <dd className="mt-0.5 truncate text-[12.5px] text-ink-dim tnum">{children}</dd>
+      <dt className="text-t10h text-ink-muted">{label}</dt>
+      <dd className="mt-0.5 truncate text-t12h text-ink-dim tnum">{children}</dd>
     </div>
   )
 }

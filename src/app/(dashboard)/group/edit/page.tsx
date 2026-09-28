@@ -26,7 +26,7 @@ export default async function GroupEditPage() {
     return (
       <div className="mx-auto max-w-[900px] px-6 py-10">
         <PageHeader icon="layers" title="그룹 · 배치 편집" code="Phase 8 · Group City" description="도시 배치는 회장님만 고칩니다." />
-        <Link href="/group" className="mt-4 inline-block text-[12.5px] text-ink-dim underline underline-offset-2 hover:text-ink">
+        <Link href="/group" className="mt-4 inline-block text-t12h text-ink-dim underline underline-offset-2 hover:text-ink">
           그룹 보기로
         </Link>
       </div>

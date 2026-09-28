@@ -46,7 +46,7 @@ export default async function NewStatementPage(
 
       {canKeepBooks(user) ? (
         accounts.length === 0 ? (
-          <p className="mt-4 rounded-md bg-warning/10 px-3 py-2 text-[12px] text-warning">
+          <p className="mt-4 rounded-md bg-warning/10 px-3 py-2 text-t12 text-warning">
             이 회사에 계정과목이 없습니다. 계정과목 화면에서 표준 계정과목표를 먼저 받으세요.
           </p>
         ) : (
@@ -64,7 +64,7 @@ export default async function NewStatementPage(
           </div>
         )
       ) : (
-        <p className="mt-4 rounded-md bg-panel px-3 py-2 text-[12px] text-ink-dim">
+        <p className="mt-4 rounded-md bg-panel px-3 py-2 text-t12 text-ink-dim">
           이 회사의 결산을 넣을 권한이 없습니다. (Chairman · Group CFO · 해당 회사 Business CEO)
         </p>
       )}

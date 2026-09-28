@@ -60,16 +60,16 @@ export function AttentionCard({
       className="mt-4 overflow-hidden rounded-glass border border-line-soft bg-panel p-4"
     >
       <div className="flex flex-wrap items-baseline gap-2">
-        <h2 className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
+        <h2 className="flex items-center gap-1.5 text-t13 font-semibold text-ink">
           <Icon name="bell" className="size-4 text-gold" filled />
           CHAIRMAN ATTENTION
         </h2>
-        <span className="text-[10.5px] text-ink-muted tnum">
+        <span className="text-t10h text-ink-muted tnum">
           {view.readable ? `열린 예외 ${view.openCount}건 · RED/YELLOW 최대 5건` : '§18 · §19'}
         </span>
         <Link
           href="/attention"
-          className="ml-auto text-[11px] text-ink-dim underline-offset-2 transition-colors hover:text-ink hover:underline"
+          className="ml-auto text-t11 text-ink-dim underline-offset-2 transition-colors hover:text-ink hover:underline"
         >
           전체 보기
         </Link>
@@ -81,11 +81,11 @@ export function AttentionCard({
           <BlindNote />
         </div>
       ) : view.top.length === 0 ? (
-        <p className="mt-2.5 rounded-lg bg-raised px-3 py-2.5 text-[11.5px] leading-relaxed text-ink-dim">
+        <p className="mt-2.5 rounded-lg bg-raised px-3 py-2.5 text-t11h leading-relaxed text-ink-dim">
           지금 회장 판단을 기다리는 RED/YELLOW 예외가 없습니다.
           {/* 숨긴 GREEN을 «없는 것»으로 그리지 않는다(§4는 숨기라고 했고, 숨긴 것은 있는 것이다). */}
           {view.hiddenGreen > 0 ? (
-            <span className="block text-[10.5px] text-ink-muted">
+            <span className="block text-t10h text-ink-muted">
               GREEN {view.hiddenGreen}건은 §4대로 이 카드에서 숨겼습니다 — CEO가 처리하는 건입니다.
             </span>
           ) : null}
@@ -96,15 +96,15 @@ export function AttentionCard({
             <li key={row.exception.id} className="rounded-lg bg-raised px-3 py-2.5">
               <div className="flex flex-wrap items-baseline gap-2">
                 <SeverityChip level={row.exception.severity} />
-                <span className="text-[12.5px] font-semibold text-ink">{row.business_name}</span>
-                <span className="text-[11.5px] text-ink-dim">{row.rule_name}</span>
+                <span className="text-t12h font-semibold text-ink">{row.business_name}</span>
+                <span className="text-t11h text-ink-dim">{row.rule_name}</span>
                 <Measured row={row} />
                 {row.exception.period ? (
-                  <span className="text-[10px] text-ink-muted tnum">기간 {row.exception.period}</span>
+                  <span className="text-t10 text-ink-muted tnum">기간 {row.exception.period}</span>
                 ) : null}
                 {/* §19: RED = Chairman decision. 그 칸이 참인 건만 이 말을 붙인다. */}
                 {row.exception.chairman_action_required ? (
-                  <span className="rounded bg-critical/15 px-1.5 py-0.5 text-[9.5px] font-bold text-critical">
+                  <span className="rounded bg-critical/15 px-1.5 py-0.5 text-t9h font-bold text-critical">
                     회장 결정 필요
                   </span>
                 ) : null}
@@ -129,7 +129,7 @@ export function AttentionCard({
                   />
                 </div>
               ) : (
-                <p className="mt-1.5 text-[10px] text-ink-muted">
+                <p className="mt-1.5 text-t10 text-ink-muted">
                   이 계정에는 처리 권한이 없습니다 — 회장 · 그 회사의 대표만 처리합니다.
                 </p>
               )}
@@ -166,7 +166,7 @@ export function AttentionFooter({ view }: { view: AttentionView }) {
   return (
     <div
       data-attention-footer
-      className="mt-2.5 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-line-soft pt-2 text-[11px] text-ink-dim tnum"
+      className="mt-2.5 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-line-soft pt-2 text-t11 text-ink-dim tnum"
     >
       <span>주의 {view.attentionCompanies.length}개사</span>
       <span>정상 {view.normal.length}개사</span>
@@ -178,7 +178,7 @@ export function AttentionFooter({ view }: { view: AttentionView }) {
         <span className="text-ink-muted">GREEN {view.hiddenGreen}건 숨김(§4)</span>
       ) : null}
       {view.unmeasured.length > 0 ? (
-        <span className="basis-full text-[10px] leading-relaxed text-ink-muted">
+        <span className="basis-full text-t10 leading-relaxed text-ink-muted">
           재지 못한 회사는 «이상 없음»이 아닙니다 —{' '}
           {view.unmeasured.map((u) => u.name).join(' · ')}. 이유는{' '}
           <Link href="/attention" className="underline underline-offset-2">

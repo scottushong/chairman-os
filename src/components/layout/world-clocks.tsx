@@ -56,12 +56,12 @@ export function WorldClocks() {
   return (
     <div
       aria-label="세계 시간"
-      className="flex items-center gap-2.5 border-l border-line pl-3 text-[11px] text-ink-dim"
+      className="flex items-center gap-2.5 border-l border-line pl-3 text-t11 text-ink-dim"
     >
       <Icon name="clock" className="size-3.5 shrink-0 text-ink-muted" />
       {CITIES.map((c, i) => (
         <span key={c.tz} className="flex flex-col items-center leading-tight">
-          <span className="text-[9px] text-ink-muted">{c.label}</span>
+          <span className="text-t9 text-ink-muted">{c.label}</span>
           <span className="tnum">{times ? times[i] : '--:--'}</span>
         </span>
       ))}

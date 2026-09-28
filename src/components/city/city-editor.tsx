@@ -187,7 +187,7 @@ export function CityEditor({
               }`}
               style={{ left: `${r.x}%`, top: `${r.y}%`, width: `${r.w}%`, height: `${r.h}%` }}
             >
-              <span className="pointer-events-none absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/70 px-1.5 py-0.5 text-[11px] text-white">
+              <span className="pointer-events-none absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/70 px-1.5 py-0.5 text-t11 text-white">
                 {lot ? '터 · ' : ''}
                 {nameOf(r)}
               </span>
@@ -201,7 +201,7 @@ export function CityEditor({
         })}
       </div>
 
-      <aside className="glass space-y-4 rounded-glass p-4 text-[12.5px]">
+      <aside className="glass space-y-4 rounded-glass p-4 text-t12h">
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -228,12 +228,12 @@ export function CityEditor({
         {current ? (
           <section className="space-y-2 rounded-lg border border-line-soft bg-raised p-3">
             <p className="font-semibold">{nameOf(current)}</p>
-            <p className="text-[11px] text-ink-muted tnum">
+            <p className="text-t11 text-ink-muted tnum">
               x {current.x} · y {current.y} · 폭 {current.w} · 높이 {current.h} (%)
             </p>
             {current.business_id !== null ? (
               <label className="block">
-                <span className="text-[11px] text-ink-dim">단계 그림</span>
+                <span className="text-t11 text-ink-dim">단계 그림</span>
                 <select
                   value={current.stage_image ?? ''}
                   onChange={(e) => patch(current.id, { stage_image: (e.target.value || null) as CityStage | null })}
@@ -249,7 +249,7 @@ export function CityEditor({
               </label>
             ) : (
               <div className="space-y-1.5">
-                <span className="text-[11px] text-ink-dim">회사로 승격 — 같은 자리에 기초가 섭니다</span>
+                <span className="text-t11 text-ink-dim">회사로 승격 — 같은 자리에 기초가 섭니다</span>
                 <div className="flex gap-1.5">
                   <select
                     value={promoteTo}
@@ -274,9 +274,9 @@ export function CityEditor({
                   </button>
                 </div>
                 {current.id < 0 || dirty ? (
-                  <p className="text-[11px] text-ink-muted">먼저 저장한 뒤 승격할 수 있습니다.</p>
+                  <p className="text-t11 text-ink-muted">먼저 저장한 뒤 승격할 수 있습니다.</p>
                 ) : freeBusinesses.length === 0 ? (
-                  <p className="text-[11px] text-ink-muted">
+                  <p className="text-t11 text-ink-muted">
                     도시에 자리가 없는 회사가 없습니다. 새 회사는 대시보드의 «기업 추가»로 먼저 만듭니다.
                   </p>
                 ) : null}
@@ -285,7 +285,7 @@ export function CityEditor({
             <button
               type="button"
               onClick={() => remove(current.id)}
-              className="flex items-center gap-1 text-[11.5px] text-ink-dim hover:text-critical"
+              className="flex items-center gap-1 text-t11h text-ink-dim hover:text-critical"
             >
               <Icon name="eye-off" className="size-3.5" />
               도시에서 빼기 (회사 · 이니셔티브는 그대로)
@@ -296,9 +296,9 @@ export function CityEditor({
         )}
 
         <section>
-          <p className="mb-1 text-[11px] font-semibold text-ink-dim">자리가 없는 회사</p>
+          <p className="mb-1 text-t11 font-semibold text-ink-dim">자리가 없는 회사</p>
           {freeBusinesses.length === 0 ? (
-            <p className="text-[11px] text-ink-muted">모두 배치됐습니다.</p>
+            <p className="text-t11 text-ink-muted">모두 배치됐습니다.</p>
           ) : (
             <div className="flex flex-wrap gap-1.5">
               {freeBusinesses.map((b) => (
@@ -316,9 +316,9 @@ export function CityEditor({
         </section>
 
         <section>
-          <p className="mb-1 text-[11px] font-semibold text-ink-dim">터가 없는 이니셔티브 (진행 중)</p>
+          <p className="mb-1 text-t11 font-semibold text-ink-dim">터가 없는 이니셔티브 (진행 중)</p>
           {freeInitiatives.length === 0 ? (
-            <p className="text-[11px] text-ink-muted">없습니다.</p>
+            <p className="text-t11 text-ink-muted">없습니다.</p>
           ) : (
             <div className="flex flex-wrap gap-1.5">
               {freeInitiatives.map((i) => (

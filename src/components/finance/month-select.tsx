@@ -19,12 +19,12 @@ export function MonthSelect({
 }) {
   const router = useRouter()
   return (
-    <label className="flex items-center gap-1.5 text-[11px] text-ink-muted">
+    <label className="flex items-center gap-1.5 text-t11 text-ink-muted">
       조회 월
       <select
         value={value}
         onChange={(e) => router.push(hrefFor[e.target.value])}
-        className="rounded-md border border-line bg-panel px-2 py-1 text-[11.5px] text-ink outline-none focus:border-accent"
+        className="rounded-md border border-line bg-panel px-2 py-1 text-t11h text-ink outline-none focus:border-accent"
       >
         {periods.map((p) => (
           <option key={p.period} value={p.period}>

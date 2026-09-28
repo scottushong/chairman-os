@@ -25,7 +25,7 @@ export function InitiativeStat({ initiatives, today }: { initiatives: Initiative
   return (
     <Link
       href="/initiatives"
-      className="flex items-center gap-2 rounded-lg border border-line bg-panel px-3 py-1.5 text-[13px] transition-colors hover:border-accent"
+      className="flex items-center gap-2 rounded-lg border border-line bg-panel px-3 py-1.5 text-t13 transition-colors hover:border-accent"
     >
       <span className="text-ink-dim">
         이니셔티브 <span className="font-semibold text-ink tnum">{active.length}</span>개 · 이번 주 행동{' '}

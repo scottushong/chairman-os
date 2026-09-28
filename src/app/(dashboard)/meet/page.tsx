@@ -58,7 +58,7 @@ export default async function MeetPage({ searchParams }: PageProps<'/meet'>) {
         )}
       >
         <form action={startInstant}>
-          <button type="submit" className="rounded-md bg-accent px-3 py-1.5 text-[12px] font-semibold text-white">
+          <button type="submit" className="rounded-md bg-accent px-3 py-1.5 text-t12 font-semibold text-white">
             {tr(lang, '즉석 회의실 열기', 'Start instant room')}
           </button>
         </form>
@@ -73,7 +73,7 @@ export default async function MeetPage({ searchParams }: PageProps<'/meet'>) {
               allow="camera; microphone; fullscreen; display-capture; autoplay; clipboard-write"
               className="h-[72vh] min-h-[420px] w-full"
             />
-            <div className="flex flex-wrap items-center justify-end gap-3 bg-panel px-3 py-2 text-[11.5px]">
+            <div className="flex flex-wrap items-center justify-end gap-3 bg-panel px-3 py-2 text-t11h">
               {/* meet.jit.si는 임베드된 통화를 몇 분 뒤 끊고 로그인을 요구할 수 있다(공개 서버 정책).
                   긴 회의는 새 탭이 정답이라 그 버튼을 앞에 둔다 — DEFERRED «화상회의 임베드». */}
               <span className="mr-auto text-ink-muted">
@@ -88,7 +88,7 @@ export default async function MeetPage({ searchParams }: PageProps<'/meet'>) {
             </div>
           </section>
         ) : (
-          <section className="glass rounded-glass p-6 text-[12.5px] leading-relaxed text-ink-dim">
+          <section className="glass rounded-glass p-6 text-t12h leading-relaxed text-ink-dim">
             <p className="font-semibold text-ink">{tr(lang, '들어갈 회의를 고르세요.', 'Pick a meeting to join.')}</p>
             <p className="mt-1">
               {tr(
@@ -101,9 +101,9 @@ export default async function MeetPage({ searchParams }: PageProps<'/meet'>) {
         )}
 
         <aside className="glass rounded-glass p-4">
-          <h2 className="text-[13px] font-semibold">{tr(lang, '앞으로 2주 · 화상 회의', 'Next 2 weeks')}</h2>
+          <h2 className="text-t13 font-semibold">{tr(lang, '앞으로 2주 · 화상 회의', 'Next 2 weeks')}</h2>
           {events.length === 0 ? (
-            <p className="mt-2 text-[12px] text-ink-muted">
+            <p className="mt-2 text-t12 text-ink-muted">
               {tr(lang, '화상 링크가 있는 미팅이 없습니다.', 'No meetings with a video link.')}
             </p>
           ) : (
@@ -112,10 +112,10 @@ export default async function MeetPage({ searchParams }: PageProps<'/meet'>) {
                 const r = roomOf(e.video_url)!
                 return (
                   <li key={e.event_id} className="py-2">
-                    <Link href={`/meet?room=${r}`} className={`block text-[12.5px] ${r === room ? 'font-semibold text-accent' : 'hover:text-accent'}`}>
+                    <Link href={`/meet?room=${r}`} className={`block text-t12h ${r === room ? 'font-semibold text-accent' : 'hover:text-accent'}`}>
                       {e.title}
                     </Link>
-                    <p className="text-[10.5px] text-ink-muted tnum">
+                    <p className="text-t10h text-ink-muted tnum">
                       {e.starts_on}
                       {e.location ? ` · ${e.location}` : ''} · {tr(lang, `참석 ${e.attendee_ids?.length ?? 0}명`, `${e.attendee_ids?.length ?? 0} invited`)}
                     </p>

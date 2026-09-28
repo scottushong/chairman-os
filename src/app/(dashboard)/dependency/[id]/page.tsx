@@ -125,7 +125,7 @@ export default async function DependencyDetailPage({ params }: { params: Promise
       >
         <Link
           href="/dependency"
-          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           전체 회사
         </Link>
@@ -140,15 +140,15 @@ export default async function DependencyDetailPage({ params }: { params: Promise
               reason="아직 계산할 수 없습니다 — 이 회사에는 처리된 결정이 아직 없습니다. 0%가 아니라 셀 것이 없다는 뜻입니다."
             />
             {last ? (
-              <p className="mt-1.5 text-[10.5px] text-ink-muted tnum">
+              <p className="mt-1.5 text-t10h text-ink-muted tnum">
                 회장 {last.chairman_count} / 전체 {last.total_count}건 · CEO {last.ceo_count} · 규칙{' '}
                 {last.rule_count}
               </p>
             ) : null}
           </div>
           <div>
-            <p className="text-[10.5px] text-ink-dim">목표 사다리</p>
-            <p className="mt-1 flex items-baseline gap-1.5 text-[13px] font-semibold text-ink-dim tnum">
+            <p className="text-t10h text-ink-dim">목표 사다리</p>
+            <p className="mt-1 flex items-baseline gap-1.5 text-t13 font-semibold text-ink-dim tnum">
               {DEPENDENCY_LADDER.map((v, i) => (
                 <span key={v}>
                   {i === DEPENDENCY_LADDER.length - 1 ? `<${v}%` : `${v}%`}
@@ -156,16 +156,16 @@ export default async function DependencyDetailPage({ params }: { params: Promise
                 </span>
               ))}
             </p>
-            <p className="mt-1 max-w-[320px] text-[10px] leading-relaxed text-ink-muted">
+            <p className="mt-1 max-w-[320px] text-t10 leading-relaxed text-ink-muted">
               첫 칸 37%는 문서 §35의 **예시 화면** 숫자입니다. 이 저장소가 잰 값이 아니라 출발점
               표기이고, 마지막 {DEPENDENCY_TARGET}%가 §7의 목표입니다.
             </p>
           </div>
           {window && window.unknown_count > 0 ? (
             <div className="max-w-[360px]">
-              <p className="text-[10.5px] text-ink-dim">역산 미도달</p>
-              <p className="mt-1 text-[13px] font-semibold text-ink tnum">{window.unknown_count}건</p>
-              <p className="mt-1 text-[10px] leading-relaxed text-ink-muted">{BACKFILL_UNREACHED_KO}</p>
+              <p className="text-t10h text-ink-dim">역산 미도달</p>
+              <p className="mt-1 text-t13 font-semibold text-ink tnum">{window.unknown_count}건</p>
+              <p className="mt-1 text-t10 leading-relaxed text-ink-muted">{BACKFILL_UNREACHED_KO}</p>
             </div>
           ) : null}
         </div>
@@ -175,10 +175,10 @@ export default async function DependencyDetailPage({ params }: { params: Promise
       <Section icon="crown" title="CEO 자율성 (§9)" note={myAutonomy[0]?.quarter ?? AUTONOMY_EMPTY_KO}>
         <AutonomyGauge level={myAutonomy[0]?.level ?? null} />
         {myAutonomy[0] ? (
-          <p className="mt-1.5 text-[11px] leading-relaxed text-ink-dim">
+          <p className="mt-1.5 text-t11 leading-relaxed text-ink-dim">
             {AUTONOMY_CRITERIA_KO[myAutonomy[0].level]}
             {myAutonomy[0].note ? (
-              <span className="mt-0.5 block text-[10.5px] text-ink-muted">근거 · {myAutonomy[0].note}</span>
+              <span className="mt-0.5 block text-t10h text-ink-muted">근거 · {myAutonomy[0].note}</span>
             ) : null}
           </p>
         ) : (
@@ -191,7 +191,7 @@ export default async function DependencyDetailPage({ params }: { params: Promise
           <AutonomyEditor businessId={id} quarter={quarter} current={myAutonomy[0]?.level ?? null} />
         ) : null}
         {myAutonomy.length > 1 ? (
-          <ul className="mt-2 space-y-0.5 text-[10.5px] text-ink-muted tnum">
+          <ul className="mt-2 space-y-0.5 text-t10h text-ink-muted tnum">
             {myAutonomy.slice(1).map((a) => (
               <li key={a.quarter}>
                 {a.quarter} · {a.level}
@@ -224,14 +224,14 @@ export default async function DependencyDetailPage({ params }: { params: Promise
                 </div>
               ))}
             </div>
-            <div className="mt-1 flex gap-1 text-[9px] text-ink-muted tnum">
+            <div className="mt-1 flex gap-1 text-t9 text-ink-muted tnum">
               {byMonth.map((m) => (
                 <span key={m.period} className="flex-1 text-center">
                   {m.period.slice(5)}
                 </span>
               ))}
             </div>
-            <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-[11px]">
+            <dl className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-t11">
               {byKind.map((k) => (
                 <div key={k.kind} className="flex items-baseline gap-1.5">
                   <dt className="text-ink-dim">{INTERVENTION_LABEL_KO[k.kind]}</dt>
@@ -255,7 +255,7 @@ export default async function DependencyDetailPage({ params }: { params: Promise
           <Bucket title="미이양" areas={notYet} />
         </div>
         {unplanned.length > 0 ? (
-          <p className="mt-2 text-[10.5px] leading-relaxed text-ink-muted">
+          <p className="mt-2 text-t10h leading-relaxed text-ink-muted">
             이양 계획이 아직 없는 영역: {unplanned.map((a) => a.area).join(' · ')} — «미이양»과 다른
             사실이라 위 세 칸에 넣지 않았습니다.
           </p>
@@ -271,13 +271,13 @@ export default async function DependencyDetailPage({ params }: { params: Promise
         ) : (
           <ul className="space-y-1">
             {next90.map((a) => (
-              <li key={a.area} className="flex flex-wrap items-baseline gap-x-2 rounded-lg bg-raised px-3 py-2 text-[11.5px]">
+              <li key={a.area} className="flex flex-wrap items-baseline gap-x-2 rounded-lg bg-raised px-3 py-2 text-t11h">
                 <span className="font-semibold text-ink">{a.area}</span>
                 <TransferChip status={a.transfer_status} />
-                <span className="text-[10.5px] text-ink-muted tnum">
+                <span className="text-t10h text-ink-muted tnum">
                   {a.target_date ? `목표 ${a.target_date}` : '목표일 없음'}
                 </span>
-                {a.note ? <span className="text-[10.5px] text-ink-muted">{a.note}</span> : null}
+                {a.note ? <span className="text-t10h text-ink-muted">{a.note}</span> : null}
               </li>
             ))}
           </ul>
@@ -301,7 +301,7 @@ export default async function DependencyDetailPage({ params }: { params: Promise
         title="회장 부재 테스트 (§12)"
         note={passed ? `${passed.days}일 통과` : '통과한 테스트 없음'}
       >
-        <p className="mb-2 text-[10.5px] leading-relaxed text-ink-muted">
+        <p className="mb-2 text-t10h leading-relaxed text-ink-muted">
           «회장이 내일부터 연락이 안 된다면, 이 회사는 30일 동안 정상적으로 돌아가는가.» §12는 7 ·
           30 · 90 · 365일 넷을 봅니다. 365일을 통과하기 전에는 CEO를 진짜 L5로 보지 않습니다.
         </p>
@@ -321,15 +321,15 @@ export default async function DependencyDetailPage({ params }: { params: Promise
 function Bucket({ title, areas }: { title: string; areas: { area: string; level: string | null }[] }) {
   return (
     <div className="rounded-lg bg-raised p-2.5">
-      <p className="text-[10.5px] text-ink-dim">
+      <p className="text-t10h text-ink-dim">
         {title} <span className="tnum">{areas.length}</span>
       </p>
       {areas.length === 0 ? (
-        <p className="mt-1 text-[10.5px] text-ink-muted">없음</p>
+        <p className="mt-1 text-t10h text-ink-muted">없음</p>
       ) : (
         <ul className="mt-1 space-y-0.5">
           {areas.map((a) => (
-            <li key={a.area} className="flex items-baseline gap-1.5 text-[11.5px] text-ink">
+            <li key={a.area} className="flex items-baseline gap-1.5 text-t11h text-ink">
               {a.area}
               <LevelChip level={a.level as never} />
             </li>

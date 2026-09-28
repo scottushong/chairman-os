@@ -165,7 +165,7 @@ export function InviteUser({
             setDone(null)
             setOpen(true)
           }}
-          className="flex items-center gap-1.5 rounded-md border border-line bg-panel px-3 py-1.5 text-[12px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="flex items-center gap-1.5 rounded-md border border-line bg-panel px-3 py-1.5 text-t12 text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           <Icon name="user-plus" className="size-3.5" />
           사용자 초대
@@ -173,7 +173,7 @@ export function InviteUser({
 
         {/* 초대만으로 끝나지 않는다. 다음 한 걸음을 여기서 말한다. */}
         {done ? (
-          <p className="rounded-lg border border-ok/40 bg-ok/10 px-3 py-2.5 text-[11.5px] leading-relaxed text-ink-dim">
+          <p className="rounded-lg border border-ok/40 bg-ok/10 px-3 py-2.5 text-t11h leading-relaxed text-ink-dim">
             <span className="font-semibold text-ink">{done}</span> 초대를 저장했습니다.
             {queued
               ? ' 회장 결재 대기로 들어갔습니다 — 승인 전에는 계정이 생겨도 권한이 붙지 않습니다.'
@@ -191,23 +191,23 @@ export function InviteUser({
       className="w-full rounded-xl border border-line bg-panel p-4"
     >
       <div className="flex items-baseline justify-between">
-        <h2 className="text-[13px] font-semibold">사용자 초대</h2>
+        <h2 className="text-t13 font-semibold">사용자 초대</h2>
         <button
           type="button"
           onClick={() => setOpen(false)}
-          className="text-[11px] text-ink-muted transition-colors hover:text-ink"
+          className="text-t11 text-ink-muted transition-colors hover:text-ink"
         >
           닫기
         </button>
       </div>
-      <p className="mt-1 text-[11px] leading-relaxed text-ink-muted">
+      <p className="mt-1 text-t11 leading-relaxed text-ink-muted">
         여기서 계정이 만들어지지는 않습니다. 이 주소로 계정이 생기면 아래 권한을 준다는 약속을
         저장합니다 — 메일은 Supabase Dashboard에서 보냅니다(DEFERRED D-15).
       </p>
 
       <div className="mt-3 grid gap-3 md:grid-cols-2">
         <label className="block">
-          <span className="text-[11px] text-ink-dim">이메일</span>
+          <span className="text-t11 text-ink-dim">이메일</span>
           <input
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -215,63 +215,63 @@ export function InviteUser({
             placeholder="name@example.co.kr"
             maxLength={254}
             disabled={busy}
-            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
+            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
           />
         </label>
 
         <label className="block">
-          <span className="text-[11px] text-ink-dim">직함 (선택)</span>
+          <span className="text-t11 text-ink-dim">직함 (선택)</span>
           <input
             value={titleKo}
             onChange={(e) => setTitleKo(e.target.value)}
             placeholder="예: 재무팀장"
             maxLength={60}
             disabled={busy}
-            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
+            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
           />
         </label>
 
         <label className="block">
-          <span className="text-[11px] text-ink-dim">이름 (한글)</span>
+          <span className="text-t11 text-ink-dim">이름 (한글)</span>
           <input
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             placeholder="예: 김민수"
             maxLength={60}
             disabled={busy}
-            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
+            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
           />
           {/* 이메일이 목록에 안 뜨는 이유를 여기서 말한다. auth.users는 PostgREST로 안 읽힌다. */}
-          <span className="mt-1 block text-[10.5px] text-ink-muted">
+          <span className="mt-1 block text-t10h text-ink-muted">
             사용자 목록에서 사람을 가리는 값입니다. 이메일은 계정이 생기면 목록에서 사라집니다.
           </span>
         </label>
 
         <label className="block">
-          <span className="text-[11px] text-ink-dim">이름 (영문, 선택)</span>
+          <span className="text-t11 text-ink-dim">이름 (영문, 선택)</span>
           <input
             value={displayNameEn}
             onChange={(e) => setDisplayNameEn(e.target.value)}
             placeholder="예: Minsu Kim"
             maxLength={60}
             disabled={busy}
-            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
+            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
           />
-          <span className="mt-1 block text-[10.5px] text-ink-muted">
+          <span className="mt-1 block text-t10h text-ink-muted">
             비워 두면 영문 줄을 그리지 않습니다 — 철자는 본인이 쓰는 것이 유일한 정답이라
             코드가 지어내지 않습니다.
           </span>
         </label>
 
         <label className="block">
-          <span className="text-[11px] text-ink-dim">
+          <span className="text-t11 text-ink-dim">
             역할 {isChairman ? '' : '— 자기보다 위 역할은 회장 결재로 갑니다'}
           </span>
           <select
             value={role}
             onChange={(e) => setRole(e.target.value as Role)}
             disabled={busy}
-            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
+            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none focus:border-accent disabled:opacity-50"
           >
             {INVITABLE_ROLE.map((r) => (
               <option key={r} value={r} className="bg-panel">
@@ -282,14 +282,14 @@ export function InviteUser({
         </label>
 
         <label className="block">
-          <span className="text-[11px] text-ink-dim">
+          <span className="text-t11 text-ink-dim">
             팀 {fixedTeam ? '— 팀장은 자기 팀으로만 부릅니다' : ''}
           </span>
           <select
             value={fixedTeam ?? teamId}
             onChange={(e) => setTeamId(e.target.value)}
             disabled={busy || Boolean(fixedTeam)}
-            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
+            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none focus:border-accent disabled:opacity-50"
           >
             <option value="" className="bg-panel">
               (나중에 배정)
@@ -303,12 +303,12 @@ export function InviteUser({
         </label>
 
         <label className="block">
-          <span className="text-[11px] text-ink-dim">직속 상사</span>
+          <span className="text-t11 text-ink-dim">직속 상사</span>
           <select
             value={reportsTo}
             onChange={(e) => setReportsTo(e.target.value)}
             disabled={busy}
-            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
+            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none focus:border-accent disabled:opacity-50"
           >
             {viewer ? (
               <option value={viewer.user_id} className="bg-panel">
@@ -323,27 +323,27 @@ export function InviteUser({
                 </option>
               ))}
           </select>
-          <span className="mt-1 block text-[10.5px] text-ink-muted">
+          <span className="mt-1 block text-t10h text-ink-muted">
             초대는 자기 아래로만 할 수 있습니다. 이 목록에 없는 사람 밑으로는 부를 수 없습니다(0026).
           </span>
         </label>
 
         <label className="block">
-          <span className="text-[11px] text-ink-dim">입사일</span>
+          <span className="text-t11 text-ink-dim">입사일</span>
           <input
             value={joinedOn}
             onChange={(e) => setJoinedOn(e.target.value)}
             type="date"
             disabled={busy}
-            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-[13px] text-ink outline-none focus:border-accent disabled:opacity-50"
+            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none focus:border-accent disabled:opacity-50"
           />
-          <span className="mt-1 block text-[10.5px] text-ink-muted">
+          <span className="mt-1 block text-t10h text-ink-muted">
             비워 두면 계정이 생기는 날(KST)이 입사일이 됩니다.
           </span>
         </label>
 
         <fieldset className="md:col-span-2">
-          <legend className="text-[11px] text-ink-dim">표기 언어</legend>
+          <legend className="text-t11 text-ink-dim">표기 언어</legend>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {LANGUAGES.map((l) => (
               <button
@@ -352,7 +352,7 @@ export function InviteUser({
                 onClick={() => setLanguage(l)}
                 disabled={busy}
                 aria-pressed={language === l}
-                className={`rounded-md border px-2.5 py-1 text-[11px] transition-colors disabled:opacity-50 ${
+                className={`rounded-md border px-2.5 py-1 text-t11 transition-colors disabled:opacity-50 ${
                   language === l
                     ? 'border-accent bg-accent/15 text-ink'
                     : 'border-line text-ink-muted hover:text-ink-dim'
@@ -362,18 +362,18 @@ export function InviteUser({
               </button>
             ))}
           </div>
-          <p className="mt-1.5 text-[10.5px] text-ink-muted">
+          <p className="mt-1.5 text-t10h text-ink-muted">
             이 사람이 ko/en 중 어느 쪽 표기를 쓰는지입니다. 화면 전체를 영어로 바꾸는 장치는
             아직 없습니다 — 이름·팀 이름이 두 벌로 저장되는 것이 지금의 이중 언어입니다.
           </p>
         </fieldset>
 
         <fieldset className="md:col-span-2">
-          <legend className="text-[11px] text-ink-dim">
+          <legend className="text-t11 text-ink-dim">
             회사 범위 {groupScope ? '— 전사 역할이라 고르지 않습니다' : ''}
           </legend>
           {groupScope ? (
-            <p className="mt-1.5 rounded-lg bg-raised px-3 py-2 text-[11.5px] text-ink-muted">
+            <p className="mt-1.5 rounded-lg bg-raised px-3 py-2 text-t11h text-ink-muted">
               {ROLE_LABEL_KO[role]}은(는) 04_권한 시트에서 Business 범위가 &lsquo;전체&rsquo;입니다.
               회사를 지정해도 0002의 has_business()가 그 목록을 보지 않습니다.
             </p>
@@ -386,7 +386,7 @@ export function InviteUser({
                   onClick={() => toggleBusiness(b.business_id)}
                   disabled={busy}
                   aria-pressed={businessIds.includes(b.business_id)}
-                  className={`rounded-md border px-2.5 py-1 text-[11px] transition-colors disabled:opacity-50 ${
+                  className={`rounded-md border px-2.5 py-1 text-t11 transition-colors disabled:opacity-50 ${
                     businessIds.includes(b.business_id)
                       ? 'border-accent bg-accent/15 text-ink'
                       : 'border-line text-ink-muted hover:text-ink-dim'
@@ -398,7 +398,7 @@ export function InviteUser({
             </div>
           )}
           {!groupScope ? (
-            <p className="mt-1.5 text-[10.5px] text-ink-muted">
+            <p className="mt-1.5 text-t10h text-ink-muted">
               여기 없는 회사는 이 사람에게 존재하지 않는 것처럼 보입니다(Business Isolation).
               자기가 못 보는 회사는 줄 수 없습니다 — DB가 거부합니다.
             </p>
@@ -406,7 +406,7 @@ export function InviteUser({
         </fieldset>
 
         <fieldset className="md:col-span-2">
-          <legend className="text-[11px] text-ink-dim">최고 보안등급</legend>
+          <legend className="text-t11 text-ink-dim">최고 보안등급</legend>
           <div className="mt-1.5 flex flex-wrap gap-1.5">
             {GRANTABLE_CLASS.map((c) => (
               <button
@@ -415,7 +415,7 @@ export function InviteUser({
                 onClick={() => setSecurityClass(c)}
                 disabled={busy}
                 aria-pressed={securityClass === c}
-                className={`rounded-md border px-2.5 py-1 text-[11px] transition-colors disabled:opacity-50 ${
+                className={`rounded-md border px-2.5 py-1 text-t11 transition-colors disabled:opacity-50 ${
                   securityClass === c
                     ? 'border-accent bg-accent/15 text-ink'
                     : 'border-line text-ink-muted hover:text-ink-dim'
@@ -425,7 +425,7 @@ export function InviteUser({
               </button>
             ))}
           </div>
-          <p className="mt-1.5 text-[10.5px] text-ink-muted">
+          <p className="mt-1.5 text-t10h text-ink-muted">
             이 등급보다 높은 자료는 값 자체가 내려가지 않습니다. 자기 등급보다 높은 등급은 줄 수
             없습니다 — 초대 화면이 등급 상승 창구가 되지 않게 DB가 막습니다.
           </p>
@@ -434,7 +434,7 @@ export function InviteUser({
 
       {/* 보내기 전에 말한다. 판정 기준은 0026의 트리거와 같다(role_rank >= 2). */}
       {approval ? (
-        <p className="mt-3 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-2 text-[11.5px] leading-relaxed text-ink-dim">
+        <p className="mt-3 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-2 text-t11h leading-relaxed text-ink-dim">
           <span className="font-semibold text-ink">회장 결재가 필요합니다.</span>{' '}
           {ROLE_LABEL_KO[role]} 이상은 결재 큐로 갑니다 — 승인 전에는 계정이 생겨도 권한이 붙지
           않습니다. {isChairman ? '회장이 직접 넣은 초대는 그 자리에서 결재된 것으로 남습니다.' : ''}
@@ -444,7 +444,7 @@ export function InviteUser({
       {error ? (
         <p
           role="alert"
-          className="mt-3 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-[11.5px] text-critical"
+          className="mt-3 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-t11h text-critical"
         >
           {error}
         </p>
@@ -454,7 +454,7 @@ export function InviteUser({
         <button
           type="submit"
           disabled={!canSave}
-          className="flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-ink transition-opacity disabled:opacity-40"
+          className="flex items-center gap-1 rounded-lg bg-accent px-3 py-1.5 text-t12 font-semibold text-ink transition-opacity disabled:opacity-40"
         >
           <Icon name="user-plus" className="size-3.5" />
           {busy ? '저장하는 중…' : '초대 저장'}

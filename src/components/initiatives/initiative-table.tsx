@@ -29,7 +29,7 @@ export function InitiativeTable({
 }) {
   if (initiatives.length === 0) {
     return (
-      <p className="mt-4 rounded-xl border border-dashed border-line bg-panel p-6 text-center text-[12px] text-ink-muted">
+      <p className="mt-4 rounded-xl border border-dashed border-line bg-panel p-6 text-center text-t12 text-ink-muted">
         {hasAny ? '이 조건에 맞는 건이 없습니다.' : '아직 등록된 이니셔티브가 없습니다. 위에서 새 건을 만들어 보세요.'}
       </p>
     )
@@ -40,9 +40,9 @@ export function InitiativeTable({
     <div className="mt-4 space-y-6">
       {INITIATIVE_STAGE.filter((s) => initiatives.some((i) => i.stage === s)).map((stage) => (
         <section key={stage}>
-          <h2 className="mb-2 flex items-baseline gap-2 text-[13px] font-semibold">
+          <h2 className="mb-2 flex items-baseline gap-2 text-t13 font-semibold">
             {INITIATIVE_STAGE_LABEL_KO[stage]}
-            <span className="text-[11px] font-normal text-ink-muted tnum">
+            <span className="text-t11 font-normal text-ink-muted tnum">
               {initiatives.filter((i) => i.stage === stage).length}건
             </span>
           </h2>
@@ -54,10 +54,10 @@ export function InitiativeTable({
                 <li key={i.initiative_id}>
                   <Link
                     href={`/initiatives/${i.initiative_id}`}
-                    className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3 text-[13px] transition-colors hover:bg-raised"
+                    className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3 text-t13 transition-colors hover:bg-raised"
                   >
                     <span className={`font-semibold text-ink ${stale ? 'opacity-55' : ''}`}>{i.title}</span>
-                    <span className={`text-[11px] text-ink-muted ${stale ? 'opacity-55' : ''}`}>
+                    <span className={`text-t11 text-ink-muted ${stale ? 'opacity-55' : ''}`}>
                       {INITIATIVE_KIND_LABEL_KO[i.kind]}
                       {i.business_id ? ` · ${nameOf.get(i.business_id) ?? i.business_id}` : ''}
                     </span>
@@ -71,12 +71,12 @@ export function InitiativeTable({
                         ) : null}
                       </span>
                     ) : (
-                      <span className={`ml-auto text-[11px] text-ink-muted ${stale ? 'opacity-55' : ''}`}>
+                      <span className={`ml-auto text-t11 text-ink-muted ${stale ? 'opacity-55' : ''}`}>
                         다음 행동 없음
                       </span>
                     )}
                     {stale ? (
-                      <span className="text-[11px] text-ink-muted tnum">{stalenessDays(i, today)}일째</span>
+                      <span className="text-t11 text-ink-muted tnum">{stalenessDays(i, today)}일째</span>
                     ) : null}
                   </Link>
                 </li>

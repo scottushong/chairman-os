@@ -8,8 +8,8 @@ export default function SetPasswordPage() {
   return (
     <main className="flex min-h-full items-center justify-center bg-app px-5 py-10">
       <div className="glass w-full max-w-[420px] rounded-glass p-5">
-        <h1 className="text-[16px] font-bold">비밀번호 정하기</h1>
-        <p className="mt-1 text-[12px] text-ink-dim">12자 이상. 다른 곳에서 유출된 적 있는 비밀번호는 쓸 수 없습니다.</p>
+        <h1 className="text-t16 font-bold">비밀번호 정하기</h1>
+        <p className="mt-1 text-t12 text-ink-dim">12자 이상. 다른 곳에서 유출된 적 있는 비밀번호는 쓸 수 없습니다.</p>
         <SetPasswordForm />
       </div>
     </main>

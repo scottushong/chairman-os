@@ -37,6 +37,8 @@ export function GlobalSearch() {
    */
   const [result, setResult] = useState<SearchState | null>(null)
   const [open, setOpen] = useState(false)
+  /** 폰(768px 미만)은 헤더에 돋보기만 두고, 누르면 화면 위쪽 전폭 입력으로 펼친다. */
+  const [expanded, setExpanded] = useState(false)
   const boxRef = useRef<HTMLDivElement>(null)
   /** 지금 화면에 있는 글자. 응답이 돌아왔을 때 그게 아직 최신인지 판단하는 기준이다. */
   const latest = useRef('')
@@ -62,7 +64,10 @@ export function GlobalSearch() {
       if (!boxRef.current?.contains(e.target as Node)) setOpen(false)
     }
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key === 'Escape') {
+        setOpen(false)
+        setExpanded(false)
+      }
     }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
@@ -86,79 +91,102 @@ export function GlobalSearch() {
   const error = fresh?.error ?? null
 
   return (
-    <div ref={boxRef} className="relative mx-auto w-full max-w-[560px]">
-      <Icon
-        name="search"
-        className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-ink-muted"
-      />
-      <input
-        type="search"
-        value={query}
-        onChange={(e) => {
-          setQuery(e.target.value)
-          setOpen(true)
-        }}
-        onFocus={() => setOpen(true)}
-        role="combobox"
-        aria-expanded={showPanel}
-        aria-controls="global-search-results"
-        placeholder="전체 검색 (회사, 프로젝트, 업무, 결정, 문서)"
-        className="h-9 w-full rounded-lg border border-line bg-panel pr-3 pl-9 text-[13px] text-ink placeholder:text-ink-muted focus:border-accent focus:outline-none"
-      />
+    <>
+      <button
+        type="button"
+        aria-label="검색"
+        onClick={() => setExpanded(true)}
+        className="ml-auto flex size-11 items-center justify-center rounded-md text-ink-dim transition-colors hover:bg-raised md:hidden"
+      >
+        <Icon name="search" className="size-5" />
+      </button>
+      <div
+        ref={boxRef}
+        className={
+          expanded
+            ? 'safe-top fixed inset-x-0 top-0 z-50 flex items-center gap-2 bg-app px-3 py-2 shadow-xl md:static md:mx-auto md:block md:w-full md:max-w-[560px] md:bg-transparent md:p-0 md:shadow-none'
+            : 'mx-auto hidden w-full max-w-[560px] md:block'
+        }
+      >
+        <div className="relative min-w-0 flex-1">
+          <Icon
+            name="search"
+            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-ink-muted"
+          />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setOpen(true)
+            }}
+            onFocus={() => setOpen(true)}
+            role="combobox"
+            aria-expanded={showPanel}
+            aria-controls="global-search-results"
+            autoFocus={expanded}
+            placeholder="전체 검색 (회사, 프로젝트, 업무, 결정, 문서)"
+            className="h-11 w-full md:h-9 rounded-lg border border-line bg-panel pr-3 pl-9 text-t13 text-ink placeholder:text-ink-muted focus:border-accent focus:outline-none"
+          />
 
-      {showPanel ? (
-        <div
-          id="global-search-results"
-          className="absolute top-11 right-0 left-0 z-40 max-h-[420px] overflow-y-auto rounded-xl border border-line bg-panel py-1.5 shadow-2xl"
-        >
-          {short ? (
-            <p className="px-3.5 py-3 text-[12px] text-ink-muted">
-              {MIN_QUERY_LENGTH}글자 이상 입력하세요.
-            </p>
-          ) : error ? (
-            <p role="alert" className="px-3.5 py-3 text-[12px] text-critical">
-              {error}
-            </p>
-          ) : hits.length === 0 ? (
-            <p className="px-3.5 py-3 text-[12px] text-ink-muted">
-              {busy ? '찾는 중…' : '결과가 없습니다.'}
-            </p>
-          ) : (
-            <>
-              {SEARCH_KIND.map((kind) => (
-                <Group
-                  key={kind}
-                  kind={kind}
-                  hits={hits.filter((h) => h.kind === kind)}
-                  onPick={() => setOpen(false)}
-                />
-              ))}
-              {/* 왜 이만큼만 나오는지 말해 둔다. '전부 검색했다'로 읽히면 없는 걸 없다고 믿는다. */}
-              <p className="border-t border-line-soft px-3.5 pt-2 pb-1 text-[10px] text-ink-muted">
-                종류별 상위 결과입니다. 볼 권한이 없는 항목은 검색되지 않습니다.
-              </p>
-            </>
-          )}
+          {showPanel ? (
+            <div
+              id="global-search-results"
+              className="absolute top-11 right-0 left-0 z-40 max-h-[420px] overflow-y-auto rounded-xl border border-line bg-panel py-1.5 shadow-2xl"
+            >
+              {short ? (
+                <p className="px-3.5 py-3 text-t12 text-ink-muted">{MIN_QUERY_LENGTH}글자 이상 입력하세요.</p>
+              ) : error ? (
+                <p role="alert" className="px-3.5 py-3 text-t12 text-critical">
+                  {error}
+                </p>
+              ) : hits.length === 0 ? (
+                <p className="px-3.5 py-3 text-t12 text-ink-muted">{busy ? '찾는 중…' : '결과가 없습니다.'}</p>
+              ) : (
+                <>
+                  {SEARCH_KIND.map((kind) => (
+                    <Group
+                      key={kind}
+                      kind={kind}
+                      hits={hits.filter((h) => h.kind === kind)}
+                      onPick={() => {
+                        setOpen(false)
+                        setExpanded(false)
+                      }}
+                    />
+                  ))}
+                  {/* 왜 이만큼만 나오는지 말해 둔다. '전부 검색했다'로 읽히면 없는 걸 없다고 믿는다. */}
+                  <p className="border-t border-line-soft px-3.5 pt-2 pb-1 text-t10 text-ink-muted">
+                    종류별 상위 결과입니다. 볼 권한이 없는 항목은 검색되지 않습니다.
+                  </p>
+                </>
+              )}
+            </div>
+          ) : null}
         </div>
-      ) : null}
-    </div>
+        {expanded ? (
+          <button
+            type="button"
+            onClick={() => {
+              setExpanded(false)
+              setOpen(false)
+            }}
+            className="flex h-11 shrink-0 items-center px-2 text-t13 text-ink-dim md:hidden"
+          >
+            닫기
+          </button>
+        ) : null}
+      </div>
+    </>
   )
 }
 
-function Group({
-  kind,
-  hits,
-  onPick,
-}: {
-  kind: SearchKind
-  hits: SearchHit[]
-  onPick: () => void
-}) {
+function Group({ kind, hits, onPick }: { kind: SearchKind; hits: SearchHit[]; onPick: () => void }) {
   if (hits.length === 0) return null
 
   return (
     <div className="px-1.5 py-1">
-      <p className="px-2 pb-1 text-[10px] font-semibold tracking-[0.08em] text-ink-muted">
+      <p className="px-2 pb-1 text-t10 font-semibold tracking-[0.08em] text-ink-muted">
         {SEARCH_KIND_LABEL_KO[kind]}
         <span className="ml-1 font-normal tnum">{hits.length}</span>
       </p>
@@ -170,8 +198,8 @@ function Group({
               onClick={onPick}
               className="block rounded-lg px-2 py-1.5 transition-colors hover:bg-raised"
             >
-              <span className="block truncate text-[12.5px] font-semibold">{hit.title}</span>
-              <span className="block truncate text-[10.5px] text-ink-muted">{hit.subtitle}</span>
+              <span className="block truncate text-t12h font-semibold">{hit.title}</span>
+              <span className="block truncate text-t10h text-ink-muted">{hit.subtitle}</span>
             </Link>
           </li>
         ))}

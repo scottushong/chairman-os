@@ -49,21 +49,21 @@ export function WaitingOnMe({ tasks, projects, businesses }: WaitingOnMeProps) {
   return (
     <GlassCard as="section" padding="p-3.5" className="flex h-full flex-col">
       <div className="flex items-baseline justify-between">
-        <h2 className="flex items-center gap-1.5 text-[13px] font-semibold">
+        <h2 className="flex items-center gap-1.5 text-t13 font-semibold">
           <Icon name="clipboard" className="size-4 text-ink-dim" />
           Waiting on Me
-          <span className="text-[11px] font-normal text-ink-muted tnum">{mine.length}건</span>
+          <span className="text-t11 font-normal text-ink-muted tnum">{mine.length}건</span>
         </h2>
         {/* CH-040으로 넘긴다. 같은 조건(회장 확인 대기)을 URL에 달아 보내야
             '전체 보기'가 다른 목록을 여는 것처럼 보이지 않는다. */}
         <Link
           href="/tasks?needed=1"
-          className="text-[11px] text-ink-muted transition-colors hover:text-ink"
+          className="text-t11 text-ink-muted transition-colors hover:text-ink"
         >
           전체 보기
         </Link>
       </div>
-      <p className="mt-0.5 text-[11px] tnum">
+      <p className="mt-0.5 text-t11 tnum">
         {stale > 0 ? (
           <span className="text-critical">{STALE_DAYS}일 초과 {stale}건</span>
         ) : (
@@ -72,14 +72,14 @@ export function WaitingOnMe({ tasks, projects, businesses }: WaitingOnMeProps) {
       </p>
 
       {mine.length === 0 ? (
-        <p className="flex flex-1 items-center justify-center text-[12px] text-ink-muted">
+        <p className="flex flex-1 items-center justify-center text-t12 text-ink-muted">
           내 승인을 기다리는 업무가 없습니다.
         </p>
       ) : (
         <div className="-mx-1.5 mt-2 flex-1 space-y-2 overflow-y-auto">
           {groups.map((g) => (
             <div key={g.businessId}>
-              <p className="px-1.5 text-[10px] font-semibold text-ink-muted">
+              <p className="px-1.5 text-t10 font-semibold text-ink-muted">
                 {businessName(businesses, g.businessId)}
                 <span className="ml-1 font-normal tnum">{g.items.length}</span>
               </p>
@@ -108,18 +108,18 @@ function WaitingItem({ task }: { task: Task }) {
         href={`/tasks/${encodeURIComponent(task.task_id)}`}
         className="block rounded-lg px-1.5 py-1 transition-colors hover:bg-raised/60">
         <div className="flex items-center gap-1.5">
-          <p className="min-w-0 flex-1 truncate text-[12px] leading-snug font-semibold">
+          <p className="min-w-0 flex-1 truncate text-t12 leading-snug font-semibold">
             {task.title}
           </p>
           <span
-            className={`shrink-0 text-[11px] font-semibold tnum ${
+            className={`shrink-0 text-t11 font-semibold tnum ${
               stale ? 'text-critical' : days > 0 ? 'text-warning' : 'text-ink-muted'
             }`}
           >
             {days > 0 ? `대기 ${days}일` : '오늘 접수'}
           </span>
         </div>
-        <p className="mt-0.5 flex items-center gap-1.5 text-[10px] text-ink-muted tnum">
+        <p className="mt-0.5 flex items-center gap-1.5 text-t10 text-ink-muted tnum">
           <span className="rounded bg-raised px-1 py-px">{TASK_STATUS_LABEL_KO[task.status]}</span>
           {task.owner}
           <span className={isOverdue(task.deadline) ? 'text-critical' : ''}>

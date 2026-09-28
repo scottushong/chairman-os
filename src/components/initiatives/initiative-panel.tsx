@@ -142,72 +142,72 @@ export function InitiativePanel({
   return (
     <section className="rounded-xl border border-line-soft bg-panel p-4">
       <div className="flex items-baseline justify-between">
-        <h2 className="text-[13px] font-semibold">개요</h2>
+        <h2 className="text-t13 font-semibold">개요</h2>
         {canEdit ? (
-          <span className="text-[10.5px] text-ink-muted">칸을 누르면 고칠 수 있습니다</span>
+          <span className="text-t10h text-ink-muted">칸을 누르면 고칠 수 있습니다</span>
         ) : null}
       </div>
 
       {error ? (
-        <p role="alert" className="mt-2.5 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-[11.5px] text-critical">
+        <p role="alert" className="mt-2.5 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-t11h text-critical">
           {error}
         </p>
       ) : null}
 
-      <div className="mt-2.5 border-l-2 border-line pl-3 text-[14px] leading-snug font-semibold">
+      <div className="mt-2.5 border-l-2 border-line pl-3 text-t14 leading-snug font-semibold">
         {body(fieldOf('title'))}
       </div>
 
       <div className="mt-3.5 grid gap-2.5 md:grid-cols-2">
         <div className="rounded-lg bg-raised/60 px-3 py-2.5">
-          <p className="text-[10px] font-semibold tracking-[0.08em] text-ink-muted">목표</p>
-          <div className="mt-1 text-[12.5px] leading-snug text-ink-dim">{body(fieldOf('goal'))}</div>
+          <p className="text-t10 font-semibold tracking-[0.08em] text-ink-muted">목표</p>
+          <div className="mt-1 text-t12h leading-snug text-ink-dim">{body(fieldOf('goal'))}</div>
         </div>
         <div className="rounded-lg bg-raised/60 px-3 py-2.5">
-          <p className="text-[10px] font-semibold tracking-[0.08em] text-ink-muted">목표일</p>
-          <div className="mt-1 text-[12.5px] leading-snug text-ink-dim tnum">{body(fieldOf('target_date'))}</div>
+          <p className="text-t10 font-semibold tracking-[0.08em] text-ink-muted">목표일</p>
+          <div className="mt-1 text-t12h leading-snug text-ink-dim tnum">{body(fieldOf('target_date'))}</div>
         </div>
       </div>
 
       {/* 지난 다음 행동만 색을 준다(요구사항서 2번) — 이 화면에서 색이 오르는 두 자리 중 하나다. */}
       <div className="mt-2.5 grid gap-2.5 md:grid-cols-3">
         <div className="rounded-lg border border-line-soft px-3 py-2.5">
-          <p className="text-[10px] font-semibold tracking-[0.08em] text-ink-muted">다음 행동</p>
+          <p className="text-t10 font-semibold tracking-[0.08em] text-ink-muted">다음 행동</p>
           <div
-            className={`mt-1 text-[12.5px] leading-relaxed ${clock?.overdue ? 'font-semibold text-critical' : 'text-ink'}`}
+            className={`mt-1 text-t12h leading-relaxed ${clock?.overdue ? 'font-semibold text-critical' : 'text-ink'}`}
           >
             {body(fieldOf('next_action'))}
           </div>
         </div>
         <div className="rounded-lg border border-line-soft px-3 py-2.5">
-          <p className="flex items-center justify-between text-[10px] font-semibold tracking-[0.08em] text-ink-muted">
+          <p className="flex items-center justify-between text-t10 font-semibold tracking-[0.08em] text-ink-muted">
             다음 행동일
             {clock ? (
-              <span className={`text-[10.5px] font-semibold tnum ${clock.overdue ? 'text-critical' : 'text-ink-dim'}`}>
+              <span className={`text-t10h font-semibold tnum ${clock.overdue ? 'text-critical' : 'text-ink-dim'}`}>
                 {clock.label}
               </span>
             ) : null}
           </p>
           <div
-            className={`mt-1 text-[12.5px] leading-relaxed tnum ${clock?.overdue ? 'font-semibold text-critical' : 'text-ink'}`}
+            className={`mt-1 text-t12h leading-relaxed tnum ${clock?.overdue ? 'font-semibold text-critical' : 'text-ink'}`}
           >
             {body(fieldOf('next_action_date'))}
           </div>
         </div>
         <div className="rounded-lg border border-line-soft px-3 py-2.5">
-          <p className="text-[10px] font-semibold tracking-[0.08em] text-ink-muted">담당자</p>
-          <div className="mt-1 text-[12.5px] leading-relaxed text-ink">{body(fieldOf('next_action_owner'))}</div>
+          <p className="text-t10 font-semibold tracking-[0.08em] text-ink-muted">담당자</p>
+          <div className="mt-1 text-t12h leading-relaxed text-ink">{body(fieldOf('next_action_owner'))}</div>
         </div>
       </div>
 
       <div className="mt-2.5 grid gap-2.5 md:grid-cols-2">
         <div className="rounded-lg bg-raised/60 px-3 py-2.5">
-          <p className="text-[10px] font-semibold tracking-[0.08em] text-ink-muted">막힌 것</p>
-          <div className="mt-1 text-[12.5px] leading-relaxed text-ink-dim">{body(fieldOf('blocker'))}</div>
+          <p className="text-t10 font-semibold tracking-[0.08em] text-ink-muted">막힌 것</p>
+          <div className="mt-1 text-t12h leading-relaxed text-ink-dim">{body(fieldOf('blocker'))}</div>
         </div>
         <div className="rounded-lg bg-raised/60 px-3 py-2.5">
-          <p className="text-[10px] font-semibold tracking-[0.08em] text-ink-muted">연결된 회사</p>
-          <div className="mt-1 text-[12.5px] leading-snug text-ink-dim">{body(fieldOf('business_id'))}</div>
+          <p className="text-t10 font-semibold tracking-[0.08em] text-ink-muted">연결된 회사</p>
+          <div className="mt-1 text-t12h leading-snug text-ink-dim">{body(fieldOf('business_id'))}</div>
         </div>
       </div>
     </section>
@@ -318,7 +318,7 @@ function FieldEditor({
   }
 
   const shared =
-    'w-full rounded-md border border-accent bg-raised px-2 py-1.5 text-[12.5px] font-normal text-ink outline-none placeholder:text-ink-muted disabled:opacity-50'
+    'w-full rounded-md border border-accent bg-raised px-2 py-1.5 text-t12h font-normal text-ink outline-none placeholder:text-ink-muted disabled:opacity-50'
 
   return (
     <div>
@@ -381,7 +381,7 @@ function FieldEditor({
           type="button"
           onClick={commit}
           disabled={busy}
-          className="rounded bg-accent px-2 py-1 text-[11px] font-semibold text-ink transition-opacity disabled:opacity-40"
+          className="rounded bg-accent px-2 py-1 text-t11 font-semibold text-ink transition-opacity disabled:opacity-40"
         >
           {busy ? '저장 중…' : '저장'}
         </button>
@@ -389,12 +389,12 @@ function FieldEditor({
           type="button"
           onClick={onCancel}
           disabled={busy}
-          className="rounded px-2 py-1 text-[11px] font-normal text-ink-muted transition-colors hover:text-ink disabled:opacity-40"
+          className="rounded px-2 py-1 text-t11 font-normal text-ink-muted transition-colors hover:text-ink disabled:opacity-40"
         >
           취소
         </button>
         {input !== 'date' && input !== 'business' ? (
-          <span className="text-[10px] font-normal text-ink-muted">
+          <span className="text-t10 font-normal text-ink-muted">
             {input === 'textarea' ? 'Ctrl+Enter 저장 · Esc 취소' : 'Enter 저장 · Esc 취소'}
           </span>
         ) : null}
@@ -493,7 +493,7 @@ export function InitiativeSidePanel({ initiative, canEdit }: { initiative: Initi
       {error ? (
         <p
           role="alert"
-          className="flex items-start gap-1.5 rounded-lg border border-critical/40 bg-critical/10 px-2.5 py-2 text-[11.5px] leading-snug text-critical"
+          className="flex items-start gap-1.5 rounded-lg border border-critical/40 bg-critical/10 px-2.5 py-2 text-t11h leading-snug text-critical"
         >
           {error}
         </p>
@@ -522,20 +522,20 @@ function EnumSelect<T extends string>({
   if (!canEdit) {
     return (
       <div>
-        <span className="block text-[10px] font-semibold tracking-[0.08em] text-ink-muted">{label}</span>
-        <p className="mt-1 text-[12.5px] text-ink-dim">{labelsKo[value]}</p>
+        <span className="block text-t10 font-semibold tracking-[0.08em] text-ink-muted">{label}</span>
+        <p className="mt-1 text-t12h text-ink-dim">{labelsKo[value]}</p>
       </div>
     )
   }
   return (
     <label className="block">
-      <span className="text-[11px] text-ink-dim">{label}</span>
+      <span className="text-t11 text-ink-dim">{label}</span>
       <select
         value={value}
         disabled={pending}
         aria-label={label}
         onChange={(e) => onChange(e.target.value as T)}
-        className="mt-1 w-full rounded-lg border border-line bg-raised px-2.5 py-2 text-[12.5px] text-ink outline-none focus:border-accent disabled:opacity-50"
+        className="mt-1 w-full rounded-lg border border-line bg-raised px-2.5 py-2 text-t12h text-ink outline-none focus:border-accent disabled:opacity-50"
       >
         {options.map((o) => (
           <option key={o} value={o}>
@@ -573,19 +573,19 @@ export function InitiativeNotePanel({ initiativeId, note }: { initiativeId: stri
 
   return (
     <section className="rounded-xl border border-gold/30 bg-gold/5 p-4">
-      <h2 className="flex items-center gap-1.5 text-[13px] font-semibold">
+      <h2 className="flex items-center gap-1.5 text-t13 font-semibold">
         <Icon name="crown" className="size-4 text-gold" filled />
         회장 메모
       </h2>
-      <p className="mt-0.5 text-[10.5px] text-ink-muted">이 칸은 회장만 봅니다.</p>
+      <p className="mt-0.5 text-t10h text-ink-muted">이 칸은 회장만 봅니다.</p>
 
       {error ? (
-        <p role="alert" className="mt-2 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-[11.5px] text-critical">
+        <p role="alert" className="mt-2 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-t11h text-critical">
           {error}
         </p>
       ) : null}
 
-      <div className="mt-2 text-[12.5px] leading-relaxed text-ink-dim">
+      <div className="mt-2 text-t12h leading-relaxed text-ink-dim">
         {editing ? (
           <FieldEditor
             input="textarea"

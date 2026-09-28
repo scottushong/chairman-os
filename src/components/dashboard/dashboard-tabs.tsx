@@ -37,7 +37,7 @@ const TABS: readonly Tab[] = [
   { label: 'AI 요약', href: '/ai' },
 ] as const
 
-const BASE = 'rounded-t-md px-4 py-2 text-[13px] transition-colors'
+const BASE = 'rounded-t-md px-4 py-2 text-t13 transition-colors'
 const ON = 'bg-panel font-semibold text-ink'
 const OFF = 'text-ink-muted hover:bg-panel/60 hover:text-ink-dim'
 

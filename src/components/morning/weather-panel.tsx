@@ -97,7 +97,7 @@ export function WeatherPanel({
   return (
     <GlassCard as="section" aria-label="날씨 — 현재 위치와 관심 도시" className="flex flex-col justify-between">
       <div className="flex items-start justify-between gap-2">
-        <p className="flex min-w-0 items-center gap-1.5 text-[13px] font-semibold text-ink">
+        <p className="flex min-w-0 items-center gap-1.5 text-t13 font-semibold text-ink">
           <Icon name="pin" className="size-3.5 shrink-0 text-ink-muted" />
           <span className="truncate">{placeLabel}</span>
         </p>
@@ -106,7 +106,7 @@ export function WeatherPanel({
           onClick={locate}
           disabled={busy}
           title="브라우저 위치 권한을 물어 지금 있는 자리의 날씨로 바꿉니다."
-          className="shrink-0 rounded-md border border-line bg-raised px-2.5 py-1 text-[11px] text-ink-dim transition-colors hover:border-accent hover:text-ink disabled:cursor-wait disabled:opacity-60"
+          className="shrink-0 rounded-md border border-line bg-raised px-2.5 py-1 text-t11 text-ink-dim transition-colors hover:border-accent hover:text-ink disabled:cursor-wait disabled:opacity-60"
         >
           {busy ? '확인 중…' : '현재 위치'}
         </button>
@@ -121,15 +121,15 @@ export function WeatherPanel({
             className="size-11 shrink-0 text-ink-dim"
           />
           <span className="flex items-baseline gap-2">
-            <span className="text-[52px] leading-none font-bold tnum">
+            <span className="text-t52 leading-none font-bold tnum">
               {Math.round(current.temperatureC)}°
             </span>
             {/* 날씨 코드는 WEATHER_CODE_LABEL_KO를 거쳐 온 라벨이다 — 날것의 숫자는 화면에 못 나간다. */}
-            <span className="text-[14px] text-ink-dim">{current.labelKo}</span>
+            <span className="text-t14 text-ink-dim">{current.labelKo}</span>
           </span>
         </p>
       ) : (
-        <p className="mt-4 text-[13px] text-ink-muted">날씨를 불러오지 못했습니다.</p>
+        <p className="mt-4 text-t13 text-ink-muted">날씨를 불러오지 못했습니다.</p>
       )}
 
       {/* 관심 도시. 전부 GlassCard 안이라 ink-muted를 써도 된다 —
@@ -142,7 +142,7 @@ export function WeatherPanel({
           {shownCities.map((c) => (
             // 도시 줄은 아이콘이 붙어도 한 줄 그대로다 — 이름 옆에 들어가지
             // 아래로 늘어나지 않는다. 위 주석의 '여섯 줄이 되면 안 된다'가 그대로 유효하다.
-            <li key={c.id} className="flex items-center justify-between gap-1 text-[11px]">
+            <li key={c.id} className="flex items-center justify-between gap-1 text-t11">
               <span className="flex min-w-0 items-center gap-1 text-ink-muted">
                 <WeatherIcon name={weatherIconFor(c.code)} className="size-3.5 shrink-0" />
                 <span className="truncate">{c.nameKo}</span>
@@ -152,12 +152,12 @@ export function WeatherPanel({
           ))}
         </ul>
       ) : (
-        <p className="mt-4 border-t border-line-soft pt-3 text-[11px] text-ink-muted">
+        <p className="mt-4 border-t border-line-soft pt-3 text-t11 text-ink-muted">
           관심 도시 날씨를 불러오지 못했습니다.
         </p>
       )}
 
-      <p className="mt-3 text-[11px] text-ink-muted">
+      <p className="mt-3 text-t11 text-ink-muted">
         {status === 'denied'
           ? '위치 권한이 거부되었습니다. 접속 위치로 표시합니다.'
           : status === 'unsupported'

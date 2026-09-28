@@ -47,8 +47,8 @@ export function FinanceView({
   if (!latest) {
     return (
       <section className="mt-4 rounded-xl border border-line-soft bg-panel px-4 py-10 text-center">
-        <p className="text-[13px] text-ink-dim">이 범위에 원장이 없습니다.</p>
-        <p className="mt-1 text-[11.5px] text-ink-muted">
+        <p className="text-t13 text-ink-dim">이 범위에 원장이 없습니다.</p>
+        <p className="mt-1 text-t11h text-ink-muted">
           전표를 입력하거나(전표 화면) DY는 ECOUNT 엑셀을 올리면 여기에 섭니다. 출처 없는 숫자는 올리지 않습니다.
         </p>
       </section>
@@ -69,7 +69,7 @@ export function FinanceView({
   return (
     <div className="mt-4 space-y-3.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2 text-[11px] text-ink-muted">
+        <div className="flex flex-wrap items-center gap-2 text-t11 text-ink-muted">
           <span>
             {period.replace('-', '년 ')}월 ·{' '}
             {origin === 'closing' ? '월 결산 기준' : origin === 'journal' ? '전표 기준 (마감 전)' : '결산·전표 혼합'}
@@ -125,14 +125,14 @@ export function FinanceView({
               href={href({ month: period, tab: t })}
               aria-current={t === tab ? 'page' : undefined}
               className={[
-                'rounded-md px-2.5 py-1 text-[12px] transition-colors',
+                'rounded-md px-2.5 py-1 text-t12 transition-colors',
                 t === tab ? 'bg-accent/15 font-semibold text-ink' : 'text-ink-muted hover:text-ink-dim',
               ].join(' ')}
             >
               {STATEMENT_LABEL_KO[t]}
             </Link>
           ))}
-          <span className="ml-auto text-[10.5px] text-ink-muted">단위: 백만원 · 계정코드는 회사 계정과목표 원본</span>
+          <span className="ml-auto text-t10h text-ink-muted">단위: 백만원 · 계정코드는 회사 계정과목표 원본</span>
         </nav>
         <div className="mt-2">
           <StatementTable kind={tab} rows={rows} period={period} />

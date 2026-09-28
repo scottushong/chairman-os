@@ -15,12 +15,12 @@ export default async function MfaPage({ searchParams }: PageProps<'/mfa'>) {
   return (
     <main className="flex min-h-full items-center justify-center bg-app px-5 py-10">
       <div className="glass w-full max-w-[420px] rounded-glass p-5">
-        <h1 className="text-[16px] font-bold">2단계 인증</h1>
-        <p className="mt-1 text-[12px] leading-relaxed text-ink-dim">
+        <h1 className="text-t16 font-bold">2단계 인증</h1>
+        <p className="mt-1 text-t12 leading-relaxed text-ink-dim">
           인증 앱(Google Authenticator · 1Password · Authy 등)의 6자리 코드로 한 번 더 확인합니다.
           {enforced ? ' 임원 이상은 필수입니다.' : ''}
         </p>
-        <p className="mt-0.5 text-[11px] text-ink-muted">
+        <p className="mt-0.5 text-t11 text-ink-muted">
           Two-step verification with an authenticator app.{enforced ? ' Required for Executives and above.' : ''}
         </p>
         <MfaPanel next={next} />

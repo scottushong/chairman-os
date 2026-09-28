@@ -17,16 +17,16 @@ export function CostStructurePanel({ data }: { data: CostStructure }) {
   return (
     <section className="rounded-xl border border-line-soft bg-panel p-3.5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-[13px] font-semibold">원가 구조</h2>
-        <span className="text-[11px] text-ink-muted">
+        <h2 className="text-t13 font-semibold">원가 구조</h2>
+        <span className="text-t11 text-ink-muted">
           매출 100 기준 · {data.period.replace('-', '년 ')}월 · 매출{' '}
           <FigureText figure={data.revenue} unit="eok" compact />
         </span>
       </div>
 
-      <table className="mt-2.5 w-full text-[12px]">
+      <table className="mt-2.5 w-full text-t12">
         <thead>
-          <tr className="text-[10.5px] text-ink-muted">
+          <tr className="text-t10h text-ink-muted">
             <th className="w-20 py-1 text-left font-normal">대분류</th>
             <th className="py-1 text-left font-normal">매출 대비 비중</th>
             <th className="w-28 py-1 text-right font-normal">비용 전년비</th>
@@ -63,18 +63,18 @@ export function CostStructurePanel({ data }: { data: CostStructure }) {
               <td className="py-2 text-right">
                 {r.driver ? (
                   <span className="inline-flex items-center gap-1.5">
-                    <span className="text-[10.5px] text-ink-muted">{r.driver.label}</span>
+                    <span className="text-t10h text-ink-muted">{r.driver.label}</span>
                     <FigureText figure={r.driver.yoyPct} unit="pct" compact />
                   </span>
                 ) : (
-                  <span className="text-[10.5px] text-ink-muted">드라이버 없음</span>
+                  <span className="text-t10h text-ink-muted">드라이버 없음</span>
                 )}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      <p className="mt-2 text-[10.5px] text-ink-muted">
+      <p className="mt-2 text-t10h text-ink-muted">
         비중은 매출원가와 판관비를 대분류로 묶은 값이다. 감가상각·영업외·법인세는 빠진다.
         지수 색은 칠하지 않는다 — 지수가 오른 것은 좋고 나쁨이 아니라 설명이다.
       </p>
@@ -98,20 +98,20 @@ export function ClosingDiffPanel({ diff }: { diff: ClosingDiff | null }) {
   return (
     <section className="rounded-xl border border-line-soft bg-panel p-3.5">
       <div className="flex items-baseline justify-between">
-        <h2 className="text-[13px] font-semibold">잠정 → 확정 차이</h2>
-        <span className="text-[11px] text-ink-muted">
+        <h2 className="text-t13 font-semibold">잠정 → 확정 차이</h2>
+        <span className="text-t11 text-ink-muted">
           {diff ? `${diff.period.replace('-', '년 ')}월 마감` : '마감 이력 없음'}
         </span>
       </div>
       {!diff ? (
-        <p className="py-6 text-center text-[12px] text-ink-muted">
+        <p className="py-6 text-center text-t12 text-ink-muted">
           마감 시점의 잠정치가 기록된 달이 아직 없습니다.
         </p>
       ) : (
         <>
-          <table className="mt-2.5 w-full text-[12px]">
+          <table className="mt-2.5 w-full text-t12">
             <thead>
-              <tr className="text-[10.5px] text-ink-muted">
+              <tr className="text-t10h text-ink-muted">
                 <th className="py-1 text-left font-normal">지표</th>
                 <th className="py-1 text-right font-normal">마감 전</th>
                 <th className="py-1 text-right font-normal">확정</th>
@@ -139,12 +139,12 @@ export function ClosingDiffPanel({ diff }: { diff: ClosingDiff | null }) {
           </table>
           {diff.accounts.length > 0 ? (
             <div className="mt-2.5 border-t border-line-soft pt-2">
-              <p className="text-[10.5px] text-ink-muted">결산조정이 들어간 계정 (백만원, 차변 − 대변)</p>
-              <ul className="mt-1 space-y-0.5 text-[11.5px]">
+              <p className="text-t10h text-ink-muted">결산조정이 들어간 계정 (백만원, 차변 − 대변)</p>
+              <ul className="mt-1 space-y-0.5 text-t11h">
                 {diff.accounts.slice(0, 5).map((a) => (
                   <li key={a.account_code} className="flex items-center justify-between gap-2">
                     <span className="text-ink-dim">
-                      <span className="mr-1.5 text-[10.5px] text-ink-muted tnum">{a.account_code}</span>
+                      <span className="mr-1.5 text-t10h text-ink-muted tnum">{a.account_code}</span>
                       {a.name}
                     </span>
                     <FigureText figure={a.diff} unit="million" compact />

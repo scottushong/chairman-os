@@ -82,40 +82,40 @@ export function RuleEditor({ rule }: { rule: ExceptionRule }) {
           type="button"
           disabled={busy}
           onClick={toggle}
-          className="rounded-md border border-line px-2 py-1 text-[10.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-40"
+          className="rounded-md border border-line px-2 py-1 text-t10h text-ink-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-40"
         >
           {rule.enabled ? '끄기' : '켜기'}
         </button>
 
         {rule.kind === 'manual' ? (
           // 빈 칸이 아니라 사실을 적는다.
-          <span className="text-[10.5px] text-ink-muted">
+          <span className="text-t10h text-ink-muted">
             수동 플래그 규칙 — 임계도 창도 없습니다(사람이 세웁니다)
           </span>
         ) : (
           <form onSubmit={submit} className="flex flex-wrap items-end gap-2">
-            <label className="text-[10px] text-ink-dim">
+            <label className="text-t10 text-ink-dim">
               임계 {unit ? `(${unit})` : '(단위 미표기)'}
               <input
                 value={threshold}
                 onChange={(e) => setThreshold(e.target.value)}
                 inputMode="decimal"
-                className="mt-0.5 block w-[86px] rounded-md border border-line bg-panel px-2 py-1 text-[11.5px] text-ink outline-none focus:border-accent tnum"
+                className="mt-0.5 block w-[86px] rounded-md border border-line bg-panel px-2 py-1 text-t11h text-ink outline-none focus:border-accent tnum"
               />
             </label>
-            <label className="text-[10px] text-ink-dim">
+            <label className="text-t10 text-ink-dim">
               창 (일)
               <input
                 value={windowDays}
                 onChange={(e) => setWindowDays(e.target.value)}
                 inputMode="numeric"
-                className="mt-0.5 block w-[72px] rounded-md border border-line bg-panel px-2 py-1 text-[11.5px] text-ink outline-none focus:border-accent tnum"
+                className="mt-0.5 block w-[72px] rounded-md border border-line bg-panel px-2 py-1 text-t11h text-ink outline-none focus:border-accent tnum"
               />
             </label>
             <button
               type="submit"
               disabled={busy}
-              className="rounded-md bg-accent px-2.5 py-1.5 text-[11px] font-semibold text-app disabled:opacity-40"
+              className="rounded-md bg-accent px-2.5 py-1.5 text-t11 font-semibold text-app disabled:opacity-40"
             >
               {busy ? '저장 중…' : '저장'}
             </button>
@@ -131,7 +131,7 @@ export function RuleEditor({ rule }: { rule: ExceptionRule }) {
        * **등급을 받지 못한다**(score.ts의 `AXES_WITH_PLANNED_SOURCE` 주석이 그 자리다).
        */}
       {rule.kind === 'metric' && Number(threshold) === 0 && threshold !== '' ? (
-        <p className="text-[10px] leading-relaxed text-warning">
+        <p className="text-t10 leading-relaxed text-warning">
           임계를 0으로 두면 «임계를 얼마나 넘어섰나»를 셀 수 없어 이 규칙의 예외는 그 뒤로
           등급이 나오지 않습니다(재무 축의 출처가 사라집니다). 저장은 됩니다.
         </p>
@@ -143,18 +143,18 @@ export function RuleEditor({ rule }: { rule: ExceptionRule }) {
        * 있다고 믿는다 — 계산은 엔진의 함수를 그대로 부른다(여기서 다시 나누지 않는다).
        */}
       {rule.kind === 'metric' && windowDays !== '' && Number(windowDays) > 0 ? (
-        <p className="text-[10px] leading-relaxed text-ink-muted">
+        <p className="text-t10 leading-relaxed text-ink-muted">
           이 창은 실제로 <b>{windowMonths(Number(windowDays))}개월</b>로 접혀 재어집니다 —
           수치 표(finance_kpis)의 눈금이 달이고, 이 저장소에 일별 수치가 없습니다.
         </p>
       ) : null}
 
       {error ? (
-        <p role="alert" className="text-[10.5px] leading-relaxed text-critical">
+        <p role="alert" className="text-t10h leading-relaxed text-critical">
           {error}
         </p>
       ) : null}
-      {saved ? <p className="text-[10.5px] text-ink-dim">저장했습니다.</p> : null}
+      {saved ? <p className="text-t10h text-ink-dim">저장했습니다.</p> : null}
     </div>
   )
 }

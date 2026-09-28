@@ -122,6 +122,169 @@
   --color-scrollbar: rgba(30, 26, 22, 0.22);
 
   --font-sans: var(--font-noto-serif-kr), "Noto Serif KR", serif;
+
+  /**
+   * 글자 크기 (모바일 전면 점검 2026-09-28).
+   * 넓은 화면(1024px 이상)의 값은 예전 text-[Npx] 그대로다 — t11 = 11px, t10h = 10.5px.
+   * 좁은 화면은 아래 @media가 같은 이름을 clamp()로 다시 정의한다. 이름이 변수라
+   * 유틸리티(text-t11)가 따라온다. 새 글자는 text-[Npx] 대신 이 이름을 쓴다.
+   */
+  --text-t9: 9px;
+  --text-t9h: 9.5px;
+  --text-t10: 10px;
+  --text-t10h: 10.5px;
+  --text-t11: 11px;
+  --text-t11h: 11.5px;
+  --text-t12: 12px;
+  --text-t12h: 12.5px;
+  --text-t13: 13px;
+  --text-t13h: 13.5px;
+  --text-t14: 14px;
+  --text-t15: 15px;
+  --text-t16: 16px;
+  --text-t17: 17px;
+  --text-t18: 18px;
+  --text-t19: 19px;
+  --text-t20: 20px;
+  --text-t22: 22px;
+  --text-t28: 28px;
+  --text-t30: 30px;
+  --text-t34: 34px;
+  --text-t44: 44px;
+  --text-t52: 52px;
+  --text-t56: 56px;
+}
+
+/**
+ * 노치 · 홈바 여백 (safe-area). root layout의 viewport가 viewport-fit=cover라 화면이 모서리까지 깔린다 —
+ * 대신 셸의 가장자리 넷이 이 값만큼 안으로 물러선다. 노치가 없는 기기에서는 전부 0이다.
+ */
+@utility safe-top {
+  padding-top: env(safe-area-inset-top);
+}
+@utility safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+@utility safe-left {
+  padding-left: env(safe-area-inset-left);
+}
+@utility safe-x {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/**
+ * 터치 과녁 44×44 (1024px 미만). 누를 것의 **최소** 크기만 올린다 — 모양(패딩 · 글자)은 각 화면의 것 그대로다.
+ * base 층이라 화면 쪽 min-h-0 · min-w-0 유틸리티가 이긴다(일부러 작게 둘 자리의 탈출구).
+ * 문단 속 글 링크는 뺀다(WCAG 2.5.8 inline 예외). inline 요소는 min-height가 먹지 않으므로 글 링크는 원래 영향이 없다.
+ */
+@layer base {
+  @media (max-width: 1023.98px) {
+    :is(button, select, summary, [role='button'], [role='tab'], a[href]:not(p a)),
+    input:not([type='checkbox'], [type='radio'], [type='hidden'], [type='range']) {
+      min-height: 44px;
+    }
+    :is(button, summary, [role='button'], [role='tab'], a[href]:not(p a)) {
+      min-width: 44px;
+    }
+  }
+}
+
+/**
+ * 모바일 공통 모양 (2026-09-28). 화면마다 새로 짜지 않고 이 셋을 붙인다.
+ *
+ *   table.m-cards   640px 이하에서 표가 카드 목록이 된다. 각 <td>에 data-label="열 이름"을 달면 그 이름이
+ *                   값 왼쪽에 붙는다. <thead>는 숨는다. 카드로 읽을 수 없는 표(재무제표처럼 열이 곧 기간인 것)는 쓰지 않는다.
+ *   .m-sticky-first 가로 스크롤 표 — 표를 감싼 상자에 overflow-x-auto와 함께. 첫 열이 왼쪽에 붙어 남는다.
+ *   .m-tabs         탭 · 칩 줄이 폰에서 두 줄로 접히지 않고 옆으로 민다(글자는 한 줄 그대로).
+ */
+@media (max-width: 640px) {
+  table.m-cards,
+  table.m-cards > tbody,
+  table.m-cards > tbody > tr,
+  table.m-cards > tbody > tr > td {
+    display: block;
+    width: 100%;
+  }
+  table.m-cards > thead {
+    display: none;
+  }
+  table.m-cards > tbody > tr {
+    margin-bottom: 12px;
+    border-radius: 14px;
+    border: 1px solid var(--color-line-soft);
+    background: var(--color-panel);
+    padding: 10px 14px;
+  }
+  table.m-cards > tbody > tr > td {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 4px 0;
+    border: 0;
+    text-align: right;
+  }
+  table.m-cards > tbody > tr > td[data-label]::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    text-align: left;
+    color: var(--color-ink-muted);
+  }
+  table.m-cards > tbody > tr > td:not([data-label]) {
+    justify-content: flex-start;
+    text-align: left;
+  }
+}
+.m-sticky-first :is(th, td):first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--color-app);
+}
+@media (max-width: 1023.98px) {
+  .m-tabs {
+    flex-wrap: nowrap !important;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .m-tabs > * {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+}
+
+/**
+ * 좁은 화면 글자 (1024px 미만 = 폰 · 태블릿 세로).
+ * 이 앱의 글꼴은 전부 명조(--font-sans)다 — 명조는 14px 아래로 내려가면 획이 뭉친다(회장 규칙 «명조 최소 14px»).
+ * 본문(데스크톱 11~13px)은 폰에서 15~17px, 숫자 카드의 큰 글씨는 화면 폭(vw)을 따라 줄어든다.
+ */
+@media (max-width: 1023.98px) {
+  :root {
+    --text-t9: 14px;
+    --text-t9h: 14px;
+    --text-t10: 14px;
+    --text-t10h: 14px;
+    --text-t11: clamp(14px, 3.9vw, 15px);
+    --text-t11h: clamp(14px, 3.9vw, 15px);
+    --text-t12: clamp(15px, 4.1vw, 16px);
+    --text-t12h: clamp(15px, 4.1vw, 16px);
+    --text-t13: clamp(15px, 4.3vw, 17px);
+    --text-t13h: clamp(15px, 4.3vw, 17px);
+    --text-t14: clamp(16px, 4.4vw, 17px);
+    --text-t15: clamp(16px, 4.5vw, 17px);
+    --text-t16: 17px;
+    --text-t17: 17px;
+    --text-t18: clamp(17px, 5vw, 19px);
+    --text-t19: clamp(17px, 5.2vw, 20px);
+    --text-t20: clamp(18px, 5.4vw, 21px);
+    --text-t22: clamp(19px, 5.8vw, 23px);
+    --text-t28: clamp(22px, 7vw, 28px);
+    --text-t30: clamp(22px, 7.4vw, 30px);
+    --text-t34: clamp(24px, 8.4vw, 34px);
+    --text-t44: clamp(28px, 10vw, 44px);
+    --text-t52: clamp(30px, 11.5vw, 52px);
+    --text-t56: clamp(32px, 12.5vw, 56px);
+  }
 }
 
 /**

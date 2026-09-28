@@ -147,7 +147,7 @@ export function StatementEditor({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end gap-3 rounded-lg border border-line bg-panel p-3">
-        <label className="text-[11px] text-ink-dim">
+        <label className="text-t11 text-ink-dim">
           기간 단위
           <select
             value={periodKind}
@@ -155,46 +155,46 @@ export function StatementEditor({
               setPeriodKind(e.target.value as 'year' | 'quarter')
               setPeriodKey('')
             }}
-            className="mt-1 block rounded-md border border-line bg-app px-2 py-1 text-[12px] text-ink"
+            className="mt-1 block rounded-md border border-line bg-app px-2 py-1 text-t12 text-ink"
           >
             <option value="year">연간</option>
             <option value="quarter">분기</option>
           </select>
         </label>
 
-        <label className="text-[11px] text-ink-dim">
+        <label className="text-t11 text-ink-dim">
           기간
           <input
             value={periodKey}
             onChange={(e) => setPeriodKey(e.target.value.trim())}
             placeholder={periodKind === 'year' ? '2025' : '2026-Q1'}
-            className="mt-1 block w-28 rounded-md border border-line bg-app px-2 py-1 text-[12px] text-ink tnum"
+            className="mt-1 block w-28 rounded-md border border-line bg-app px-2 py-1 text-t12 text-ink tnum"
           />
         </label>
 
-        <label className="min-w-[240px] flex-1 text-[11px] text-ink-dim">
+        <label className="min-w-[240px] flex-1 text-t11 text-ink-dim">
           증빙 링크 (사내 스토리지 PDF)
           <input
             value={evidenceUrl}
             onChange={(e) => setEvidenceUrl(e.target.value)}
             placeholder="https://..."
-            className="mt-1 block w-full rounded-md border border-line bg-app px-2 py-1 text-[12px] text-ink"
+            className="mt-1 block w-full rounded-md border border-line bg-app px-2 py-1 text-t12 text-ink"
           />
         </label>
 
-        <label className="min-w-[200px] flex-1 text-[11px] text-ink-dim">
+        <label className="min-w-[200px] flex-1 text-t11 text-ink-dim">
           메모
           <input
             value={memo}
             onChange={(e) => setMemo(e.target.value)}
             placeholder="성연회계법인 2025 결산"
-            className="mt-1 block w-full rounded-md border border-line bg-app px-2 py-1 text-[12px] text-ink"
+            className="mt-1 block w-full rounded-md border border-line bg-app px-2 py-1 text-t12 text-ink"
           />
         </label>
       </div>
 
       {clash ? (
-        <p className="flex items-start gap-1.5 rounded-md bg-warning/10 px-3 py-2 text-[12px] text-warning">
+        <p className="flex items-start gap-1.5 rounded-md bg-warning/10 px-3 py-2 text-t12 text-warning">
           <Icon name="shield" className="mt-px size-3.5 shrink-0" />
           {periodKey}에 이미 결산이 있습니다({clash.memo}). 저장하면 정정으로 기록됩니다.
         </p>
@@ -212,7 +212,7 @@ export function StatementEditor({
             type="button"
             onClick={() => setTab(key)}
             aria-pressed={tab === key}
-            className={`rounded-md px-3 py-1.5 text-[12px] transition-colors ${
+            className={`rounded-md px-3 py-1.5 text-t12 transition-colors ${
               tab === key ? 'bg-accent/15 font-semibold text-accent' : 'text-ink-dim hover:bg-raised hover:text-ink'
             }`}
           >
@@ -231,17 +231,17 @@ export function StatementEditor({
           return (
             <section key={section} className="rounded-lg border border-line-soft">
               <header className="flex items-baseline justify-between border-b border-line-soft px-3 py-1.5">
-                <h3 className="text-[12px] font-semibold text-ink">
+                <h3 className="text-t12 font-semibold text-ink">
                   {ACCOUNT_SECTION_LABEL_KO[section]}
-                  {credit ? <span className="ml-1.5 text-[10px] font-normal text-ink-muted">대변</span> : null}
+                  {credit ? <span className="ml-1.5 text-t10 font-normal text-ink-muted">대변</span> : null}
                 </h3>
-                <span className="text-[12px] font-semibold text-ink tnum">{won(subtotal)}</span>
+                <span className="text-t12 font-semibold text-ink tnum">{won(subtotal)}</span>
               </header>
               <ul className="divide-y divide-line-soft">
                 {rows.map((a) => (
                   <li key={a.account_code} className="flex items-center gap-3 px-3 py-1">
-                    <span className="w-14 shrink-0 text-[10.5px] text-ink-muted tnum">{a.account_code}</span>
-                    <span className="min-w-0 flex-1 truncate text-[12px] text-ink-dim">{a.name}</span>
+                    <span className="w-14 shrink-0 text-t10h text-ink-muted tnum">{a.account_code}</span>
+                    <span className="min-w-0 flex-1 truncate text-t12 text-ink-dim">{a.name}</span>
                     <input
                       inputMode="numeric"
                       value={amounts[a.account_code] ?? ''}
@@ -250,7 +250,7 @@ export function StatementEditor({
                       }
                       // 입력은 언제나 양수다. 대변 계정의 부호 뒤집기는 저장 직전에 한 번만 한다.
                       placeholder="0"
-                      className="w-36 rounded-md border border-line bg-app px-2 py-1 text-right text-[12px] text-ink tnum"
+                      className="w-36 rounded-md border border-line bg-app px-2 py-1 text-right text-t12 text-ink tnum"
                     />
                   </li>
                 ))}
@@ -263,13 +263,13 @@ export function StatementEditor({
       {/* 소계 — 계산된 줄이다. 칸이 없는 것이 요점이다. */}
       {tab === 'balance' ? (
         <div className="rounded-lg border border-line bg-panel p-3">
-          <dl className="grid grid-cols-3 gap-3 text-[12px]">
+          <dl className="grid grid-cols-3 gap-3 text-t12">
             <Total label="자산 합계" value={balance.assets} />
             <Total label="부채 합계" value={balance.liabilities} />
             <Total label="자본 합계" value={balance.equity} />
           </dl>
           <p
-            className={`mt-3 flex items-center gap-1.5 rounded-md px-3 py-2 text-[12px] ${
+            className={`mt-3 flex items-center gap-1.5 rounded-md px-3 py-2 text-t12 ${
               balance.balanced ? 'bg-ok/10 text-ok' : 'bg-critical/10 text-critical'
             }`}
           >
@@ -283,23 +283,23 @@ export function StatementEditor({
         </div>
       ) : (
         <div className="rounded-lg border border-line bg-panel p-3">
-          <dl className="grid grid-cols-2 gap-3 text-[12px] md:grid-cols-4">
+          <dl className="grid grid-cols-2 gap-3 text-t12 md:grid-cols-4">
             <Total label="매출총이익" value={income.grossProfit} />
             <Total label="EBITDA" value={income.ebitda} />
             <Total label="영업이익" value={income.operatingProfit} />
             <Total label="당기순이익" value={income.netIncome} />
           </dl>
-          <p className="mt-2 text-[11px] text-ink-muted">
+          <p className="mt-2 text-t11 text-ink-muted">
             소계는 계산된 줄입니다. 구성 항목을 고치면 따라 바뀝니다.
           </p>
         </div>
       )}
 
       {error ? (
-        <p className="rounded-md bg-critical/10 px-3 py-2 text-[12px] text-critical">{error}</p>
+        <p className="rounded-md bg-critical/10 px-3 py-2 text-t12 text-critical">{error}</p>
       ) : null}
       {saved !== null ? (
-        <p className="rounded-md bg-ok/10 px-3 py-2 text-[12px] text-ok">
+        <p className="rounded-md bg-ok/10 px-3 py-2 text-t12 text-ok">
           {businessName} {periodKey} 결산을 저장했습니다. 이 기간의 월별 입력은 이제 잠깁니다.
         </p>
       ) : null}
@@ -309,12 +309,12 @@ export function StatementEditor({
           type="button"
           onClick={submit}
           disabled={!canSave}
-          className="rounded-md bg-accent px-4 py-2 text-[12.5px] font-semibold text-app transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+          className="rounded-md bg-accent px-4 py-2 text-t12h font-semibold text-app transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
         >
           {pending ? '저장 중…' : '확정으로 저장'}
         </button>
         {!canSave && !pending ? (
-          <span className="text-[11px] text-ink-muted">
+          <span className="text-t11 text-ink-muted">
             {!periodValid
               ? '기간을 넣으세요.'
               : !evidenceValid
@@ -332,10 +332,10 @@ export function StatementEditor({
 function Total({ label, value }: { label: string; value: number }) {
   return (
     <div>
-      <dt className="text-[11px] text-ink-muted">{label}</dt>
-      <dd className={`text-[15px] font-semibold tnum ${value < 0 ? 'text-critical' : 'text-ink'}`}>
+      <dt className="text-t11 text-ink-muted">{label}</dt>
+      <dd className={`text-t15 font-semibold tnum ${value < 0 ? 'text-critical' : 'text-ink'}`}>
         {won(value)}
-        <span className="ml-1.5 text-[11px] font-normal text-ink-muted">{formatEok(value)}</span>
+        <span className="ml-1.5 text-t11 font-normal text-ink-muted">{formatEok(value)}</span>
       </dd>
     </div>
   )

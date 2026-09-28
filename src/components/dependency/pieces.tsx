@@ -39,16 +39,16 @@ export function BigPercent({
   if (value === null) {
     return (
       <div>
-        <p className="text-[28px] font-bold leading-none text-ink-muted tnum">—</p>
-        <p className="mt-1.5 max-w-[360px] text-[11px] leading-relaxed text-ink-dim">{reason}</p>
+        <p className="text-t28 font-bold leading-none text-ink-muted tnum">—</p>
+        <p className="mt-1.5 max-w-[360px] text-t11 leading-relaxed text-ink-dim">{reason}</p>
       </div>
     )
   }
   const over = value > DEPENDENCY_TARGET
   return (
-    <p className={`text-[44px] font-bold leading-none tnum ${over ? 'text-critical' : 'text-ink'}`}>
+    <p className={`text-t44 font-bold leading-none tnum ${over ? 'text-critical' : 'text-ink'}`}>
       {value}
-      <span className="ml-0.5 text-[20px] font-semibold">%</span>
+      <span className="ml-0.5 text-t20 font-semibold">%</span>
     </p>
   )
 }
@@ -81,10 +81,10 @@ export function AutonomyGauge({ level }: { level: AutonomyLevel | null }) {
             />
           )
         })}
-        <span className="ml-1.5 text-[12px] font-semibold text-ink tnum">{level ?? ''}</span>
+        <span className="ml-1.5 text-t12 font-semibold text-ink tnum">{level ?? ''}</span>
       </div>
       {level === null ? (
-        <p className="mt-1 text-[11px] text-ink-dim">{AUTONOMY_EMPTY_KO}</p>
+        <p className="mt-1 text-t11 text-ink-dim">{AUTONOMY_EMPTY_KO}</p>
       ) : null}
     </div>
   )
@@ -92,11 +92,11 @@ export function AutonomyGauge({ level }: { level: AutonomyLevel | null }) {
 
 /** 의존도 등급 칩. HIGH만 색이 붙는다 — 그것이 예외다. */
 export function LevelChip({ level }: { level: DependencyLevel | null }) {
-  if (level === null) return <span className="text-[11px] text-ink-muted">—</span>
+  if (level === null) return <span className="text-t11 text-ink-muted">—</span>
   const tone =
     level === 'HIGH' ? 'bg-critical/15 text-critical' : 'bg-raised text-ink-dim'
   return (
-    <span className={`rounded px-1.5 py-0.5 text-[10.5px] ${tone}`}>
+    <span className={`rounded px-1.5 py-0.5 text-t10h ${tone}`}>
       {DEPENDENCY_LEVEL_LABEL_KO[level]}
     </span>
   )
@@ -104,9 +104,9 @@ export function LevelChip({ level }: { level: DependencyLevel | null }) {
 
 /** 이양 상태 칩. 색 없이 글자만이다 — 이양은 정상 과정이지 예외가 아니다. */
 export function TransferChip({ status }: { status: TransferStatus | null }) {
-  if (status === null) return <span className="text-[11px] text-ink-muted">—</span>
+  if (status === null) return <span className="text-t11 text-ink-muted">—</span>
   return (
-    <span className="rounded bg-raised px-1.5 py-0.5 text-[10.5px] text-ink-dim">
+    <span className="rounded bg-raised px-1.5 py-0.5 text-t10h text-ink-dim">
       {TRANSFER_STATUS_LABEL_KO[status]}
     </span>
   )
@@ -117,7 +117,7 @@ export function TransferChip({ status }: { status: TransferStatus | null }) {
  * '0'이 아니라 '아직 모른다'이고, 그 둘은 화면에서 전혀 다른 말이다.
  */
 export function Missing({ children }: { children: React.ReactNode }) {
-  return <p className="rounded-lg bg-raised px-3 py-2.5 text-[11px] leading-relaxed text-ink-muted">{children}</p>
+  return <p className="rounded-lg bg-raised px-3 py-2.5 text-t11 leading-relaxed text-ink-muted">{children}</p>
 }
 
 export function Section({
@@ -133,11 +133,11 @@ export function Section({
 }) {
   return (
     <section className="mt-3.5 rounded-xl border border-line-soft bg-panel p-3.5">
-      <h2 className="mb-2 flex flex-wrap items-baseline gap-1.5 text-[13px] font-semibold">
+      <h2 className="mb-2 flex flex-wrap items-baseline gap-1.5 text-t13 font-semibold">
         <Icon name={icon} className="size-4 text-ink-dim" />
         {title}
         {note ? (
-          <span className="rounded bg-raised px-1.5 py-0.5 text-[9.5px] font-normal text-ink-dim">
+          <span className="rounded bg-raised px-1.5 py-0.5 text-t9h font-normal text-ink-dim">
             {note}
           </span>
         ) : null}

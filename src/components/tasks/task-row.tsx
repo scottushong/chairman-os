@@ -99,20 +99,20 @@ export function TaskRow({
             같은 줄에 상태 select와 토글 버튼이 있어 누르는 자리가 겹친다. */}
         <Link
           href={`/tasks/${encodeURIComponent(task.task_id)}`}
-          className="text-[12.5px] leading-snug font-semibold transition-colors hover:text-accent"
+          className="text-t12h leading-snug font-semibold transition-colors hover:text-accent"
         >
           {task.title}
         </Link>
-        <p className="mt-0.5 truncate text-[10.5px] text-ink-muted">
+        <p className="mt-0.5 truncate text-t10h text-ink-muted">
           {businessName} · {projectName}
         </p>
       </td>
 
-      <td className="px-3 py-2 text-[11.5px] text-ink-dim">{task.owner}</td>
+      <td className="px-3 py-2 text-t11h text-ink-dim">{task.owner}</td>
 
       <td className="px-3 py-2">
         <span
-          className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${PRIORITY_TONE[task.priority]}`}
+          className={`rounded px-1.5 py-0.5 text-t10 font-semibold ${PRIORITY_TONE[task.priority]}`}
         >
           {WORK_PRIORITY_LABEL_KO[task.priority]}
         </span>
@@ -125,7 +125,7 @@ export function TaskRow({
           disabled={pending}
           aria-label={`${task.title} 상태`}
           onChange={(e) => changeStatus(e.target.value as TaskStatus)}
-          className={`rounded-md border border-line bg-raised px-1.5 py-1 text-[11.5px] outline-none focus:border-accent disabled:opacity-50 ${STATUS_TONE[status]}`}
+          className={`rounded-md border border-line bg-raised px-1.5 py-1 text-t11h outline-none focus:border-accent disabled:opacity-50 ${STATUS_TONE[status]}`}
         >
           {TASK_STATUS.map((s) => (
             <option key={s} value={s} className="bg-panel text-ink">
@@ -135,12 +135,12 @@ export function TaskRow({
         </select>
       </td>
 
-      <td className="px-3 py-2 text-right text-[11.5px] text-ink-muted tnum">
+      <td className="px-3 py-2 text-right text-t11h text-ink-muted tnum">
         {status === 'Done' ? '—' : days > 0 ? `${days}일` : '오늘'}
       </td>
 
       <td
-        className={`px-3 py-2 text-right text-[11.5px] font-semibold tnum ${
+        className={`px-3 py-2 text-right text-t11h font-semibold tnum ${
           overdue ? 'text-critical' : 'text-ink-dim'
         }`}
       >

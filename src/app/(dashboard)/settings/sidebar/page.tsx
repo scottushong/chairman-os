@@ -37,7 +37,7 @@ export default async function SidebarSettingsPage() {
       >
         <Link
           href="/settings"
-          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           설정으로
         </Link>

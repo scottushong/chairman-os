@@ -59,22 +59,22 @@ export function ApprovalDetail({
       <div className="border-b border-line-soft px-4 py-3.5">
         <div className="flex flex-wrap items-center gap-1.5">
           <span
-            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${IMPACT_TONE[decision.impact]}`}
+            className={`rounded px-1.5 py-0.5 text-t10 font-semibold ${IMPACT_TONE[decision.impact]}`}
           >
             {WORK_PRIORITY_LABEL_KO[decision.impact]}
           </span>
-          <span className="text-[11.5px] text-ink-muted">{businessName}</span>
-          <span className="text-[10px] text-ink-muted tnum">{decision.decision_id}</span>
+          <span className="text-t11h text-ink-muted">{businessName}</span>
+          <span className="text-t10 text-ink-muted tnum">{decision.decision_id}</span>
           <span
-            className={`ml-auto text-[12px] font-semibold tnum ${
+            className={`ml-auto text-t12 font-semibold tnum ${
               overdue ? 'text-critical' : 'text-ink-dim'
             }`}
           >
             마감 {decision.deadline} · {formatDDay(decision.deadline)}
           </span>
         </div>
-        <h2 className="mt-1.5 text-[16px] leading-snug font-bold">{decision.title}</h2>
-        <p className="mt-1 text-[11.5px] text-ink-muted">
+        <h2 className="mt-1.5 text-t16 leading-snug font-bold">{decision.title}</h2>
+        <p className="mt-1 text-t11h text-ink-muted">
           현재 상태 <span className="text-ink-dim">{DECISION_STATUS_LABEL_KO[decision.status]}</span>
         </p>
       </div>
@@ -83,12 +83,12 @@ export function ApprovalDetail({
         <Field label="선택안">
           <div className="flex flex-wrap gap-1.5">
             {decision.options.length === 0 ? (
-              <span className="text-[12px] text-ink-muted">선택안이 등록되지 않았습니다.</span>
+              <span className="text-t12 text-ink-muted">선택안이 등록되지 않았습니다.</span>
             ) : (
               decision.options.map((opt) => (
                 <span
                   key={opt}
-                  className={`rounded-md px-2 py-1 text-[12px] ${
+                  className={`rounded-md px-2 py-1 text-t12 ${
                     opt === decision.ai_recommendation
                       ? 'border border-accent/50 bg-accent/10 text-ink'
                       : 'bg-raised text-ink-dim'
@@ -103,31 +103,31 @@ export function ApprovalDetail({
 
         <Field label="AI 추천">
           {decision.ai_recommendation ? (
-            <p className="flex flex-wrap items-center gap-1.5 text-[12.5px] text-ink-dim">
+            <p className="flex flex-wrap items-center gap-1.5 text-t12h text-ink-dim">
               <Icon name="sparkles" className="size-3.5 text-accent" />
               {decision.ai_recommendation}
               {/* 신뢰도는 값이 있을 때만 붙인다. 없는 걸 0%로 그리면 '추천을 못 믿겠다'로 읽힌다. */}
               {decision.ai_confidence === undefined ? null : (
-                <span className="text-[11px] text-ink-muted tnum">
+                <span className="text-t11 text-ink-muted tnum">
                   신뢰도 {Math.round(decision.ai_confidence * 100)}%
                 </span>
               )}
             </p>
           ) : (
-            <p className="text-[12px] text-ink-muted">추천안이 없습니다.</p>
+            <p className="text-t12 text-ink-muted">추천안이 없습니다.</p>
           )}
         </Field>
 
         {/* 0038. 양식으로 올린 결재만. 결재선은 제출 순간 DB가 얼린 값이다 — 조직이 바뀌어도 그대로다. */}
         {decision.approval_line && decision.approval_line.length > 0 ? (
           <Field label="결재선">
-            <ol className="flex flex-wrap items-center gap-1.5 text-[12px]">
+            <ol className="flex flex-wrap items-center gap-1.5 text-t12">
               {decision.approval_line.map((s, i) => (
                 <li key={s.step} className="flex items-center gap-1.5">
                   {i > 0 ? <span className="text-ink-muted">→</span> : null}
                   <span className="rounded-md border border-line-soft bg-raised px-2 py-1" title={s.why}>
                     <span className="font-semibold">{s.name}</span>
-                    <span className="ml-1 text-[10.5px] text-ink-muted">{s.why}</span>
+                    <span className="ml-1 text-t10h text-ink-muted">{s.why}</span>
                   </span>
                 </li>
               ))}
@@ -136,7 +136,7 @@ export function ApprovalDetail({
         ) : null}
         {decision.form && Object.keys(decision.form).length > 0 ? (
           <Field label="양식 항목">
-            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[12px]">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-t12">
               {Object.entries(decision.form).map(([k, v]) => (
                 <div key={k} className="contents">
                   <dt className="text-ink-muted">{k}</dt>
@@ -154,19 +154,19 @@ export function ApprovalDetail({
               href={decision.attachment_url}
               target="_blank"
               rel="noreferrer noopener"
-              className="inline-flex items-center gap-1.5 rounded-md border border-line bg-raised px-2.5 py-1.5 text-[12px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+              className="inline-flex items-center gap-1.5 rounded-md border border-line bg-raised px-2.5 py-1.5 text-t12 text-ink-dim transition-colors hover:border-accent hover:text-ink"
             >
               <Icon name="file-text" className="size-3.5" />
               사내 스토리지에서 열기
             </a>
           ) : (
-            <p className="text-[12px] text-ink-muted">첨부된 문서가 없습니다.</p>
+            <p className="text-t12 text-ink-muted">첨부된 문서가 없습니다.</p>
           )}
         </Field>
 
         <Field label="처리 이력">
           {history.length === 0 ? (
-            <p className="text-[12px] text-ink-muted">
+            <p className="text-t12 text-ink-muted">
               아직 처리 기록이 없습니다.
               {decision.status === 'Open'
                 ? ''
@@ -180,10 +180,10 @@ export function ApprovalDetail({
                     className={`mt-1.5 size-1.5 shrink-0 rounded-full ${ACTION_TONE[h.action]}`}
                   />
                   <span className="min-w-0">
-                    <span className="block text-[12.5px] font-semibold">
+                    <span className="block text-t12h font-semibold">
                       {ACTION_LABEL[h.action]}
                     </span>
-                    <span className="block text-[11px] text-ink-muted tnum">
+                    <span className="block text-t11 text-ink-muted tnum">
                       {formatDateTime(h.occurred_at)} · {h.actor_name}
                     </span>
                   </span>
@@ -201,7 +201,7 @@ export function ApprovalDetail({
             />
           </div>
         ) : (
-          <p className="border-t border-line-soft pt-4 text-[12px] text-ink-muted">
+          <p className="border-t border-line-soft pt-4 text-t12 text-ink-muted">
             이미 처리된 결정입니다. 되돌리려면 새 결재를 올려야 합니다 — 기록은 지우지 않습니다.
           </p>
         )}
@@ -213,7 +213,7 @@ export function ApprovalDetail({
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <p className="mb-1.5 text-[10px] font-semibold tracking-[0.08em] text-ink-muted">{label}</p>
+      <p className="mb-1.5 text-t10 font-semibold tracking-[0.08em] text-ink-muted">{label}</p>
       {children}
     </div>
   )

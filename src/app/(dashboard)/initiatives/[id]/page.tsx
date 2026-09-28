@@ -67,7 +67,7 @@ export default async function InitiativePage(props: PageProps<'/initiatives/[id]
       >
         <Link
           href="/initiatives"
-          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           목록으로
         </Link>
@@ -94,8 +94,8 @@ export default async function InitiativePage(props: PageProps<'/initiatives/[id]
           <EventPanel events={ownEvents} canEdit={canEdit} initiativeId={id} />
 
           <section className="rounded-xl border border-line-soft bg-panel p-4">
-            <h2 className="text-[13px] font-semibold">이력</h2>
-            <p className="mt-1 mb-3 text-[11px] text-ink-muted">
+            <h2 className="text-t13 font-semibold">이력</h2>
+            <p className="mt-1 mb-3 text-t11 text-ink-muted">
               감사 기록(audit_log)을 이 건으로 되짚은 것이다. 지워지지 않는다.
             </p>
             <AuditTimeline records={audit} emptyMessage="아직 이 건을 고친 기록이 없습니다." />
@@ -103,7 +103,7 @@ export default async function InitiativePage(props: PageProps<'/initiatives/[id]
         </div>
 
         <aside className="rounded-xl border border-line-soft bg-panel p-4 xl:sticky xl:top-4 xl:self-start">
-          <h2 className="text-[13px] font-semibold">단계 · 상태</h2>
+          <h2 className="text-t13 font-semibold">단계 · 상태</h2>
           <div className="mt-3">
             <InitiativeSidePanel initiative={initiative} canEdit={canEdit} />
           </div>

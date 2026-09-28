@@ -26,7 +26,7 @@ export function BooksNav({ businessId, current }: { businessId: string; current:
           href={`${base}${t.suffix}`}
           aria-current={t.tab === current ? 'page' : undefined}
           className={[
-            'rounded px-2.5 py-1 text-[11.5px] transition-colors',
+            'rounded px-2.5 py-1 text-t11h transition-colors',
             t.tab === current ? 'bg-accent/15 font-semibold text-ink' : 'text-ink-dim hover:text-ink',
           ].join(' ')}
         >

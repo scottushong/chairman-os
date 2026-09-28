@@ -178,14 +178,14 @@ export default async function AiPage(props: PageProps<'/ai'>) {
             **이 셸에 바를 하나라도 붙이면 그 높이만큼 여기 2rem도 같이 늘려야 한다.** */}
         <div className="min-[1025px]:sticky min-[1025px]:top-4 min-[1025px]:max-h-[calc(100vh-2rem)] min-[1025px]:self-start min-[1025px]:overflow-y-auto min-[1025px]:pr-2">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
+            <h2 className="flex items-center gap-1.5 text-t13 font-semibold text-ink">
               <Icon name="target" className="size-4 text-ink-dim" />
               장기 프로젝트 · 선언문
             </h2>
             {isChairman ? (
               <Link
                 href="/settings/chairman"
-                className="rounded-md border border-line bg-panel px-2.5 py-1 text-[11px] text-ink-dim transition-colors hover:border-accent hover:text-ink"
+                className="rounded-md border border-line bg-panel px-2.5 py-1 text-t11 text-ink-dim transition-colors hover:border-accent hover:text-ink"
               >
                 루틴 편집
               </Link>
@@ -207,7 +207,7 @@ export default async function AiPage(props: PageProps<'/ai'>) {
           ) : null}
 
           {isChairman && activeProjects.length === 0 && !manifesto.body ? (
-            <p className="mt-3 rounded-xl border border-dashed border-line bg-panel p-4 text-[12px] text-ink-muted">
+            <p className="mt-3 rounded-xl border border-dashed border-line bg-panel p-4 text-t12 text-ink-muted">
               아직 장기 프로젝트와 선언문이 없습니다.{' '}
               <Link href="/settings/chairman" className="text-accent underline-offset-2 hover:underline">
                 회장 루틴 설정
@@ -237,7 +237,7 @@ export default async function AiPage(props: PageProps<'/ai'>) {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2
                 id="ai-brief-heading"
-                className="flex items-center gap-1.5 text-[13px] font-semibold text-ink"
+                className="flex items-center gap-1.5 text-t13 font-semibold text-ink"
               >
                 <Icon name="sparkles" className="size-4 text-ink-dim" />
                 AI 브리핑
@@ -246,7 +246,7 @@ export default async function AiPage(props: PageProps<'/ai'>) {
             </div>
 
             {dates.length === 0 ? (
-              <p className="mt-4 text-[12.5px] text-ink-muted">
+              <p className="mt-4 text-t12h text-ink-muted">
                 아직 브리핑이 없습니다. 아침 브리핑은 회장님 현지 시간 06시쯤에 만들어집니다.
               </p>
             ) : (
@@ -259,7 +259,7 @@ export default async function AiPage(props: PageProps<'/ai'>) {
                         <Link
                           href={`/ai?date=${d}`}
                           aria-current={d === date ? 'page' : undefined}
-                          className={`block rounded-lg px-3 py-2 text-[12.5px] whitespace-nowrap tnum transition-colors ${
+                          className={`block rounded-lg px-3 py-2 text-t12h whitespace-nowrap tnum transition-colors ${
                             d === date
                               ? 'bg-raised font-semibold text-ink'
                               : 'text-ink-muted hover:bg-raised/60 hover:text-ink-dim'
@@ -305,7 +305,7 @@ function RunSection({
 
   return (
     <section className="space-y-2.5">
-      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-muted tnum">
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-t11 text-ink-muted tnum">
         <span className="flex items-center gap-1">
           <Icon name="clock" className="size-3.5" />
           {formatRunTime(run.finished_at)} 완료
@@ -324,7 +324,7 @@ function RunSection({
         >
           <OutputHead output={run.group} name="그룹 브리핑" />
           <p
-            className={`mt-3 text-[14px] leading-relaxed whitespace-pre-line ${
+            className={`mt-3 text-t14 leading-relaxed whitespace-pre-line ${
               run.group.status === 'Failed' ? 'text-ink-muted' : 'text-ink'
             }`}
           >
@@ -349,14 +349,14 @@ function RunSection({
               />
               <div className="min-w-0 flex-1">
                 <OutputHead output={o} name={outputName(businesses, o.business_id)} compact />
-                <p className="mt-1 line-clamp-1 text-[12px] text-ink-dim group-open:hidden">
+                <p className="mt-1 line-clamp-1 text-t12 text-ink-dim group-open:hidden">
                   {o.result_summary}
                 </p>
               </div>
             </summary>
             <div className="border-t border-line-soft px-4 pt-3 pb-4 pl-10">
               <p
-                className={`text-[13px] leading-relaxed whitespace-pre-line ${
+                className={`text-t13 leading-relaxed whitespace-pre-line ${
                   o.status === 'Failed' ? 'text-ink-muted' : 'text-ink'
                 }`}
               >
@@ -384,16 +384,16 @@ function OutputHead({
   const low = output.confidence < CONFIDENCE_FLOOR
   return (
     <div className="flex items-center gap-2">
-      <span className={`font-semibold ${compact ? 'text-[13px]' : 'text-[15px]'}`}>{name}</span>
-      <span className="rounded bg-raised px-1.5 py-0.5 text-[9px] font-semibold text-ink-dim">
+      <span className={`font-semibold ${compact ? 'text-t13' : 'text-t15'}`}>{name}</span>
+      <span className="rounded bg-raised px-1.5 py-0.5 text-t9 font-semibold text-ink-dim">
         {output.job_type}
       </span>
-      {failed ? <span className="text-[10px] text-critical">실패</span> : null}
+      {failed ? <span className="text-t10 text-critical">실패</span> : null}
       {/* 실패한 줄에는 신뢰도가 없다. 0%로 쓰면 '틀린 요약'으로 읽힌다. */}
       {failed ? null : (
         <span
           title="AI 신뢰도"
-          className={`ml-auto text-[12px] font-semibold tnum ${low ? 'text-ink-muted' : 'text-ink'}`}
+          className={`ml-auto text-t12 font-semibold tnum ${low ? 'text-ink-muted' : 'text-ink'}`}
         >
           신뢰도 {Math.round(output.confidence * 100)}%
         </span>
@@ -419,8 +419,8 @@ function Items({ items }: { items?: AiBriefItem[] }) {
             className={`mt-[7px] size-1.5 shrink-0 rounded-full ${SEVERITY_TONE[it.severity].dot}`}
           />
           <div className="min-w-0">
-            <p className="text-[12.5px] font-semibold text-ink">{it.title}</p>
-            <p className="text-[12px] leading-relaxed text-ink-dim">{it.detail}</p>
+            <p className="text-t12h font-semibold text-ink">{it.title}</p>
+            <p className="text-t12 leading-relaxed text-ink-dim">{it.detail}</p>
           </div>
         </li>
       ))}
@@ -433,10 +433,10 @@ function ProjectNotes({ notes }: { notes?: ProjectNote[] }) {
   if (!notes?.length) return null
   return (
     <div className="mt-4 border-t border-line-soft pt-3">
-      <p className="text-[11px] font-semibold text-ink-dim">장기 프로젝트 · 이번 주 행동</p>
+      <p className="text-t11 font-semibold text-ink-dim">장기 프로젝트 · 이번 주 행동</p>
       <ul className="mt-1.5 space-y-1">
         {notes.map((n, i) => (
-          <li key={i} className="text-[12.5px] leading-relaxed">
+          <li key={i} className="text-t12h leading-relaxed">
             <span className="font-semibold text-ink">{n.project_title}</span>
             <span className="text-ink-muted"> — </span>
             <span className="text-ink-dim">{n.action}</span>
