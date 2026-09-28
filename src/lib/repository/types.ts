@@ -405,6 +405,8 @@ export interface ChairmanRepository {
   listEvents(): Promise<ChairmanEvent[]>
   saveEvent(input: EventInput, actor: AuditActor): Promise<ChairmanEvent>
   removeEvent(eventId: string, actor: AuditActor): Promise<void>
+  /** Phase 9 블록 5(0040). 회의 일정에 Jitsi 링크를 만들고 참석자에게 알린다. 이미 있으면 그 링크. */
+  createEventVideoLink(eventId: string, actor: AuditActor): Promise<string>
 
   /** 0017 calendar_items 뷰. from·to는 'YYYY-MM-DD' 포함 구간이다. */
   listCalendarItems(from: IsoDate, to: IsoDate): Promise<CalendarItem[]>

@@ -359,6 +359,7 @@ async function rls(db: Db) {
   await cityLayout(db, as)
   await groupware(db, as)
   await googleToken(db, as)
+  await eventVideo(db, as)
 
   // ── 0018 initiative-logos 버킷 ─────────────────────────────────────
   // 버킷이 비공개인가. as()는 첫 칸을 Number()로 바꾸는데 false가 0으로 둔갑하면
@@ -846,6 +847,53 @@ async function cityLayout(db: Db, as: As) {
 
   // 다음 검사가 빈 표를 전제할 수 있게 치운다.
   await db.exec(`delete from city_layout`)
+}
+
+/**
+ * 0040 일정 화상 링크 — event_video_link()가 유일한 문. 방 이름 · 저장 · 참석자 알림 · 감사가 한 번에.
+ */
+async function eventVideo(db: Db, as: As) {
+  await db.exec(`
+    insert into events (event_id, title, starts_on, kind, business_id, attendee_ids) values
+      ('00000000-0000-0000-0000-00000000e001', '주간 회의', '2026-09-30', 'Meeting', 'biz_dy', array['${UID.member}'::uuid, '${UID.ceo}'::uuid]),
+      ('00000000-0000-0000-0000-00000000e002', '출장', '2026-10-01', 'Trip', null, '{}');
+  `)
+  const E1 = '00000000-0000-0000-0000-00000000e001'
+  // 회장 세션으로 링크를 만들고 **커밋한다**(as()는 되돌린다). 알림 · 두 번째 호출을 소유자 권한으로 잰다.
+  const asChairman = async (sql: string) => {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${UID.chairman}', true); set local role authenticated;`)
+    try {
+      const r = await db.query<{ u: string }>(sql)
+      await db.exec('commit')
+      return r.rows[0]?.u ?? ''
+    } catch (e) {
+      await db.exec('rollback')
+      throw e
+    }
+  }
+  const link = await asChairman(`select event_video_link('${E1}') as u`)
+  assert.match(link, /^https:\/\/meet\.jit\.si\/chairman-os-dy-20260930-[0-9a-f]{16}$/, `0040: 방 이름 모양이 틀렸다(${link})`)
+  const notes = await db.query<{ n: number }>(`select count(*)::int as n from notifications where link = '/meet?room=${link.slice('https://meet.jit.si/'.length)}'`)
+  assert.equal(notes.rows[0].n, 2, '0040: 참석자 둘에게 알림이 가지 않았다')
+
+  const second = await asChairman(`select event_video_link('${E1}') as u`)
+  const count = await db.query<{ n: number }>(`select count(*)::int as n from notifications where link like '/meet?room=%'`)
+  assert.deepEqual([second, count.rows[0].n], [link, 2], '0040: 두 번 누르면 링크가 바뀌거나 알림이 또 간다')
+
+  await assert.rejects(as(UID.member, `select event_video_link('${E1}')`), /event_video_forbidden/, '0040: 직원이 화상 링크를 만든다')
+  await assert.rejects(
+    as(UID.chairman, `select event_video_link('00000000-0000-0000-0000-00000000e002')`),
+    /event_not_meeting/, '0040: 회의가 아닌 일정에 화상 링크가 선다',
+  )
+  assert.equal(
+    await as(
+      UID.chairman,
+      `select count(*)::int from events where event_id = '00000000-0000-0000-0000-00000000e002' and video_url is null`,
+      `update events set video_url = 'https://meet.jit.si/chairman-os-x' where event_id = '00000000-0000-0000-0000-00000000e002'`,
+    ),
+    1, '0040: 일반 update로 화상 링크를 바꿀 수 있다 — 방 이름이 입장권이다',
+  )
+  await db.exec(`delete from notifications where link like '/meet?room=%'; delete from events where event_id in ('${E1}', '00000000-0000-0000-0000-00000000e002');`)
 }
 
 /**

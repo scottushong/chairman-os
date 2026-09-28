@@ -313,6 +313,16 @@ export async function saveEventAction(input: unknown): Promise<EventState> {
         location: typeof f.location === 'string' ? f.location.trim() : '',
         timezone,
         note: typeof f.note === 'string' ? f.note.trim() : '',
+        // 0040. uuid 모양만 받는다. 없는 사람은 알림 단계에서 조용히 빠진다(revoked 포함).
+        // **배열이 올 때만 싣는다.** 참석자 칸이 없는 폼(initiatives/event-panel.tsx)이 같은 액션을
+        // 부르는데, 거기서 []를 실으면 저장할 때마다 참석자가 지워진다.
+        ...(Array.isArray(f.attendee_ids)
+          ? {
+              attendee_ids: f.attendee_ids.filter(
+                (x): x is string => typeof x === 'string' && /^[0-9a-f-]{36}$/i.test(x),
+              ),
+            }
+          : {}),
       },
       { user_id: user.user_id, role: user.role },
     )
@@ -411,4 +421,29 @@ export async function removeInitiativeLogoAction(initiativeId: unknown): Promise
   revalidatePath('/initiatives')
   revalidatePath(`/initiatives/${id}`)
   return {}
+}
+
+/**
+ * Phase 9 블록 5. 회의 일정에 화상 링크 만들기(0040 event_video_link). 이미 있으면 그 링크가 온다 —
+ * 링크를 바꾸면 먼저 알림을 받은 사람이 헛방에 들어간다.
+ */
+export async function createEventVideoLinkAction(eventId: unknown): Promise<{ error?: string; url?: string }> {
+  const id = typeof eventId === 'string' ? eventId : ''
+  if (!id) return { error: '일정을 알 수 없습니다.' }
+  const user = await currentUser()
+  if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  try {
+    const repo = await getRepository()
+    const url = await repo.createEventVideoLink(id, { user_id: user.user_id, role: user.role })
+    revalidatePath('/calendar')
+    revalidatePath('/ai')
+    revalidatePath('/meet')
+    return { url }
+  } catch (e) {
+    const message = e instanceof Error ? e.message : ''
+    if (/event_not_meeting/.test(message)) return { error: '화상 링크는 «미팅» 일정에만 만듭니다.' }
+    if (/event_video_forbidden|42501/.test(message)) return { error: '일정을 고칠 권한이 없습니다. (회장 · 그룹 CFO)' }
+    console.error('[createEventVideoLinkAction]', e)
+    return { error: '화상 링크를 만들지 못했습니다.' }
+  }
 }

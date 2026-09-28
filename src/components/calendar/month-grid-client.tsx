@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 
-import { DayModal } from '@/components/calendar/day-modal'
+import { DayModal, type PersonOption } from '@/components/calendar/day-modal'
 import { KIND_MARK, isPastRisk } from '@/components/calendar/month-grid'
 import { occursOn } from '@/lib/calendar'
 import { CALENDAR_ITEM_LABEL_KO, type CalendarItem, type ChairmanEvent, type IsoDate } from '@/types'
@@ -27,6 +27,7 @@ export function MonthGridClient({
   month,
   today,
   canEdit,
+  people = [],
 }: {
   grid: IsoDate[][]
   items: CalendarItem[]
@@ -34,6 +35,8 @@ export function MonthGridClient({
   month: string
   today: IsoDate
   canEdit: boolean
+  /** 0040. 미팅 참석자 후보. */
+  people?: PersonOption[]
 }) {
   const [open, setOpen] = useState<IsoDate | null>(null)
 
@@ -122,6 +125,7 @@ export function MonthGridClient({
           items={dayItems(open)}
           events={dayEvents(open)}
           canEdit={canEdit}
+          people={people}
           onClose={() => setOpen(null)}
         />
       ) : null}

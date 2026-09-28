@@ -117,6 +117,10 @@ export interface ChairmanEvent {
    */
   timezone: string | null
   note: string
+  /** 0040. Jitsi 방 주소. event_video_link()만 채운다. */
+  video_url?: string | null
+  /** 0040. 참석자 user_id. 화상 링크를 만들 때 알림이 간다. */
+  attendee_ids?: string[]
 }
 
 export const CALENDAR_ITEM_KIND = ['event', 'next_action', 'milestone', 'decision'] as const

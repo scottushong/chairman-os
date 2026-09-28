@@ -1,3 +1,4 @@
+import { roomOf } from '@/lib/meet'
 import Link from 'next/link'
 
 import { RunNightBrief } from '@/components/ai/run-night-brief'
@@ -104,6 +105,15 @@ export default async function AiPage(props: PageProps<'/ai'>) {
 
   // Task 9. "오늘·이번 주" — occursOn으로 오늘에 걸치는 항목만(여러 날 이벤트는 구간 포함이면 오늘로 친다).
   const todayItems = calendarItems.filter((it) => occursOn(it, today))
+  // Phase 9 블록 5(0040). 오늘 일정 가운데 화상 링크가 있는 것 — 일정 원본에서만 링크를 안다.
+  // 일정이 없는 날은 부르지 않는다(대부분의 아침).
+  const videoRooms: Record<string, string> = todayItems.some((it) => it.kind === 'event')
+    ? Object.fromEntries(
+        (await repo.listEvents().catch(() => []))
+          .map((e) => [e.event_id, roomOf(e.video_url)] as const)
+          .filter((x): x is readonly [string, string] => x[1] !== null),
+      )
+    : {}
   // 7일 내(지난 것 포함) 다음 행동이 있는 Active 건. 정렬은 컴포넌트가 next_action_date로 한다.
   const upcomingInitiatives = initiatives.filter((i) => {
     if (i.status !== 'Active') return false
@@ -218,6 +228,7 @@ export default async function AiPage(props: PageProps<'/ai'>) {
                 upcoming={upcomingInitiatives}
                 stale={staleInitiatives}
                 today={today}
+                videoRooms={videoRooms}
               />
             </GlassCard>
           ) : null}

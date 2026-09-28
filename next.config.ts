@@ -21,7 +21,8 @@ const nextConfig: NextConfig = {
         headers: [
           {
             key: 'Content-Security-Policy',
-            value: "frame-src 'self' https://docs.google.com",
+            // Phase 9 블록 5 — 화상회의(Jitsi) 임베드. lib/meet.ts의 JITSI_ORIGIN과 같다.
+            value: "frame-src 'self' https://docs.google.com https://meet.jit.si",
           },
         ],
       },

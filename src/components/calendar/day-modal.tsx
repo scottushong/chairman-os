@@ -3,9 +3,10 @@
 import Link from 'next/link'
 import { useEffect, useRef, useState } from 'react'
 
-import { removeEventAction, saveEventAction } from '@/app/actions/initiatives'
+import { createEventVideoLinkAction, removeEventAction, saveEventAction } from '@/app/actions/initiatives'
 import { Icon } from '@/components/ui/icon'
 import { BRIEF_TIMEZONE_OPTIONS } from '@/lib/chairman-timezone'
+import { roomOf } from '@/lib/meet'
 import {
   CALENDAR_ITEM_LABEL_KO, EVENT_KIND, EVENT_KIND_LABEL_KO,
   type CalendarItem, type ChairmanEvent, type EventKind, type IsoDate,
@@ -41,6 +42,14 @@ interface Draft {
   initiativeId: string | null
   businessId: string | null
   note: string
+  /** 0040. 참석자. 화상 링크를 만들 때 이 사람들에게 알림이 간다. */
+  attendeeIds: string[]
+}
+
+/** 참석자 후보 한 사람(화면용). */
+export interface PersonOption {
+  id: string
+  name: string
 }
 
 function emptyDraft(day: IsoDate): Draft {
@@ -48,7 +57,7 @@ function emptyDraft(day: IsoDate): Draft {
   // 캘린더에서 새로 만드는 일정은 정말로 어디에도 안 걸린다 — null/null/''이 맞다.
   return {
     title: '', kind: 'Meeting', startsOn: day, endsOn: '', location: '', timezone: '',
-    initiativeId: null, businessId: null, note: '',
+    initiativeId: null, businessId: null, note: '', attendeeIds: [],
   }
 }
 
@@ -64,6 +73,7 @@ function draftOf(e: ChairmanEvent): Draft {
     initiativeId: e.initiative_id,
     businessId: e.business_id,
     note: e.note,
+    attendeeIds: e.attendee_ids ?? [],
   }
 }
 
@@ -72,6 +82,7 @@ export function DayModal({
   items,
   events,
   canEdit,
+  people = [],
   onClose,
 }: {
   day: IsoDate
@@ -80,6 +91,8 @@ export function DayModal({
   /** 이 날에 걸리는 events 원본 (수정 대상) */
   events: ChairmanEvent[]
   canEdit: boolean
+  /** 0040. 참석자 후보. 없으면 참석자 칸을 그리지 않는다. */
+  people?: PersonOption[]
   onClose: () => void
 }) {
   const [list, setList] = useState(events)
@@ -121,6 +134,7 @@ export function DayModal({
       initiative_id: draft.initiativeId,
       business_id: draft.businessId,
       note: draft.note,
+      attendee_ids: draft.attendeeIds,
     })
     setBusy(false)
     if (result.error || !result.saved) {
@@ -130,6 +144,20 @@ export function DayModal({
     const saved = result.saved
     setList((l) => [...l.filter((e) => e.event_id !== saved.event_id), saved])
     setDraft(null)
+  }
+
+  /** 0040. 방 이름은 서버(DB)가 만든다. 이미 있으면 그 링크가 그대로 온다. */
+  async function makeVideo(e: ChairmanEvent) {
+    if (busy) return
+    setBusy(true)
+    setError(null)
+    const result = await createEventVideoLinkAction(e.event_id)
+    setBusy(false)
+    if (result.error || !result.url) {
+      setError(result.error ?? '화상 링크를 만들지 못했습니다.')
+      return
+    }
+    setList((l) => l.map((x) => (x.event_id === e.event_id ? { ...x, video_url: result.url } : x)))
   }
 
   async function remove(e: ChairmanEvent) {
@@ -207,6 +235,7 @@ export function DayModal({
               {draft?.eventId === e.event_id ? (
                 <EventForm
                   draft={draft}
+                  people={people}
                   setDraft={setDraft}
                   onSubmit={submit}
                   onCancel={() => setDraft(null)}
@@ -260,6 +289,25 @@ export function DayModal({
                   <span className="shrink-0 text-[11px] text-ink-dim tnum">
                     {e.ends_on && e.ends_on !== e.starts_on ? `${e.starts_on} ~ ${e.ends_on}` : ''}
                   </span>
+                  {/* 0040. 미팅에만. 링크가 있으면 입장, 없으면(쓰기 권한이 있을 때) 만들기. */}
+                  {e.kind === 'Meeting' && roomOf(e.video_url) ? (
+                    <Link
+                      href={`/meet?room=${roomOf(e.video_url)}`}
+                      className="shrink-0 rounded bg-accent px-2 py-0.5 text-[11px] font-semibold text-white"
+                    >
+                      화상 입장
+                    </Link>
+                  ) : e.kind === 'Meeting' && canEdit ? (
+                    <button
+                      type="button"
+                      onClick={() => makeVideo(e)}
+                      disabled={busy}
+                      title={`참석자 ${e.attendee_ids?.length ?? 0}명에게 알림이 갑니다`}
+                      className="shrink-0 rounded border border-accent px-2 py-0.5 text-[11px] text-ink-dim hover:text-ink disabled:opacity-40"
+                    >
+                      화상 링크 생성
+                    </button>
+                  ) : null}
                   {canEdit ? (
                     <button
                       type="button"
@@ -331,12 +379,14 @@ export function DayModal({
 /** 추가와 수정이 같은 폼이다 — draft.eventId 유무로만 갈린다. */
 function EventForm({
   draft,
+  people = [],
   setDraft,
   onSubmit,
   onCancel,
   busy,
 }: {
   draft: Draft
+  people?: PersonOption[]
   setDraft: (d: Draft) => void
   onSubmit: () => void
   onCancel: () => void
@@ -418,6 +468,35 @@ function EventForm({
           className={field}
         />
       </label>
+      {/* 0040. 미팅의 참석자 — 화상 링크를 만들 때 알림이 간다. */}
+      {draft.kind === 'Meeting' && people.length > 0 ? (
+        <fieldset className={`${label} sm:col-span-2`}>
+          <legend>참석자 (화상 링크 알림)</legend>
+          <div className="mt-1 flex max-h-28 flex-wrap gap-1 overflow-y-auto">
+            {people.map((p) => {
+              const on = draft.attendeeIds.includes(p.id)
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() =>
+                    setDraft({
+                      ...draft,
+                      attendeeIds: on ? draft.attendeeIds.filter((x) => x !== p.id) : [...draft.attendeeIds, p.id],
+                    })
+                  }
+                  className={`rounded-md border px-2 py-0.5 text-[11px] font-normal tracking-normal ${
+                    on ? 'border-accent bg-accent/15 text-ink' : 'border-line text-ink-muted hover:text-ink-dim'
+                  }`}
+                >
+                  {p.name}
+                </button>
+              )
+            })}
+          </div>
+        </fieldset>
+      ) : null}
       <div className="flex items-center gap-1.5 sm:col-span-2">
         <button
           type="button"

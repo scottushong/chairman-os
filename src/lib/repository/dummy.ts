@@ -20,6 +20,7 @@ import { dayKey } from '@/lib/format'
 import { logoPath } from '@/lib/initiative-logo'
 import { photoPath } from '@/lib/profile-photo'
 import { kpisFromLedger } from '@/lib/ledger/cells'
+import { meetUrl } from '@/lib/meet'
 
 import { dummyActivitySeed } from './dummy-activity'
 import {
@@ -1397,7 +1398,9 @@ export const dummyRepository: ChairmanRepository = {
   },
 
   async saveEvent(input: EventInput, actor: AuditActor) {
-    const { event_id, ...fields } = input
+    // 0040. video_url은 event_video_link만 채운다 — 저장 경로에서 버린다(DB 트리거와 같다).
+    const { event_id, video_url: _video, ...fields } = input
+    void _video
     const existing = event_id ? memoryEvents.find((e) => e.event_id === event_id) : undefined
     if (event_id && !existing) throw new Error('events: 고칠 일정이 없다.')
     const saved: ChairmanEvent = existing
@@ -1408,6 +1411,20 @@ export const dummyRepository: ChairmanRepository = {
       console.warn(`[dummy] save event by ${actor.role} — 메모리에만 남는다.`)
     }
     return { ...saved }
+  },
+
+  /** 0040 event_video_link()의 거울. dummy에는 알림 표가 없어 알림은 콘솔에만 남는다. */
+  async createEventVideoLink(eventId: string, actor: AuditActor) {
+    if (actor.role !== 'Chairman' && actor.role !== 'GroupCFO') throw new Error('event_video_forbidden')
+    const e = memoryEvents.find((x) => x.event_id === eventId)
+    if (!e) throw new Error('event_not_found')
+    if (e.kind !== 'Meeting') throw new Error('event_not_meeting')
+    if (e.video_url) return e.video_url
+    e.video_url = meetUrl(e.business_id, e.starts_on)
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[dummy] video link ${e.video_url} → 알림 ${e.attendee_ids?.length ?? 0}명(메모리에 없음)`)
+    }
+    return e.video_url
   },
 
   async removeEvent(eventId: string, actor: AuditActor) {

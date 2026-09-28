@@ -211,8 +211,8 @@ export const SYSTEM_LINKS: readonly NavItem[] = [
     key: 'sys_mail', label: '메일', href: '/mail', icon: 'mail', ready: true,
   },
   {
-    key: 'sys_meet', label: '화상회의', href: '/meet', icon: 'video', ready: false,
-    waitingFor: '화상회의 도구가 정해지면 이 칸이 그리로 넘어갑니다.',
+    // Phase 9 블록 5 — Jitsi Meet 임베드(0040).
+    key: 'sys_meet', label: '화상회의', href: '/meet', icon: 'video', ready: true,
   },
   {
     key: 'sys_chat', label: '커뮤니케이션', href: '/chat', icon: 'message', ready: false,

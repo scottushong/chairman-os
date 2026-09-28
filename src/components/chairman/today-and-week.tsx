@@ -21,6 +21,7 @@ export function TodayAndWeek({
   upcoming,
   stale,
   today,
+  videoRooms = {},
 }: {
   /** 오늘에 걸치는 항목(occursOn으로 이미 걸러져 들어온다) */
   todayItems: CalendarItem[]
@@ -29,6 +30,8 @@ export function TodayAndWeek({
   /** 14일 이상 손 안 댄 Active 건 */
   stale: Initiative[]
   today: IsoDate
+  /** Phase 9 블록 5(0040). event_id → Jitsi 방 이름. 있으면 그 일정 옆에 «화상» 버튼. */
+  videoRooms?: Record<string, string>
 }) {
   if (todayItems.length === 0 && upcoming.length === 0 && stale.length === 0) return null
 
@@ -48,13 +51,21 @@ export function TodayAndWeek({
           <h2 className="text-[13px] font-semibold">오늘</h2>
           <ul className="mt-2 space-y-1.5">
             {todayItems.map((it) => (
-              <li key={`${it.kind}-${it.source_id}`}>
+              <li key={`${it.kind}-${it.source_id}`} className="flex items-center gap-2">
                 <Link
                   href={it.href}
-                  className="block truncate text-[12.5px] text-ink-dim hover:text-ink hover:underline"
+                  className="block min-w-0 flex-1 truncate text-[12.5px] text-ink-dim hover:text-ink hover:underline"
                 >
                   <span className="text-ink-muted">{CALENDAR_ITEM_LABEL_KO[it.kind]}</span> · {it.title}
                 </Link>
+                {it.kind === 'event' && videoRooms[it.source_id] ? (
+                  <Link
+                    href={`/meet?room=${videoRooms[it.source_id]}`}
+                    className="shrink-0 rounded bg-accent px-2 py-0.5 text-[11px] font-semibold text-white"
+                  >
+                    화상
+                  </Link>
+                ) : null}
               </li>
             ))}
           </ul>

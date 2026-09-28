@@ -598,7 +598,7 @@ const INITIATIVE_KEYMAN_COLUMNS = 'keyman_id,initiative_id,name,relation,channel
 const INITIATIVE_DOC_COLUMNS = 'doc_id,initiative_id,title,url'
 
 /** 0017 events. */
-const EVENT_COLUMNS = 'event_id,title,starts_on,ends_on,kind,initiative_id,business_id,location,timezone,note'
+const EVENT_COLUMNS = 'event_id,title,starts_on,ends_on,kind,initiative_id,business_id,location,timezone,note,video_url,attendee_ids'
 
 /** 0015 accounts + 0016 active. 읽기와 쓰기가 같은 모양을 돌려줘야 한다. */
 const JOURNAL_ENTRY_COLUMNS = 'business_id,slip_no,entry_date,memo,evidence_url,created_by,created_at,corrects_id,correction_kind'
@@ -1289,6 +1289,14 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         .single()
       if (error) throw new Error(`Supabase doc_folders ${error.code ?? '?'}: ${error.message}`)
       return Number((data as { folder_id: number }).folder_id)
+    },
+
+    /** 0040. 방 이름 생성 · 저장 · 참석자 알림 · 감사가 DB 함수 한 번이다. */
+    async createEventVideoLink(eventId: string, actor: AuditActor): Promise<string> {
+      void actor
+      const { data, error } = await sb.rpc('event_video_link', { p_event_id: eventId })
+      if (error) throw new Error(`Supabase event_video_link ${error.code ?? '?'}: ${error.message}`)
+      return String(data)
     },
 
     /** 블록 3. 감사 기록·결산·라인 closed가 0016 close_period() 한 트랜잭션이다. */
@@ -3536,7 +3544,9 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
 
     /** saveKeyman과 같은 순서다 — 기록이 먼저, 바뀐 칸만. */
     async saveEvent(input: EventInput, actor: AuditActor): Promise<ChairmanEvent> {
-      const { event_id, ...fields } = input
+      // video_url은 보내지 않는다 — 0040 event_video_link()만 채운다(트리거도 막는다).
+      const { event_id, video_url: _video, ...fields } = input
+      void _video
       let before: ChairmanEvent | null = null
       if (event_id) {
         const { data, error } = await sb

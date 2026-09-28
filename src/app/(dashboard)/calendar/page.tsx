@@ -49,6 +49,12 @@ export default async function CalendarPage(props: PageProps<'/calendar'>) {
     currentUser(),
   ])
   const canEdit = user?.role === 'Chairman' || user?.role === 'GroupCFO'
+  // 0040. 미팅 참석자 후보 — 일정을 고칠 수 있는 사람에게만 읽는다(보이는 사람은 RLS가 정한다).
+  const people = canEdit
+    ? (await repo.listUserAccounts())
+        .filter((p) => !p.revoked_at && p.status === 'active' && p.user_id !== user?.user_id)
+        .map((p) => ({ id: p.user_id, name: p.display_name }))
+    : []
 
   const [y, m] = month.split('-')
 
@@ -92,6 +98,7 @@ export default async function CalendarPage(props: PageProps<'/calendar'>) {
           month={month}
           today={today}
           canEdit={canEdit}
+          people={people}
         />
 
         <aside className="rounded-xl border border-line-soft bg-panel p-4 xl:sticky xl:top-4 xl:self-start">
