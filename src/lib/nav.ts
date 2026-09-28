@@ -52,12 +52,11 @@ export const NAV: readonly NavGroup[] = [
     items: [
       { key: 'nav_dashboard', label: '대시보드', href: '/', icon: 'home', ready: true },
       {
-        key: 'nav_group', label: '그룹 전체 현황',
+        // Phase 8 G-1 — 그룹 시티. key는 그대로 둔다: 사이드바 주머니(0030)가 이 key로 순서·숨김을 기억한다.
+        key: 'nav_group', label: '그룹',
         href: '/group',
         icon: 'layers',
-        ready: false,
-        waitingFor:
-          '대시보드(CH-001~019)가 이미 그룹 합계를 보여 줍니다. 이 화면은 회사별 비교와 드릴다운이 붙는 자리라 Phase 2 범위입니다.',
+        ready: true,
       },
       // CH-041 전자결재. 라벨은 시안 그대로 두고 대상만 실제 화면으로 잇는다 —
       // 그 화면이 곧 대시보드 '내 결정 사항' 패널의 전체 화면 버전이다.

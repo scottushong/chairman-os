@@ -77,6 +77,11 @@ interface DashboardBoardProps {
   /** 개입 건수를 볼 수 있는 세션인가. Chairman·GroupCFO·자기 회사 CEO다(0034 4절). */
   canSeeInterventions: boolean
   today: IsoDate
+  /**
+   * Phase 8 G-1. HOME의 회사 줄 자리에 서는 도시 띠. page.tsx가 서버에서 그려 넘긴다 —
+   * 핫스팟 계산(lib/city.ts)이 서버 원천을 쓰고, 이 컴포넌트는 그것을 자리에 놓기만 한다.
+   */
+  city: React.ReactNode
 }
 
 /**
@@ -103,6 +108,7 @@ export function DashboardBoard({
   dependency,
   canSeeInterventions,
   today,
+  city,
 }: DashboardBoardProps) {
   const [hidden, setHidden] = useState<string[]>(settings.hidden_businesses)
   const [pinned, setPinned] = useState<string[]>(() =>
@@ -248,7 +254,21 @@ export function DashboardBoard({
       {/* 4줄 — 프로세스차트. 높이는 카드가 스스로 확보한다(시트가 읽혀야 한다). */}
       <ProcessChartCard charts={processCharts} businesses={businesses} />
 
-      {/* 5줄 — 내 비즈니스 (가로 5열) */}
+      {/*
+       * 5줄 — 그룹 시티 (Phase 8 G-1). 원문: "회사 5개 카드 → 도시 띠(전경 크롭 260px + 핫스팟 5)
+       * + 전체 보기 →". 카드 줄 자리를 띠가 가져간다.
+       *
+       * **카드는 지우지 않고 띠 아래 접어 둔다.** 숨김·핀·기업 추가(CH-002·004·005)가 이 카드에만
+       * 붙어 있고, 숨김은 아래 재무 합계(FinanceTrend·KpiStrip)가 어느 회사를 셀지까지 정한다 —
+       * 카드를 없애면 그 스위치들이 HOME에서 통째로 사라진다. 판단은 DEFERRED에 적었다.
+       */}
+      {city}
+
+      <details className="group/cards">
+        <summary className="mb-2 flex cursor-pointer list-none items-baseline gap-2 text-ink-dim hover:text-ink">
+          <Icon name="chevron-right" className="size-3.5 self-center transition-transform group-open/cards:rotate-90" />
+          <span className="text-[12px] font-semibold">회사 카드 · 숨김 · 핀 · 기업 추가</span>
+        </summary>
       <section aria-label="내 비즈니스">
         {/* 이 줄도 카드 밖(맨 배경)이다 — 아래 이니셔티브 헤더와 같은 규칙을 받는다.
             보조 숫자는 ink-muted(3.35:1)에서 ink-dim(5.73:1)으로 올린다.
@@ -332,6 +352,7 @@ export function DashboardBoard({
           </div>
         ) : null}
       </section>
+      </details>
 
       {/* 5줄 — 그룹 전체 재무 현황 */}
       <FinanceTrend kpis={financeKpis} businessIds={shown.map((b) => b.business_id)} />

@@ -2,6 +2,8 @@ import Link from 'next/link'
 
 import { Icon } from '@/components/ui/icon'
 import { ACTIVITY_RETENTION_DAYS } from '@/lib/activity'
+import { citySrc, citySrcSet } from '@/lib/city'
+import { cityPhase } from '@/lib/city-phase'
 import { DATA_MODE } from '@/lib/env'
 
 import { LoginForm } from './login-form'
@@ -20,10 +22,25 @@ export default async function LoginPage({ searchParams }: PageProps<'/login'>) {
   const candidate = Array.isArray(raw) ? raw[0] : raw
   // 열린 리다이렉트를 막는다. 서버 액션 쪽에서 한 번 더 검사한다.
   const next = candidate?.startsWith('/') && !candidate.startsWith('//') ? candidate : '/'
+  const phase = await cityPhase()
 
   return (
-    <main className="flex min-h-full items-center justify-center bg-app px-5 py-10">
-      <div className="w-full max-w-[380px]">
+    <main className="relative flex min-h-full items-center justify-center bg-app px-5 py-10">
+      {/*
+        Phase 8 G-1 — 전경을 배경으로 깐다(현지 시각으로 낮/저녁). **라벨 없는 전경만 쓴다.**
+        로그인 전에는 회사도 숫자도 보이면 안 된다(머리 주석) — 5개사 그림은 영문 회사명이
+        박혀 있어서 여기 걸지 않는다. 글자는 전부 유리 카드 위에 둔다(globals.css '유리 없이
+        글자를 놓지 마라'). 그림은 장식이라 alt를 비운다.
+      */}
+      {/* eslint-disable-next-line @next/next/no-img-element -- 폭 셋을 미리 만들어 두었다(scripts/city-assets.mjs). */}
+      <img
+        src={citySrc(phase)}
+        srcSet={citySrcSet(phase)}
+        sizes="100vw"
+        alt=""
+        className="pointer-events-none fixed inset-0 size-full object-cover"
+      />
+      <div className="glass relative w-full max-w-[420px] rounded-glass p-5 shadow-2xl">
         <div className="flex items-center gap-2">
           <Icon name="crown" className="size-6 text-gold" filled />
           <span className="text-[19px] font-bold tracking-tight">CHAIRMAN OS</span>

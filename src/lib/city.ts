@@ -176,3 +176,83 @@ export function clampBox(box: { x: number; y: number; w: number; h: number }) {
     h,
   }
 }
+
+/* ------------------------------------------------------------------ 핫스팟 한 칸 */
+
+export interface CityItem {
+  layout: CityLayout
+  kind: 'business' | 'initiative'
+  /** business_id 또는 initiative_id */
+  id: string
+  name: string
+  /** 상세 화면. 회사 = /business/[id], 터 = /initiatives/[id]. */
+  href: string
+  /** 가장 최근 달의 매출(원). 재무 자료가 없으면 null — 0원이 아니다. */
+  revenue: number | null
+  revenuePeriod: string | null
+  level: AutonomyLevel | null
+  completion: Completion
+  stage: CityStage
+}
+
+/**
+ * 배치 줄에 이름·숫자를 붙인다. /group과 HOME 도시 띠가 이것 하나를 쓴다.
+ *
+ * 주인을 못 찾는 줄은 버린다 — 숨긴 회사(visible=false)거나 이 사람이 못 보는 이니셔티브다.
+ * RLS가 이미 거른 것을 여기서 다시 판정하지는 않는다. 끝난 이니셔티브(Done/Dropped)의 터는
+ * 그대로 둔다: 치울지 승격할지는 회장이 /group/edit에서 정한다.
+ */
+export function buildCityItems(input: {
+  layout: CityLayout[]
+  businesses: { business_id: BusinessId; name: string; visible: boolean }[]
+  initiatives: { initiative_id: string; title: string }[]
+  dependency: DependencySummary[]
+  kpis: FinanceKpi[]
+}): CityItem[] {
+  const latest = input.kpis
+    .filter((k) => k.metric === 'Revenue')
+    .map((k) => k.period)
+    .sort()
+    .at(-1) ?? null
+
+  const items: CityItem[] = []
+  for (const layout of input.layout) {
+    if (layout.business_id !== null) {
+      const b = input.businesses.find((x) => x.business_id === layout.business_id && x.visible)
+      if (!b) continue
+      const dep = input.dependency.find((d) => d.business_id === b.business_id)
+      const completion = businessCompletion(b.business_id, dep, input.kpis)
+      const row = latest
+        ? input.kpis.find((k) => k.business_id === b.business_id && k.metric === 'Revenue' && k.period === latest)
+        : undefined
+      items.push({
+        layout,
+        kind: 'business',
+        id: b.business_id,
+        name: b.name,
+        href: `/business/${b.business_id}`,
+        revenue: row ? row.value : null,
+        revenuePeriod: row ? latest : null,
+        level: dep?.autonomy?.level ?? null,
+        completion,
+        stage: effectiveStage(layout, completion.pct),
+      })
+    } else if (layout.initiative_id !== null) {
+      const i = input.initiatives.find((x) => x.initiative_id === layout.initiative_id)
+      if (!i) continue
+      items.push({
+        layout,
+        kind: 'initiative',
+        id: i.initiative_id,
+        name: i.title,
+        href: `/initiatives/${i.initiative_id}`,
+        revenue: null,
+        revenuePeriod: null,
+        level: null,
+        completion: { pct: null, parts: { autonomy: null, revenue: null, transfer: null } },
+        stage: 'lot',
+      })
+    }
+  }
+  return items
+}

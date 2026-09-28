@@ -1,3 +1,4 @@
+import { CityStrip } from '@/components/city/city-strip'
 import { AiNightPanel } from '@/components/dashboard/ai-night-panel'
 import { AlertPanel } from '@/components/dashboard/alert-panel'
 import { AttentionCard } from '@/components/dashboard/attention-card'
@@ -15,6 +16,8 @@ import { recordScreenRead } from '@/lib/activity-record'
 import { summarizeAttention } from '@/lib/attention/screen'
 import { currentUser } from '@/lib/auth/session'
 import { kstToday } from '@/lib/chairman-project'
+import { buildCityItems } from '@/lib/city'
+import { cityPhase } from '@/lib/city-phase'
 import { summarizeDependency } from '@/lib/dependency'
 import { orderInitiatives } from '@/lib/initiative'
 import { resolveLocation } from '@/lib/geo'
@@ -114,6 +117,19 @@ export default async function DashboardPage() {
    * 예외가 0행인 것과 «못 보는 것»을 카드가 가를 수 있도록 역할을 같이 내려 준다 —
    * 그 값으로 목록을 거르지 않는다(거르는 것은 RLS다).
    */
+  /**
+   * Phase 8 G-1. 회사 줄 자리의 도시 띠. 의존 요약과 재무 원천은 위에서 이미 읽었다 —
+   * 배치 줄만 더 읽어 /group과 같은 buildCityItems()로 접는다(같은 회사가 두 화면에서 같은 %).
+   */
+  const [cityLayout, phase] = await Promise.all([repo.listCityLayout(), cityPhase()])
+  const cityItems = buildCityItems({
+    layout: cityLayout,
+    businesses: data.businesses,
+    initiatives,
+    dependency,
+    kpis: data.financeKpis,
+  })
+
   const [exceptionRows, exceptionRules, attentionScores, ledger] = await Promise.all([
     repo.listExceptions(),
     repo.listExceptionRules(),
@@ -230,6 +246,7 @@ export default async function DashboardPage() {
             user?.role === 'Chairman' || user?.role === 'GroupCFO' || user?.role === 'BusinessCEO'
           }
           today={todayIso}
+          city={<CityStrip phase={phase} items={cityItems} />}
         />
       </div>
 
