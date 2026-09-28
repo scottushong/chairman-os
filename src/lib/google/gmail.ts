@@ -131,12 +131,17 @@ export async function todayMail(sb: SupabaseClient, tz = 'Asia/Seoul', limit = 5
   }
 }
 
-/** 브리핑 요약: 오늘 N통, 그중 키맨(email 일치) M통. 이름은 세지 않는다 — 주소만. */
-export function summarizeMail(items: MailItem[], keymanEmails: Set<string>) {
-  const fromKeymen = items.filter((i) => keymanEmails.has(i.fromEmail))
+/**
+ * 브리핑 요약: 오늘 N통, 그중 키맨(email 일치) M통, 그 키맨의 이름.
+ *
+ * **이름은 우리 DB의 키맨 이름이다 — 메일 From의 표시 이름이 아니다.** 표시 이름은 보낸 사람이
+ * 마음대로 적는 글자라, 그것을 브리핑 프롬프트에 넣으면 메일 한 통으로 모델에게 지시를 넣을 수 있다.
+ */
+export function summarizeMail(items: MailItem[], keymen: Map<string, string>) {
+  const fromKeymen = items.filter((i) => keymen.has(i.fromEmail))
   return {
     count: items.length,
     keyman: fromKeymen.length,
-    keymanFrom: [...new Set(fromKeymen.map((i) => i.from))].slice(0, 5),
+    keymanFrom: [...new Set(fromKeymen.map((i) => keymen.get(i.fromEmail)!))].slice(0, 5),
   }
 }

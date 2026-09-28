@@ -81,7 +81,7 @@ export default async function MailPage({ searchParams }: PageProps<'/mail'>) {
   const result: MailResult = DATA_MODE === 'dummy' ? demoMail() : await todayMail(await createSupabaseServerClient(), tz)
 
   const items = result.state === 'ok' ? result.items : []
-  const summary = summarizeMail(items, keymanEmails)
+  const summary = summarizeMail(items, keymanByEmail)
   const ordered = [...items].sort(
     (a, b) => Number(keymanEmails.has(b.fromEmail)) - Number(keymanEmails.has(a.fromEmail)) || b.receivedAt.localeCompare(a.receivedAt),
   )

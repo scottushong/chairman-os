@@ -866,6 +866,14 @@ async function googleToken(db: Db, as: As) {
     await as(UID.chairman, save('https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send')),
     0, '0039: 보내기 범위가 섞인 토큰이 저장된다 — «앱에서 보내지 않음»',
   )
+  assert.equal(
+    await as(UID.chairman, save('https://www.googleapis.com/auth/gmail.settings.sharing')),
+    0, '0039: 전달 주소 · 위임 범위(settings.sharing)가 저장된다 — 허용 목록이어야 한다',
+  )
+  assert.equal(
+    await as(UID.chairman, `select google_token_save('acc', '', now() + interval '1 hour', 'https://www.googleapis.com/auth/gmail.readonly', 'x@x.com')::int`),
+    0, '0039: 처음 연결에 refresh token이 비어도 저장된다 — 한 시간 뒤 조용히 끊긴다',
+  )
   assert.equal(await as(UID.chairman, `select count(*)::int from google_token_status()`, save('https://www.googleapis.com/auth/gmail.readonly')), 1, '0039: 회장이 자기 연결 상태를 못 본다')
 
   // 소유자 권한으로 한 줄 심고 역할별로 토큰을 읽어 본다.
@@ -887,6 +895,13 @@ async function googleToken(db: Db, as: As) {
   assert.equal(
     await as(UID.cfo, `select google_token_refreshed('${UID.chairman}', 'x', now())::int`),
     0, '0039: CFO가 회장 토큰을 덮어쓴다',
+  )
+  // 회장이 둘이면 AIAgent는 for_read가 주는 줄(가장 최근)만 갱신한다.
+  await db.exec(`insert into chairman_google_token (user_id, email, access_token, refresh_token, expires_at, scopes, updated_at)
+    values ('${UID.chairman2}', 'ch2@x.com', 'acc', 'ref', now() + interval '1 hour', 'https://www.googleapis.com/auth/gmail.readonly', now() - interval '1 day')`)
+  assert.equal(
+    await as(UID.agent, `select google_token_refreshed('${UID.chairman2}', 'swap', now() + interval '1 hour')::int`),
+    0, '0039: AIAgent가 브리핑이 읽지 않는 줄의 토큰을 바꿔 끼운다',
   )
   await db.exec(`delete from chairman_google_token`)
 

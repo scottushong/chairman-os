@@ -567,12 +567,14 @@ async function readChairmanContext(
     const result = await todayMail(sb)
     if (result.state === 'ok') {
       const [keymen, initiativeKeymen] = await Promise.all([repo.listKeymen(), repo.listInitiativeKeymen()])
-      const emails = new Set([...keymen, ...initiativeKeymen].map((k) => k.email).filter((e): e is string => !!e))
-      const m = summarizeMail(result.items, emails)
+      const byEmail = new Map(
+        [...keymen, ...initiativeKeymen].filter((k) => k.email).map((k) => [k.email as string, k.name]),
+      )
+      const m = summarizeMail(result.items, byEmail)
       mail =
         `오늘 회장 메일 ${m.count}통, 중요 발신자(키맨) ${m.keyman}통` +
         (m.keymanFrom.length > 0 ? ` — ${m.keymanFrom.join(', ')}` : '') +
-        (emails.size === 0 ? ' (키맨에 이메일이 없어 중요 발신자를 셀 수 없음)' : '')
+        (byEmail.size === 0 ? ' (키맨에 이메일이 없어 중요 발신자를 셀 수 없음)' : '')
     }
   } catch (e) {
     console.error('[night-brief] mail', errorText(e))

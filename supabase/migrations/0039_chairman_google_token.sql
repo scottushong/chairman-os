@@ -89,9 +89,17 @@ begin
   if not (is_active() and auth_role()::text = 'Chairman') then
     return false;
   end if;
-  -- 보내기 범위가 섞여 들어오면 저장하지 않는다. 요청을 readonly 하나로 보내지만, 이미 다른 앱에
-  -- 준 범위가 합쳐져 돌아오는 경우(include_granted_scopes)를 여기서 한 번 더 막는다.
-  if coalesce(p_scopes, '') ~ '(gmail\.send|gmail\.compose|gmail\.modify|mail\.google\.com)' then
+  -- **허용 목록이다.** 받은 범위가 gmail.readonly 하나(공백으로 여럿 와도 전부 그것)가 아니면
+  -- 저장하지 않는다. 차단 목록(send · compose …)은 settings.sharing(전달 주소 · 위임) 같은 것을 놓친다.
+  if coalesce(trim(p_scopes), '') = '' or exists (
+    select 1 from regexp_split_to_table(trim(p_scopes), '\s+') as s(scope)
+     where s.scope <> 'https://www.googleapis.com/auth/gmail.readonly'
+  ) then
+    return false;
+  end if;
+  -- 처음 연결인데 refresh token이 없으면 한 시간 뒤 브리핑이 조용히 끊긴다. 저장하지 않는다
+  -- (다시 연결 — prompt=consent라 두 번째에는 온다). 재연결(update)은 기존 값을 지킨다.
+  if coalesce(p_refresh, '') = '' and not exists (select 1 from chairman_google_token where user_id = auth.uid()) then
     return false;
   end if;
   insert into chairman_google_token (user_id, email, access_token, refresh_token, expires_at, scopes)
@@ -116,10 +124,15 @@ begin
   if not (is_active() and auth_role()::text in ('Chairman', 'AIAgent')) then
     return false;
   end if;
-  -- 회장 세션은 자기 줄만. AIAgent는 같은 회차의 google_token_for_read()가 준 user_id 줄만.
+  -- 회장 세션은 자기 줄만. AIAgent는 google_token_for_read()가 주는 바로 그 줄(가장 최근 연결)만 —
+  -- 아무 user_id나 받으면 새어 나간 AIAgent 자격으로 남의 토큰을 자기 것으로 바꿔 끼울 수 있다.
   update chairman_google_token set access_token = p_access, expires_at = p_expires
    where user_id = p_user_id
-     and (auth_role()::text = 'AIAgent' or user_id = auth.uid());
+     and (
+       user_id = auth.uid()
+       or (auth_role()::text = 'AIAgent'
+           and user_id = (select t.user_id from chairman_google_token t order by t.updated_at desc limit 1))
+     );
   get diagnostics n = row_count;
   return n > 0;
 end;

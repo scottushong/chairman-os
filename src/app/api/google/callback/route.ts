@@ -3,6 +3,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { NextResponse, type NextRequest } from 'next/server'
 
 import { currentUser } from '@/lib/auth/session'
+import { DATA_MODE } from '@/lib/env'
 import { GOOGLE_STATE_COOKIE, requireGoogleConfig } from '@/lib/google/config'
 import { exchangeCode } from '@/lib/google/token'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
@@ -27,6 +28,10 @@ function sameState(a: string, b: string): boolean {
 }
 
 export async function GET(request: NextRequest) {
+  // dummy 모드의 가상 회장으로 실제 Google 교환과 Supabase 저장을 돌리지 않는다.
+  if (DATA_MODE === 'dummy') {
+    return NextResponse.redirect(new URL('/mail?google=config', process.env.APP_BASE_URL ?? request.nextUrl.origin))
+  }
   const user = await currentUser()
   if (!user || user.role !== 'Chairman') {
     return NextResponse.json({ error: 'Gmail 연결은 Chairman만 할 수 있습니다.' }, { status: 403 })
