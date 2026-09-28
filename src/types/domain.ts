@@ -143,6 +143,16 @@ export interface Decision {
   form?: Record<string, string>
   /** 제출 순간 DB 트리거가 얼린 결재선(팀장 → 규칙 → 회장). */
   approval_line?: ApprovalStep[]
+  /** 기안자(0026). 내 요청 · 팀 요청함이 쓴다. */
+  created_by?: string | null
+  /** 0042 팀장 단계. pending = 팀장 대기, skipped = 팀장이 없어 규칙으로 바로. */
+  lead_status?: 'pending' | 'approved' | 'rejected' | 'skipped' | null
+  /** 0042. 규칙(또는 팀장의 회장 확인 요청)이 회장까지 올리는가. */
+  chairman_required?: boolean | null
+  escalated?: boolean
+  /** 0042. 회장 기안(취합)에 묶였으면 그 한 건. */
+  bundle_id?: string | null
+  decided_by_kind?: 'chairman' | 'ceo' | 'rule' | null
 }
 
 export const ALERT_STATUS = ['Open', 'Acknowledged', 'Resolved'] as const

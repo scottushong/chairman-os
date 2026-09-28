@@ -361,6 +361,7 @@ async function rls(db: Db) {
   await googleToken(db, as)
   await eventVideo(db, as)
   await chat(db, as)
+  await staffHome(db, as)
 
   // ── 0018 initiative-logos 버킷 ─────────────────────────────────────
   // 버킷이 비공개인가. as()는 첫 칸을 Number()로 바꾸는데 false가 0으로 둔갑하면
@@ -634,6 +635,7 @@ async function rls(db: Db) {
     await as(UID.chairman, `update chairman_checkins set condition = 5 where checkin_date = '2026-09-01'`),
     1, '0019: Chairman이 체크인을 못 고친다',
   )
+  // 체크인은 자연 키(날짜) 표라 0042 soft delete에서 빠졌다 — 지우기가 그대로다.
   assert.equal(
     await as(UID.chairman, `delete from chairman_checkins where checkin_date = '2026-09-01'`),
     1, '0019: Chairman이 체크인을 못 지운다',
@@ -848,6 +850,137 @@ async function cityLayout(db: Db, as: As) {
 
   // 다음 검사가 빈 표를 전제할 수 있게 치운다.
   await db.exec(`delete from city_layout`)
+}
+
+/**
+ * 0042 직원 홈 · 보안 — 원문 검증 «요청 → 팀장 승인 → 규칙 판정» · 원격 로그아웃 · 새 기기 알림 · 가입 확인.
+ *
+ * 팀장 L(TeamLead) 아래 기안자 R(Member). 팀장은 teams.lead_user_id로만 팀장이다(R이 L의 subtree가
+ * 아니어도 결재선 첫 칸이면 읽고 정한다 — decisions_lead_read).
+ */
+async function staffHome(db: Db, as: As) {
+  const S = { lead: '00000000-0000-0000-0000-0000000d6a01', req: '00000000-0000-0000-0000-0000000d6a02' }
+  await db.exec(`
+    insert into auth.users values ('${S.lead}', 'sl@x'), ('${S.req}', 'sr@x');
+    insert into teams (team_id, business_id, name, name_en, lead_user_id) values ('team_6_2', 'biz_dy', '생산', 'Prod', '${S.lead}');
+    insert into user_profiles (user_id, role, display_name, max_security_class, team_id) values
+      ('${S.lead}', 'TeamLead', '생산팀장', 'Normal', 'team_6_2'),
+      ('${S.req}', 'Member', '생산직원', 'Normal', 'team_6_2');
+    insert into user_business_access values ('${S.lead}', 'biz_dy'), ('${S.req}', 'biz_dy');
+    insert into user_module_access (user_id, module, can_write) values ('${S.req}', '/chairman/decisions', true);
+  `)
+  const commitAs = async (uid: string, sql: string) => {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
+    try {
+      const r = await db.query<{ v: string }>(sql)
+      await db.exec('commit')
+      return r.rows[0]?.v ?? null
+    } catch (e) {
+      await db.exec('rollback')
+      throw e
+    }
+  }
+  const request = (id: string, tpl: string, form: string) =>
+    `insert into decisions (decision_id, business_id, title, template_key, form, attachment_url, created_by)
+       values ('${id}', 'biz_dy', '요청 ${id}', '${tpl}', '${form}'::jsonb, 'https://x/a', '${S.req}') returning decision_id as v`
+  const small = '{"amount":"100000","purpose":"공구","spent_on":"2026-09-28"}'
+  const big = '{"amount":"6000000","purpose":"설비","spent_on":"2026-09-28"}'
+  await commitAs(S.req, request('dec_62a', 'expense', small))
+  await commitAs(S.req, request('dec_62b', 'expense', big))
+  await commitAs(S.req, request('dec_62c', 'leave', '{"starts_on":"2026-10-01","ends_on":"2026-10-02"}'))
+  const row = async (id: string) =>
+    (await db.query<{ status: string; lead_status: string; kind: string | null; cr: boolean }>(
+      `select status::text, lead_status, decided_by_kind as kind, chairman_required as cr from decisions where decision_id = '${id}'`,
+    )).rows[0]
+  assert.deepEqual(await row('dec_62a'), { status: 'Open', lead_status: 'pending', kind: null, cr: false }, '0042: 요청이 팀장 대기로 서지 않는다')
+
+  assert.equal(await as(S.lead, `select count(*)::int from decisions where decision_id in ('dec_62a', 'dec_62b', 'dec_62c')`), 3, '0042: 팀장이 자기 결재선의 요청을 못 읽는다')
+  await assert.rejects(as(UID.member, `select lead_decide('dec_62a', true)`), /lead_forbidden|lead_not_found/, '0042: 팀장이 아닌 사람이 팀장 승인을 한다')
+
+  assert.equal(await commitAs(S.lead, `select lead_decide('dec_62a', true) as v`), 'closed_by_rule', '0042: 10만 원 지출이 팀장 승인 뒤 규칙으로 종결되지 않는다')
+  assert.deepEqual(await row('dec_62a'), { status: 'Approved', lead_status: 'approved', kind: 'rule', cr: false })
+  assert.equal(await commitAs(S.lead, `select lead_decide('dec_62b', true) as v`), 'to_chairman', '0042: 600만 원 지출이 회장 큐로 가지 않는다')
+  assert.deepEqual(await row('dec_62b'), { status: 'Open', lead_status: 'approved', kind: null, cr: true })
+  assert.equal(await commitAs(S.lead, `select lead_decide('dec_62c', false) as v`), 'rejected', '0042: 팀장 반려가 닫히지 않는다')
+  assert.deepEqual(await row('dec_62c'), { status: 'Rejected', lead_status: 'rejected', kind: 'ceo', cr: false })
+  await assert.rejects(as(S.lead, `select lead_decide('dec_62a', true)`), /lead_not_pending/, '0042: 이미 정한 요청을 또 정한다')
+  // 리뷰 C2 — 처음부터 «승인됨»으로 넣어도 Open으로 들어온다.
+  await commitAs(S.req, `insert into decisions (decision_id, business_id, title, template_key, form, attachment_url, created_by, status, decided_by_kind)
+    values ('dec_62e', 'biz_dy', '위조', 'expense', '${small}'::jsonb, 'https://x/a', '${S.req}', 'Approved', 'chairman') returning decision_id as v`)
+  assert.deepEqual(await row('dec_62e'), { status: 'Open', lead_status: 'pending', kind: null, cr: false }, '0042: 기안자가 승인된 결재를 넣는다')
+  // 리뷰 C1 — CEO(can_approve)는 팀장 대기 · 회장 큐를 건너뛰어 닫지 못한다. dy CEO를 잠시 만든다.
+  await db.exec(`insert into auth.users values ('00000000-0000-0000-0000-0000000d6a03', 'dc@x');
+    insert into user_profiles (user_id, role, display_name, max_security_class) values ('00000000-0000-0000-0000-0000000d6a03', 'BusinessCEO', 'dyceo', 'Restricted');
+    insert into user_business_access values ('00000000-0000-0000-0000-0000000d6a03', 'biz_dy');
+    update decisions set created_by = '00000000-0000-0000-0000-0000000d6a03' where decision_id in ('dec_62e');`)
+  await assert.rejects(
+    as('00000000-0000-0000-0000-0000000d6a03', `update decisions set status = 'Approved' where decision_id = 'dec_62e'`),
+    /lead_step_pending/, '0042: CEO가 팀장 대기 중인 요청을 건너뛰어 닫는다',
+  )
+  await db.exec(`update decisions set created_by = '00000000-0000-0000-0000-0000000d6a03' where decision_id = 'dec_62b'`)
+  await assert.rejects(
+    as('00000000-0000-0000-0000-0000000d6a03', `update decisions set status = 'Approved' where decision_id = 'dec_62b'`),
+    /chairman_required/, '0042: CEO가 회장 큐의 요청을 닫는다',
+  )
+  await db.exec(`update decisions set created_by = '${S.req}' where decision_id in ('dec_62b', 'dec_62e');
+    update user_profiles set revoked_at = now() where user_id = '00000000-0000-0000-0000-0000000d6a03';`)
+
+  await assert.rejects(
+    // 트리거를 잰다 — 역할과 상관없이(소유자 권한으로도) 설정 없이는 못 고친다.
+    db.exec(`update decisions set lead_status = 'approved' where decision_id = 'dec_62c'`),
+    /lead_step_frozen/, '0042: 팀장 단계 칸을 일반 update로 고친다',
+  )
+
+  // 회장 확인 요청(규칙과 상관없이 회장에게) + 취합.
+  await commitAs(S.req, request('dec_62d', 'expense', small))
+  assert.equal(await commitAs(S.lead, `select lead_decide('dec_62d', true, true) as v`), 'to_chairman', '0042: 회장 확인 요청이 회장 큐로 가지 않는다')
+  const bundle = await commitAs(S.lead, `select lead_bundle(array['dec_62b', 'dec_62d'], '생산팀 설비 · 공구 묶음') as v`)
+  assert.ok(bundle, '0042: 회장 기안(취합)이 서지 않는다')
+  await assert.rejects(as(S.req, `select lead_bundle(array['dec_62b', 'dec_62d'], 'x')`), /bundle_forbidden/, '0042: 팀장이 아닌 사람이 취합한다')
+  await commitAs(UID.chairman, `update decisions set status = 'Approved', decided_at = now(), decided_by = '${UID.chairman}' where decision_id = '${bundle}' returning 'ok' as v`)
+  const kids = await db.query<{ n: number }>(`select count(*)::int as n from decisions where bundle_id = '${bundle}' and status::text = 'Approved'`)
+  assert.equal(kids.rows[0].n, 2, '0042: 회장이 묶음을 승인했는데 묶인 요청이 닫히지 않는다')
+
+  // 가입 확인 — anon이 부를 수 있고, 초대된(열린) 이메일만 참.
+  await db.exec(`insert into user_invitations (email, role, display_name, invited_by) values ('new.hire@dy.example', 'Member', '신입', '${UID.chairman}')`)
+  const inv = await db.query<{ a: boolean; b: boolean; anon: boolean }>(`
+    select invitation_open('New.Hire@dy.example') as a, invitation_open('stranger@x.com') as b,
+           has_function_privilege('anon', 'invitation_open(text)', 'execute') as anon`)
+  assert.deepEqual(inv.rows[0], { a: true, b: false, anon: true }, '0042: 가입 확인이 초대 이메일만 참이 아니다')
+  // 리뷰 C3 — 초대를 지우면(soft_delete = 회수) 가입 확인도 거짓이 된다.
+  const invId = (await db.query<{ id: string }>(`select invitation_id::text as id from user_invitations where email = 'new.hire@dy.example'`)).rows[0].id
+  await commitAs(UID.chairman, `select soft_delete('user_invitations', '${invId}')::text as v`)
+  const gone = await db.query<{ a: boolean }>(`select invitation_open('new.hire@dy.example') as a`)
+  assert.equal(gone.rows[0].a, false, '0042: 지운 초대로 가입할 수 있다')
+
+  // 새 기기 — 이전 로그인 기기와 다르면 본인 알림 + 회장 큐. 같은 기기면 아무것도.
+  await db.exec(`insert into audit_log (action, entity_table, entity_id, actor_user_id, actor_role, after)
+    values ('login', 'auth.users', '${S.req}', '${S.req}', 'Member', '{"device":"Chrome · Windows","city":"Seoul"}')`)
+  assert.equal(await commitAs(S.req, `select report_login_device('Chrome · Windows', 'Seoul')::text as v`), 'false', '0042: 같은 기기를 새 기기로 본다')
+  assert.equal(await commitAs(S.req, `select report_login_device('Safari · iPhone', 'Busan')::text as v`), 'true', '0042: 새 기기를 못 알아본다')
+  const alerts = `select count(*)::int from security_alerts where user_id = '${S.req}'`
+  assert.equal(await as(UID.chairman, alerts), 1, '0042: 회장 큐에 새 기기 알림이 없다')
+  assert.equal(await as(S.req, alerts), 0, '0042: 직원이 보안 알림 큐를 읽는다')
+  const note = await db.query<{ n: number }>(`select count(*)::int as n from notifications where user_id = '${S.req}' and title like '새 기기%'`)
+  assert.equal(note.rows[0].n, 1, '0042: 본인에게 새 기기 알림이 가지 않는다')
+  assert.equal(await commitAs(S.req, `select report_login_device('Edge · Android', 'Daegu')::text as v`), 'false', '0042: 한 시간 안에 새 기기 알림이 또 쌓인다(회장 카톡 도배)')
+
+  // 원격 로그아웃 — 회장만.
+  assert.equal(await as(UID.cfo, `select force_logout('${S.req}')::int`), 0, '0042: CFO가 남을 원격 로그아웃시킨다')
+  await commitAs(UID.chairman, `select force_logout('${S.req}')::text as v`)
+  const sr = await db.query<{ n: number }>(`select count(*)::int as n from user_profiles where user_id = '${S.req}' and sessions_revoked_at is not null`)
+  assert.equal(sr.rows[0].n, 1, '0042: 원격 로그아웃 시각이 적히지 않는다')
+  const active = await as(S.req, `select is_active()::int`)
+  assert.equal(active, 0, '0042: 원격 로그아웃 뒤에도(그 전 로그인의 토큰) is_active()가 참이다 — DB에서도 끊겨야 한다')
+
+
+  await db.exec(`
+    delete from user_module_access where user_id = '${S.req}';
+    delete from user_business_access where user_id in ('${S.lead}', '${S.req}');
+    update user_profiles set team_id = null, revoked_at = now(), status = 'left' where user_id in ('${S.lead}', '${S.req}');
+    delete from teams where team_id = 'team_6_2';
+    delete from user_invitations where email = 'new.hire@dy.example';
+  `)
 }
 
 /**

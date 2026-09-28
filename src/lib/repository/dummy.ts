@@ -875,6 +875,43 @@ export const dummyRepository: ChairmanRepository = {
     }
   },
 
+  /** 0042 lead_decide()의 거울. 팀장 = 얼린 결재선의 첫 칸. */
+  async leadDecide(decisionId: string, approve: boolean, escalate: boolean, actor: AuditActor) {
+    const d = memoryDecisions.find((x) => x.decision_id === decisionId)
+    if (!d) throw new Error('lead_not_found')
+    if (d.lead_status !== 'pending' || (memoryDecisionStatuses.get(d.decision_id) ?? d.status) !== 'Open') throw new Error('lead_not_pending')
+    if (d.approval_line?.[0]?.user_id !== actor.user_id) throw new Error('lead_forbidden')
+    if (!approve) {
+      Object.assign(d, { lead_status: 'rejected', status: 'Rejected', decided_by_kind: 'ceo' })
+      return 'rejected' as const
+    }
+    if (escalate || d.chairman_required) {
+      Object.assign(d, { lead_status: 'approved', chairman_required: true, escalated: escalate && !d.chairman_required })
+      return 'to_chairman' as const
+    }
+    Object.assign(d, { lead_status: 'approved', status: 'Approved', decided_by_kind: 'rule' })
+    return 'closed_by_rule' as const
+  },
+
+  async leadBundle(decisionIds: string[], title: string, actor: AuditActor) {
+    const items = memoryDecisions.filter((x) => decisionIds.includes(x.decision_id))
+    if (
+      items.length < 2 || items.length !== decisionIds.length ||
+      items.some((x) => x.lead_status !== 'approved' || x.approval_line?.[0]?.user_id !== actor.user_id || x.status !== 'Open' || x.bundle_id)
+    ) {
+      throw new Error('bundle_forbidden')
+    }
+    if (new Set(items.map((x) => x.business_id)).size !== 1) throw new Error('bundle_mixed_business')
+    const id = `dec_${String(decisions.length + memoryDecisions.length + 1).padStart(3, '0')}`
+    memoryDecisions.push({
+      decision_id: id, business_id: items[0].business_id, title, options: ['승인', '반려'], ai_recommendation: '',
+      impact: 'Medium', deadline: items.map((x) => x.deadline).sort()[0], status: 'Open',
+      created_by: actor.user_id, chairman_required: true, lead_status: 'approved',
+    })
+    for (const x of items) x.bundle_id = id
+    return id
+  },
+
   /** CH-041 기안. id는 live에서 0010의 시퀀스가 준다. 여기서는 같은 모양(dec_005)을 흉내 낸다. */
   async createDecision(input: NewDecision, actor: AuditActor): Promise<Decision> {
     // 0038 트리거의 거울 — 필수 항목 · 첨부를 보고 결재선을 여기서 만든다(화면 값은 안 믿는다).
@@ -893,6 +930,20 @@ export const dummyRepository: ChairmanRepository = {
       template_key: input.template_key,
       form: input.template_key ? (input.form ?? {}) : undefined,
       approval_line: line,
+      created_by: actor.user_id,
+      // 0042 트리거의 거울 — 팀장 칸이 있으면 팀장 대기, 없으면 규칙이 바로 판정.
+      ...(line
+        ? (() => {
+            const toChairman = line.some((st) => st.step === 'chairman')
+            const hasLead = line[0]?.user_id != null
+            return {
+              chairman_required: toChairman,
+              lead_status: hasLead ? ('pending' as const) : ('skipped' as const),
+              status: !hasLead && !toChairman ? ('Approved' as const) : ('Open' as const),
+              decided_by_kind: !hasLead && !toChairman ? ('rule' as const) : null,
+            }
+          })()
+        : {}),
     }
     memoryDecisions.push(created)
 

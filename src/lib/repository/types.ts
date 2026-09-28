@@ -191,6 +191,14 @@ export interface ChairmanRepository {
   listApprovalTemplates(): Promise<ApprovalTemplate[]>
   myApprovalLead(): Promise<ApprovalLead | null>
 
+  /**
+   * Phase 6-2(0042) 팀장 단계. 팀장 = 얼린 결재선의 첫 칸. 승인하면 규칙 판정 —
+   * 'closed_by_rule'(팀 선에서 종결) · 'to_chairman'(회장 큐) · 'rejected'.
+   */
+  leadDecide(decisionId: string, approve: boolean, escalate: boolean, actor: AuditActor): Promise<'closed_by_rule' | 'to_chairman' | 'rejected'>
+  /** 회장 기안(취합) — 내가 승인해 회장 큐에 올린 요청 여럿을 한 건으로. 새 결재 id. */
+  leadBundle(decisionIds: string[], title: string, actor: AuditActor): Promise<string>
+
   /** 블록 3 — 문서 폴더(회사 > 팀 > 폴더). */
   listDocFolders(): Promise<DocFolder[]>
   saveDocFolder(input: Omit<DocFolder, 'folder_id'>, actor: AuditActor): Promise<number>

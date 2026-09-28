@@ -288,6 +288,12 @@ interface DecisionRow {
   template_key: ApprovalTemplateKey | null
   form: Record<string, string> | null
   approval_line: ApprovalStep[] | null
+  created_by?: string | null
+  lead_status?: Decision['lead_status']
+  chairman_required?: boolean | null
+  escalated?: boolean
+  bundle_id?: string | null
+  decided_by_kind?: Decision['decided_by_kind']
 }
 
 /**
@@ -311,6 +317,12 @@ function toDecision(r: DecisionRow): Decision {
     template_key: r.template_key ?? undefined,
     form: r.form ?? undefined,
     approval_line: r.approval_line ?? undefined,
+    created_by: r.created_by ?? null,
+    lead_status: r.lead_status ?? null,
+    chairman_required: r.chairman_required ?? null,
+    escalated: r.escalated ?? false,
+    bundle_id: r.bundle_id ?? null,
+    decided_by_kind: r.decided_by_kind ?? null,
   }
 }
 
@@ -711,6 +723,16 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
   // 이 어댑터는 요청 하나마다 새로 만들어진다. 이름표 캐시의 수명도 딱 그만큼이다.
   const ownerNames = createOwnerNames(sb)
   const businessNames = createBusinessNames(sb)
+
+  /**
+   * 0042 soft delete의 유일한 길. 한 줄도 안 바뀌면(없거나 · 이미 지웠거나 · 권한 밖) 던진다 —
+   * 예전의 oneAffectedRow와 같은 약속이다(조용히 성공한 척하지 않는다).
+   */
+  async function softDelete(table: string, key: string) {
+    const { data, error } = await sb.rpc('soft_delete', { p_table: table, p_key: key })
+    if (error) throw new Error(`Supabase soft_delete ${table} ${error.code ?? '?'}: ${error.message}`)
+    if (data !== true) throw new Error(`row-level security: ${table} soft delete affected 0 rows`)
+  }
 
   /** 장부 쓰기(0016)의 감사 한 줄. 실패하면 던진다 — 기록 없이 장부를 바꾸지 않는다. */
   async function audit(entry: {
@@ -1234,9 +1256,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
 
     async deleteNotice(id: number, actor: AuditActor): Promise<void> {
       void actor
-      const { data, error } = await sb.from('notices').delete().eq('notice_id', id).select('notice_id')
-      if (error) throw new Error(`Supabase notices delete ${error.code ?? '?'}: ${error.message}`)
-      if (!data || data.length === 0) throw new Error('row-level security: notices delete affected 0 rows')
+      // 0042 soft delete — 지우기는 deleted_at을 적는 것이다(soft_delete()가 호출자의 update 권한으로 돈다).
+      await softDelete('notices', String(id))
     },
 
     async markNoticeRead(id: number, actor: AuditActor): Promise<void> {
@@ -1271,6 +1292,20 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       if (error) throw new Error(`Supabase my_approval_lead ${error.code ?? '?'}: ${error.message}`)
       const row = (data as ApprovalLead[] | null)?.[0]
       return row ?? null
+    },
+
+    async leadDecide(decisionId: string, approve: boolean, escalate: boolean, actor: AuditActor) {
+      void actor // 팀장 판정은 DB가 auth.uid()와 얼린 결재선으로 한다.
+      const { data, error } = await sb.rpc('lead_decide', { p_decision: decisionId, p_approve: approve, p_escalate: escalate })
+      if (error) throw new Error(`Supabase lead_decide ${error.code ?? '?'}: ${error.message}`)
+      return data as 'closed_by_rule' | 'to_chairman' | 'rejected'
+    },
+
+    async leadBundle(decisionIds: string[], title: string, actor: AuditActor) {
+      void actor
+      const { data, error } = await sb.rpc('lead_bundle', { p_ids: decisionIds, p_title: title })
+      if (error) throw new Error(`Supabase lead_bundle ${error.code ?? '?'}: ${error.message}`)
+      return String(data)
     },
 
     async listDocFolders(): Promise<DocFolder[]> {
@@ -1542,12 +1577,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
       }
 
-      const { data, error } = await sb
-        .from('business_keymen')
-        .delete()
-        .eq('keyman_id', keymanId)
-        .select('keyman_id')
-      oneAffectedRow('business_keymen', data, error)
+      // 0042 soft delete.
+      await softDelete('business_keymen', keymanId)
     },
 
     async listProjects(): Promise<Project[]> {
@@ -1612,7 +1643,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         sb
           .from('decisions')
           .select(
-            'decision_id,business_id,title,options,ai_recommendation,impact,deadline,status,ai_confidence,attachment_url,template_key,form,approval_line',
+            'decision_id,business_id,title,options,ai_recommendation,impact,deadline,status,ai_confidence,attachment_url,template_key,form,approval_line,created_by,lead_status,chairman_required,escalated,bundle_id,decided_by_kind',
             { count: 'exact' },
           )
           .order('deadline')
@@ -3437,12 +3468,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
       }
 
-      const { data, error } = await sb
-        .from('initiative_keymen')
-        .delete()
-        .eq('keyman_id', keymanId)
-        .select('keyman_id')
-      oneAffectedRow('initiative_keymen', data, error)
+      // 0042 soft delete.
+      await softDelete('initiative_keymen', keymanId)
     },
 
     /** 0017 initiative_docs. listDocuments와 같은 이유로 페이지네이션 헬퍼를 쓴다. */
@@ -3535,12 +3562,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
       }
 
-      const { data, error } = await sb
-        .from('initiative_docs')
-        .delete()
-        .eq('doc_id', docId)
-        .select('doc_id')
-      oneAffectedRow('initiative_docs', data, error)
+      // 0042 soft delete.
+      await softDelete('initiative_docs', docId)
     },
 
     /**
@@ -3757,12 +3780,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       // 지워진 행 수를 반드시 센다. RLS는 DELETE를 막을 때 오류를 내지 않고 0행을 지운다 —
       // 그냥 두면 audit_log에는 '지웠다'가 남고, 화면은 성공이라 하고, 행은 그대로 있다.
       // 이 파일의 다른 삭제 함수(removeKeyman 등)가 전부 oneAffectedRow를 거치는 이유다.
-      const { data, error } = await sb
-        .from('events')
-        .delete()
-        .eq('event_id', eventId)
-        .select('event_id')
-      oneAffectedRow('events', data, error)
+      // 0042 soft delete.
+      await softDelete('events', eventId)
     },
 
     /**

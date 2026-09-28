@@ -62,4 +62,11 @@ const config = readFileSync(new URL('../supabase/config.toml', import.meta.url),
 assert.match(config, /project_id = "chairman-os-d17"/)
 assert.match(config, /max_rows = 137/)
 assert.match(config, /\[db.seed\][\s\S]*?enabled = false/)
-console.log('PASS: local target, production/unknown/remote rejection, Docker isolation, secret stripping, CLI argument rejection, SQL guards, config invariants, staging env file and link guards')
+// Phase 6-2 블록 3 — soft delete: 허용 목록 밖의 표에 DELETE 정책이 없는가(카탈로그로 잰다).
+{
+  const soft = spawnSync(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'scripts/check-soft-delete.ts'], { encoding: 'utf8' })
+  assert.equal(soft.status, 0, `soft delete 검사 실패:
+${soft.stdout}${soft.stderr}`)
+}
+
+console.log('PASS: soft delete(DELETE 정책은 허용 목록만), local target, production/unknown/remote rejection, Docker isolation, secret stripping, CLI argument rejection, SQL guards, config invariants, staging env file and link guards')
