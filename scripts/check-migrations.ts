@@ -3676,10 +3676,27 @@ async function attachments() {
 
   // ── 버킷 객체 — 줄이 보이는 사람만, 파일은 AIAgent에게 닫힌다, 덮어쓰기 없음 ──
   const objects = `select count(*)::int from storage.objects where bucket_id = 'attachments'`
+  const openAfter0 = (id: string) => `select count(*)::int from storage.objects where bucket_id = 'attachments' and name like '%${id}'`
+  // 읽기 통행증 — 올린 본인 · 회장이 아니면 감사 줄(내려받기 · 외부 AI 전송) 없이는 못 연다(리뷰 Important 1).
   assert.equal(await u(AT.chair, objects), 7, '0045: 회장이 첨부 객체 일곱을 못 본다')
-  assert.equal(await u(AT.member, objects), 2, '0045: Member가 보는 객체가 줄의 범위와 다르다')
-  assert.equal(await u(AT.agent, objects), 0, '0045: AIAgent가 첨부 파일을 연다')
-  assert.equal(await u(AT.exec2, objects), 5, '0045: Vault 지정자가 Vault 파일을 못 연다(4 + 1)')
+  assert.equal(await u(AT.exec2, openAfter0(AF.dyV)), 0, '0045: Vault 지정자가 감사 없이 Vault 파일을 연다(브라우저가 Storage를 바로 부르는 길)')
+  assert.equal(await u(AT.cfo, openAfter0(AF.dyR)), 0, '0045: 남이 올린 파일이 감사 없이 열린다')
+  const openAfter = (id: string) => `select count(*)::int from storage.objects where bucket_id = 'attachments' and name like '%${id}'`
+  assert.equal(await u(AT.cfo, openAfter(AF.dyR), `select record_attachment_download('${AF.dyR}')`), 1, '0045: 내려받기 감사 뒤에도 GroupCFO가 파일을 못 연다')
+  assert.equal(await u(AT.exec, openAfter(AF.dyR), `select record_attachment_ai_send('${AF.dyR}', 'm')`), 1, '0045: 외부 AI 전송 감사 뒤에도 요약용으로 파일을 못 연다')
+  assert.equal(await u(AT.cfo, openAfter(AF.dyN), `select record_attachment_download('${AF.dyR}')`), 0, '0045: 다른 첨부의 통행증으로 파일이 열린다')
+  assert.equal(await u(AT.member, openAfter(AF.dyR), `select record_attachment_download('${AF.dyR}')`), 0, '0045: 줄이 안 보이는 Member가 통행증으로 파일을 연다')
+  // AIAgent는 감사 줄조차 못 적는다(denied) — 어느 쪽이든 파일은 안 열린다.
+  assert.notEqual(await u(AT.agent, openAfter(AF.dyR), `select record_attachment_download('${AF.dyR}')`), 1, '0045: AIAgent가 첨부 파일을 연다')
+  assert.equal(await u(AT.exec2, openAfter(AF.dyV), `select record_attachment_download('${AF.dyV}')`), 1, '0045: Vault 지정자가 내려받기 감사 뒤에 Vault 파일을 못 연다')
+  // 첨부 감사 줄(파일 이름 · 등급)은 본인과 회장만 — subtree 읽기로 새지 않는다(리뷰 Important 3).
+  const dlRows = `select count(*)::int from audit_log where entity_table = 'attachments' and action::text = 'download' and actor_user_id = '${AT.exec2}'`
+  for (const [who, uid] of [['GroupCFO', AT.cfo], ['Member', AT.member]] as const) {
+    assert.equal(await u(uid, dlRows, `select set_config('request.jwt.claim.sub', '${AT.exec2}', true); select record_attachment_download('${AF.dyV}'); select set_config('request.jwt.claim.sub', '${uid}', true);`), 0,
+      `0045: ${who}가 남의 첨부 감사 줄(Vault 파일 이름)을 읽는다`)
+  }
+  assert.equal(await u(AT.chair, dlRows, `select set_config('request.jwt.claim.sub', '${AT.exec2}', true); select record_attachment_download('${AF.dyV}'); select set_config('request.jwt.claim.sub', '${AT.chair}', true);`), 1,
+    '0045: 회장이 첨부 감사 줄을 못 읽는다')
   assert.equal(await u(AT.exec, `insert into storage.objects (bucket_id, name) values ('attachments', 'businesses/biz_dy/${AF.dyR}-copy')`), 'denied',
     '0045: 줄 없는 경로에 올린다')
   assert.equal(await u(AT.exec,
@@ -3692,6 +3709,12 @@ async function attachments() {
      insert into attachments (entity_table, entity_id, file_name, mime, size_bytes, security_class) values ('businesses', 'biz_dy', 'new.pdf', '${PDF}', 10, 'Normal');
      select set_config('request.jwt.claim.sub', '${AT.member}', true);`),
   'denied', '0045: 남이 만든 줄의 경로에 객체를 올린다')
+  // 올리는 창은 요약 전뿐 — 요약이 선 줄의 경로에 새 바이트를 넣지 못한다(리뷰 Important 2).
+  assert.equal(await u(AT.exec,
+    `insert into storage.objects (bucket_id, name) select 'attachments', storage_path from attachments where file_name = 'new.pdf'`,
+    `insert into attachments (entity_table, entity_id, file_name, mime, size_bytes) values ('businesses', 'biz_dy', 'new.pdf', '${PDF}', 10);
+     update attachments set status = 'summarized', ai_summary = '${SUMMARY}'::jsonb, ai_model = 'm', summarized_at = now() where file_name = 'new.pdf';`),
+  'denied', '0045: 요약이 선 뒤에 같은 경로로 파일을 바꿔 올린다')
   assert.equal(await u(AT.chair, `update storage.objects set name = name || '-v2' where bucket_id = 'attachments'`), 0,
     '0045: 첨부 원본을 덮어쓴다(update 정책이 없어야 한다)')
   assert.equal(await u(AT.member, `delete from storage.objects where bucket_id = 'attachments' and name = 'businesses/biz_dy/${AF.dyN}'`), 0,

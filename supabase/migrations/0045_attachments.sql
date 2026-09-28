@@ -511,6 +511,24 @@ end $$;
 --   (다른 버킷까지) 권한 오류로 죽는다 — 표 권한은 행을 보기 전에 계획 단계에서 잰다.
 --   plpgsql은 도달한 문장만 계획하므로 anon은 첫 줄에서 false로 나간다.
 --   AIAgent는 줄은 읽어도(브리핑 집계) 파일은 못 연다 — 브리핑은 파일을 읽지 않는다.
+-- 읽기 통행증 — 이 사람이 방금(2분 안) 이 첨부를 «내려받기» 또는 «외부 AI 전송»으로 감사에 적었는가.
+-- 적지 않고는 파일을 못 연다: 브라우저가 세션으로 Storage를 바로 불러 감사 없이 내려받는 길을 막는다
+-- (0045 리뷰 Important 1). definer인 이유는 audit_log가 본인 줄조차 역할마다 다르게 보이기 때문이다.
+create or replace function attachment_recent_pass(p_attachment uuid) returns boolean
+language sql stable security definer set search_path = public as $fn$
+  select exists (
+    select 1 from audit_log l
+     where l.entity_table = 'attachments'
+       and l.entity_id = p_attachment::text
+       and l.actor_user_id = auth.uid()
+       and l.action::text in ('download', 'ai_external_send')
+       and l.occurred_at > now() - interval '2 minutes'
+  );
+$fn$;
+
+revoke all on function attachment_recent_pass(uuid) from public, anon;
+grant execute on function attachment_recent_pass(uuid) to authenticated;
+
 create or replace function attachment_object_visible(object_name text, p_owner_only boolean default false)
 returns boolean
 language plpgsql stable security invoker set search_path = public as $fn$
@@ -524,7 +542,13 @@ begin
   return exists (
     select 1 from public.attachments a
      where a.storage_path = object_name
-       and (not p_owner_only or public.attachment_is_mine_or_chairman(a.uploaded_by))
+       and (
+         -- 올린 본인과 회장은 통행증 없이 연다 — 지우기(Postgres는 지울 줄을 먼저 읽을 수 있어야 한다)가
+         -- 여기에 걸리고, 올린 사람은 이미 그 바이트를 가졌고, 회장은 감사를 읽는 사람이다. 그 밖의 사람
+         -- (Vault 지정자 포함)은 감사 줄이 먼저다. 판단은 DEFERRED.
+         public.attachment_is_mine_or_chairman(a.uploaded_by)
+         or (not p_owner_only and public.attachment_recent_pass(a.attachment_id))
+       )
   );
 end;
 $fn$;
@@ -536,10 +560,14 @@ begin
   if auth.uid() is null or not public.is_active() then
     return false;
   end if;
+  -- 올리는 창은 **요약 전 · 한 시간 안**뿐이다. 요약이 선 뒤에 파일을 지우고 다른 바이트를 같은 경로에
+  -- 올리면 요약 · 감사가 다른 파일을 말하게 된다(0045 리뷰 Important 2 — «원본은 덮어쓰지 않는다»).
   return exists (
     select 1 from public.attachments a
      where a.storage_path = object_name
        and a.uploaded_by = auth.uid()
+       and a.status::text in ('uploaded', 'skipped_vault')
+       and a.created_at > now() - interval '1 hour'
   );
 end;
 $fn$;
@@ -556,6 +584,11 @@ create policy attachments_objects_read on storage.objects for select
 drop policy if exists attachments_objects_insert on storage.objects;
 create policy attachments_objects_insert on storage.objects for insert
   with check (bucket_id = 'attachments' and public.attachment_object_uploadable(name));
+
+-- **첨부 감사 줄은 본인과 회장만 읽는다**(0041 audit_log_ai_chats_private와 같은 모양). 줄에 파일 이름 · 등급 ·
+-- 대상이 들어 있어서, 0031의 subtree 읽기가 그대로면 지정되지 않은 팀장이 Vault 파일 이름을 읽는다(리뷰 Important 3).
+create policy audit_log_attachments_private on audit_log as restrictive for select
+  using (entity_table is distinct from 'attachments' or actor_user_id = auth.uid() or auth_role()::text = 'Chairman');
 
 -- update 정책은 없다 — 원본은 덮어쓰지 않는다. 바꾸려면 지우고 새로 올린다(감사에 둘 다 남는다).
 

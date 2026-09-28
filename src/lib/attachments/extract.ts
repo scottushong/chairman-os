@@ -76,7 +76,11 @@ async function xlsx(bytes: Uint8Array): Promise<string[]> {
       if (n++ >= XLSX_MAX_ROWS) return
       const cells: string[] = []
       row.eachCell({ includeEmpty: false }, (cell) => {
-        const t = (cell.text ?? '').toString().trim()
+        // 수식 칸은 저장된 결과가 없으면 text가 빈다(프로그램이 만든 파일은 결과를 안 적는 일이 많다).
+        // 그때는 수식을 그대로 보낸다 — 빈 칸으로 보내면 모델이 «합계 행이 비어 있다»고 말한다(검증에서 그랬다).
+        const v = cell.value as { formula?: string; sharedFormula?: string; result?: unknown } | null
+        const formula = v && typeof v === 'object' ? (v.formula ?? v.sharedFormula) : undefined
+        const t = (cell.text ?? '').toString().trim() || (formula ? `=${formula}` : '')
         if (t) cells.push(t)
       })
       if (cells.length) lines.push(cells.join('\t'))

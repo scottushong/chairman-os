@@ -236,11 +236,10 @@ export async function summarizeAttachment(repo: ChairmanRepository, attachmentId
 
   try {
     await repo.updateAttachmentSummary(attachmentId, { status: 'extracting', ai_error: null })
-    const extracted = await extractAttachment(await repo.readAttachmentObject(a.storage_path), a.mime)
-
     const key = process.env.ANTHROPIC_API_KEY
     if (!key) {
       if (repo.mode !== 'dummy') return fail('AI 연결(ANTHROPIC_API_KEY)이 없어 요약하지 않았습니다.')
+      const extracted = await extractAttachment(await repo.readAttachmentObject(a.storage_path), a.mime)
       await repo.updateAttachmentSummary(attachmentId, {
         status: 'summarized',
         ai_summary: dummySummary(a.file_name, extracted),
@@ -251,8 +250,10 @@ export async function summarizeAttachment(repo: ChairmanRepository, attachmentId
     }
 
     const model = aiModel()
-    // ④ 감사가 먼저다. false = 못 보는 첨부. Vault는 여기서 DB가 던진다(①이 이미 막지만 두 번째 문).
+    // ④ 감사가 먼저다 — **파일을 열기 전에.** 0045의 읽기 통행증(attachment_recent_pass)이 이 줄을 본다:
+    // 적지 않으면 Storage가 파일을 내주지 않는다. false = 못 보는 첨부. Vault는 DB가 던진다(두 번째 문).
     if (!(await repo.recordAttachmentAiSend(attachmentId, model))) return fail('외부 AI 전송 기록을 남기지 못해 요약하지 않았습니다.')
+    const extracted = await extractAttachment(await repo.readAttachmentObject(a.storage_path), a.mime)
 
     const client = new Anthropic({ apiKey: key })
     const summary = await runSummary(client, model, a.file_name, extracted, async (u) => {
