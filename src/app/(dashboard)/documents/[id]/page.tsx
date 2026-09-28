@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
+import { AttachmentsSection } from '@/components/attachments/attachments-section'
 import { PageHeader } from '@/components/layout/page-header'
 import { AuditTimeline } from '@/components/shared/audit-timeline'
 import { SharePanel } from '@/components/shared/share-panel'
@@ -125,13 +126,16 @@ export default async function DocumentDetailPage(props: PageProps<'/documents/[i
               </div>
             ) : null}
             <p className="mt-3 text-t11 leading-relaxed text-ink-muted">
-              파일은 이 시스템에 없습니다. 사내 스토리지의 주소만 보관합니다 — Vault 등급일수록
-              실체가 여기 없어야 합니다.
+              이 문서의 원본은 사내 스토리지 주소입니다. 아래 «첨부»에 올린 파일은 이 시스템의 비공개
+              버킷에 있고, 첨부마다 등급이 따로 걸립니다(Phase 10).
               {doc.security_class === 'Public'
                 ? ' 이 문서는 공개 등급이라 같은 회사면 누구 밑인지와 무관하게 보입니다(0026).'
                 : ''}
             </p>
           </section>
+
+          {/* Phase 10 — 링크 방식 옆에 파일 실체 + AI 요약. 등급은 첨부마다 따로 고른다(0045). */}
+          <AttachmentsSection entityTable="documents" entityId={id} />
 
           <section className="rounded-xl border border-line-soft bg-panel p-4">
             <h2 className="flex items-baseline gap-2 text-t13 font-semibold">

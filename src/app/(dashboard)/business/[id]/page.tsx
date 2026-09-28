@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
+import { AttachmentsSection } from '@/components/attachments/attachments-section'
 import { CoordinatesPanel } from '@/components/business/coordinates-panel'
 import { KeymenPanel } from '@/components/business/keymen-panel'
 import { FinanceTrend } from '@/components/dashboard/finance-trend'
@@ -143,6 +144,8 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
           keymen={keymen.filter((k) => k.business_id === id)}
           canEdit={canEditStrategy(user)}
         />
+        {/* Phase 10 — 회사에 붙인 파일 + AI 요약(0045: 회사가 보이고 AND 등급). */}
+        <AttachmentsSection entityTable="businesses" entityId={id} />
       </div>
 
       <div className="mt-3.5 grid grid-cols-12 gap-3.5 pb-6">

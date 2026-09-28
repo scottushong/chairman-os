@@ -581,6 +581,21 @@ async function readChairmanContext(
     mail = null
   }
 
+  /**
+   * Phase 10. 이번 주 첨부 수 · 결정 필요 합계(0045). AIAgent 세션이라 Vault는 오지 않는다(0045 attachment_class_ok).
+   * 다른 칸과 같이 따로 감싼다. 숫자만 — 파일 이름과 요약 문장은 모델에게 넘기지 않는다.
+   */
+  let attachments: string | null = null
+  try {
+    const since = kstWeekStartIso(date)
+    const week = await repo.listRecentAttachments(since, 500)
+    const decisions = week.reduce((n, a) => n + (a.ai_summary?.decisions_needed.length ?? 0), 0)
+    attachments = `이번 주(${since.slice(0, 10)}~) 새 첨부 ${week.length}건 · AI 요약의 «결정 필요» 합계 ${decisions}건`
+  } catch (e) {
+    console.error('[night-brief] attachments', errorText(e))
+    attachments = null
+  }
+
   return {
     projects: orderProjects(projects)
       .filter((p) => p.status === 'Active')
@@ -619,7 +634,15 @@ async function readChairmanContext(
     checkin,
     activity,
     mail,
+    attachments,
   }
+}
+
+/** run_date(KST)가 속한 주의 월요일 00:00 KST를 ISO로. created_at(timestamptz)과 비교한다. */
+export function kstWeekStartIso(date: IsoDate): string {
+  const d = new Date(`${date}T00:00:00+09:00`)
+  const dow = (new Date(`${date}T12:00:00Z`).getUTCDay() + 6) % 7 // 월=0
+  return new Date(d.getTime() - dow * 86_400_000).toISOString()
 }
 
 async function readAll(repo: ReturnType<typeof createSupabaseRepository>) {

@@ -1,5 +1,6 @@
 import Link from 'next/link'
 
+import { RecentAttachments } from '@/components/attachments/recent-attachments'
 import { PageHeader } from '@/components/layout/page-header'
 import { FolderCreate } from '@/components/documents/folder-create'
 import { RegisterDocument } from '@/components/documents/register-document'
@@ -58,11 +59,13 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
   await recordScreenRead({ path: '/documents', kind: 'page' })
 
   const repo = await getRepository()
-  const [allDocuments, businesses, folders, teams] = await Promise.all([
+  const [allDocuments, businesses, folders, teams, attachments] = await Promise.all([
     repo.listDocuments(),
     repo.listBusinesses(),
     repo.listDocFolders(),
     repo.listTeams(),
+    // Phase 10 — 상세 화면들에 붙은 파일과 요약(보이는 것만, 0045).
+    repo.listRecentAttachments(null, 30),
   ])
   const paths = folderPaths(folders, teams)
   const inFolder = folderFilter ? descendantIds(folders, folderFilter) : null
@@ -244,6 +247,11 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
           </div>
         )}
       </div>
+
+      <RecentAttachments
+        attachments={attachments}
+        scopeName={(id) => (id ? businessName(businesses, id) : '그룹 공통')}
+      />
 
       <p className="mt-3 pb-6 text-t11 text-ink-dim">
         {shown.length}건 표시 중. 열람 등급이 모자란 문서는 이 목록에 오지 않는다 — 필터를

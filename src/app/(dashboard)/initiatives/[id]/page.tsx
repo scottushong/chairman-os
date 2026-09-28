@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
+import { AttachmentsSection } from '@/components/attachments/attachments-section'
 import { KeymenPanel } from '@/components/business/keymen-panel'
 import { EventPanel } from '@/components/initiatives/event-panel'
 import { InitiativeDocsPanel } from '@/components/initiatives/initiative-docs-panel'
@@ -90,6 +91,20 @@ export default async function InitiativePage(props: PageProps<'/initiatives/[id]
           <KeymenPanel scope={{ kind: 'initiative', initiativeId: id }} keymen={ownKeymen} canEdit={canEdit} />
 
           <InitiativeDocsPanel initiativeId={id} docs={ownDocs} canEdit={canEdit} />
+
+          {/* Phase 10 — 첨부 + AI 요약. 목표 · 다음 행동 · 막힌 점이 비어 있으면 요약에서 «채우기»를 제안한다. */}
+          <AttachmentsSection
+            entityTable="initiatives"
+            entityId={id}
+            fill={
+              canEdit
+                ? {
+                    initiativeId: id,
+                    empty: (['goal', 'next_action', 'blocker'] as const).filter((f) => !initiative[f].trim()),
+                  }
+                : undefined
+            }
+          />
 
           <EventPanel events={ownEvents} canEdit={canEdit} initiativeId={id} />
 

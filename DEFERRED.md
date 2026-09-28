@@ -1977,3 +1977,36 @@ B-4가 찾은 결함 하나를 고쳤다. **리뷰 루프가 없는 작업이고
 - **HOME은 도시 띠(2줄) → 이니셔티브(3줄) → 전략 좌표 순이다.** 이니셔티브 섹션을 DashboardBoard에서 꺼냈다.
 - 0044 리뷰 Minor: 음수 좌표 · `{"door":null}` · 0과 100 경계의 검사가 없다(판정은 맞다). dummy 저장은 길목 모양을
   검사하지 않는다(액션이 가둔다).
+
+## Phase 10 — 파일 첨부 + AI 요약 (2026-09-28)
+
+- **Vault 첨부도 버킷에 둔다(회장 지시가 등급 셋을 명시).** CLAUDE.md의 «Vault는 링크만»(선택지 B)과 갈린다 — 대신 Vault는
+  회장 + 지정자만 보고 AI로 나가지 않는다(0045 attachments_vault_check · record_attachment_ai_send가 던진다). 다른 선택지:
+  Vault 등급은 첨부를 막고 documents.storage_url 링크만 받는다.
+- **Vault 지정자 = 첨부마다 한 줄(attachment_vault_viewers), 회장만 넣고 뺀다.** max_security_class와 무관하다. 다른 선택지:
+  사람 단위 플래그(user_profiles.vault_viewer) — 한 번 켜면 모든 Vault가 열려 «지정된 사람»보다 넓다.
+- **대상 규칙은 옮겨 적지 않고 대상 표를 호출자 권한으로 한 번 읽는다**(attachment_entity_visible, security invoker — 0032 수법).
+  대상이 soft delete되면 첨부도 숨는다. 다른 선택지: 표마다 판정식 복사(한쪽만 고쳐지는 날이 온다).
+- **올리기: 줄 먼저(DB가 경로를 만든다) → live는 브라우저가 Storage로 바로 올린다 → 서버가 내려받아 추출 · 요약.** Vercel 함수의
+  요청 본문 한도(4.5MB)가 20MB 파일을 못 받아서다. dummy는 서버 액션(FormData)으로 메모리에 둔다. 업로드가 실패하면 줄을 지운다.
+- **감사 낱말 넷을 더했다**(upload · download · ai_summarize · ai_external_send). 삭제는 기존 delete_request, 지정자는 permission_change.
+  «외부 AI 전송»은 일반 등급도 같은 낱말로 남기고 note로 제한 등급을 가른다.
+- **첨부는 soft delete가 아니다**(check-soft-delete 허용 목록). 파일 실체와 같이 지우고 감사에 delete_request가 남는다.
+- **요약은 올린 사람 · 회장만 고친다**(칸 단위 grant 다섯). 다른 사람이 «다시 요약»을 누를 수 없다.
+- **추출 라이브러리: PDF = unpdf(서버리스용 PDF.js 번들, 워커 없음) · docx = mammoth · xlsx = exceljs · pptx = fflate로 풀어
+  slide XML.** npm `xlsx` 0.18.x는 미패치 CVE(프로토타입 오염 · ReDoS)가 있고 첨부는 믿을 수 없는 파일이라 쓰지 않는다. exceljs 4.4는
+  uuid<11 moderate 경고가 남는다(buf 인자 경계 — 이 경로에서 쓰지 않는다). OOXML 셋은 풀기 전에 fflate로 압축 해제 크기 합(200MB)을 잰다.
+- **스캔본 PDF(글자 없음)는 «텍스트를 찾지 못했습니다»로 failed.** 다른 선택지: PDF를 document 블록으로 Claude에 통째로 보낸다(비용 ↑).
+- **긴 문서: 12만 자 또는 50쪽을 넘으면 4만 자 구간(최대 8)으로 나눠 요약한 뒤 같은 프롬프트로 합친다.** 8구간을 넘는 뒷부분은 읽지 않고
+  confidence를 low로 내린다(«뒷부분 생략»을 요약 첫 줄에 적는다). 비용 천장이다.
+- **이미지는 5MB(API 한도)를 넘으면 브라우저가 긴 변 2400px JPEG로 줄여 올린다**(폰 카메라 촬영본이 대개 그렇다). 원본 대신 줄인
+  사진이 «원본»이 된다. 다른 선택지: 서버에서 sharp로 줄이기(번들 ↑).
+- **비용 추정은 모델별 단가표(lib/ai/pricing.ts)로 한다.** 표에 없는 모델은 Sonnet 단가로 적는다 — 실제 청구와 다를 수 있다.
+- **dummy에서 키가 없으면 «DUMMY 요약»(결정적 가짜)을 적는다.** 키가 있으면 dummy에서도 실제 API를 부른다(세 문서 실측용).
+- **«채우기»(목표 · 다음 행동 · 막힌 점이 빈 이니셔티브)는 요약의 next_actions · decisions_needed 첫 줄을 제안한다.** 받으면
+  saveInitiative가 update 감사를 남긴다. 목표는 요약 첫 줄이다(요약이 목표를 말하지 않는 문서가 많다 — 회장이 고친다).
+- **«AI로 정리»(회장 메모)는 같은 프롬프트(memo 모드)로 구조화해 제안만 한다. 받으면 메모를 그 글로 바꾼다(회장만).** 메모 전송은
+  audit_log가 아니라 ai_usage_log(entity initiatives:<id>, feature memo_structure)에 남는다 — 회장 본인의 글을 회장이 보내는 것이라서다.
+  다른 선택지: audit_log에 ai_external_send 한 줄(첨부 문과 같은 모양의 문을 하나 더 만든다).
+- **브리핑에는 숫자만 간다**(이번 주 첨부 수 · «결정 필요» 합계). 파일 이름 · 요약 문장은 모델에게 넘기지 않는다. AIAgent는 Vault를 못 센다.
+- **dummy에는 이니셔티브 시드가 없다** — /initiatives에서 하나 만든 뒤 상세의 «첨부»를 쓴다.

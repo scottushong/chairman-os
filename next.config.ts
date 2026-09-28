@@ -46,6 +46,27 @@ const nextConfig: NextConfig = {
   // 이 라우트 번들에 직접 싣는다. 빠지면 Vercel에서만 ENOENT로 회사 전부가 Failed가 된다.
   outputFileTracingIncludes: {
     '/api/cron/night-brief': ['./src/lib/ai/prompts/**/*'],
+    // Phase 10 — 첨부 요약 · «AI로 정리»는 서버 액션이라 그 액션을 부르는 화면의 번들에서 돈다.
+    // 첨부 칸이 선 화면 전부에 프롬프트를 싣는다(빠지면 Vercel에서만 ENOENT → 요약 실패).
+    '/initiatives/*': ['./src/lib/ai/prompts/attachment-summary.md'],
+    '/business/*': ['./src/lib/ai/prompts/attachment-summary.md'],
+    '/documents': ['./src/lib/ai/prompts/attachment-summary.md'],
+    '/documents/*': ['./src/lib/ai/prompts/attachment-summary.md'],
+    '/approvals': ['./src/lib/ai/prompts/attachment-summary.md'],
+  },
+  /**
+   * Phase 10 — 첨부 추출 도구 셋은 번들하지 않고 node_modules에서 그대로 부른다. unpdf는 PDF.js 번들을
+   * 동적 import로 읽고, exceljs · mammoth는 큰 CJS 묶음이라 번들러가 옮기면 깨지거나 느려진다.
+   */
+  serverExternalPackages: ['unpdf', 'mammoth', 'exceljs'],
+  experimental: {
+    serverActions: {
+      /**
+       * dummy 모드의 첨부는 서버 액션으로 바이트를 받는다(20MB + multipart 여유). live는 브라우저가
+       * Storage로 바로 올리므로 이 한도를 타지 않는다 — Vercel 함수 요청 한도(4.5MB)가 그 이유다.
+       */
+      bodySizeLimit: '21mb',
+    },
   },
 }
 

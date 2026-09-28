@@ -114,6 +114,12 @@ export interface ChairmanContext {
    * 모델 프롬프트로 흘러가지 않게 한다. 키맨 판정은 발신 주소가 키맨 email과 같은가뿐이다.
    */
   mail: string | null
+  /**
+   * Phase 10(0045). 이번 주(KST 월요일~) 새로 붙은 첨부 수와 그 요약들의 «결정 필요» 합계 한 줄.
+   * **파일 이름 · 요약 문장은 넘기지 않는다** — 숫자만이다. AIAgent가 읽을 수 있는 첨부(Vault 밖)만 센다.
+   * 못 읽었으면(0045 적용 전 등) null — 브리핑이 첨부를 언급하지 않는다.
+   */
+  attachments: string | null
 }
 
 /**

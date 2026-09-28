@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from 'react'
 
+import { structureMemoAction } from '@/app/actions/attachments'
 import { saveInitiativeField, saveInitiativeNoteAction, type InitiativeField } from '@/app/actions/initiatives'
 import { Icon } from '@/components/ui/icon'
 import { GOAL_MAX, initiativeClock } from '@/lib/initiative'
@@ -558,6 +559,18 @@ export function InitiativeNotePanel({ initiativeId, note }: { initiativeId: stri
   const [saved, setSaved] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const value = saved ?? note
+  // «AI로 정리»(Phase 10) — 같은 요약 프롬프트로 구조만 잡은 **제안**. 받아야 메모가 바뀐다.
+  const [proposal, setProposal] = useState<{ text: string; dummy?: boolean } | null>(null)
+  const [structuring, startStructure] = useTransition()
+
+  function structure() {
+    startStructure(async () => {
+      setError(null)
+      const r = await structureMemoAction(initiativeId, value)
+      if (r.error || !r.text) setError(r.error ?? '정리하지 못했습니다.')
+      else setProposal({ text: r.text, dummy: r.dummy })
+    })
+  }
 
   async function save(next: string) {
     setError(null)
@@ -577,7 +590,43 @@ export function InitiativeNotePanel({ initiativeId, note }: { initiativeId: stri
         <Icon name="crown" className="size-4 text-gold" filled />
         회장 메모
       </h2>
-      <p className="mt-0.5 text-t10h text-ink-muted">이 칸은 회장만 봅니다.</p>
+      <div className="mt-0.5 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-t10h text-ink-muted">이 칸은 회장만 봅니다.</p>
+        {value && !editing ? (
+          <button
+            type="button"
+            disabled={structuring}
+            onClick={structure}
+            className="inline-flex items-center gap-1 rounded-md border border-gold/40 px-2 py-0.5 text-t10h text-gold transition-colors hover:bg-gold/10 disabled:opacity-50"
+          >
+            <Icon name="sparkles" className="size-3" />
+            {structuring ? '정리 중…' : 'AI로 정리'}
+          </button>
+        ) : null}
+      </div>
+
+      {proposal ? (
+        <div className="mt-2 rounded-md border border-accent/30 bg-panel p-2.5">
+          <p className="text-t10h font-semibold text-accent">
+            AI 정리 제안 · 결정 아님{proposal.dummy ? ' · DUMMY' : ''} — 받으면 메모가 이 글로 바뀝니다
+          </p>
+          <pre className="mt-1.5 whitespace-pre-wrap font-sans text-t11h leading-relaxed text-ink-dim">{proposal.text}</pre>
+          <div className="mt-2 flex gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                if (await save(proposal.text)) setProposal(null)
+              }}
+              className="rounded border border-accent px-2 py-0.5 text-t10h text-accent hover:bg-accent/10"
+            >
+              받기(메모 바꾸기)
+            </button>
+            <button type="button" onClick={() => setProposal(null)} className="rounded px-2 py-0.5 text-t10h text-ink-muted hover:underline">
+              버리기
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {error ? (
         <p role="alert" className="mt-2 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-t11h text-critical">

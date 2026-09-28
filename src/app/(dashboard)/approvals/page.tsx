@@ -1,6 +1,7 @@
 import Link from 'next/link'
 
 import { ApprovalDetail } from '@/components/approvals/approval-detail'
+import { AttachmentsSection } from '@/components/attachments/attachments-section'
 import { DraftDecision } from '@/components/approvals/draft-decision'
 import { PageHeader } from '@/components/layout/page-header'
 import { FilterChips, type FilterOption } from '@/components/ui/filter-chips'
@@ -212,6 +213,12 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
               businessName={businessName(businesses, selected.business_id)}
               history={history}
             />
+          ) : null}
+          {/* Phase 10 — 결재 근거 파일 + AI 요약(0045: 결재가 보이고 AND 등급). 링크 첨부(attachment_url)는 그대로다. */}
+          {selected ? (
+            <div className="mt-3.5">
+              <AttachmentsSection key={selected.decision_id} entityTable="decisions" entityId={selected.decision_id} />
+            </div>
           ) : (
             <p className="rounded-xl border border-line-soft bg-panel px-4 py-10 text-center text-t12h text-ink-muted">
               왼쪽에서 결재를 고르면 내용과 처리 이력이 여기 열립니다.
