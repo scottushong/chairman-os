@@ -204,7 +204,7 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
         {shown.length === 0 ? (
           <div className="px-4 py-10 text-center">
             <p className="text-[12.5px] text-ink-muted">
-              {documents.length === 0
+              {allDocuments.length === 0
                 ? '등록된 문서가 없습니다. 오른쪽 위 «링크 등록»으로 첫 문서를 올립니다.'
                 : '조건에 맞는 문서가 없습니다.'}
             </p>
