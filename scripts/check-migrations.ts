@@ -3751,6 +3751,140 @@ async function attachments() {
 }
 
 /**
+ * 0046 AI 어시스턴트 — 새 PGlite 한 벌. 제안(ai_actions)은 넣으면 늘 pending · 15분이고,
+ * 확인은 ai_action_decide() 하나로 주인만 · 한 번만 · 만료 전만 넘어간다. 확인은 감사에 남는다.
+ */
+const AA = {
+  chair: '00000000-0000-0000-0000-0000000046c0',
+  member: '00000000-0000-0000-0000-0000000046c1',
+  other: '00000000-0000-0000-0000-0000000046c2',
+  agent: '00000000-0000-0000-0000-0000000046c3',
+  integration: '00000000-0000-0000-0000-0000000046c4',
+}
+
+async function aiAssistant() {
+  const db = new PGlite({ extensions: { pg_trgm } })
+  await applyAll(db)
+  await db.exec(`
+    grant usage on schema public, auth to authenticated, anon;
+    insert into auth.users values
+      ('${AA.chair}', 'b1@x'), ('${AA.member}', 'b2@x'), ('${AA.other}', 'b3@x'), ('${AA.agent}', 'b4@x'), ('${AA.integration}', 'b5@x');
+    insert into user_profiles (user_id, role, display_name, max_security_class) values
+      ('${AA.chair}', 'Chairman', 'ch', 'Vault'),
+      ('${AA.member}', 'Member', 'm', 'Normal'),
+      ('${AA.other}', 'Member', 'o', 'Normal'),
+      ('${AA.agent}', 'AIAgent', 'ai', 'Restricted'),
+      ('${AA.integration}', 'Integration', 'sync', 'Restricted');
+    insert into user_business_access values ('${AA.member}', 'biz_dy'), ('${AA.other}', 'biz_dy');
+    insert into initiatives (initiative_id, title, kind) values ('ini_ai', 'VLING24', 'Deal');
+  `)
+
+  // 한 트랜잭션 안에서 여러 문장을 순서대로 돌리고 마지막 결과를 돌려준다(끝나면 되돌린다).
+  async function as(uid: string | null, steps: string[], role: 'authenticated' | 'anon' = 'authenticated'): Promise<unknown[] | 'denied'> {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid ?? ''}', true); set local role ${role};`)
+    try {
+      let last: unknown[] = []
+      for (const s of steps) {
+        if (s.startsWith('@')) {
+          // '@<uid>' — 같은 트랜잭션 안에서 다른 사람으로 바꾼다(남이 넣은 줄을 두고 재기 위해).
+          await db.exec(`select set_config('request.jwt.claim.sub', '${s.slice(1)}', true)`)
+          continue
+        }
+        if (s.startsWith('!')) {
+          // '!<sql>' — 역할 밖(소유자)으로 잠깐 나가 시각을 옮긴다. 만료를 흉내 내는 자리뿐이다.
+          await db.exec(`reset role; ${s.slice(1)}; set local role ${role};`)
+          continue
+        }
+        last = (await db.query(s)).rows as unknown[]
+      }
+      return last
+    } catch (e) {
+      if (/row-level security/.test(e instanceof Error ? e.message : '')) return 'denied'
+      throw e
+    } finally {
+      await db.exec('rollback')
+    }
+  }
+  const insert = (extra = '') =>
+    `insert into ai_actions (kind, payload, preview, target_table, target_id, business_id${extra ? ', status, expires_at' : ''})
+     values ('initiative_update', '{"initiative_id":"ini_ai","changes":{"next_action":"계약서 초안"}}', '{"title":"VLING24 다음 행동"}', 'initiatives', 'ini_ai', 'biz_nope'${extra})`
+  const decide = (confirm: boolean) =>
+    `select ai_action_decide((select action_id from ai_actions order by created_at desc limit 1), ${confirm}) as r`
+  const one = (rows: unknown[] | 'denied') => (rows === 'denied' ? 'denied' : (rows[0] as Record<string, unknown>))
+
+  // ── 자물쇠: force 없음, anon은 표 · 함수 전부 없음 ──
+  const lock = await db.query<{ forced: boolean; anon: boolean; upd: boolean }>(`
+    select c.relforcerowsecurity as forced,
+           has_table_privilege('anon', c.oid, 'select') or has_table_privilege('anon', c.oid, 'insert') as anon,
+           has_table_privilege('authenticated', c.oid, 'update') or has_table_privilege('authenticated', c.oid, 'delete') as upd
+      from pg_class c where c.relname = 'ai_actions'`)
+  assert.deepEqual(lock.rows, [{ forced: false, anon: false, upd: false }], '0046: ai_actions에 force가 걸렸거나 anon에게 열렸거나 update/delete grant가 있다')
+  for (const fn of ['ai_action_decide(uuid, boolean)', 'ai_action_finish(uuid, boolean, text)']) {
+    const r = await db.query<{ ok: boolean }>(`select has_function_privilege('anon', '${fn}', 'execute') as ok`)
+    assert.equal(r.rows[0].ok, false, `0046: anon이 ${fn}을 부를 수 있다`)
+  }
+  await assert.rejects(as(null, [`select count(*) from ai_actions`], 'anon'), /permission denied/, '0046: anon이 ai_actions를 읽는다')
+
+  // ── 넣으면 늘 pending · 15분 · 내 이름 — 'confirmed' · 먼 만료를 보내도 덮인다 ──
+  const stamped = one(await as(AA.member, [
+    insert(`, 'confirmed', now() + interval '10 years'`),
+    `select status, user_id::text as uid, extract(epoch from (expires_at - created_at))::int as ttl from ai_actions`,
+  ]))
+  assert.deepEqual(stamped, { status: 'pending', uid: AA.member, ttl: 900 }, '0046: 넣을 때 상태 · 만료 · 주인을 DB가 정하지 않는다')
+
+  // ── 고치고 지우는 길이 없다(상태를 표에서 직접 못 옮긴다) ──
+  await assert.rejects(as(AA.member, [insert(), `update ai_actions set status = 'confirmed'`]), /permission denied/, '0046: 제안을 직접 confirmed로 고친다')
+  await assert.rejects(as(AA.chair, [insert(), `delete from ai_actions`]), /permission denied/, '0046: 제안을 지운다')
+
+  // ── 확인: 주인만 · 한 번만 · 감사 «AI 제안, 직원 확인» ──
+  const confirmed = one(await as(AA.member, [insert(), decide(true)]))
+  assert.equal((confirmed as { r: { status: string } }).r.status, 'confirmed', '0046: 주인이 확인해도 confirmed가 안 된다')
+  assert.equal(one(await as(AA.member, [insert(), decide(true), decide(true)])).r, null, '0046: 같은 제안을 두 번 확인한다')
+  assert.equal(one(await as(AA.member, [insert(), decide(false), decide(true)])).r, null, '0046: 취소한 제안을 뒤에 확인한다')
+  assert.equal(one(await as(AA.member, [insert(), `@${AA.other}`, decide(true)])).r, null, '0046: 남의 제안을 확인한다')
+  assert.equal(one(await as(AA.member, [insert(), `@${AA.chair}`, decide(true)])).r, null, '0046: 회장이 남의 제안을 확인한다(확인은 제안받은 본인의 일이다)')
+  assert.equal(one(await as(AA.member, [insert(), `@${AA.other}`, `select count(*)::int as n from ai_actions`])).n, 0, '0046: 남의 제안이 보인다')
+  assert.equal(one(await as(AA.member, [insert(), `!update ai_actions set expires_at = now() - interval '1 second'`, decide(true)])).r, null,
+    '0046: 만료된 제안을 확인한다')
+
+  const audit = one(await as(AA.member, [insert(), decide(true),
+    `select entity_table, entity_id, business_id, note, actor_role, after->>'kind' as kind from audit_log where note like 'AI 제안%'`]))
+  assert.deepEqual(audit, { entity_table: 'initiatives', entity_id: 'ini_ai', business_id: null, note: 'AI 제안, 직원 확인', actor_role: 'Member', kind: 'initiative_update' },
+    '0046: 확인이 대상 줄의 감사에 «AI 제안, 직원 확인»으로 남지 않는다(없는 회사는 null이어야 한다)')
+  const chairAudit = one(await as(AA.chair, [insert(), decide(true), `select note from audit_log where note like 'AI 제안%'`]))
+  assert.equal(chairAudit.note, 'AI 제안, 회장 확인', '0046: 회장 확인 문구')
+  assert.equal(one(await as(AA.chair, [insert(), decide(false), `select count(*)::int as n from audit_log where note like 'AI 제안%'`])).n, 0,
+    '0046: 취소가 «확인»으로 감사에 남는다')
+
+  // ── 실행 결과: confirmed에서만 done/failed ──
+  const id = `(select action_id from ai_actions order by created_at desc limit 1)`
+  assert.equal(one(await as(AA.member, [insert(), `select ai_action_finish(${id}, true, '저장') as ok`])).ok, false, '0046: 확인 전 제안을 done으로 적는다')
+  assert.deepEqual(one(await as(AA.member, [insert(), decide(true), `select ai_action_finish(${id}, true, '저장')`, `select status, result from ai_actions`])),
+    { status: 'done', result: '저장' }, '0046: 확인 뒤 실행 결과가 안 적힌다')
+
+  // ── 시스템 계정은 제안을 못 만든다 · 남의 대화에 못 건다 ──
+  assert.equal(await as(AA.agent, [insert()]), 'denied', '0046: AIAgent가 제안을 만든다')
+  assert.equal(await as(AA.integration, [insert()]), 'denied', '0046: Integration이 제안을 만든다')
+  assert.equal(await as(AA.member, [`insert into ai_chats (chat_id, title) values ('00000000-0000-0000-0000-0000000046d0', '남의 대화')`, `@${AA.other}`,
+    `insert into ai_actions (chat_id, kind, payload, preview) values ('00000000-0000-0000-0000-0000000046d0', 'checkin', '{}', '{}')`]), 'denied',
+  '0046: 남의 대화에 제안을 건다')
+  await assert.rejects(as(AA.member, [`insert into ai_actions (kind, payload, preview) values ('drop_table', '{}', '{}')`]), /ai_actions_kind_check/, '0046: 모르는 쓰기 종류')
+
+  // ── 대화 표의 새 칸 ──
+  await assert.rejects(as(AA.member, [`insert into ai_chats (title, context_path) values ('x', '//evil.example')`]), /ai_chats_context_path_check/, '0046: 바깥 경로를 대화 화면으로 적는다')
+  assert.deepEqual(one(await as(AA.member, [`insert into ai_chats (title, context_path) values ('x', '/initiatives/ini_ai')`,
+    `insert into ai_chat_messages (chat_id, role, content, tokens, actions) select chat_id, 'assistant', '답', 1200, '["a"]' from ai_chats`,
+    `select sum(tokens)::int as t from ai_chat_messages`])), { t: 1200 }, '0046: 답의 토큰이 안 남는다')
+
+  // ── restrictive 방어선 — 카탈로그에서 잰다 ──
+  const { rows: pol } = await db.query<{ k: string; p: string }>(
+    `select policyname as k, permissive as p from pg_policies where tablename = 'ai_actions' and policyname like '%_no_insert'`)
+  assert.deepEqual(Object.fromEntries(pol.map((r) => [r.k, r.p])), { ai_agent_no_insert: 'RESTRICTIVE', integration_no_insert: 'RESTRICTIVE' },
+    '0046: ai_actions의 시스템 계정 방어선이 restrictive가 아니다')
+  await db.close()
+}
+
+/**
  * 화면이 말하는 마이그레이션 번호가 실제 마지막 파일과 같은가 (Phase 5-E 4절).
  *
  * `/settings`의 '이 웹에 대해' 절이 `src/lib/version.ts`의 LATEST_MIGRATION을 그대로 보여 준다.
@@ -3788,8 +3922,9 @@ async function main() {
   await definerUnderNonBypassOwner()
   await subtreeBackfill()
   await attachments()
+  await aiAssistant()
   console.log(
-    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log)`,
+    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 · 감사 «AI 제안, <역할> 확인» · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금)`,
   )
 }
 
