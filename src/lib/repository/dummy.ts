@@ -835,6 +835,8 @@ export const dummyRepository: ChairmanRepository = {
 
   /** CH-041 기안. id는 live에서 0010의 시퀀스가 준다. 여기서는 같은 모양(dec_005)을 흉내 낸다. */
   async createDecision(input: NewDecision, actor: AuditActor): Promise<Decision> {
+    // 0038 트리거의 거울 — 필수 항목 · 첨부를 보고 결재선을 여기서 만든다(화면 값은 안 믿는다).
+    const line = input.template_key ? await groupware.draftApprovalLine(input) : undefined
     const created: Decision = {
       decision_id: `dec_${String(decisions.length + memoryDecisions.length + 1).padStart(3, '0')}`,
       business_id: input.business_id,
@@ -846,6 +848,9 @@ export const dummyRepository: ChairmanRepository = {
       deadline: input.deadline,
       status: 'Open',
       attachment_url: input.attachment_url,
+      template_key: input.template_key,
+      form: input.template_key ? (input.form ?? {}) : undefined,
+      approval_line: line,
     }
     memoryDecisions.push(created)
 

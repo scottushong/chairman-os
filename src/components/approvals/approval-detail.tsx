@@ -118,6 +118,35 @@ export function ApprovalDetail({
           )}
         </Field>
 
+        {/* 0038. 양식으로 올린 결재만. 결재선은 제출 순간 DB가 얼린 값이다 — 조직이 바뀌어도 그대로다. */}
+        {decision.approval_line && decision.approval_line.length > 0 ? (
+          <Field label="결재선">
+            <ol className="flex flex-wrap items-center gap-1.5 text-[12px]">
+              {decision.approval_line.map((s, i) => (
+                <li key={s.step} className="flex items-center gap-1.5">
+                  {i > 0 ? <span className="text-ink-muted">→</span> : null}
+                  <span className="rounded-md border border-line-soft bg-raised px-2 py-1" title={s.why}>
+                    <span className="font-semibold">{s.name}</span>
+                    <span className="ml-1 text-[10.5px] text-ink-muted">{s.why}</span>
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </Field>
+        ) : null}
+        {decision.form && Object.keys(decision.form).length > 0 ? (
+          <Field label="양식 항목">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[12px]">
+              {Object.entries(decision.form).map(([k, v]) => (
+                <div key={k} className="contents">
+                  <dt className="text-ink-muted">{k}</dt>
+                  <dd className="whitespace-pre-wrap">{v}</dd>
+                </div>
+              ))}
+            </dl>
+          </Field>
+        ) : null}
+
         <Field label="첨부">
           {decision.attachment_url ? (
             // 링크만 있다. 파일 실체는 사내 스토리지에 있고 Chairman OS는 그 주소만 안다(0006).

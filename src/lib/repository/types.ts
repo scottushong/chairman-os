@@ -56,6 +56,7 @@ import type {
   CityLayoutInput,
   ApprovalLead,
   ApprovalTemplate,
+  ApprovalTemplateKey,
   DocFolder,
   Notice,
   NoticeInput,
@@ -903,6 +904,12 @@ export interface NewDecision {
   deadline: string
   /** 사내 스토리지 링크. 없으면 넣지 않는다(0006). */
   attachment_url?: string
+  /**
+   * 0038 결재 양식. 있으면 DB 트리거가 필수 항목 · 첨부를 보고 결재선을 새로 만든다 —
+   * 결재선은 여기서 보내지 않는다(보내도 트리거가 버린다).
+   */
+  template_key?: ApprovalTemplateKey
+  form?: Record<string, string>
 }
 
 /**

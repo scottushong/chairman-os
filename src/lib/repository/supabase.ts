@@ -75,7 +75,9 @@ import type {
   CityLayout,
   CityLayoutInput,
   ApprovalLead,
+  ApprovalStep,
   ApprovalTemplate,
+  ApprovalTemplateKey,
   DocFolder,
   Notice,
   NoticeInput,
@@ -276,6 +278,9 @@ interface DecisionRow {
   status: DecisionStatus
   ai_confidence: number | string | null
   attachment_url: string | null
+  template_key: ApprovalTemplateKey | null
+  form: Record<string, string> | null
+  approval_line: ApprovalStep[] | null
 }
 
 /**
@@ -296,6 +301,9 @@ function toDecision(r: DecisionRow): Decision {
     // 0으로 채우면 신뢰도 0%인 추천처럼 보인다.
     ai_confidence: r.ai_confidence === null ? undefined : num(r.ai_confidence),
     attachment_url: r.attachment_url ?? undefined,
+    template_key: r.template_key ?? undefined,
+    form: r.form ?? undefined,
+    approval_line: r.approval_line ?? undefined,
   }
 }
 
@@ -1456,7 +1464,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         sb
           .from('decisions')
           .select(
-            'decision_id,business_id,title,options,ai_recommendation,impact,deadline,status,ai_confidence,attachment_url',
+            'decision_id,business_id,title,options,ai_recommendation,impact,deadline,status,ai_confidence,attachment_url,template_key,form,approval_line',
             { count: 'exact' },
           )
           .order('deadline')
@@ -2250,13 +2258,16 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
           // 올린 결재는 항상 Open이다. 이 값을 화면이 정하게 두지 않는다.
           status: 'Open',
           attachment_url: input.attachment_url ?? null,
+          // 0038. 결재선은 보내지 않는다 — 트리거가 만든다.
+          template_key: input.template_key ?? null,
+          form: input.form ?? null,
           // 0026이 더한 칸. 기안자가 없으면 이 결재에는 '본인'이 없고, 0026의 다섯 번째 겹이
           // 그것을 '주인 없음 = 회사 공통'으로 읽어 올린 사람만 보는 결재가 전사에 열린다.
           // 화면이 보내는 값이 아니라 세션의 actor다 — 남의 이름으로 기안할 수 없다.
           created_by: actor.user_id,
         })
         .select(
-          'decision_id,business_id,title,options,ai_recommendation,ai_confidence,impact,deadline,status,attachment_url',
+          'decision_id,business_id,title,options,ai_recommendation,ai_confidence,impact,deadline,status,attachment_url,template_key,form,approval_line',
         )
         .single<DecisionRow>()
 

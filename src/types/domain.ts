@@ -1,3 +1,4 @@
+import type { ApprovalStep, ApprovalTemplateKey } from './groupware'
 import type { ProjectNote } from './chairman'
 import type { FigureBasis, Provenance } from './finance'
 import type { BusinessStatus, Severity, TaskStatus, WorkPriority, SecurityClass } from './enums'
@@ -137,6 +138,11 @@ export interface Decision {
   ai_confidence?: Confidence
   /** CH-041 첨부. 사내 스토리지 링크만이다 — 파일 실체는 Chairman OS에 없다(0006). */
   attachment_url?: string
+  /** 0038. 양식으로 올린 결재만 값이 있다. 기존 결재는 셋 다 없다. */
+  template_key?: ApprovalTemplateKey
+  form?: Record<string, string>
+  /** 제출 순간 DB 트리거가 얼린 결재선(팀장 → 규칙 → 회장). */
+  approval_line?: ApprovalStep[]
 }
 
 export const ALERT_STATUS = ['Open', 'Acknowledged', 'Resolved'] as const

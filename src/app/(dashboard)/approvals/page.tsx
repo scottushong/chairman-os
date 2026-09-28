@@ -124,6 +124,13 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
         code="CH-041"
         description="승인·거절·수정요청·위임. 처리하면 결정 상태가 옮겨지고 감사 로그에 한 줄이 남는다."
       >
+        {/* Phase 9 블록 2. 양식(지출 · 구매 · 휴가 · 계약 · 채용)과 결재선 미리보기. */}
+        <Link
+          href="/approvals/new"
+          className="rounded-md border border-accent bg-accent px-2.5 py-1.5 text-[11.5px] font-semibold text-white"
+        >
+          + 양식으로 올리기
+        </Link>
         <span className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-[11.5px] text-ink-dim tnum">
           오늘 처리 <span className="font-semibold text-ink">{countOn(audit, dayKey())}</span>건
         </span>

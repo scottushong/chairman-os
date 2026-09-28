@@ -25,6 +25,8 @@ import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm'
 import { applyAll, applyOne, MIGRATIONS, type Db } from './pglite'
 
 import { sheetFinanceKpis } from '../src/data'
+import { approvalLine } from '../src/lib/approval-line'
+import type { ApprovalTemplate } from '../src/types'
 import { kstToday } from '../src/lib/chairman-project'
 import { loadMockLedger } from '../src/lib/ecount/mock-ledger'
 import { kpisFromLedger } from '../src/lib/ledger/cells'
@@ -962,6 +964,33 @@ async function groupware(db: Db, as: As) {
     as(UID.member, `select 1`, draft('expense', '{"amount":"1000"}')),
     /approval_form_missing:purpose/, '0038: 필수 항목이 빈 지출이 들어간다',
   )
+  // 화면 미리보기(lib/approval-line.ts)가 트리거와 **같은 결재선**을 그리는가 — 문장(why)까지.
+  // 갈라지면 미리보기가 «회장까지 안 간다»고 말하는데 실제로는 가는 결재가 생긴다.
+  const tplRows = await db.query<ApprovalTemplate>(`select * from approval_templates`)
+  const templatesByKey = new Map(tplRows.rows.map((t) => [t.template_key, { ...t, chairman_over: t.chairman_over === null ? null : Number(t.chairman_over) }]))
+  for (const [tpl, form] of [
+    ['expense', { amount: '6,000,000', purpose: '장비', spent_on: '2026-09-28' }],
+    ['expense', { amount: '100000', purpose: '다과', spent_on: '2026-09-28' }],
+    ['leave', { starts_on: '2026-10-01', ends_on: '2026-10-02' }],
+    ['hiring', { position: '엔지니어', team: '연구소', amount: '60000000', reason: '증원' }],
+  ] as const) {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${UID.member}', true); set local role authenticated;`)
+    let dbLine: { step: string; name: string; why: string }[]
+    try {
+      await db.exec(draft(tpl, JSON.stringify(form)))
+      const r = await db.query<{ line: { step: string; name: string; why: string }[] }>(`select approval_line as line from decisions where decision_id = 'dec_gw'`)
+      dbLine = r.rows[0].line
+    } finally {
+      await db.exec('rollback')
+    }
+    const preview = approvalLine(templatesByKey.get(tpl)!, { ...form }, { user_id: UID.ceo, display_name: 'ceo', via: 'team_lead' })
+    assert.deepEqual(
+      preview.map((s) => [s.step, s.why]),
+      dbLine.map((s) => [s.step, s.why]),
+      `0038: 결재선 미리보기와 트리거가 갈라졌다(${tpl} ${JSON.stringify(form)})`,
+    )
+  }
+
   await db.exec(`
     insert into decisions (decision_id, business_id, title, template_key, form, attachment_url, created_by)
       values ('dec_gw2', 'biz_dy', '결재', 'leave', '{"starts_on":"2026-10-01","ends_on":"2026-10-02"}', null, '${UID.chairman}');

@@ -1,5 +1,7 @@
+import { approvalLine, missingFields } from '@/lib/approval-line'
 import type {
   ApprovalLead,
+  ApprovalStep,
   ApprovalTemplate,
   DocFolder,
   Notice,
@@ -226,4 +228,28 @@ export async function saveDocFolder(
   const id = nextFolder++
   folders.push({ ...input, folder_id: id })
   return id
+}
+
+/**
+ * 0038 decisions_approval_line() 트리거의 dummy 거울 — 필수 항목 · 첨부가 비면 던지고,
+ * 결재선(팀장 → 규칙 → 회장)을 만든다. 규칙 문장은 lib/approval-line.ts가 트리거와 같게 쓴다.
+ */
+export async function draftApprovalLine(input: {
+  template_key?: ApprovalTemplate['template_key']
+  form?: Record<string, string>
+  attachment_url?: string
+}): Promise<ApprovalStep[]> {
+  const template = templates.find((t) => t.template_key === input.template_key)
+  if (!template) throw new Error('approval_template_unknown')
+  const form = input.form ?? {}
+  const missing = missingFields(template, form)
+  if (missing.length > 0) throw new Error(`approval_form_missing:${missing[0]}`)
+  if (template.attachment_required && !(input.attachment_url ?? '').trim()) {
+    throw new Error('approval_attachment_missing')
+  }
+  const chairman = DUMMY_PEOPLE.find((p) => p.role === 'Chairman' && !p.revoked_at)
+  return approvalLine(template, form, await myApprovalLead(), {
+    user_id: chairman?.user_id ?? null,
+    name: '회장',
+  })
 }
