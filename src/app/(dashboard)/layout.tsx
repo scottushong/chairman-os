@@ -1,3 +1,4 @@
+import { MobileTabs } from '@/components/layout/mobile-tabs'
 import { Header } from '@/components/layout/header'
 import { Sidebar } from '@/components/layout/sidebar'
 import { SystemBar } from '@/components/layout/system-bar'
@@ -54,7 +55,11 @@ export default async function DashboardLayout({ children }: LayoutProps<'/'>) {
       <div className="flex min-w-0 flex-1 flex-col">
         <Header user={user} />
         <main className="flex-1 overflow-y-auto">{children}</main>
-        <SystemBar />
+        {/* 넓은 화면은 시스템 바, 폰은 하단 탭(Phase 9 블록 6). 둘은 서로의 breakpoint에서 숨는다. */}
+        <div className="hidden md:block">
+          <SystemBar />
+        </div>
+        <MobileTabs />
       </div>
     </div>
   )

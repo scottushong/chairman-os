@@ -215,8 +215,8 @@ export const SYSTEM_LINKS: readonly NavItem[] = [
     key: 'sys_meet', label: '화상회의', href: '/meet', icon: 'video', ready: true,
   },
   {
-    key: 'sys_chat', label: '커뮤니케이션', href: '/chat', icon: 'message', ready: false,
-    waitingFor: '사내 메신저가 정해지면 이 칸이 그리로 넘어갑니다.',
+    // Phase 9 블록 6 — 사내 메신저 + AI에게 묻기(0041).
+    key: 'sys_chat', label: '커뮤니케이션', href: '/chat', icon: 'message', ready: true,
   },
 ] as const
 

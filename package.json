@@ -25,7 +25,8 @@
     "check:activity": "tsx scripts/check-activity.ts",
     "check:dependency": "tsx scripts/check-dependency.ts",
     "check:attention": "tsx scripts/check-attention.ts",
-    "city:assets": "node scripts/city-assets.mjs"
+    "city:assets": "node scripts/city-assets.mjs",
+    "check:ask": "tsx --conditions=react-server scripts/check-ask.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",
