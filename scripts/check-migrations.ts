@@ -360,6 +360,7 @@ async function rls(db: Db) {
   await groupware(db, as)
   await googleToken(db, as)
   await eventVideo(db, as)
+  await chat(db, as)
 
   // ── 0018 initiative-logos 버킷 ─────────────────────────────────────
   // 버킷이 비공개인가. as()는 첫 칸을 Number()로 바꾸는데 false가 0으로 둔갑하면
@@ -847,6 +848,139 @@ async function cityLayout(db: Db, as: As) {
 
   // 다음 검사가 빈 표를 전제할 수 있게 치운다.
   await db.exec(`delete from city_layout`)
+}
+
+/**
+ * 0041 메신저 · AI 대화 — 원문 검증 «직원 세션으로 팀 채널 메시지 → 다른 팀 안 보임».
+ *
+ * 한 회사(biz_dy)에 팀 둘(A · B). A: 팀장 leadA, 팀원 memA(→ leadA → execDy). B: 팀원 memB.
+ * execDy는 A의 위(subtree)라 A 방이 보이고, B와는 줄이 없어 B 방은 안 보인다.
+ */
+async function chat(db: Db, as: As) {
+  const C = {
+    memA: '00000000-0000-0000-0000-0000000c0a01',
+    memB: '00000000-0000-0000-0000-0000000c0b01',
+    leadA: '00000000-0000-0000-0000-0000000c0a00',
+    execDy: '00000000-0000-0000-0000-0000000c0e00',
+  }
+  await db.exec(`
+    insert into auth.users values ('${C.memA}', 'ma@x'), ('${C.memB}', 'mb@x'), ('${C.leadA}', 'la@x'), ('${C.execDy}', 'ex@x');
+    insert into teams (team_id, business_id, name, name_en, lead_user_id) values
+      ('team_chat_a', 'biz_dy', '채팅A', 'ChatA', '${C.leadA}'),
+      ('team_chat_b', 'biz_dy', '채팅B', 'ChatB', null);
+    insert into user_profiles (user_id, role, display_name, max_security_class, team_id, reports_to) values
+      ('${C.execDy}', 'Executive', 'exec', 'Restricted', null, null),
+      ('${C.leadA}', 'TeamLead', 'leadA', 'Normal', 'team_chat_a', '${C.execDy}'),
+      ('${C.memA}', 'Member', 'memA', 'Normal', 'team_chat_a', '${C.leadA}'),
+      ('${C.memB}', 'Member', 'memB', 'Normal', 'team_chat_b', null);
+    insert into user_business_access values ('${C.execDy}', 'biz_dy'), ('${C.leadA}', 'biz_dy'), ('${C.memA}', 'biz_dy'), ('${C.memB}', 'biz_dy');
+  `)
+  // 채널을 연다(커밋해야 뒤의 as()가 본다) — 각자 자기 세션으로.
+  const commitAs = async (uid: string, sql: string) => {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
+    try {
+      const r = await db.query<{ v: string }>(sql)
+      await db.exec('commit')
+      return r.rows[0]?.v ?? null
+    } catch (e) {
+      await db.exec('rollback')
+      throw e
+    }
+  }
+  await commitAs(C.memA, `select ensure_chat_channels()::text as v`)
+  await commitAs(C.memB, `select ensure_chat_channels()::text as v`)
+  const idOf = async (team: string) =>
+    (await db.query<{ id: string }>(`select channel_id::text as id from chat_channels where team_id = '${team}'`)).rows[0]?.id
+  const chA = await idOf('team_chat_a')
+  const chB = await idOf('team_chat_b')
+  assert.ok(chA && chB, '0041: 팀 채널이 열리지 않았다')
+
+  const teamRooms = `select count(*)::int from chat_channels where kind = 'team' and team_id in ('team_chat_a', 'team_chat_b')`
+  assert.equal(await as(C.memA, teamRooms), 1, '0041: 팀원 A에게 다른 팀(B) 방이 보인다')
+  assert.equal(await as(C.memB, teamRooms), 1, '0041: 팀원 B에게 다른 팀(A) 방이 보인다')
+  assert.equal(await as(C.leadA, teamRooms), 1, '0041: 팀장 A가 자기 팀 방만 보지 않는다')
+  assert.equal(await as(C.execDy, teamRooms), 1, '0041: 상위(A의 위)가 A 방 하나만 보지 않는다 — B는 그의 subtree가 아니다')
+
+  const send = (ch: string, body: string) => `insert into chat_messages (channel_id, body) values ('${ch}', '${body}')`
+  assert.equal(await as(C.memA, send(chA, '안녕')), 1, '0041: 팀원이 자기 팀 방에 못 쓴다')
+  assert.equal(await as(C.memA, send(chB, '침입')), 'denied', '0041: 팀원이 다른 팀 방에 쓴다')
+  await commitAs(C.memA, `${send(chA, '팀 A 기밀')} returning 'ok' as v`)
+  const inA = `select count(*)::int from chat_messages where channel_id = '${chA}'`
+  assert.equal(await as(C.memB, inA), 0, '0041: 다른 팀 사람이 A 방 메시지를 읽는다')
+  assert.equal(await as(C.execDy, inA), 1, '0041: 상위가 A 방 메시지를 못 읽는다')
+  assert.equal(
+    await as(C.memA, `update chat_messages set body = '고침' where channel_id = '${chA}'`),
+    0, '0041: 보낸 메시지를 고친다 — 대화는 기록이다',
+  )
+  // 남의 이름 · 과거 시각을 적어 보내도 DB가 자기 이름 · 지금으로 덮는다.
+  assert.equal(
+    await as(
+      C.memA,
+      `select count(*)::int from chat_messages where body = '사칭' and sender_id = '${C.memA}' and created_at > now() - interval '1 minute'`,
+      `insert into chat_messages (channel_id, body, sender_id, created_at) values ('${chA}', '사칭', '${C.memB}', '2020-01-01')`,
+    ),
+    1, '0041: 남의 이름이나 과거 시각으로 메시지가 저장된다',
+  )
+  await assert.rejects(
+    as(C.memA, `insert into chat_messages (channel_id, link) values ('${chA}', '/\\evil.com')`),
+    /chat_messages_link_check/, '0041: /\\ 로 시작하는 링크(브라우저가 //로 읽는다)가 들어간다',
+  )
+  await assert.rejects(as(C.memA, `insert into chat_messages (channel_id, body) values ('${chA}', '  ')`), /chat_message_empty/, '0041: 빈 메시지가 들어간다')
+  assert.equal(await as(UID.agent, `select count(*)::int from chat_messages where channel_id = '${chA}'`), 0, '0041: 야간 AI 계정이 사내 대화를 읽는다')
+
+  // 1:1 — 두 사람만. 상위도 회장도 못 본다. 다른 회사 사람과는 못 연다.
+  const dm = await commitAs(C.memA, `select open_dm('${C.memB}')::text as v`)
+  const dmSee = `select count(*)::int from chat_channels where channel_id = '${dm}'`
+  assert.equal(await as(C.memB, dmSee), 1, '0041: 1:1 상대가 방을 못 본다')
+  assert.equal(await as(C.execDy, dmSee), 0, '0041: 상위가 남의 1:1을 본다')
+  assert.equal(await as(UID.chairman, dmSee), 0, '0041: 회장이 남의 1:1을 본다')
+  await assert.rejects(as(C.memA, `select open_dm('${UID.ceo}')`), /dm_forbidden/, '0041: 다른 회사(VANA) 사람과 1:1이 열린다')
+  assert.equal(await commitAs(C.memB, `select open_dm('${C.memA}')::text as v`), dm, '0041: 같은 두 사람에게 1:1 방이 둘 생긴다')
+
+  // 못 보는 문서는 걸지 못한다.
+  await db.exec(`insert into documents (document_id, business_id, title, doc_type, security_class, storage_url, uploaded_by)
+    values ('doc_chat_secret', 'biz_dy', '기밀', 'Plan', 'Restricted', 'https://x/s', '${UID.chairman}')`)
+  assert.equal(
+    await as(C.memA, `insert into chat_messages (channel_id, body, document_id) values ('${chA}', '첨부', 'doc_chat_secret')`),
+    'denied', '0041: 못 보는(Restricted) 문서를 채널에 건다',
+  )
+
+  // AI 대화 — 본인만. 회장도 남의 것은 못 본다. 질문 요약은 감사에.
+  const chat = await commitAs(C.memA, `insert into ai_chats (title) values ('재무 질문') returning chat_id::text as v`)
+  await commitAs(C.memA, `insert into ai_chat_messages (chat_id, role, content) values ('${chat}', 'user', '이번 달 구매 요청 합계는 얼마인가요? 부서별로 나눠서 보여 주세요.') returning 'ok' as v`)
+  const mine = `select count(*)::int from ai_chat_messages where chat_id = '${chat}'`
+  assert.equal(await as(C.memA, mine), 1, '0041: 본인이 자기 AI 대화를 못 읽는다')
+  assert.equal(await as(C.memB, mine), 0, '0041: 동료가 남의 AI 대화를 읽는다')
+  assert.equal(await as(UID.chairman, mine), 0, '0041: 회장이 직원의 AI 대화를 읽는다 — 원문 «회장은 자기 것만»')
+  assert.equal(
+    await as(C.memB, `insert into ai_chat_messages (chat_id, role, content) values ('${chat}', 'user', '끼어들기')`),
+    'denied', '0041: 남의 AI 대화에 끼어든다',
+  )
+  const audit = await db.query<{ q: string }>(`select after->>'question' as q from audit_log where entity_table = 'ai_chats' and entity_id = '${chat}'`)
+  assert.equal(audit.rows.length, 1, '0041: 질문 요약이 감사에 남지 않았다')
+  assert.ok(audit.rows[0].q.length <= 80, '0041: 감사에 질문 전문이 남는다 — 앞 80자까지만')
+  const auditSee = `select count(*)::int from audit_log where entity_table = 'ai_chats' and entity_id = '${chat}'`
+  assert.equal(await as(C.leadA, auditSee), 0, '0041: 팀장이 부하 직원의 AI 질문 요약을 읽는다')
+  assert.equal(await as(C.execDy, auditSee), 0, '0041: 임원이 subtree 직원의 AI 질문 요약을 읽는다')
+  assert.equal(await as(C.memA, auditSee), 1, '0041: 본인이 자기 질문 요약을 못 읽는다')
+  assert.equal(await as(UID.chairman, auditSee), 1, '0041: 회장이 질문 요약을 못 읽는다(원문: audit_log에 질문 요약)')
+  await assert.rejects(
+    as(C.memA, `insert into ai_chat_messages (chat_id, role, content, sources) values ('${chat}', 'assistant', 'x', '[{"label":"x","href":"javascript:alert(1)"}]')`),
+    /ai_source_href/, '0041: 앱 밖 근거 링크가 들어간다',
+  )
+
+  await db.exec(`
+    delete from ai_chats where chat_id = '${chat}';
+    delete from chat_channels where team_id in ('team_chat_a', 'team_chat_b') or channel_id = '${dm}';
+    delete from chat_channels where kind = 'company';
+    delete from documents where document_id = 'doc_chat_secret';
+    delete from user_business_access where user_id in ('${C.memA}', '${C.memB}', '${C.leadA}', '${C.execDy}');
+    update user_profiles set team_id = null, reports_to = null where user_id in ('${C.memA}', '${C.memB}', '${C.leadA}', '${C.execDy}');
+    delete from teams where team_id in ('team_chat_a', 'team_chat_b');
+  `)
+  // 사람은 지우지 않는다 — audit_log가 그들을 가리키고(질문 요약), 감사는 지우는 길이 없다.
+  // 대신 권한을 끊어 뒤의 검사가 세는 활성 사용자에 섞이지 않게 한다.
+  await db.exec(`update user_profiles set revoked_at = now(), status = 'left' where user_id in ('${C.memA}', '${C.memB}', '${C.leadA}', '${C.execDy}')`)
 }
 
 /**

@@ -57,6 +57,13 @@ import type {
   ApprovalLead,
   ApprovalTemplate,
   ApprovalTemplateKey,
+  AiChat,
+  AiChatMessage,
+  AiSource,
+  ChatChannel,
+  ChatMessage,
+  ChatMessageInput,
+  ChatRead,
   DocFolder,
   Notice,
   NoticeInput,
@@ -187,6 +194,23 @@ export interface ChairmanRepository {
   /** 블록 3 — 문서 폴더(회사 > 팀 > 폴더). */
   listDocFolders(): Promise<DocFolder[]>
   saveDocFolder(input: Omit<DocFolder, 'folder_id'>, actor: AuditActor): Promise<number>
+
+  /**
+   * Phase 9 블록 6 — 메신저(0041). 보이는 방 · 메시지는 RLS(can_read_channel)가 정한다.
+   * viewerId는 1:1 상대 · 내 읽음 줄을 고르는 데만 쓴다.
+   */
+  listChatChannels(viewerId: string): Promise<ChatChannel[]>
+  listChatMessages(channelId: string): Promise<ChatMessage[]>
+  sendChatMessage(input: ChatMessageInput, actor: AuditActor): Promise<void>
+  markChannelRead(channelId: string, actor: AuditActor): Promise<void>
+  listChannelReads(channelId: string): Promise<ChatRead[]>
+  openDm(otherId: string): Promise<string>
+
+  /** AI 대화 — 본인만(0041 ai_chats). 질문 요약은 트리거가 감사에 남긴다. */
+  listAiChats(): Promise<AiChat[]>
+  listAiChatMessages(chatId: string): Promise<AiChatMessage[]>
+  createAiChat(title: string, actor: AuditActor): Promise<string>
+  appendAiMessage(chatId: string, role: 'user' | 'assistant', content: string, sources: AiSource[], actor: AuditActor): Promise<void>
 
   listProjects(): Promise<Project[]>
   listTasks(): Promise<Task[]>

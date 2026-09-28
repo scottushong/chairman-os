@@ -76,6 +76,13 @@ import type {
   CityLayoutInput,
   ApprovalLead,
   ApprovalStep,
+  AiChat,
+  AiChatMessage,
+  AiSource,
+  ChatChannel,
+  ChatMessage,
+  ChatMessageInput,
+  ChatRead,
   ApprovalTemplate,
   ApprovalTemplateKey,
   DocFolder,
@@ -1297,6 +1304,136 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       const { data, error } = await sb.rpc('event_video_link', { p_event_id: eventId, p_rotate: rotate })
       if (error) throw new Error(`Supabase event_video_link ${error.code ?? '?'}: ${error.message}`)
       return String(data)
+    },
+
+    /* ---------------------------------------------------- Phase 9 메신저 · AI 대화(0041) */
+
+    /**
+     * 채널 목록. ensure_chat_channels()로 내 회사 · 팀 방을 먼저 열고(여러 번 불러도 같다),
+     * 보이는 방은 RLS(can_read_channel)가 정한다. 이름은 회사 · 팀 · 상대 이름으로 붙인다.
+     */
+    async listChatChannels(viewerId: string): Promise<ChatChannel[]> {
+      const ensured = await sb.rpc('ensure_chat_channels')
+      if (ensured.error) throw new Error(`Supabase ensure_chat_channels ${ensured.error.code ?? '?'}: ${ensured.error.message}`)
+      const [ch, teams, reads, recent, names, bizNames] = await Promise.all([
+        sb.from('chat_channels').select('channel_id,kind,business_id,team_id,dm_a,dm_b'),
+        sb.from('teams').select('team_id,name'),
+        sb.from('chat_reads').select('channel_id,last_read_at').eq('user_id', viewerId),
+        sb.from('chat_messages').select('channel_id,created_at').order('created_at', { ascending: false }).limit(500),
+        ownerNames(),
+        businessNames(),
+      ])
+      if (ch.error) throw new Error(`Supabase chat_channels ${ch.error.code ?? '?'}: ${ch.error.message}`)
+      const teamName = new Map((teams.data ?? []).map((t) => [t.team_id as string, t.name as string]))
+      const myRead = new Map((reads.data ?? []).map((r) => [r.channel_id as string, r.last_read_at as string]))
+      const last = new Map<string, string>()
+      for (const m of recent.data ?? []) if (!last.has(m.channel_id)) last.set(m.channel_id, m.created_at)
+      return (ch.data ?? []).map((c) => {
+        const other = c.kind === 'dm' ? (c.dm_a === viewerId ? c.dm_b : c.dm_a) : null
+        return {
+          channel_id: c.channel_id,
+          kind: c.kind,
+          business_id: c.business_id,
+          team_id: c.team_id,
+          other_user_id: other,
+          title:
+            c.kind === 'company'
+              ? `${bizNames.get(c.business_id) ?? c.business_id} 전체`
+              : c.kind === 'team'
+                ? `${bizNames.get(c.business_id) ?? ''} · ${teamName.get(c.team_id) ?? c.team_id}`
+                : (names.get(other ?? '') ?? '미지정'),
+          my_last_read_at: myRead.get(c.channel_id) ?? null,
+          last_message_at: last.get(c.channel_id) ?? null,
+        }
+      })
+    },
+
+    /** 최근 200개. 첨부 문서의 제목은 **이 사람이 볼 수 있을 때만** 붙는다(documents RLS). */
+    async listChatMessages(channelId: string): Promise<ChatMessage[]> {
+      const [{ data, error }, names] = await Promise.all([
+        sb
+          .from('chat_messages')
+          .select('message_id,channel_id,sender_id,body,link,document_id,created_at')
+          .eq('channel_id', channelId)
+          .order('created_at', { ascending: false })
+          .limit(200),
+        ownerNames(),
+      ])
+      if (error) throw new Error(`Supabase chat_messages ${error.code ?? '?'}: ${error.message}`)
+      const rows = (data ?? []).reverse()
+      const docIds = [...new Set(rows.map((r) => r.document_id).filter((x): x is string => !!x))]
+      const docs = docIds.length
+        ? await sb.from('documents').select('document_id,title').in('document_id', docIds)
+        : { data: [] as { document_id: string; title: string }[] }
+      const title = new Map((docs.data ?? []).map((d) => [d.document_id, d.title]))
+      return rows.map((r) => ({
+        ...(r as Omit<ChatMessage, 'sender_name' | 'document_title'>),
+        message_id: Number(r.message_id),
+        sender_name: names.get(r.sender_id) ?? '미지정',
+        document_title: r.document_id ? (title.get(r.document_id) ?? null) : null,
+      }))
+    },
+
+    async sendChatMessage(input: ChatMessageInput, actor: AuditActor): Promise<void> {
+      void actor // 보낸 사람은 DB가 auth.uid()로 적고 정책이 확인한다.
+      const { error } = await sb.from('chat_messages').insert({
+        channel_id: input.channel_id,
+        body: input.body,
+        link: input.link,
+        document_id: input.document_id,
+      })
+      if (error) throw new Error(`Supabase chat_messages ${error.code ?? '?'}: ${error.message}`)
+    },
+
+    async markChannelRead(channelId: string, actor: AuditActor): Promise<void> {
+      const { error } = await sb
+        .from('chat_reads')
+        .upsert(
+          { channel_id: channelId, user_id: actor.user_id, last_read_at: new Date().toISOString() },
+          { onConflict: 'channel_id,user_id' },
+        )
+      if (error) throw new Error(`Supabase chat_reads ${error.code ?? '?'}: ${error.message}`)
+    },
+
+    async listChannelReads(channelId: string): Promise<ChatRead[]> {
+      const { data, error } = await sb.from('chat_reads').select('user_id,last_read_at').eq('channel_id', channelId)
+      if (error) throw new Error(`Supabase chat_reads ${error.code ?? '?'}: ${error.message}`)
+      return (data ?? []) as ChatRead[]
+    },
+
+    async openDm(otherId: string): Promise<string> {
+      const { data, error } = await sb.rpc('open_dm', { p_other: otherId })
+      if (error) throw new Error(`Supabase open_dm ${error.code ?? '?'}: ${error.message}`)
+      return String(data)
+    },
+
+    async listAiChats(): Promise<AiChat[]> {
+      const { data, error } = await sb.from('ai_chats').select('chat_id,title,created_at').order('created_at', { ascending: false }).limit(50)
+      if (error) throw new Error(`Supabase ai_chats ${error.code ?? '?'}: ${error.message}`)
+      return (data ?? []) as AiChat[]
+    },
+
+    async listAiChatMessages(chatId: string): Promise<AiChatMessage[]> {
+      const { data, error } = await sb
+        .from('ai_chat_messages')
+        .select('id,chat_id,role,content,sources,created_at')
+        .eq('chat_id', chatId)
+        .order('id')
+      if (error) throw new Error(`Supabase ai_chat_messages ${error.code ?? '?'}: ${error.message}`)
+      return (data ?? []).map((r) => ({ ...(r as AiChatMessage), id: Number(r.id) }))
+    },
+
+    async createAiChat(title: string, actor: AuditActor): Promise<string> {
+      void actor
+      const { data, error } = await sb.from('ai_chats').insert({ title }).select('chat_id').single()
+      if (error) throw new Error(`Supabase ai_chats ${error.code ?? '?'}: ${error.message}`)
+      return String((data as { chat_id: string }).chat_id)
+    },
+
+    async appendAiMessage(chatId: string, role: 'user' | 'assistant', content: string, sources: AiSource[], actor: AuditActor): Promise<void> {
+      void actor
+      const { error } = await sb.from('ai_chat_messages').insert({ chat_id: chatId, role, content, sources })
+      if (error) throw new Error(`Supabase ai_chat_messages ${error.code ?? '?'}: ${error.message}`)
     },
 
     /** 블록 3. 감사 기록·결산·라인 closed가 0016 close_period() 한 트랜잭션이다. */

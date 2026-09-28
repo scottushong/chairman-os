@@ -37,6 +37,7 @@ import {
   dummyInterventions,
 } from './dummy-succession'
 import * as books from './dummy-books'
+import * as chat from './dummy-chat'
 import * as city from './dummy-city'
 import * as groupware from './dummy-groupware'
 import { dummyLedger } from './dummy-books'
@@ -481,6 +482,27 @@ export const dummyRepository: ChairmanRepository = {
   myApprovalLead: groupware.myApprovalLead,
   listDocFolders: groupware.listDocFolders,
   saveDocFolder: groupware.saveDocFolder,
+
+  // 0041. 회사 이름 · 문서 제목은 이 어댑터의 다른 목록에서 빌려 온다(같은 판정을 두 번 쓰지 않는다).
+  async listChatChannels() {
+    const names = new Map((await this.listBusinesses()).map((b) => [b.business_id, b.name]))
+    return chat.listChatChannels(names)
+  },
+  async listChatMessages(channelId: string) {
+    const docs = new Map((await this.listDocuments()).map((d) => [d.document_id, d.title]))
+    return chat.listChatMessages(channelId, (id) => docs.get(id) ?? null)
+  },
+  async sendChatMessage(input, actor) {
+    const docs = new Set((await this.listDocuments()).map((d) => d.document_id))
+    return chat.sendChatMessage(input, actor, (id) => docs.has(id))
+  },
+  markChannelRead: chat.markChannelRead,
+  listChannelReads: chat.listChannelReads,
+  openDm: chat.openDm,
+  listAiChats: chat.listAiChats,
+  listAiChatMessages: chat.listAiChatMessages,
+  createAiChat: chat.createAiChat,
+  appendAiMessage: chat.appendAiMessage,
 
   async listKeymen() {
     return memoryKeymen.map((k) => ({ ...k }))
