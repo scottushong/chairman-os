@@ -109,8 +109,9 @@ export function CoordinatesPanel({
 
   return (
     <section className="rounded-xl border border-line-soft bg-panel p-4">
-      <div className="flex items-baseline justify-between">
-        <h2 className="text-t13 font-semibold">전략 좌표</h2>
+      {/* 폰에서는 제목이 «전략 / 좌표»로 접혔다. 제목은 한 줄로 두고, 안내 글이 좁으면 제 줄에서 접힌다. */}
+      <div className="flex items-baseline justify-between gap-2">
+        <h2 className="shrink-0 text-t13 font-semibold">전략 좌표</h2>
         <span className="flex items-center gap-2">
           {canEdit ? (
             <span className="text-t10h text-ink-muted">칸을 누르면 고칠 수 있습니다</span>

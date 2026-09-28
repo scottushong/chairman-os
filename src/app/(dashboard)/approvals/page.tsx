@@ -117,7 +117,7 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
   ]
 
   return (
-    <div className="mx-auto max-w-[1600px] px-6 py-5">
+    <div className="mx-auto max-w-[1600px] px-4 py-5 lg:px-6">
       <PageHeader
         icon="stamp"
         title="전자결재"

@@ -283,7 +283,8 @@ export function MonthlyGrid({
           type="button"
           onClick={submit}
           disabled={!canEdit || pending || dirtyMonths.length === 0}
-          className="rounded-md bg-accent px-4 py-2 text-t12h font-semibold text-app transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+          // shrink-0 · nowrap: 폰에서 옆 안내문에 밀려 버튼 글자가 세 줄로 접혔다
+          className="shrink-0 rounded-md bg-accent px-4 py-2 text-t12h font-semibold whitespace-nowrap text-app transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
         >
           {pending ? '저장 중…' : `${dirtyMonths.length}개월 전표로 넣기`}
         </button>

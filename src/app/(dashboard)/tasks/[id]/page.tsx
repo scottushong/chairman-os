@@ -79,7 +79,7 @@ export default async function TaskDetailPage(props: PageProps<'/tasks/[id]'>) {
   const overdue = isOverdue(task.deadline) && task.status !== 'Done'
 
   return (
-    <div className="mx-auto max-w-[1600px] px-6 py-5">
+    <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6">
       <PageHeader
         icon="clipboard"
         title={task.title}

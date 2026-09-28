@@ -39,7 +39,9 @@ export function AreaEditor({
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[720px] border-collapse text-t11h">
+      {/* 폰(640px 이하): 영역 하나를 카드 하나로(m-cards). 여러 조각짜리 칸은 span · div로 묶었다 —
+          카드의 칸은 가로 flex라 안 묶으면 이름과 영문명, 메모와 버튼이 양 끝으로 갈라진다. */}
+      <table className="m-cards w-full border-collapse text-t11h sm:min-w-[720px]">
         <thead>
           <tr className="border-b border-line-soft text-left text-t10h text-ink-dim">
             <th className="py-1.5 pr-3 font-normal">영역</th>
@@ -53,7 +55,8 @@ export function AreaEditor({
           {areas.map((a) =>
             editing === a.area ? (
               <tr key={a.area} className="border-b border-line-soft last:border-0">
-                <td colSpan={5} className="py-2">
+                {/* 수정 칸은 입력이 위아래로 쌓여야 한다 — m-cards의 가로 flex를 끈다 */}
+                <td colSpan={5} className="py-2 max-sm:block!">
                   <AreaForm
                     businessId={businessId}
                     area={a}
@@ -65,37 +68,41 @@ export function AreaEditor({
             ) : (
               <tr key={a.area} className="border-b border-line-soft last:border-0 align-top">
                 <td className="py-2 pr-3">
-                  <span className="font-semibold text-ink">{a.area}</span>
-                  {a.area_en ? (
-                    <span className="ml-1.5 text-t10 text-ink-muted">{a.area_en}</span>
-                  ) : null}
+                  <span>
+                    <span className="font-semibold text-ink">{a.area}</span>
+                    {a.area_en ? (
+                      <span className="ml-1.5 text-t10 text-ink-muted">{a.area_en}</span>
+                    ) : null}
+                  </span>
                 </td>
-                <td className="py-2 pr-3">
+                <td className="py-2 pr-3" data-label="회장 의존도">
                   {a.level === null ? (
                     <span className="text-t10h text-ink-muted">{DEPENDENCY_LEVEL_EMPTY_KO}</span>
                   ) : (
                     <LevelChip level={a.level} />
                   )}
                 </td>
-                <td className="py-2 pr-3">
+                <td className="py-2 pr-3" data-label="이양">
                   {a.transfer_status === null ? (
                     <span className="text-t10h text-ink-muted">{TRANSFER_STATUS_EMPTY_KO}</span>
                   ) : (
                     <TransferChip status={a.transfer_status} />
                   )}
                 </td>
-                <td className="py-2 pr-3 tnum text-ink-dim">{a.target_date ?? '—'}</td>
-                <td className="py-2 text-t10h leading-relaxed text-ink-muted">
-                  {a.note ?? '—'}
-                  {canWrite ? (
-                    <button
-                      type="button"
-                      onClick={() => setEditing(a.area)}
-                      className="ml-2 rounded border border-line px-1.5 py-0.5 text-t10 text-ink-dim hover:border-accent hover:text-ink"
-                    >
-                      고치기
-                    </button>
-                  ) : null}
+                <td className="py-2 pr-3 tnum text-ink-dim" data-label="목표일">{a.target_date ?? '—'}</td>
+                <td className="py-2 text-t10h leading-relaxed text-ink-muted" data-label="메모">
+                  <div>
+                    {a.note ?? '—'}
+                    {canWrite ? (
+                      <button
+                        type="button"
+                        onClick={() => setEditing(a.area)}
+                        className="ml-2 rounded border border-line px-1.5 py-0.5 text-t10 text-ink-dim hover:border-accent hover:text-ink"
+                      >
+                        고치기
+                      </button>
+                    ) : null}
+                  </div>
                 </td>
               </tr>
             ),

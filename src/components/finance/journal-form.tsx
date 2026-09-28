@@ -6,6 +6,7 @@ import { useState } from 'react'
 
 import { postCorrection, postJournalEntry } from '@/app/actions/books'
 import { Icon } from '@/components/ui/icon'
+import { StepHeader, StepNav, useMobileSteps } from '@/components/ui/mobile-steps'
 import { CLOSED_PERIOD_MESSAGE } from '@/lib/ledger/journal'
 import { JOURNAL_TEMPLATES, type JournalTemplate } from '@/lib/ledger/journal-templates'
 import { ACCOUNT_SECTION, ACCOUNT_SECTION_LABEL_KO, type AccountSection } from '@/types'
@@ -93,6 +94,8 @@ export function JournalForm({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
+  // 폰은 ① 템플릿 · 일자 · 적요 ② 라인 · 저장 두 화면으로 넘긴다(mobile-steps.tsx). 640px 이상은 한 화면 그대로.
+  const steps = useMobileSteps(2)
 
   const known = new Set(accounts.map((a) => a.account_code))
   const debit = rows.reduce((s, r) => s + won(r.debit), 0)
@@ -188,24 +191,29 @@ export function JournalForm({
           )}
         </h2>
         <p className="text-t10h text-ink-muted">
-          {lockedThrough ? `${lockedThrough.replace('-', '년 ')}월까지 마감 — 그 이전 날짜는 입력할 수 없습니다` : '마감된 달 없음'}
+          {lockedThrough
+            ? `${lockedThrough.replace('-', '년 ')}월까지 마감 — 그 이전 날짜는 입력할 수 없습니다`
+            : '마감된 달 없음'}
         </p>
       </div>
 
       {correcting ? (
         <p className="mt-2 rounded-md border border-line-soft bg-raised/60 px-2.5 py-1.5 text-t11h text-ink-dim">
-          원 전표는 고치지 않습니다. 저장하면 이 날짜에 ① 원 전표를 뒤집은 <b>역분개</b>와 ② 아래 내용의{' '}
-          <b>정정분개</b>가 들어갑니다. 라인을 모두 비우면 역분개만 넣어 원 전표를 취소합니다.
+          원 전표는 고치지 않습니다. 저장하면 이 날짜에 ① 원 전표를 뒤집은 <b>역분개</b>와 ② 아래 내용의 <b>정정분개</b>
+          가 들어갑니다. 라인을 모두 비우면 역분개만 넣어 원 전표를 취소합니다.
         </p>
       ) : null}
 
-      <div className={`mt-2.5 flex flex-wrap items-end gap-1.5 ${correcting ? 'hidden' : ''}`}>
+      <StepHeader steps={steps} labels={['템플릿 · 일자 · 적요', '라인 · 저장']} className="mt-3" />
+
+      <div className={`mt-2.5 flex flex-wrap items-end gap-1.5 ${correcting ? 'hidden' : steps.only(0)}`}>
         <label className="text-t10h text-ink-muted">
           템플릿 금액
           <input
             className={`${input} mt-0.5 w-32 text-right tnum`}
             value={templateAmount}
             inputMode="numeric"
+            enterKeyHint="done"
             placeholder="0"
             disabled={busy}
             onChange={(e) => setTemplateAmount(withCommas(e.target.value))}
@@ -224,10 +232,16 @@ export function JournalForm({
         ))}
       </div>
 
-      <div className="mt-2.5 grid gap-2 md:grid-cols-[150px_1fr_1fr]">
+      <div className={`mt-2.5 grid gap-2 md:grid-cols-[150px_1fr_1fr] ${steps.only(0)}`}>
         <label className="text-t10h text-ink-muted">
           일자
-          <input type="date" className={`${input} mt-0.5`} value={date} disabled={busy} onChange={(e) => setDate(e.target.value)} />
+          <input
+            type="date"
+            className={`${input} mt-0.5`}
+            value={date}
+            disabled={busy}
+            onChange={(e) => setDate(e.target.value)}
+          />
         </label>
         <label className="text-t10h text-ink-muted">
           적요
@@ -235,6 +249,7 @@ export function JournalForm({
             className={`${input} mt-0.5`}
             value={memo}
             maxLength={200}
+            enterKeyHint="next"
             placeholder="예: 8월 SaaS 구독 매출"
             disabled={busy}
             onChange={(e) => setMemo(e.target.value)}
@@ -245,6 +260,8 @@ export function JournalForm({
           <input
             className={`${input} mt-0.5`}
             value={evidenceUrl}
+            inputMode="url"
+            enterKeyHint="done"
             placeholder="https://… 사내 스토리지"
             disabled={busy}
             onChange={(e) => setEvidenceUrl(e.target.value)}
@@ -252,134 +269,150 @@ export function JournalForm({
         </label>
       </div>
 
-      <table className="mt-2.5 w-full text-t12">
-        <thead>
-          <tr className="text-left text-t10h text-ink-muted">
-            <th className="w-8 py-1 font-normal">#</th>
-            <th className="py-1 font-normal">계정</th>
-            <th className="w-40 py-1 text-right font-normal">차변</th>
-            <th className="w-40 py-1 text-right font-normal">대변</th>
-            <th className="w-10 py-1" />
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i} className="border-t border-line-soft">
-              <td className="py-1 text-t11 text-ink-muted tnum">{i + 1}</td>
-              <td className="py-1 pr-2">
-                <select
-                  aria-label={`${i + 1}번째 줄 계정`}
-                  className={input}
-                  value={r.account_code}
-                  disabled={busy}
-                  onChange={(e) => setRow(i, { account_code: e.target.value })}
-                >
-                  <option value="">계정 선택</option>
-                  {bySection.map((g) => (
-                    <optgroup key={g.section} label={ACCOUNT_SECTION_LABEL_KO[g.section]}>
-                      {g.accounts.map((a) => (
-                        <option key={a.account_code} value={a.account_code}>
-                          {a.account_code} {a.name}
-                        </option>
-                      ))}
-                    </optgroup>
-                  ))}
-                </select>
-              </td>
-              <td className="py-1 pr-2">
-                <input
-                  aria-label={`${i + 1}번째 줄 차변`}
-                  className={`${input} text-right tnum`}
-                  value={r.debit}
-                  inputMode="numeric"
-                  disabled={busy}
-                  onChange={(e) => setRow(i, { debit: withCommas(e.target.value) })}
-                />
-              </td>
-              <td className="py-1 pr-2">
-                <input
-                  aria-label={`${i + 1}번째 줄 대변`}
-                  className={`${input} text-right tnum`}
-                  value={r.credit}
-                  inputMode="numeric"
-                  disabled={busy}
-                  onChange={(e) => setRow(i, { credit: withCommas(e.target.value) })}
-                />
-              </td>
-              <td className="py-1 text-right">
-                {rows.length > 2 ? (
-                  <button
-                    type="button"
-                    aria-label={`${i + 1}번째 줄 지우기`}
-                    disabled={busy}
-                    onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))}
-                    className="rounded px-1.5 text-t12 text-ink-muted hover:text-critical disabled:opacity-40"
-                  >
-                    ×
-                  </button>
-                ) : null}
-              </td>
+      {/* 폰(640px 이하)에서는 줄마다 카드 한 장(m-cards) — 5열 표에서는 계정 칸이 36px로 눌려 고를 수가 없었다. */}
+      <div className={steps.only(1)}>
+        <table className="m-cards mt-2.5 w-full text-t12">
+          <thead>
+            <tr className="text-left text-t10h text-ink-muted">
+              <th className="w-8 py-1 font-normal">#</th>
+              <th className="py-1 font-normal">계정</th>
+              <th className="w-40 py-1 text-right font-normal">차변</th>
+              <th className="w-40 py-1 text-right font-normal">대변</th>
+              <th className="w-10 py-1" />
             </tr>
-          ))}
-          <tr className="border-t border-line">
-            <td />
-            <td className="py-1.5">
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => setRows((rs) => [...rs, EMPTY_ROW])}
-                className="flex items-center gap-1 text-t11 text-ink-dim hover:text-ink disabled:opacity-40"
-              >
-                <Icon name="plus" className="size-3" />줄 추가
-              </button>
-            </td>
-            <td className="py-1.5 pr-2 text-right font-semibold tnum">{debit.toLocaleString('ko-KR')}</td>
-            <td className="py-1.5 pr-2 text-right font-semibold tnum">{credit.toLocaleString('ko-KR')}</td>
-            <td />
-          </tr>
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} className="border-t border-line-soft">
+                <td data-label="줄" className="py-1 text-t11 text-ink-muted tnum">
+                  {i + 1}
+                </td>
+                <td data-label="계정" className="py-1 pr-2">
+                  <select
+                    aria-label={`${i + 1}번째 줄 계정`}
+                    className={`${input} min-w-0`}
+                    value={r.account_code}
+                    disabled={busy}
+                    onChange={(e) => setRow(i, { account_code: e.target.value })}
+                  >
+                    <option value="">계정 선택</option>
+                    {bySection.map((g) => (
+                      <optgroup key={g.section} label={ACCOUNT_SECTION_LABEL_KO[g.section]}>
+                        {g.accounts.map((a) => (
+                          <option key={a.account_code} value={a.account_code}>
+                            {a.account_code} {a.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </td>
+                <td data-label="차변" className="py-1 pr-2">
+                  <input
+                    aria-label={`${i + 1}번째 줄 차변`}
+                    className={`${input} min-w-0 text-right tnum`}
+                    value={r.debit}
+                    inputMode="numeric"
+                    enterKeyHint="next"
+                    disabled={busy}
+                    onChange={(e) => setRow(i, { debit: withCommas(e.target.value) })}
+                  />
+                </td>
+                <td data-label="대변" className="py-1 pr-2">
+                  <input
+                    aria-label={`${i + 1}번째 줄 대변`}
+                    className={`${input} min-w-0 text-right tnum`}
+                    value={r.credit}
+                    inputMode="numeric"
+                    enterKeyHint="next"
+                    disabled={busy}
+                    onChange={(e) => setRow(i, { credit: withCommas(e.target.value) })}
+                  />
+                </td>
+                <td className="py-1 text-right">
+                  {rows.length > 2 ? (
+                    <button
+                      type="button"
+                      aria-label={`${i + 1}번째 줄 지우기`}
+                      disabled={busy}
+                      onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))}
+                      className="rounded px-1.5 text-t12 text-ink-muted hover:text-critical disabled:opacity-40"
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </td>
+              </tr>
+            ))}
+            <tr className="border-t border-line">
+              <td />
+              <td className="py-1.5">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setRows((rs) => [...rs, EMPTY_ROW])}
+                  className="flex items-center gap-1 text-t11 text-ink-dim hover:text-ink disabled:opacity-40"
+                >
+                  <Icon name="plus" className="size-3" />줄 추가
+                </button>
+              </td>
+              <td data-label="차변 합계" className="py-1.5 pr-2 text-right font-semibold tnum">
+                {debit.toLocaleString('ko-KR')}
+              </td>
+              <td data-label="대변 합계" className="py-1.5 pr-2 text-right font-semibold tnum">
+                {credit.toLocaleString('ko-KR')}
+              </td>
+              <td />
+            </tr>
+          </tbody>
+        </table>
 
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={submit}
-          disabled={busy || locked || !(balanced || cancelOnly)}
-          className="rounded bg-accent px-3 py-1.5 text-t12 font-semibold text-ink disabled:opacity-40"
-        >
-          {busy ? '저장 중…' : correcting ? (cancelOnly ? '역분개만 저장 (취소)' : '정정 전표 저장') : '전표 저장'}
-        </button>
-        {correcting ? (
-          <Link href={correcting.doneHref} className="rounded px-2 py-1.5 text-t11h text-ink-muted hover:text-ink">
-            정정 그만두기
-          </Link>
-        ) : null}
-        {locked ? (
-          <span role="alert" className="text-t11h text-critical">
-            {CLOSED_PERIOD_MESSAGE}
-          </span>
-        ) : cancelOnly ? (
-          <span className="text-t11h text-ink-dim">라인 없음 — 원 전표를 역분개로 취소합니다.</span>
-        ) : debit === 0 && credit === 0 ? (
-          <span className="text-t11h text-ink-muted">금액을 입력하세요.</span>
-        ) : balanced ? (
-          <span className="text-t11h text-ok">차대 일치</span>
-        ) : (
-          <span className="text-t11h text-critical tnum">
-            차대 불일치 — 차이 {Math.abs(debit - credit).toLocaleString('ko-KR')}원
-          </span>
-        )}
-        {saved ? (
-          <span role="status" className="text-t11h text-ink-dim">
-            저장했습니다: <span className="tnum font-semibold text-ink">{saved}</span> · 잠정
-          </span>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={submit}
+            disabled={busy || locked || !(balanced || cancelOnly)}
+            className="rounded bg-accent px-3 py-1.5 text-t12 font-semibold text-ink disabled:opacity-40"
+          >
+            {busy ? '저장 중…' : correcting ? (cancelOnly ? '역분개만 저장 (취소)' : '정정 전표 저장') : '전표 저장'}
+          </button>
+          {correcting ? (
+            <Link href={correcting.doneHref} className="rounded px-2 py-1.5 text-t11h text-ink-muted hover:text-ink">
+              정정 그만두기
+            </Link>
+          ) : null}
+          {locked ? (
+            <span role="alert" className="text-t11h text-critical">
+              {CLOSED_PERIOD_MESSAGE}
+            </span>
+          ) : cancelOnly ? (
+            <span className="text-t11h text-ink-dim">라인 없음 — 원 전표를 역분개로 취소합니다.</span>
+          ) : debit === 0 && credit === 0 ? (
+            <span className="text-t11h text-ink-muted">금액을 입력하세요.</span>
+          ) : balanced ? (
+            <span className="text-t11h text-ok">차대 일치</span>
+          ) : (
+            <span className="text-t11h text-critical tnum">
+              차대 불일치 — 차이 {Math.abs(debit - credit).toLocaleString('ko-KR')}원
+            </span>
+          )}
+          {saved ? (
+            <span role="status" className="text-t11h text-ink-dim">
+              저장했습니다: <span className="tnum font-semibold text-ink">{saved}</span> · 잠정
+            </span>
+          ) : null}
+        </div>
+        {error ? (
+          <p
+            role="alert"
+            className="mt-2 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-t11h text-critical"
+          >
+            {error}
+          </p>
         ) : null}
       </div>
-      {error ? (
-        <p role="alert" className="mt-2 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-t11h text-critical">
-          {error}
-        </p>
-      ) : null}
+
+      <StepNav steps={steps} className="mt-3" />
     </section>
   )
 }

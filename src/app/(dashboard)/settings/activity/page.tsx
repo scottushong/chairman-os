@@ -86,7 +86,7 @@ export default async function ActivityPage() {
   )
 
   return (
-    <div className="mx-auto max-w-[980px] px-6 py-5">
+    <div className="mx-auto max-w-[980px] px-4 py-5 sm:px-6">
       <PageHeader
         icon="eye"
         title="접속 현황"
@@ -325,7 +325,7 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <section className="mt-3.5 rounded-xl border border-line-soft bg-panel p-3.5">
+    <section className="mt-3 rounded-xl border border-line-soft bg-panel p-3.5 sm:mt-3.5">
       <h2 className="mb-2 flex flex-wrap items-baseline gap-1.5 text-t13 font-semibold">
         <Icon name={icon} className="size-4 text-ink-dim" />
         {title}

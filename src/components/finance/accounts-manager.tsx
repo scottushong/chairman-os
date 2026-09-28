@@ -190,8 +190,9 @@ export function AccountsManager({
           ) : null}
         </section>
       ) : (
-        <section className="overflow-x-auto rounded-xl border border-line-soft bg-panel">
-          <table className="w-full min-w-[760px] text-t12">
+        // 폰(640px 이하): 계정 하나를 카드 하나로(m-cards). 바깥 상자의 테두리 · 배경은 걷는다 — 카드 속 카드가 된다.
+        <section className="overflow-x-auto rounded-xl border border-line-soft bg-panel max-sm:border-0 max-sm:bg-transparent">
+          <table className="m-cards w-full text-t12 sm:min-w-[760px]">
             <thead>
               <tr className="border-b border-line-soft text-left text-t10h text-ink-muted">
                 <th className="px-3 py-2 font-normal">코드</th>
@@ -207,15 +208,17 @@ export function AccountsManager({
               if (rows.length === 0) return null
               return (
                 <tbody key={section}>
-                  <tr>
-                    <th colSpan={6} className="bg-raised/50 px-3 py-1 text-left text-t10h font-semibold text-ink-dim">
+                  {/* 구분 제목 줄은 카드가 아니라 카드 묶음의 머리다 — m-cards의 카드 모양(테두리 · 배경 · 여백)을 끈다 */}
+                  <tr className="max-sm:mb-1.5! max-sm:border-0! max-sm:bg-transparent! max-sm:p-0!">
+                    <th colSpan={6} className="bg-raised/50 px-3 py-1 max-sm:block max-sm:rounded-md text-left text-t10h font-semibold text-ink-dim">
                       {ACCOUNT_SECTION_LABEL_KO[section]}
                     </th>
                   </tr>
                   {rows.map((a) =>
                     editing?.code === a.account_code ? (
                       <tr key={a.account_code} className="border-t border-line-soft">
-                        <td colSpan={6} className="px-3 py-2">
+                        {/* 수정 칸은 입력 여럿이 위아래로 쌓여야 한다 — m-cards의 가로 flex를 끈다 */}
+                        <td colSpan={6} className="px-3 py-2 max-sm:block!">
                           <p className="text-t11 text-ink-muted">
                             <span className="tnum font-semibold text-ink">{a.account_code}</span> 수정 — 코드는 바뀌지 않습니다
                           </p>
@@ -225,22 +228,25 @@ export function AccountsManager({
                       </tr>
                     ) : (
                       <tr key={a.account_code} className={`border-t border-line-soft ${a.active ? '' : 'text-ink-muted'}`}>
-                        <td className="px-3 py-1.5 tnum">{a.account_code}</td>
-                        <td className="px-3 py-1.5">
-                          {a.name}
-                          {!a.active ? <span className="ml-1.5 rounded border border-line px-1 text-t9h">비활성</span> : null}
-                          {used.has(a.account_code) ? (
-                            <span className="ml-1.5 text-t9h text-ink-muted" title="전표가 이 계정을 쓰고 있어 지울 수 없습니다">
-                              전표 있음
-                            </span>
-                          ) : null}
+                        <td className="px-3 py-1.5 tnum max-sm:font-semibold">{a.account_code}</td>
+                        <td className="px-3 py-1.5" data-label="계정명">
+                          {/* 카드(m-cards)에서는 칸이 flex라 이름과 꼬리표가 양 끝으로 갈라진다 — 한 덩어리로 묶는다 */}
+                          <span>
+                            {a.name}
+                            {!a.active ? <span className="ml-1.5 rounded border border-line px-1 text-t9h">비활성</span> : null}
+                            {used.has(a.account_code) ? (
+                              <span className="ml-1.5 text-t9h text-ink-muted" title="전표가 이 계정을 쓰고 있어 지울 수 없습니다">
+                                전표 있음
+                              </span>
+                            ) : null}
+                          </span>
                         </td>
-                        <td className="px-3 py-1.5 text-ink-dim">{ACCOUNT_CATEGORY_LABEL_KO[a.category]}</td>
-                        <td className="px-3 py-1.5 text-ink-dim">{a.cash_flow ? CASH_FLOW_CLASS_LABEL_KO[a.cash_flow] : '—'}</td>
-                        <td className="px-3 py-1.5 text-t11 text-ink-muted">{a.source === 'ecount' ? 'ECOUNT' : '자체'}</td>
-                        <td className="px-3 py-1.5 text-right whitespace-nowrap">
+                        <td className="px-3 py-1.5 text-ink-dim" data-label="대분류">{ACCOUNT_CATEGORY_LABEL_KO[a.category]}</td>
+                        <td className="px-3 py-1.5 text-ink-dim" data-label="현금흐름">{a.cash_flow ? CASH_FLOW_CLASS_LABEL_KO[a.cash_flow] : '—'}</td>
+                        <td className="px-3 py-1.5 text-t11 text-ink-muted" data-label="원천">{a.source === 'ecount' ? 'ECOUNT' : '자체'}</td>
+                        <td className="px-3 py-1.5 text-right whitespace-nowrap" data-label={canEdit ? '관리' : undefined}>
                           {canEdit ? (
-                            <>
+                            <span>
                               <button
                                 type="button"
                                 disabled={busy}
@@ -267,7 +273,7 @@ export function AccountsManager({
                               >
                                 {a.active ? '비활성화' : '다시 사용'}
                               </button>
-                            </>
+                            </span>
                           ) : null}
                         </td>
                       </tr>

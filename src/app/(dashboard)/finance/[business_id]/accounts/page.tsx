@@ -33,20 +33,24 @@ export default async function AccountsPage(props: PageProps<'/finance/[business_
   const used = [...new Set(ledger.journal.filter((j) => j.business_id === business_id).map((j) => j.account_code))]
 
   return (
-    <div className="mx-auto max-w-[1600px] px-6 py-5">
+    <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6">
       <PageHeader
         icon="book"
         title={`${business.name} 계정과목`}
         code="CH-052"
         description="코드는 바꾸지 않습니다. 이름·분류만 고치고, 안 쓰는 계정은 비활성화합니다."
       >
-        <BooksNav businessId={business_id} current="accounts" />
-        <Link
-          href="/finance"
-          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
-        >
-          그룹 재무
-        </Link>
+        {/* PageHeader의 오른쪽 칸은 줄을 접지 않는다. 폰에서는 버튼들이 한 줄에 못 들어가 탭이 한 글자씩 눌렸다 —
+            여기서 한 번 감싸 좁을 때만 다음 줄로 넘긴다(넓은 화면은 한 줄 그대로). */}
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <BooksNav businessId={business_id} current="accounts" />
+          <Link
+            href="/finance"
+            className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          >
+            그룹 재무
+          </Link>
+        </div>
       </PageHeader>
       <AccountsManager
         businessId={business_id}

@@ -1,3 +1,7 @@
+'use client'
+
+import { useEffect, useRef } from 'react'
+
 /**
  * 한 지표의 12개월 추이. 막대(연한 면) + 부드러운 곡선(진한 선)을 겹쳐 그린다.
  * 차트 라이브러리를 넣지 않고 sparkline.tsx·line-chart.tsx와 같은 방식으로 SVG만 그린다.
@@ -13,6 +17,15 @@
  * 폭이 변해도 12개월이 균등하게 서는데, 그 안에 둔 <text>나 <circle>은 같이 늘어나
  * 글자가 찌그러지고 점이 타원이 된다. 선 굵기만 vectorEffect로 지킨다.
  */
+
+/** 폰 한 화면에 들어가는 달 수. 그보다 많으면 옆으로 민다. */
+const MOBILE_WINDOW = 6
+
+/**
+ * 플롯 높이. 데스크톱은 height prop(px) 그대로, 1024px 미만은 폭에 비례한다.
+ * y축과 플롯이 같은 값을 써야 눈금이 격자선에 맞는다 — 그래서 한 자리에 둔다.
+ */
+const PLOT_H = 'h-(--chart-h) max-lg:h-[clamp(140px,48cqw,60vh)]'
 
 export interface MetricTrendPoint {
   /** x축 눈금 글자. '26-08' 꼴. */
@@ -115,10 +128,23 @@ export function MetricTrendChart({
   height = 176,
   tickCount = 3,
 }: MetricTrendChartProps) {
-  if (points.length === 0) return null
-
-  const scale = scaleFor(points.map((p) => p.value), tickCount)
+  const scroller = useRef<HTMLDivElement>(null)
   const n = points.length
+
+  // 처음에는 최근 달(맨 오른쪽)에 선다. 폰이 아니면 넘치는 폭이 없어 아무 일도 없다.
+  // 지표 탭을 바꿔도 다시 끝으로 — 새 지표를 볼 때 옛 달부터 보여 줄 이유가 없다.
+  // 배열 자체가 아니라 값으로 본다. 부모가 다시 그릴 때마다 새 배열이 와서, 배열을 보면
+  // 회장이 옛 달로 밀어 둔 자리가 아무 이유 없이 끝으로 튀어 간다.
+  const signature = points.map((p) => `${p.label}:${p.value}`).join('|')
+  useEffect(() => {
+    const el = scroller.current
+    if (el) el.scrollLeft = el.scrollWidth
+  }, [signature])
+
+  if (n === 0) return null
+
+  const span = Math.max(1, n / MOBILE_WINDOW)
+  const scale = scaleFor(points.map((p) => p.value), tickCount)
 
   // 띠(band) 배치. 막대가 칸 가운데 서고 곡선의 점도 같은 자리에 온다 —
   // 선이 막대 사이를 지나가면 둘이 같은 달을 말하는 것으로 안 읽힌다.
@@ -140,116 +166,144 @@ export function MetricTrendChart({
     .filter(({ i }) => i % 3 === 0 || i === lastIndex)
 
   return (
-    <div>
-      <div className="flex gap-2" style={{ height }}>
+    /*
+     * 1024px 미만은 두 가지가 바뀐다(데스크톱은 예전 그대로다).
+     *   높이 — 고정 px가 아니라 폭에 비례한다(48cqw). 폰에서 176px 고정이면 막대가 납작해지고,
+     *          태블릿에서는 반대로 가로로 길쭉한 띠가 된다. 가로 폰은 60vh로 묶어 화면을 다 먹지 않게 한다.
+     *   폭 — 여섯 달이 한 화면이다. 열두 칸을 360px에 다 넣으면 막대가 실처럼 가늘어지고 눈금이 붙는다.
+     *        플롯을 (n÷6)배로 넓혀 옆으로 밀게 하고, 처음에는 맨 끝(최근 달)에 서게 한다.
+     * y축은 스크롤 밖에 둔다 — 밀어도 눈금이 따라가지 않아야 막대 높이를 읽을 수 있다.
+     */
+    <div
+      className="flex gap-2 max-lg:[container-type:inline-size]"
+      style={{ '--chart-h': `${height}px`, '--chart-span': `${span * 100}%` } as React.CSSProperties}
+    >
+      <div className="w-11 shrink-0">
         {/* y축. justify-between으로 눈금 간격을 플롯 높이에 그대로 맞춘다. */}
-        <div className="flex w-11 shrink-0 flex-col justify-between py-px text-right text-t9 text-ink-muted tnum">
+        <div className={`flex flex-col justify-between py-px text-right text-t9 text-ink-muted tnum ${PLOT_H}`}>
           {[...scale.ticks].reverse().map((t) => (
             <span key={t}>{formatY(t)}</span>
           ))}
         </div>
-
-        {/* 플롯. relative인 이유는 마지막 점과 말풍선을 HTML로 겹쳐 놓기 때문이다. */}
-        <div className="relative flex-1">
-          <svg
-            viewBox="0 0 100 100"
-            preserveAspectRatio="none"
-            className="h-full w-full"
-            role="img"
-            aria-label={ariaLabel}
-          >
-            {scale.ticks.map((t) => (
-              <line
-                key={t}
-                x1={0}
-                x2={100}
-                y1={y(t)}
-                y2={y(t)}
-                stroke="currentColor"
-                // 0선만 한 단계 진하다. 손익이 음수로 내려가는 달에 그 선이 기준이 된다.
-                className={t === 0 ? 'text-line' : 'text-line-soft'}
-                strokeWidth={1}
-                vectorEffect="non-scaling-stroke"
-              />
-            ))}
-
-            {points.map((p, i) => {
-              const top = Math.min(y(p.value), zeroY)
-              const h = Math.abs(y(p.value) - zeroY)
-              return (
-                <rect
-                  key={p.label}
-                  x={cx(i) - barWidth / 2}
-                  y={top}
-                  width={barWidth}
-                  // 값이 0이면 높이도 0이라 아무것도 안 보인다. 최소 굵기를 줘서 '0인 달'을 남긴다.
-                  height={Math.max(h, 0.4)}
-                  className="text-accent"
-                  fill="currentColor"
-                  fillOpacity={0.2}
-                  stroke={p.provisional ? 'currentColor' : 'none'}
-                  strokeOpacity={p.provisional ? 0.55 : 0}
-                  strokeWidth={1}
-                  strokeDasharray={p.provisional ? '3 2' : undefined}
-                  vectorEffect="non-scaling-stroke"
-                >
-                  <title>{p.title}</title>
-                </rect>
-              )
-            })}
-
-            <path
-              d={curve}
-              fill="none"
-              stroke="currentColor"
-              className="text-accent"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              vectorEffect="non-scaling-stroke"
-            />
-          </svg>
-
-          {/*
-           * 마지막 점과 말풍선. SVG 밖 HTML이라 플롯이 늘어나도 동그라미가 타원이 되지 않는다.
-           * 좌표는 SVG와 같은 0~100 비율이라 퍼센트로 그대로 얹힌다.
-           * 점 둘레의 링은 면 색이다 — 곡선이 점 아래를 지날 때 둘이 붙어 보이지 않게 띄운다.
-           */}
-          <span
-            className="pointer-events-none absolute z-10 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent ring-2 ring-panel"
-            style={{ left: `${cx(lastIndex)}%`, top: `${lastY}%` }}
-          />
-          {/*
-           * data-theme="dark"를 이 요소에만 건다 — (dashboard)/page.tsx의 브리핑 카드와 같은 수법이다.
-           * --color-app은 테마를 따라 뒤집히는 토큰이라(라이트 #f6ede0 / 다크 #0c1224)
-           * 그냥 bg-app을 쓰면 라이트에서 크림색 말풍선에 흰 글자가 되어 안 읽힌다.
-           * 이 속성이 그 안쪽에서만 토큰을 다크 값으로 재정의하므로, 말풍선은 양쪽 테마에서 어둡다.
-           */}
-          <span
-            data-theme="dark"
-            className={`pointer-events-none absolute z-10 -translate-x-1/2 rounded-md bg-app px-1.5 py-0.5 text-t10 font-semibold whitespace-nowrap text-ink shadow-sm ring-1 ring-white/15 tnum ${
-              bubbleBelow ? 'translate-y-2' : '-translate-y-[calc(100%+0.5rem)]'
-            }`}
-            style={{ left: `${cx(lastIndex)}%`, top: `${lastY}%` }}
-          >
-            {lastLabel}
-          </span>
-        </div>
       </div>
 
-      {/* x축은 플롯 폭 위에 절대 위치로 올린다. 균등 배치하면 마지막 달이 안쪽으로 밀린다. */}
-      <div className="mt-1 flex gap-2">
-        <div className="w-11 shrink-0" />
-        <div className="relative h-3.5 flex-1">
-          {xTicks.map(({ label, i }) => (
-            <span
-              key={label}
-              className="absolute top-0 -translate-x-1/2 text-t9 whitespace-nowrap text-ink-muted tnum"
-              style={{ left: `${cx(i)}%` }}
-            >
-              {label}
-            </span>
-          ))}
+      <div
+        ref={scroller}
+        className="min-w-0 flex-1 max-lg:snap-x max-lg:snap-mandatory max-lg:overflow-x-auto max-lg:[scrollbar-width:none]"
+      >
+        <div className="relative w-full max-lg:w-(--chart-span)">
+          {/* 스와이프가 여섯 달 단위로 멈추게 하는 자리표. 그림에는 아무것도 없다. */}
+          {span > 1
+            ? Array.from({ length: Math.ceil(span) }, (_, i) => (
+                <span
+                  key={i}
+                  aria-hidden
+                  className="pointer-events-none absolute inset-y-0 snap-end"
+                  style={{ left: 0, width: `${Math.min(100, ((i + 1) / span) * 100)}%` }}
+                />
+              ))
+            : null}
+
+          {/* 플롯. relative인 이유는 마지막 점과 말풍선을 HTML로 겹쳐 놓기 때문이다. */}
+          <div className={`relative ${PLOT_H}`}>
+              <svg
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+                className="h-full w-full"
+                role="img"
+                aria-label={ariaLabel}
+              >
+                {scale.ticks.map((t) => (
+                  <line
+                    key={t}
+                    x1={0}
+                    x2={100}
+                    y1={y(t)}
+                    y2={y(t)}
+                    stroke="currentColor"
+                    // 0선만 한 단계 진하다. 손익이 음수로 내려가는 달에 그 선이 기준이 된다.
+                    className={t === 0 ? 'text-line' : 'text-line-soft'}
+                    strokeWidth={1}
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ))}
+
+                {points.map((p, i) => {
+                  const top = Math.min(y(p.value), zeroY)
+                  const h = Math.abs(y(p.value) - zeroY)
+                  return (
+                    <rect
+                      key={p.label}
+                      x={cx(i) - barWidth / 2}
+                      y={top}
+                      width={barWidth}
+                      // 값이 0이면 높이도 0이라 아무것도 안 보인다. 최소 굵기를 줘서 '0인 달'을 남긴다.
+                      height={Math.max(h, 0.4)}
+                      className="text-accent"
+                      fill="currentColor"
+                      fillOpacity={0.2}
+                      stroke={p.provisional ? 'currentColor' : 'none'}
+                      strokeOpacity={p.provisional ? 0.55 : 0}
+                      strokeWidth={1}
+                      strokeDasharray={p.provisional ? '3 2' : undefined}
+                      vectorEffect="non-scaling-stroke"
+                    >
+                      <title>{p.title}</title>
+                    </rect>
+                  )
+                })}
+
+                <path
+                  d={curve}
+                  fill="none"
+                  stroke="currentColor"
+                  className="text-accent"
+                  strokeWidth={2}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+              </svg>
+
+              {/*
+               * 마지막 점과 말풍선. SVG 밖 HTML이라 플롯이 늘어나도 동그라미가 타원이 되지 않는다.
+               * 좌표는 SVG와 같은 0~100 비율이라 퍼센트로 그대로 얹힌다.
+               * 점 둘레의 링은 면 색이다 — 곡선이 점 아래를 지날 때 둘이 붙어 보이지 않게 띄운다.
+               */}
+              <span
+                className="pointer-events-none absolute z-10 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-accent ring-2 ring-panel"
+                style={{ left: `${cx(lastIndex)}%`, top: `${lastY}%` }}
+              />
+              {/*
+               * data-theme="dark"를 이 요소에만 건다 — (dashboard)/page.tsx의 브리핑 카드와 같은 수법이다.
+               * --color-app은 테마를 따라 뒤집히는 토큰이라(라이트 #f6ede0 / 다크 #0c1224)
+               * 그냥 bg-app을 쓰면 라이트에서 크림색 말풍선에 흰 글자가 되어 안 읽힌다.
+               * 이 속성이 그 안쪽에서만 토큰을 다크 값으로 재정의하므로, 말풍선은 양쪽 테마에서 어둡다.
+               */}
+              <span
+                data-theme="dark"
+                className={`pointer-events-none absolute z-10 -translate-x-1/2 rounded-md bg-app px-1.5 py-0.5 text-t10 font-semibold whitespace-nowrap text-ink shadow-sm ring-1 ring-white/15 tnum ${
+                  bubbleBelow ? 'translate-y-2' : '-translate-y-[calc(100%+0.5rem)]'
+                }`}
+                style={{ left: `${cx(lastIndex)}%`, top: `${lastY}%` }}
+              >
+                {lastLabel}
+              </span>
+          </div>
+
+          {/* x축은 플롯 폭 위에 절대 위치로 올린다. 균등 배치하면 마지막 달이 안쪽으로 밀린다.
+              폰은 글자가 14px로 커지므로 줄 높이도 키운다 — 스크롤 상자가 넘친 아래를 잘라 낸다. */}
+          <div className="relative mt-1 h-3.5 max-lg:h-6">
+            {xTicks.map(({ label, i }) => (
+              <span
+                key={label}
+                className="absolute top-0 -translate-x-1/2 text-t9 whitespace-nowrap text-ink-muted tnum"
+                style={{ left: `${cx(i)}%` }}
+              >
+                {label}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
     </div>

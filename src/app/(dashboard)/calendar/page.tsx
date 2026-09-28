@@ -59,7 +59,7 @@ export default async function CalendarPage(props: PageProps<'/calendar'>) {
   const [y, m] = month.split('-')
 
   return (
-    <div className="mx-auto max-w-[1600px] px-6 py-5">
+    <div className="mx-auto max-w-[1600px] px-4 py-5 lg:px-6">
       <PageHeader
         icon="calendar"
         title="캘린더"
@@ -90,7 +90,8 @@ export default async function CalendarPage(props: PageProps<'/calendar'>) {
         {y}년 {Number(m)}월
       </p>
 
-      <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
+      {/* grid-cols-1(= minmax(0,1fr)) — 암묵 auto 칸은 달력의 min-content만큼 늘어나 폰 폭을 넘쳤다. */}
+      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <MonthGridClient
           grid={grid}
           items={items}

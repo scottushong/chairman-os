@@ -24,7 +24,9 @@ export function CostStructurePanel({ data }: { data: CostStructure }) {
         </span>
       </div>
 
-      <table className="mt-2.5 w-full text-t12">
+      {/* m-cards: 폰(640px 이하)에서는 네 칸이 360px에 못 들어가 대분류가 한 글자씩 접혔다.
+          줄 하나를 카드 하나로 세우고 칸 이름을 값 왼쪽에 붙인다(globals.css). */}
+      <table className="m-cards mt-2.5 w-full text-t12">
         <thead>
           <tr className="text-t10h text-ink-muted">
             <th className="w-20 py-1 text-left font-normal">대분류</th>
@@ -36,9 +38,10 @@ export function CostStructurePanel({ data }: { data: CostStructure }) {
         <tbody>
           {data.rows.map((r) => (
             <tr key={r.category} className="border-t border-line-soft">
-              <td className="py-2 text-ink-dim">{ACCOUNT_CATEGORY_LABEL_KO[r.category]}</td>
-              <td className="py-2 pr-3">
-                <div className="flex items-center gap-2">
+              <td className="py-2 text-ink-dim max-sm:font-semibold max-sm:text-ink">{ACCOUNT_CATEGORY_LABEL_KO[r.category]}</td>
+              <td className="py-2 pr-3" data-label="매출 대비 비중">
+                {/* 카드에서는 칸 이름 옆 남은 폭을 막대가 채운다 — flex-1이 없으면 막대 폭이 0이 된다 */}
+                <div className="flex items-center gap-2 max-sm:flex-1">
                   <div className="h-2 flex-1 overflow-hidden rounded-full bg-raised">
                     <div
                       className="h-full rounded-full bg-accent"
@@ -56,11 +59,11 @@ export function CostStructurePanel({ data }: { data: CostStructure }) {
                   </span>
                 </div>
               </td>
-              <td className="py-2 text-right">
+              <td className="py-2 text-right" data-label="비용 전년비">
                 {/* 비용은 오르는 게 나쁘다 — 색이 뒤집힌다 */}
                 <FigureText figure={r.yoyPct} unit="pct" compact signTone={{ upIsGood: false }} />
               </td>
-              <td className="py-2 text-right">
+              <td className="py-2 text-right" data-label="관련 지수 전년비">
                 {r.driver ? (
                   <span className="inline-flex items-center gap-1.5">
                     <span className="text-t10h text-ink-muted">{r.driver.label}</span>
@@ -109,7 +112,8 @@ export function ClosingDiffPanel({ diff }: { diff: ClosingDiff | null }) {
         </p>
       ) : (
         <>
-          <table className="mt-2.5 w-full text-t12">
+          {/* m-cards: 폰에서는 지표 하나가 카드 하나 — 네 칸을 360px에 욱여넣으면 숫자와 꼬리표가 갈라진다 */}
+          <table className="m-cards mt-2.5 w-full text-t12">
             <thead>
               <tr className="text-t10h text-ink-muted">
                 <th className="py-1 text-left font-normal">지표</th>
@@ -123,10 +127,10 @@ export function ClosingDiffPanel({ diff }: { diff: ClosingDiff | null }) {
                 .filter((m) => ['Revenue', 'Cost', 'EBITDA', 'NetIncome', 'Cash'].includes(m.metric))
                 .map((m) => (
                   <tr key={m.metric} className="border-t border-line-soft">
-                    <td className="py-1.5 text-ink-dim">{METRIC_KO[m.metric]}</td>
-                    <td className="py-1.5 text-right"><FigureText figure={m.provisional} unit="eok" digits={2} compact /></td>
-                    <td className="py-1.5 text-right"><FigureText figure={m.confirmed} unit="eok" digits={2} compact /></td>
-                    <td className="py-1.5 text-right font-semibold">
+                    <td className="py-1.5 text-ink-dim max-sm:font-semibold max-sm:text-ink">{METRIC_KO[m.metric]}</td>
+                    <td className="py-1.5 text-right" data-label="마감 전"><FigureText figure={m.provisional} unit="eok" digits={2} compact /></td>
+                    <td className="py-1.5 text-right" data-label="확정"><FigureText figure={m.confirmed} unit="eok" digits={2} compact /></td>
+                    <td className="py-1.5 text-right font-semibold" data-label="차이">
                       {Math.round(m.diff.value) === 0 ? (
                         <span className="text-ink-muted">없음</span>
                       ) : (

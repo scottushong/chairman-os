@@ -42,7 +42,7 @@ export default async function MonthlyPage(props: PageProps<'/finance/[business_i
   const preset = ECOUNT_CODE_BUSINESSES.includes(business_id) ? 'manufacturing' : 'startup'
 
   return (
-    <div className="mx-auto max-w-[1400px] px-6 py-5">
+    <div className="mx-auto max-w-[1400px] px-4 py-5 sm:px-6">
       <PageHeader
         icon="grid"
         title={`${business.name} — 월별 간이 손익`}

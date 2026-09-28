@@ -208,15 +208,18 @@ export default async function DashboardPage() {
        *
        * 시간·날씨는 헤더 칩에서 이 줄의 카드로 옮겼다. 헤더에서는 11px 한 줄이라 훑기 어려웠고,
        * 검색창이 가장 넓은 자리를 써야 하는 바에서 자리만 다투고 있었다.
+       *
+       * 폰(640px 미만)은 세 장이 한 줄씩 세로로 선다. D-day · 날씨는 높이를 내용에 맡긴다 —
+       * 268px은 세 장을 나란히 맞추려던 키라, 혼자 서면 날씨 카드 아래 절반이 빈 칸으로 남는다.
        */}
       <div className="mt-4 grid grid-cols-1 gap-3.5 lg:grid-cols-4">
         <div data-theme="dark" className="h-[268px] overflow-hidden rounded-glass lg:col-span-2">
           <AiNightPanel outputs={data.aiNightOutputs} businesses={data.businesses} />
         </div>
-        <div className="h-[268px]">
+        <div className="h-[268px] max-sm:h-auto">
           <DdayHero projects={chairmanProjects} />
         </div>
-        <div className="h-[268px]">
+        <div className="h-[268px] max-sm:h-auto">
           <ClockWeatherCard city={location.city} weather={weather} />
         </div>
       </div>

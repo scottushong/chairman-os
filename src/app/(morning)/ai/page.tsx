@@ -142,8 +142,9 @@ export default async function AiPage(props: PageProps<'/ai'>) {
     weekday: 'short',
   }).format(new Date())
 
+  // 옆 여백은 폰 · 태블릿 16px(모바일 공통 규칙), 1024px 이상은 원래 24px.
   return (
-    <div className="mx-auto max-w-[1600px] px-6 py-5">
+    <div className="mx-auto max-w-[1600px] px-4 py-5 lg:px-6">
       {/* 상단 3칸. 체크인이 없는 역할에게는 2칸이다 — 빈 칸을 남겨 두면 '여기 뭔가 있다'가
           그대로 보이고, 그건 체크인을 숨긴 이유를 되돌리는 것이다. */}
       <div

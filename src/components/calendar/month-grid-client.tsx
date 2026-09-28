@@ -47,9 +47,14 @@ export function MonthGridClient({
   const dayEvents = (day: IsoDate) =>
     events.filter((e) => occursOn({ on_date: e.starts_on, ends_on: e.ends_on }, day))
 
+  /*
+   * 폰(640px 미만): 칸 하나가 44px 터치 과녁이라 7칸 + 간격 + 여백이 360px 화면을 넘쳤다(371px).
+   * 그래서 폰에서만 여백 p-1 · 간격 1px로 줄여 칸 폭 ≈45px를 만들고, 칸 안에는 제목 대신 종류 표식만 둔다
+   * (45px에 제목은 두 글자도 안 들어간다). 누르면 뜨는 DayModal과 아래 «앞으로 2주»가 제목을 보여 준다.
+   */
   return (
-    <div className="rounded-xl border border-line-soft bg-panel p-3">
-      <div className="grid grid-cols-7 gap-1 text-center text-t10 font-semibold text-ink-muted">
+    <div className="rounded-xl border border-line-soft bg-panel p-3 max-sm:p-1">
+      <div className="grid grid-cols-7 gap-1 text-center max-sm:gap-px text-t10 font-semibold text-ink-muted">
         {WEEKDAY_KO.map((w) => (
           <div key={w} className="py-1">
             {w}
@@ -57,7 +62,7 @@ export function MonthGridClient({
         ))}
       </div>
 
-      <div className="mt-1 grid grid-cols-7 gap-1">
+      <div className="mt-1 grid grid-cols-7 gap-1 max-sm:gap-px">
         {grid.flat().map((day) => {
           const all = dayItems(day)
           const shown = all.slice(0, MAX_PER_CELL)
@@ -72,7 +77,7 @@ export function MonthGridClient({
               onClick={() => setOpen(day)}
               aria-label={`${Number(day.slice(5, 7))}월 ${Number(day.slice(8, 10))}일, ${all.length}건`}
               className={[
-                'min-h-[92px] rounded-md border p-1.5 text-left transition-colors hover:border-accent',
+                'min-h-[92px] rounded-md border p-1.5 text-left transition-colors hover:border-accent max-sm:min-h-16 max-sm:min-w-0 max-sm:p-1',
                 isToday ? 'border-2 border-ink' : 'border-line-soft',
               ].join(' ')}
             >
@@ -88,7 +93,7 @@ export function MonthGridClient({
                 {Number(day.slice(8, 10))}
               </div>
 
-              <div className="mt-1 space-y-0.5">
+              <div className="mt-1 space-y-0.5 max-sm:flex max-sm:flex-wrap max-sm:gap-0.5 max-sm:space-y-0">
                 {shown.map((it) => {
                   const risk = isPastRisk(it, today)
                   return (
@@ -104,7 +109,7 @@ export function MonthGridClient({
                       <span aria-hidden className="shrink-0">
                         {KIND_MARK[it.kind]}
                       </span>
-                      <span className="truncate">{it.title}</span>
+                      <span className="truncate max-sm:hidden">{it.title}</span>
                     </span>
                   )
                 })}

@@ -50,13 +50,32 @@ export default async function GroupEditPage() {
         code="Phase 8 · Group City"
         description="상자를 끌어 건물 위에 올리고, 오른쪽 아래 모서리로 크기를 맞춥니다. 저장을 눌러야 반영됩니다."
       />
-      <CityEditor
-        key={city.layout.map((l) => `${l.id}:${l.business_id ?? l.initiative_id}:${l.x}:${l.y}:${l.w}:${l.h}:${l.stage_image}`).join('|')}
-        phase={phase}
-        layout={city.layout}
-        businesses={businesses}
-        initiatives={initiatives}
-      />
+      {/*
+       * 배치 편집은 PC 전용이다(1024px 이상). 상자를 끌고 모서리로 크기를 맞추는 일이라 손가락으로는
+       * 몇 %씩 어긋나고, 그 어긋남이 저장되면 모든 사람의 도시가 틀어진다. 폰 · 태블릿에는 안내만 둔다.
+       * 편집기는 CSS로 숨긴다 — 창을 넓히면(태블릿 가로 등) 새로 불러오지 않고 바로 편집할 수 있게.
+       */}
+      <div className="glass mt-4 rounded-glass p-5 text-t13 leading-relaxed text-ink-dim lg:hidden">
+        <p className="font-semibold text-ink">배치 편집은 PC에서 합니다.</p>
+        <p className="mt-1">
+          상자를 끌어 옮기는 일이라 폰 화면에서는 정확히 맞출 수 없습니다. 도시는 그룹 화면에서 볼 수 있습니다.
+        </p>
+        <Link
+          href="/group"
+          className="mt-3 inline-flex items-center rounded-lg border border-line bg-raised px-3 text-t13 font-semibold text-ink transition-colors hover:border-accent"
+        >
+          그룹 보기로
+        </Link>
+      </div>
+      <div className="max-lg:hidden">
+        <CityEditor
+          key={city.layout.map((l) => `${l.id}:${l.business_id ?? l.initiative_id}:${l.x}:${l.y}:${l.w}:${l.h}:${l.stage_image}`).join('|')}
+          phase={phase}
+          layout={city.layout}
+          businesses={businesses}
+          initiatives={initiatives}
+        />
+      </div>
     </div>
   )
 }

@@ -177,15 +177,17 @@ export function AttentionFooter({ view }: { view: AttentionView }) {
       {view.hiddenGreen > 0 ? (
         <span className="text-ink-muted">GREEN {view.hiddenGreen}건 숨김(§4)</span>
       ) : null}
+      {/* <p>인 이유: 문장 속 글 링크다. span이면 flex 줄의 한 칸이 되어 링크가 블록처럼 굴고,
+          폰의 44px 터치 규칙이 문장 한가운데 링크를 부풀린다(WCAG 2.5.8은 글 속 링크를 뺀다). */}
       {view.unmeasured.length > 0 ? (
-        <span className="basis-full text-t10 leading-relaxed text-ink-muted">
+        <p className="basis-full text-t10 leading-relaxed text-ink-muted">
           재지 못한 회사는 «이상 없음»이 아닙니다 —{' '}
           {view.unmeasured.map((u) => u.name).join(' · ')}. 이유는{' '}
           <Link href="/attention" className="underline underline-offset-2">
             주의 목록
           </Link>
           에 회사별로 적혀 있습니다.
-        </span>
+        </p>
       ) : null}
     </div>
   )

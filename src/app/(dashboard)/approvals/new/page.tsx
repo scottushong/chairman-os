@@ -27,7 +27,7 @@ export default async function NewApprovalPage() {
   due.setUTCDate(due.getUTCDate() + 7)
 
   return (
-    <div className="mx-auto max-w-[1280px] px-6 py-5">
+    <div className="mx-auto max-w-[1280px] px-4 py-5 lg:px-6">
       <PageHeader
         icon="stamp"
         title={tr(lang, '결재 올리기', 'New approval')}

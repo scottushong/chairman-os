@@ -80,7 +80,8 @@ export function CheckinPanel({ date, initial }: { date: IsoDate; initial: Chairm
               <label
                 key={c}
                 className={[
-                  'flex h-9 flex-1 cursor-pointer items-center justify-center rounded-md border text-t14 font-semibold tnum transition-colors',
+                  'flex h-11 flex-1 cursor-pointer items-center justify-center rounded-md border text-t14 font-semibold tnum transition-colors lg:h-9',
+                  // 폰 · 태블릿은 h-11(44px) — 손가락 과녁. 1024px 이상은 원래 h-9 그대로.
                   // 고른 칸은 골드 필이다. bg-accent 위의 글자색은 globals.css가 다크에서
                   // #161412로 내려 준다(황동 위 흰 글자는 2.23:1이라 못 읽는다).
                   condition === c

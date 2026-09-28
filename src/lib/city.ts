@@ -118,8 +118,8 @@ export function effectiveStage(layout: CityLayout, pct: number | null): CityStag
 
 export type CityPhase = 'day' | 'dusk'
 
-/** 전경 폭(scripts/city-assets.mjs의 WIDTHS와 같은 셋). 원본 비율 2752×1536. */
-export const CITY_WIDTHS = [1280, 1920, 2752] as const
+/** 전경 폭(scripts/city-assets.mjs의 WIDTHS와 같은 셋). 720 · 1080은 폰(2x · 3x)용이다. 원본 비율 2752×1536. */
+export const CITY_WIDTHS = [720, 1080, 1280, 1920, 2752] as const
 export const CITY_ASPECT = 1536 / 2752
 
 export function citySrc(phase: CityPhase, width: (typeof CITY_WIDTHS)[number] = 1920): string {

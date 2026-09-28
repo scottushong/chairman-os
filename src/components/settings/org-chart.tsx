@@ -120,8 +120,9 @@ export function OrgChart({
   }
 
   return (
-    <div className="grid gap-3.5 xl:grid-cols-[minmax(0,1fr)_340px]">
-      <div className="space-y-3.5">
+    // 폰에서는 카드 사이를 12px로 좁힌다(회장 규칙 «카드 간격 12px»). 넓은 화면은 그대로.
+    <div className="grid gap-3 sm:gap-3.5 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="space-y-3 sm:space-y-3.5">
         <WarningBar
           leadlessTeams={leadlessTeams}
           teamless={teamlessPeople}
@@ -530,7 +531,11 @@ function PersonRow({
          * 그 전에 그럴듯한 값을 지어내면 '이 사람은 두 달째 안 들어온다' 같은 판단이
          * 가짜 숫자 위에서 내려진다.
          */}
-        <span className="ml-auto text-t10h text-ink-muted tnum" title="열람 기록은 블록 7에서 만들어집니다">
+        {/* 폰에서는 이 칸이 꼬리표 사이에 끼어 줄이 들쭉날쭉했다 — 이름 아래 한 줄로 따로 내린다(사진 24px + 간격만큼 들여서) */}
+        <span
+          className="ml-auto text-t10h text-ink-muted tnum max-sm:ml-0 max-sm:w-full max-sm:pl-[30px]"
+          title="열람 기록은 블록 7에서 만들어집니다"
+        >
           마지막 접속 —
         </span>
       </button>

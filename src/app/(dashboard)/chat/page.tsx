@@ -49,7 +49,7 @@ export default async function ChatPage({ searchParams }: PageProps<'/chat'>) {
   const unread = (c: ChatChannel) => !!c.last_message_at && (!c.my_last_read_at || c.last_message_at > c.my_last_read_at)
 
   return (
-    <div className="mx-auto max-w-[1400px] px-6 py-5">
+    <div className="mx-auto max-w-[1400px] px-4 py-5 lg:px-6">
       <PageHeader
         icon="message"
         title={tr(lang, '커뮤니케이션', 'Communication')}

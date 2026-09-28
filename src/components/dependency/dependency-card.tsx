@@ -99,10 +99,13 @@ export function DependencyCard({
         {unknown > 0 ? (
           <p className="mt-2 flex items-baseline gap-1.5 text-t10 leading-relaxed text-ink-muted">
             <Icon name="shield" className="size-3 shrink-0 translate-y-0.5" />
-            역산이 닿지 않은 결정 {unknown}건은 분자에도 분모에도 넣지 않았습니다.{' '}
-            <Link href="/dependency/settings" className="underline underline-offset-2">
-              세는 규칙
-            </Link>
+            {/* 글과 링크를 한 span에 묶는다. flex 줄에 바로 두면 링크가 블록 칸이 되어 글 속 링크로 읽히지 않는다. */}
+            <span>
+              역산이 닿지 않은 결정 {unknown}건은 분자에도 분모에도 넣지 않았습니다.{' '}
+              <Link href="/dependency/settings" className="underline underline-offset-2">
+                세는 규칙
+              </Link>
+            </span>
           </p>
         ) : null}
       </div>

@@ -60,20 +60,24 @@ export default async function JournalPage(props: PageProps<'/finance/[business_i
   const monthHref = (p: string) => withParams(basePath, { month: p === today.slice(0, 7) ? undefined : p })
 
   return (
-    <div className="mx-auto max-w-[1600px] px-6 py-5">
+    <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6">
       <PageHeader
         icon="clipboard"
         title={`${business.name} 전표`}
         code="CH-052"
         description="차변 합과 대변 합이 같아야 저장됩니다. 마감된 달은 고치지 않고 당월에 정정 전표로 바로잡습니다."
       >
-        <BooksNav businessId={business_id} current="journal" />
-        <Link
-          href="/finance"
-          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
-        >
-          그룹 재무
-        </Link>
+        {/* PageHeader의 오른쪽 칸은 줄을 접지 않는다. 폰에서는 버튼들이 한 줄에 못 들어가 탭이 한 글자씩 눌렸다 —
+            여기서 한 번 감싸 좁을 때만 다음 줄로 넘긴다(넓은 화면은 한 줄 그대로). */}
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <BooksNav businessId={business_id} current="journal" />
+          <Link
+            href="/finance"
+            className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          >
+            그룹 재무
+          </Link>
+        </div>
       </PageHeader>
 
       <div className="mt-4 space-y-3.5">

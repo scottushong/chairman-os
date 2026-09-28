@@ -55,12 +55,13 @@ export async function Header({ user }: { user: SessionUser | null }) {
   return (
     // glass-nav = --color-nav 면 + backdrop-blur. 사이드바·시스템바와 같은 면이라 같은 클래스를 쓴다.
     // 폰(768px 미만)은 로고 · 검색 돋보기 · 알림 · 프로필만(회장 지시 2026-09-28). 1024px 미만은 햄버거로 서랍을 연다.
+    // 태블릿 · 가로 폰(768~1023px)은 검색창을 펴고 나머지는 폰과 같다 — 환율 · 뱃지 · 톱니 · 이름 · 로그아웃까지 두면 검색창이 80px로 눌린다.
     // 노치 자리만큼 위를 비운다(safe-top) — iOS 홈 화면 앱은 상태 막대가 비치는 black-translucent다.
     <header className="glass-nav safe-top box-content flex h-14 shrink-0 items-center gap-1 border-b border-line-soft px-2 md:gap-4 md:px-5">
       <MenuButton />
       <Link href="/" aria-label="대시보드" className="flex min-h-11 items-center gap-1.5 px-1 lg:hidden">
         <Icon name="crown" className="size-5 text-gold" filled />
-        <span className="hidden text-t13 font-bold tracking-[0.04em] text-ink min-[400px]:inline">CHAIRMAN OS</span>
+        <span className="hidden text-t13 font-bold tracking-[0.04em] text-ink min-[400px]:inline md:hidden">CHAIRMAN OS</span>
       </Link>
       {/* CH-043. 이 헤더는 서버 컴포넌트로 두고 검색창만 클라이언트로 떼어 낸다 —
           세션(user)은 여기서 그리고, 입력·드롭다운만 브라우저로 내려간다. */}
@@ -74,7 +75,7 @@ export async function Header({ user }: { user: SessionUser | null }) {
         {usd ? (
           <span
             title={`USD/KRW · ${usd.asOf} 고시 · 전일(${usd.comparedTo}) 대비 ${usd.deltaKrw >= 0 ? '+' : '−'}${Math.abs(usd.deltaKrw).toFixed(2)}원`}
-            className="hidden shrink-0 items-center gap-1 px-1 text-t11 text-ink-muted md:flex"
+            className="hidden shrink-0 items-center gap-1 px-1 text-t11 text-ink-muted lg:flex"
           >
             <span>USD</span>
             <span className="text-ink-dim tnum">{Math.round(usd.krw).toLocaleString('ko-KR')}</span>
@@ -85,7 +86,7 @@ export async function Header({ user }: { user: SessionUser | null }) {
             ) : null}
           </span>
         ) : null}
-        <span className="hidden md:contents">
+        <span className="hidden lg:contents">
           <DataModeBadge />
         </span>
         <NotificationBell unread={unread} items={items} />
@@ -95,7 +96,7 @@ export async function Header({ user }: { user: SessionUser | null }) {
           href="/settings"
           aria-label="설정"
           title="설정"
-          className="hidden rounded-md p-2 text-ink-dim transition-colors hover:bg-raised hover:text-ink md:block"
+          className="hidden rounded-md p-2 text-ink-dim transition-colors hover:bg-raised hover:text-ink lg:block"
         >
           <Icon name="settings" className="size-[18px]" />
         </Link>
@@ -103,7 +104,7 @@ export async function Header({ user }: { user: SessionUser | null }) {
         {/* Phase 5-E 2절. 이름+직함이 /settings/profile로 가는 링크가 됐다.
             세션이 없으면 링크가 아니라 글자다 — 누를 프로필이 없는데 누르는 자리를
             만들면 그것이 곧 죽은 버튼이다. */}
-        <div className="flex items-center gap-2.5 md:ml-2 md:border-l md:border-line md:pl-3">
+        <div className="flex items-center gap-2.5 lg:ml-2 lg:border-l lg:border-line lg:pl-3">
           {user ? (
             <Link
               href="/settings/profile"
@@ -113,7 +114,7 @@ export async function Header({ user }: { user: SessionUser | null }) {
               <span className="flex size-8 items-center justify-center rounded-full bg-accent-soft text-t12 font-bold text-ink">
                 {user.name.slice(0, 1)}
               </span>
-              <span className="hidden leading-tight md:block">
+              <span className="hidden leading-tight lg:block">
                 <span className="block text-t13 font-semibold">{user.name}</span>
                 <span className="block text-t11 text-ink-muted">
                   {user.title_ko || ROLE_LABEL_KO[user.role]}
@@ -125,7 +126,7 @@ export async function Header({ user }: { user: SessionUser | null }) {
               <span className="flex size-8 items-center justify-center rounded-full bg-accent-soft text-t12 font-bold text-ink">
                 ?
               </span>
-              <span className="hidden leading-tight md:block">
+              <span className="hidden leading-tight lg:block">
                 <span className="block text-t13 font-semibold">알 수 없음</span>
                 <span className="block text-t11 text-ink-muted">세션 없음</span>
               </span>
@@ -133,7 +134,7 @@ export async function Header({ user }: { user: SessionUser | null }) {
           )}
 
           {/* 로그아웃은 Server Action이다. 쿠키를 지우는 건 서버만 할 수 있다. */}
-          <form action={signOut} className="hidden md:block">
+          <form action={signOut} className="hidden lg:block">
             <button
               type="submit"
               aria-label="로그아웃"

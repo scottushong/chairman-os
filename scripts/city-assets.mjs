@@ -27,12 +27,16 @@ import sharp from 'sharp'
 const SRC = 'public/city'
 const OUT = 'public/city/gen'
 
-/** 전경. 폭 셋을 만든다 — 폰(1280) · 노트북(1920) · 원본 폭(2752). */
+/**
+ * 전경 폭 다섯 — 폰 720(2x) · 1080(3x) · 태블릿(1280) · 노트북(1920) · 원본 폭(2752).
+ * 720 · 1080은 2026-09-28 모바일 점검에서 더했다: 폰이 1280(174KB)을 받던 자리가 66~131KB가 된다.
+ * lib/city.ts의 CITY_WIDTHS와 같은 셋이어야 한다.
+ */
 const BACKGROUNDS = [
   { src: 'city-day.png', name: 'day' },
   { src: 'city-dusk.png', name: 'dusk' },
 ]
-const WIDTHS = [1280, 1920, 2752]
+const WIDTHS = [720, 1080, 1280, 1920, 2752]
 
 /**
  * 단계 이미지에서 «그 장이 말하는 것»이 있는 자리. 0~1 비율이다(좌·상·폭·높이).

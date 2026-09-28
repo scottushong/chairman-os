@@ -47,8 +47,9 @@ export function DashboardTabs() {
   // 깜빡이고, 이 탭 줄은 자리 안내지 현재 위치 표시가 아니다.
   const [active, setActive] = useState(0)
 
+  // m-tabs: 폰에서 탭이 좁아지면 «전체 요약»이 두 줄로 접혔다 — 줄은 접지 않고 옆으로 민다.
   return (
-    <div className="mt-4 flex gap-1 border-b border-line-soft">
+    <div className="m-tabs mt-4 flex gap-1 border-b border-line-soft">
       {TABS.map((tab, i) =>
         tab.href ? (
           <Link key={tab.label} href={tab.href} className={`${BASE} ${OFF}`}>

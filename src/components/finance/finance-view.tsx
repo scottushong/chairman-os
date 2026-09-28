@@ -67,7 +67,8 @@ export function FinanceView({
   const rows = statementRows(tab, scope, period)
 
   return (
-    <div className="mt-4 space-y-3.5">
+    // 폰에서는 카드 사이를 12px로 좁힌다(회장 규칙 «카드 간격 12px»). 넓은 화면은 그대로.
+    <div className="mt-4 space-y-3 sm:space-y-3.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2 text-t11 text-ink-muted">
           <span>
@@ -108,7 +109,7 @@ export function FinanceView({
         }}
       />
 
-      <div className="grid grid-cols-12 gap-3.5">
+      <div className="grid grid-cols-12 gap-3 sm:gap-3.5">
         <div className="col-span-12 xl:col-span-7">
           <CostStructurePanel data={costStructure(scope, ledger, period)} />
         </div>
@@ -118,22 +119,26 @@ export function FinanceView({
       </div>
 
       <section className="rounded-xl border border-line-soft bg-panel p-3.5">
-        <nav className="flex items-center gap-1 border-b border-line-soft pb-2" aria-label="재무제표">
-          {STATEMENT_TABS.map((t) => (
-            <Link
-              key={t}
-              href={href({ month: period, tab: t })}
-              aria-current={t === tab ? 'page' : undefined}
-              className={[
-                'rounded-md px-2.5 py-1 text-t12 transition-colors',
-                t === tab ? 'bg-accent/15 font-semibold text-ink' : 'text-ink-muted hover:text-ink-dim',
-              ].join(' ')}
-            >
-              {STATEMENT_LABEL_KO[t]}
-            </Link>
-          ))}
-          <span className="ml-auto text-t10h text-ink-muted">단위: 백만원 · 계정코드는 회사 계정과목표 원본</span>
-        </nav>
+        {/* 탭과 단위 안내를 한 줄에 두되, 폰에서는 안내가 다음 줄로 내려간다 —
+            같은 줄에 두면 세 탭이 '손익/계산/서'처럼 접혔다. 탭 줄 자체는 m-tabs로 접히지 않는다. */}
+        <div className="flex flex-wrap items-center gap-1 border-b border-line-soft pb-2">
+          <nav className="m-tabs flex max-w-full items-center gap-1" aria-label="재무제표">
+            {STATEMENT_TABS.map((t) => (
+              <Link
+                key={t}
+                href={href({ month: period, tab: t })}
+                aria-current={t === tab ? 'page' : undefined}
+                className={[
+                  'rounded-md px-2.5 py-1 text-t12 transition-colors',
+                  t === tab ? 'bg-accent/15 font-semibold text-ink' : 'text-ink-muted hover:text-ink-dim',
+                ].join(' ')}
+              >
+                {STATEMENT_LABEL_KO[t]}
+              </Link>
+            ))}
+          </nav>
+          <span className="ml-auto text-t10h text-ink-muted max-sm:ml-0">단위: 백만원 · 계정코드는 회사 계정과목표 원본</span>
+        </div>
         <div className="mt-2">
           <StatementTable kind={tab} rows={rows} period={period} />
         </div>

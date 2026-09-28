@@ -31,7 +31,11 @@ export function NoticeStrip({ notices, today, lang }: { notices: Notice[]; today
       <ul className="flex min-w-0 flex-1 gap-4 overflow-hidden">
         {live.slice(0, 3).map((n) => (
           <li key={n.notice_id} className="min-w-0 truncate text-t12">
-            <Link href="/groupware" className={`hover:underline ${n.read_by_me ? 'text-ink-dim' : 'font-semibold'}`}>
+            {/* 1024px 미만은 block — inline 링크에는 min-height가 안 먹어 21px 과녁이 됐다(터치 44px 규칙). */}
+            <Link
+              href="/groupware"
+              className={`hover:underline max-lg:block max-lg:truncate max-lg:leading-[44px] ${n.read_by_me ? 'text-ink-dim' : 'font-semibold'}`}
+            >
               {n.pinned ? '📌 ' : ''}
               {pickText(lang, n.title, n.title_en)}
             </Link>

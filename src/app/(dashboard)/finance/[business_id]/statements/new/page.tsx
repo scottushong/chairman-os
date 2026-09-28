@@ -34,7 +34,7 @@ export default async function NewStatementPage(
   const accounts = ledger.accounts.filter((a) => a.business_id === business_id && a.active)
 
   return (
-    <div className="mx-auto max-w-[1100px] px-6 py-5">
+    <div className="mx-auto max-w-[1100px] px-4 py-5 sm:px-6">
       <PageHeader
         icon="file-text"
         title={`${business.name} — 공식 재무제표 입력`}

@@ -86,8 +86,11 @@ export function NotificationBell({
         ) : null}
       </button>
 
+      {/* 폰(640px 미만)은 종 아래에 매달지 않고 화면 폭에 건다(좌우 12px) — 320px 판이 종 위치에서
+          오른쪽 정렬되면 360px 화면 왼쪽 밖으로 잘렸다. 헤더(h-14 + 노치) 바로 아래에 선다.
+          폰은 바탕도 불투명(bg-app)이다 — 반투명 판이 화면 폭을 덮으면 아래 본문 글자와 겹쳐 읽히지 않았다. */}
       {open ? (
-        <div className="absolute top-full right-0 z-30 mt-1 w-[320px] rounded-xl border border-line-soft bg-panel p-2 shadow-lg">
+        <div className="absolute top-full right-0 z-30 mt-1 w-[320px] rounded-xl border border-line-soft bg-panel p-2 shadow-lg max-sm:fixed max-sm:inset-x-3 max-sm:top-[calc(3.5rem+env(safe-area-inset-top)+4px)] max-sm:mt-0 max-sm:w-auto max-sm:bg-app">
           <div className="flex items-baseline justify-between px-1.5 pb-1.5">
             <span className="text-t12 font-semibold">알림</span>
             {unreadIds.length > 0 ? (

@@ -86,7 +86,7 @@ export default async function UsersPage(props: PageProps<'/settings/users'>) {
     userId ? (accounts.find((a) => a.user_id === userId)?.display_name ?? null) : null
 
   return (
-    <div className="mx-auto max-w-[1600px] px-6 py-5">
+    <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6">
       <PageHeader
         icon="users"
         title="사용자 · 권한 · 조직도"
@@ -112,7 +112,7 @@ export default async function UsersPage(props: PageProps<'/settings/users'>) {
         />
       </div>
 
-      <div className="mt-3.5">
+      <div className="mt-3 sm:mt-3.5">
         {accounts.length === 0 ? (
           <p className="rounded-xl border border-line-soft bg-panel px-3.5 py-8 text-center text-t12 text-ink-muted">
             보이는 사람이 없습니다. 조직도는 자기 아래(직속·그 아래)만 보여 줍니다 — 아직 아무도
@@ -129,7 +129,7 @@ export default async function UsersPage(props: PageProps<'/settings/users'>) {
         )}
       </div>
 
-      <section className="mt-3.5 rounded-xl border border-line-soft bg-panel p-3.5">
+      <section className="mt-3 rounded-xl border border-line-soft bg-panel p-3.5 sm:mt-3.5">
         <h2 className="flex items-baseline gap-1.5 text-t13 font-semibold">
           <Icon name="mail" className="size-4 text-ink-dim" />
           대기 중인 초대
@@ -159,7 +159,7 @@ export default async function UsersPage(props: PageProps<'/settings/users'>) {
         )}
       </section>
 
-      <section className="mt-3.5 rounded-xl border border-line-soft bg-panel p-3.5">
+      <section className="mt-3 rounded-xl border border-line-soft bg-panel p-3.5 sm:mt-3.5">
         <h2 className="flex items-baseline gap-1.5 text-t13 font-semibold">
           <Icon name="clock" className="size-4 text-ink-dim" />
           최근 30일 입·퇴사
@@ -196,7 +196,7 @@ export default async function UsersPage(props: PageProps<'/settings/users'>) {
       </section>
 
       {settled.length > 0 ? (
-        <section className="mt-3.5 mb-6 rounded-xl border border-line-soft bg-panel p-3.5">
+        <section className="mt-3 mb-6 rounded-xl border border-line-soft bg-panel p-3.5 sm:mt-3.5">
           <h2 className="flex items-baseline gap-1.5 text-t13 font-semibold">
             <Icon name="clock" className="size-4 text-ink-dim" />
             지난 초대

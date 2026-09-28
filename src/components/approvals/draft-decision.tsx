@@ -5,12 +5,8 @@ import { useState } from 'react'
 
 import { draftDecision } from '@/app/actions/draft-decision'
 import { Icon } from '@/components/ui/icon'
-import {
-  WORK_PRIORITY,
-  WORK_PRIORITY_LABEL_KO,
-  type Business,
-  type WorkPriority,
-} from '@/types'
+import { StepHeader, StepNav, useMobileSteps } from '@/components/ui/mobile-steps'
+import { WORK_PRIORITY, WORK_PRIORITY_LABEL_KO, type Business, type WorkPriority } from '@/types'
 
 /**
  * CH-041 기안 폼 (DEFERRED D-10 선택지 A).
@@ -47,6 +43,9 @@ export function DraftDecision({ businesses }: { businesses: Business[] }) {
   const [attachmentUrl, setAttachmentUrl] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // 폰은 ① 제목 · 회사 · 마감 ② 선택안 ③ 첨부 · 긴급도 · 올리기 세 화면(mobile-steps.tsx).
+  // 640px 이상은 한 화면 그대로. 숨은 칸도 마운트된 채라 올릴 때 모든 값이 같이 간다.
+  const steps = useMobileSteps(3)
 
   const canSave =
     title.trim().length > 0 &&
@@ -122,54 +121,65 @@ export function DraftDecision({ businesses }: { businesses: Business[] }) {
         올린 결재는 대기 상태로 들어가고, 올린 사실이 감사 기록에 한 줄 남습니다(CH-051).
       </p>
 
+      <StepHeader
+        steps={steps}
+        labels={['제목 · 회사 · 마감', '선택안', '첨부 · 긴급도']}
+        className="mt-3"
+      />
+
       <div className="mt-3 grid gap-3 md:grid-cols-2">
-        <label className="block md:col-span-2">
-          <span className="text-t11 text-ink-dim">제목</span>
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="예: Hot-melt 판매가 조정 — 원료 단가 +12% 반영 시점"
-            maxLength={200}
-            disabled={busy}
-            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
-          />
-        </label>
+        {/* 단계 묶음은 display:contents — 640px 이상에서는 칸들이 지금처럼 한 격자에 흐른다. */}
+        <div className={`contents ${steps.only(0)}`}>
+          <label className="block md:col-span-2">
+            <span className="text-t11 text-ink-dim">제목</span>
+            <input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="예: Hot-melt 판매가 조정 — 원료 단가 +12% 반영 시점"
+              maxLength={200}
+              disabled={busy}
+              className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
+            />
+          </label>
 
-        <label className="block">
-          <span className="text-t11 text-ink-dim">회사</span>
-          <select
-            value={businessId}
-            onChange={(e) => setBusinessId(e.target.value)}
-            disabled={busy}
-            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none focus:border-accent disabled:opacity-50"
-          >
-            {/* 그룹 공통 선택지가 없다. 0001의 decisions.business_id는 not null이다 —
+          <label className="block">
+            <span className="text-t11 text-ink-dim">회사</span>
+            <select
+              value={businessId}
+              onChange={(e) => setBusinessId(e.target.value)}
+              disabled={busy}
+              className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none focus:border-accent disabled:opacity-50"
+            >
+              {/* 그룹 공통 선택지가 없다. 0001의 decisions.business_id는 not null이다 —
                 결재는 언제나 어느 회사의 일이고, 그게 권한 범위를 정한다. */}
-            {businesses.map((b) => (
-              <option key={b.business_id} value={b.business_id} className="bg-panel">
-                {b.name}
-              </option>
-            ))}
-          </select>
-        </label>
+              {businesses.map((b) => (
+                <option key={b.business_id} value={b.business_id} className="bg-panel">
+                  {b.name}
+                </option>
+              ))}
+            </select>
+          </label>
 
-        <label className="block">
-          <span className="text-t11 text-ink-dim">마감일</span>
-          <input
-            type="date"
-            value={deadline}
-            onChange={(e) => setDeadline(e.target.value)}
-            disabled={busy}
-            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none focus:border-accent disabled:opacity-50"
-          />
-        </label>
+          <label className="block">
+            <span className="text-t11 text-ink-dim">마감일</span>
+            <input
+              type="date"
+              value={deadline}
+              onChange={(e) => setDeadline(e.target.value)}
+              disabled={busy}
+              className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none focus:border-accent disabled:opacity-50"
+            />
+          </label>
+        </div>
 
-        <label className="block md:col-span-2">
+        <label className={`block md:col-span-2 ${steps.only(1)}`}>
           <span className="text-t11 text-ink-dim">내용 — 선택안</span>
           <textarea
             value={options}
             onChange={(e) => setOptions(e.target.value)}
-            placeholder={'한 줄에 하나씩 적습니다.\n예: 10월부터 8% 인상\n예: 12월까지 동결 후 재협상\n예: 물량 계약으로 전환'}
+            placeholder={
+              '한 줄에 하나씩 적습니다.\n예: 10월부터 8% 인상\n예: 12월까지 동결 후 재협상\n예: 물량 계약으로 전환'
+            }
             rows={4}
             maxLength={1000}
             disabled={busy}
@@ -181,42 +191,45 @@ export function DraftDecision({ businesses }: { businesses: Business[] }) {
           </span>
         </label>
 
-        <label className="block md:col-span-2">
-          <span className="text-t11 text-ink-dim">첨부 — 사내 스토리지 링크 (선택)</span>
-          <input
-            value={attachmentUrl}
-            onChange={(e) => setAttachmentUrl(e.target.value)}
-            placeholder="https://storage.example.co.kr/decisions/2026/..."
-            inputMode="url"
-            disabled={busy}
-            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
-          />
-          <span className="mt-1 block text-t10h text-ink-muted">
-            파일은 올리지 않습니다. Chairman OS는 문서의 주소만 보관합니다.
-          </span>
-        </label>
+        <div className={`contents ${steps.only(2)}`}>
+          <label className="block md:col-span-2">
+            <span className="text-t11 text-ink-dim">첨부 — 사내 스토리지 링크 (선택)</span>
+            <input
+              value={attachmentUrl}
+              onChange={(e) => setAttachmentUrl(e.target.value)}
+              placeholder="https://storage.example.co.kr/decisions/2026/..."
+              inputMode="url"
+              enterKeyHint="done"
+              disabled={busy}
+              className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
+            />
+            <span className="mt-1 block text-t10h text-ink-muted">
+              파일은 올리지 않습니다. Chairman OS는 문서의 주소만 보관합니다.
+            </span>
+          </label>
 
-        <fieldset className="md:col-span-2">
-          <legend className="text-t11 text-ink-dim">긴급도</legend>
-          <div className="mt-1.5 flex flex-wrap gap-1.5">
-            {WORK_PRIORITY.map((p) => (
-              <button
-                key={p}
-                type="button"
-                onClick={() => setImpact(p)}
-                disabled={busy}
-                aria-pressed={impact === p}
-                className={`rounded-md border px-2.5 py-1 text-t11 transition-colors disabled:opacity-50 ${
-                  impact === p
-                    ? 'border-accent bg-accent/15 text-ink'
-                    : 'border-line text-ink-muted hover:text-ink-dim'
-                }`}
-              >
-                {WORK_PRIORITY_LABEL_KO[p]}
-              </button>
-            ))}
-          </div>
-        </fieldset>
+          <fieldset className="md:col-span-2">
+            <legend className="text-t11 text-ink-dim">긴급도</legend>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {WORK_PRIORITY.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setImpact(p)}
+                  disabled={busy}
+                  aria-pressed={impact === p}
+                  className={`rounded-md border px-2.5 py-1 text-t11 transition-colors disabled:opacity-50 ${
+                    impact === p
+                      ? 'border-accent bg-accent/15 text-ink'
+                      : 'border-line text-ink-muted hover:text-ink-dim'
+                  }`}
+                >
+                  {WORK_PRIORITY_LABEL_KO[p]}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+        </div>
       </div>
 
       {error ? (
@@ -228,7 +241,7 @@ export function DraftDecision({ businesses }: { businesses: Business[] }) {
         </p>
       ) : null}
 
-      <div className="mt-4 flex justify-end">
+      <div className={`mt-4 flex justify-end ${steps.only(2)}`}>
         <button
           type="submit"
           disabled={!canSave}
@@ -238,6 +251,7 @@ export function DraftDecision({ businesses }: { businesses: Business[] }) {
           {busy ? '올리는 중…' : '결재 올리기'}
         </button>
       </div>
+      <StepNav steps={steps} className="mt-4" />
     </form>
   )
 }

@@ -25,7 +25,8 @@ export function TaskTable({ items }: { items: TaskListItem[] }) {
   const [error, setError] = useState<string | null>(null)
 
   return (
-    <div className="mt-3 rounded-xl border border-line-soft bg-panel">
+    // 폰에서는 줄마다 카드가 되므로(아래 m-cards) 바깥 상자의 테두리 · 배경을 걷는다 — 카드 속 카드가 된다.
+    <div className="mt-3 rounded-xl border border-line-soft bg-panel max-sm:border-0 max-sm:bg-transparent">
       {error ? (
         <p
           role="alert"
@@ -40,8 +41,11 @@ export function TaskTable({ items }: { items: TaskListItem[] }) {
           조건에 맞는 업무가 없습니다.
         </p>
       ) : (
+        // 폰(640px 이하): 일곱 칸 표를 옆으로 미는 대신 업무 하나를 카드 하나로 세운다(m-cards).
+        // 태블릿은 표 그대로 자기 상자 안에서 민다. m-sticky-first는 달지 않는다 — 카드가 된 첫 칸에
+        // 앱 배경색이 깔려 카드 안에 띠가 생긴다.
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[860px] border-collapse">
+          <table className="m-cards w-full border-collapse sm:min-w-[860px]">
             <thead>
               <tr className="text-t10 tracking-[0.08em] text-ink-muted">
                 <th className="px-3 py-2 text-left font-semibold">업무</th>

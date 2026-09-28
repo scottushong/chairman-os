@@ -47,27 +47,31 @@ export default async function BusinessFinancePage(props: PageProps<'/finance/[bu
   const closable = canCloseBooks(user) ? closablePeriod(ledger, business_id, todayKst()) : null
 
   return (
-    <div className="mx-auto max-w-[1600px] px-6 py-5">
+    <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6">
       <PageHeader
         icon="coin"
         title={`${business.name} 재무`}
         code="CH-023 · CH-052"
         description={`${business.industry} · ${STATUS_LABEL_KO[business.status]} · ${business.business_id}`}
       >
-        {closable ? <CloseMonth businessId={business_id} period={closable} /> : null}
-        <BooksNav businessId={business_id} current="statements" />
-        <Link
-          href="/finance"
-          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
-        >
-          그룹 재무
-        </Link>
-        <Link
-          href={`/business/${encodeURIComponent(business_id)}`}
-          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
-        >
-          회사 상세
-        </Link>
+        {/* PageHeader의 오른쪽 칸은 줄을 접지 않는다. 폰에서는 버튼들이 한 줄에 못 들어가 탭이 한 글자씩 눌렸다 —
+            여기서 한 번 감싸 좁을 때만 다음 줄로 넘긴다(넓은 화면은 한 줄 그대로). */}
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          {closable ? <CloseMonth businessId={business_id} period={closable} /> : null}
+          <BooksNav businessId={business_id} current="statements" />
+          <Link
+            href="/finance"
+            className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          >
+            그룹 재무
+          </Link>
+          <Link
+            href={`/business/${encodeURIComponent(business_id)}`}
+            className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          >
+            회사 상세
+          </Link>
+        </div>
       </PageHeader>
       <FinanceView
         ledger={ledger}

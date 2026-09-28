@@ -193,15 +193,16 @@ export function StrategicCoordinates({
         <h2 className="mb-3 text-t13 font-semibold">Strategic Coordinates</h2>
 
         {/*
-         * 1024px 이하는 2×2다 — 알약 넷을 한 줄에 세우면 한 칸이 140px 밑으로 내려가
-         * 'Monthly Priority'가 두 줄로 접힌다. 그 폭에서는 → 연결도 의미가 없어 같이 숨긴다.
+         * 1024px 이하는 옆으로 미는 한 줄이다. 예전 2×2는 폰(360px)에서 한 칸이 150px로 줄어
+         * 'Top Goal'이 «Top ···»로 잘렸다 — 이름을 자르면 알약이 무엇인지 읽을 수 없다.
+         * 알약은 글자 폭만큼 서고, 넘치는 것은 스크롤이 받는다. 그 폭에서는 → 연결도 의미가 없어 숨긴다.
          * lg(1024px)는 '1024를 포함'하므로 쓸 수 없다. 전부 min-[1025px]로 맞춘다.
          */}
         <div
           role="tablist"
           aria-label="전략 좌표 단계"
           onKeyDown={onKeyDown}
-          className="grid grid-cols-2 gap-2 min-[1025px]:flex min-[1025px]:items-stretch min-[1025px]:gap-0"
+          className="-mx-4 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none] min-[1025px]:mx-0 min-[1025px]:items-stretch min-[1025px]:gap-0 min-[1025px]:overflow-visible min-[1025px]:px-0"
         >
           {STEPS.map((s, i) => (
             <div key={s.key} className="contents min-[1025px]:flex min-[1025px]:flex-1 min-[1025px]:items-stretch">
@@ -217,14 +218,14 @@ export function StrategicCoordinates({
                 tabIndex={step === s.key ? 0 : -1}
                 onClick={() => select(s.key)}
                 className={[
-                  'flex min-w-0 flex-1 items-center gap-1.5 rounded-full px-3 py-2 text-left transition-colors',
+                  'flex flex-none items-center gap-1.5 rounded-full px-3 py-2 text-left whitespace-nowrap transition-colors min-[1025px]:min-w-0 min-[1025px]:flex-1 min-[1025px]:whitespace-normal',
                   step === s.key
                     ? 'bg-accent font-semibold text-app'
                     : 'border border-line-soft text-ink-dim hover:bg-raised hover:text-ink',
                 ].join(' ')}
               >
                 <Icon name={s.icon} className="size-3.5 shrink-0" />
-                <span className="min-w-0 flex-1 truncate text-t11h">{s.label}</span>
+                <span className="text-t11h min-[1025px]:min-w-0 min-[1025px]:flex-1 min-[1025px]:truncate">{s.label}</span>
                 <span
                   className={`shrink-0 text-t11 font-semibold tnum ${
                     step === s.key ? 'text-app' : 'text-ink-muted'

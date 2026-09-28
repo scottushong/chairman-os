@@ -106,7 +106,8 @@ export function FinanceTrend({ kpis: all, businessIds, title, scopeNote }: Finan
   return (
     <GlassCard as="section" padding="p-3.5" className="h-full">
       <div className="flex items-baseline justify-between gap-2">
-        <h2 className="flex min-w-0 items-baseline gap-2 text-t13 font-semibold">
+        {/* 폰에서 제목이 «재무 / 추이»로 접혔다. 제목은 한 줄로 두고 줄어드는 것은 옆의 설명(truncate)이다. */}
+        <h2 className="flex min-w-0 items-baseline gap-2 text-t13 font-semibold max-lg:whitespace-nowrap">
           {title ?? '그룹 전체 재무 현황'}
           <span className="truncate text-t11 font-normal text-ink-muted tnum">
             최근 {periods.length}개월 · {scopeNote ?? `표시 중인 ${businessIds.length}개사 합계`}
@@ -120,7 +121,7 @@ export function FinanceTrend({ kpis: all, businessIds, title, scopeNote }: Finan
        * 주소를 바꾸는 링크에 가깝기 때문이다 — 뒤로 가기가 동작해야 하고,
        * 스크린 리더에는 '눌린 상태'(aria-pressed)가 더 정확하다.
        */}
-      <div className="mt-3 flex flex-wrap gap-1">
+      <div className="m-tabs mt-3 flex flex-wrap gap-1">
         {METRICS.map((m) => {
           const on = m.metric === metric
           return (

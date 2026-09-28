@@ -18,14 +18,16 @@ export default async function GroupFinancePage(props: PageProps<'/finance'>) {
   const active = businesses.filter((b) => b.status !== 'Archived').sort((a, b) => a.sort_order - b.sort_order)
 
   return (
-    <div className="mx-auto max-w-[1600px] px-6 py-5">
+    <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6">
       <PageHeader
         icon="coin"
         title="그룹 재무"
         code="CH-025~027"
         description={`${active.length}개사 합산 · 손익계산서 · 재무상태표 · 현금흐름표 · 모든 숫자에 출처 꼬리표`}
       >
-        <div className="flex flex-wrap items-center gap-1">
+        {/* 폰에서는 회사 칩이 세 줄로 쌓여 첫 화면을 먹는다 — m-tabs로 한 줄에서 옆으로 민다.
+            폭 상한이 %가 아닌 길이인 이유는 books-nav.tsx 주석(머리글 오른쪽 칸의 최소 폭) 참고. */}
+        <div className="m-tabs flex max-w-full flex-wrap items-center gap-1 max-sm:max-w-[calc(100vw-2rem)]">
           {active.map((b) => (
             <Link
               key={b.business_id}

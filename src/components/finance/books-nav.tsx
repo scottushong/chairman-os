@@ -18,8 +18,11 @@ const TABS: { tab: BooksTab; label: string; suffix: string }[] = [
 
 export function BooksNav({ businessId, current }: { businessId: string; current: BooksTab }) {
   const base = `/finance/${encodeURIComponent(businessId)}`
+  // m-tabs: 폰에서 다섯 탭이 한 글자씩 세로로 접혔다(360px). 줄을 접지 않고 옆으로 밀게 한다.
+  // 폭 상한을 화면 폭(- 좌우 16px)으로 못 박는 이유: PageHeader 오른쪽 칸은 내용의 최소 폭 아래로 줄지 않고,
+  // 스크롤 상자라도 그 최소 폭은 탭 전체 길이로 잡힌다. %가 아닌 길이로 상한을 줘야 그 계산이 잘린다.
   return (
-    <nav className="flex items-center gap-1 rounded-md border border-line bg-panel p-0.5" aria-label="회사 재무">
+    <nav className="m-tabs flex max-w-full items-center gap-1 max-sm:max-w-[calc(100vw-2rem)] rounded-md border border-line bg-panel p-0.5" aria-label="회사 재무">
       {TABS.map((t) => (
         <Link
           key={t.tab}

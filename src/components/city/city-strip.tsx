@@ -40,8 +40,13 @@ export function CityStrip({ phase, items }: { phase: CityPhase; items: CityItem[
         </Link>
       </div>
 
-      <div className="relative overflow-hidden rounded-glass" style={{ height: STRIP, containerType: 'inline-size' }}>
-        <div className="absolute inset-x-0" style={{ top, height: `calc${imageH}` }}>
+      {/* 폰(768px 미만)은 띠를 200px로 낮추고 그림이 띠를 꽉 채운다. 폭이 좁으면 그림 키(폭 × 0.56)가
+          260px에 못 미쳐 띠 위쪽이 빈 칸으로 남았다. 폰에는 그림 위 라벨이 없어 위치 계산을 따를 이유도 없다. */}
+      <div
+        className="relative overflow-hidden rounded-glass max-md:h-[200px]!"
+        style={{ height: STRIP, containerType: 'inline-size' }}
+      >
+        <div className="absolute inset-x-0 max-md:top-0! max-md:h-full!" style={{ top, height: `calc${imageH}` }}>
           {/* eslint-disable-next-line @next/next/no-img-element -- 폭 셋을 미리 만들어 두었다(city-map.tsx). */}
           <img
             src={citySrc(phase)}
@@ -59,7 +64,7 @@ export function CityStrip({ phase, items }: { phase: CityPhase; items: CityItem[
               key={item.layout.id}
               href={`/group?focus=${item.layout.id}`}
               aria-label={`${item.name} — ${hotspotFacts(item).join(' · ')}`}
-              className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-md bg-black/60 px-2 py-1 text-t11 leading-tight text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-black/80"
+              className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-md bg-black/60 max-md:hidden px-2 py-1 text-t11 leading-tight text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-black/80"
               style={{
                 left: `clamp(64px, ${cx}%, calc(100% - 64px))`,
                 // 건물의 세로 가운데. 창 밖이면 띠의 위·아래 끝에 붙인다 — 가로는 건물 그대로라
@@ -73,6 +78,26 @@ export function CityStrip({ phase, items }: { phase: CityPhase; items: CityItem[
           )
         })}
       </div>
+
+      {/*
+       * 폰(768px 미만)은 그림 위 라벨을 빼고 이 줄로 대신한다. 360px 띠에 여섯 라벨을 얹으면
+       * 서로 겹치고 화면 밖으로 잘려 이름도 숫자도 읽히지 않았다. 그림은 풍경으로만 두고,
+       * 누를 것은 그림 아래 옆으로 미는 한 줄에 모은다.
+       */}
+      {companies.length > 0 ? (
+        <div className="m-tabs mt-2 flex gap-1.5 md:hidden">
+          {companies.map((item) => (
+            <Link
+              key={item.layout.id}
+              href={`/group?focus=${item.layout.id}`}
+              className="flex items-center rounded-lg border border-line-soft bg-panel px-3 text-t12 text-ink-dim transition-colors hover:text-ink"
+            >
+              <span className="font-semibold text-ink">{item.name}</span>
+              <span className="ml-1.5 tnum">{hotspotFacts(item).join(' · ')}</span>
+            </Link>
+          ))}
+        </div>
+      ) : null}
 
       {companies.length === 0 ? (
         <p className="mt-1.5 text-t11 text-ink-dim">도시에 아직 배치된 회사가 없습니다. 그룹 화면에서 배치합니다.</p>

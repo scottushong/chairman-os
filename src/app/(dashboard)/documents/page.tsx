@@ -122,7 +122,7 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
   ]
 
   return (
-    <div className="mx-auto max-w-[1600px] px-6 py-5">
+    <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6">
       <PageHeader
         icon="book"
         title="문서 / 지식"
@@ -200,7 +200,8 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
         <FilterChips label="소속" options={businessOptions} />
       </div>
 
-      <div className="mt-3 rounded-xl border border-line-soft bg-panel">
+      {/* 폰에서는 문서 하나가 카드 하나다(아래 m-cards) — 바깥 상자의 테두리 · 배경을 걷어 카드 속 카드를 피한다 */}
+      <div className="mt-3 rounded-xl border border-line-soft bg-panel max-sm:border-0 max-sm:bg-transparent">
         {shown.length === 0 ? (
           <div className="px-4 py-10 text-center">
             <p className="text-t12h text-ink-muted">
@@ -211,7 +212,8 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[880px] border-collapse">
+            {/* 폰(640px 이하): 일곱 칸 표를 옆으로 미는 대신 문서 하나를 카드 하나로 세운다 */}
+            <table className="m-cards w-full border-collapse sm:min-w-[880px]">
               <thead>
                 <tr className="text-t10 tracking-[0.08em] text-ink-muted">
                   <th className="px-3 py-2 text-left font-semibold">문서</th>
@@ -286,50 +288,58 @@ function DocumentRow({
   return (
     <tr className="border-t border-line-soft">
       <td className="px-3 py-2">
-        {/* 제목은 단건 화면으로 간다 — 공유 버튼이 거기 있다(Phase 6-1 블록 C-1).
-            목록 줄에 공유를 달지 않은 이유는 그 화면 주석에 적었다. */}
-        <Link
-          href={`/documents/${encodeURIComponent(doc.document_id)}`}
-          className="text-t12h leading-snug font-semibold transition-colors hover:text-accent"
-        >
-          {doc.title}
-        </Link>
-        <p className="mt-0.5 text-t10 text-ink-muted tnum">
-          {doc.document_id}
-          {folderPath ? <span className="ml-1.5">📁 {folderPath}</span> : null}
-        </p>
-        {doc.tags && doc.tags.length > 0 ? (
-          <p className="mt-0.5 flex flex-wrap gap-1">
-            {doc.tags.map((t) => (
-              <Link key={t} href={withParams(BASE, { tag: t })} className="rounded bg-raised px-1 text-t10 text-ink-dim hover:text-ink">
-                #{t}
-              </Link>
-            ))}
+        {/* 카드(m-cards)에서 칸은 가로 flex다 — 제목 · id · 태그가 옆으로 늘어서지 않게 한 덩어리로 묶는다 */}
+        <div>
+          {/* 제목은 단건 화면으로 간다 — 공유 버튼이 거기 있다(Phase 6-1 블록 C-1).
+              목록 줄에 공유를 달지 않은 이유는 그 화면 주석에 적었다. */}
+          <Link
+            href={`/documents/${encodeURIComponent(doc.document_id)}`}
+            // 1024px 미만: 글 링크(inline)엔 44px 최소 높이가 먹지 않는다 — flex로 세워 과녁을 키운다
+            className="text-t12h leading-snug font-semibold transition-colors hover:text-accent max-lg:flex max-lg:items-center"
+          >
+            {doc.title}
+          </Link>
+          <p className="mt-0.5 text-t10 text-ink-muted tnum">
+            {doc.document_id}
+            {folderPath ? <span className="ml-1.5">📁 {folderPath}</span> : null}
           </p>
-        ) : null}
+          {doc.tags && doc.tags.length > 0 ? (
+            <p className="mt-0.5 flex flex-wrap gap-1">
+              {doc.tags.map((t) => (
+                <Link key={t} href={withParams(BASE, { tag: t })} className="rounded bg-raised px-1 text-t10 text-ink-dim hover:text-ink">
+                  #{t}
+                </Link>
+              ))}
+            </p>
+          ) : null}
+        </div>
       </td>
-      <td className="px-3 py-2 text-t11h text-ink-dim">{scopeName}</td>
-      <td className="px-3 py-2 text-t11h text-ink-dim">{doc.doc_type}</td>
-      <td className="px-3 py-2">
+      <td className="px-3 py-2 text-t11h text-ink-dim" data-label="소속">{scopeName}</td>
+      <td className="px-3 py-2 text-t11h text-ink-dim" data-label="유형">{doc.doc_type}</td>
+      <td className="px-3 py-2" data-label="등급">
         <span
           className={`rounded px-1.5 py-0.5 text-t10 font-semibold ${CLASS_TONE[doc.security_class]}`}
         >
           {SECURITY_CLASS_LABEL_KO[doc.security_class]}
         </span>
       </td>
-      <td className="px-3 py-2 text-right text-t11h text-ink-dim tnum">
-        v{doc.version}
-        {previous ? (
-          <Link href={`/documents/${encodeURIComponent(previous.document_id)}`} className="block text-t10 text-ink-muted hover:text-ink hover:underline">
-            ← v{previous.version}
-          </Link>
-        ) : null}
+      <td className="px-3 py-2 text-right text-t11h text-ink-dim tnum" data-label="버전">
+        <span>
+          v{doc.version}
+          {previous ? (
+            <Link href={`/documents/${encodeURIComponent(previous.document_id)}`} className="block text-t10 text-ink-muted hover:text-ink hover:underline">
+              ← v{previous.version}
+            </Link>
+          ) : null}
+        </span>
       </td>
-      <td className="px-3 py-2 text-t11 text-ink-muted tnum">
-        {formatDateTime(doc.created_at)}
-        <span className="block text-ink-muted">{doc.uploaded_by}</span>
+      <td className="px-3 py-2 text-t11 text-ink-muted tnum" data-label="등록">
+        <span>
+          {formatDateTime(doc.created_at)}
+          <span className="block text-ink-muted">{doc.uploaded_by}</span>
+        </span>
       </td>
-      <td className="px-3 py-2 text-center">
+      <td className="px-3 py-2 text-center" data-label="링크">
         {/* 바깥으로 나가는 링크다. noreferrer를 붙이는 이유는 사내 스토리지 주소에
             Chairman OS의 화면 주소가 Referer로 따라 나가지 않게 하기 위해서다. */}
         <a

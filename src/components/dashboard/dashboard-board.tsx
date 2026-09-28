@@ -298,14 +298,14 @@ export function DashboardBoard({
          * 줄이므로 카드 한 장의 최소 폭이 지켜진다.
          *
          * 1440px에서 다섯 장이 한 줄에 선다. 1280~1439는 넷, 1024~1279는 셋,
-         * 그 아래는 둘이다 — 폰에서도 두 장은 나란히 읽힌다.
+         * 640~1023은 둘, 폰(640px 미만)은 한 장이다 — 회장 규칙 «폰은 카드 1열».
          *
          * **이름 있는 변형(lg/xl)과 arbitrary 변형을 섞지 않는다.** 처음엔
          * `xl:grid-cols-4 min-[1440px]:grid-cols-5`로 썼는데 2560px에서도 네 칸만 섰다 —
          * 둘의 특이도가 같아 생성된 CSS의 순서가 승부를 가르는데, arbitrary 쪽이
          * 먼저 나와 xl에게 덮였다. 전부 min-[]로 맞추면 폭 순서대로 정렬된다.
          */}
-        <div className="grid grid-cols-2 items-stretch gap-2 min-[1024px]:grid-cols-3 min-[1280px]:grid-cols-4 min-[1440px]:grid-cols-5">
+        <div className="grid grid-cols-1 items-stretch gap-2 min-[640px]:grid-cols-2 min-[1024px]:grid-cols-3 min-[1280px]:grid-cols-4 min-[1440px]:grid-cols-5">
           {shown.map((b) => (
             <div key={b.business_id} className="min-w-0">
               <BusinessCard

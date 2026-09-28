@@ -17,7 +17,8 @@ export interface FilterOption {
 
 export function FilterChips({ label, options }: { label: string; options: FilterOption[] }) {
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
+    // m-tabs: 폰에서는 칩이 서너 줄로 쌓여 목록이 화면 아래로 밀려났다 — 한 줄로 두고 옆으로 민다.
+    <div className="m-tabs flex flex-wrap items-center gap-1.5">
       <span className="text-t10 font-semibold tracking-[0.08em] text-ink-muted">{label}</span>
       {options.map((o) => (
         <Link

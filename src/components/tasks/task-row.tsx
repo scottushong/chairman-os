@@ -95,22 +95,25 @@ export function TaskRow({
   return (
     <tr className={`border-t border-line-soft transition-opacity ${pending ? 'opacity-50' : ''}`}>
       <td className="px-3 py-2">
-        {/* 제목이 단건 화면으로 가는 자리다(DEFERRED D-12). 줄 전체를 링크로 만들지 않는다 —
-            같은 줄에 상태 select와 토글 버튼이 있어 누르는 자리가 겹친다. */}
-        <Link
-          href={`/tasks/${encodeURIComponent(task.task_id)}`}
-          className="text-t12h leading-snug font-semibold transition-colors hover:text-accent"
-        >
-          {task.title}
-        </Link>
-        <p className="mt-0.5 truncate text-t10h text-ink-muted">
-          {businessName} · {projectName}
-        </p>
+        <div>
+          {/* 제목이 단건 화면으로 가는 자리다(DEFERRED D-12). 줄 전체를 링크로 만들지 않는다 —
+              같은 줄에 상태 select와 토글 버튼이 있어 누르는 자리가 겹친다. */}
+          <Link
+            href={`/tasks/${encodeURIComponent(task.task_id)}`}
+            // 1024px 미만: 글 링크(inline)는 min-height가 먹지 않아 과녁이 21px였다 — flex로 세워 44px 규칙을 받는다
+            className="text-t12h leading-snug font-semibold transition-colors hover:text-accent max-lg:flex max-lg:items-center"
+          >
+            {task.title}
+          </Link>
+          <p className="mt-0.5 truncate text-t10h text-ink-muted">
+            {businessName} · {projectName}
+          </p>
+        </div>
       </td>
 
-      <td className="px-3 py-2 text-t11h text-ink-dim">{task.owner}</td>
+      <td className="px-3 py-2 text-t11h text-ink-dim" data-label="담당">{task.owner}</td>
 
-      <td className="px-3 py-2">
+      <td className="px-3 py-2" data-label="중요도">
         <span
           className={`rounded px-1.5 py-0.5 text-t10 font-semibold ${PRIORITY_TONE[task.priority]}`}
         >
@@ -118,7 +121,7 @@ export function TaskRow({
         </span>
       </td>
 
-      <td className="px-3 py-2">
+      <td className="px-3 py-2" data-label="상태">
         {/* 06_상태코드의 4개만 고를 수 있다. 자유 입력을 두면 임의 상태명이 생긴다. */}
         <select
           value={status}
@@ -135,11 +138,12 @@ export function TaskRow({
         </select>
       </td>
 
-      <td className="px-3 py-2 text-right text-t11h text-ink-muted tnum">
+      <td className="px-3 py-2 text-right text-t11h text-ink-muted tnum" data-label="경과">
         {status === 'Done' ? '—' : days > 0 ? `${days}일` : '오늘'}
       </td>
 
       <td
+        data-label="마감"
         className={`px-3 py-2 text-right text-t11h font-semibold tnum ${
           overdue ? 'text-critical' : 'text-ink-dim'
         }`}
@@ -147,7 +151,7 @@ export function TaskRow({
         {formatDDay(task.deadline)}
       </td>
 
-      <td className="px-3 py-2 text-center">
+      <td className="px-3 py-2 text-center" data-label="회장 확인">
         {/* CH-017. 이 플래그 하나가 그 업무를 회장 화면으로 올리는 유일한 조건이다. */}
         <button
           type="button"

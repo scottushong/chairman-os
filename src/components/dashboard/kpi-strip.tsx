@@ -54,9 +54,10 @@ export function KpiStrip({ kpis: all, businessIds, title, scopeNote }: KpiStripP
 
   return (
     <section aria-label={title ?? '그룹 재무 KPI'}>
-      <div className="mb-2 flex items-baseline gap-2">
+      {/* 폰에서는 제목이 «그룹 KPI (당 / 월)»로 접혔다 — 제목은 한 줄, 설명이 다음 줄로 내려간다. */}
+      <div className="mb-2 flex items-baseline gap-2 max-lg:flex-wrap">
         {/* '그룹 전체 재무 현황'은 아래 추이 카드(CH-025~026)가 쓴다. 같은 제목을 두 번 걸지 않는다. */}
-        <h2 className="text-t13 font-semibold">{title ?? '그룹 KPI (당월)'}</h2>
+        <h2 className="text-t13 font-semibold whitespace-nowrap">{title ?? '그룹 KPI (당월)'}</h2>
         <span className="text-t11 text-ink-muted tnum">
           {period ? `${period.replace('-', '년 ')}월` : '기간 없음'} ·{' '}
           {scopeNote ?? `표시 중인 ${businessIds.length}개사 합계`}

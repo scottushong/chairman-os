@@ -51,7 +51,7 @@ export default async function AttentionRulesPage() {
   const disabled = rules.filter((r) => !r.enabled)
 
   return (
-    <div className="mx-auto max-w-[1280px] px-6 py-5">
+    <div className="mx-auto max-w-[1280px] px-4 py-5 sm:px-6">
       <PageHeader
         icon="settings"
         title="주의 규칙 · 임계값"
@@ -105,7 +105,9 @@ export default async function AttentionRulesPage() {
         </h2>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[920px] border-collapse text-t11h">
+          {/* 폰(640px 이하): 규칙 하나를 카드 하나로(m-cards). 여러 조각짜리 칸은 div로 묶었다 —
+              카드의 칸은 가로 flex라 안 묶으면 값과 보충 줄이 옆으로 흩어진다. */}
+          <table className="m-cards w-full border-collapse text-t11h sm:min-w-[920px]">
             <thead>
               <tr className="border-b border-line-soft text-left text-t10h text-ink-dim">
                 <th className="py-1.5 pr-3 font-normal">규칙</th>
@@ -123,61 +125,70 @@ export default async function AttentionRulesPage() {
                 return (
                   <tr key={r.rule_key} className="border-b border-line-soft align-top last:border-0">
                     <td className="py-2 pr-3">
-                      <span className="font-semibold text-ink">{r.name}</span>
-                      <span className="ml-1.5 text-t10 text-ink-muted">{r.rule_key}</span>
-                      {!r.enabled ? (
-                        <span className="ml-1.5 rounded bg-raised px-1.5 py-0.5 text-t9h text-ink-dim">
-                          꺼짐
-                        </span>
-                      ) : null}
-                      {/* 수치 규칙인데 잴 식이 없는 경우. «안 걸렸다»로 읽히면 안 된다. */}
-                      {r.kind === 'metric' && !canMeasure ? (
-                        <span className="block text-t10 leading-relaxed text-warning">
-                          이 저장소에 잴 식이 없습니다 — 야간 Job이 이 규칙을 평가하지 않습니다.
-                        </span>
-                      ) : null}
-                    </td>
-                    <td className="py-2 pr-3 text-t10h text-ink-dim">
-                      {r.kind === 'metric' ? '수치 자동' : '수동 플래그'}
-                      {r.metric ? (
-                        <span className="block text-t10 text-ink-muted">{r.metric}</span>
-                      ) : null}
-                    </td>
-                    <td className="py-2 pr-3 tnum">
-                      {/* ① 빈 칸을 그리지 않는다. 수동 규칙에는 임계가 «없다». */}
-                      {r.threshold === null ? (
-                        <span className="text-t10h text-ink-muted">
-                          없음 (수동 플래그 규칙)
-                        </span>
-                      ) : (
-                        <>
-                          <span className="font-semibold text-ink">
-                            {r.comparator} {r.threshold}
-                            {/* ③ 단위는 코드의 RULE_UNIT에서 온다. 없으면 지어내지 않는다. */}
-                            {unit ? <span className="ml-0.5 text-t10 text-ink-dim">{unit}</span> : null}
+                      <div>
+                        <span className="font-semibold text-ink">{r.name}</span>
+                        <span className="ml-1.5 text-t10 text-ink-muted">{r.rule_key}</span>
+                        {!r.enabled ? (
+                          <span className="ml-1.5 rounded bg-raised px-1.5 py-0.5 text-t9h text-ink-dim">
+                            꺼짐
                           </span>
-                          {!unit ? (
-                            <span className="block text-t10 text-ink-muted">단위 미표기</span>
-                          ) : null}
-                        </>
-                      )}
-                    </td>
-                    <td className="py-2 pr-3 tnum">
-                      {r.window_days === null ? (
-                        <span className="text-t10h text-ink-muted">없음</span>
-                      ) : (
-                        <>
-                          <span className="text-ink">{r.window_days}일</span>
-                          <span className="block text-t10 text-ink-muted">
-                            실제 {windowMonths(r.window_days)}개월로 접힘
+                        ) : null}
+                        {/* 수치 규칙인데 잴 식이 없는 경우. «안 걸렸다»로 읽히면 안 된다. */}
+                        {r.kind === 'metric' && !canMeasure ? (
+                          <span className="block text-t10 leading-relaxed text-warning">
+                            이 저장소에 잴 식이 없습니다 — 야간 Job이 이 규칙을 평가하지 않습니다.
                           </span>
-                        </>
-                      )}
+                        ) : null}
+                      </div>
                     </td>
-                    <td className="py-2 pr-3 text-t10h text-ink-dim">
+                    <td className="py-2 pr-3 text-t10h text-ink-dim" data-label="종류">
+                      <div>
+                        {r.kind === 'metric' ? '수치 자동' : '수동 플래그'}
+                        {r.metric ? (
+                          <span className="block text-t10 text-ink-muted">{r.metric}</span>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="py-2 pr-3 tnum" data-label="임계">
+                      <div>
+                        {/* ① 빈 칸을 그리지 않는다. 수동 규칙에는 임계가 «없다». */}
+                        {r.threshold === null ? (
+                          <span className="text-t10h text-ink-muted">
+                            없음 (수동 플래그 규칙)
+                          </span>
+                        ) : (
+                          <>
+                            <span className="font-semibold text-ink">
+                              {r.comparator} {r.threshold}
+                              {/* ③ 단위는 코드의 RULE_UNIT에서 온다. 없으면 지어내지 않는다. */}
+                              {unit ? <span className="ml-0.5 text-t10 text-ink-dim">{unit}</span> : null}
+                            </span>
+                            {!unit ? (
+                              <span className="block text-t10 text-ink-muted">단위 미표기</span>
+                            ) : null}
+                          </>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-2 pr-3 tnum" data-label="창">
+                      <div>
+                        {r.window_days === null ? (
+                          <span className="text-t10h text-ink-muted">없음</span>
+                        ) : (
+                          <>
+                            <span className="text-ink">{r.window_days}일</span>
+                            <span className="block text-t10 text-ink-muted">
+                              실제 {windowMonths(r.window_days)}개월로 접힘
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-2 pr-3 text-t10h text-ink-dim" data-label="출발 등급">
                       {r.severity_base} · {ATTENTION_LEVEL_LABEL_KO[r.severity_base]}
                     </td>
-                    <td className="py-2">
+                    {/* 고치기 칸은 편집기가 폭을 다 쓰게 가로 flex를 끈다 */}
+                    <td className="py-2 max-sm:block!">
                       {canWrite ? (
                         <RuleEditor rule={r} />
                       ) : (

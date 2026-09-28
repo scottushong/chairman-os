@@ -80,7 +80,7 @@ export default async function DependencyPage() {
   const unknownTotal = rows.reduce((a, r) => a + r.unknown, 0)
 
   return (
-    <div className="mx-auto max-w-[1280px] px-6 py-5">
+    <div className="mx-auto max-w-[1280px] px-4 py-5 sm:px-6">
       <PageHeader
         icon="shield"
         title="의존"
@@ -141,7 +141,9 @@ export default async function DependencyPage() {
           <Missing>볼 수 있는 회사가 없습니다.</Missing>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[880px] border-collapse text-t11h">
+            {/* 폰(640px 이하): 일곱 칸을 옆으로 미는 대신 회사 하나를 카드 하나로 세운다(m-cards).
+                여러 줄짜리 칸은 div로 한 덩어리로 묶었다 — 카드의 칸은 가로 flex라 안 묶으면 옆으로 흩어진다. */}
+            <table className="m-cards w-full border-collapse text-t11h sm:min-w-[880px]">
               <thead>
                 <tr className="border-b border-line-soft text-left text-t10h text-ink-dim">
                   <th className="py-1.5 pr-3 font-normal">회사</th>
@@ -161,26 +163,28 @@ export default async function DependencyPage() {
                       <td className="py-2 pr-3">
                         <CompanyLink id={r.business_id} name={nameOf.get(r.business_id) ?? r.business_id} />
                       </td>
-                      <td className="py-2 pr-3">
-                        {r.current === null ? (
-                          <span className="text-t10h text-ink-muted">
-                            아직 계산할 수 없습니다
-                            <br />
-                            (처리된 결정 0건)
-                          </span>
-                        ) : (
-                          <>
-                            <Percent value={r.current} />
-                            <span className="ml-1 text-t10 text-ink-muted tnum">{r.currentPeriod}</span>
-                            {r.unknown > 0 ? (
-                              <span className="block text-t10 text-ink-muted">
-                                역산 미도달 {r.unknown}건 제외
-                              </span>
-                            ) : null}
-                          </>
-                        )}
+                      <td className="py-2 pr-3" data-label="의존도">
+                        <div>
+                          {r.current === null ? (
+                            <span className="text-t10h text-ink-muted">
+                              아직 계산할 수 없습니다
+                              <br />
+                              (처리된 결정 0건)
+                            </span>
+                          ) : (
+                            <>
+                              <Percent value={r.current} />
+                              <span className="ml-1 text-t10 text-ink-muted tnum">{r.currentPeriod}</span>
+                              {r.unknown > 0 ? (
+                                <span className="block text-t10 text-ink-muted">
+                                  역산 미도달 {r.unknown}건 제외
+                                </span>
+                              ) : null}
+                            </>
+                          )}
+                        </div>
                       </td>
-                      <td className="w-[140px] py-2 pr-3">
+                      <td className="w-[140px] py-2 pr-3" data-label="12개월">
                         {/* §32: 그래프를 많이 넣지 않는다. 회사당 한 줄, 축도 눈금도 없다. */}
                         {spark.length >= 2 ? (
                           <Sparkline data={spark} className="h-[22px] w-[120px]" />
@@ -190,48 +194,54 @@ export default async function DependencyPage() {
                           </span>
                         )}
                       </td>
-                      <td className="py-2 pr-3">
+                      <td className="py-2 pr-3" data-label="자율성">
                         <AutonomyGauge level={r.autonomy?.level ?? null} />
                       </td>
-                      <td className="py-2 pr-3 tnum">
-                        {canSeeInterventions ? (
-                          <>
-                            {r.interventions}건
-                            <span className="ml-1 text-t10 text-ink-muted">{thisMonth}</span>
-                          </>
-                        ) : (
-                          <span className="text-t10h text-ink-muted">권한 밖이라 집계되지 않습니다</span>
-                        )}
+                      <td className="py-2 pr-3 tnum" data-label="이번 달 개입">
+                        <div>
+                          {canSeeInterventions ? (
+                            <>
+                              {r.interventions}건
+                              <span className="ml-1 text-t10 text-ink-muted">{thisMonth}</span>
+                            </>
+                          ) : (
+                            <span className="text-t10h text-ink-muted">권한 밖이라 집계되지 않습니다</span>
+                          )}
+                        </div>
                       </td>
-                      <td className="py-2 pr-3">
-                        {r.nextTransfer ? (
-                          <>
-                            <span className="text-ink">{r.nextTransfer.area}</span>
-                            <span className="block text-t10 text-ink-muted">
-                              {TRANSFER_STATUS_LABEL_KO[r.nextTransfer.transfer_status ?? 'not_started']}
-                              {r.nextTransfer.target_date ? ` · ${r.nextTransfer.target_date}` : ' · 목표일 없음'}
-                            </span>
-                          </>
-                        ) : (
-                          <span className="text-t10h text-ink-muted">이양 계획 없음</span>
-                        )}
-                        {r.transfer ? (
-                          <span className="block text-t10 text-ink-muted tnum">
-                            이양 {r.transfer.done}/{r.transfer.planned}
-                          </span>
-                        ) : null}
-                      </td>
-                      <td className="py-2">
-                        {r.nextAbsence ? (
-                          <>
-                            <span className="text-ink tnum">{r.nextAbsence.days}일</span>
+                      <td className="py-2 pr-3" data-label="다음 이양">
+                        <div>
+                          {r.nextTransfer ? (
+                            <>
+                              <span className="text-ink">{r.nextTransfer.area}</span>
+                              <span className="block text-t10 text-ink-muted">
+                                {TRANSFER_STATUS_LABEL_KO[r.nextTransfer.transfer_status ?? 'not_started']}
+                                {r.nextTransfer.target_date ? ` · ${r.nextTransfer.target_date}` : ' · 목표일 없음'}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-t10h text-ink-muted">이양 계획 없음</span>
+                          )}
+                          {r.transfer ? (
                             <span className="block text-t10 text-ink-muted tnum">
-                              {r.nextAbsence.scheduled_on} 시작 예정
+                              이양 {r.transfer.done}/{r.transfer.planned}
                             </span>
-                          </>
-                        ) : (
-                          <span className="text-t10h text-ink-muted">예정된 테스트 없음</span>
-                        )}
+                          ) : null}
+                        </div>
+                      </td>
+                      <td className="py-2" data-label="다음 부재 테스트">
+                        <div>
+                          {r.nextAbsence ? (
+                            <>
+                              <span className="text-ink tnum">{r.nextAbsence.days}일</span>
+                              <span className="block text-t10 text-ink-muted tnum">
+                                {r.nextAbsence.scheduled_on} 시작 예정
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-t10h text-ink-muted">예정된 테스트 없음</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )
