@@ -1943,8 +1943,9 @@ B-4가 찾은 결함 하나를 고쳤다. **리뷰 루프가 없는 작업이고
   공지 전체는 /groupware에 있다.
 - **«활동은 그룹 시티에 표시» 고지는 회사 단위로만 약속했다.** 지금 그룹 시티는 사람별 접속을 그리지 않는다 —
   그리게 되면 /privacy 2-1절 문구부터 고친다.
-- **Executive 이상 TOTP 필수는 Supabase MFA(TOTP)가 켜져 있어야 선다.** 꺼진 채 배포하면 회장을 포함해
-  Executive 이상이 /mfa에서 멈춘다(OPERATIONS 3-1절 3번을 앱 배포 전에).
+- **Executive 이상 TOTP 필수는 `MFA_ENFORCE=true`일 때만 선다(기본 꺼짐, 회장 결정 2026-09-28).** 켜기 전에는
+  등록만 열려 있고, 등록한 사람도 로그인 때 코드를 묻지 않는다. 켤 때 Supabase MFA(TOTP)가 꺼져 있으면
+  Executive 이상이 /mfa에서 멈춘다(OPERATIONS 3-1절 3번). DB(`is_active()`)는 aal을 보지 않는다 — 앱 한 겹이다.
 - **세션 7일은 JWT amr의 최초 인증 시각 기준.** 비밀번호를 바꾸거나 MFA를 새로 거치면 amr 시각이 갱신될 수 있다
   (Supabase 동작). 문제가 되면 user_profiles에 last_login_at을 두고 그걸로 판정한다.
 - **팀장 요청함의 «데이터 있는» 스크린샷은 없다.** dummy 사용자 전환이 env라 dev 서버가 메모리를 잃는다 —

@@ -360,8 +360,10 @@ select tgname from pg_trigger where tgrelid = 'auth.users'::regclass;
    가입을 끄면 «처음이세요?»가 `signup_disabled`로 실패한다 — 초대가 문지기이므로 켜 두어도 된다.
 2. **Authentication → URL Configuration**: Site URL = 앱 주소, Redirect URLs에 `https://<앱 주소>/auth/confirm`
    (Preview를 쓰면 그 주소도). 빠지면 인증 링크가 Site URL 루트로 떨어진다.
-3. **Authentication → Multi-Factor**: TOTP **Enabled**. 꺼져 있으면 `/mfa`가 «시작하지 못했습니다»를 띄우고
-   **Executive 이상은 앱에 못 들어간다**(proxy가 aal2를 요구한다). 이 설정을 먼저 켜고 앱을 배포한다.
+3. **Authentication → Multi-Factor**: TOTP **Enabled**. 꺼져 있으면 `/mfa`가 «시작하지 못했습니다»를 띄운다.
+   **강제는 앱 환경변수 `MFA_ENFORCE=true`일 때만**(기본 꺼짐 — 등록만 열려 있다). 켜면 Executive 이상은
+   세션이 aal2가 아닐 때 `/mfa`로 간다. 순서: TOTP Enabled → 회장이 `/mfa`에서 등록 · 한 번 확인 →
+   Vercel Production에 `MFA_ENFORCE=true` → Redeploy. 등록 전에 켜면 회장도 `/mfa`에서 등록부터 해야 들어간다.
 4. **Authentication → Policies(Passwords)**: Minimum length 12, **Prevent use of leaked passwords 켬**
    (Pro 이상). 앱도 같은 검사(`src/lib/password.ts`, HIBP k-익명성)를 하므로 플랜이 안 되면 앱 검사만으로 선다.
 5. **Authentication → Sessions**: Time-box user sessions = 7일(Pro 이상). 앱(proxy)과 DB(`is_active()`)도

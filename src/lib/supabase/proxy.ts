@@ -19,12 +19,19 @@ import { requireSupabaseConfig } from './config'
  *   expired  최초 로그인에서 7일이 지났다 → 다시 로그인.
  *   revoked  회장이 «모든 기기 로그아웃»을 한 뒤의 세션이다(0042 sessions_revoked_at) → 다시 로그인.
  *   mfa      Executive 이상인데 이 세션이 2단계 인증(aal2)을 거치지 않았다 → /mfa.
+ *            **MFA_ENFORCE=true일 때만.** 기본은 꺼짐 — 등록(/mfa)은 열려 있되 아무도 보내지 않는다.
+ *            회장이 TOTP를 등록한 뒤 Vercel에 켜고 Redeploy한다(OPERATIONS 3-1절).
  * 최초 로그인 시각은 JWT의 amr(인증 방법별 시각)에서 읽는다 — 토큰을 갱신해도 바뀌지 않는다.
  * DB도 같은 판정을 한다(0042 is_active()) — 이 자리는 사람에게 «다시 로그인하세요»를 보여 주는 쪽이다.
  */
 export type SessionGate = 'ok' | 'expired' | 'revoked' | 'mfa'
 
 export const SESSION_MAX_DAYS = 7
+/** 2단계 인증 강제. 서버 전용 값이라 런타임에 읽는다 — 바꾸면 Redeploy. */
+export function mfaEnforced(): boolean {
+  return process.env.MFA_ENFORCE === 'true'
+}
+
 const RANK: Record<string, number> = { Chairman: 5, GroupCFO: 4, BusinessCEO: 3, Executive: 2, TeamLead: 1, Member: 0 }
 
 export async function resolveSession(
@@ -69,7 +76,7 @@ export async function resolveSession(
     const loginAt = stamps.length > 0 ? Math.min(...stamps) * 1000 : Date.parse(user.last_sign_in_at ?? '') || 0
     if (loginAt && Date.now() - loginAt > SESSION_MAX_DAYS * 86_400_000) gate = 'expired'
     else if (profile?.sessions_revoked_at && loginAt < Date.parse(profile.sessions_revoked_at)) gate = 'revoked'
-    else if ((RANK[profile?.role ?? ''] ?? -1) >= 2 && aal?.currentLevel !== 'aal2') gate = 'mfa'
+    else if (mfaEnforced() && (RANK[profile?.role ?? ''] ?? -1) >= 2 && aal?.currentLevel !== 'aal2') gate = 'mfa'
   }
 
   return {

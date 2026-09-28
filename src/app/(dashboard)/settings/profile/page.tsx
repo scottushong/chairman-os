@@ -8,6 +8,7 @@ import { Icon } from '@/components/ui/icon'
 import { decideChairmanTimezone } from '@/lib/chairman-timezone'
 import { formatDateTime } from '@/lib/format'
 import { getRepository } from '@/lib/repository'
+import { mfaEnforced } from '@/lib/supabase/proxy'
 import { ROLE_LABEL_KO, SECURITY_CLASS_LABEL_KO } from '@/types'
 
 /**
@@ -112,15 +113,15 @@ export default async function ProfileSettingsPage() {
         ) : null}
       </section>
 
-      {/* Phase 6-2 블록 3 — 2단계 인증. 임원 이상은 proxy가 필수로 보낸다. 나머지는 여기서 켠다. */}
+      {/* Phase 6-2 블록 3 — 2단계 인증. MFA_ENFORCE=true면 임원 이상은 proxy가 필수로 보낸다. 나머지는 여기서 켠다. */}
       <section className="mt-3.5 rounded-xl border border-line-soft bg-panel p-3.5">
         <h2 className="flex items-baseline gap-1.5 text-[13px] font-semibold">
           <Icon name="shield" className="size-4 text-ink-dim" />
           2단계 인증
         </h2>
         <p className="mt-1 text-[10.5px] leading-relaxed text-ink-muted">
-          인증 앱(Google Authenticator 등)의 6자리 코드로 한 번 더 확인합니다. 임원 이상은 필수이고, 그 밖의
-          역할은 선택입니다. 비밀번호는 12자 이상이어야 하며 유출된 비밀번호 목록에 있으면 쓸 수 없습니다.
+          인증 앱(Google Authenticator 등)의 6자리 코드로 한 번 더 확인합니다.
+          {mfaEnforced() ? ' 임원 이상은 필수이고, 그 밖의 역할은 선택입니다.' : ''} 비밀번호는 12자 이상이어야 하며 유출된 비밀번호 목록에 있으면 쓸 수 없습니다.
         </p>
         <Link
           href="/mfa?next=/settings/profile"
