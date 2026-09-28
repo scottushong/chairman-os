@@ -36,6 +36,7 @@ import {
   dummyDecisionRows,
   dummyInterventions,
 } from './dummy-succession'
+import { attachmentSearchText, dummyAttachments } from './dummy-attachments'
 import * as books from './dummy-books'
 import * as chat from './dummy-chat'
 import * as city from './dummy-city'
@@ -57,7 +58,7 @@ import {
   dummyViewerId,
 } from './dummy-org'
 import { emptyStrategy } from '@/lib/strategy-fields'
-import type { SearchHit } from '@/lib/search'
+import { attachmentHitId, type SearchHit } from '@/lib/search'
 import { MONITOR_DAYS, needsChairmanApproval } from '@/types'
 import type {
   AppNotification,
@@ -443,6 +444,29 @@ const memoryActivityWeek = (() => {
 export const dummyRepository: ChairmanRepository = {
   mode: 'dummy',
 
+  /**
+   * Phase 10 첨부(0045). 대상 판정은 이 어댑터의 목록(각각 RLS를 옮겨 적은 것)으로 한다 —
+   * 이니셔티브는 0017의 역할 셋(Chairman · GroupCFO · AIAgent), 회사 · 결재는 회사 격리, 문서는 listDocuments.
+   */
+  ...dummyAttachments(async (table, id) => {
+    const viewer = dummyViewer()
+    if (table === 'initiatives') {
+      const found = memoryInitiatives.find((i) => i.initiative_id === id)
+      const ok = !!found && ['Chairman', 'GroupCFO', 'AIAgent'].includes(viewer.role)
+      return { visible: ok, business_id: found?.business_id ?? null }
+    }
+    if (table === 'businesses') {
+      const ok = [...businesses, ...memoryBusinesses].some((b) => b.business_id === id) && dummyHasBusiness(viewer, id)
+      return { visible: ok, business_id: id }
+    }
+    if (table === 'documents') {
+      const d = (await dummyRepository.listDocuments()).find((x) => x.document_id === id)
+      return { visible: !!d, business_id: d && d.business_id !== 'group' ? d.business_id : null }
+    }
+    const d = (await dummyRepository.listDecisions()).find((x) => x.decision_id === id)
+    return { visible: !!d && dummyHasBusiness(viewer, d.business_id), business_id: d?.business_id ?? null }
+  }),
+
   async listBusinesses() {
     return [...businesses, ...memoryBusinesses]
   },
@@ -667,6 +691,17 @@ export const dummyRepository: ChairmanRepository = {
           title: d.title,
           subtitle: `${scopeName(d.business_id === 'group' ? null : d.business_id)} · ${d.doc_type}`,
           business_id: d.business_id === 'group' ? null : d.business_id,
+        })),
+      // Phase 10 — 첨부 요약도 찾는다. 보이는 것만(listRecentAttachments가 0045 판정을 옮겨 적었다).
+      ...(await this.listRecentAttachments(null, 500))
+        .filter((a) => attachmentSearchText(a).includes(q))
+        .slice(0, limitPerKind)
+        .map((a): SearchHit => ({
+          kind: 'attachment',
+          id: attachmentHitId(a.entity_table, a.entity_id),
+          title: a.file_name,
+          subtitle: `${scopeName(a.business_id)} · 첨부 요약`,
+          business_id: a.business_id,
         })),
     ]
   },

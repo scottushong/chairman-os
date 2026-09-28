@@ -82,6 +82,9 @@ const tables: Record<string, Row[]> = {
   user_invitations: records((i) => ({ invitation_id: id(i), email: `${i}@example.invalid`,
     role: 'Chairman', max_security_class: 'Vault', business_ids: null, display_name: '',
     title_ko: null, invited_at: '2026-09-01', accepted_at: null, revoked_at: null })),
+  // Phase 10 (0045). search() also reads attachment summaries (bounded like the other kinds).
+  attachments: records((i) => ({ attachment_id: id(i), entity_table: 'businesses', entity_id: '0000',
+    file_name: `File ${i}.pdf`, business_id: '0000' })),
   // Phase 4-A (0017). listInitiatives() is a single unranged select (chairman_projects'
   // pattern — "dozens, not thousands") and is covered separately in checkInitiatives(),
   // not through checkPagination()'s row-cap-busting fixture(). Kept here anyway so both
@@ -199,7 +202,7 @@ async function checkPagination() {
     assert.equal((await read()).length, SIZE)
   }
   const hits = await repo.search('Task', 3)
-  assert.equal(hits.length, 15, 'Search remains bounded to three per kind')
+  assert.equal(hits.length, 18, 'Search remains bounded to three per kind (six kinds)')
   for (const cap of [1, 500]) {
     const small = { ...tables, alerts: tables.alerts.slice(0, cap === 1 ? 3 : 1000) }
     assert.equal((await fixture(cap, undefined, small).repo.listAlerts()).length, small.alerts.length)

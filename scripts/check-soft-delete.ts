@@ -45,6 +45,9 @@ const DELETE_ALLOWED: Record<string, string> = {
   autonomy_assessments: '자연 키(회사 × 분기)',
   absence_tests: '자연 키(회사 × 일수)',
   teams: '자연 키(team_id)',
+  // 0045 — 첨부는 파일 실체와 같이 지운다(버킷 객체를 먼저 지우고 줄을 지운다). 감사에 삭제가 남는다.
+  attachments: '파일 실체와 같이 지운다 — 감사에 delete_request',
+  attachment_vault_viewers: '권한 부여 줄 — 회수가 삭제다',
 }
 
 const SOFT = [

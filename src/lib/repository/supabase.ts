@@ -6,7 +6,7 @@ import { AUDIT_ACTION, DECISION_STATUS, type DecisionAuditRecord } from '@/lib/d
 import { dayKey } from '@/lib/format'
 import { LOGO_BUCKET, logoPath } from '@/lib/initiative-logo'
 import { PHOTO_BUCKET, photoPath } from '@/lib/profile-photo'
-import { needsSubstringSearch, type SearchHit } from '@/lib/search'
+import { attachmentHitId, needsSubstringSearch, type SearchHit } from '@/lib/search'
 
 import type {
   AbsenceTest,
@@ -140,6 +140,7 @@ import {
   type BriefTimezoneSettings,
   type UserSettings,
 } from './types'
+import { attachmentMethods } from './supabase-attachments'
 
 /**
  * Supabase 어댑터.
@@ -761,6 +762,9 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
 
   return {
     mode: 'live',
+
+    // Phase 10 첨부(0045) — 읽기는 표가 없는 DB를 견딘다(supabase-attachments.ts 머리 주석).
+    ...attachmentMethods(sb),
 
     async listBusinesses(): Promise<Business[]> {
       const { data, error } = await fetchAll('businesses', ['business_id'], (from, to) =>
@@ -1924,6 +1928,21 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
           businessNames(),
         ])
 
+      /**
+       * Phase 10 — 첨부 요약도 찾는다(CH-043). 요약 문장에 한글이 섞이므로 늘 ILIKE다(search_text는
+       * 0045 트리거가 파일 이름 + 요약으로 채운다). 0045가 없는 DB에서는 이 한 갈래만 빈다.
+       */
+      const attachmentRows = await sb
+        .from('attachments')
+        .select('attachment_id,entity_table,entity_id,file_name,business_id')
+        .or(orIlike(['file_name', 'search_text'], q))
+        .limit(limitPerKind)
+        .returns<{ attachment_id: string; entity_table: string; entity_id: string; file_name: string; business_id: string | null }[]>()
+      const attachmentHits =
+        attachmentRows.error && (attachmentRows.error.code === 'PGRST205' || attachmentRows.error.code === '42P01')
+          ? []
+          : unwrap('attachments', attachmentRows.data, attachmentRows.error)
+
       const scopeName = (id: string | null) =>
         id === null ? '그룹 공통' : (names.get(id) ?? id)
 
@@ -1973,6 +1992,15 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
             id: r.document_id,
             title: r.title,
             subtitle: `${scopeName(r.business_id)} · ${r.doc_type}`,
+            business_id: r.business_id,
+          }),
+        ),
+        ...attachmentHits.map(
+          (r): SearchHit => ({
+            kind: 'attachment',
+            id: attachmentHitId(r.entity_table, r.entity_id),
+            title: r.file_name,
+            subtitle: `${scopeName(r.business_id)} · 첨부 요약`,
             business_id: r.business_id,
           }),
         ),

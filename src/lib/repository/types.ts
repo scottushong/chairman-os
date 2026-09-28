@@ -10,7 +10,13 @@ import type {
   AbsenceTest,
   Account,
   AiNightOutput,
+  AiUsageInput,
   Alert,
+  Attachment,
+  AttachmentEntity,
+  AttachmentSummaryPatch,
+  AttachmentViewer,
+  NewAttachment,
   AttentionScore,
   AutonomyAssessment,
   AutonomyLevel,
@@ -219,6 +225,33 @@ export interface ChairmanRepository {
   listAiChatMessages(chatId: string): Promise<AiChatMessage[]>
   createAiChat(title: string, actor: AuditActor): Promise<string>
   appendAiMessage(chatId: string, role: 'user' | 'assistant', content: string, sources: AiSource[], actor: AuditActor): Promise<void>
+
+  /**
+   * Phase 10 — 첨부(0045). 보이는 범위는 DB가 정한다: 붙은 대상이 보이고 AND 등급(Vault는 회장 +
+   * 지정자). 0045가 없는 DB(master push = production 배포가 먼저 나간 순간)에서는 읽기가 빈 목록이다.
+   */
+  listAttachments(entityTable: AttachmentEntity, entityId: string): Promise<Attachment[]>
+  /** 최근 첨부(보이는 것 전부). since(ISO)가 있으면 그 뒤만. /documents와 브리핑 집계가 쓴다. */
+  listRecentAttachments(since: string | null, limit: number): Promise<Attachment[]>
+  getAttachment(attachmentId: string): Promise<Attachment | null>
+  /** 줄만 만든다(경로는 DB가 정한다). 파일 바이트는 따로 올린다 — live는 브라우저가 Storage로 바로. */
+  createAttachment(input: NewAttachment, actor: AuditActor): Promise<Attachment>
+  /** 서버에서 바이트를 올린다. dummy의 유일한 길이고, live에서는 작은 파일의 예비 길이다. */
+  putAttachmentObject(path: string, bytes: ArrayBuffer, contentType: string): Promise<void>
+  /** 요약을 위해 바이트를 읽는다. 호출자 세션으로 읽는다 — 버킷 정책이 그대로 걸린다. */
+  readAttachmentObject(path: string): Promise<ArrayBuffer>
+  updateAttachmentSummary(attachmentId: string, patch: AttachmentSummaryPatch): Promise<void>
+  /** 객체를 먼저 지우고 줄을 지운다(줄이 먼저 사라지면 객체를 지울 정책 근거가 없다). 감사는 트리거. */
+  deleteAttachment(attachmentId: string, actor: AuditActor): Promise<void>
+  /** 내려받기 = 감사 한 줄 + 서명 URL(10분). 못 보면 null. */
+  downloadAttachment(attachmentId: string): Promise<string | null>
+  /** «외부 AI 전송» 감사(0045 record_attachment_ai_send). Vault면 던진다. 못 보면 false. */
+  recordAttachmentAiSend(attachmentId: string, model: string): Promise<boolean>
+  listAttachmentViewers(attachmentId: string): Promise<AttachmentViewer[]>
+  /** Vault 지정자 넣기 · 빼기. 회장만(DB). */
+  setAttachmentViewer(attachmentId: string, userId: string, on: boolean, actor: AuditActor): Promise<void>
+  /** AI 호출 한 번의 사용량(0045 ai_usage_log). 실패해도 요약은 살린다 — 호출자가 삼킨다. */
+  logAiUsage(input: AiUsageInput): Promise<void>
 
   listProjects(): Promise<Project[]>
   listTasks(): Promise<Task[]>

@@ -3440,6 +3440,294 @@ async function notificationsAndProfile() {
 }
 
 /**
+ * 0045 첨부 + AI 요약 — 새 PGlite 한 벌(rls()의 일괄 grant가 칸 단위 grant를 덮지 않게).
+ *
+ * 읽기 = 대상이 보이고 AND 등급(Vault는 회장 + 지정자). 쓰기는 올린 사람 · 회장, 칸은 요약 다섯만.
+ * 감사는 트리거(올림 · 요약 · 삭제)와 문 둘(내려받기 · 외부 AI 전송). 버킷은 비공개, anon은 전부 닫힌다.
+ */
+const AT = {
+  chair: '00000000-0000-0000-0000-0000000045c0',
+  cfo: '00000000-0000-0000-0000-0000000045c1',
+  ceo: '00000000-0000-0000-0000-0000000045c2', // biz_vana
+  member: '00000000-0000-0000-0000-0000000045c3', // biz_dy, Normal
+  exec: '00000000-0000-0000-0000-0000000045c4', // biz_dy, Restricted — 올린 사람
+  exec2: '00000000-0000-0000-0000-0000000045c5', // biz_dy, Restricted — Vault 지정자
+  agent: '00000000-0000-0000-0000-0000000045c6',
+  integration: '00000000-0000-0000-0000-0000000045c7',
+}
+const AF = {
+  ini: '00000000-0000-0000-0000-00000045a001', // initiatives · Restricted · 회장
+  dyN: '00000000-0000-0000-0000-00000045a002', // biz_dy · Normal · exec
+  dyR: '00000000-0000-0000-0000-00000045a003', // biz_dy · Restricted · exec
+  dyV: '00000000-0000-0000-0000-00000045a004', // biz_dy · Vault · 회장
+  doc: '00000000-0000-0000-0000-00000045a005', // documents · Normal
+  dec: '00000000-0000-0000-0000-00000045a006', // decisions · Restricted
+  vana: '00000000-0000-0000-0000-00000045a007', // biz_vana · Normal
+}
+const PDF = 'application/pdf'
+const SUMMARY = `{"summary":["첫 줄","둘째 줄","셋째 줄"],"key_numbers":["매출 12억 원"],"decisions_needed":["가격 승인"],"next_actions":["계약 초안 검토"],"confidence":"high"}`
+
+async function attachments() {
+  const db = new PGlite({ extensions: { pg_trgm } })
+  await applyAll(db)
+  await db.exec(`
+    grant usage on schema public, auth to authenticated, anon;
+    -- 실제 Supabase는 anon에게도 storage.objects를 연다(판정은 정책이 한다). 흉내 스텁은 authenticated만 연다.
+    grant select, insert, update, delete on storage.objects to anon;
+    insert into auth.users values
+      ('${AT.chair}', 'a1@x'), ('${AT.cfo}', 'a2@x'), ('${AT.ceo}', 'a3@x'), ('${AT.member}', 'a4@x'),
+      ('${AT.exec}', 'a5@x'), ('${AT.exec2}', 'a6@x'), ('${AT.agent}', 'a7@x'), ('${AT.integration}', 'a8@x');
+    insert into user_profiles (user_id, role, display_name, max_security_class) values
+      ('${AT.chair}', 'Chairman', 'ch', 'Vault'),
+      ('${AT.cfo}', 'GroupCFO', 'cfo', 'Restricted'),
+      ('${AT.ceo}', 'BusinessCEO', 'ceo', 'Restricted'),
+      ('${AT.member}', 'Member', 'm', 'Normal'),
+      ('${AT.exec}', 'Executive', 'ex', 'Restricted'),
+      ('${AT.exec2}', 'Executive', 'ex2', 'Restricted'),
+      ('${AT.agent}', 'AIAgent', 'ai', 'Restricted'),
+      ('${AT.integration}', 'Integration', 'sync', 'Restricted');
+    insert into user_business_access values
+      ('${AT.ceo}', 'biz_vana'), ('${AT.member}', 'biz_dy'), ('${AT.exec}', 'biz_dy'), ('${AT.exec2}', 'biz_dy');
+    insert into user_business_access select '${AT.agent}', business_id from businesses;
+    insert into user_business_access select '${AT.integration}', business_id from businesses;
+    insert into initiatives (initiative_id, title, kind) values ('ini_att', '첨부 딜', 'Deal');
+    insert into documents (document_id, business_id, title, doc_type, security_class, storage_url)
+      values ('doc_att', 'biz_dy', '첨부 문서', 'Report', 'Normal', 'https://example.invalid/d');
+    insert into decisions (decision_id, business_id, title) values ('dec_att', 'biz_dy', '첨부 결재');
+    insert into attachments (attachment_id, entity_table, entity_id, file_name, mime, size_bytes, security_class, uploaded_by) values
+      ('${AF.ini}', 'initiatives', 'ini_att', 'term-sheet.pdf', '${PDF}', 100, 'Restricted', '${AT.chair}'),
+      ('${AF.dyN}', 'businesses', 'biz_dy', 'brochure.pdf', '${PDF}', 100, 'Normal', '${AT.exec}'),
+      ('${AF.dyR}', 'businesses', 'biz_dy', 'cost.pdf', '${PDF}', 100, 'Restricted', '${AT.exec}'),
+      ('${AF.dyV}', 'businesses', 'biz_dy', 'formula.pdf', '${PDF}', 100, 'Vault', '${AT.chair}'),
+      ('${AF.doc}', 'documents', 'doc_att', 'doc.pdf', '${PDF}', 100, 'Normal', '${AT.exec}'),
+      ('${AF.dec}', 'decisions', 'dec_att', 'quote.pdf', '${PDF}', 100, 'Restricted', '${AT.exec}'),
+      ('${AF.vana}', 'businesses', 'biz_vana', 'vana.pdf', '${PDF}', 100, 'Normal', '${AT.ceo}');
+    insert into storage.objects (bucket_id, name) select 'attachments', storage_path from attachments;
+  `)
+
+  async function as(role: 'authenticated' | 'anon', uid: string | null, sql: string, setup = ''): Promise<'denied' | number> {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid ?? ''}', true); set local role ${role};`)
+    try {
+      if (setup) await db.exec(setup)
+      const res = await db.query<Record<string, number>>(sql)
+      return res.rows.length ? Number(Object.values(res.rows[0])[0]) : (res.affectedRows ?? 0)
+    } catch (e) {
+      if (/row-level security/.test(e instanceof Error ? e.message : '')) return 'denied'
+      throw e
+    } finally {
+      await db.exec('rollback')
+    }
+  }
+  const u = (uid: string, sql: string, setup = '') => as('authenticated', uid, sql, setup)
+  const count = `select count(*)::int from attachments`
+
+  // ── 자물쇠: force 없음(0035), anon은 표 · 판정 함수 · 문 전부 없음, 버킷은 비공개 ──
+  const lock = await db.query<{ t: string; forced: boolean; anon: boolean }>(`
+    select c.relname as t, c.relforcerowsecurity as forced,
+           has_table_privilege('anon', c.oid, 'select') or has_table_privilege('anon', c.oid, 'insert')
+             or has_table_privilege('anon', c.oid, 'truncate') as anon
+      from pg_class c where c.relname in ('attachments', 'attachment_vault_viewers', 'ai_usage_log') order by 1`)
+  assert.equal(lock.rows.length, 3, '0045: 표 셋이 다 있어야 한다')
+  for (const r of lock.rows) assert.deepEqual([r.forced, r.anon], [false, false], `0045: ${r.t}에 force가 걸렸거나 anon에게 열려 있다`)
+  for (const fn of ['attachment_entity_visible(text, text)', 'attachment_class_ok(uuid, security_class)',
+    'attachment_is_mine_or_chairman(uuid)', 'record_attachment_download(uuid)', 'record_attachment_ai_send(uuid, text)']) {
+    const r = await db.query<{ ok: boolean }>(`select has_function_privilege('anon', '${fn}', 'execute') as ok`)
+    assert.equal(r.rows[0].ok, false, `0045: anon이 ${fn}을 부를 수 있다`)
+  }
+  const bucket = await db.query<{ public: boolean }>(`select public from storage.buckets where id = 'attachments'`)
+  assert.deepEqual(bucket.rows, [{ public: false }], '0045: attachments 버킷이 없거나 공개다')
+  await assert.rejects(as('anon', null, count), /permission denied/, '0045: anon이 attachments를 읽는다')
+  // anon의 storage 질의는 0032 정책(user_profiles → in_my_subtree)이 먼저 권한 오류로 끊을 수 있다.
+  // 끊겨도 닫힌 것이다 — 0행이거나 거부이거나 권한 오류면 통과, 한 줄이라도 보이면 실패.
+  const closed = <T,>(p: Promise<T>, shut: T) =>
+    p.catch((e: unknown) => { if (/permission denied/.test(e instanceof Error ? e.message : '')) return shut; throw e })
+  assert.equal(await closed(as('anon', null, `select count(*)::int from storage.objects where bucket_id = 'attachments'`), 0), 0,
+    '0045: anon에게 첨부 객체가 보인다')
+  assert.equal(await closed(as('anon', null, `insert into storage.objects (bucket_id, name) values ('attachments', 'businesses/biz_dy/x')`), 'denied' as const),
+    'denied', '0045: anon이 첨부 버킷에 올린다')
+  // 판정 함수 자체는 anon에게 false다(정책이 anon 질의를 죽이지 않게 plpgsql 첫 줄에서 나간다).
+  assert.equal(await as('anon', null, `select count(*)::int from attachments_probe where public.attachment_object_visible(name)`,
+    `create temp table attachments_probe as select 'businesses/biz_dy/${AF.dyN}'::text as name;`), 0,
+    '0045: anon에게 attachment_object_visible이 참이다')
+
+  // ── 읽기: 대상 규칙 AND 등급 ──
+  assert.equal(await u(AT.chair, count), 7, '0045: 회장은 일곱 다 본다(Vault 포함)')
+  assert.equal(await u(AT.cfo, count), 6, '0045: GroupCFO는 Vault만 빼고 여섯')
+  assert.equal(await u(AT.member, count), 2, '0045: Member(biz_dy · 일반)는 DY 일반 둘(회사 · 문서)만 — 제한 · 이니셔티브 · 남의 회사가 보인다')
+  assert.equal(await u(AT.exec, count), 4, '0045: Executive(biz_dy · 제한)는 DY 일반 · 제한 넷')
+  assert.equal(await u(AT.ceo, count), 1, '0045: BusinessCEO(biz_vana)는 VANA 하나 — 다른 회사 첨부가 보인다')
+  assert.equal(await u(AT.agent, count), 6, '0045: AIAgent는 브리핑 집계를 위해 Vault 밖 여섯을 읽는다')
+  assert.equal(await u(AT.integration, count), 0, '0045: Integration에게 첨부가 보인다')
+  assert.equal(await u(AT.cfo, `select count(*)::int from attachments where entity_table = 'initiatives'`), 1,
+    '0045: GroupCFO가 이니셔티브 첨부를 못 본다')
+  // 대상이 soft delete되면 첨부도 숨는다(대상 규칙을 옮겨 적지 않고 따라간다).
+  assert.equal(await u(AT.chair, `select count(*)::int from attachments where entity_table = 'documents'`,
+    `select soft_delete('documents', 'doc_att')`), 0, '0045: 지운 문서의 첨부가 남아 보인다')
+
+  // ── Vault: 회장 + 지정자만 ──
+  const vault = `select count(*)::int from attachments where attachment_id = '${AF.dyV}'`
+  assert.equal(await u(AT.exec2, vault), 0, '0045: 지정 전 Executive에게 Vault가 보인다')
+  assert.equal(await u(AT.cfo, `insert into attachment_vault_viewers (attachment_id, user_id) values ('${AF.dyV}', '${AT.exec2}')`),
+    'denied', '0045: 회장이 아닌 사람이 Vault 지정자를 넣는다')
+  assert.equal(await u(AT.exec2, `insert into attachment_vault_viewers (attachment_id, user_id) values ('${AF.dyV}', '${AT.exec2}')`),
+    'denied', '0045: 본인이 자기를 Vault 지정자로 넣는다')
+  assert.equal(await u(AT.chair, `select count(*)::int from audit_log where entity_table = 'attachments' and action::text = 'permission_change'`,
+    `insert into attachment_vault_viewers (attachment_id, user_id) values ('${AF.dyV}', '${AT.exec2}');
+     delete from attachment_vault_viewers where attachment_id = '${AF.dyV}';`),
+  2, '0045: Vault 지정 추가 · 해제가 감사에 안 남는다')
+  await db.exec(`insert into attachment_vault_viewers (attachment_id, user_id, granted_by) values ('${AF.dyV}', '${AT.exec2}', '${AT.chair}')`)
+  assert.equal(await u(AT.exec2, vault), 1, '0045: 지정된 사람에게 Vault가 안 보인다')
+  assert.equal(await u(AT.exec, vault), 0, '0045: 지정 안 된 같은 회사 Executive에게 Vault가 보인다')
+  assert.equal(await u(AT.cfo, vault), 0, '0045: GroupCFO에게 Vault가 보인다')
+  assert.equal(await u(AT.exec2, `select count(*)::int from attachment_vault_viewers`), 1, '0045: 지정자가 자기 줄을 못 본다')
+  assert.equal(await u(AT.exec, `select count(*)::int from attachment_vault_viewers`), 0, '0045: 남의 지정 줄이 보인다')
+
+  // ── 올리기 ──
+  const add = (table: string, id: string, cls: string) =>
+    `insert into attachments (entity_table, entity_id, file_name, mime, size_bytes, security_class)
+     values ('${table}', '${id}', 'x.pdf', '${PDF}', 10, '${cls}')`
+  assert.equal(await u(AT.member, add('businesses', 'biz_dy', 'Normal')), 1, '0045: Member가 자기 회사에 일반 첨부를 못 올린다')
+  assert.equal(await u(AT.member, add('businesses', 'biz_dy', 'Restricted')), 'denied', '0045: Member가 제한 등급을 올린다(볼 수도 없는 등급)')
+  assert.equal(await u(AT.member, add('businesses', 'biz_vana', 'Normal')), 'denied', '0045: Member가 남의 회사에 올린다')
+  assert.equal(await u(AT.member, add('initiatives', 'ini_att', 'Normal')), 'denied', '0045: Member가 안 보이는 이니셔티브에 올린다')
+  assert.equal(await u(AT.member, add('decisions', 'dec_missing', 'Normal')), 'denied', '0045: 없는 대상에 올린다')
+  assert.equal(await u(AT.cfo, add('businesses', 'biz_dy', 'Vault')), 'denied', '0045: 회장 아닌 사람이 Vault를 올린다')
+  assert.equal(await u(AT.exec2, add('businesses', 'biz_dy', 'Vault')), 'denied', '0045: Vault 지정자가 새 Vault를 올린다')
+  assert.equal(await u(AT.agent, add('businesses', 'biz_dy', 'Normal')), 'denied', '0045: AIAgent가 첨부를 올린다')
+  assert.equal(await u(AT.integration, add('businesses', 'biz_dy', 'Normal')), 'denied', '0045: Integration이 첨부를 올린다')
+  assert.equal(await u(AT.chair, `select count(*)::int from attachments where status = 'skipped_vault' and file_name = 'x.pdf'`,
+    add('businesses', 'biz_dy', 'Vault')), 1, '0045: Vault 첨부가 skipped_vault로 서지 않는다')
+  // 처음부터 «요약됨» · 남의 이름으로 넣어도 DB가 덮는다.
+  assert.equal(await u(AT.exec,
+    `select count(*)::int from attachments where file_name = 'y.pdf' and status = 'uploaded' and ai_summary is null
+        and uploaded_by = '${AT.exec}' and business_id = 'biz_dy'`,
+    `insert into attachments (entity_table, entity_id, file_name, mime, size_bytes, status, ai_summary, uploaded_by, business_id)
+     values ('businesses', 'biz_dy', 'y.pdf', '${PDF}', 10, 'summarized', '${SUMMARY}'::jsonb, '${AT.chair}', 'biz_vana')`), 1,
+  '0045: 올릴 때 요약 · 상태 · 올린 사람 · 회사를 화면 값 그대로 받는다')
+  assert.equal(await u(AT.exec,
+    `select count(*)::int from audit_log where entity_table = 'attachments' and action::text = 'upload' and actor_user_id = '${AT.exec}'`,
+    add('decisions', 'dec_att', 'Restricted')), 1, '0045: 올림이 감사에 upload로 안 남는다')
+
+  // 모양 — DB가 막는다.
+  // 소유자 권한으로 넣는다 — RLS의 with check가 제약보다 먼저 막으면 어느 줄이 막았는지 못 가린다.
+  const raw = async (table: string, id: string, mime: string, size: number, cls = 'Normal') => {
+    await db.exec('begin')
+    try {
+      await db.exec(`insert into attachments (entity_table, entity_id, file_name, mime, size_bytes, security_class, uploaded_by) values ('${table}', '${id}', 'x', '${mime}', ${size}, '${cls}', '${AT.chair}')`)
+    } finally {
+      await db.exec('rollback')
+    }
+  }
+  await assert.rejects(raw('tasks', 't1', PDF, 10), /attachments_entity_check/, '0045: 모르는 대상 표')
+  await assert.rejects(raw('businesses', '../biz_dy', PDF, 10), /attachments_entity_id_check/, '0045: 경로를 벗어나는 대상 id')
+  await assert.rejects(raw('businesses', 'biz_dy', 'application/x-msdownload', 10), /attachments_mime_check/, '0045: 받지 않는 형식')
+  await assert.rejects(raw('businesses', 'biz_dy', PDF, 20971521), /attachments_size_check/, '0045: 20MB 초과')
+  await assert.rejects(raw('businesses', 'biz_dy', PDF, 10, 'Public'), /attachments_class_check/, '0045: 첨부에 공개 등급')
+  await assert.rejects(u(AT.chair, `update attachments set status = 'done' where attachment_id = '${AF.dyN}'`), /attachments_status_check/, '0045: 없는 상태')
+
+  // ── 요약 칸 쓰기 ──
+  const summarize = (id: string, json = SUMMARY) =>
+    `update attachments set status = 'summarized', ai_summary = '${json}'::jsonb, ai_model = 'm' where attachment_id = '${id}'`
+  assert.equal(await u(AT.exec, summarize(AF.dyN)), 1, '0045: 올린 사람이 요약을 못 적는다')
+  assert.equal(await u(AT.chair, summarize(AF.dyN)), 1, '0045: 회장이 요약을 못 적는다')
+  assert.equal(await u(AT.member, summarize(AF.dyN)), 0, '0045: 올린 사람도 회장도 아닌 Member가 요약을 고친다')
+  assert.equal(await u(AT.agent, summarize(AF.dyN)), 0, '0045: AIAgent가 요약 칸을 쓴다')
+  assert.equal(await u(AT.exec,
+    `select count(*)::int from attachments where attachment_id = '${AF.dyN}' and summarized_at is not null and search_text like '%계약 초안%'`,
+    summarize(AF.dyN)), 1, '0045: 요약 시각 · 검색 문장이 안 채워진다')
+  assert.equal(await u(AT.exec,
+    `select count(*)::int from audit_log where entity_table = 'attachments' and entity_id = '${AF.dyN}' and action::text = 'ai_summarize' and note = 'AI 요약'`,
+    summarize(AF.dyN)), 1, '0045: 요약이 감사에 ai_summarize로 안 남는다')
+  await assert.rejects(u(AT.exec, `update attachments set security_class = 'Normal' where attachment_id = '${AF.dyR}'`), /permission denied/,
+    '0045: 등급을 update로 내린다 — 칸 단위 grant가 빠졌다')
+  await assert.rejects(u(AT.exec, `update attachments set entity_id = 'biz_vana' where attachment_id = '${AF.dyR}'`), /permission denied/,
+    '0045: 첨부를 다른 대상으로 옮긴다')
+  await assert.rejects(u(AT.chair, summarize(AF.dyV)), /attachments_vault_check/, '0045: Vault 첨부에 요약이 적힌다')
+  for (const [bad, why] of [
+    ['{"summary":["a","b","c","d"],"key_numbers":[],"decisions_needed":[],"next_actions":[],"confidence":"high"}', '넷째 줄'],
+    ['{"summary":["a"],"key_numbers":[],"decisions_needed":[],"next_actions":[],"confidence":"sure"}', '모르는 확신도'],
+    ['{"summary":["a"],"key_numbers":[1],"decisions_needed":[],"next_actions":[],"confidence":"low"}', '숫자 항목'],
+    ['{"summary":["a"],"key_numbers":[],"decisions_needed":[],"next_actions":[],"confidence":"low","text":"본문"}', '추출 본문 칸'],
+    ['{"summary":"a","key_numbers":[],"decisions_needed":[],"next_actions":[],"confidence":"low"}', '배열 아닌 요약'],
+  ] as const) {
+    await assert.rejects(u(AT.exec, summarize(AF.dyR, bad)), /attachments_summary_check/, `0045: ${why}이(가) 요약에 들어간다`)
+  }
+  await assert.rejects(u(AT.exec, `update attachments set status = 'summarized' where attachment_id = '${AF.dyR}'`), /attachments_summarized_check/,
+    '0045: 요약 없이 «요약됨»')
+
+  // ── 문 둘: 내려받기 · 외부 AI 전송 ──
+  const dl = await db.query<{ p: string }>(`select storage_path as p from attachments where attachment_id = '${AF.dyR}'`)
+  assert.equal(dl.rows[0].p, `businesses/biz_dy/${AF.dyR}`, '0045: storage_path 모양')
+  assert.equal(await u(AT.exec, `select count(*)::int from audit_log where action::text = 'download' and entity_id = '${AF.dyR}'`,
+    `select record_attachment_download('${AF.dyR}')`), 1, '0045: 내려받기가 감사에 안 남는다')
+  assert.equal(await u(AT.member, `select count(*)::int from (select record_attachment_download('${AF.dyR}') as p) x where p is not null`), 0,
+    '0045: 못 보는 첨부의 경로를 내려받기 문이 준다')
+  assert.equal(await u(AT.exec, `select count(*)::int from audit_log where action::text = 'ai_external_send' and note = '외부 AI 전송 (제한 등급)'`,
+    `select record_attachment_ai_send('${AF.dyR}', 'm')`), 1, '0045: 제한 등급 외부 AI 전송이 감사에 안 남는다')
+  await assert.rejects(u(AT.chair, `select record_attachment_ai_send('${AF.dyV}', 'm')`), /attachment_vault_no_ai/, '0045: Vault가 외부 AI 전송 문을 지난다')
+
+  // ── 지우기 ──
+  assert.equal(await u(AT.member, `delete from attachments where attachment_id = '${AF.dyN}'`), 0, '0045: Member가 남의 첨부를 지운다')
+  assert.equal(await u(AT.agent, `delete from attachments where attachment_id = '${AF.dyN}'`), 0, '0045: AIAgent가 첨부를 지운다')
+  assert.equal(await u(AT.exec,
+    `select count(*)::int from audit_log where entity_id = '${AF.dyN}' and action::text = 'delete_request' and note = '첨부 삭제'`,
+    `delete from attachments where attachment_id = '${AF.dyN}'`), 1, '0045: 올린 사람의 삭제가 감사에 안 남는다')
+  assert.equal(await u(AT.chair, `delete from attachments where attachment_id = '${AF.dyN}'`), 1, '0045: 회장이 첨부를 못 지운다')
+
+  // ── 버킷 객체 — 줄이 보이는 사람만, 파일은 AIAgent에게 닫힌다, 덮어쓰기 없음 ──
+  const objects = `select count(*)::int from storage.objects where bucket_id = 'attachments'`
+  assert.equal(await u(AT.chair, objects), 7, '0045: 회장이 첨부 객체 일곱을 못 본다')
+  assert.equal(await u(AT.member, objects), 2, '0045: Member가 보는 객체가 줄의 범위와 다르다')
+  assert.equal(await u(AT.agent, objects), 0, '0045: AIAgent가 첨부 파일을 연다')
+  assert.equal(await u(AT.exec2, objects), 5, '0045: Vault 지정자가 Vault 파일을 못 연다(4 + 1)')
+  assert.equal(await u(AT.exec, `insert into storage.objects (bucket_id, name) values ('attachments', 'businesses/biz_dy/${AF.dyR}-copy')`), 'denied',
+    '0045: 줄 없는 경로에 올린다')
+  assert.equal(await u(AT.exec,
+    `insert into storage.objects (bucket_id, name) select 'attachments', storage_path from attachments where file_name = 'new.pdf'`,
+    `insert into attachments (entity_table, entity_id, file_name, mime, size_bytes) values ('businesses', 'biz_dy', 'new.pdf', '${PDF}', 10)`),
+  1, '0045: 올린 사람이 자기 줄 경로에 객체를 못 올린다')
+  assert.equal(await u(AT.member,
+    `insert into storage.objects (bucket_id, name) select 'attachments', storage_path from attachments where file_name = 'new.pdf'`,
+    `select set_config('request.jwt.claim.sub', '${AT.exec}', true);
+     insert into attachments (entity_table, entity_id, file_name, mime, size_bytes, security_class) values ('businesses', 'biz_dy', 'new.pdf', '${PDF}', 10, 'Normal');
+     select set_config('request.jwt.claim.sub', '${AT.member}', true);`),
+  'denied', '0045: 남이 만든 줄의 경로에 객체를 올린다')
+  assert.equal(await u(AT.chair, `update storage.objects set name = name || '-v2' where bucket_id = 'attachments'`), 0,
+    '0045: 첨부 원본을 덮어쓴다(update 정책이 없어야 한다)')
+  assert.equal(await u(AT.member, `delete from storage.objects where bucket_id = 'attachments' and name = 'businesses/biz_dy/${AF.dyN}'`), 0,
+    '0045: Member가 남의 첨부 파일을 지운다')
+  assert.equal(await u(AT.exec, `delete from storage.objects where bucket_id = 'attachments' and name = 'businesses/biz_dy/${AF.dyR}'`), 1,
+    '0045: 올린 사람이 자기 파일을 못 지운다')
+
+  // ── ai_usage_log — 회장만 읽고, 자기 이름으로만 쓰고, 고치지 못한다 ──
+  const usage = (uid: string) =>
+    `insert into ai_usage_log (feature, model, input_tokens, output_tokens, estimated_cost_usd, user_id) values ('attachment_summary', 'm', 10, 5, 0.0001, '${uid}')`
+  assert.equal(await u(AT.member, `select count(*)::int from ai_usage_log`, usage(AT.member)), 0, '0045: Member가 사용량 표를 읽는다')
+  assert.equal(await u(AT.chair, `select count(*)::int from ai_usage_log where user_id = '${AT.chair}'`, usage(AT.cfo)), 1,
+    '0045: 남의 이름으로 적은 사용량이 그대로 남는다(또는 회장이 못 읽는다)')
+  assert.equal(await u(AT.agent, usage(AT.agent)), 1, '0045: AIAgent가 사용량을 못 적는다(Phase 11 야간 비용)')
+  assert.equal(await u(AT.integration, usage(AT.integration)), 'denied', '0045: Integration이 사용량을 적는다')
+  await assert.rejects(u(AT.chair, `update ai_usage_log set estimated_cost_usd = 0`), /permission denied/, '0045: 사용량을 고친다')
+  await assert.rejects(u(AT.chair, `delete from ai_usage_log`), /permission denied/, '0045: 사용량을 지운다')
+  await assert.rejects(as('anon', null, `select count(*)::int from ai_usage_log`), /permission denied/, '0045: anon이 사용량을 읽는다')
+  await assert.rejects(u(AT.chair, `insert into ai_usage_log (feature, model) values ('Bad Feature!', 'm')`), /ai_usage_log_feature_check/, '0045: 기능 이름 모양')
+
+  // ── restrictive 방어선 — 카탈로그에서 잰다(permissive가 느슨해진 날 남는 줄) ──
+  const { rows: pol } = await db.query<{ k: string; p: string }>(
+    `select tablename || '.' || policyname as k, permissive as p from pg_policies
+      where tablename in ('attachments', 'attachment_vault_viewers') and (policyname like 'ai_agent_no_%' or policyname like 'integration_no_%')`)
+  const kinds = new Map(pol.map((r) => [r.k, r.p]))
+  for (const t of ['attachments', 'attachment_vault_viewers']) {
+    for (const who of ['ai_agent', 'integration']) {
+      for (const op of ['insert', 'update', 'delete']) {
+        assert.equal(kinds.get(`${t}.${who}_no_${op}`), 'RESTRICTIVE', `0045: ${t}에 ${who}_no_${op}가 restrictive로 있어야 한다`)
+      }
+    }
+  }
+  await db.close()
+}
+
+/**
  * 화면이 말하는 마이그레이션 번호가 실제 마지막 파일과 같은가 (Phase 5-E 4절).
  *
  * `/settings`의 '이 웹에 대해' 절이 `src/lib/version.ts`의 LATEST_MIGRATION을 그대로 보여 준다.
@@ -3476,8 +3764,9 @@ async function main() {
   await notificationsAndProfile()
   await definerUnderNonBypassOwner()
   await subtreeBackfill()
+  await attachments()
   console.log(
-    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo)`,
+    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log)`,
   )
 }
 

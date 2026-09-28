@@ -6,7 +6,7 @@
  * 화면 구조를 바꿀 때 데이터 계층을 같이 고쳐야 한다.
  */
 
-export const SEARCH_KIND = ['business', 'project', 'task', 'decision', 'document'] as const
+export const SEARCH_KIND = ['business', 'project', 'task', 'decision', 'document', 'attachment'] as const
 export type SearchKind = (typeof SEARCH_KIND)[number]
 
 export const SEARCH_KIND_LABEL_KO: Record<SearchKind, string> = {
@@ -15,6 +15,7 @@ export const SEARCH_KIND_LABEL_KO: Record<SearchKind, string> = {
   task: '업무',
   decision: '결정',
   document: '문서',
+  attachment: '첨부 요약',
 }
 
 /**
@@ -49,6 +50,33 @@ export function hitHref(hit: SearchHit): string {
       return `/projects/${encodeURIComponent(hit.id)}`
     case 'task':
       return `/tasks/${encodeURIComponent(hit.id)}`
+    case 'attachment':
+      return attachmentEntityHref(hit.id)
+  }
+}
+
+/**
+ * Phase 10 — 첨부 검색 결과의 id는 «붙은 대상»이다(`<표>:<id>`). 결과를 누르면 첨부 한 건이 아니라
+ * 그 첨부가 걸린 상세 화면으로 간다 — 요약은 그 화면의 «첨부» 칸에 있다.
+ */
+export function attachmentHitId(entityTable: string, entityId: string): string {
+  return `${entityTable}:${entityId}`
+}
+
+export function attachmentEntityHref(hitId: string): string {
+  const [table, id = ''] = hitId.split(':')
+  const e = encodeURIComponent(id)
+  switch (table) {
+    case 'initiatives':
+      return `/initiatives/${e}`
+    case 'businesses':
+      return `/business/${e}`
+    case 'documents':
+      return `/documents/${e}`
+    case 'decisions':
+      return `/approvals?id=${e}`
+    default:
+      return '/documents'
   }
 }
 
