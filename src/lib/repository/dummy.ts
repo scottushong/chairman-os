@@ -1414,12 +1414,12 @@ export const dummyRepository: ChairmanRepository = {
   },
 
   /** 0040 event_video_link()의 거울. dummy에는 알림 표가 없어 알림은 콘솔에만 남는다. */
-  async createEventVideoLink(eventId: string, actor: AuditActor) {
+  async createEventVideoLink(eventId: string, actor: AuditActor, rotate = false) {
     if (actor.role !== 'Chairman' && actor.role !== 'GroupCFO') throw new Error('event_video_forbidden')
     const e = memoryEvents.find((x) => x.event_id === eventId)
     if (!e) throw new Error('event_not_found')
     if (e.kind !== 'Meeting') throw new Error('event_not_meeting')
-    if (e.video_url) return e.video_url
+    if (e.video_url && !rotate) return e.video_url
     e.video_url = meetUrl(e.business_id, e.starts_on)
     if (process.env.NODE_ENV !== 'production') {
       console.warn(`[dummy] video link ${e.video_url} → 알림 ${e.attendee_ids?.length ?? 0}명(메모리에 없음)`)

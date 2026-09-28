@@ -73,8 +73,13 @@ export default async function MeetPage({ searchParams }: PageProps<'/meet'>) {
               allow="camera; microphone; fullscreen; display-capture; autoplay; clipboard-write"
               className="h-[72vh] min-h-[420px] w-full"
             />
-            <div className="flex items-center justify-end gap-3 bg-panel px-3 py-2 text-[11.5px]">
-              <a href={`${JITSI_ORIGIN}/${room}`} target="_blank" rel="noreferrer noopener" className="text-ink-dim hover:text-ink hover:underline">
+            <div className="flex flex-wrap items-center justify-end gap-3 bg-panel px-3 py-2 text-[11.5px]">
+              {/* meet.jit.si는 임베드된 통화를 몇 분 뒤 끊고 로그인을 요구할 수 있다(공개 서버 정책).
+                  긴 회의는 새 탭이 정답이라 그 버튼을 앞에 둔다 — DEFERRED «화상회의 임베드». */}
+              <span className="mr-auto text-ink-muted">
+                {tr(lang, '공개 Jitsi 서버는 화면 안 통화를 몇 분 뒤 끊을 수 있습니다. 긴 회의는 새 탭으로 여세요.', 'Public Jitsi may cut embedded calls after a few minutes — use a new tab for long meetings.')}
+              </span>
+              <a href={`${JITSI_ORIGIN}/${room}`} target="_blank" rel="noreferrer noopener" className="rounded bg-accent px-2.5 py-1 font-semibold text-white">
                 {tr(lang, '새 탭으로 열기', 'Open in new tab')}
               </a>
               <Link href="/meet" className="text-ink-dim hover:text-ink hover:underline">

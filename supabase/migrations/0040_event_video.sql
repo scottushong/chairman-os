@@ -47,7 +47,9 @@ create trigger events_video_guard_trigger
   for each row execute function events_video_guard();
 
 -- 회사 이름 대신 business_id의 꼬리(biz_dy → dy). 회사가 없으면 group. 날짜는 일정 시작일.
-create or replace function event_video_link(p_event_id uuid) returns text
+-- p_rotate = true면 이미 있는 링크를 **새로 만든다**(방 이름이 새어 나갔을 때 · 나중에 더한 참석자까지
+-- 다시 알릴 때). 바꾸면 이전 링크는 헛방이 되므로, 지금 참석자 전원에게 새 링크로 다시 알린다.
+create or replace function event_video_link(p_event_id uuid, p_rotate boolean default false) returns text
 language plpgsql volatile security definer set search_path = public as $fn$
 declare
   v_event events%rowtype;
@@ -65,11 +67,12 @@ begin
   if v_event.kind <> 'Meeting' then
     raise exception 'event_not_meeting' using errcode = '23514';
   end if;
-  if v_event.video_url is not null then
-    return v_event.video_url;   -- 이미 있으면 그대로. 링크를 바꾸면 먼저 받은 사람이 헛방에 들어간다.
+  if v_event.video_url is not null and not p_rotate then
+    return v_event.video_url;   -- 이미 있으면 그대로. 바꾸는 것은 p_rotate로만(위 주석).
   end if;
 
-  v_slug := lower(regexp_replace(coalesce(regexp_replace(v_event.business_id, '^biz_', ''), 'group'), '[^a-z0-9]+', '-', 'g'));
+  -- 소문자를 **먼저** — 대문자가 [^a-z0-9]에 걸려 '-'가 되지 않게.
+  v_slug := regexp_replace(lower(coalesce(regexp_replace(v_event.business_id, '^biz_', ''), 'group')), '[^a-z0-9]+', '-', 'g');
   v_url := 'https://meet.jit.si/chairman-os-' || v_slug || '-' || to_char(v_event.starts_on, 'YYYYMMDD') || '-'
            || substr(md5(gen_random_uuid()::text || clock_timestamp()::text), 1, 16);
 
@@ -77,7 +80,8 @@ begin
   update events set video_url = v_url where event_id = p_event_id;
   perform set_config('chairman.video_link', 'off', true);
 
-  foreach v_uid in array v_event.attendee_ids loop
+  -- 같은 사람이 두 번 적혀 있어도 알림은 한 번.
+  for v_uid in select distinct u from unnest(v_event.attendee_ids) as u loop
     insert into notifications (user_id, kind, title, body, link)
     select v_uid, 'system',
            '화상회의 링크: ' || v_event.title,
@@ -89,13 +93,13 @@ begin
   insert into audit_log (action, entity_table, entity_id, business_id, actor_user_id, actor_role, after, note)
   values ('update', 'events', p_event_id::text, v_event.business_id, auth.uid(), auth_role()::text,
           jsonb_build_object('video_url', v_url, 'notified', coalesce(array_length(v_event.attendee_ids, 1), 0)),
-          '화상회의 링크 생성');
+          case when p_rotate then '화상회의 링크 다시 만들기' else '화상회의 링크 생성' end);
   return v_url;
 end;
 $fn$;
 
-revoke all on function event_video_link(uuid) from public, anon;
-grant execute on function event_video_link(uuid) to authenticated;
+revoke all on function event_video_link(uuid, boolean) from public, anon;
+grant execute on function event_video_link(uuid, boolean) to authenticated;
 
-comment on function event_video_link(uuid) is
-  '0040. 화상 링크를 만드는 유일한 문. 방 이름 생성 · 저장 · 참석자 알림 · 감사가 한 트랜잭션. 일정 쓰기 권한(Chairman · GroupCFO)만.';
+comment on function event_video_link(uuid, boolean) is
+  '0040. 화상 링크를 만드는 유일한 문. 방 이름 생성 · 저장 · 참석자 알림 · 감사가 한 트랜잭션. 일정 쓰기 권한(Chairman · GroupCFO)만. 알림은 [제한] 등급인 일정 제목 · 장소를 일정을 못 읽는 참석자에게도 보낸다 — 참석자는 회장 · CFO가 고른 사람이라 의도한 전달이다.';

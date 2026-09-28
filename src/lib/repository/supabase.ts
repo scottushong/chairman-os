@@ -1292,9 +1292,9 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     },
 
     /** 0040. 방 이름 생성 · 저장 · 참석자 알림 · 감사가 DB 함수 한 번이다. */
-    async createEventVideoLink(eventId: string, actor: AuditActor): Promise<string> {
+    async createEventVideoLink(eventId: string, actor: AuditActor, rotate = false): Promise<string> {
       void actor
-      const { data, error } = await sb.rpc('event_video_link', { p_event_id: eventId })
+      const { data, error } = await sb.rpc('event_video_link', { p_event_id: eventId, p_rotate: rotate })
       if (error) throw new Error(`Supabase event_video_link ${error.code ?? '?'}: ${error.message}`)
       return String(data)
     },

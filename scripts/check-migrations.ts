@@ -880,6 +880,12 @@ async function eventVideo(db: Db, as: As) {
   const count = await db.query<{ n: number }>(`select count(*)::int as n from notifications where link like '/meet?room=%'`)
   assert.deepEqual([second, count.rows[0].n], [link, 2], '0040: 두 번 누르면 링크가 바뀌거나 알림이 또 간다')
 
+  // 다시 만들기(p_rotate) — 새 방 이름, 지금 참석자 전원에게 새 링크로 다시 알림.
+  const rotated = await asChairman(`select event_video_link('${E1}', true) as u`)
+  const after = await db.query<{ n: number }>(`select count(*)::int as n from notifications where link = '/meet?room=${rotated.slice('https://meet.jit.si/'.length)}'`)
+  assert.ok(rotated !== link && /chairman-os-dy-20260930-[0-9a-f]{16}$/.test(rotated), '0040: 다시 만들기가 새 방 이름을 내지 않는다')
+  assert.equal(after.rows[0].n, 2, '0040: 다시 만든 링크가 참석자에게 다시 가지 않는다')
+
   await assert.rejects(as(UID.member, `select event_video_link('${E1}')`), /event_video_forbidden/, '0040: 직원이 화상 링크를 만든다')
   await assert.rejects(
     as(UID.chairman, `select event_video_link('00000000-0000-0000-0000-00000000e002')`),

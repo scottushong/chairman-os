@@ -11,6 +11,7 @@ export const JITSI_ORIGIN = 'https://meet.jit.si'
 export const ROOM_PATTERN = /^chairman-os-[a-z0-9-]+$/
 
 export function roomSlug(businessId: string | null): string {
+  // 소문자가 먼저다 — 0040 event_video_link()와 같은 순서.
   return (businessId ? businessId.replace(/^biz_/, '') : 'group').toLowerCase().replace(/[^a-z0-9]+/g, '-')
 }
 

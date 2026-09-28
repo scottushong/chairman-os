@@ -147,11 +147,11 @@ export function DayModal({
   }
 
   /** 0040. 방 이름은 서버(DB)가 만든다. 이미 있으면 그 링크가 그대로 온다. */
-  async function makeVideo(e: ChairmanEvent) {
+  async function makeVideo(e: ChairmanEvent, rotate = false) {
     if (busy) return
     setBusy(true)
     setError(null)
-    const result = await createEventVideoLinkAction(e.event_id)
+    const result = await createEventVideoLinkAction(e.event_id, rotate)
     setBusy(false)
     if (result.error || !result.url) {
       setError(result.error ?? '화상 링크를 만들지 못했습니다.')
@@ -291,12 +291,25 @@ export function DayModal({
                   </span>
                   {/* 0040. 미팅에만. 링크가 있으면 입장, 없으면(쓰기 권한이 있을 때) 만들기. */}
                   {e.kind === 'Meeting' && roomOf(e.video_url) ? (
-                    <Link
-                      href={`/meet?room=${roomOf(e.video_url)}`}
-                      className="shrink-0 rounded bg-accent px-2 py-0.5 text-[11px] font-semibold text-white"
-                    >
-                      화상 입장
-                    </Link>
+                    <>
+                      <Link
+                        href={`/meet?room=${roomOf(e.video_url)}`}
+                        className="shrink-0 rounded bg-accent px-2 py-0.5 text-[11px] font-semibold text-white"
+                      >
+                        화상 입장
+                      </Link>
+                      {canEdit ? (
+                        <button
+                          type="button"
+                          onClick={() => makeVideo(e, true)}
+                          disabled={busy}
+                          title="방 이름을 새로 만들고 지금 참석자 전원에게 다시 알립니다. 이전 링크는 쓸 수 없게 됩니다."
+                          className="shrink-0 rounded px-1 text-[11px] text-ink-muted hover:text-ink disabled:opacity-40"
+                        >
+                          다시 만들기
+                        </button>
+                      ) : null}
+                    </>
                   ) : e.kind === 'Meeting' && canEdit ? (
                     <button
                       type="button"

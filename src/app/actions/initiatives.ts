@@ -319,8 +319,9 @@ export async function saveEventAction(input: unknown): Promise<EventState> {
         ...(Array.isArray(f.attendee_ids)
           ? {
               attendee_ids: f.attendee_ids.filter(
-                (x): x is string => typeof x === 'string' && /^[0-9a-f-]{36}$/i.test(x),
-              ),
+                (x): x is string =>
+                  typeof x === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(x),
+              ).filter((x, i, all) => all.indexOf(x) === i),
             }
           : {}),
       },
@@ -427,14 +428,17 @@ export async function removeInitiativeLogoAction(initiativeId: unknown): Promise
  * Phase 9 블록 5. 회의 일정에 화상 링크 만들기(0040 event_video_link). 이미 있으면 그 링크가 온다 —
  * 링크를 바꾸면 먼저 알림을 받은 사람이 헛방에 들어간다.
  */
-export async function createEventVideoLinkAction(eventId: unknown): Promise<{ error?: string; url?: string }> {
+export async function createEventVideoLinkAction(
+  eventId: unknown,
+  rotate = false,
+): Promise<{ error?: string; url?: string }> {
   const id = typeof eventId === 'string' ? eventId : ''
   if (!id) return { error: '일정을 알 수 없습니다.' }
   const user = await currentUser()
   if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
   try {
     const repo = await getRepository()
-    const url = await repo.createEventVideoLink(id, { user_id: user.user_id, role: user.role })
+    const url = await repo.createEventVideoLink(id, { user_id: user.user_id, role: user.role }, rotate === true)
     revalidatePath('/calendar')
     revalidatePath('/ai')
     revalidatePath('/meet')
