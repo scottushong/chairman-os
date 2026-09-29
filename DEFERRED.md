@@ -2075,6 +2075,6 @@ B-4가 찾은 결함 하나를 고쳤다. **리뷰 루프가 없는 작업이고
   지금 막는 자리는 **화면**(첨부 패널에서 Vault를 고르면 파일 버튼 · 끌어놓기 대신 «문서 화면에서 링크로 등록» →
   `/documents?register=Vault`)과 **Server Action**(beginAttachment가 Vault를 거절)이다. **DB는 아직 받는다** —
   0045의 attachments_insert는 회장의 Vault 줄을 허용한다(회장 세션으로 PostgREST를 직접 부르면 들어간다).
-  DB까지 막으려면 0047에 `security_class <> 'Vault'` 제약을 넣는다(마이그레이션 → 리뷰 → production 승인). 암호화 층이 오면
+  DB까지 막으려면 0047에 `security_class <> 'Vault'` 제약을 넣는다(마이그레이션 → 리뷰 → production 승인). **다음 마이그레이션 묶음에 포함한다**(2026-09-29 회장 결정 — 그때까지 DEFERRED). 암호화 층이 오면
   그 제약과 Server Action 한 줄을 걷고, 0045의 Vault 줄 규칙(지정자 · skipped_vault)을 그대로 다시 쓴다.
 - **스캔본 PDF(글자 없음) → vision 경로는 다음 세션.** 지금은 «텍스트를 찾지 못했습니다»로 failed.
