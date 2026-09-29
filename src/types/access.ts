@@ -59,7 +59,7 @@ export interface UserAccount {
   modules: ModuleGrant[]
 }
 
-/** 0002 user_module_access 한 줄. 모듈 키는 05_Architecture의 경로다('/finance'). */
+/** 0002 user_module_access 한 줄. 모듈 키는 경로다 — 재무는 회사까지('/finance/biz_dy', 0047). */
 export interface ModuleGrant {
   module: string
   can_write: boolean
@@ -68,21 +68,22 @@ export interface ModuleGrant {
 
 /**
  * 사용자 화면이 켜고 끄는 모듈 권한 목록(0047). 모듈을 더할 때 여기에 한 줄 — 칸 이름은 모듈마다 다르게 읽힌다
- * (재무는 can_write = 입력, can_approve = 월 마감). DB 판정은 각 모듈의 판정 함수가 한다(재무는 0047 finance_grant).
+ * (재무는 can_write = 입력, can_approve = 월 마감). 권한은 **회사마다** 한 줄이다: 키 = prefix + '/' + business_id
+ * (lib/module-grants.ts moduleKey). DB 판정은 각 모듈의 판정 함수가 한다(재무는 0047 finance_grant(target)).
  */
 export const MODULE_GRANT_OPTIONS: readonly {
-  module: string
+  prefix: string
   label: string
   write: string
   approve: string
   note: string
 }[] = [
   {
-    module: '/finance',
+    prefix: '/finance',
     label: '재무',
     write: '재무 입력',
     approve: '월 마감',
-    note: '전표 · 월별 손익 · 공식 재무제표 · 계정과목. 회사 범위는 «회사 범위»가 정합니다. 둘 다 끄면 재무를 못 봅니다.',
+    note: '전표 · 월별 손익 · 공식 재무제표 · 계정과목 — 회사마다 따로 켭니다. 회사 범위에 있어도 여기서 켜지 않은 회사의 재무는 열리지 않습니다. 둘 다 끄면 그 회사 재무를 못 봅니다.',
   },
 ]
 

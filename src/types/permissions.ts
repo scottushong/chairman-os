@@ -109,9 +109,10 @@ export interface SessionUser {
    */
   language: 'ko' | 'en'
   /**
-   * 0047. 본인의 재무 모듈 권한(user_module_access '/finance' — 0002 module_access_self_read로 자기 줄만 읽는다).
-   * 역할로 이미 되는 사람(Chairman · GroupCFO · BusinessCEO)은 줄이 없어도 여기가 false일 수 있다 —
-   * 화면 판정은 lib/auth/roles.ts가 역할과 이 값을 합쳐서 한다. 줄이 없거나 못 읽으면 둘 다 false다.
+   * 0047. 본인의 재무 모듈 권한, 회사별(business_id → 칸 둘). user_module_access '/finance/<business_id>' 줄을
+   * 0002 module_access_self_read로 자기 것만 읽는다. 역할로 이미 되는 사람(Chairman · GroupCFO · BusinessCEO)은
+   * 줄이 없어 비어 있을 수 있다 — 화면 판정은 lib/auth/roles.ts가 역할과 이 값을 합쳐서 한다.
+   * 줄이 없거나 못 읽으면 그 회사는 키가 없다(= 둘 다 false).
    */
-  finance: { write: boolean; close: boolean }
+  finance: Record<string, { write: boolean; close: boolean }>
 }

@@ -8,6 +8,7 @@ import { ForceLogoutButton } from '@/components/settings/force-logout-button'
 import { RevokeButton } from '@/components/settings/revoke-button'
 import { Icon } from '@/components/ui/icon'
 import { businessName } from '@/lib/lookup'
+import { businessOfModule, moduleKey } from '@/lib/module-grants'
 import {
   INVITABLE_ROLE,
   MODULE_GRANT_OPTIONS,
@@ -719,7 +720,7 @@ function PersonPanel({
           </label>
 
           {SYSTEM_ROLE.includes(person.role) ? null : (
-            <ModuleGrants person={person} busy={busy} setBusy={setBusy} setError={setError} />
+            <ModuleGrants person={person} businesses={businesses} busy={busy} setBusy={setBusy} setError={setError} />
           )}
 
           <div className="flex items-center justify-between gap-2 pt-1">
@@ -745,10 +746,13 @@ function PersonPanel({
               내 모듈 권한:{' '}
               {person.modules
                 .map((m) => {
-                  const o = MODULE_GRANT_OPTIONS.find((x) => x.module === m.module)
-                  if (!o) return null
-                  const parts = [m.can_write ? o.write : null, m.can_approve ? o.approve : null].filter(Boolean)
-                  return `${o.label}(${parts.length ? parts.join(' · ') : '보기'})`
+                  for (const o of MODULE_GRANT_OPTIONS) {
+                    const biz = businessOfModule(o.prefix, m.module)
+                    if (!biz) continue
+                    const parts = [m.can_write ? o.write : null, m.can_approve ? o.approve : null].filter(Boolean)
+                    return `${o.label} ${businessName(businesses, biz)}(${parts.length ? parts.join(' · ') : '보기'})`
+                  }
+                  return null
                 })
                 .filter(Boolean)
                 .join(', ')}
@@ -771,29 +775,32 @@ function PersonPanel({
 }
 
 /**
- * 0047 «모듈 권한» — 사람 단위로 켜는 권한(재무 입력 · 월 마감 등). 회장에게만 그린다(PersonPanel의 canManage).
- * 자물쇠는 0002 module_access_admin_write다. 회사 범위는 여기서 고르지 않는다 — 위의 «회사 범위»(user_business_access)가
- * 그대로 적용된다(0047 can_keep_books = 모듈 줄 AND has_business).
- * 칸 둘을 다 끄면 줄이 지워진다(줄이 있으면 보기가 열리므로). 역할로 이미 되는 사람(회장 · CFO · 대표)에게는
- * 켜도 달라지는 것이 없어 그 사실을 적는다.
+ * 0047 «모듈 권한» — 사람 × 회사로 켜는 권한(재무 입력 · 월 마감 등). 회장에게만 그린다(PersonPanel의 canManage).
+ * 자물쇠는 0002 module_access_admin_write다. **회사마다 한 줄**이다 — 이 사람의 회사 범위(user_business_access)에 있는
+ * 회사마다 칸 둘을 그린다. 회사 범위에 있어도 여기서 켜지 않은 회사의 재무는 열리지 않는다(0047 finance_grant(target) AND
+ * has_business(target)). 범위 밖인데 줄만 남은 회사도 그린다 — 효과가 없다는 표시와 함께, 지울 수 있게.
+ * 칸 둘을 다 끄면 줄이 지워진다(줄이 있으면 보기가 열리므로). 역할로 이미 되는 사람(회장 · CFO)에게는 그리지 않는다.
  */
 function ModuleGrants({
   person,
+  businesses,
   busy,
   setBusy,
   setError,
 }: {
   person: UserAccount
+  businesses: Business[]
   busy: boolean
   setBusy: (v: boolean) => void
   setError: (v: string | null) => void
 }) {
-  async function toggle(module: string, next: { can_write: boolean; can_approve: boolean }) {
+  async function toggle(prefix: string, businessId: string, next: { can_write: boolean; can_approve: boolean }) {
     setBusy(true)
     setError(null)
     const result = await setModuleGrant({
       userId: person.user_id,
-      module,
+      prefix,
+      businessId,
       canWrite: next.can_write,
       canApprove: next.can_approve,
     })
@@ -801,41 +808,66 @@ function ModuleGrants({
     if (result.error) setError(result.error)
   }
 
-  const byRole = person.role === 'Chairman' || person.role === 'GroupCFO'
+  if (person.role === 'Chairman' || person.role === 'GroupCFO') {
+    return (
+      <p className="rounded-lg border border-line-soft px-2.5 py-2 text-t10 leading-relaxed text-ink-muted">
+        모듈 권한 — 전사 역할이라 역할로 이미 전부 할 수 있습니다. 켤 것이 없습니다.
+      </p>
+    )
+  }
 
   return (
     <fieldset className="rounded-lg border border-line-soft px-2.5 py-2">
       <legend className="px-1 text-t11 text-ink-dim">모듈 권한</legend>
       {MODULE_GRANT_OPTIONS.map((o) => {
-        const row = person.modules.find((m) => m.module === o.module)
-        const cur = { can_write: row?.can_write ?? false, can_approve: row?.can_approve ?? false }
+        const granted = person.modules
+          .map((m) => businessOfModule(o.prefix, m.module))
+          .filter((b): b is string => b !== null)
+        const companies = [...new Set([...person.business_ids, ...granted])]
         return (
-          <div key={o.module} className="py-1">
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-              <span className="min-w-10 text-t12 font-semibold">{o.label}</span>
-              <label className="flex min-h-11 items-center gap-1.5 text-t12 sm:min-h-0">
-                <input
-                  type="checkbox"
-                  checked={cur.can_write}
-                  disabled={busy}
-                  onChange={(e) => toggle(o.module, { ...cur, can_write: e.target.checked })}
-                  className="size-4 accent-[var(--color-accent)] disabled:opacity-50"
-                />
-                {o.write}
-              </label>
-              <label className="flex min-h-11 items-center gap-1.5 text-t12 sm:min-h-0">
-                <input
-                  type="checkbox"
-                  checked={cur.can_approve}
-                  disabled={busy}
-                  onChange={(e) => toggle(o.module, { ...cur, can_approve: e.target.checked })}
-                  className="size-4 accent-[var(--color-accent)] disabled:opacity-50"
-                />
-                {o.approve}
-              </label>
-            </div>
+          <div key={o.prefix} className="py-1">
+            <span className="text-t12 font-semibold">{o.label}</span>
+            {companies.length === 0 ? (
+              <span className="mt-0.5 block text-t10 text-ink-muted">회사 범위가 없어 켤 회사가 없습니다.</span>
+            ) : (
+              <ul className="mt-1 space-y-1">
+                {companies.map((biz) => {
+                  const row = person.modules.find((m) => m.module === moduleKey(o.prefix, biz))
+                  const cur = { can_write: row?.can_write ?? false, can_approve: row?.can_approve ?? false }
+                  const outOfScope = !person.business_ids.includes(biz)
+                  return (
+                    <li key={biz} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                      <span className="min-w-16 text-t12">{businessName(businesses, biz)}</span>
+                      <label className="flex min-h-11 items-center gap-1.5 text-t12 sm:min-h-0">
+                        <input
+                          type="checkbox"
+                          checked={cur.can_write}
+                          disabled={busy}
+                          onChange={(e) => toggle(o.prefix, biz, { ...cur, can_write: e.target.checked })}
+                          className="size-4 accent-[var(--color-accent)] disabled:opacity-50"
+                        />
+                        {o.write}
+                      </label>
+                      <label className="flex min-h-11 items-center gap-1.5 text-t12 sm:min-h-0">
+                        <input
+                          type="checkbox"
+                          checked={cur.can_approve}
+                          disabled={busy}
+                          onChange={(e) => toggle(o.prefix, biz, { ...cur, can_approve: e.target.checked })}
+                          className="size-4 accent-[var(--color-accent)] disabled:opacity-50"
+                        />
+                        {o.approve}
+                      </label>
+                      {outOfScope ? (
+                        <span className="text-t10 text-warning">회사 범위 밖 — 효과 없음</span>
+                      ) : null}
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
             <span className="mt-0.5 block text-t10 leading-relaxed text-ink-muted">
-              {byRole ? '역할로 이미 전부 할 수 있습니다 — 켜도 달라지는 것이 없습니다. ' : ''}
+              {person.role === 'BusinessCEO' ? '대표는 자기 회사를 역할로 이미 입력합니다(마감은 아님). ' : ''}
               {o.note}
             </span>
           </div>

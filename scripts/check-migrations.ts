@@ -3926,20 +3926,25 @@ async function aiAssistant() {
 }
 
 /**
- * 0047 재무 모듈 권한 — 사람 단위('/finance' user_module_access).
+ * 0047 재무 모듈 권한 — 사람 × 회사 단위('/finance/<business_id>' user_module_access).
  *
  * 첫 실사용자(DY 경영지원 TeamLead)가 biz_dy 장부를 읽고 · 전표를 넣고 · 공식 재무제표를 넣는다.
- * 다른 회사는 0행 · 거부, 마감은 can_approve가 있어야만. 같은 TeamLead라도 줄이 없으면(영업팀장) 0행이다.
- * AIAgent · Integration은 줄이 있어도 넓어지지 않는다. 기본 권한은 가입(프로필 insert) · 팀 이동 트리거가 준다.
+ * 다른 회사는 0행 · 거부 — **그 회사 접근(user_business_access)을 더해도** 그 회사 줄이 없으면 그대로다(리뷰 I1).
+ * 마감은 그 회사의 can_approve가 있어야만. 같은 TeamLead라도 줄이 없으면(영업팀장) 0행이다.
+ * AIAgent · Integration은 줄이 있어도 넓어지지 않는다.
+ * 기본 권한은 회장이 넣거나 승인한 초대의 가입 · 회장의 조직도 이동에만 붙는다 — 위임 초대에는 안 붙는다(리뷰 C1).
+ * 회수하면 줄이 전부 지워지고, 회장이 경영지원 자리에서 옮기면 기본값 모양의 줄만 지워진다(리뷰 I2).
  */
 const FG = {
   chair: '00000000-0000-0000-0000-0000000047a1',
   cfo: '00000000-0000-0000-0000-0000000047a2',
-  lead: '00000000-0000-0000-0000-0000000047a3', // DY 경영지원 팀장 — 기본 권한 대상
+  lead: '00000000-0000-0000-0000-0000000047a3', // DY 경영지원 팀장 — 회장 초대로 가입(기본 권한 대상)
   sales: '00000000-0000-0000-0000-0000000047a4', // DY 영업팀장 — 줄 없음
   agent: '00000000-0000-0000-0000-0000000047a5',
   integration: '00000000-0000-0000-0000-0000000047a6',
   exec: '00000000-0000-0000-0000-0000000047a7', // DY Executive — can_read_restricted로 읽기만(회귀)
+  member: '00000000-0000-0000-0000-0000000047a8', // DY 직원 — 위임 초대를 넣는 사람
+  delegated: '00000000-0000-0000-0000-0000000047a9', // 직원이 위임 초대한 경영지원 팀장
 }
 
 async function financeGrants() {
@@ -3955,24 +3960,38 @@ async function financeGrants() {
     grant select, insert, update, delete on all tables in schema public to authenticated;
     grant usage, select on all sequences in schema public to authenticated;
     insert into auth.users values
-      ('${FG.chair}', 'f1@x'), ('${FG.cfo}', 'f2@x'), ('${FG.lead}', 'f3@x'), ('${FG.sales}', 'f4@x'),
-      ('${FG.agent}', 'f5@x'), ('${FG.integration}', 'f6@x'), ('${FG.exec}', 'f7@x');
+      ('${FG.chair}', 'f1@x'), ('${FG.cfo}', 'f2@x'), ('${FG.sales}', 'f4@x'),
+      ('${FG.agent}', 'f5@x'), ('${FG.integration}', 'f6@x'), ('${FG.exec}', 'f7@x'), ('${FG.member}', 'f8@x');
     insert into user_profiles (user_id, role, display_name, max_security_class, team_id) values
       ('${FG.chair}', 'Chairman', 'ch', 'Vault', null),
       ('${FG.cfo}', 'GroupCFO', 'cfo', 'Restricted', null),
-      ('${FG.lead}', 'TeamLead', '경영지원팀장', 'Normal', 'team_dy_support'),
       ('${FG.sales}', 'TeamLead', '영업팀장', 'Normal', 'team_dy_sales'),
       ('${FG.agent}', 'AIAgent', 'ai', 'Restricted', null),
       ('${FG.integration}', 'Integration', 'sync', 'Restricted', null),
-      ('${FG.exec}', 'Executive', 'ex', 'Restricted', 'team_dy_sales');
+      ('${FG.exec}', 'Executive', 'ex', 'Restricted', 'team_dy_sales'),
+      ('${FG.member}', 'Member', '직원', 'Normal', 'team_dy_production');
     insert into user_business_access values
-      ('${FG.lead}', 'biz_dy'), ('${FG.sales}', 'biz_dy'), ('${FG.exec}', 'biz_dy');
+      ('${FG.sales}', 'biz_dy'), ('${FG.exec}', 'biz_dy'), ('${FG.member}', 'biz_dy');
     insert into user_business_access select '${FG.agent}', business_id from businesses;
     insert into user_business_access select '${FG.integration}', business_id from businesses;
     -- 누가 실수로 시스템 계정에 재무 줄을 넣었다 — 그래도 범위가 넓어지면 안 된다.
     insert into user_module_access (user_id, module, can_write, can_approve) values
-      ('${FG.agent}', '/finance', true, true), ('${FG.integration}', '/finance', true, true);
+      ('${FG.agent}', '/finance/biz_dy', true, true), ('${FG.integration}', '/finance/biz_dy', true, true);
   `)
+
+  // ── 가입 두 갈래: 회장 초대(C1 허용) · 직원의 위임 초대(C1 차단) ──
+  //   초대는 그 사람의 세션으로 넣는다(0026 set_approval이 auth_role()로 chairman_approved_at을 정한다 — 위임은 RLS까지 지난다).
+  //   가입은 세션 없이 auth.users insert → 0011 on_auth_user_created → apply_user_invitation.
+  const inviteAs = async (who: string, email: string) => {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${who}', true); set local role authenticated;
+      insert into user_invitations (email, role, display_name, invited_by, reports_to, max_security_class, business_ids, team_id)
+      values ('${email}', 'TeamLead', '${email}', '${who}', '${who}', 'Normal', '{biz_dy}', 'team_dy_support');
+      commit;`)
+  }
+  await inviteAs(FG.chair, 'lead@x')
+  await inviteAs(FG.member, 'delegated@x')
+  await db.exec(`select set_config('request.jwt.claim.sub', '', false);
+    insert into auth.users values ('${FG.lead}', 'lead@x'), ('${FG.delegated}', 'delegated@x');`)
 
   // 한 트랜잭션 안에서 여러 문장. '@<uid>' 사람 바꾸기 · '!<sql>' 소유자로 잠깐 나가기. 끝나면 되돌린다.
   async function as(uid: string, steps: string[]): Promise<'denied' | number> {
@@ -3997,12 +4016,21 @@ async function financeGrants() {
     }
   }
   const owner = async (sql: string) => (await db.query<Record<string, unknown>>(sql)).rows
+  const grants = (uid: string) => `select count(*)::int from user_module_access where user_id = '${uid}'`
 
-  // ── 기본 권한: 경영지원 팀장만, 입력 O · 마감 X ──
-  assert.deepEqual(await owner(`select user_id::text as u, can_write, can_approve from user_module_access where module = '/finance' and user_id in ('${FG.lead}', '${FG.sales}', '${FG.exec}')`),
-    [{ u: FG.lead, can_write: true, can_approve: false }], '0047: 경영지원 팀장만 기본 재무 입력 권한을 받아야 한다')
+  // ── C1: 회장 초대로 가입한 경영지원 팀장만 기본 권한(입력 O · 마감 X), 위임 초대는 없음 ──
+  assert.deepEqual(await owner(`select user_id::text as u, module, can_write, can_approve from user_module_access
+      where user_id in ('${FG.lead}', '${FG.delegated}', '${FG.sales}', '${FG.exec}', '${FG.member}') order by 1`),
+  [{ u: FG.lead, module: '/finance/biz_dy', can_write: true, can_approve: false }],
+  '0047: 회장 초대 경영지원 팀장만 DY 기본 재무 권한을 받아야 한다(위임 초대 · 다른 사람은 없음)')
+  assert.deepEqual(await owner(`select role::text as r, team_id as t from user_profiles where user_id = '${FG.delegated}'`),
+    [{ r: 'TeamLead', t: 'team_dy_support' }], '0047 검사 전제: 위임 초대가 실제로 경영지원 팀장 계정을 만들었다')
+  // 세션 없는 수정(회장 아님)으로 자리를 옮겼다 되돌려도 붙지 않는다.
+  await owner(`update user_profiles set team_id = 'team_dy_sales' where user_id = '${FG.delegated}'`)
+  await owner(`update user_profiles set team_id = 'team_dy_support' where user_id = '${FG.delegated}'`)
+  assert.equal(Number((await owner(grants(FG.delegated)))[0].count), 0, '0047: 회장이 아닌 수정이 경영지원 기본 권한을 붙인다')
 
-  // ── 읽기: 자기 회사만 ──
+  // ── 읽기: 그 회사만 ──
   const lines = (biz: string) => `select count(*)::int from journal_lines where business_id = '${biz}'`
   assert.ok(Number(await as(FG.lead, [lines('biz_dy')])) > 0, '0047: 경영지원 팀장이 DY 전표를 못 읽는다')
   for (const t of ['journal_lines', 'accounts', 'closings', 'journal_entries', 'official_statements', 'finance_kpis_sheet']) {
@@ -4012,15 +4040,19 @@ async function financeGrants() {
   assert.equal(await as(FG.lead, [`select count(*)::int from finance_kpis_masked where value is null and business_id = 'biz_dy'`]), 0,
     '0047: 권한 있는 사람에게 마스킹 뷰가 값을 가린다')
   assert.equal(await as(FG.sales, [lines('biz_dy')]), 0, '0047: 줄 없는 TeamLead(영업팀장)에게 전표가 보인다')
+  assert.equal(await as(FG.delegated, [lines('biz_dy')]), 0, '0047: 위임 초대 경영지원 팀장에게 전표가 보인다')
   assert.ok(Number(await as(FG.exec, [lines('biz_dy')])) > 0, '0047: Executive의 기존 읽기가 막혔다')
   assert.equal(await as(FG.exec, [lines('biz_vana')]), 0, '0047: Executive에게 다른 회사가 보인다')
-  assert.equal(await as(FG.lead, [`!update user_profiles set revoked_at = now() where user_id = '${FG.lead}'`, lines('biz_dy')]), 0,
-    '0047: 회수된 사람이 재무를 읽는다')
-  // 줄을 지우면(회수) 읽기도 닫힌다.
-  assert.equal(await as(FG.lead, [`!delete from user_module_access where user_id = '${FG.lead}'`, lines('biz_dy')]), 0,
-    '0047: 모듈 줄을 지웠는데 읽힌다')
 
-  // ── 쓰기: 전표 · 공식 재무제표 · 계정과목 — 자기 회사만 ──
+  // ── I1: 회사 접근을 더해도 그 회사 줄이 없으면 닫혀 있다 ──
+  const vanaAccess = `!insert into user_business_access values ('${FG.lead}', 'biz_vana')`
+  assert.equal(await as(FG.lead, [vanaAccess, lines('biz_vana')]), 0, '0047: VANA 접근만 더했는데 VANA 장부가 열린다')
+  assert.ok(Number(await as(FG.lead, [vanaAccess, `!insert into user_module_access (user_id, module) values ('${FG.lead}', '/finance/biz_vana')`, lines('biz_vana')])) > 0,
+    '0047: VANA 줄을 줬는데 VANA 장부가 안 열린다')
+  assert.equal(await as(FG.lead, [`!insert into user_module_access (user_id, module) values ('${FG.lead}', '/finance/biz_vana')`, lines('biz_vana')]), 0,
+    '0047: 회사 접근 없이 모듈 줄만으로 VANA가 열린다')
+
+  // ── 쓰기: 전표 · 공식 재무제표 · 계정과목 — 그 회사만 ──
   const post = (biz: string) =>
     `select count(*)::int from (select post_journal_entry('${biz}', '2026-08-20', '0047 전표', 'https://drive.example/x',
        '[{"account_code":"1010","side":"debit","amount":1000},{"account_code":"4010","side":"credit","amount":1000}]'::jsonb)) x`
@@ -4028,6 +4060,7 @@ async function financeGrants() {
   assert.equal(await as(FG.lead, [post('biz_dy'), `select count(*)::int from audit_log where entity_table = 'journal_entries' and actor_user_id = '${FG.lead}'`]), 1,
     '0047: 팀장 전표가 감사에 안 남는다')
   assert.equal(await as(FG.lead, [post('biz_vana')]), 'denied', '0047: 경영지원 팀장이 다른 회사 전표를 넣는다')
+  assert.equal(await as(FG.lead, [vanaAccess, post('biz_vana')]), 'denied', '0047: VANA 접근만으로 VANA 전표가 들어간다')
   assert.equal(await as(FG.sales, [post('biz_dy')]), 'denied', '0047: 줄 없는 TeamLead가 전표를 넣는다')
   assert.equal(await as(FG.lead, [`!update user_module_access set can_write = false where user_id = '${FG.lead}'`, post('biz_dy')]), 'denied',
     '0047: 읽기만 가진 사람이 전표를 넣는다')
@@ -4040,22 +4073,25 @@ async function financeGrants() {
   assert.equal(await as(FG.lead, [`insert into accounts (business_id, account_code, name, category, section, source, fetched_at) values ('biz_dy', '9471', 'x', 'other', 'sga', 'manual', now())`]),
     1, '0047: 경영지원 팀장이 DY 계정과목을 못 만든다')
 
-  // ── 마감: 기본은 없다 · can_approve를 주면 자기 회사만 ──
+  // ── 마감: 기본은 없다 · 그 회사의 can_approve를 주면 그 회사만 ──
   const close = (biz: string) => `select close_period('${biz}', '2026-08')`
   await assert.rejects(as(FG.lead, [close('biz_dy')]), /close_forbidden/, '0047: 입력 권한만으로 마감한다')
-  const approve = `!update user_module_access set can_approve = true where user_id = '${FG.lead}'`
-  assert.ok(Number(await as(FG.lead, [approve, close('biz_dy')])) > 0, '0047: can_approve를 받은 팀장이 DY를 마감하지 못한다')
-  await assert.rejects(as(FG.lead, [approve, close('biz_vana')]), /close_forbidden/, '0047: 마감 권한이 다른 회사까지 간다')
+  const approve = `!update user_module_access set can_approve = true where user_id = '${FG.lead}' and module = '/finance/biz_dy'`
+  assert.ok(Number(await as(FG.lead, [approve, close('biz_dy')])) > 0, '0047: DY can_approve를 받은 팀장이 DY를 마감하지 못한다')
+  await assert.rejects(as(FG.lead, [approve, vanaAccess, `!insert into user_module_access (user_id, module, can_write) values ('${FG.lead}', '/finance/biz_vana', true)`, close('biz_vana')]),
+    /close_forbidden/, '0047: DY 마감 권한이 VANA(입력만 받은 회사)까지 간다')
   assert.ok(Number(await as(FG.cfo, [close('biz_dy')])) > 0, '0047: GroupCFO 마감이 막혔다(회귀)')
+  // 인자 없는 0016 can_close_books()는 역할만 그대로다(부르는 곳은 전부 옮겼다).
+  assert.equal(await as(FG.lead, [approve, `select can_close_books()::int`]), 0, '0047: 0016의 인자 없는 can_close_books()가 넓어졌다')
 
   // ── 권한 줄 자체: 본인은 읽기만, 쓰기는 회장만 ──
   assert.equal(await as(FG.lead, [`select count(*)::int from user_module_access`]), 1, '0047: 본인이 자기 모듈 줄을 못 읽는다(세션 안내가 안 선다)')
   assert.equal(await as(FG.lead, [`update user_module_access set can_approve = true where user_id = '${FG.lead}'`]), 0, '0047: 본인이 자기 마감 권한을 켠다')
-  assert.equal(await as(FG.lead, [`insert into user_module_access (user_id, module, can_write) values ('${FG.sales}', '/finance', true)`]), 'denied',
+  assert.equal(await as(FG.lead, [`insert into user_module_access (user_id, module, can_write) values ('${FG.sales}', '/finance/biz_dy', true)`]), 'denied',
     '0047: 팀장이 남에게 재무 권한을 준다')
-  assert.equal(await as(FG.cfo, [`insert into user_module_access (user_id, module, can_write) values ('${FG.sales}', '/finance', true)`]), 'denied',
+  assert.equal(await as(FG.cfo, [`insert into user_module_access (user_id, module, can_write) values ('${FG.sales}', '/finance/biz_dy', true)`]), 'denied',
     '0047: GroupCFO가 재무 권한을 준다(회장만)')
-  assert.ok(Number(await as(FG.chair, [`insert into user_module_access (user_id, module, can_write) values ('${FG.sales}', '/finance', true)`, `@${FG.sales}`, lines('biz_dy')])) > 0,
+  assert.ok(Number(await as(FG.chair, [`insert into user_module_access (user_id, module, can_write) values ('${FG.sales}', '/finance/biz_dy', true)`, `@${FG.sales}`, lines('biz_dy')])) > 0,
     '0047: 회장이 준 권한으로 영업팀장이 읽지 못한다')
 
   // ── 시스템 계정: 줄이 있어도 그대로 ──
@@ -4063,17 +4099,24 @@ async function financeGrants() {
   assert.equal(await as(FG.integration, [post('biz_dy')]), 'denied', '0047: 재무 줄 있는 Integration이 수기 전표를 넣는다')
   assert.equal(await as(FG.integration, [official('biz_dy')]), 'denied', '0047: 재무 줄 있는 Integration이 공식 재무제표를 넣는다')
   await assert.rejects(as(FG.agent, [close('biz_dy')]), /close_forbidden/, '0047: 재무 줄 있는 AIAgent가 마감한다')
-  assert.equal(await as(FG.agent, [`select finance_grant(false, false)::int`]), 0, '0047: AIAgent에게 finance_grant가 참이다')
+  assert.equal(await as(FG.agent, [`select finance_grant('biz_dy', false, false)::int`]), 0, '0047: AIAgent에게 finance_grant가 참이다')
   assert.ok(Number(await as(FG.agent, [lines('biz_vana')])) > 0, '0047: AIAgent의 기존 읽기([제한] 등급)가 막혔다')
 
-  // ── 트리거: 팀 이동으로 경영지원 팀장이 되면 기본 권한 + 회장 이름의 감사 · 있던 마감 권한은 덮지 않는다 ──
+  // ── 회장의 조직도 이동: 들어오면 기본 권한 + 회장 이름의 감사, 떠나면 기본값 줄만 삭제 ──
   const moved = await as(FG.chair, [
     `update user_profiles set team_id = 'team_dy_support' where user_id = '${FG.sales}'`,
-    `select (select count(*)::int from user_module_access where user_id = '${FG.sales}' and module = '/finance' and can_write and not can_approve)
+    `select (select count(*)::int from user_module_access where user_id = '${FG.sales}' and module = '/finance/biz_dy' and can_write and not can_approve)
           + (select count(*)::int from audit_log where entity_table = 'user_module_access' and entity_id = '${FG.sales}'
-               and action = 'permission_change' and actor_user_id = '${FG.chair}') * 10`,
+               and business_id = 'biz_dy' and action = 'permission_change' and actor_user_id = '${FG.chair}') * 10`,
   ])
-  assert.equal(moved, 11, '0047: 경영지원으로 옮긴 팀장에게 기본 권한 · 감사가 안 선다')
+  assert.equal(moved, 11, '0047: 회장이 경영지원으로 옮긴 팀장에게 기본 권한 · 감사가 안 선다')
+  assert.equal(await as(FG.chair, [
+    `update user_profiles set team_id = 'team_dy_sales' where user_id = '${FG.lead}'`,
+    `select (select count(*)::int from user_module_access where user_id = '${FG.lead}')
+          + (select count(*)::int from audit_log where entity_table = 'user_module_access' and entity_id = '${FG.lead}' and before is not null) * 10`,
+  ]), 10, '0047: 경영지원 자리를 떠난 팀장의 기본 권한이 안 지워진다(또는 감사가 없다)')
+  assert.equal(await as(FG.chair, [approve, `update user_profiles set team_id = 'team_dy_sales' where user_id = '${FG.lead}'`, grants(FG.lead)]), 1,
+    '0047: 회장이 마감까지 준 줄을 자리 이동이 지운다')
   assert.equal(await as(FG.chair, [
     `!update user_module_access set can_approve = true where user_id = '${FG.lead}'`,
     `update user_profiles set role = 'Member' where user_id = '${FG.lead}'`,
@@ -4083,12 +4126,26 @@ async function financeGrants() {
   assert.equal(await as(FG.chair, [
     `!delete from user_module_access where user_id = '${FG.lead}'`,
     `update user_profiles set display_name = '경영지원팀장2' where user_id = '${FG.lead}'`,
-    `select count(*)::int from user_module_access where user_id = '${FG.lead}'`,
+    grants(FG.lead),
   ]), 0, '0047: 역할 · 팀과 무관한 프로필 수정이 회수한 권한을 되살린다')
 
-  // ── 카탈로그: force 새로 없음 · 트리거 함수는 아무도 못 부른다 ──
-  const fn = await owner(`select has_function_privilege('authenticated', 'finance_default_grant()', 'execute') as ok`)
-  assert.deepEqual(fn, [{ ok: false }], '0047: finance_default_grant를 authenticated가 부를 수 있다')
+  // ── I2: 회수하면 줄 전부 삭제(감사 포함) · 되살려도(재초대 · revoked_at null) 옛 줄은 없다 ──
+  const extra = `!insert into user_module_access (user_id, module, can_write, can_approve) values ('${FG.lead}', '/finance/biz_vana', true, true)`
+  const revoke = `update user_profiles set revoked_at = now() where user_id = '${FG.lead}'`
+  assert.equal(await as(FG.chair, [extra, revoke, grants(FG.lead)]), 0, '0047: 회수했는데 모듈 줄이 남는다')
+  assert.equal(await as(FG.chair, [extra, revoke,
+    `select count(*)::int from audit_log where entity_table = 'user_module_access' and entity_id = '${FG.lead}' and note like '계정 회수%'`]),
+  2, '0047: 회수로 지운 모듈 줄이 감사에 안 남는다')
+  assert.equal(await as(FG.chair, [extra, revoke, `!update user_profiles set revoked_at = null where user_id = '${FG.lead}'`, grants(FG.lead)]), 0,
+    '0047: 회수 뒤 되살린 계정에 옛 모듈 줄이 돌아온다')
+  assert.equal(await as(FG.lead, [`!update user_profiles set revoked_at = now() where user_id = '${FG.lead}'`, lines('biz_dy')]), 0,
+    '0047: 회수된 사람이 재무를 읽는다')
+
+  // ── 카탈로그: force 새로 없음 · 트리거 · 도우미 함수는 아무도 못 부른다 ──
+  for (const fn of ['finance_profile_grants()', 'finance_default_apply(uuid)', 'module_grant_audit(uuid, text, jsonb, jsonb, text)']) {
+    const r = await owner(`select has_function_privilege('authenticated', '${fn}', 'execute') as ok`)
+    assert.deepEqual(r, [{ ok: false }], `0047: ${fn}을 authenticated가 부를 수 있다`)
+  }
   const forced = await owner(`select relforcerowsecurity as f from pg_class where relname = 'user_module_access'`)
   assert.deepEqual(forced, [{ f: false }], '0047: user_module_access에 force가 걸렸다(0035 함정)')
   await db.close()

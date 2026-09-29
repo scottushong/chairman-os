@@ -114,8 +114,9 @@ export function makeContext(req: AssistantRequest): ToolContext {
     screen: screenSubject(req.path),
     chatId: req.chatId,
     channel: req.channel ?? 'web',
-    // 0047: 재무 모듈 권한(입력 · 마감)을 받은 사람도 재무를 묻는다. 회사 범위는 원장 RLS(can_read_books)가 자른다.
-    financeAllowed: FINANCE_ROLES.has(req.user.role) || req.user.finance.write || req.user.finance.close,
+    // 0047: 어느 회사든 재무 모듈 권한(입력 · 마감)을 받은 사람도 재무를 묻는다. 회사 범위는 원장 RLS(can_read_books)가 자른다.
+    financeAllowed:
+      FINANCE_ROLES.has(req.user.role) || Object.values(req.user.finance).some((f) => f.write || f.close),
     evidence: [],
     actionIds: [],
     businesses: () => (businesses ??= req.repo.listBusinesses().then((l) => l.filter((b) => b.visible)).catch(() => [])),

@@ -52,6 +52,7 @@ import {
   DUMMY_TASKS,
   DUMMY_TEAMS,
   dummyHasBusiness,
+  clearDummyModuleGrants,
   dummyModuleGrants,
   dummyOwnerUnknown,
   dummyPerson,
@@ -102,6 +103,7 @@ import type {
   Task,
   UserAccount,
   ModuleGrant,
+  Role,
   UserInvitation,
 } from '@/types'
 
@@ -1072,16 +1074,18 @@ export const dummyRepository: ChairmanRepository = {
     const was = { role: target.role, team_id: target.team_id }
     Object.assign(target, patch)
 
-    // 0047 finance_default_grant()를 옮겨 적은 것 — 역할 · 팀이 바뀌어 DY 경영지원 팀장이 된 순간, 줄이 없을 때만.
-    const became = target.role !== was.role || target.team_id !== was.team_id
-    if (
-      became &&
-      target.role === 'TeamLead' &&
-      target.team_id === 'team_dy_support' &&
-      !target.revoked_at &&
-      !dummyModuleGrants(userId).some((m) => m.module === '/finance')
-    ) {
-      setDummyModuleGrant(userId, { module: '/finance', can_write: true, can_approve: false })
+    // 0047 finance_profile_grants()를 옮겨 적은 것 — **회장이 옮길 때만**(리뷰 C1).
+    //   DY 경영지원 팀장이 된 순간: DY 기본 입력 권한(줄이 없고 DY 접근이 있을 때만).
+    //   그 자리를 떠난 순간: 기본값 모양의 줄(마감 권한 없는 '/finance/biz_dy')만 지운다(리뷰 I2).
+    const support = (p: { role: Role; team_id: string | null }) => p.role === 'TeamLead' && p.team_id === 'team_dy_support'
+    if (actor.role === 'Chairman' && !target.revoked_at) {
+      if (support(target) && !support(was)) {
+        if (target.business_ids.includes('biz_dy') && !dummyModuleGrants(userId).some((m) => m.module === '/finance/biz_dy')) {
+          setDummyModuleGrant(userId, { module: '/finance/biz_dy', can_write: true, can_approve: false })
+        }
+      } else if (support(was) && !support(target)) {
+        clearDummyModuleGrants(userId, (m) => m.module !== '/finance/biz_dy' || m.can_approve)
+      }
     }
 
     if (process.env.NODE_ENV !== 'production') {
@@ -1314,6 +1318,8 @@ export const dummyRepository: ChairmanRepository = {
       found.revoked_at = new Date().toISOString()
       found.status = 'left'
       found.left_on = kstToday()
+      // 0047 — 회수하면 모듈 줄을 전부 지운다. 남기면 재초대 한 번에 옛 재무 권한이 살아난다(리뷰 I2).
+      clearDummyModuleGrants(found.user_id)
 
       // 승계(0026 5절). 올릴 상사가 없으면 아무것도 하지 않는다 —
       // 트리를 끊는 것보다 조직도에 경고로 남는 편이 낫다.

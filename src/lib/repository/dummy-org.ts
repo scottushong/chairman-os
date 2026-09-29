@@ -132,7 +132,7 @@ export const DUMMY_PEOPLE: UserAccount[] = [
   // 0047. DY 경영지원 팀장 — 첫 실사용자의 자리. 가입 트리거(finance_default_grant)가 주는 기본값과 같다:
   // 재무 입력 O · 월 마감 X. biz_dy만 가진다(다른 회사 재무는 존재하지 않는 것처럼 보인다).
   person(DUMMY_UID.supportLead, 'TeamLead', '경영지원팀장', 'Management Support Team Lead', '팀장', DUMMY_UID.dyCeo, 'team_dy_support', {
-    modules: [{ module: '/finance', can_write: true, can_approve: false }],
+    modules: [{ module: '/finance/biz_dy', can_write: true, can_approve: false }],
   }),
   person(DUMMY_UID.exec, 'Executive', '영업본부장', 'Sales Executive', '본부장', DUMMY_UID.dyCeo, 'team_dy_sales', {
     max_security_class: 'Restricted',
@@ -220,10 +220,15 @@ export function setDummyModuleGrant(userId: string, grant: ModuleGrant): void {
   moduleGrants.set(userId, grant.can_write || grant.can_approve ? [...rest, { ...grant }] : rest)
 }
 
-/** 0047 finance_grant()를 옮겨 적은 것. 사람 역할만 — 시스템 계정은 줄이 있어도 false. */
-export function dummyFinanceGrant(viewer: UserAccount, need: 'read' | 'write' | 'approve'): boolean {
+/** 회수 · 경영지원 자리 이동 때 줄을 지운다(0047 finance_profile_grants). keep이 참인 줄은 남긴다. */
+export function clearDummyModuleGrants(userId: string, keep: (m: ModuleGrant) => boolean = () => false): void {
+  moduleGrants.set(userId, (moduleGrants.get(userId) ?? []).filter(keep))
+}
+
+/** 0047 finance_grant(target)를 옮겨 적은 것. 사람 역할만 — 시스템 계정은 줄이 있어도 false. 키는 회사까지. */
+export function dummyFinanceGrant(viewer: UserAccount, businessId: string, need: 'read' | 'write' | 'approve'): boolean {
   if (viewer.revoked_at || viewer.role === 'AIAgent' || viewer.role === 'Integration') return false
-  const row = dummyModuleGrants(viewer.user_id).find((m) => m.module === '/finance')
+  const row = dummyModuleGrants(viewer.user_id).find((m) => m.module === `/finance/${businessId}`)
   if (!row) return false
   return need === 'read' || (need === 'write' ? row.can_write : row.can_approve)
 }

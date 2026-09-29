@@ -50,13 +50,13 @@ import { DUPLICATE_ACCOUNT_CODE, type AccountPatch, type AuditActor, type NewAcc
 /** 0015 · 0047의 읽기 역할 — can_read_restricted()(등급 있는 AIAgent 포함). */
 const RESTRICTED_READER = ['Chairman', 'GroupCFO', 'BusinessCEO', 'Executive']
 
-/** 0047 can_read_books(). 회사 범위 AND ([제한] 열람 역할 OR '/finance' 줄). */
+/** 0047 can_read_books(). 회사 범위 AND ([제한] 열람 역할 OR '/finance/<회사>' 줄). */
 function canReadBooks(businessId: string): boolean {
   const viewer = dummyViewer()
   if (viewer.revoked_at || !dummyHasBusiness(viewer, businessId)) return false
   if (RESTRICTED_READER.includes(viewer.role)) return true
   if (viewer.role === 'AIAgent') return viewer.max_security_class === 'Restricted' || viewer.max_security_class === 'Vault'
-  return dummyFinanceGrant(viewer, 'read')
+  return dummyFinanceGrant(viewer, businessId, 'read')
 }
 
 /** 0047 can_keep_books(). live는 RLS 거부(42501)라 같은 낱말로 던진다 — 화면이 같은 문장을 보여 준다. */
@@ -66,17 +66,17 @@ function assertKeepBooks(businessId: string) {
     !viewer.revoked_at &&
     (viewer.role === 'Chairman' ||
       viewer.role === 'GroupCFO' ||
-      (dummyHasBusiness(viewer, businessId) && (viewer.role === 'BusinessCEO' || dummyFinanceGrant(viewer, 'write'))))
+      (dummyHasBusiness(viewer, businessId) && (viewer.role === 'BusinessCEO' || dummyFinanceGrant(viewer, businessId, 'write'))))
   if (!ok) throw new Error('new row violates row-level security policy (0047 can_keep_books)')
 }
 
-/** 0016 close_period()의 첫 검사 = can_close_books() and has_business(). 0047이 '/finance' can_approve를 더했다. */
+/** 0047 close_period()의 첫 검사 = can_close_books(target) — 역할 둘 또는 '/finance/<회사>' can_approve, AND 회사 범위. */
 function assertCloseBooks(businessId: string) {
   const viewer = dummyViewer()
   const ok =
     !viewer.revoked_at &&
     dummyHasBusiness(viewer, businessId) &&
-    (viewer.role === 'Chairman' || viewer.role === 'GroupCFO' || dummyFinanceGrant(viewer, 'approve'))
+    (viewer.role === 'Chairman' || viewer.role === 'GroupCFO' || dummyFinanceGrant(viewer, businessId, 'approve'))
   if (!ok) throw new Error('close_forbidden')
 }
 

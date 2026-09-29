@@ -44,7 +44,7 @@ export default async function JournalPage(props: PageProps<'/finance/[business_i
   const period = requested && periods.includes(requested) ? requested : today.slice(0, 7)
   const locked = isPeriodLocked(ledger, business_id, period)
   const slips = slipsOf(ledger, business_id, period)
-  const bookkeeper = canKeepBooks(user)
+  const bookkeeper = canKeepBooks(user, business_id)
 
   // 정정 모드. 정정할 수 없는 전표(역분개·이미 정정됨·ECOUNT)면 폼을 열지 않는다 — 목록에 버튼도 없다.
   const correctId = firstParam(params.correct)

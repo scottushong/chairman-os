@@ -44,7 +44,7 @@ export default async function BusinessFinancePage(props: PageProps<'/finance/[bu
   })
 
   // 마감 차례인 달. 마감 담당(Chairman · GroupCFO · 0047 월 마감 권한을 받은 사람)에게만 버튼이 선다 — 안내다, 문은 0016 close_period().
-  const closable = canCloseBooks(user) ? closablePeriod(ledger, business_id, todayKst()) : null
+  const closable = canCloseBooks(user, business_id) ? closablePeriod(ledger, business_id, todayKst()) : null
 
   return (
     <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6">

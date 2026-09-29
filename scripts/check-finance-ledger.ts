@@ -26,6 +26,7 @@ import { STANDARD_CHART } from '../src/lib/ledger/standard-chart'
 import { SECTION_CATEGORIES } from '../src/lib/ledger/accounts'
 import { balanceSheet, cashFlowStatement } from '../src/lib/ledger/statements'
 import { dummyRepository } from '../src/lib/repository/dummy'
+import { DUMMY_UID, dummyModuleGrants, dummyPerson } from '../src/lib/repository/dummy-org'
 
 const BUSINESSES = ['biz_dy', 'biz_vana', 'biz_sticky', 'biz_hof', 'biz_boram']
 
@@ -251,11 +252,43 @@ async function financeGrantsDummy() {
     assert.equal((await repo.listOfficialStatements('biz_dy')).length, 1)
     await assert.rejects(repo.closePeriod('biz_dy', '2026-08', actor), /close_forbidden/, '0047 dummy: 입력 권한만으로 마감한다')
 
+    // I1 — 회사 접근(VANA)을 더해도 VANA 줄이 없으면 닫혀 있다. 회장이 VANA 줄을 켜면 그때 열린다.
+    const me = dummyPerson(DUMMY_UID.supportLead)!
+    me.business_ids.push('biz_vana')
+    try {
+      assert.ok((await repo.listBusinesses()).some((b) => b.business_id === 'biz_vana'), '0047 dummy 전제: VANA 접근이 붙었다')
+      assert.equal((await repo.loadFinanceLedger()).journal.filter((j) => j.business_id === 'biz_vana').length, 0,
+        '0047 dummy: VANA 접근만으로 VANA 원장이 열린다')
+      await assert.rejects(repo.postJournalEntry(dySale('biz_vana'), actor), /row-level security/, '0047 dummy: VANA 접근만으로 VANA 전표가 들어간다')
+      await assert.rejects(repo.setModuleGrant(DUMMY_UID.supportLead, { module: '/finance/biz_vana', can_write: true, can_approve: false }, actor),
+        /row-level security/, '0047 dummy: 회장 아닌 사람이 모듈 권한을 준다')
+      await repo.setModuleGrant(DUMMY_UID.supportLead, { module: '/finance/biz_vana', can_write: false, can_approve: false }, { user_id: 'chair', role: 'Chairman' })
+      await repo.setModuleGrant(DUMMY_UID.supportLead, { module: '/finance/biz_vana', can_write: true, can_approve: false }, { user_id: 'chair', role: 'Chairman' })
+      assert.ok((await repo.loadFinanceLedger()).journal.some((j) => j.business_id === 'biz_vana'), '0047 dummy: VANA 줄을 켰는데 VANA 원장이 안 열린다')
+      await repo.setModuleGrant(DUMMY_UID.supportLead, { module: '/finance/biz_vana', can_write: false, can_approve: false }, { user_id: 'chair', role: 'Chairman' })
+    } finally {
+      me.business_ids.splice(me.business_ids.indexOf('biz_vana'), 1)
+    }
+
     process.env.DUMMY_USER = 'sales_lead'
     assert.equal((await repo.loadFinanceLedger()).journal.length, 0, '0047 dummy: 줄 없는 팀장에게 원장이 보인다')
     assert.equal((await repo.listOfficialStatements('biz_dy')).length, 0, '0047 dummy: 줄 없는 팀장에게 공식 재무제표가 보인다')
     await assert.rejects(repo.postJournalEntry(dySale('biz_dy'), { user_id: 'sales', role: 'TeamLead' }), /row-level security/,
       '0047 dummy: 줄 없는 팀장이 전표를 넣는다')
+
+    // C1 — 회장이 아닌 사람이 경영지원으로 옮기면 기본 권한이 안 붙고, 회장이 옮기면 붙는다. I2 — 떠나면 기본값 줄만 지운다.
+    const finance = (uid: string) => dummyModuleGrants(uid).filter((m) => m.module === '/finance/biz_dy')
+    await repo.updateUserProfile(DUMMY_UID.buyLead, { team_id: 'team_dy_support' }, { user_id: 'exec', role: 'Executive' })
+    assert.equal(finance(DUMMY_UID.buyLead).length, 0, '0047 dummy: 회장 아닌 이동이 기본 재무 권한을 붙인다')
+    await repo.updateUserProfile(DUMMY_UID.buyLead, { team_id: 'team_dy_purchasing' }, { user_id: 'chair', role: 'Chairman' })
+    await repo.updateUserProfile(DUMMY_UID.buyLead, { team_id: 'team_dy_support' }, { user_id: 'chair', role: 'Chairman' })
+    assert.equal(finance(DUMMY_UID.buyLead).length, 1, '0047 dummy: 회장이 경영지원으로 옮겼는데 기본 권한이 없다')
+    await repo.updateUserProfile(DUMMY_UID.buyLead, { team_id: 'team_dy_purchasing' }, { user_id: 'chair', role: 'Chairman' })
+    assert.equal(finance(DUMMY_UID.buyLead).length, 0, '0047 dummy: 경영지원을 떠났는데 기본 권한이 남는다')
+
+    // I2 — 회수하면 줄이 전부 지워진다(재초대가 옛 권한을 살리지 못하게).
+    await repo.revokeUser({ kind: 'account', user_id: DUMMY_UID.supportLead }, { user_id: 'chair', role: 'Chairman' })
+    assert.equal(dummyModuleGrants(DUMMY_UID.supportLead).length, 0, '0047 dummy: 회수했는데 모듈 줄이 남는다')
   } finally {
     if (prev === undefined) delete process.env.DUMMY_USER
     else process.env.DUMMY_USER = prev

@@ -6,7 +6,7 @@ import { useState } from 'react'
 import { closePeriod } from '@/app/actions/books'
 
 /**
- * "N월 마감" (Phase 2-B 블록 3). Chairman · Group CFO와 월 마감 권한(0047 '/finance' can_approve)을 받은 사람에게만 보인다 — 안내다. 실제 문은 0016 close_period().
+ * "N월 마감" (Phase 2-B 블록 3). Chairman · Group CFO와 그 회사의 월 마감 권한(0047 '/finance/<회사>' can_approve)을 받은 사람에게만 보인다 — 안내다. 실제 문은 0016 close_period().
  *
  * 마감 해제가 없어서 한 번 더 묻는다. 브라우저 confirm()을 쓰지 않는다 — 화면 안에서 두 번째 버튼으로 묻는다.
  * 마감이 끝나면 서버가 다시 그린 재무 화면의 꼬리표가 잠정 → 확정으로 바뀐다.

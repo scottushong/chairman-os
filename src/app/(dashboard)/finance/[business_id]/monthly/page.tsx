@@ -59,7 +59,7 @@ export default async function MonthlyPage(props: PageProps<'/finance/[business_i
           officials={periods}
           officialMemos={memos}
           preset={preset}
-          canEdit={canKeepBooks(user)}
+          canEdit={canKeepBooks(user, business_id)}
         />
       </div>
     </div>

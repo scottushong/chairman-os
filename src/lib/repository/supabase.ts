@@ -6,6 +6,7 @@ import { AUDIT_ACTION, DECISION_STATUS, type DecisionAuditRecord } from '@/lib/d
 import { dayKey } from '@/lib/format'
 import { LOGO_BUCKET, logoPath } from '@/lib/initiative-logo'
 import { PHOTO_BUCKET, photoPath } from '@/lib/profile-photo'
+import { businessOfModule } from '@/lib/module-grants'
 import { attachmentHitId, needsSubstringSearch, type SearchHit } from '@/lib/search'
 
 import type {
@@ -97,7 +98,7 @@ import type {
   WorkPriority,
 } from '@/types'
 // 값으로 쓰는 것 — 관찰 기한(0035의 check가 status와 함께 요구한다).
-import { MONITOR_DAYS } from '@/types'
+import { MODULE_GRANT_OPTIONS, MONITOR_DAYS } from '@/types'
 
 import type { CorrectionResult, NewCorrection, NewJournalEntry } from '@/lib/ledger/journal'
 import { STANDARD_CHART } from '@/lib/ledger/standard-chart'
@@ -2720,7 +2721,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         action: 'permission_change',
         entity_table: 'user_module_access',
         entity_id: userId,
-        business_id: null,
+        // 0047. 재무 권한은 회사마다 한 줄이라 감사도 그 회사로 건다('/finance/biz_dy' → 'biz_dy').
+        business_id: MODULE_GRANT_OPTIONS.map((o) => businessOfModule(o.prefix, grant.module)).find((b) => b !== null) ?? null,
         actor_user_id: actor.user_id,
         actor_role: actor.role,
         before: before ? { module: before.module, can_write: before.can_write, can_approve: before.can_approve } : null,

@@ -56,7 +56,7 @@ export default async function AccountsPage(props: PageProps<'/finance/[business_
         businessId={business_id}
         accounts={accounts}
         usedCodes={used}
-        canEdit={canKeepBooks(user)}
+        canEdit={canKeepBooks(user, business_id)}
         usesEcountCodes={ECOUNT_CODE_BUSINESSES.includes(business_id)}
       />
     </div>

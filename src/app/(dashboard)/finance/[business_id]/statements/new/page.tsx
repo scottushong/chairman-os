@@ -44,7 +44,7 @@ export default async function NewStatementPage(
         <BooksNav businessId={business_id} current="official" />
       </PageHeader>
 
-      {canKeepBooks(user) ? (
+      {canKeepBooks(user, business_id) ? (
         accounts.length === 0 ? (
           <p className="mt-4 rounded-md bg-warning/10 px-3 py-2 text-t12 text-warning">
             이 회사에 계정과목이 없습니다. 계정과목 화면에서 표준 계정과목표를 먼저 받으세요.

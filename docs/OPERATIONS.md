@@ -349,19 +349,32 @@ select tgname from pg_trigger where tgrelid = 'auth.users'::regclass;
 ### 모듈 권한 — 재무 입력 · 월 마감 (0047)
 
 재무(`/finance/<회사>`)는 역할(Chairman · GroupCFO · BusinessCEO(자기 회사) · 읽기는 Executive까지) 말고도
-**사람 단위로** 연다. `/settings/users` → 사람을 누른다 → 오른쪽 패널 «모듈 권한» → **재무 입력** · **월 마감** 체크.
-회장만 바꿀 수 있고(`module_access_admin_write`), 바꿀 때마다 `audit_log`에 `permission_change`
-(`entity_table = 'user_module_access'`)가 먼저 남는다. 둘 다 끄면 줄이 지워지고 재무를 못 본다.
-어느 회사인지는 이 칸이 아니라 **회사 범위**(`user_business_access`)가 정한다 — DY만 가진 사람은 DY 재무만 본다.
+**사람 × 회사 단위로** 연다. `/settings/users` → 사람을 누른다 → 오른쪽 패널 «모듈 권한» → 그 사람의 회사 범위에 있는
+**회사마다** **재무 입력** · **월 마감** 체크. 권한 줄의 키는 `'/finance/<business_id>'`(예 `/finance/biz_dy`)다.
 
-**기본값:** 역할이 TeamLead이고 팀이 DY 경영지원(`team_dy_support`)인 사람은 가입 · 회장 결재 · 조직도에서 그 자리로
-옮기는 순간 «재무 입력»을 자동으로 받는다(월 마감은 없다 — 0047 `finance_default_grant` 트리거). 이미 줄이 있으면
-덮지 않는다. 가입 순간에는 세션이 없어 그 한 줄의 감사가 남지 않는다 — 출처는 같은 사람의 초대 감사 줄이다.
+- **회사 범위만으로는 열리지 않는다.** 그 회사 접근(`user_business_access`)과 그 회사 줄이 **둘 다** 있어야 한다 —
+  나중에 VANA 접근을 더해 줘도 VANA 재무는 «모듈 권한»에서 VANA를 켜기 전까지 닫혀 있다.
+- 회장만 바꿀 수 있고(`module_access_admin_write`), 바꿀 때마다 `audit_log`에 `permission_change`
+  (`entity_table = 'user_module_access'`, `business_id` = 그 회사)가 먼저 남는다. 둘 다 끄면 줄이 지워지고 그 회사 재무를 못 본다.
+
+**기본값(DY 경영지원 팀장):** 역할 TeamLead · 팀 DY 경영지원(`team_dy_support`) · DY 접근이 있는 사람은 «DY 재무 입력»
+(마감 없음)을 자동으로 받는다 — **회장이 관여한 경우에만**:
+
+- 가입: **회장이 넣은 초대이거나 회장이 승인한 초대**일 때만(`user_invitations.chairman_approved_at`).
+  팀장 · 직원이 위임으로 초대한 사람은 받지 않는다 — 회장이 사용자 화면에서 체크한다.
+- 조직도: **회장이** 그 자리로 옮길 때만. 이미 줄이 있으면 덮지 않는다.
+- 가입 순간에는 세션이 없어 그 한 줄의 감사가 남지 않는다 — 출처는 회장이 넣거나 승인한 초대의 감사 줄이다.
+
+**거두는 길:**
+
+- **권한 회수**(4절)를 누르면 그 사람의 모듈 줄이 **전부** 지워진다(줄마다 감사). 재초대해도 옛 권한은 돌아오지 않는다.
+- 회장이 경영지원 팀장 자리에서 옮기면 **마감 권한이 없는 DY 기본 줄만** 지워진다. 회장이 마감까지 준 줄은 남으니
+  필요하면 «모듈 권한»에서 끈다.
 
 ```sql
-select p.display_name, m.can_write, m.can_approve, m.granted_at
+select p.display_name, m.module, m.can_write, m.can_approve, m.granted_at
   from user_module_access m join user_profiles p using (user_id)
- where m.module = '/finance';
+ where m.module like '/finance/%';
 ```
 
 ---

@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 
 import { currentUser } from '@/lib/auth/session'
+import { moduleKey } from '@/lib/module-grants'
 import { DUPLICATE_INVITATION, getRepository } from '@/lib/repository'
 import {
   INVITABLE_ROLE,
@@ -308,22 +309,25 @@ export async function updateUserProfile(input: {
 }
 
 /**
- * 0047 — 사람 단위 모듈 권한(재무 입력 · 월 마감 등). 회장만이다(0002 module_access_admin_write).
+ * 0047 — 사람 × 회사 단위 모듈 권한(재무 입력 · 월 마감 등). 회장만이다(0002 module_access_admin_write).
  *
- * 모듈 키는 화면 목록(MODULE_GRANT_OPTIONS)에 있는 것만 받는다 — 아무 경로나 받으면 권한 표에 뜻 없는 줄이
- * 쌓이고, 그 줄은 나중에 누가 같은 이름의 모듈을 만드는 날 조용히 권한이 된다. 두 칸이 다 false면 줄을 지운다.
- * 판정(회장인가)은 여기서 하지 않는다 — DB가 거부하면 그 문장을 한국어로 옮긴다.
+ * 키는 «화면 목록(MODULE_GRANT_OPTIONS)의 접두사 + 실제로 있는 회사»만 받는다('/finance/biz_dy') — 아무 경로나 받으면
+ * 권한 표에 뜻 없는 줄이 쌓이고, 그 줄은 나중에 누가 같은 이름의 모듈 · 회사를 만드는 날 조용히 권한이 된다.
+ * 두 칸이 다 false면 줄을 지운다. 판정(회장인가)은 여기서 하지 않는다 — DB가 거부하면 그 문장을 한국어로 옮긴다.
  */
 export async function setModuleGrant(input: {
   userId: unknown
-  module: unknown
+  prefix: unknown
+  businessId: unknown
   canWrite: unknown
   canApprove: unknown
 }): Promise<RevokeUserState> {
   const userId = typeof input.userId === 'string' ? input.userId.trim() : ''
   if (!userId) return { error: '대상을 알 수 없습니다.' }
-  const option = MODULE_GRANT_OPTIONS.find((o) => o.module === input.module)
+  const option = MODULE_GRANT_OPTIONS.find((o) => o.prefix === input.prefix)
   if (!option) return { error: '알 수 없는 모듈입니다.' }
+  const businessId = typeof input.businessId === 'string' ? input.businessId.trim() : ''
+  if (!/^[a-z0-9_]+$/.test(businessId)) return { error: '어느 회사인지 알 수 없습니다.' }
   if (typeof input.canWrite !== 'boolean' || typeof input.canApprove !== 'boolean') {
     return { error: '권한 값을 읽을 수 없습니다.' }
   }
@@ -333,9 +337,13 @@ export async function setModuleGrant(input: {
 
   try {
     const repo = await getRepository()
+    // 없는 회사 키는 받지 않는다(회장 세션은 전사라 전 회사를 본다 — 목록에 없으면 정말 없는 회사다).
+    if (!(await repo.listBusinesses()).some((b) => b.business_id === businessId)) {
+      return { error: '없는 회사입니다.' }
+    }
     await repo.setModuleGrant(
       userId,
-      { module: option.module, can_write: input.canWrite, can_approve: input.canApprove },
+      { module: moduleKey(option.prefix, businessId), can_write: input.canWrite, can_approve: input.canApprove },
       { user_id: user.user_id, role: user.role },
     )
   } catch (e) {
