@@ -151,7 +151,10 @@ export async function runAssistant(req: AssistantRequest): Promise<AssistantAnsw
   const key = process.env.ANTHROPIC_API_KEY
   if (!key) return ruled(en ? 'AI is not connected in this environment (ANTHROPIC_API_KEY missing).' : '이 환경에는 AI 연결(ANTHROPIC_API_KEY)이 없어 답을 만들지 못했습니다.')
 
-  promptCache ??= readFile(join(process.cwd(), 'src', 'lib', 'ai', 'prompts', 'assistant.md'), 'utf8')
+  // production만 담아 둔다 — dev에서 담으면 프롬프트를 고쳐도 서버를 다시 띄우기 전까지 옛 글이 돈다(검증에서 그랬다).
+  if (!promptCache || process.env.NODE_ENV !== 'production') {
+    promptCache = readFile(join(process.cwd(), 'src', 'lib', 'ai', 'prompts', 'assistant.md'), 'utf8')
+  }
   const system = await promptCache
   const tools = ALL_TOOLS.filter((t) => t.available(ctx))
   const byName = new Map(tools.map((t) => [t.def.name, t]))

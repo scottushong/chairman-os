@@ -39,7 +39,8 @@ export function AssistantMessages({
         ) : (
           <li key={m.id} className="max-w-[94%] rounded-2xl rounded-bl-sm border border-line-soft bg-raised px-3 py-2.5 text-t12h leading-relaxed">
             <span className="mb-1 inline-block rounded bg-gold/15 px-1.5 py-0.5 text-t10 font-semibold text-gold">{tr(lang, '결정 아님', 'Not a decision')}</span>
-            <p className="whitespace-pre-wrap">{m.content}</p>
+            {/* 프롬프트가 마크다운을 막지만(assistant.md 10) 모델이 가끔 **굵게**를 쓴다 — 별표만 걷는다. */}
+            <p className="whitespace-pre-wrap">{m.content.replace(/\*\*(.+?)\*\*/g, '$1')}</p>
             {m.sources.length > 0 ? (
               <div className="mt-2 grid gap-1.5">
                 {m.sources.map((s) => (
