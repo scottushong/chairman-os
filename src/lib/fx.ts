@@ -15,7 +15,7 @@
  * 호치민·두바이는 사업 도시지만 이 띠에 칸이 서지 않는다(DEFERRED 기록).
  */
 
-/** 띠에 세우는 통화. BUSINESS_CITIES 여섯 곳 중 다섯이 여기 대응한다(호치민·두바이 제외, EUR 추가). */
+/** 띠에 세우는 통화. 관심 도시 목록(lib/world-cities.ts)과는 따로 간다. */
 export const FX_CODES = ['USD', 'EUR', 'CNY', 'CAD', 'SGD'] as const
 export type FxCode = (typeof FX_CODES)[number]
 

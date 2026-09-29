@@ -4,6 +4,7 @@ import {
   type NotificationKind,
   type NotificationSwitches,
 } from '@/types'
+import { normalizeWorldCityIds } from '@/lib/world-cities'
 
 /**
  * 개인 화면 설정의 **읽는 쪽 한 곳** (Phase 5-E 3·4절, 0030 user_settings.sidebar_prefs / app_prefs).
@@ -69,12 +70,18 @@ export interface AppPrefs {
    * 기기가 «동작 줄이기»(prefers-reduced-motion)를 켜 두었으면 이 값과 무관하게 멈춘다.
    */
   city_motion: boolean
+  /**
+   * 세계시간 · 관심 도시 날씨의 도시 id(lib/world-cities.ts). 서울이 늘 첫 자리다.
+   * 한 번도 고친 적 없으면 기본 열 곳(2026-09-29 회장 지시)이다.
+   */
+  world_cities: string[]
 }
 
 export const APP_PREFS_DEFAULT: AppPrefs = {
   theme: 'light',
   notify: NOTIFICATION_SWITCHES_DEFAULT,
   city_motion: true,
+  world_cities: normalizeWorldCityIds(undefined),
 }
 
 /* ------------------------------------------------------------------ 읽기 */
@@ -118,7 +125,12 @@ export function readAppPrefs(raw: PrefsBag): AppPrefs {
   const notify = Object.fromEntries(
     NOTIFICATION_KIND.map((k) => [k, rawNotify[k] !== false]),
   ) as NotificationSwitches
-  return { theme, notify, city_motion: b.city_motion !== false }
+  return {
+    theme,
+    notify,
+    city_motion: b.city_motion !== false,
+    world_cities: normalizeWorldCityIds(b.world_cities),
+  }
 }
 
 /* ------------------------------------------------------------------ 판정 */

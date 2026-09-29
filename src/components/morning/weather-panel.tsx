@@ -17,12 +17,12 @@ import type { CityWeather, WeatherCurrent } from '@/lib/weather'
 /**
  * 상단 3칸 중 둘째 칸 — 현재 위치 날씨 + 관심 도시.
  *
- * 요구사항은 "현재 위치 + 관심 도시(호치민·싱가폴·상하이·두바이·토론토·SF)"다.
- * 관심 도시는 서버가 한 번에 불러(getBusinessCitiesWeather, 좌표 6개를 콤마로 묶은 요청 하나)
- * 내려 준다 — 이 컴포넌트는 그리기만 한다. 브라우저 위치 버튼은 현재 위치만 바꾼다.
+ * 관심 도시는 세계시간과 같은 목록이다(app_prefs.world_cities, 기본 열 곳 — lib/world-cities.ts).
+ * 서버가 한 번에 불러(getWorldCitiesWeather, 좌표를 콤마로 묶은 요청 하나) 내려 준다 —
+ * 이 컴포넌트는 그리기만 한다. 브라우저 위치 버튼은 현재 위치만 바꾼다.
  *
- * 아침에 훑는 칸이라 도시는 3칸 2줄로 접어 이름과 기온만 둔다. 날씨 앱이 아니다 —
- * 라벨(맑음/비)까지 넣으면 여섯 줄이 되어 이 칸이 옆 두 칸보다 두 배 길어진다.
+ * 아침에 훑는 칸이라 도시는 5개씩 줄(좁으면 가로 스크롤)로 이름과 기온만 둔다. 날씨 앱이 아니다 —
+ * 라벨(맑음/비)까지 넣으면 이 칸이 옆 두 칸보다 두 배 길어진다.
  *
  * 처음 뜨는 값은 서버가 정한 위치다(P5-5b resolveLocation → getCurrentLocationWeather).
  * Vercel 엣지의 IP 헤더가 있으면 그 도시, 없으면 서울 기본값이다.
@@ -46,7 +46,7 @@ export function WeatherPanel({
   source: 'vercel-ip' | 'default'
   /** 서버가 미리 불러 둔 그 위치의 현재 날씨. 실패했으면 null이다. */
   initial: WeatherCurrent | null
-  /** 관심 도시 6곳. 도시별 current가 null이면 그 도시만 부분 실패다(weather.ts). */
+  /** 관심 도시. 도시별 current가 null이면 그 도시만 부분 실패다(weather.ts). */
   cities: CityWeather[]
 }) {
   const { coordinates, status, locate } = useGeolocation()
@@ -135,22 +135,28 @@ export function WeatherPanel({
       {/* 관심 도시. 전부 GlassCard 안이라 ink-muted를 써도 된다 —
           라이트는 5.39(최악 4.64), 다크는 어두운 스크림 위 7.03이다(globals.css). */}
       {shownCities.length > 0 ? (
-        <ul
-          aria-label="관심 도시 날씨"
-          className="mt-4 grid grid-cols-3 gap-x-3 gap-y-1 border-t border-line-soft pt-3"
-        >
-          {shownCities.map((c) => (
-            // 도시 줄은 아이콘이 붙어도 한 줄 그대로다 — 이름 옆에 들어가지
-            // 아래로 늘어나지 않는다. 위 주석의 '여섯 줄이 되면 안 된다'가 그대로 유효하다.
-            <li key={c.id} className="flex items-center justify-between gap-1 text-t11">
-              <span className="flex min-w-0 items-center gap-1 text-ink-muted">
-                <WeatherIcon name={weatherIconFor(c.code)} className="size-3.5 shrink-0" />
-                <span className="truncate">{c.nameKo}</span>
-              </span>
-              <span className="shrink-0 text-ink tnum">{Math.round(c.temperatureC)}°</span>
-            </li>
-          ))}
-        </ul>
+        // 5개씩 줄의 기준은 뷰포트가 아니라 이 상자의 폭이다(@container 250px · 폰은 스크롤 — world-clocks.tsx와 같다).
+        <div className="@container mt-4 border-t border-line-soft pt-3">
+          <ul
+            aria-label="관심 도시 날씨"
+            className="flex snap-x gap-x-3 gap-y-2 overflow-x-auto pb-1 sm:@min-[250px]:grid sm:@min-[250px]:grid-cols-5 sm:@min-[250px]:overflow-visible sm:@min-[250px]:pb-0"
+          >
+            {shownCities.map((c) => (
+              // 이름 한 줄, 그 아래 그림 + 기온.
+              <li
+                key={c.id}
+                title={c.nameKo}
+                className="min-w-[58px] shrink-0 snap-start text-t11 leading-tight sm:@min-[250px]:min-w-0"
+              >
+                <span className="block truncate text-t10 text-ink-muted">{c.nameKo}</span>
+                <span className="mt-0.5 flex items-center gap-1">
+                  <WeatherIcon name={weatherIconFor(c.code)} className="size-3.5 shrink-0 text-ink-muted" />
+                  <span className="text-ink tnum">{Math.round(c.temperatureC)}°</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : (
         <p className="mt-4 border-t border-line-soft pt-3 text-t11 text-ink-muted">
           관심 도시 날씨를 불러오지 못했습니다.

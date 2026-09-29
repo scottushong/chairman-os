@@ -1,4 +1,5 @@
-import { BUSINESS_CITIES, type BusinessCity, type Coordinates } from '@/lib/cities'
+import type { Coordinates } from '@/lib/cities'
+import type { WorldCity } from '@/lib/world-cities'
 import { weatherLabel } from '@/lib/weather-codes'
 
 /**
@@ -87,12 +88,15 @@ export async function getCurrentLocationWeather(coordinates: Coordinates): Promi
 }
 
 export interface CityWeather {
-  city: BusinessCity
+  city: WorldCity
   current: WeatherCurrent | null
 }
 
-/** 사업 도시 6곳의 날씨를 한 번에. 도시별 null은 부분 실패 — 패널이 있는 도시만 그린다. */
-export async function getBusinessCitiesWeather(): Promise<CityWeather[]> {
-  const results = await fetchOpenMeteoCurrent(BUSINESS_CITIES.map((c) => c.coordinates))
-  return BUSINESS_CITIES.map((city, i) => ({ city, current: results[i] ?? null }))
+/**
+ * 관심 도시(app_prefs.world_cities — 세계시간과 같은 목록)의 날씨를 한 번에.
+ * 도시별 null은 부분 실패 — 패널이 있는 도시만 그린다.
+ */
+export async function getWorldCitiesWeather(cities: WorldCity[]): Promise<CityWeather[]> {
+  const results = await fetchOpenMeteoCurrent(cities.map((c) => c.coordinates))
+  return cities.map((city, i) => ({ city, current: results[i] ?? null }))
 }

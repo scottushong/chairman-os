@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { AiUsagePanel } from '@/components/settings/ai-usage'
 import { AccountSecurity } from '@/components/settings/account-security'
 import { CityMotionSwitch, NotifySwitches, ThemePicker } from '@/components/settings/display-prefs'
+import { WorldCitiesEditor } from '@/components/settings/world-cities-editor'
 import { Icon, type IconName } from '@/components/ui/icon'
 import { canEditChairmanRoutine, canManageUsers } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
@@ -152,6 +153,9 @@ export default async function SettingsHubPage() {
         <p className="text-t11 text-ink-dim">테마</p>
         <ThemePicker value={prefs.app.theme} />
         <CityMotionSwitch value={prefs.app.city_motion} />
+
+        <p className="mt-3 text-t11 text-ink-dim">관심 도시 · 세계시간</p>
+        <WorldCitiesEditor value={prefs.app.world_cities} />
 
         <div className="mt-3 space-y-1.5">
           <Row

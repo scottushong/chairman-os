@@ -3,8 +3,10 @@
 import { useEffect, useState } from 'react'
 
 import { DataModeBadge } from '@/components/layout/data-mode-badge'
+import { WorldClocks } from '@/components/layout/world-clocks'
 import { GlassCard } from '@/components/ui/glass-card'
 import { Icon } from '@/components/ui/icon'
+import type { WorldCity } from '@/lib/world-cities'
 
 /**
  * 상단 3칸 중 첫 칸 — 인사 + 큰 시계 + 세계 시간.
@@ -17,29 +19,18 @@ import { Icon } from '@/components/ui/icon'
  * react-hooks/set-state-in-effect에 걸리고, 타이머 안으로 넣으면 '외부 시스템(시계) 구독'의
  * 정상 형태가 된다.
  *
- * 큰 시계는 **브라우저의 로컬 시각**이다. 회장은 여섯 도시를 오가고, 이 화면을 여는 자리의
+ * 큰 시계는 **브라우저의 로컬 시각**이다. 회장은 여러 도시를 오가고, 이 화면을 여는 자리의
  * 시각이 먼저다. 한국 날짜(dateLabel)는 서버가 Asia/Seoul로 찍어 내려 준다 —
  * 날짜는 초 단위로 움직이지 않고, 문자열을 그대로 그리므로 하이드레이션과 무관하다.
  *
- * 도시 목록을 여기서 다시 적는 이유: lib/geo.ts의 BUSINESS_CITIES는 next/headers를 import하는
- * 모듈에 있어 클라이언트 번들로 넘어오지 못하고, 애초에 시간대(tz) 값을 갖고 있지 않다.
- * 헤더의 WorldClocks도 그대로 쓰지 못한다 — 그쪽은 왼쪽 구분선이 붙은 헤더 전용 칩이라
- * 카드 안에 넣으면 카드 왼쪽 모서리에 세로줄이 하나 남는다.
+ * 세계 시간은 대시보드 카드와 같은 WorldClocks(panel 크기)다. 도시는 페이지가
+ * app_prefs.world_cities에서 골라 넘긴다 — 날씨 칸과 같은 목록이다(lib/world-cities.ts).
  */
-const CITIES: { tz: string; label: string }[] = [
-  { tz: 'Asia/Seoul', label: '서울' },
-  { tz: 'Asia/Ho_Chi_Minh', label: '호치민' },
-  { tz: 'Asia/Dubai', label: '두바이' },
-  { tz: 'America/Toronto', label: '토론토' },
-]
-
 interface Reading {
   /** 로컬 시각 HH:MM */
   local: string
   /** 로컬 초 SS. 큰 숫자 옆에 작게 붙는다. */
   seconds: string
-  /** CITIES 순서와 같은 길이 */
-  cities: string[]
 }
 
 function read(): Reading {
@@ -52,18 +43,18 @@ function read(): Reading {
   return {
     local: hm,
     seconds: String(now.getSeconds()).padStart(2, '0'),
-    cities: CITIES.map(({ tz }) =>
-      new Intl.DateTimeFormat('ko-KR', {
-        timeZone: tz,
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-      }).format(now),
-    ),
   }
 }
 
-export function GreetingClock({ name, dateLabel }: { name: string | null; dateLabel: string }) {
+export function GreetingClock({
+  name,
+  dateLabel,
+  cities,
+}: {
+  name: string | null
+  dateLabel: string
+  cities: WorldCity[]
+}) {
   // null = 마운트 전. 서버와 첫 클라이언트 렌더가 똑같이 '--:--'를 그려야 하이드레이션이 맞는다.
   const [reading, setReading] = useState<Reading | null>(null)
 
@@ -104,15 +95,8 @@ export function GreetingClock({ name, dateLabel }: { name: string | null; dateLa
         </span>
       </p>
 
-      <div className="mt-4 flex flex-wrap gap-x-5 gap-y-2 border-t border-line-soft pt-3">
-        {CITIES.map((c, i) => (
-          <span key={c.tz} className="leading-tight">
-            <span className="block text-t10 text-ink-muted">{c.label}</span>
-            <span className="block text-t13 text-ink-dim tnum">
-              {reading ? reading.cities[i] : '--:--'}
-            </span>
-          </span>
-        ))}
+      <div className="mt-4 border-t border-line-soft pt-3">
+        <WorldClocks cities={cities} size="panel" />
       </div>
 
       {/* 이 화면이 명세의 어느 줄인지 남긴다. PageHeader를 걷어 내면서 이 표기까지

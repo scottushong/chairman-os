@@ -12,6 +12,7 @@ import {
   THEME_CHOICE,
   type ThemeChoice,
 } from '@/lib/ui-prefs'
+import { normalizeWorldCityIds } from '@/lib/world-cities'
 import { NOTIFICATION_KIND, type NotificationKind } from '@/types'
 
 /**
@@ -121,6 +122,25 @@ export async function saveCityMotion(on: unknown): Promise<UiPrefsState> {
     const repo = await getRepository()
     const current = readAppPrefs((await repo.getUserSettings()).app_prefs)
     await repo.saveUserSettings({ app_prefs: { ...current, city_motion: on } })
+  } catch (e) {
+    console.error('[ui-prefs]', e)
+    return FAILED
+  }
+  revalidatePath('/', 'layout')
+  return { saved: true }
+}
+
+/**
+ * 세계시간 · 관심 도시 목록(순서 그대로). 모르는 id는 빠지고 서울은 맨 앞으로 온다 —
+ * 읽는 쪽과 같은 normalizeWorldCityIds를 거쳐 저장한다.
+ */
+export async function saveWorldCities(ids: unknown): Promise<UiPrefsState> {
+  const list = stringList(ids)
+  if (!list) return { error: '잘못된 요청입니다.' }
+  try {
+    const repo = await getRepository()
+    const current = readAppPrefs((await repo.getUserSettings()).app_prefs)
+    await repo.saveUserSettings({ app_prefs: { ...current, world_cities: normalizeWorldCityIds(list) } })
   } catch (e) {
     console.error('[ui-prefs]', e)
     return FAILED

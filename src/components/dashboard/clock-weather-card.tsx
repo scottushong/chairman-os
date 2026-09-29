@@ -4,13 +4,14 @@ import { WorldClocks } from '@/components/layout/world-clocks'
 import { WeatherIcon } from '@/components/ui/weather-icon'
 import { weatherIconFor } from '@/lib/weather-codes'
 import type { WeatherCurrent } from '@/lib/weather'
+import type { WorldCity } from '@/lib/world-cities'
 
 /**
  * 날씨 + 세계시간 카드 (Phase 5-D 1줄 우측 1/4).
  *
  * 헤더에 칩으로 있던 둘을 카드로 옮겼다. 헤더에서는 11px 글자 한 줄이라 훑기 어려웠고,
  * 검색창이 가장 넓은 자리를 써야 하는 바에서 자리만 다투고 있었다.
- * 카드로 내리면 기온을 크게 쓸 수 있고 도시 네 곳의 시각이 나란히 선다.
+ * 카드로 내리면 기온을 크게 쓸 수 있고 관심 도시(기본 열 곳)의 시각이 5개씩 줄로 선다.
  *
  * 날씨를 못 불러오면 그 칸만 빠지고 시계는 그대로 선다 — 외부 API 하나가
  * 카드 전체를 비우지 않는다(lib/weather.ts의 계약과 같다).
@@ -18,9 +19,12 @@ import type { WeatherCurrent } from '@/lib/weather'
 export function ClockWeatherCard({
   city,
   weather,
+  cities,
 }: {
   city: string
   weather: WeatherCurrent | null
+  /** 세계시간 도시(app_prefs.world_cities). */
+  cities: WorldCity[]
 }) {
   return (
     <GlassCard as="section" padding="p-3.5" aria-label="날씨와 세계시간" className="flex h-full flex-col justify-between">
@@ -48,9 +52,9 @@ export function ClockWeatherCard({
         )}
       </div>
 
-      {/* 세계시간. 헤더에서 쓰던 컴포넌트를 그대로 쓴다 — 브라우저 로컬 시각으로 1분마다 갱신한다. */}
-      <div className="mt-3 border-t border-line-soft pt-2.5">
-        <WorldClocks />
+      {/* 세계시간. 5개씩 줄 · 폰은 가로 스크롤(world-clocks.tsx). 세 줄이 넘치면 이 칸 안에서만 스크롤한다. */}
+      <div className="mt-3 min-h-0 overflow-y-auto border-t border-line-soft pt-2.5">
+        <WorldClocks cities={cities} />
       </div>
     </GlassCard>
   )

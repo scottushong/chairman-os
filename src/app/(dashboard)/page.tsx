@@ -25,6 +25,7 @@ import { orderInitiatives } from '@/lib/initiative'
 import { resolveLocation } from '@/lib/geo'
 import { getRepository, loadDashboard } from '@/lib/repository'
 import { loadUiPrefs } from '@/lib/ui-prefs-server'
+import { worldCitiesOf } from '@/lib/world-cities'
 import { getCurrentLocationWeather } from '@/lib/weather'
 
 /**
@@ -225,7 +226,11 @@ export default async function DashboardPage() {
           <DdayHero projects={chairmanProjects} />
         </div>
         <div className="h-[268px] max-sm:h-auto">
-          <ClockWeatherCard city={location.city} weather={weather} />
+          <ClockWeatherCard
+            city={location.city}
+            weather={weather}
+            cities={worldCitiesOf(uiPrefs.app.world_cities)}
+          />
         </div>
       </div>
 
