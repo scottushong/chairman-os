@@ -416,7 +416,12 @@ Supabase 기본 메일 서버는 **시간당 2통 안팎**이고 운영용이 �
 3. Supabase **Project Settings → Authentication → SMTP Settings**: Enable custom SMTP,
    Host `smtp.resend.com`, Port `465`, Username `resend`, Password = API key, Sender = `no-reply@<도메인>`.
 4. **Authentication → Rate Limits**에서 이메일 한도를 파일럿 인원에 맞게 올린다(예: 시간당 30).
-5. 초대된 테스트 이메일로 `/signup`을 한 번 끝까지 지나 본다 — 메일 도착 · `/auth/confirm` · 비밀번호 · `/me`.
+5. **Authentication → Emails → Confirm signup** 템플릿의 링크를 token_hash 모양으로 바꾼다:
+   `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=email`.
+   기본 링크(PKCE `?code=`)는 **가입을 시작한 그 브라우저**에서만 풀린다 — PC에서 가입하고 폰 메일앱에서 누르면
+   `/login?reason=confirm`으로 떨어진다. `/auth/confirm`은 두 모양을 다 받는다. 제목 예: «[Chairman OS] 가입 확인».
+6. 초대된 테스트 이메일로 `/signup`을 한 번 끝까지 지나 본다 — 메일 도착(스팸함 아님) · `/auth/confirm` · 비밀번호 · `/me`.
+   PC에서 가입 → 폰에서 링크, 한 번 더.
 
 ## 4. 권한 회수
 
