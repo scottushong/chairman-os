@@ -2067,3 +2067,14 @@ B-4가 찾은 결함 하나를 고쳤다. **리뷰 루프가 없는 작업이고
   그 사람의 세션으로 대상 표의 RLS 아래에서 실행한다(스스로 넣은 제안도 손으로 할 수 있는 쓰기 이상은 못 한다).
 - **dummy 확인 감사는 서버 메모리의 이력 저장소로 간다**(이니셔티브 상세 «기록» 줄). dummy의 saveInitiative 자체는 이력을 남기지
   않는다(원래 그렇다) — live는 칸마다 update 감사 + AI 확인 줄 둘이 남는다.
+
+## Phase 10 — Vault 첨부 차단 · 스캔 PDF 보류 (2026-09-29 회장 결정)
+
+- **Vault 등급은 업로드를 막고 링크만 받는다**(CLAUDE.md 원칙 유지 — 위 Phase 10 «Vault 첨부도 버킷에 둔다»를 뒤집는다).
+  이유: 앱 레벨 암호화(회사 보유 키) 층이 아직 없다. 그 층이 생기면 업로드를 허용한다.
+  지금 막는 자리는 **화면**(첨부 패널에서 Vault를 고르면 파일 버튼 · 끌어놓기 대신 «문서 화면에서 링크로 등록» →
+  `/documents?register=Vault`)과 **Server Action**(beginAttachment가 Vault를 거절)이다. **DB는 아직 받는다** —
+  0045의 attachments_insert는 회장의 Vault 줄을 허용한다(회장 세션으로 PostgREST를 직접 부르면 들어간다).
+  DB까지 막으려면 0047에 `security_class <> 'Vault'` 제약을 넣는다(마이그레이션 → 리뷰 → production 승인). 암호화 층이 오면
+  그 제약과 Server Action 한 줄을 걷고, 0045의 Vault 줄 규칙(지정자 · skipped_vault)을 그대로 다시 쓴다.
+- **스캔본 PDF(글자 없음) → vision 경로는 다음 세션.** 지금은 «텍스트를 찾지 못했습니다»로 failed.

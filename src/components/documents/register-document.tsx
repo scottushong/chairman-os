@@ -29,18 +29,21 @@ export function RegisterDocument({
   businesses,
   folders = [],
   folderPaths = {},
+  initialClass,
 }: {
   businesses: Business[]
   /** 0038. 고른 소속의 폴더만 보여 준다(트리거가 같은 회사인지 한 번 더 본다). */
   folders?: DocFolder[]
   /** folder_id → «팀 / 폴더 / 하위» 경로. 서버가 만든다(함수는 클라이언트로 못 넘긴다). */
   folderPaths?: Record<number, string>
+  /** `?register=<등급>` — 첨부 패널의 «Vault는 링크로 등록» 안내가 폼을 그 등급으로 펴서 보낸다. */
+  initialClass?: SecurityClass
 }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(!!initialClass)
   const [title, setTitle] = useState('')
   const [businessId, setBusinessId] = useState<string>(GROUP)
   const [docType, setDocType] = useState('')
-  const [securityClass, setSecurityClass] = useState<SecurityClass>('Normal')
+  const [securityClass, setSecurityClass] = useState<SecurityClass>(initialClass ?? 'Normal')
   const [storageUrl, setStorageUrl] = useState('')
   const [folderId, setFolderId] = useState('')
   const [tags, setTags] = useState('')

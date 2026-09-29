@@ -45,7 +45,7 @@ export const ATTACHMENT_CLASS_LABEL: Record<AttachmentClass, string> = {
 export const ATTACHMENT_CLASS_HINT: Record<AttachmentClass, string> = {
   Normal: '대상이 보이는 사람 전원 · AI 요약',
   Restricted: '제한 등급 이상 · AI 요약(외부 AI 전송 기록)',
-  Vault: '회장 + 지정자만 · AI로 보내지 않음',
+  Vault: '파일은 받지 않음 · 링크로 등록',
 }
 
 /** 대상 상세 화면 경로 — 저장 뒤 다시 그릴 자리. */

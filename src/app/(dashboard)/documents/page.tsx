@@ -48,6 +48,7 @@ const CLASS_TONE: Record<SecurityClass, string> = {
 export default async function DocumentsPage(props: PageProps<'/documents'>) {
   const params = await props.searchParams
   const classFilter = oneOf(firstParam(params.class), SECURITY_CLASS)
+  const registerClass = oneOf(firstParam(params.register), SECURITY_CLASS)
   const businessFilter = firstParam(params.business)
   // Phase 9 블록 3. 폴더(하위 포함) · 태그 · 검색어(제목 또는 태그).
   const folderFilter = Number(firstParam(params.folder)) || null
@@ -132,7 +133,7 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
         code="CH-042"
         description="사내 스토리지에 있는 문서의 링크와 보안등급을 모아 둔다. 파일 자체는 여기 없다."
       >
-        <RegisterDocument businesses={businesses} folders={folders} folderPaths={paths} />
+        <RegisterDocument businesses={businesses} folders={folders} folderPaths={paths} initialClass={registerClass} />
       </PageHeader>
 
       <div className="mt-4 grid grid-cols-1 items-start gap-3 lg:grid-cols-[250px_minmax(0,1fr)]">

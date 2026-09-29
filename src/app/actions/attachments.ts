@@ -55,6 +55,8 @@ export async function beginAttachment(input: unknown): Promise<BeginResult> {
 
   if (!ATTACHMENT_ENTITY.includes(entity_table) || !/^[A-Za-z0-9_-]{1,64}$/.test(entity_id)) return { error: '어디에 붙일지 알 수 없습니다.' }
   if (!ATTACHMENT_CLASS.includes(security_class)) return { error: '등급을 고르세요.' }
+  // CLAUDE.md — Vault는 링크만. 앱 레벨 암호화(회사 보유 키)가 생기면 이 줄을 걷는다.
+  if (security_class === 'Vault') return { error: 'Vault 파일은 올리지 않습니다. 문서 화면에서 링크로 등록하세요.' }
   if (!file_name) return { error: '파일 이름이 없습니다.' }
   if (!mime) return { error: 'PDF · Word · Excel · PowerPoint · PNG · JPG만 받습니다.' }
   if (size_bytes < 1 || size_bytes > ATTACHMENT_MAX_BYTES) return { error: '20MB까지 올릴 수 있습니다.' }

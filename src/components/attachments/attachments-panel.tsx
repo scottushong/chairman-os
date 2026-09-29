@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useRef, useState, useTransition } from 'react'
 
@@ -163,11 +164,13 @@ export function AttachmentsPanel(props: AttachmentsPanelProps) {
           onDrop={(e) => {
             e.preventDefault()
             setDrag(false)
-            void uploadAll(e.dataTransfer.files)
+            if (cls !== 'Vault') void uploadAll(e.dataTransfer.files)
           }}
           className={`mt-3 rounded-lg border border-dashed p-3 transition-colors ${drag ? 'border-accent bg-accent/10' : 'border-line'}`}
         >
           <div className="flex flex-wrap items-center gap-2">
+            {cls === 'Vault' ? null : (
+              <>
             <button
               type="button"
               disabled={!!busy}
@@ -184,6 +187,8 @@ export function AttachmentsPanel(props: AttachmentsPanelProps) {
             >
               카메라로 찍기
             </button>
+              </>
+            )}
             <label className="flex items-center gap-1.5 text-t11 text-ink-muted">
               등급
               <select
@@ -198,9 +203,21 @@ export function AttachmentsPanel(props: AttachmentsPanelProps) {
             </label>
             <span className="text-t10h text-ink-muted">{ATTACHMENT_CLASS_HINT[cls]}</span>
           </div>
-          <p className="mt-1.5 text-t10h text-ink-muted">
-            여기로 끌어다 놓아도 됩니다 · PDF · Word · Excel · PowerPoint · PNG · JPG, 20MB까지
-          </p>
+          {cls === 'Vault' ? (
+            // CLAUDE.md — Vault 원본은 사내 스토리지에 두고 링크만. 앱 레벨 암호화(회사 보유 키)가
+            // 생기기 전까지 파일은 받지 않는다. 0045의 Vault 줄 규칙은 그날을 위해 남겨 둔다.
+            <p className="mt-2 rounded-md border border-gold/40 bg-gold/10 px-2.5 py-2 text-t11h text-ink">
+              Vault 파일은 올리지 않습니다. 원본은 사내 스토리지에 두고{' '}
+              <Link href="/documents?register=Vault" className="font-semibold text-accent underline underline-offset-2">
+                문서 화면에서 링크로 등록
+              </Link>
+              하세요.
+            </p>
+          ) : (
+            <p className="mt-1.5 text-t10h text-ink-muted">
+              여기로 끌어다 놓아도 됩니다 · PDF · Word · Excel · PowerPoint · PNG · JPG, 20MB까지
+            </p>
+          )}
           <input ref={fileRef} type="file" multiple accept={ATTACHMENT_ACCEPT} className="hidden" onChange={(e) => void uploadAll(e.target.files)} />
           {/* 폰: 명함 · 계약서를 바로 찍는다 → vision 요약. */}
           <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => void uploadAll(e.target.files)} />
