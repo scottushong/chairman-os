@@ -16,6 +16,7 @@
 --       ai_action_finish(id, ok, note) confirmed → done | failed (실행 결과를 적는다).
 --   · 확인은 감사에 남는다 — «AI 제안, 회장 확인»(역할은 실제 역할). 대상 줄(이니셔티브 등)이
 --     정해져 있으면 그 줄의 이력에 붙인다: 상세 화면의 기록 줄에서 바로 보이게.
+--     그 줄은 **본인과 회장만** 읽는다(audit_log_ai_actions_private).
 --   · 실제 쓰기는 앱이 **기존 쓰기 문**(이니셔티브 · 일정 · 결재 기안 · 체크인 · 메모 · 첨부 요약)으로
 --     한다 — 권한은 그 표의 RLS가 그대로 본다. 이 표는 «확인했는가»만 지킨다.
 --   payload(실행할 값)는 서버가 적고 서버가 읽는다. 확인 버튼은 action_id만 보낸다 — 화면이
@@ -178,6 +179,14 @@ begin
   return found;
 end;
 $fn$;
+
+-- **AI 확인 감사 줄은 본인과 회장만 읽는다**(0041 audit_log_ai_chats_private · 0045 audit_log_attachments_private와
+-- 같은 모양 — 리뷰 Important 2). 줄에 제안의 제목(메모 정리 · 체크인 같은 사적인 것도 있다)이 들어 있어서,
+-- 0031의 subtree 읽기가 그대로면 팀장 · 임원이 부하 직원이 AI와 무엇을 고쳤는지 읽는다.
+-- 표 이름으로 가를 수 없다 — 확인 줄은 대상 표(initiatives 등)에 붙는다. 그래서 after의 'ai_action' 표지로 가른다.
+-- after가 null인 줄은 이 정책과 무관하다(coalesce → true).
+create policy audit_log_ai_actions_private on audit_log as restrictive for select
+  using (coalesce(not (after ? 'ai_action'), true) or actor_user_id = auth.uid() or auth_role()::text = 'Chairman');
 
 revoke all on function ai_action_decide(uuid, boolean) from public, anon;
 revoke all on function ai_action_finish(uuid, boolean, text) from public, anon;

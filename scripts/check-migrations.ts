@@ -3760,7 +3760,11 @@ const AA = {
   other: '00000000-0000-0000-0000-0000000046c2',
   agent: '00000000-0000-0000-0000-0000000046c3',
   integration: '00000000-0000-0000-0000-0000000046c4',
+  lead: '00000000-0000-0000-0000-0000000046c5', // member의 상사(subtree로 감사를 읽는 자리)
+  cfo: '00000000-0000-0000-0000-0000000046c6',
 }
+/** 주인이 넣는 제안의 고정 id — 남이 «그 줄»을 지목해 확인하게 하려면 RLS 밖에서 id를 알아야 한다. */
+const AA_ACTION = '00000000-0000-0000-0000-0000000046e0'
 
 async function aiAssistant() {
   const db = new PGlite({ extensions: { pg_trgm } })
@@ -3768,14 +3772,18 @@ async function aiAssistant() {
   await db.exec(`
     grant usage on schema public, auth to authenticated, anon;
     insert into auth.users values
-      ('${AA.chair}', 'b1@x'), ('${AA.member}', 'b2@x'), ('${AA.other}', 'b3@x'), ('${AA.agent}', 'b4@x'), ('${AA.integration}', 'b5@x');
+      ('${AA.chair}', 'b1@x'), ('${AA.member}', 'b2@x'), ('${AA.other}', 'b3@x'), ('${AA.agent}', 'b4@x'), ('${AA.integration}', 'b5@x'),
+      ('${AA.lead}', 'b6@x'), ('${AA.cfo}', 'b7@x');
     insert into user_profiles (user_id, role, display_name, max_security_class) values
       ('${AA.chair}', 'Chairman', 'ch', 'Vault'),
       ('${AA.member}', 'Member', 'm', 'Normal'),
       ('${AA.other}', 'Member', 'o', 'Normal'),
       ('${AA.agent}', 'AIAgent', 'ai', 'Restricted'),
-      ('${AA.integration}', 'Integration', 'sync', 'Restricted');
-    insert into user_business_access values ('${AA.member}', 'biz_dy'), ('${AA.other}', 'biz_dy');
+      ('${AA.integration}', 'Integration', 'sync', 'Restricted'),
+      ('${AA.lead}', 'TeamLead', 'lead', 'Normal'),
+      ('${AA.cfo}', 'GroupCFO', 'cfo', 'Restricted');
+    update user_profiles set reports_to = '${AA.lead}' where user_id = '${AA.member}';
+    insert into user_business_access values ('${AA.member}', 'biz_dy'), ('${AA.other}', 'biz_dy'), ('${AA.lead}', 'biz_dy');
     insert into initiatives (initiative_id, title, kind) values ('ini_ai', 'VLING24', 'Deal');
   `)
 
@@ -3810,7 +3818,11 @@ async function aiAssistant() {
      values ('initiative_update', '{"initiative_id":"ini_ai","changes":{"next_action":"계약서 초안"}}', '{"title":"VLING24 다음 행동"}', 'initiatives', 'ini_ai', 'biz_nope'${extra})`
   const decide = (confirm: boolean) =>
     `select ai_action_decide((select action_id from ai_actions order by created_at desc limit 1), ${confirm}) as r`
-  const one = (rows: unknown[] | 'denied') => (rows === 'denied' ? 'denied' : (rows[0] as Record<string, unknown>))
+  // 결과 첫 줄. RLS 거부면 그 자체가 실패다(거부를 재는 곳은 as()의 'denied'를 직접 본다).
+  const one = (rows: unknown[] | 'denied'): Record<string, unknown> => {
+    assert.notEqual(rows, 'denied', '0046: 기대하지 않은 RLS 거부')
+    return (rows as unknown[])[0] as Record<string, unknown>
+  }
 
   // ── 자물쇠: force 없음, anon은 표 · 함수 전부 없음 ──
   const lock = await db.query<{ forced: boolean; anon: boolean; upd: boolean }>(`
@@ -3841,8 +3853,22 @@ async function aiAssistant() {
   assert.equal((confirmed as { r: { status: string } }).r.status, 'confirmed', '0046: 주인이 확인해도 confirmed가 안 된다')
   assert.equal(one(await as(AA.member, [insert(), decide(true), decide(true)])).r, null, '0046: 같은 제안을 두 번 확인한다')
   assert.equal(one(await as(AA.member, [insert(), decide(false), decide(true)])).r, null, '0046: 취소한 제안을 뒤에 확인한다')
-  assert.equal(one(await as(AA.member, [insert(), `@${AA.other}`, decide(true)])).r, null, '0046: 남의 제안을 확인한다')
-  assert.equal(one(await as(AA.member, [insert(), `@${AA.chair}`, decide(true)])).r, null, '0046: 회장이 남의 제안을 확인한다(확인은 제안받은 본인의 일이다)')
+  // 남이 확인: **주인의 id를 글자로** 지목한다(하위 질의로 찾으면 남의 RLS가 null을 줘서 늘 통과한다 — 리뷰 Important 1).
+  // 확인을 시도한 뒤 주인으로 돌아와 줄이 그대로 pending이고 감사가 없는지까지 본다.
+  const fixed = `insert into ai_actions (action_id, kind, payload, preview, target_table, target_id)
+     values ('${AA_ACTION}', 'initiative_update', '{}', '{"title":"t"}', 'initiatives', 'ini_ai')`
+  const untouched = `select status, (select count(*)::int from audit_log where note like 'AI 제안%') as audits from ai_actions where action_id = '${AA_ACTION}'`
+  for (const [who, why] of [[AA.other, '남(같은 회사 직원)'], [AA.chair, '회장(확인은 제안받은 본인의 일이다)'], [AA.lead, '상사']] as const) {
+    const rows = await as(AA.member, [fixed, `@${who}`, `select ai_action_decide('${AA_ACTION}', true) as r`, `@${AA.member}`, untouched])
+    assert.deepEqual(one(rows), { status: 'pending', audits: 0 }, `0046: ${why}이(가) 남의 제안을 확인한다`)
+  }
+  for (const who of [AA.agent, AA.integration]) {
+    await assert.rejects(as(AA.member, [fixed, `@${who}`, `select ai_action_decide('${AA_ACTION}', true)`]), /ai_action_denied/,
+      '0046: 시스템 계정이 제안을 확인한다')
+  }
+  // 대조군: 같은 고정 id를 주인이 확인하면 넘어간다(위 검사들이 id를 잘못 지목해 통과한 것이 아님을 보인다).
+  assert.equal(one(await as(AA.member, [fixed, `select ai_action_decide('${AA_ACTION}', true)->>'status' as s`])).s, 'confirmed',
+    '0046: 주인이 고정 id로 확인하지 못한다')
   assert.equal(one(await as(AA.member, [insert(), `@${AA.other}`, `select count(*)::int as n from ai_actions`])).n, 0, '0046: 남의 제안이 보인다')
   assert.equal(one(await as(AA.member, [insert(), `!update ai_actions set expires_at = now() - interval '1 second'`, decide(true)])).r, null,
     '0046: 만료된 제안을 확인한다')
@@ -3855,6 +3881,17 @@ async function aiAssistant() {
   assert.equal(chairAudit.note, 'AI 제안, 회장 확인', '0046: 회장 확인 문구')
   assert.equal(one(await as(AA.chair, [insert(), decide(false), `select count(*)::int as n from audit_log where note like 'AI 제안%'`])).n, 0,
     '0046: 취소가 «확인»으로 감사에 남는다')
+
+  // AI 확인 감사 줄은 본인과 회장만 읽는다 — 상사(subtree)도 CFO도 0줄(리뷰 Important 2).
+  const auditCount = `select count(*)::int as n from audit_log where note like 'AI 제안%'`
+  for (const [who, why] of [[AA.lead, '상사(TeamLead)'], [AA.cfo, 'GroupCFO'], [AA.other, '다른 직원']] as const) {
+    assert.equal(one(await as(AA.member, [insert(), decide(true), `@${who}`, auditCount])).n, 0, `0046: ${why}가 남의 AI 확인 감사를 읽는다`)
+  }
+  assert.equal(one(await as(AA.member, [insert(), decide(true), `@${AA.chair}`, auditCount])).n, 1, '0046: 회장이 AI 확인 감사를 못 읽는다')
+  assert.equal(one(await as(AA.member, [insert(), decide(true), auditCount])).n, 1, '0046: 본인이 자기 AI 확인 감사를 못 읽는다')
+  // 대조군: 같은 상사가 부하 직원의 **보통** 감사 줄은 읽는다(정책이 AI 줄만 좁혔는지).
+  assert.equal(one(await as(AA.member, [`insert into audit_log (action, entity_table, entity_id, actor_user_id, actor_role) values ('update', 'initiatives', 'ini_ai', '${AA.member}', 'Member')`,
+    `@${AA.lead}`, `select count(*)::int as n from audit_log where entity_id = 'ini_ai'`])).n, 1, '0046: 새 정책이 AI 아닌 감사까지 막는다')
 
   // ── 실행 결과: confirmed에서만 done/failed ──
   const id = `(select action_id from ai_actions order by created_at desc limit 1)`
@@ -3924,7 +3961,7 @@ async function main() {
   await attachments()
   await aiAssistant()
   console.log(
-    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 · 감사 «AI 제안, <역할> 확인» · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금)`,
+    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금)`,
   )
 }
 
