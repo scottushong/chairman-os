@@ -11,7 +11,7 @@ import { lastClosedPeriod } from './journal'
 
 /** DB가 던지는 낱말 → 사람 말. dummy도 같은 낱말로 던진다. */
 export const CLOSE_PROBLEM_KO = {
-  close_forbidden: '월 마감은 Chairman · Group CFO만 할 수 있습니다.',
+  close_forbidden: '월 마감은 Chairman · Group CFO와 회장이 월 마감 권한을 준 사람만 할 수 있습니다.',
   invalid_period: '마감할 달이 올바르지 않습니다.',
   period_not_ended: '아직 끝나지 않은 달은 마감할 수 없습니다.',
   already_closed: '이미 마감된 달입니다. 마감 해제는 없습니다 — 당월에 정정 전표를 넣고 당월을 마감하세요.',

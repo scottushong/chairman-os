@@ -3595,8 +3595,12 @@ async function attachments() {
   assert.equal(await u(AT.exec2, add('businesses', 'biz_dy', 'Vault')), 'denied', '0045: Vault 지정자가 새 Vault를 올린다')
   assert.equal(await u(AT.agent, add('businesses', 'biz_dy', 'Normal')), 'denied', '0045: AIAgent가 첨부를 올린다')
   assert.equal(await u(AT.integration, add('businesses', 'biz_dy', 'Normal')), 'denied', '0045: Integration이 첨부를 올린다')
-  assert.equal(await u(AT.chair, `select count(*)::int from attachments where status = 'skipped_vault' and file_name = 'x.pdf'`,
-    add('businesses', 'biz_dy', 'Vault')), 1, '0045: Vault 첨부가 skipped_vault로 서지 않는다')
+  // 0047: 회장도 새 Vault 줄을 못 넣는다(restrictive insert — 앱 레벨 암호화 전까지 링크로만). 0045의
+  // skipped_vault 트리거는 0047 이전에 들어온 줄(여기서는 소유자가 심은 시드)로 잰다.
+  assert.equal(await u(AT.chair, add('businesses', 'biz_dy', 'Vault')), 'denied', '0047: 회장이 새 Vault 첨부를 올린다')
+  assert.equal(await u(AT.chair, add('businesses', 'biz_dy', 'Restricted')), 1, '0047: Vault 차단이 회장의 제한 등급 올리기까지 막는다')
+  assert.equal(await u(AT.chair, `select count(*)::int from attachments where status = 'skipped_vault' and attachment_id = '${AF.dyV}'`),
+    1, '0045: Vault 첨부가 skipped_vault로 서지 않는다')
   // 처음부터 «요약됨» · 남의 이름으로 넣어도 DB가 덮는다.
   assert.equal(await u(AT.exec,
     `select count(*)::int from attachments where file_name = 'y.pdf' and status = 'uploaded' and ai_summary is null
@@ -3922,6 +3926,175 @@ async function aiAssistant() {
 }
 
 /**
+ * 0047 재무 모듈 권한 — 사람 단위('/finance' user_module_access).
+ *
+ * 첫 실사용자(DY 경영지원 TeamLead)가 biz_dy 장부를 읽고 · 전표를 넣고 · 공식 재무제표를 넣는다.
+ * 다른 회사는 0행 · 거부, 마감은 can_approve가 있어야만. 같은 TeamLead라도 줄이 없으면(영업팀장) 0행이다.
+ * AIAgent · Integration은 줄이 있어도 넓어지지 않는다. 기본 권한은 가입(프로필 insert) · 팀 이동 트리거가 준다.
+ */
+const FG = {
+  chair: '00000000-0000-0000-0000-0000000047a1',
+  cfo: '00000000-0000-0000-0000-0000000047a2',
+  lead: '00000000-0000-0000-0000-0000000047a3', // DY 경영지원 팀장 — 기본 권한 대상
+  sales: '00000000-0000-0000-0000-0000000047a4', // DY 영업팀장 — 줄 없음
+  agent: '00000000-0000-0000-0000-0000000047a5',
+  integration: '00000000-0000-0000-0000-0000000047a6',
+  exec: '00000000-0000-0000-0000-0000000047a7', // DY Executive — can_read_restricted로 읽기만(회귀)
+}
+
+async function financeGrants() {
+  const db = new PGlite({ extensions: { pg_trgm } })
+  await applyAll(db)
+  const ledger = await loadMockLedger()
+  await db.exec(`delete from accounts where source = 'manual'`)
+  await bulk(db, 'accounts', ledger.accounts, ['business_id', 'account_code', 'name', 'category', 'section', 'cash_flow', 'source', 'fetched_at', 'closed'])
+  await bulk(db, 'journal_lines', ledger.journal, ['business_id', 'entry_date', 'account_code', 'amount', 'side', 'slip_no', 'line_no', 'memo', 'source', 'fetched_at', 'closed'])
+  await bulk(db, 'closings', ledger.closings, ['business_id', 'period', 'account_code', 'amount', 'closed_on', 'provisional_amount', 'source', 'fetched_at', 'closed'])
+  await db.exec(`
+    grant usage on schema public, auth to authenticated, anon;
+    grant select, insert, update, delete on all tables in schema public to authenticated;
+    grant usage, select on all sequences in schema public to authenticated;
+    insert into auth.users values
+      ('${FG.chair}', 'f1@x'), ('${FG.cfo}', 'f2@x'), ('${FG.lead}', 'f3@x'), ('${FG.sales}', 'f4@x'),
+      ('${FG.agent}', 'f5@x'), ('${FG.integration}', 'f6@x'), ('${FG.exec}', 'f7@x');
+    insert into user_profiles (user_id, role, display_name, max_security_class, team_id) values
+      ('${FG.chair}', 'Chairman', 'ch', 'Vault', null),
+      ('${FG.cfo}', 'GroupCFO', 'cfo', 'Restricted', null),
+      ('${FG.lead}', 'TeamLead', '경영지원팀장', 'Normal', 'team_dy_support'),
+      ('${FG.sales}', 'TeamLead', '영업팀장', 'Normal', 'team_dy_sales'),
+      ('${FG.agent}', 'AIAgent', 'ai', 'Restricted', null),
+      ('${FG.integration}', 'Integration', 'sync', 'Restricted', null),
+      ('${FG.exec}', 'Executive', 'ex', 'Restricted', 'team_dy_sales');
+    insert into user_business_access values
+      ('${FG.lead}', 'biz_dy'), ('${FG.sales}', 'biz_dy'), ('${FG.exec}', 'biz_dy');
+    insert into user_business_access select '${FG.agent}', business_id from businesses;
+    insert into user_business_access select '${FG.integration}', business_id from businesses;
+    -- 누가 실수로 시스템 계정에 재무 줄을 넣었다 — 그래도 범위가 넓어지면 안 된다.
+    insert into user_module_access (user_id, module, can_write, can_approve) values
+      ('${FG.agent}', '/finance', true, true), ('${FG.integration}', '/finance', true, true);
+  `)
+
+  // 한 트랜잭션 안에서 여러 문장. '@<uid>' 사람 바꾸기 · '!<sql>' 소유자로 잠깐 나가기. 끝나면 되돌린다.
+  async function as(uid: string, steps: string[]): Promise<'denied' | number> {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
+    try {
+      let last: Record<string, unknown>[] = []
+      let affected = 0
+      for (const s of steps) {
+        if (s.startsWith('@')) { await db.exec(`select set_config('request.jwt.claim.sub', '${s.slice(1)}', true)`); continue }
+        if (s.startsWith('!')) { await db.exec(`reset role; ${s.slice(1)}; set local role authenticated;`); continue }
+        const res = await db.query<Record<string, unknown>>(s)
+        last = res.rows
+        affected = res.affectedRows ?? 0
+      }
+      await db.exec('set constraints all immediate')
+      return last.length ? Number(Object.values(last[0])[0]) : affected
+    } catch (e) {
+      if (/row-level security/.test(e instanceof Error ? e.message : '')) return 'denied'
+      throw e
+    } finally {
+      await db.exec('rollback')
+    }
+  }
+  const owner = async (sql: string) => (await db.query<Record<string, unknown>>(sql)).rows
+
+  // ── 기본 권한: 경영지원 팀장만, 입력 O · 마감 X ──
+  assert.deepEqual(await owner(`select user_id::text as u, can_write, can_approve from user_module_access where module = '/finance' and user_id in ('${FG.lead}', '${FG.sales}', '${FG.exec}')`),
+    [{ u: FG.lead, can_write: true, can_approve: false }], '0047: 경영지원 팀장만 기본 재무 입력 권한을 받아야 한다')
+
+  // ── 읽기: 자기 회사만 ──
+  const lines = (biz: string) => `select count(*)::int from journal_lines where business_id = '${biz}'`
+  assert.ok(Number(await as(FG.lead, [lines('biz_dy')])) > 0, '0047: 경영지원 팀장이 DY 전표를 못 읽는다')
+  for (const t of ['journal_lines', 'accounts', 'closings', 'journal_entries', 'official_statements', 'finance_kpis_sheet']) {
+    assert.equal(await as(FG.lead, [`select count(*)::int from ${t} where business_id <> 'biz_dy'`]), 0, `0047: 경영지원 팀장에게 다른 회사 ${t}가 보인다`)
+  }
+  assert.equal(await as(FG.lead, [`select count(distinct business_id)::int from finance_kpis`]), 1, '0047: 재무 지표가 DY 하나가 아니다')
+  assert.equal(await as(FG.lead, [`select count(*)::int from finance_kpis_masked where value is null and business_id = 'biz_dy'`]), 0,
+    '0047: 권한 있는 사람에게 마스킹 뷰가 값을 가린다')
+  assert.equal(await as(FG.sales, [lines('biz_dy')]), 0, '0047: 줄 없는 TeamLead(영업팀장)에게 전표가 보인다')
+  assert.ok(Number(await as(FG.exec, [lines('biz_dy')])) > 0, '0047: Executive의 기존 읽기가 막혔다')
+  assert.equal(await as(FG.exec, [lines('biz_vana')]), 0, '0047: Executive에게 다른 회사가 보인다')
+  assert.equal(await as(FG.lead, [`!update user_profiles set revoked_at = now() where user_id = '${FG.lead}'`, lines('biz_dy')]), 0,
+    '0047: 회수된 사람이 재무를 읽는다')
+  // 줄을 지우면(회수) 읽기도 닫힌다.
+  assert.equal(await as(FG.lead, [`!delete from user_module_access where user_id = '${FG.lead}'`, lines('biz_dy')]), 0,
+    '0047: 모듈 줄을 지웠는데 읽힌다')
+
+  // ── 쓰기: 전표 · 공식 재무제표 · 계정과목 — 자기 회사만 ──
+  const post = (biz: string) =>
+    `select count(*)::int from (select post_journal_entry('${biz}', '2026-08-20', '0047 전표', 'https://drive.example/x',
+       '[{"account_code":"1010","side":"debit","amount":1000},{"account_code":"4010","side":"credit","amount":1000}]'::jsonb)) x`
+  assert.equal(await as(FG.lead, [post('biz_dy')]), 1, '0047: 경영지원 팀장이 DY 전표를 못 넣는다')
+  assert.equal(await as(FG.lead, [post('biz_dy'), `select count(*)::int from audit_log where entity_table = 'journal_entries' and actor_user_id = '${FG.lead}'`]), 1,
+    '0047: 팀장 전표가 감사에 안 남는다')
+  assert.equal(await as(FG.lead, [post('biz_vana')]), 'denied', '0047: 경영지원 팀장이 다른 회사 전표를 넣는다')
+  assert.equal(await as(FG.sales, [post('biz_dy')]), 'denied', '0047: 줄 없는 TeamLead가 전표를 넣는다')
+  assert.equal(await as(FG.lead, [`!update user_module_access set can_write = false where user_id = '${FG.lead}'`, post('biz_dy')]), 'denied',
+    '0047: 읽기만 가진 사람이 전표를 넣는다')
+  const official = (biz: string) =>
+    `select count(*)::int from (select official_statement_save('${biz}', 'year', '2025', 'https://drive.example/audit', '0047 결산',
+       '[{"account_code":"4010","amount":-5000}]'::jsonb)) x`
+  assert.equal(await as(FG.lead, [official('biz_dy')]), 1, '0047: 경영지원 팀장이 DY 공식 재무제표를 못 넣는다')
+  assert.equal(await as(FG.lead, [official('biz_dy'), official('biz_dy')]), 1, '0047: 경영지원 팀장이 공식 재무제표를 정정(supersede)하지 못한다')
+  assert.equal(await as(FG.lead, [official('biz_vana')]), 'denied', '0047: 경영지원 팀장이 다른 회사 공식 재무제표를 넣는다')
+  assert.equal(await as(FG.lead, [`insert into accounts (business_id, account_code, name, category, section, source, fetched_at) values ('biz_dy', '9471', 'x', 'other', 'sga', 'manual', now())`]),
+    1, '0047: 경영지원 팀장이 DY 계정과목을 못 만든다')
+
+  // ── 마감: 기본은 없다 · can_approve를 주면 자기 회사만 ──
+  const close = (biz: string) => `select close_period('${biz}', '2026-08')`
+  await assert.rejects(as(FG.lead, [close('biz_dy')]), /close_forbidden/, '0047: 입력 권한만으로 마감한다')
+  const approve = `!update user_module_access set can_approve = true where user_id = '${FG.lead}'`
+  assert.ok(Number(await as(FG.lead, [approve, close('biz_dy')])) > 0, '0047: can_approve를 받은 팀장이 DY를 마감하지 못한다')
+  await assert.rejects(as(FG.lead, [approve, close('biz_vana')]), /close_forbidden/, '0047: 마감 권한이 다른 회사까지 간다')
+  assert.ok(Number(await as(FG.cfo, [close('biz_dy')])) > 0, '0047: GroupCFO 마감이 막혔다(회귀)')
+
+  // ── 권한 줄 자체: 본인은 읽기만, 쓰기는 회장만 ──
+  assert.equal(await as(FG.lead, [`select count(*)::int from user_module_access`]), 1, '0047: 본인이 자기 모듈 줄을 못 읽는다(세션 안내가 안 선다)')
+  assert.equal(await as(FG.lead, [`update user_module_access set can_approve = true where user_id = '${FG.lead}'`]), 0, '0047: 본인이 자기 마감 권한을 켠다')
+  assert.equal(await as(FG.lead, [`insert into user_module_access (user_id, module, can_write) values ('${FG.sales}', '/finance', true)`]), 'denied',
+    '0047: 팀장이 남에게 재무 권한을 준다')
+  assert.equal(await as(FG.cfo, [`insert into user_module_access (user_id, module, can_write) values ('${FG.sales}', '/finance', true)`]), 'denied',
+    '0047: GroupCFO가 재무 권한을 준다(회장만)')
+  assert.ok(Number(await as(FG.chair, [`insert into user_module_access (user_id, module, can_write) values ('${FG.sales}', '/finance', true)`, `@${FG.sales}`, lines('biz_dy')])) > 0,
+    '0047: 회장이 준 권한으로 영업팀장이 읽지 못한다')
+
+  // ── 시스템 계정: 줄이 있어도 그대로 ──
+  assert.equal(await as(FG.agent, [post('biz_dy')]), 'denied', '0047: 재무 줄 있는 AIAgent가 전표를 넣는다')
+  assert.equal(await as(FG.integration, [post('biz_dy')]), 'denied', '0047: 재무 줄 있는 Integration이 수기 전표를 넣는다')
+  assert.equal(await as(FG.integration, [official('biz_dy')]), 'denied', '0047: 재무 줄 있는 Integration이 공식 재무제표를 넣는다')
+  await assert.rejects(as(FG.agent, [close('biz_dy')]), /close_forbidden/, '0047: 재무 줄 있는 AIAgent가 마감한다')
+  assert.equal(await as(FG.agent, [`select finance_grant(false, false)::int`]), 0, '0047: AIAgent에게 finance_grant가 참이다')
+  assert.ok(Number(await as(FG.agent, [lines('biz_vana')])) > 0, '0047: AIAgent의 기존 읽기([제한] 등급)가 막혔다')
+
+  // ── 트리거: 팀 이동으로 경영지원 팀장이 되면 기본 권한 + 회장 이름의 감사 · 있던 마감 권한은 덮지 않는다 ──
+  const moved = await as(FG.chair, [
+    `update user_profiles set team_id = 'team_dy_support' where user_id = '${FG.sales}'`,
+    `select (select count(*)::int from user_module_access where user_id = '${FG.sales}' and module = '/finance' and can_write and not can_approve)
+          + (select count(*)::int from audit_log where entity_table = 'user_module_access' and entity_id = '${FG.sales}'
+               and action = 'permission_change' and actor_user_id = '${FG.chair}') * 10`,
+  ])
+  assert.equal(moved, 11, '0047: 경영지원으로 옮긴 팀장에게 기본 권한 · 감사가 안 선다')
+  assert.equal(await as(FG.chair, [
+    `!update user_module_access set can_approve = true where user_id = '${FG.lead}'`,
+    `update user_profiles set role = 'Member' where user_id = '${FG.lead}'`,
+    `update user_profiles set role = 'TeamLead' where user_id = '${FG.lead}'`,
+    `select count(*)::int from user_module_access where user_id = '${FG.lead}' and can_approve`,
+  ]), 1, '0047: 기본 권한 트리거가 회장이 준 마감 권한을 덮는다')
+  assert.equal(await as(FG.chair, [
+    `!delete from user_module_access where user_id = '${FG.lead}'`,
+    `update user_profiles set display_name = '경영지원팀장2' where user_id = '${FG.lead}'`,
+    `select count(*)::int from user_module_access where user_id = '${FG.lead}'`,
+  ]), 0, '0047: 역할 · 팀과 무관한 프로필 수정이 회수한 권한을 되살린다')
+
+  // ── 카탈로그: force 새로 없음 · 트리거 함수는 아무도 못 부른다 ──
+  const fn = await owner(`select has_function_privilege('authenticated', 'finance_default_grant()', 'execute') as ok`)
+  assert.deepEqual(fn, [{ ok: false }], '0047: finance_default_grant를 authenticated가 부를 수 있다')
+  const forced = await owner(`select relforcerowsecurity as f from pg_class where relname = 'user_module_access'`)
+  assert.deepEqual(forced, [{ f: false }], '0047: user_module_access에 force가 걸렸다(0035 함정)')
+  await db.close()
+}
+
+/**
  * 화면이 말하는 마이그레이션 번호가 실제 마지막 파일과 같은가 (Phase 5-E 4절).
  *
  * `/settings`의 '이 웹에 대해' 절이 `src/lib/version.ts`의 LATEST_MIGRATION을 그대로 보여 준다.
@@ -3960,8 +4133,9 @@ async function main() {
   await subtreeBackfill()
   await attachments()
   await aiAssistant()
+  await financeGrants()
   console.log(
-    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금)`,
+    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단)`,
   )
 }
 

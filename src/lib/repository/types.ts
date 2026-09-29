@@ -5,6 +5,7 @@ import type { CorrectionResult, NewCorrection, NewJournalEntry } from '@/lib/led
 import type { DecisionAuditRecord, DecisionAction } from '@/lib/decision-log'
 import type { SearchHit } from '@/lib/search'
 import type {
+  ModuleGrant,
   AbsenceDays,
   AbsenceResult,
   AbsenceTest,
@@ -357,6 +358,11 @@ export interface ChairmanRepository {
   revokeUser(target: RevokeTarget, actor: AuditActor): Promise<void>
   /** Phase 6-2 — «모든 기기 로그아웃»(0042 force_logout). Chairman만. 대상이 없거나 권한이 없으면 false. */
   forceLogout(userId: string): Promise<boolean>
+  /**
+   * 0047. 사람 단위 모듈 권한 한 줄을 켜고 끈다. 두 칸이 다 false면 줄을 지운다(회수 = 삭제 — 0042 허용 목록).
+   * 0002 module_access_admin_write가 Chairman만 통과시킨다. audit_log에 permission_change가 먼저 남는다.
+   */
+  setModuleGrant(userId: string, grant: ModuleGrant, actor: AuditActor): Promise<void>
 
   /**
    * Phase 6-1 블록 B — 조직도(회사 > 팀 > 사람).

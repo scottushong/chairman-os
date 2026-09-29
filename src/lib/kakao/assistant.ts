@@ -52,6 +52,8 @@ const KAKAO_ASKER: SessionUser = {
   title_ko: '',
   display_name_en: null,
   language: 'ko',
+  // 회장은 역할로 이미 재무를 다 한다(0016). 모듈 줄은 보지 않는다.
+  finance: { write: false, close: false },
 }
 
 export async function answerFromKakao(question: string): Promise<AssistantAnswer> {

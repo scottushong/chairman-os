@@ -218,6 +218,50 @@ async function books() {
   )
 }
 
+/**
+ * 0047 — dummy가 재무 권한을 흉내 내는가. 첫 실사용자(DY 경영지원 팀장, DUMMY_USER=support_lead)의 화면이
+ * dummy에서 live와 같게 보여야 한다: 회사는 DY 하나 · 원장도 DY만 · 전표/공식 재무제표는 DY만 · 마감은 안 된다.
+ * 줄 없는 팀장(sales_lead)은 원장이 비고 전표가 거부된다.
+ */
+async function financeGrantsDummy() {
+  const repo = dummyRepository
+  const prev = process.env.DUMMY_USER
+  try {
+    process.env.DUMMY_USER = 'support_lead'
+    const actor = { user_id: 'support', role: 'TeamLead' }
+    assert.deepEqual((await repo.listBusinesses()).map((b) => b.business_id), ['biz_dy'], '0047 dummy: 경영지원 팀장에게 DY 말고 다른 회사가 보인다')
+    const ledger = await repo.loadFinanceLedger()
+    assert.ok(ledger.journal.length > 0, '0047 dummy: 경영지원 팀장이 DY 원장을 못 본다')
+    assert.deepEqual([...new Set([...ledger.accounts, ...ledger.journal, ...ledger.closings].map((r) => r.business_id))], ['biz_dy'],
+      '0047 dummy: 원장에 다른 회사 줄이 섞인다')
+    const dySale = (business_id: string) => ({
+      business_id, entry_date: '2026-09-10', memo: '0047 검증', evidence_url: null,
+      lines: [
+        { account_code: '1010', side: 'debit' as const, amount: 1000 },
+        { account_code: '4010', side: 'credit' as const, amount: 1000 },
+      ],
+    })
+    assert.match(await repo.postJournalEntry(dySale('biz_dy'), actor), /^M2609-\d{6}$/, '0047 dummy: 경영지원 팀장이 DY 전표를 못 넣는다')
+    await assert.rejects(repo.postJournalEntry(dySale('biz_vana'), actor), /row-level security/, '0047 dummy: 다른 회사 전표가 들어간다')
+    const id = await repo.saveOfficialStatement(
+      { business_id: 'biz_dy', period_kind: 'year', period_key: '2025', evidence_url: 'https://drive.example/a', memo: '0047', lines: [{ account_code: '4010', amount: -5000 }] },
+      actor,
+    )
+    assert.ok(id > 0, '0047 dummy: 경영지원 팀장이 공식 재무제표를 못 넣는다')
+    assert.equal((await repo.listOfficialStatements('biz_dy')).length, 1)
+    await assert.rejects(repo.closePeriod('biz_dy', '2026-08', actor), /close_forbidden/, '0047 dummy: 입력 권한만으로 마감한다')
+
+    process.env.DUMMY_USER = 'sales_lead'
+    assert.equal((await repo.loadFinanceLedger()).journal.length, 0, '0047 dummy: 줄 없는 팀장에게 원장이 보인다')
+    assert.equal((await repo.listOfficialStatements('biz_dy')).length, 0, '0047 dummy: 줄 없는 팀장에게 공식 재무제표가 보인다')
+    await assert.rejects(repo.postJournalEntry(dySale('biz_dy'), { user_id: 'sales', role: 'TeamLead' }), /row-level security/,
+      '0047 dummy: 줄 없는 팀장이 전표를 넣는다')
+  } finally {
+    if (prev === undefined) delete process.env.DUMMY_USER
+    else process.env.DUMMY_USER = prev
+  }
+}
+
 async function main() {
   await sheetWins()
   await statementsClose()
@@ -226,7 +270,8 @@ async function main() {
   standardChart()
   await provisionalGap()
   await books()
-  console.log('PASS: sheet 480 cells = ledger, statements close, basis rules, ECOUNT mapping boundaries, standard chart, provisional→confirmed gap, dummy books')
+  await financeGrantsDummy()
+  console.log('PASS: sheet 480 cells = ledger, statements close, basis rules, ECOUNT mapping boundaries, standard chart, provisional→confirmed gap, dummy books, 0047 dummy finance grants')
 }
 
 main().catch((e) => {

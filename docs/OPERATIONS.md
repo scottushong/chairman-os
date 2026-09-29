@@ -346,6 +346,24 @@ select tgname from pg_trigger where tgrelid = 'auth.users'::regclass;
 -- on_auth_user_created 가 있어야 한다
 ```
 
+### 모듈 권한 — 재무 입력 · 월 마감 (0047)
+
+재무(`/finance/<회사>`)는 역할(Chairman · GroupCFO · BusinessCEO(자기 회사) · 읽기는 Executive까지) 말고도
+**사람 단위로** 연다. `/settings/users` → 사람을 누른다 → 오른쪽 패널 «모듈 권한» → **재무 입력** · **월 마감** 체크.
+회장만 바꿀 수 있고(`module_access_admin_write`), 바꿀 때마다 `audit_log`에 `permission_change`
+(`entity_table = 'user_module_access'`)가 먼저 남는다. 둘 다 끄면 줄이 지워지고 재무를 못 본다.
+어느 회사인지는 이 칸이 아니라 **회사 범위**(`user_business_access`)가 정한다 — DY만 가진 사람은 DY 재무만 본다.
+
+**기본값:** 역할이 TeamLead이고 팀이 DY 경영지원(`team_dy_support`)인 사람은 가입 · 회장 결재 · 조직도에서 그 자리로
+옮기는 순간 «재무 입력»을 자동으로 받는다(월 마감은 없다 — 0047 `finance_default_grant` 트리거). 이미 줄이 있으면
+덮지 않는다. 가입 순간에는 세션이 없어 그 한 줄의 감사가 남지 않는다 — 출처는 같은 사람의 초대 감사 줄이다.
+
+```sql
+select p.display_name, m.can_write, m.can_approve, m.granted_at
+  from user_module_access m join user_profiles p using (user_id)
+ where m.module = '/finance';
+```
+
 ---
 
 ## 3-1. 직원 가입 · 인증 설정 (Phase 6-2)

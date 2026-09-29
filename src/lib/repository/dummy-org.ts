@@ -2,6 +2,7 @@ import { kstToday } from '@/lib/chairman-project'
 import {
   ROLE,
   type DocumentRecord,
+  type ModuleGrant,
   type Project,
   type Role,
   type ShareRecord,
@@ -27,11 +28,12 @@ import {
  * 이 트리는 scripts/check-migrations.ts의 H(그리고 subtreeRls의 일감)와 **같은 모양**이다.
  * 두 벌을 다르게 만들면 "DB에서는 되는데 화면에서는 안 된다"를 매번 새로 조사하게 된다.
  *
- *   회장 ─ DY 대표 ─ 영업본부장 ─┬─ 영업팀장 ─┬─ 영업 직원
- *                                │            ├─ 영업 직원 2
- *                                │            └─ 영업 직원 3
- *                                ├─ 구매팀장 ─── 구매 직원
- *                                └─ (퇴사자)
+ *   회장 ─ DY 대표 ─┬─ 경영지원팀장 (0047 — 재무 입력 권한, 첫 실사용자의 자리)
+ *                   └─ 영업본부장 ─┬─ 영업팀장 ─┬─ 영업 직원
+ *                                  │            ├─ 영업 직원 2
+ *                                  │            └─ 영업 직원 3
+ *                                  ├─ 구매팀장 ─── 구매 직원
+ *                                  └─ (퇴사자)
  *   회장 ─ 시스템 계정 둘(Integration · AI Agent)
  *   (배치 전 신입 한 명은 트리에 매달려 있지 않다 — 조직도가 경고로 보여 준다)
  */
@@ -51,6 +53,7 @@ export const DUMMY_UID = {
   leaver: '00000000-0000-0000-0000-0000000d000b',
   integration: '00000000-0000-0000-0000-0000000d000c',
   aiAgent: '00000000-0000-0000-0000-0000000d000d',
+  supportLead: '00000000-0000-0000-0000-0000000d000e',
 } as const
 
 const DAY = 86_400_000
@@ -68,13 +71,14 @@ const DY = 'biz_dy'
 
 /**
  * 팀 다섯. 0025:141의 시드와 같은 team_id·이름이다.
- * 팀장이 없는 팀 셋(생산·경영지원·연구소)은 일부러 비워 둔다 — 블록 B-2의 경고 세 종 중
+ * 경영지원은 0047부터 팀장이 있다(첫 실사용자의 자리 — 재무 입력 권한을 dummy에서 눈으로 보기 위해).
+ * 팀장이 없는 팀 둘(생산·연구소)은 일부러 비워 둔다 — 블록 B-2의 경고 세 종 중
  * 하나가 그것이고, 경고가 한 번도 뜨지 않는 시드로는 '고치는 곳으로 데려가는' 동선을 볼 수 없다.
  */
 export const DUMMY_TEAMS: Team[] = [
   { team_id: 'team_dy_sales', business_id: DY, name: '영업', name_en: 'Sales', lead_user_id: DUMMY_UID.salesLead },
   { team_id: 'team_dy_production', business_id: DY, name: '생산', name_en: 'Production', lead_user_id: null },
-  { team_id: 'team_dy_support', business_id: DY, name: '경영지원', name_en: 'Management Support', lead_user_id: null },
+  { team_id: 'team_dy_support', business_id: DY, name: '경영지원', name_en: 'Management Support', lead_user_id: DUMMY_UID.supportLead },
   { team_id: 'team_dy_purchasing', business_id: DY, name: '구매', name_en: 'Purchasing', lead_user_id: DUMMY_UID.buyLead },
   { team_id: 'team_dy_rnd', business_id: DY, name: '연구소', name_en: 'R&D', lead_user_id: null },
 ]
@@ -109,6 +113,8 @@ function person(
     // 0032. 시드에는 사진이 없다 — 화면 곳곳의 동그라미가 이름 첫 글자로 떨어지는 것이
     // 기본 모양이고, 그 모양을 먼저 볼 수 있어야 한다. dummy에서 올리면 메모리에 붙는다.
     photo_path: null,
+    // 0047. 사람 단위 모듈 권한. 기본은 없다 — 역할로 이미 되는 사람(회장 · CFO · 대표)은 줄이 필요 없다.
+    modules: [],
     ...extra,
   }
 }
@@ -122,6 +128,11 @@ export const DUMMY_PEOPLE: UserAccount[] = [
   }),
   person(DUMMY_UID.dyCeo, 'BusinessCEO', 'DY 대표', 'DY CEO', '대표이사', DUMMY_UID.chair, null, {
     max_security_class: 'Restricted',
+  }),
+  // 0047. DY 경영지원 팀장 — 첫 실사용자의 자리. 가입 트리거(finance_default_grant)가 주는 기본값과 같다:
+  // 재무 입력 O · 월 마감 X. biz_dy만 가진다(다른 회사 재무는 존재하지 않는 것처럼 보인다).
+  person(DUMMY_UID.supportLead, 'TeamLead', '경영지원팀장', 'Management Support Team Lead', '팀장', DUMMY_UID.dyCeo, 'team_dy_support', {
+    modules: [{ module: '/finance', can_write: true, can_approve: false }],
   }),
   person(DUMMY_UID.exec, 'Executive', '영업본부장', 'Sales Executive', '본부장', DUMMY_UID.dyCeo, 'team_dy_sales', {
     max_security_class: 'Restricted',
@@ -179,6 +190,7 @@ export const DUMMY_SESSION_KEY: Record<string, string> = {
   sales_staff: DUMMY_UID.salesStaff,
   buy_lead: DUMMY_UID.buyLead,
   buy_staff: DUMMY_UID.buyStaff,
+  support_lead: DUMMY_UID.supportLead,
 }
 
 export function dummyViewer(): UserAccount {
@@ -189,6 +201,31 @@ export function dummyViewer(): UserAccount {
   const role = ROLE.find((r) => r === process.env.DUMMY_ROLE)
   const byRole = role ? DUMMY_PEOPLE.find((p) => p.role === role && !p.revoked_at) : undefined
   return byRole ?? BY_ID.get(DUMMY_UID.chair)!
+}
+
+/**
+ * 0047. dummy의 user_module_access. 사용자 화면에서 켜고 끈 것이 서버가 살아 있는 동안 남는다.
+ * 세션(lib/auth/session.ts)과 조직도(dummy.ts listUserAccounts)가 **같은 저장소**를 본다 — 두 벌이면
+ * 회장이 켠 권한이 조직도에는 보이는데 그 사람의 화면에는 안 붙는다.
+ */
+const moduleGrants = new Map<string, ModuleGrant[]>(DUMMY_PEOPLE.map((p) => [p.user_id, p.modules.map((m) => ({ ...m }))]))
+
+export function dummyModuleGrants(userId: string): ModuleGrant[] {
+  return (moduleGrants.get(userId) ?? []).map((m) => ({ ...m }))
+}
+
+/** 두 칸이 다 false면 줄을 지운다 — live의 setModuleGrant와 같다. */
+export function setDummyModuleGrant(userId: string, grant: ModuleGrant): void {
+  const rest = (moduleGrants.get(userId) ?? []).filter((m) => m.module !== grant.module)
+  moduleGrants.set(userId, grant.can_write || grant.can_approve ? [...rest, { ...grant }] : rest)
+}
+
+/** 0047 finance_grant()를 옮겨 적은 것. 사람 역할만 — 시스템 계정은 줄이 있어도 false. */
+export function dummyFinanceGrant(viewer: UserAccount, need: 'read' | 'write' | 'approve'): boolean {
+  if (viewer.revoked_at || viewer.role === 'AIAgent' || viewer.role === 'Integration') return false
+  const row = dummyModuleGrants(viewer.user_id).find((m) => m.module === '/finance')
+  if (!row) return false
+  return need === 'read' || (need === 'write' ? row.can_write : row.can_approve)
 }
 
 export function dummyViewerId(): string {

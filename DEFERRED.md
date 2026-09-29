@@ -2077,6 +2077,9 @@ B-4가 찾은 결함 하나를 고쳤다. **리뷰 루프가 없는 작업이고
   0045의 attachments_insert는 회장의 Vault 줄을 허용한다(회장 세션으로 PostgREST를 직접 부르면 들어간다).
   DB까지 막으려면 0047에 `security_class <> 'Vault'` 제약을 넣는다(마이그레이션 → 리뷰 → production 승인). **다음 마이그레이션 묶음에 포함한다**(2026-09-29 회장 결정 — 그때까지 DEFERRED). 암호화 층이 오면
   그 제약과 Server Action 한 줄을 걷고, 0045의 Vault 줄 규칙(지정자 · skipped_vault)을 그대로 다시 쓴다.
+  → **0047에 넣었다(2026-09-29, production 미적용).** check 제약이 아니라 restrictive insert 정책
+  `attachments_no_vault_insert`다 — check는 `not valid`여도 기존 Vault 줄(0045 이후 production에 있을 수 있다)을
+  고칠 때마다 다시 재서 요약 상태 갱신 · soft delete가 23514로 깨진다. 등급 칸은 update grant가 없어 insert만 막으면 된다.
 - **스캔본 PDF(글자 없음) → vision 경로는 다음 세션.** 지금은 «텍스트를 찾지 못했습니다»로 failed.
 
 ## 세계시간 · 관심 도시 10곳 (2026-09-29 회장 지시)
@@ -2087,3 +2090,26 @@ B-4가 찾은 결함 하나를 고쳤다. **리뷰 루프가 없는 작업이고
 - **헤더에는 세계시간이 없다** — Phase 5-D에서 대시보드 «날씨와 세계시간» 카드로 옮겼다. 지시의 «헤더»는 그 카드(같은 WorldClocks)로 읽었다.
 - 다른 app_prefs(테마 등)를 저장하면 readAppPrefs의 기본값이 world_cities로 같이 저장된다 — 기본 목록을 나중에 바꾸면 그 사람은 옛 기본값에 남는다(Minor).
 - 설정 편집은 역할 제한 없이 각자 자기 목록이다(user_settings는 본인 행만 — 0002).
+
+## 재무 모듈 권한 — 사람 단위 (0047 · 2026-09-29 회장 지시: 첫 실사용자 = DY 경영지원 팀장)
+
+- **권한은 역할이 아니라 사람이다** — 0002의 `user_module_access`('/finance', can_write = 재무 입력 · can_approve = 월 마감)를
+  썼다. 다른 선택지: TeamLead 역할 전체에 재무를 여는 것(«모든 팀장이 재무를 본다» — 원문과 다르다), 새 권한 표(0002가 이미 있다).
+- **회사 범위는 모듈 줄이 아니라 has_business()다** — 한 사람이 두 회사를 가지면 두 회사 모두에서 입력(마감)한다.
+  회사별로 다른 권한이 필요해지면 user_module_access에 business_id 칸을 더한다(Minor, 지금은 한 사람 · 한 회사).
+- **기본 권한은 team_id 상수(`team_dy_support`)로 가른다** — teams는 force RLS라 가입 순간 definer 함수가 0행을 본다(0025 머리 주석).
+  다른 회사에 경영지원팀이 생기면 0047 `finance_default_grant()`의 조건에 그 team_id를 더하는 마이그레이션이 필요하다(Minor).
+- **가입 순간의 기본 권한은 감사 줄이 없다** — audit_log가 force라 세션 없는 insert를 audit_log_insert가 막는다(0031 5절).
+  출처는 같은 사람의 초대 감사 줄 + `granted_at`. 회장 결재 · 조직도 이동으로 붙는 경우는 회장 이름으로 남는다(Minor).
+- **회수한 기본 권한이 되살아나는 길** — 회장이 줄을 지운 뒤 그 사람의 역할/팀을 다른 값으로 옮겼다가 되돌리면 다시 붙는다
+  («경영지원 팀장이 된 순간»의 기본값이라 그렇게 두었다). 역할 · 팀과 무관한 프로필 수정으로는 안 붙는다(검사가 잰다).
+- **0020 `official_statement_save()`가 live에서 한 번도 저장된 적이 없었다** — 감사 insert의 action이 text(case 리터럴)라 42804.
+  0047 4절이 `::audit_action` 하나로 고쳤다(본문 복사). production에 0047이 들어가기 전까지 공식 재무제표 입력 화면은
+  저장을 누르면 «저장하지 못했습니다»다 — 이번 첫 실사용자 일정이 0047 production 적용을 기다리는 이유 하나.
+- **화면 안내는 세션이 본인 줄 하나를 읽는다**(SessionUser.finance) — canDraftDecision은 모듈 표를 안 읽는 쪽을 골랐지만,
+  재무는 입력 폼이 통째로 서느냐가 걸려 있어 읽는다. 요청당 한 번(cache). «보기만»(두 칸 false 줄)은 UI가 만들지 않는다.
+- **dummy가 0047부터 재무 권한과 회사 격리를 흉내 낸다** — listBusinesses가 has_business로 잘리고(전에는 모두에게 다섯 회사),
+  원장 · 공식 재무제표가 can_read_books로 잘리며, 쓰기 · 마감이 같은 판정으로 거부된다. 세션 키 `DUMMY_USER=support_lead`
+  (경영지원팀장, 조직도에서 DY 대표 바로 아래 · 경영지원 팀장 자리). dummy 역할/팀 변경은 dummy 세션의 역할에 반영되지 않는다(시드 기준, 기존 한계).
+- **초대 폼은 기본 권한을 미리 보여 주지 않는다** — 트리거가 자동으로 붙이므로 폼에 칸을 두지 않았다. 부여 여부는
+  가입 후 사용자 화면의 «모듈 권한»에서 본다(Minor — 초대 폼에 «경영지원 팀장은 재무 입력이 자동으로 붙습니다» 한 줄을 둘 수 있다).

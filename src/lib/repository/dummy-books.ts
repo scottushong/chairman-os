@@ -30,6 +30,7 @@ import type {
   ProcessChartInput,
 } from '@/types'
 
+import { dummyFinanceGrant, dummyHasBusiness, dummyViewer } from './dummy-org'
 import { DUPLICATE_ACCOUNT_CODE, type AccountPatch, type AuditActor, type NewAccount } from './types'
 
 /**
@@ -38,9 +39,46 @@ import { DUPLICATE_ACCOUNT_CODE, type AccountPatch, type AuditActor, type NewAcc
  * 출발점은 mock 원장(lib/ecount/mock-ledger.ts)이다. 그 위에 화면에서 한 쓰기를 얹는다.
  * 서버가 살아 있는 동안만 남는다 — 다른 dummy 쓰기(키맨·기안)와 같은 한계다.
  *
- * 권한은 흉내 내지 않는다(dummy.ts 머리 주석). 장부 규칙(코드 불변·중복 코드)은 흉내 낸다 —
- * 규칙이 빠지면 dummy에서 되는 입력이 live에서 거부되고, 그 차이를 화면 검증이 못 잡는다.
+ * 장부 규칙(코드 불변·중복 코드)은 흉내 낸다 — 규칙이 빠지면 dummy에서 되는 입력이 live에서
+ * 거부되고, 그 차이를 화면 검증이 못 잡는다.
+ *
+ * 0047부터 **재무 권한도 흉내 낸다**(아래 canReadBooks · assertKeepBooks · assertCloseBooks). 첫 실사용자가
+ * TeamLead라 «자기 회사만 보이고 · 입력은 되고 · 마감은 안 된다»를 dummy 화면에서 봐야 하는데, 권한을 안
+ * 흉내 내면 dummy의 팀장 세션이 다섯 회사 장부를 다 보고 다 마감한다 — 그 화면은 거짓이다.
  */
+
+/** 0015 · 0047의 읽기 역할 — can_read_restricted()(등급 있는 AIAgent 포함). */
+const RESTRICTED_READER = ['Chairman', 'GroupCFO', 'BusinessCEO', 'Executive']
+
+/** 0047 can_read_books(). 회사 범위 AND ([제한] 열람 역할 OR '/finance' 줄). */
+function canReadBooks(businessId: string): boolean {
+  const viewer = dummyViewer()
+  if (viewer.revoked_at || !dummyHasBusiness(viewer, businessId)) return false
+  if (RESTRICTED_READER.includes(viewer.role)) return true
+  if (viewer.role === 'AIAgent') return viewer.max_security_class === 'Restricted' || viewer.max_security_class === 'Vault'
+  return dummyFinanceGrant(viewer, 'read')
+}
+
+/** 0047 can_keep_books(). live는 RLS 거부(42501)라 같은 낱말로 던진다 — 화면이 같은 문장을 보여 준다. */
+function assertKeepBooks(businessId: string) {
+  const viewer = dummyViewer()
+  const ok =
+    !viewer.revoked_at &&
+    (viewer.role === 'Chairman' ||
+      viewer.role === 'GroupCFO' ||
+      (dummyHasBusiness(viewer, businessId) && (viewer.role === 'BusinessCEO' || dummyFinanceGrant(viewer, 'write'))))
+  if (!ok) throw new Error('new row violates row-level security policy (0047 can_keep_books)')
+}
+
+/** 0016 close_period()의 첫 검사 = can_close_books() and has_business(). 0047이 '/finance' can_approve를 더했다. */
+function assertCloseBooks(businessId: string) {
+  const viewer = dummyViewer()
+  const ok =
+    !viewer.revoked_at &&
+    dummyHasBusiness(viewer, businessId) &&
+    (viewer.role === 'Chairman' || viewer.role === 'GroupCFO' || dummyFinanceGrant(viewer, 'approve'))
+  if (!ok) throw new Error('close_forbidden')
+}
 
 const key = (businessId: string, code: string) => `${businessId}|${code}`
 
@@ -91,23 +129,32 @@ function note(actor: AuditActor, what: string) {
   }
 }
 
-/** 화면이 읽는 원장 한 벌. 복사본을 준다 — 화면이 sort() 한 번만 잘못 불러도 원장이 영구히 바뀐다. */
+/**
+ * 화면이 읽는 원장 한 벌. 복사본을 준다 — 화면이 sort() 한 번만 잘못 불러도 원장이 영구히 바뀐다.
+ * 0047: live의 원장 select 정책(can_read_books)처럼 보는 사람이 읽을 수 있는 회사의 줄만 준다.
+ */
 export async function dummyLedger(): Promise<FinanceLedger> {
   const ledger = await loadMockLedger()
   const store = await accountStore()
+  const readable = new Map<string, boolean>()
+  const can = (businessId: string) => {
+    if (!readable.has(businessId)) readable.set(businessId, canReadBooks(businessId))
+    return readable.get(businessId)!
+  }
   return {
-    accounts: [...store.values()].map((a) => ({ ...a })),
-    journal: [...ledger.journal, ...lines].map((j) =>
+    accounts: [...store.values()].filter((a) => can(a.business_id)).map((a) => ({ ...a })),
+    journal: [...ledger.journal, ...lines].filter((j) => can(j.business_id)).map((j) =>
       closedMonths.has(key(j.business_id, periodOfDate(j.entry_date))) ? { ...j, closed: true } : { ...j },
     ),
-    closings: [...ledger.closings, ...closings],
-    entries: entries.map((e) => ({ ...e })),
+    closings: [...ledger.closings, ...closings].filter((c) => can(c.business_id)),
+    entries: entries.filter((e) => can(e.business_id)).map((e) => ({ ...e })),
     fxRates: [...ledger.fxRates],
     costIndices: [...ledger.costIndices],
   }
 }
 
 export async function createAccount(input: NewAccount, actor: AuditActor): Promise<Account> {
+  assertKeepBooks(input.business_id)
   const store = await accountStore()
   if (store.has(key(input.business_id, input.account_code))) throw new Error(DUPLICATE_ACCOUNT_CODE)
   const row: Account = {
@@ -128,6 +175,7 @@ export async function updateAccount(
   patch: AccountPatch,
   actor: AuditActor,
 ): Promise<Account> {
+  assertKeepBooks(businessId)
   const store = await accountStore()
   const before = store.get(key(businessId, accountCode))
   if (!before) throw new Error('accounts: 고칠 계정이 없다.')
@@ -141,6 +189,7 @@ export async function updateAccount(
 }
 
 export async function applyStandardChart(businessId: string, actor: AuditActor): Promise<number> {
+  assertKeepBooks(businessId)
   const store = await accountStore()
   const fetched_at = new Date().toISOString()
   let n = 0
@@ -158,6 +207,7 @@ export async function applyStandardChart(businessId: string, actor: AuditActor):
  * 규칙은 lib/ledger/journal.ts entryProblem 한 곳이다. 마감 달은 DB와 같은 낱말(closed_period)로 던진다.
  */
 export async function postJournalEntry(input: NewJournalEntry, actor: AuditActor): Promise<string> {
+  assertKeepBooks(input.business_id)
   const ledger = await dummyLedger()
   const problem = entryProblem(input, ledger)
   if (problem === CLOSED_PERIOD_MESSAGE) throw new Error('closed_period')
@@ -209,6 +259,7 @@ function insertEntry(
  * 차대는 이미 맞고, 계정이 그 사이 비활성화됐어도 되돌릴 수 있어야 한다(DB 트리거와 같은 예외).
  */
 export async function postCorrection(input: NewCorrection, actor: AuditActor): Promise<CorrectionResult> {
+  assertKeepBooks(input.business_id)
   const ledger = await dummyLedger()
   const problem = correctionProblem(ledger, input.business_id, input.corrects_id, input.entry_date)
   if (problem) throw new Error(problem)
@@ -237,6 +288,7 @@ export async function postCorrection(input: NewCorrection, actor: AuditActor): P
 
 /** 0016 close_period()를 흉내 낸다. 검사 순서와 거부 낱말이 같다(lib/ledger/closing.ts). */
 export async function closePeriod(businessId: string, period: string, actor: AuditActor): Promise<number> {
+  assertCloseBooks(businessId)
   const ledger = await dummyLedger()
   const today = todayKst()
   const problem = closeProblem(ledger, businessId, period, today)
@@ -261,6 +313,7 @@ export async function saveOfficialStatement(
   input: NewOfficialStatement,
   actor: AuditActor,
 ): Promise<number> {
+  assertKeepBooks(input.business_id)
   if (input.lines.length === 0) throw new Error('재무제표에 줄이 하나도 없습니다.')
 
   // 자산 + 부채 + 자본 = 0. 0020의 함수가 보는 것과 같은 식이다.
@@ -313,6 +366,7 @@ export async function saveOfficialStatement(
 
 /** 활성 행만. 정정으로 밀려난 것은 목록에 없다 — 잠금 판정이 옛 결산을 보면 안 된다. */
 export async function listOfficialStatements(businessId: string): Promise<OfficialStatement[]> {
+  if (!canReadBooks(businessId)) return []
   return officialStatements
     .filter((s) => s.business_id === businessId && s.superseded_at === null)
     .map((s) => ({ ...s }))
@@ -320,7 +374,9 @@ export async function listOfficialStatements(businessId: string): Promise<Offici
 
 /** 화면이 이전 값을 보여 줄 때 쓴다. */
 export async function officialStatementLines(statementId: number): Promise<OfficialStatementLine[]> {
-  return officialLines.filter((l) => l.statement_id === statementId).map((l) => ({ ...l }))
+  return officialLines
+    .filter((l) => l.statement_id === statementId && canReadBooks(l.business_id))
+    .map((l) => ({ ...l }))
 }
 
 // ---------------------------------------------------------------------

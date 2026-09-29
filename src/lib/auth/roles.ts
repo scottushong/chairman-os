@@ -45,20 +45,37 @@ export function canEditChairmanRoutine(user: SessionUser | null): boolean {
 }
 
 /**
- * Phase 2-B 자체 장부. 0016의 can_keep_books()와 같은 역할 목록이어야 한다.
- * BusinessCEO는 자기 회사만인데, 회사 범위는 화면이 흉내 내지 않는다(canDraftDecision과 같은 이유) —
- * 남의 회사에서 저장을 누르면 DB가 거부하고 그 문장을 보여 준다.
+ * Phase 2-B 자체 장부. 0016 · 0047의 can_keep_books()와 같은 판정이어야 한다.
+ *   역할   Chairman · GroupCFO · BusinessCEO(자기 회사)
+ *   사람   user_module_access '/finance' 줄(0047) — 회장이 사용자 화면에서 사람마다 켠다.
+ *          경영지원 팀장은 가입할 때 입력 권한을 기본으로 받는다(0047 finance_default_grant).
+ *
+ * 위 canDraftDecision은 모듈 표를 화면이 읽지 않는 쪽을 골랐다. 재무는 다르게 간다 — 회장이 «이 사람에게
+ * 재무 입력을 준다»를 사람 단위로 지시했고(2026-09-29), 입력 폼이 통째로 서느냐 마느냐가 그 값에 달려 있어서
+ * «눌러 보기 전에는 모른다»로는 첫 실사용자가 화면을 못 쓴다. 그래서 세션이 **본인 줄 하나**만 읽어 온다
+ * (lib/auth/session.ts의 SessionUser.finance — 0002 module_access_self_read). 판정은 여전히 DB가 한다:
+ * 이 값이 틀려도 보여야 할 버튼이 안 보이거나 눌러서 거부될 뿐 데이터는 새지 않는다.
+ *
+ * 회사 범위는 화면이 흉내 내지 않는다(canDraftDecision과 같은 이유) — 남의 회사에서 저장을 누르면 DB가
+ * 거부하고 그 문장을 보여 준다. 모듈 줄을 가진 사람은 애초에 자기 회사의 재무 화면만 연다(회사 목록이 RLS로 잘린다).
  */
 const BOOKKEEPER: readonly Role[] = ['Chairman', 'GroupCFO', 'BusinessCEO']
 
-/** 계정과목·전표를 쓸 수 있는가(안내). */
+/** 시스템 계정은 모듈 줄이 있어도 사람 권한이 아니다(0047 finance_grant()). */
+const SYSTEM: readonly Role[] = ['AIAgent', 'Integration']
+
+/** 계정과목 · 전표 · 월별 손익 · 공식 재무제표를 쓸 수 있는가(안내). */
 export function canKeepBooks(user: SessionUser | null): boolean {
-  return user !== null && BOOKKEEPER.includes(user.role)
+  if (user === null) return false
+  if (BOOKKEEPER.includes(user.role)) return true
+  return !SYSTEM.includes(user.role) && user.finance.write
 }
 
-/** 월 마감을 할 수 있는가(안내). 0016 can_close_books()와 같다. */
+/** 월 마감을 할 수 있는가(안내). 0047 can_close_books()와 같다 — 역할 둘 + '/finance' can_approve. */
 export function canCloseBooks(user: SessionUser | null): boolean {
-  return user?.role === 'Chairman' || user?.role === 'GroupCFO'
+  if (user === null) return false
+  if (user.role === 'Chairman' || user.role === 'GroupCFO') return true
+  return !SYSTEM.includes(user.role) && user.finance.close
 }
 
 /**

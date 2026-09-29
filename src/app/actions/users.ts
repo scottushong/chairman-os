@@ -6,6 +6,7 @@ import { currentUser } from '@/lib/auth/session'
 import { DUPLICATE_INVITATION, getRepository } from '@/lib/repository'
 import {
   INVITABLE_ROLE,
+  MODULE_GRANT_OPTIONS,
   SECURITY_CLASS,
   type PersonLanguage,
   type ProfilePatch,
@@ -303,6 +304,48 @@ export async function updateUserProfile(input: {
   }
 
   revalidatePath('/settings/users')
+  return {}
+}
+
+/**
+ * 0047 — 사람 단위 모듈 권한(재무 입력 · 월 마감 등). 회장만이다(0002 module_access_admin_write).
+ *
+ * 모듈 키는 화면 목록(MODULE_GRANT_OPTIONS)에 있는 것만 받는다 — 아무 경로나 받으면 권한 표에 뜻 없는 줄이
+ * 쌓이고, 그 줄은 나중에 누가 같은 이름의 모듈을 만드는 날 조용히 권한이 된다. 두 칸이 다 false면 줄을 지운다.
+ * 판정(회장인가)은 여기서 하지 않는다 — DB가 거부하면 그 문장을 한국어로 옮긴다.
+ */
+export async function setModuleGrant(input: {
+  userId: unknown
+  module: unknown
+  canWrite: unknown
+  canApprove: unknown
+}): Promise<RevokeUserState> {
+  const userId = typeof input.userId === 'string' ? input.userId.trim() : ''
+  if (!userId) return { error: '대상을 알 수 없습니다.' }
+  const option = MODULE_GRANT_OPTIONS.find((o) => o.module === input.module)
+  if (!option) return { error: '알 수 없는 모듈입니다.' }
+  if (typeof input.canWrite !== 'boolean' || typeof input.canApprove !== 'boolean') {
+    return { error: '권한 값을 읽을 수 없습니다.' }
+  }
+
+  const user = await currentUser()
+  if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+
+  try {
+    const repo = await getRepository()
+    await repo.setModuleGrant(
+      userId,
+      { module: option.module, can_write: input.canWrite, can_approve: input.canApprove },
+      { user_id: user.user_id, role: user.role },
+    )
+  } catch (e) {
+    console.error('[setModuleGrant]', e)
+    return { error: denialMessage(e, '모듈 권한을 바꿀 권한이 없습니다. (Chairman만 가능합니다)') }
+  }
+
+  revalidatePath('/settings/users')
+  // 그 사람의 재무 화면 안내(입력 폼 · 마감 버튼)가 세션 값으로 선다 — 다음 요청에서 새로 읽는다.
+  revalidatePath('/finance', 'layout')
   return {}
 }
 

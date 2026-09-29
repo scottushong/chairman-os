@@ -117,7 +117,7 @@ export async function saveMonthlyBooks(input: {
     const message = e instanceof Error ? e.message : ''
     if (/closed_period/.test(message)) return { error: '이미 마감된 달이 있습니다. 마감 후에는 정정 전표로 고칩니다.' }
     if (/42501|PGRST301|row-level security/.test(message)) {
-      return { error: '이 회사의 장부를 쓸 권한이 없습니다. (Chairman · Group CFO · 해당 회사 Business CEO)' }
+      return { error: '이 회사의 장부를 쓸 권한이 없습니다. (Chairman · Group CFO · 해당 회사 Business CEO · 회장이 재무 입력 권한을 준 사람)' }
     }
     return { error: '월별 손익을 저장하지 못했습니다.' }
   }

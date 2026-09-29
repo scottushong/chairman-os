@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react'
 
-import { saveTeam, updateUserProfile } from '@/app/actions/users'
+import { saveTeam, setModuleGrant, updateUserProfile } from '@/app/actions/users'
 import { ProfilePhoto } from '@/components/settings/profile-photo'
 import { ForceLogoutButton } from '@/components/settings/force-logout-button'
 import { RevokeButton } from '@/components/settings/revoke-button'
@@ -10,6 +10,7 @@ import { Icon } from '@/components/ui/icon'
 import { businessName } from '@/lib/lookup'
 import {
   INVITABLE_ROLE,
+  MODULE_GRANT_OPTIONS,
   PERSON_LANGUAGE_LABEL_KO,
   ROLE_LABEL_KO,
   SECURITY_CLASS_LABEL_KO,
@@ -717,6 +718,10 @@ function PersonPanel({
             </span>
           </label>
 
+          {SYSTEM_ROLE.includes(person.role) ? null : (
+            <ModuleGrants person={person} busy={busy} setBusy={setBusy} setError={setError} />
+          )}
+
           <div className="flex items-center justify-between gap-2 pt-1">
             <span className="text-t10h text-ink-muted">
               {person.revoked_at
@@ -734,10 +739,26 @@ function PersonPanel({
           </div>
         </div>
       ) : (
-        <p className="mt-3 border-t border-line-soft pt-3 text-t11 leading-relaxed text-ink-muted">
-          역할·팀·상사를 바꾸고 권한을 회수하는 것은 회장만 할 수 있습니다(0002
-          user_profiles_admin_write). 그래서 여기 버튼이 없습니다 — 눌러도 DB가 거부합니다.
-        </p>
+        <div className="mt-3 border-t border-line-soft pt-3">
+          {self && person.modules.length > 0 ? (
+            <p className="mb-2 text-t11 text-ink-dim">
+              내 모듈 권한:{' '}
+              {person.modules
+                .map((m) => {
+                  const o = MODULE_GRANT_OPTIONS.find((x) => x.module === m.module)
+                  if (!o) return null
+                  const parts = [m.can_write ? o.write : null, m.can_approve ? o.approve : null].filter(Boolean)
+                  return `${o.label}(${parts.length ? parts.join(' · ') : '보기'})`
+                })
+                .filter(Boolean)
+                .join(', ')}
+            </p>
+          ) : null}
+          <p className="text-t11 leading-relaxed text-ink-muted">
+            역할·팀·상사·모듈 권한을 바꾸고 권한을 회수하는 것은 회장만 할 수 있습니다(0002
+            user_profiles_admin_write · module_access_admin_write). 그래서 여기 버튼이 없습니다 — 눌러도 DB가 거부합니다.
+          </p>
+        </div>
       )}
 
       {error ? (
@@ -746,6 +767,81 @@ function PersonPanel({
         </p>
       ) : null}
     </div>
+  )
+}
+
+/**
+ * 0047 «모듈 권한» — 사람 단위로 켜는 권한(재무 입력 · 월 마감 등). 회장에게만 그린다(PersonPanel의 canManage).
+ * 자물쇠는 0002 module_access_admin_write다. 회사 범위는 여기서 고르지 않는다 — 위의 «회사 범위»(user_business_access)가
+ * 그대로 적용된다(0047 can_keep_books = 모듈 줄 AND has_business).
+ * 칸 둘을 다 끄면 줄이 지워진다(줄이 있으면 보기가 열리므로). 역할로 이미 되는 사람(회장 · CFO · 대표)에게는
+ * 켜도 달라지는 것이 없어 그 사실을 적는다.
+ */
+function ModuleGrants({
+  person,
+  busy,
+  setBusy,
+  setError,
+}: {
+  person: UserAccount
+  busy: boolean
+  setBusy: (v: boolean) => void
+  setError: (v: string | null) => void
+}) {
+  async function toggle(module: string, next: { can_write: boolean; can_approve: boolean }) {
+    setBusy(true)
+    setError(null)
+    const result = await setModuleGrant({
+      userId: person.user_id,
+      module,
+      canWrite: next.can_write,
+      canApprove: next.can_approve,
+    })
+    setBusy(false)
+    if (result.error) setError(result.error)
+  }
+
+  const byRole = person.role === 'Chairman' || person.role === 'GroupCFO'
+
+  return (
+    <fieldset className="rounded-lg border border-line-soft px-2.5 py-2">
+      <legend className="px-1 text-t11 text-ink-dim">모듈 권한</legend>
+      {MODULE_GRANT_OPTIONS.map((o) => {
+        const row = person.modules.find((m) => m.module === o.module)
+        const cur = { can_write: row?.can_write ?? false, can_approve: row?.can_approve ?? false }
+        return (
+          <div key={o.module} className="py-1">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+              <span className="min-w-10 text-t12 font-semibold">{o.label}</span>
+              <label className="flex min-h-11 items-center gap-1.5 text-t12 sm:min-h-0">
+                <input
+                  type="checkbox"
+                  checked={cur.can_write}
+                  disabled={busy}
+                  onChange={(e) => toggle(o.module, { ...cur, can_write: e.target.checked })}
+                  className="size-4 accent-[var(--color-accent)] disabled:opacity-50"
+                />
+                {o.write}
+              </label>
+              <label className="flex min-h-11 items-center gap-1.5 text-t12 sm:min-h-0">
+                <input
+                  type="checkbox"
+                  checked={cur.can_approve}
+                  disabled={busy}
+                  onChange={(e) => toggle(o.module, { ...cur, can_approve: e.target.checked })}
+                  className="size-4 accent-[var(--color-accent)] disabled:opacity-50"
+                />
+                {o.approve}
+              </label>
+            </div>
+            <span className="mt-0.5 block text-t10 leading-relaxed text-ink-muted">
+              {byRole ? '역할로 이미 전부 할 수 있습니다 — 켜도 달라지는 것이 없습니다. ' : ''}
+              {o.note}
+            </span>
+          </div>
+        )
+      })}
+    </fieldset>
   )
 }
 

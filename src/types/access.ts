@@ -52,7 +52,39 @@ export interface UserAccount {
    * 이 칸이 보이는 범위 = 이름이 보이는 범위다(같은 표의 같은 행이라 자동으로 그렇다).
    */
   photo_path: string | null
+  /**
+   * 0047. 사람 단위 모듈 권한(user_module_access). 회장 세션은 전부 읽고, 나머지는 자기 줄만 읽는다
+   * (0002 module_access_self_read) — 그래서 회장이 아닌 사람의 조직도에서 남의 이 칸은 빈 배열이다.
+   */
+  modules: ModuleGrant[]
 }
+
+/** 0002 user_module_access 한 줄. 모듈 키는 05_Architecture의 경로다('/finance'). */
+export interface ModuleGrant {
+  module: string
+  can_write: boolean
+  can_approve: boolean
+}
+
+/**
+ * 사용자 화면이 켜고 끄는 모듈 권한 목록(0047). 모듈을 더할 때 여기에 한 줄 — 칸 이름은 모듈마다 다르게 읽힌다
+ * (재무는 can_write = 입력, can_approve = 월 마감). DB 판정은 각 모듈의 판정 함수가 한다(재무는 0047 finance_grant).
+ */
+export const MODULE_GRANT_OPTIONS: readonly {
+  module: string
+  label: string
+  write: string
+  approve: string
+  note: string
+}[] = [
+  {
+    module: '/finance',
+    label: '재무',
+    write: '재무 입력',
+    approve: '월 마감',
+    note: '전표 · 월별 손익 · 공식 재무제표 · 계정과목. 회사 범위는 «회사 범위»가 정합니다. 둘 다 끄면 재무를 못 봅니다.',
+  },
+]
 
 export interface UserInvitation {
   invitation_id: string

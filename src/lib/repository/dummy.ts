@@ -52,11 +52,13 @@ import {
   DUMMY_TASKS,
   DUMMY_TEAMS,
   dummyHasBusiness,
+  dummyModuleGrants,
   dummyOwnerUnknown,
   dummyPerson,
   dummySharedWithMe,
   dummyViewer,
   dummyViewerId,
+  setDummyModuleGrant,
 } from './dummy-org'
 import { emptyStrategy } from '@/lib/strategy-fields'
 import { attachmentHitId, type SearchHit } from '@/lib/search'
@@ -99,6 +101,7 @@ import type {
   NewInvitation,
   Task,
   UserAccount,
+  ModuleGrant,
   UserInvitation,
 } from '@/types'
 
@@ -468,8 +471,14 @@ export const dummyRepository: ChairmanRepository = {
     return { visible: !!d && dummyHasBusiness(viewer, d.business_id), business_id: d?.business_id ?? null }
   }),
 
+  /**
+   * 0002 businesses_read = has_business(). 0047 전까지 dummy는 회사를 가르지 않았다 — 그래서 dummy의 DY 팀장이
+   * 재무 화면에서 다섯 회사를 다 봤다(live는 DY 하나 · 나머지 404). 첫 실사용자의 화면을 dummy로 검증하려면
+   * 이 문이 live와 같아야 한다. 전사 역할(회장 · CFO)은 그대로 전부다.
+   */
   async listBusinesses() {
-    return [...businesses, ...memoryBusinesses]
+    const viewer = dummyViewer()
+    return [...businesses, ...memoryBusinesses].filter((b) => dummyHasBusiness(viewer, b.business_id))
   },
   /**
    * live의 0015 finance_kpis 뷰를 흉내 낸다. 시트 JSON을 그대로 돌려주지 않고 mock 원장에서 계산한다 —
@@ -1016,10 +1025,16 @@ export const dummyRepository: ChairmanRepository = {
    */
   async listUserAccounts(): Promise<UserAccount[]> {
     const viewer = memoryPerson(dummyViewer().user_id)
-    if (viewer.role === 'Chairman') return memoryPeople.map((p) => ({ ...p }))
+    // 0047. 모듈 줄은 dummy-org의 저장소가 원천이다(세션과 같은 곳). 0002 module_access_self_read처럼
+    // 회장은 전부, 나머지는 자기 줄만 본다 — 남의 칸은 빈 배열이다.
+    const withModules = (p: UserAccount): UserAccount => ({
+      ...p,
+      modules: viewer.role === 'Chairman' || p.user_id === viewer.user_id ? dummyModuleGrants(p.user_id) : [],
+    })
+    if (viewer.role === 'Chairman') return memoryPeople.map(withModules)
     return memoryPeople
       .filter((p) => p.user_id === viewer.user_id || inMemorySubtree(viewer.user_id, p.user_id))
-      .map((p) => ({ ...p }))
+      .map(withModules)
   },
 
   /** 0025 teams_read = 회사 격리. subtree로 자르지 않는다 — 팀 이름은 뼈대이지 비밀이 아니다. */
@@ -1054,7 +1069,20 @@ export const dummyRepository: ChairmanRepository = {
         throw new Error('보고 체계에 순환이 생깁니다')
       }
     }
+    const was = { role: target.role, team_id: target.team_id }
     Object.assign(target, patch)
+
+    // 0047 finance_default_grant()를 옮겨 적은 것 — 역할 · 팀이 바뀌어 DY 경영지원 팀장이 된 순간, 줄이 없을 때만.
+    const became = target.role !== was.role || target.team_id !== was.team_id
+    if (
+      became &&
+      target.role === 'TeamLead' &&
+      target.team_id === 'team_dy_support' &&
+      !target.revoked_at &&
+      !dummyModuleGrants(userId).some((m) => m.module === '/finance')
+    ) {
+      setDummyModuleGrant(userId, { module: '/finance', can_write: true, can_approve: false })
+    }
 
     if (process.env.NODE_ENV !== 'production') {
       console.warn(
@@ -1254,6 +1282,21 @@ export const dummyRepository: ChairmanRepository = {
   /** dummy에는 세션이 없다 — 대상이 있는지만 본다. */
   async forceLogout(userId: string): Promise<boolean> {
     return memoryPeople.some((p) => p.user_id === userId)
+  },
+
+  /**
+   * 0047. live에서는 0002 module_access_admin_write가 Chairman만 통과시킨다. dummy도 그 문장을 흉내 낸다 —
+   * 이 칸은 권한 그 자체라, dummy가 관대하면 회장 아닌 세션에서 «켜졌다»를 보게 된다.
+   */
+  async setModuleGrant(userId: string, grant: ModuleGrant, actor: AuditActor): Promise<void> {
+    if (actor.role !== 'Chairman') {
+      throw new Error('new row violates row-level security policy for table "user_module_access"')
+    }
+    if (!memoryPeople.some((p) => p.user_id === userId)) throw new Error('Dummy user_module_access: 사람이 없다.')
+    setDummyModuleGrant(userId, grant)
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[dummy] module ${userId} ${JSON.stringify(grant)} by ${actor.role} — 메모리에만 남는다.`)
+    }
   },
 
   async revokeUser(target: RevokeTarget, actor: AuditActor): Promise<void> {

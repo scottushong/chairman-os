@@ -4,7 +4,7 @@ import { cache } from 'react'
 import { DATA_MODE } from '@/lib/env'
 import { supabaseConfig } from '@/lib/supabase/config'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import { dummyViewer } from '@/lib/repository/dummy-org'
+import { dummyModuleGrants, dummyViewer } from '@/lib/repository/dummy-org'
 import { type Role, type SessionUser } from '@/types'
 
 /**
@@ -60,6 +60,18 @@ export const currentUser = cache(async function currentUser(): Promise<SessionUs
 
   if (!data) return null
 
+  /**
+   * 0047. 본인의 재무 모듈 줄. 0002 module_access_self_read가 자기 줄만 내준다. 화면 안내(roles.ts)만 이 값을 쓰고
+   * 판정은 0047 can_keep_books() · can_close_books()가 한다 — 여기서 못 읽으면(오류) 둘 다 false로 떨어진다.
+   * 버튼이 안 보일 뿐 데이터가 새지 않는 쪽이다. 한 번 더 왕복하지만 cache() 덕에 요청당 한 번이다.
+   */
+  const { data: grant } = await sb
+    .from('user_module_access')
+    .select('can_write,can_approve')
+    .eq('user_id', user.id)
+    .eq('module', '/finance')
+    .maybeSingle<{ can_write: boolean; can_approve: boolean }>()
+
   return {
     user_id: data.user_id,
     name: data.display_name,
@@ -67,6 +79,7 @@ export const currentUser = cache(async function currentUser(): Promise<SessionUs
     title_ko: data.title_ko ?? '',
     display_name_en: data.display_name_en ?? null,
     language: data.language === 'en' ? 'en' : 'ko',
+    finance: { write: grant?.can_write === true, close: grant?.can_approve === true },
   }
 })
 
@@ -83,7 +96,7 @@ export const currentUser = cache(async function currentUser(): Promise<SessionUs
  * 않은 사람에게는 자기 것 말고 아무것도 보이지 않는다.
  *
  *   DUMMY_USER=sales_lead   시드의 키로 직접 고른다(chairman · dy_ceo · exec · sales_lead ·
- *                           sales_staff · buy_lead · buy_staff)
+ *                           sales_staff · buy_lead · buy_staff · support_lead)
  *   DUMMY_ROLE=TeamLead     역할로 고른다. 예전 개발 습관을 그대로 둔다.
  *   둘 다 없으면 회장이다.
  *
@@ -93,6 +106,8 @@ export const currentUser = cache(async function currentUser(): Promise<SessionUs
 function dummyUser(): SessionUser | null {
   if (DATA_MODE !== 'dummy') return null
   const person = dummyViewer()
+  // 사용자 화면에서 켜고 끈 값(서버 메모리)까지 본다 — 시드 칸이 아니라 dummy-org의 저장소.
+  const grant = dummyModuleGrants(person.user_id).find((m) => m.module === '/finance')
   return {
     user_id: person.user_id,
     name: person.display_name,
@@ -100,5 +115,6 @@ function dummyUser(): SessionUser | null {
     title_ko: person.title_ko,
     display_name_en: person.display_name_en,
     language: person.language === 'en' ? 'en' : 'ko',
+    finance: { write: grant?.can_write === true, close: grant?.can_approve === true },
   }
 }

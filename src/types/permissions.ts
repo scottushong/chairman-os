@@ -108,4 +108,10 @@ export interface SessionUser {
    * (lib/i18n.ts). 값이 없거나 읽지 못하면 'ko'다.
    */
   language: 'ko' | 'en'
+  /**
+   * 0047. 본인의 재무 모듈 권한(user_module_access '/finance' — 0002 module_access_self_read로 자기 줄만 읽는다).
+   * 역할로 이미 되는 사람(Chairman · GroupCFO · BusinessCEO)은 줄이 없어도 여기가 false일 수 있다 —
+   * 화면 판정은 lib/auth/roles.ts가 역할과 이 값을 합쳐서 한다. 줄이 없거나 못 읽으면 둘 다 false다.
+   */
+  finance: { write: boolean; close: boolean }
 }

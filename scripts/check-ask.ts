@@ -19,7 +19,7 @@ delete process.env.ANTHROPIC_API_KEY
 
 function sessionOf(): SessionUser {
   const v = dummyViewer()
-  return { user_id: v.user_id, name: v.display_name, role: v.role, title_ko: v.title_ko, display_name_en: null, language: 'ko' }
+  return { user_id: v.user_id, name: v.display_name, role: v.role, title_ko: v.title_ko, display_name_en: null, language: 'ko', finance: { write: false, close: false } }
 }
 const as = (key: string) => {
   process.env.DUMMY_USER = key

@@ -9,6 +9,7 @@ import { PHOTO_BUCKET, photoPath } from '@/lib/profile-photo'
 import { attachmentHitId, needsSubstringSearch, type SearchHit } from '@/lib/search'
 
 import type {
+  ModuleGrant,
   AbsenceTest,
   AiNightOutput,
   Alert,
@@ -370,6 +371,14 @@ interface ShareRow {
 interface AccessRow {
   user_id: string
   business_id: string
+}
+
+/** 0002 user_module_access. 회장은 전부, 나머지는 자기 줄만 읽는다(module_access_self_read). */
+interface ModuleAccessRow {
+  user_id: string
+  module: string
+  can_write: boolean
+  can_approve: boolean
 }
 
 interface UserInvitationRow {
@@ -2510,7 +2519,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
      * 그래서 여기서만 revoked_at 필터를 걸지 않는다(session.ts와 다른 점).
      */
     async listUserAccounts(): Promise<UserAccount[]> {
-      const [{ data, error }, access] = await Promise.all([
+      const [{ data, error }, access, modules] = await Promise.all([
         fetchAll('user_profiles', ['user_id'], (from, to) =>
           sb
             .from('user_profiles')
@@ -2529,9 +2538,29 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
             .range(from, to)
             .returns<AccessRow[]>(),
         ),
+        // 0047. 사람 단위 모듈 권한. 사용자 화면의 «모듈 권한» 칸이 이것을 그린다.
+        fetchAll('user_module_access', ['user_id', 'module'], (from, to) =>
+          sb
+            .from('user_module_access')
+            .select('user_id,module,can_write,can_approve', { count: 'exact' })
+            .order('user_id')
+            .order('module')
+            .range(from, to)
+            .returns<ModuleAccessRow[]>(),
+        ),
       ])
 
       const rows = unwrap('user_profiles', data, error)
+      // 모듈 줄을 못 읽었으면 «권한 없음»으로 그리지 않는다 — 회장이 그 화면에서 켜고 끄는 값이라,
+      // 빈 칸을 믿고 다시 켜면 이미 있던 마감 권한을 덮는다. 목록 전체를 실패로 돌린다.
+      const moduleRows = unwrap('user_module_access', modules.data, modules.error)
+      const modulesByUser = new Map<string, ModuleGrant[]>()
+      for (const m of moduleRows) {
+        modulesByUser.set(m.user_id, [
+          ...(modulesByUser.get(m.user_id) ?? []),
+          { module: m.module, can_write: m.can_write, can_approve: m.can_approve },
+        ])
+      }
       // A failed access-list page must not masquerade as an empty company list.
       const byUser = new Map<string, string[]>()
       for (const a of access.data ?? []) {
@@ -2555,6 +2584,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         left_on: r.left_on,
         language: r.language ?? 'ko',
         photo_path: r.photo_path,
+        modules: modulesByUser.get(r.user_id) ?? [],
       }))
     },
 
@@ -2665,6 +2695,62 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       const { data, error } = await sb.rpc('force_logout', { p_user: userId })
       if (error) throw new Error(`Supabase force_logout ${error.code ?? '?'}: ${error.message}`)
       return data === true
+    },
+
+    /**
+     * 0047. 모듈 권한 한 줄. 순서는 초대 · 회수와 같다 — **기록이 먼저**다. 권한을 나눠 주고 거두는 일은
+     * CH-051이 기록 대상으로 꼽은 것이라 '주려고 했다'까지 남는다. 이전 값은 회장이 읽을 수 있는 줄에서 가져온다.
+     * 두 칸이 다 false면 줄을 지운다 — 줄이 있으면 읽기가 열리므로(0047 can_read_books) «전부 끔»은 삭제다.
+     */
+    async setModuleGrant(userId: string, grant: ModuleGrant, actor: AuditActor): Promise<void> {
+      const { data: before, error: beforeError } = await sb
+        .from('user_module_access')
+        .select('user_id,module,can_write,can_approve')
+        .eq('user_id', userId)
+        .eq('module', grant.module)
+        .maybeSingle<ModuleAccessRow>()
+      if (beforeError) {
+        throw new Error(`Supabase user_module_access ${beforeError.code ?? '?'}: ${beforeError.message}`)
+      }
+      const off = !grant.can_write && !grant.can_approve
+      if (off && !before) return
+      if (before && before.can_write === grant.can_write && before.can_approve === grant.can_approve) return
+
+      const { error: auditError } = await sb.from('audit_log').insert({
+        action: 'permission_change',
+        entity_table: 'user_module_access',
+        entity_id: userId,
+        business_id: null,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        before: before ? { module: before.module, can_write: before.can_write, can_approve: before.can_approve } : null,
+        after: off ? null : { module: grant.module, can_write: grant.can_write, can_approve: grant.can_approve },
+        note: off ? '모듈 권한 회수' : '모듈 권한 변경',
+      })
+      if (auditError) {
+        throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      }
+
+      if (off) {
+        const { data, error } = await sb
+          .from('user_module_access')
+          .delete()
+          .eq('user_id', userId)
+          .eq('module', grant.module)
+          .select('user_id')
+          .returns<{ user_id: string }[]>()
+        oneAffectedRow('user_module_access', data, error)
+        return
+      }
+      const { data, error } = await sb
+        .from('user_module_access')
+        .upsert(
+          { user_id: userId, module: grant.module, can_write: grant.can_write, can_approve: grant.can_approve },
+          { onConflict: 'user_id,module' },
+        )
+        .select('user_id')
+        .returns<{ user_id: string }[]>()
+      oneAffectedRow('user_module_access', data, error)
     },
 
     async revokeUser(target: RevokeTarget, actor: AuditActor): Promise<void> {

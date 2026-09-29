@@ -32,6 +32,8 @@ const tables: Record<string, Row[]> = {
   user_profiles: records((i) => ({ user_id: id(i), display_name: `Owner ${i}`, role: 'Chairman',
     title_ko: null, max_security_class: 'Vault', revoked_at: null, created_at: '2026-09-01' })),
   user_business_access: records((i) => ({ user_id: '0000', business_id: id(i) })),
+  // 0047. 사람 단위 모듈 권한. 복합 키(user_id, module)라 fetchAll이 끝까지 읽는지 같이 본다.
+  user_module_access: records((i) => ({ user_id: '0000', module: `/m${id(i)}`, can_write: i % 2 === 0, can_approve: false })),
   finance_kpis: records((i) => ({ period: '2026-09', business_id: id(i), metric: 'EBITDA',
     value: '280000000', target: null, currency: 'KRW', source: 'ecount', closed: false,
     fetched_at: '2026-09-16T14:00:00Z', basis: 'provisional' })),
@@ -196,6 +198,7 @@ async function checkPagination() {
   const accounts = await repo.listUserAccounts()
   assert.equal(accounts.length, SIZE)
   assert.equal(accounts[0].business_ids.length, SIZE, 'Composite-key access list must be complete')
+  assert.equal(accounts[0].modules.length, SIZE, '0047: composite-key module list must be complete')
   for (const read of [repo.listBusinesses, repo.listDecisions, repo.listAlerts, repo.listTopGoals,
     repo.listMonthlyPriorities, repo.listCriticalRisks, repo.listNextMilestones,
     repo.listBusinessStrategy, repo.listUserInvitations, repo.listAiNightOutputs]) {
