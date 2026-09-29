@@ -63,9 +63,12 @@ import type {
   ApprovalLead,
   ApprovalTemplate,
   ApprovalTemplateKey,
+  AiAction,
   AiChat,
   AiChatMessage,
   AiSource,
+  AiUsageDay,
+  NewAiAction,
   ChatChannel,
   ChatMessage,
   ChatMessageInput,
@@ -223,8 +226,32 @@ export interface ChairmanRepository {
   /** AI 대화 — 본인만(0041 ai_chats). 질문 요약은 트리거가 감사에 남긴다. */
   listAiChats(): Promise<AiChat[]>
   listAiChatMessages(chatId: string): Promise<AiChatMessage[]>
-  createAiChat(title: string, actor: AuditActor): Promise<string>
-  appendAiMessage(chatId: string, role: 'user' | 'assistant', content: string, sources: AiSource[], actor: AuditActor): Promise<void>
+  /** contextPath(0046)는 대화를 연 화면. 0046 전 DB에서는 칸 없이 만든다. */
+  createAiChat(title: string, actor: AuditActor, contextPath?: string | null): Promise<string>
+  /** extra(0046)는 토큰 · 제안 id. 0046 전 DB에서는 그 둘을 빼고 적는다(대화는 살린다). */
+  appendAiMessage(
+    chatId: string,
+    role: 'user' | 'assistant',
+    content: string,
+    sources: AiSource[],
+    actor: AuditActor,
+    extra?: { tokens?: number; action_ids?: string[] },
+  ): Promise<void>
+
+  /**
+   * Phase 11 — AI 제안(0046 ai_actions). 넣으면 DB가 늘 pending · 15분으로 적는다.
+   * **실행은 여기 없다** — decideAiAction이 확인을 한 번 소비한 뒤 앱이 기존 쓰기 문으로 한다.
+   * 0046이 없는 DB에서 createAiAction은 던진다(표 없이 «확인 카드»를 띄우면 누를 것이 없다).
+   */
+  createAiAction(input: NewAiAction, actor: AuditActor): Promise<AiAction>
+  /** 이 대화의 제안(본인 것만 — RLS). 0046 전 DB는 빈 목록. */
+  listAiActions(chatId: string): Promise<AiAction[]>
+  /** 확인(true) · 취소(false). 주인 · pending · 만료 전일 때만 줄이 오고, 아니면 null(0046 ai_action_decide). */
+  decideAiAction(actionId: string, confirm: boolean): Promise<AiAction | null>
+  /** 확인된 제안의 실행 결과(done · failed). */
+  finishAiAction(actionId: string, ok: boolean, result: string): Promise<void>
+  /** /settings 일별 AI 비용(0045 ai_usage_log). 회장만 행이 온다. days일 전부터. */
+  listAiUsageDays(days: number): Promise<AiUsageDay[]>
 
   /**
    * Phase 10 — 첨부(0045). 보이는 범위는 DB가 정한다: 붙은 대상이 보이고 AND 등급(Vault는 회장 +

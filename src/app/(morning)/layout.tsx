@@ -1,3 +1,4 @@
+import { AssistantDock } from '@/components/assistant/assistant-dock'
 import { MobileTabs } from '@/components/layout/mobile-tabs'
 import { NavDrawer } from '@/components/layout/nav-drawer'
 import { RailSidebar } from '@/components/layout/rail-sidebar'
@@ -58,6 +59,9 @@ export default async function MorningLayout({ children }: LayoutProps<'/'>) {
         <main className="flex-1 overflow-y-auto">{children}</main>
         <MobileTabs />
       </div>
+      {/* Phase 11 — 모든 화면의 AI 어시스턴트(오른쪽 아래 버튼 → 패널). 셸에 한 번만 둔다: 화면마다 넣으면 빠지는 화면이 생긴다.
+          로그인 없는 화면(/login 등)은 이 셸 밖이라 뜨지 않는다. */}
+      {user ? <AssistantDock lang={user.language} /> : null}
     </div>
   )
 }

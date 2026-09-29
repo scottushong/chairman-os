@@ -40,6 +40,10 @@ export default async function ChatPage({ searchParams }: PageProps<'/chat'>) {
   ])
   const aiId = one(params.ai) || null
   const aiMessages = tab === 'ai' && aiId ? await repo.listAiChatMessages(aiId) : []
+  // Phase 11 — 답 아래의 제안 카드. payload는 화면으로 내리지 않는다(미리보기만).
+  const aiActions = tab === 'ai' && aiId
+    ? (await repo.listAiActions(aiId).catch(() => [])).map(({ payload: _p, ...rest }) => (void _p, rest))
+    : []
 
   const groups: { key: ChatChannel['kind']; label: string }[] = [
     { key: 'company', label: tr(lang, '회사 전체', 'Company') },
@@ -129,7 +133,7 @@ export default async function ChatPage({ searchParams }: PageProps<'/chat'>) {
 
         <section className="glass min-w-0 rounded-glass p-3">
           {tab === 'ai' ? (
-            <AiPanel chatId={aiId} messages={aiMessages} lang={lang} />
+            <AiPanel chatId={aiId} messages={aiMessages} actions={aiActions} lang={lang} />
           ) : selected ? (
             <>
               <h2 className="mb-1 text-t13h font-semibold">

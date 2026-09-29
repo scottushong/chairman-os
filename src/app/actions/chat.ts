@@ -2,10 +2,8 @@
 
 import { revalidatePath } from 'next/cache'
 
-import { answerQuestion } from '@/lib/ai/ask'
 import { currentUser } from '@/lib/auth/session'
 import { getRepository } from '@/lib/repository'
-import type { AiSource } from '@/types'
 
 /**
  * 메신저 · AI 묻기 (Phase 9 블록 6, 0041). 판정은 DB(can_read_channel · ai_chats 본인만)가 한다.
@@ -74,32 +72,5 @@ export async function openDm(otherId: unknown): Promise<{ error?: string; channe
   }
 }
 
-/**
- * AI에게 묻기. 대화가 없으면 새로 만든다. 질문 → (DB 트리거가 감사에 요약) → 답 → 저장.
- * 답은 이 사람의 세션으로 읽은 데이터로만 만든다(lib/ai/ask.ts).
- */
-export async function askAi(input: { chatId?: unknown; question: unknown }): Promise<{
-  error?: string
-  chatId?: string
-  answer?: string
-  sources?: AiSource[]
-}> {
-  const user = await currentUser()
-  if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
-  const question = text(input.question)
-  if (!question) return { error: '질문을 넣으세요.' }
-  if (question.length > 2000) return { error: '질문은 2,000자까지입니다.' }
-  const actor = { user_id: user.user_id, role: user.role }
-  try {
-    const repo = await getRepository()
-    const chatId = text(input.chatId) || (await repo.createAiChat(question.slice(0, 60), actor))
-    await repo.appendAiMessage(chatId, 'user', question, [], actor)
-    const result = await answerQuestion(question, repo, user)
-    await repo.appendAiMessage(chatId, 'assistant', result.answer, result.sources, actor)
-    revalidatePath('/chat')
-    return { chatId, answer: result.answer, sources: result.sources }
-  } catch (e) {
-    console.error('[askAi]', e)
-    return { error: 'AI가 답하지 못했습니다. 잠시 후 다시 시도하세요.' }
-  }
-}
+// «AI에게 묻기»(Phase 9)는 Phase 11부터 어시스턴트 하나로 합쳤다 — /chat의 AI 탭도 떠 있는 패널과 같은
+// 엔진(app/actions/assistant.ts askAssistant · lib/ai/assistant/run.ts)을 쓴다. 두 벌이면 한쪽만 권한을 고친다.

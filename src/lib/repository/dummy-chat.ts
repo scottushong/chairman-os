@@ -1,7 +1,4 @@
 import type {
-  AiChat,
-  AiChatMessage,
-  AiSource,
   ChatChannel,
   ChatMessage,
   ChatMessageInput,
@@ -188,37 +185,4 @@ export async function openDm(otherId: string): Promise<string> {
   return id
 }
 
-/* ------------------------------------------------------------------ AI 대화 — 본인만 */
-
-const aiChats: (AiChat & { user_id: string })[] = []
-const aiMessages: (AiChatMessage & { user_id: string })[] = []
-let nextAi = 1
-
-export async function listAiChats(): Promise<AiChat[]> {
-  const me = dummyViewer().user_id
-  return aiChats.filter((c) => c.user_id === me).map(({ user_id: _u, ...c }) => (void _u, c)).reverse()
-}
-
-export async function listAiChatMessages(chatId: string): Promise<AiChatMessage[]> {
-  const me = dummyViewer().user_id
-  return aiMessages.filter((m) => m.chat_id === chatId && m.user_id === me).map(({ user_id: _u, ...m }) => (void _u, m))
-}
-
-export async function createAiChat(title: string, actor: AuditActor): Promise<string> {
-  const id = crypto.randomUUID()
-  aiChats.push({ chat_id: id, title, created_at: new Date().toISOString(), user_id: actor.user_id })
-  return id
-}
-
-export async function appendAiMessage(
-  chatId: string,
-  role: 'user' | 'assistant',
-  content: string,
-  sources: AiSource[],
-  actor: AuditActor,
-): Promise<void> {
-  if (!aiChats.some((c) => c.chat_id === chatId && c.user_id === actor.user_id)) {
-    throw new Error('row-level security: ai_chat_messages')
-  }
-  aiMessages.push({ id: nextAi++, chat_id: chatId, role, content, sources, created_at: new Date().toISOString(), user_id: actor.user_id })
-}
+// AI 대화(0041)는 Phase 11부터 dummy-assistant.ts가 제안(0046)과 같이 든다.

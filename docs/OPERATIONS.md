@@ -699,3 +699,35 @@ Environment secret이 아니라 **repository secret**으로 넣는다 — 워크
 - 출장 일정으로 시간대를 따라가게 하려면 일정의 종류를 **출장(Trip)** 으로 두고
   **현지 시간대** 칸을 고른다. 그 칸이 비면 ②는 건너뛴다 — 장소 문자열('뉴욕')에서
   시간대를 추측하지 않는다.
+
+## 11. AI 어시스턴트 (Phase 11)
+
+모든 화면 오른쪽 아래의 금색 버튼. 답은 «결정 아님», 고치는 것은 미리보기 → **[확인]**을 눌러야 저장된다.
+
+**배포 순서.** 0046(ai_actions · 대화 칸 셋)을 staging → production에 먼저 적용한다(9절). 앱이 먼저 나가도 묻기는 된다 —
+0046이 없으면 제안 카드 없이 «묻기만» 되는 상태로 물러선다(제안을 만들려 하면 실패 문구).
+
+**환경변수(서버 전용).**
+
+| 이름 | 뜻 |
+| --- | --- |
+| `ANTHROPIC_API_KEY` · `AI_MODEL` | 기존 그대로. 없으면 «AI 연결 없음»으로 답한다. |
+| `AI_ASSISTANT_CHAT_TOKEN_LIMIT` | 대화 하나의 토큰 상한(입력+출력). 기본 200000. |
+| `KAKAO_SKILL_ENABLED` · `KAKAO_SKILL_SECRET` · `KAKAO_SKILL_USER_IDS` | 카카오 창구(아래). 셋 다 있어야 켜진다. |
+
+**비용.** `/settings` → «AI 사용량 · 비용»(회장만) — 최근 14일, 날짜(KST) × 기능, 추정 USD.
+
+### 카카오 어시스턴트 켜기 (회장 계정 필요 — 코드가 못 하는 것)
+
+1. 카카오톡 채널 관리자센터에서 채널을 만든다(이미 있으면 그 채널).
+2. 카카오 i 오픈빌더(https://chatbot.kakao.com)에서 봇을 만들고 채널에 연결한다.
+3. **스킬**을 하나 만든다. URL: `https://<앱 주소>/api/kakao/skill?key=<KAKAO_SKILL_SECRET>` (비밀은 16자 이상 무작위).
+4. **폴백 블록**(또는 전용 블록)의 응답을 «스킬 데이터 사용»으로 이 스킬에 건다.
+5. 5초 안에 못 끝내는 답이 많다 — 봇 설정에서 **AI 챗봇 콜백**을 신청 · 켜고, 그 블록의 «콜백 사용»을 켠다.
+   켜면 먼저 «읽고 있습니다…»가 가고 답은 1분 안에 따라온다(route가 `after()`로 callbackUrl에 보낸다).
+6. 회장이 채널에 한 번 말을 건 뒤, 오픈빌더 «로그»에서 그 사용자의 `botUserKey`(userRequest.user.id)를 읽어
+   `KAKAO_SKILL_USER_IDS`에 넣는다(여럿이면 쉼표). 목록 밖 사람에게는 «연결되어 있지 않습니다»만 답한다.
+7. Vercel에 `KAKAO_SKILL_ENABLED=true` · `KAKAO_SKILL_SECRET` · `KAKAO_SKILL_USER_IDS` · `APP_BASE_URL`(이미 있다) · `AI_AGENT_EMAIL/PASSWORD`(이미 있다)를 넣고 재배포.
+
+카카오 창구는 **읽기만** 하고 AI Agent 계정의 권한으로 읽는다. 재무 숫자 · 첨부 요약 · 주의 금액은 보내지 않고 앱 링크로 안내한다.
+고치자는 요청은 «앱에서»로 답한다(확인 버튼을 누를 화면이 없다). 끄려면 `KAKAO_SKILL_ENABLED`를 지운다(주소가 404가 된다).

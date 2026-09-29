@@ -38,6 +38,7 @@ import {
 } from './dummy-succession'
 import { attachmentSearchText, dummyAttachments } from './dummy-attachments'
 import * as books from './dummy-books'
+import { dummyAssistant } from './dummy-assistant'
 import * as chat from './dummy-chat'
 import * as city from './dummy-city'
 import * as groupware from './dummy-groupware'
@@ -523,10 +524,22 @@ export const dummyRepository: ChairmanRepository = {
   markChannelRead: chat.markChannelRead,
   listChannelReads: chat.listChannelReads,
   openDm: chat.openDm,
-  listAiChats: chat.listAiChats,
-  listAiChatMessages: chat.listAiChatMessages,
-  createAiChat: chat.createAiChat,
-  appendAiMessage: chat.appendAiMessage,
+  // Phase 11 — 대화 · 제안 · 사용량(dummy-assistant.ts). 확인 감사는 이 파일의 이력 저장소로 온다.
+  ...dummyAssistant((e) => {
+    memoryEntityAudit.push({
+      id: memoryEntityAudit.length + 1,
+      entity_table: e.entity_table as AuditEntityTable,
+      entity_id: e.entity_id,
+      occurred_at: new Date().toISOString(),
+      action: 'update',
+      actor_user_id: e.actor.user_id,
+      actor_name: dummyPerson(e.actor.user_id)?.display_name ?? e.actor.user_id,
+      actor_role: e.actor.role,
+      before: null,
+      after: e.after,
+      note: e.note,
+    })
+  }),
 
   async listKeymen() {
     return memoryKeymen.map((k) => ({ ...k }))

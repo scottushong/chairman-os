@@ -49,12 +49,16 @@ export interface AiChat {
   chat_id: string
   title: string
   created_at: IsoDateTime
+  /** 0046. 대화를 연 화면. 0046 전 대화는 null. */
+  context_path?: string | null
 }
 
 export interface AiSource {
   label: string
   /** 앱 안의 경로만('/…'). */
   href: string
+  /** Phase 11 근거 카드의 한 줄(«2025-09 영업이익 2.04억» 같은 것). 코드가 만든다 — 모델이 쓰지 않는다. */
+  detail?: string
 }
 
 export interface AiChatMessage {
@@ -64,4 +68,8 @@ export interface AiChatMessage {
   content: string
   sources: AiSource[]
   created_at: IsoDateTime
+  /** 0046. 이 답에 쓴 토큰(입력+출력). 대화 하나의 상한을 이 합으로 잰다. */
+  tokens?: number
+  /** 0046. 이 답이 만든 제안(ai_actions)의 id. */
+  action_ids?: string[]
 }

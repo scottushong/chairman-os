@@ -53,6 +53,10 @@ const nextConfig: NextConfig = {
     '/documents': ['./src/lib/ai/prompts/attachment-summary.md'],
     '/documents/*': ['./src/lib/ai/prompts/attachment-summary.md'],
     '/approvals': ['./src/lib/ai/prompts/attachment-summary.md'],
+    // Phase 11 — AI 어시스턴트는 셸(모든 화면)에 떠 있고 서버 액션이 그 화면의 번들에서 돈다. 그래서 전 라우트에 싣는다.
+    // 메모 정리 · 첨부 요약 제안이 attachment-summary.md를 같이 읽는다. 카카오 스킬 라우트도 같은 엔진이다.
+    '/**': ['./src/lib/ai/prompts/assistant.md', './src/lib/ai/prompts/attachment-summary.md'],
+    '/api/kakao/skill': ['./src/lib/ai/prompts/assistant.md'],
   },
   /**
    * Phase 10 — 첨부 추출 도구 셋은 번들하지 않고 node_modules에서 그대로 부른다. unpdf는 PDF.js 번들을

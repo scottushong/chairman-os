@@ -76,9 +76,6 @@ import type {
   CityLayoutInput,
   ApprovalLead,
   ApprovalStep,
-  AiChat,
-  AiChatMessage,
-  AiSource,
   ChatChannel,
   ChatMessage,
   ChatMessageInput,
@@ -140,6 +137,7 @@ import {
   type BriefTimezoneSettings,
   type UserSettings,
 } from './types'
+import { assistantMethods } from './supabase-assistant'
 import { attachmentMethods } from './supabase-attachments'
 
 /**
@@ -765,6 +763,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
 
     // Phase 10 첨부(0045) — 읽기는 표가 없는 DB를 견딘다(supabase-attachments.ts 머리 주석).
     ...attachmentMethods(sb),
+    // Phase 11 AI 어시스턴트(0046) — 대화 · 제안 · 사용량. 0046 전 DB를 견딘다(supabase-assistant.ts 머리 주석).
+    ...assistantMethods(sb),
 
     async listBusinesses(): Promise<Business[]> {
       const { data, error } = await fetchAll('businesses', ['business_id'], (from, to) =>
@@ -1453,35 +1453,6 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       const { data, error } = await sb.rpc('open_dm', { p_other: otherId })
       if (error) throw new Error(`Supabase open_dm ${error.code ?? '?'}: ${error.message}`)
       return String(data)
-    },
-
-    async listAiChats(): Promise<AiChat[]> {
-      const { data, error } = await sb.from('ai_chats').select('chat_id,title,created_at').order('created_at', { ascending: false }).limit(50)
-      if (error) throw new Error(`Supabase ai_chats ${error.code ?? '?'}: ${error.message}`)
-      return (data ?? []) as AiChat[]
-    },
-
-    async listAiChatMessages(chatId: string): Promise<AiChatMessage[]> {
-      const { data, error } = await sb
-        .from('ai_chat_messages')
-        .select('id,chat_id,role,content,sources,created_at')
-        .eq('chat_id', chatId)
-        .order('id')
-      if (error) throw new Error(`Supabase ai_chat_messages ${error.code ?? '?'}: ${error.message}`)
-      return (data ?? []).map((r) => ({ ...(r as AiChatMessage), id: Number(r.id) }))
-    },
-
-    async createAiChat(title: string, actor: AuditActor): Promise<string> {
-      void actor
-      const { data, error } = await sb.from('ai_chats').insert({ title }).select('chat_id').single()
-      if (error) throw new Error(`Supabase ai_chats ${error.code ?? '?'}: ${error.message}`)
-      return String((data as { chat_id: string }).chat_id)
-    },
-
-    async appendAiMessage(chatId: string, role: 'user' | 'assistant', content: string, sources: AiSource[], actor: AuditActor): Promise<void> {
-      void actor
-      const { error } = await sb.from('ai_chat_messages').insert({ chat_id: chatId, role, content, sources })
-      if (error) throw new Error(`Supabase ai_chat_messages ${error.code ?? '?'}: ${error.message}`)
     },
 
     /** 블록 3. 감사 기록·결산·라인 closed가 0016 close_period() 한 트랜잭션이다. */

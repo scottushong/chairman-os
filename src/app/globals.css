@@ -762,3 +762,23 @@ body {
   background: var(--color-accent-soft);
   outline: 1px solid var(--color-accent);
 }
+
+/*
+ * Phase 11 AI 어시스턴트 패널 — PC(1024px~)에서 오른쪽에서 밀려 나온다. 폰은 전체 화면이라 움직이지 않는다.
+ * «움직임 줄이기»를 켠 기기에서는 그냥 뜬다.
+ */
+@media (min-width: 1024px) and (prefers-reduced-motion: no-preference) {
+  .assistant-slide {
+    animation: assistant-slide-in 180ms ease-out;
+  }
+}
+@keyframes assistant-slide-in {
+  from {
+    transform: translateX(28px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}

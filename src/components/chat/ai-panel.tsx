@@ -1,26 +1,29 @@
 'use client'
 
-import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 
-import { askAi } from '@/app/actions/chat'
+import { askAssistant } from '@/app/actions/assistant'
+import { AssistantMessages } from '@/components/assistant/assistant-messages'
 import { tr, type Lang } from '@/lib/i18n'
-import type { AiChatMessage } from '@/types'
+import type { AiActionView, AiChatMessage } from '@/types'
 
 /**
- * «AI에게 묻기» (CH-044). 답마다 «결정 아님»을 붙이고 근거 링크를 단다.
- * AI가 보는 것은 **이 사람의 권한 안의 데이터뿐이다** — 화면이 그 사실을 입력칸 위에 적는다.
+ * /chat의 «AI» 탭 (CH-044). Phase 11부터 떠 있는 어시스턴트와 **같은 엔진 · 같은 대화 줄기**를 쓴다
+ * (askAssistant · AssistantMessages) — 답마다 «결정 아님», 근거 카드, 제안이면 [확인] 카드.
+ * AI가 보는 것은 이 사람의 권한 안의 데이터뿐이다 — 화면이 그 사실을 입력칸 위에 적는다.
  */
 const EXAMPLES_KO = ['왜 DY가 yellow인가', '이번 달 구매 요청 합계', '진행 중인 이니셔티브의 다음 행동']
 
 export function AiPanel({
   chatId,
   messages,
+  actions,
   lang,
 }: {
   chatId: string | null
   messages: AiChatMessage[]
+  actions: AiActionView[]
   lang: Lang
 }) {
   const router = useRouter()
@@ -31,7 +34,7 @@ export function AiPanel({
   function ask(question: string) {
     setError(null)
     start(async () => {
-      const r = await askAi({ chatId, question })
+      const r = await askAssistant({ chatId, question, path: '/chat' })
       if (r.error) {
         setError(r.error)
         return
@@ -47,13 +50,13 @@ export function AiPanel({
       <p className="rounded-md bg-raised px-2.5 py-1.5 text-t11 text-ink-dim">
         {tr(
           lang,
-          'AI는 내가 볼 수 있는 데이터만 봅니다(권한 밖 자료는 AI에게도 보이지 않습니다). 답은 참고용이며 결정이 아닙니다. 질문의 앞부분은 감사 기록에 남고 본인과 회장만 봅니다.',
-          'AI only sees data you are allowed to see. Answers are for reference, not decisions. A summary of each question is audit-logged (visible to you and the Chairman).',
+          'AI는 내가 볼 수 있는 데이터만 봅니다(권한 밖 자료는 AI에게도 보이지 않습니다). 답은 참고용이며 결정이 아닙니다. 고치는 제안은 [확인]을 눌러야 저장됩니다. 질문의 앞부분은 감사 기록에 남고 본인과 회장만 봅니다.',
+          'AI only sees data you are allowed to see. Answers are for reference, not decisions. Proposed changes are saved only when you press Confirm. A summary of each question is audit-logged (visible to you and the Chairman).',
         )}
       </p>
-      <ul className="flex-1 space-y-3 overflow-y-auto px-1 py-3">
+      <div className="flex-1 overflow-y-auto">
         {messages.length === 0 ? (
-          <li className="space-y-1.5 py-4 text-center text-t12 text-ink-muted">
+          <div className="space-y-1.5 py-4 text-center text-t12 text-ink-muted">
             <p>{tr(lang, '예를 들어 이렇게 물어보세요.', 'Try asking:')}</p>
             <div className="flex flex-wrap justify-center gap-1.5">
               {EXAMPLES_KO.map((e) => (
@@ -62,33 +65,11 @@ export function AiPanel({
                 </button>
               ))}
             </div>
-          </li>
+          </div>
         ) : null}
-        {messages.map((m) =>
-          m.role === 'user' ? (
-            <li key={m.id} className="flex justify-end">
-              <p className="max-w-[80%] rounded-xl bg-accent px-3 py-2 text-t12h text-white">{m.content}</p>
-            </li>
-          ) : (
-            <li key={m.id} className="max-w-[88%] rounded-xl bg-raised px-3 py-2 text-t12h leading-relaxed">
-              <span className="mb-1 inline-block rounded bg-line-soft px-1.5 py-0.5 text-t10 font-semibold text-ink-dim">
-                {tr(lang, '결정 아님', 'Not a decision')}
-              </span>
-              <p className="whitespace-pre-wrap">{m.content}</p>
-              {m.sources.length > 0 ? (
-                <div className="mt-1.5 flex flex-wrap gap-1">
-                  {m.sources.map((s) => (
-                    <Link key={s.href + s.label} href={s.href} className="rounded border border-line bg-panel px-1.5 py-0.5 text-t10h text-ink-dim hover:text-ink">
-                      ↗ {s.label}
-                    </Link>
-                  ))}
-                </div>
-              ) : null}
-            </li>
-          ),
-        )}
-        {pending ? <li className="text-t11h text-ink-muted">{tr(lang, '생각하는 중…', 'Thinking…')}</li> : null}
-      </ul>
+        <AssistantMessages messages={messages} actions={actions} lang={lang} pending={pending} onChanged={() => router.refresh()} />
+        {pending ? <p className="text-t11h text-ink-muted">{tr(lang, '생각하는 중…', 'Thinking…')}</p> : null}
+      </div>
       {error ? (
         <p role="alert" className="mb-1 text-t11h text-critical">
           {error}

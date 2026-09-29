@@ -33,6 +33,11 @@ interface Store {
 const g = globalThis as unknown as { __chairmanDummyAttachments?: Store }
 const store: Store = (g.__chairmanDummyAttachments ??= { rows: [], bytes: new Map(), viewers: [], audit: [], usage: [] })
 
+/** Phase 11 /settings 일별 비용이 읽는다(dummy-assistant.ts). 줄을 고치지 못하게 사본을 준다. */
+export function dummyUsageRows(): (AiUsageInput & { user_id: string; created_at: string })[] {
+  return store.usage.map((u) => ({ ...u }))
+}
+
 const CLASS_RANK: Record<string, number> = { Public: 0, Normal: 1, Restricted: 2, Vault: 3 }
 
 function audit(action: string, a: Attachment, note: string) {

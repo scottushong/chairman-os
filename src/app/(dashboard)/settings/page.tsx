@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { PageHeader } from '@/components/layout/page-header'
+import { AiUsagePanel } from '@/components/settings/ai-usage'
 import { AccountSecurity } from '@/components/settings/account-security'
 import { CityMotionSwitch, NotifySwitches, ThemePicker } from '@/components/settings/display-prefs'
 import { Icon, type IconName } from '@/components/ui/icon'
@@ -33,18 +34,23 @@ import { ROLE_LABEL_KO } from '@/types'
  * 원문 4절에 있던 항목이지만 뒤따라온 `5-E 변경`이 취소했다("나가는 통로 없음.
  * 내보내기 관련 코드·버튼 만들지 않는다"). 같은 절의 감사 로그 열람만 남는다.
  */
+/** /settings의 AI 비용 표가 거슬러 보는 날 수. */
+const AI_USAGE_DAYS = 14
+
 export default async function SettingsHubPage() {
   const user = await currentUser()
   // 세션이 없으면 개인 설정이라는 것도 없다. /settings/users·/settings/chairman과 같은 방식이다.
   if (!user) notFound()
 
   const repo = await getRepository()
-  const [prefs, session, profile, kakao] = await Promise.all([
+  const [prefs, session, profile, kakao, aiUsage] = await Promise.all([
     loadUiPrefs(),
     readSessionInfo(),
     repo.getMyProfile(),
     // 카카오 연결 상태는 회장 것 하나뿐이다. 다른 역할에게는 아래에서 이 절을 아예 안 그린다.
     canEditChairmanRoutine(user) ? repo.getKakaoConnection() : Promise.resolve(null),
+    // Phase 11 일별 AI 비용 — 회장만(0045 ai_usage_log_read). 다른 역할은 부르지도 않는다.
+    canEditChairmanRoutine(user) ? repo.listAiUsageDays(AI_USAGE_DAYS).catch(() => []) : Promise.resolve([]),
   ])
 
   const version = appVersion()
@@ -212,6 +218,13 @@ export default async function SettingsHubPage() {
           두지 않았습니다.
         </p>
       </Section>
+
+      {/* ───────── AI 사용량 (Phase 11 · 회장 전용) ───────── */}
+      {isChairman ? (
+        <Section icon="sparkles" title="AI 사용량 · 비용" scope="회장 전용">
+          <AiUsagePanel rows={aiUsage} days={AI_USAGE_DAYS} />
+        </Section>
+      ) : null}
 
       {/* ───────── 관리 (권한 있는 사람에게만) ───────── */}
       {isAdmin || isChairman ? (
