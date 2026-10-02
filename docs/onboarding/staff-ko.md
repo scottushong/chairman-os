@@ -1,4 +1,4 @@
-# Chairman OS 시작 안내 (직원용)
+# DY 그룹웨어 시작 안내 (직원용)
 
 **주소** https://chairman-os-eosin.vercel.app  ·  이 종이 한 장이면 첫날 쓸 수 있습니다.
 
@@ -66,4 +66,4 @@
 - 기록에 관한 문의: 회장님께 직접
 
 ---
-<sub>2026-09 · Chairman OS 직원 안내 v1</sub>
+<sub>2026-09 · DY 그룹웨어 직원 안내 v1.1</sub>

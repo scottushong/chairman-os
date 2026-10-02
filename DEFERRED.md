@@ -626,6 +626,12 @@ Chairman OS는 Layer 2(그룹 관제)다. 업무의 내용을 쓰는 곳은 각 
 > 계정과목표는 `REAL_CHART`(코드) 대신 DB `accounts`가 갖는다 — 스타트업 4곳은 표준 계정과목표, DY는 ECOUNT 코드 그대로.
 > `Integration` 역할은 남겼지만 지금 쓰는 곳이 없다. 업로드 블록에서 쓸지 정한다.
 
+> **재확인 (2026-10-02, 회장 — ECOUNT 공식 페이지).** OAPI **조회**는 품목 · 발주서 · 재고현황 · 창고별재고현황뿐이다.
+> 회계는 매출/매입 **입력**만 있고 조회가 없다 → **회계는 엑셀 유지**(위 결정 그대로 — 계정과목표도 ECOUNT 엑셀 업로드로 받는다).
+> **재고 · 발주 대시보드는 API로 가능**하다. 다만 ECOUNT OAPI는 **고정 IP 등록**이 필요하고 Vercel 함수의 나가는 IP는 바뀐다 —
+> 고정 IP 출구(Vercel Static IPs 같은 유료 옵션 · 고정 IP 프록시 · 사내 서버 중계) 중 하나가 필요해 **비용 판단은 회장**.
+> **직원 온보딩이 끝난 뒤 검토한다.** 그때 정할 것: 출구 방식 · 비용, 동기화 계정(`Integration` 재사용 여부), 주기(재고는 하루 몇 번이면 되는지).
+
 **무엇이** Phase 2-A는 "ECOUNT OpenAPI 문서 형식대로, 키 오면 real로"였다. 2026-09-17 조사 결과
 (공식 매뉴얼은 로그인 후에만 열려 테스트 서버 실호출과 ECOUNT 제품 페이지의 '제공 API' 표로 확인):
 
@@ -2131,3 +2137,19 @@ B-4가 찾은 결함 하나를 고쳤다. **리뷰 루프가 없는 작업이고
 - finance_profile_grants의 전체 예외 삼킴(0047:363) — 회수 때 권한 줄 삭제가 실패해도 회수는 성공하고 줄이 남는다(WARNING만). 감사 호출 주위만 잡는 쪽이 더 좁다.
 - setModuleGrant는 감사 먼저 → 회장이 아니면 upsert가 RLS에 막혀 «모듈 권한 변경» 줄만 남는다(revokeUser · updateUserProfile과 같은 기존 패턴).
 - 재초대 때 team_id는 옛 값을 유지(0028 coalesce 그대로) — 회장 승인 재초대가 다른 팀을 적어도 경영지원에 남아 기본 권한이 다시 붙을 수 있다.
+
+## 문서 모듈 권한 — 사람 × 회사 (0048 · 2026-10-02 회장 결정 ②)
+
+- **키 `'/documents/<business_id>'`, can_write = 그 회사 문서 · 폴더 등록**(can_approve는 안 쓴다 — 화면은 칸 하나, 서버가 늘 false로 저장). 다른 선택지: 역할(TeamLead 전원)에 여는 것 · 0047처럼 키를 '/documents' 하나로 두는 것(회사 접근을 더하는 순간 그 회사 등록이 열린다 — 0047 리뷰 I1과 같은 이유로 버림).
+- **옛 `'/core/search'` 분기를 `can_write_documents()`에 남겼다** — 그 줄을 가진 사람의 권한이 0048로 줄지 않게. 그 키는 회사가 없는 **전역** 키라(줄 하나로 범위 안 모든 회사 등록) 줄을 가진 사람이 없다는 것을 production에서 확인한 뒤 분기째 걷는 마이그레이션을 낸다. 세션도 같은 줄을 읽는다(SessionUser.documents_legacy_write).
+- **GroupCFO를 역할로 넣지 않았다** — 회장 결정이 «사람 × 회사»라 CFO도 회사마다 켠다(사용자 화면이 CFO에게도 문서 칸을 그리고, 회사 목록은 전 회사). 그룹 공통(business_id null) 문서는 회장(과 옛 전역 줄의 CFO)만 쓴다. 다른 선택지: CFO를 역할로 열기(재무와 같은 모양) — 문서는 재무와 결정이 달라 보류.
+- **등급 칸을 insert · update with check에 더했다**(`class_rank(security_class) <= class_rank(max_class())`, documents_read와 같은 식) — 지금까지 insert에 등급 검사가 없었고(쓰기 = 회장뿐이라 드러나지 않음), 0048로 Normal 직원이 쓰기를 받는 순간 Vault · Restricted 문서를 넣는 길이 열린다. 리허설의 «Vault insert 42501»은 '/core/search' 줄이 없어서였다. 다른 선택지: 0047처럼 Vault만 막는 restrictive 정책(Restricted 직원 · Normal 직원의 Restricted 등록이 남는다).
+- **documents_delete를 다시 만들지 않았다** — 0042 5절이 soft delete로 옮기며 permissive DELETE를 지웠다. 지우기 = soft_delete()의 update(documents_update가 판정). doc_folders는 0042 대상이 아니라 hard delete 그대로(doc_folders_delete).
+- **기본 권한 없음** — 가입 · 자리 이동에 자동으로 붙이지 않는다(0048을 작게). 회장이 사용자 화면에서 켠다(docs/onboarding/first-staff-check.md 2절). 다른 선택지: 0047 finance_default_apply에 '/documents/biz_dy'를 더하기. dummy 시드의 경영지원 팀장만 줄을 갖고 시작한다(첫 실사용자 흐름을 dummy에서 눌러 보려고).
+- **회수는 0047 트리거가 그대로 거둔다** — finance_profile_grants가 revoked_at 때 접두사와 무관하게 줄 전부 삭제. 0048이 module_grant_audit()의 business_id 식만 '/documents/'까지 넓혔다(본문 복사).
+- **화면은 SessionUser에 등급이 없어 보안등급 버튼을 거르지 않는다** — 열람 등급 위를 고르면 DB가 거부하고 한국어 문장이 뜬다. 거르려면 세션이 max_security_class를 같이 읽는다(Minor).
+- **리뷰 I1 — insert의 uploaded_by = auth.uid()**(회장 포함). documents_read가 이 칸으로 보이는 범위를 정해서, 남의 이름으로 넣으면 범위가 바뀐다. 앱은 이미 actor.user_id를 적는다. **owner_user_id는 insert에서 묶지 않았다** — 비서가 회장 명의로 등록하는 길(0026 머리 주석). 다른 선택지: owner_user_id도 본인 또는 null로 묶기(그 길이 막힌다).
+- **리뷰 I2 — update(soft delete 포함)는 자기가 올린 문서만, 회장은 전부** + 트리거 `documents_owner_guard`(security invoker)가 회장 아닌 세션의 owner_user_id · uploaded_by 변경을 42501로 막는다(주인 재지정은 회장만). 세션 없는 수정(auth.uid() null — 마이그레이션 · SQL 편집기 백필)은 막지 않는다. 다른 선택지: 같은 회사 문서 줄을 가진 사람 모두에게 고치기를 열기(남의 문서 등급 낮추기 · 링크 바꿔치기 · 주인 빼앗기가 열린다 — 버림).
+- **옛 '/core/search' 줄도 자기 것만 고친다** — 0048 전에는 그 줄이면 범위 안 남의 문서도 고쳤다. 줄을 가진 실제 사람이 없어 줄어드는 사람이 없다.
+- **documents update에는 DB 감사 트리거가 없다**(Minor) — 앱도 지금은 문서 고치기 화면이 없다(등록 · 공유만). 고치기 화면을 만들 때 감사를 같이 넣는다.
+- **리뷰 M4 — 폴더 고치기 · 지우기는 만든 사람(created_by) 또는 회장.** 남의 폴더를 지우면 안의 문서가 회사 바로 밑으로 쏟아진다. 앱은 폴더 만들기만 있다.
