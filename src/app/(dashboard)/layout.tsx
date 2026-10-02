@@ -54,12 +54,14 @@ export default async function DashboardLayout({ children }: LayoutProps<'/'>) {
    * 다크로 올린다. 하이드레이션을 기다리는 클라이언트 컴포넌트로 하면 다크를 쓰는 기기에서
    * 첫 프레임이 밝게 번쩍인다 — 아침에 여는 화면에서 그 번쩍임이 제일 거슬린다.
    */
-  const auto = prefs.app.theme === 'auto'
-  const theme = auto ? 'light' : prefs.app.theme
+  // 회장 외 역할은 심플 스킨(globals.css 끝 블록) — 흰 바탕 업무용 모양이라 라이트로 고정한다(2026-10-02 회장 지시).
+  const simple = user?.role !== 'Chairman'
+  const auto = !simple && prefs.app.theme === 'auto'
+  const theme = simple ? 'light' : auto ? 'light' : prefs.app.theme
 
   return (
     // 셸은 화면에 고정하고 본문만 스크롤한다. 관제 화면에서 헤더가 밀리면 안 된다.
-    <div id="app-shell" data-theme={theme} className="safe-x flex h-full">
+    <div id="app-shell" data-theme={theme} data-skin={simple ? 'simple' : undefined} className="safe-x flex h-full">
       {auto ? (
         <script
           // 파싱 시점에 동기로 돌아야 번쩍임이 없다. 값은 이 파일의 상수 문자열이고 바깥에서 오지 않는다.

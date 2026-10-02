@@ -13,8 +13,8 @@ export default async function MfaPage({ searchParams }: PageProps<'/mfa'>) {
   const next = raw?.startsWith('/') && !raw.startsWith('//') ? raw : '/'
   const enforced = mfaEnforced()
   return (
-    <main className="flex min-h-full items-center justify-center bg-app px-5 py-10">
-      <div className="glass w-full max-w-[420px] rounded-glass p-5">
+    <main data-skin="simple" className="flex min-h-full items-center justify-center bg-app px-5 py-10">
+      <div className="glass w-full max-w-[420px] rounded-glass p-6">
         <h1 className="text-t16 font-bold">2단계 인증</h1>
         <p className="mt-1 text-t12 leading-relaxed text-ink-dim">
           인증 앱(Google Authenticator · 1Password · Authy 등)의 6자리 코드로 한 번 더 확인합니다.

@@ -8,8 +8,8 @@ import { SignupForm } from './signup-form'
  */
 export default function SignupPage() {
   return (
-    <main className="flex min-h-full items-center justify-center bg-app px-5 py-10">
-      <div className="glass w-full max-w-[420px] rounded-glass p-5">
+    <main data-skin="simple" className="flex min-h-full items-center justify-center bg-app px-5 py-10">
+      <div className="glass w-full max-w-[420px] rounded-glass p-6">
         <h1 className="text-t16 font-bold">처음이세요?</h1>
         <p className="mt-1 text-t12 leading-relaxed text-ink-dim">
           회사에서 등록해 둔 이메일을 넣으면 인증 메일을 보내 드립니다. 메일의 링크를 누르고 비밀번호를 정하면

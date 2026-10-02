@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 
 import { CityEditor } from '@/components/city/city-editor'
 import { PageHeader } from '@/components/layout/page-header'
@@ -19,19 +20,10 @@ import { getRepository } from '@/lib/repository'
  * 한 번 더 넣으려 한다.
  */
 export default async function GroupEditPage() {
-  await recordScreenRead({ path: '/group/edit', kind: 'page' })
-
+  // 회장 외 역할은 편집기도 안내문도 없이 /me로 — 시티의 존재를 알리지 않는다(2026-10-02).
   const user = await currentUser()
-  if (user?.role !== 'Chairman') {
-    return (
-      <div className="mx-auto max-w-[900px] px-6 py-10">
-        <PageHeader icon="layers" title="그룹 · 배치 편집" code="Phase 8 · Group City" description="도시 배치는 회장님만 고칩니다." />
-        <Link href="/group" className="mt-4 inline-block text-t12h text-ink-dim underline underline-offset-2 hover:text-ink">
-          그룹 보기로
-        </Link>
-      </div>
-    )
-  }
+  if (user?.role !== 'Chairman') redirect('/me')
+  await recordScreenRead({ path: '/group/edit', kind: 'page' })
 
   const repo = await getRepository()
   const [phase, city] = await Promise.all([cityPhase(), loadCity(repo)])

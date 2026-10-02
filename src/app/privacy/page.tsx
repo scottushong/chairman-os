@@ -30,7 +30,7 @@ export const metadata = {
 
 export default function PrivacyPage() {
   return (
-    <main className="min-h-full bg-app px-5 py-10">
+    <main data-skin="simple" className="min-h-full bg-app px-5 py-10">
       <div className="mx-auto w-full max-w-[760px]">
         <Link href="/login" className="flex items-center gap-2">
           {/* 로그인 전 화면이라 직원 이름이 기본이다(lib/brand.ts). */}

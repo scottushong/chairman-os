@@ -225,13 +225,14 @@ export const SYSTEM_LINKS: readonly NavItem[] = [
 
 /**
  * 회장 전용 메뉴(회장 메모 2026-10 «의존 · 주의 등»). 회장이 아닌 사람의 사이드바 · 서랍 · 메뉴 설정에서 뺀다.
+ *   그룹(/group)        그룹 시티. 회장이 아니면 /me로 돌린다(group/page.tsx · 2026-10-02).
  *   아침 루틴(/ai)      회장이 아니면 /me로 돌린다((morning)/ai/page.tsx).
  *   의존 · 주의         회장이 매일 보는 관제 화면(§7 · §18-19). 직원에게는 판단 재료가 아니다.
  *   회장 루틴           /settings/chairman — 회장이 아니면 404다.
  * «회사»는 여기 없다 — 펼치면 그 사람이 볼 수 있는 회사(0002 has_business)만 나온다.
  * **화면 안내일 뿐 권한이 아니다** — 주소로 들어가면 각 화면과 RLS가 판정한다.
  */
-const CHAIRMAN_ONLY_NAV: ReadonlySet<string> = new Set(['nav_morning', 'nav_dependency', 'nav_attention', 'nav_chairman'])
+const CHAIRMAN_ONLY_NAV: ReadonlySet<string> = new Set(['nav_group', 'nav_morning', 'nav_dependency', 'nav_attention', 'nav_chairman'])
 
 /**
  * 이니셔티브를 읽는 역할 — 0017 can_read_initiatives()(Chairman · GroupCFO · AIAgent)의 거울.

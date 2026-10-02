@@ -34,7 +34,9 @@ export function MobileTabs({ role }: { role: Role | null | undefined }) {
       ? { ...t, href: home }
       : t.href === '/initiatives' && !canReadInitiatives(role)
         ? { href: '/tasks', label: '업무', icon: 'clipboard' as IconName }
-        : t,
+        : t.href === '/approvals' && role !== 'Chairman'
+          ? { ...t, label: '결재' } // «결정»은 회장의 말이다(사이드바 «전자결재»와 같은 이유 — lib/nav.ts STAFF_NAV_OVERRIDE).
+          : t,
   )
   return (
     <nav aria-label="하단 탭" className="glass-nav safe-bottom grid shrink-0 grid-cols-5 border-t border-line-soft lg:hidden">

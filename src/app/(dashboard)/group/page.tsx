@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 
 import { CityHotspotList } from '@/components/city/city-map'
 import { CityPanel } from '@/components/city/city-panel'
@@ -28,6 +29,9 @@ import { loadUiPrefs } from '@/lib/ui-prefs-server'
  * 읽힌다.
  */
 export default async function GroupPage({ searchParams }: PageProps<'/group'>) {
+  // 그룹 시티는 회장 화면이다 — 다른 역할은 시티의 존재를 몰라야 한다(2026-10-02). 기록 전에 돌려보낸다.
+  const viewer = await currentUser()
+  if (viewer?.role !== 'Chairman') redirect('/me')
   await recordScreenRead({ path: '/group', kind: 'page' })
 
   const params = await searchParams

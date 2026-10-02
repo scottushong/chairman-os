@@ -98,9 +98,12 @@ export async function Header({ user }: { user: SessionUser | null }) {
             ) : null}
           </span>
         ) : null}
-        <span className="hidden lg:contents">
-          <DataModeBadge />
-        </span>
+        {/* LIVE/DUMMY 뱃지는 회장 화면에만 — 직원 화면에는 관제 표식을 두지 않는다(2026-10-02 심플 버전). */}
+        {user?.role === 'Chairman' ? (
+          <span className="hidden lg:contents">
+            <DataModeBadge />
+          </span>
+        ) : null}
         <NotificationBell unread={unread} items={items} />
         {/* 설정 톱니. Phase 5-E 4절이 /settings 허브를 세우기 전까지 이 버튼은 onClick도
             href도 없었다 — 갈 곳이 없어서 아무 데도 안 갔다. */}

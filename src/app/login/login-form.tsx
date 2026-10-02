@@ -30,7 +30,7 @@ export function LoginForm({ next }: { next: string }) {
           autoComplete="username"
           required
           autoFocus
-          placeholder="chairman@example.com"
+          placeholder="name@dyindustrial.com"
           className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2.5 text-t13 text-ink outline-none placeholder:text-ink-muted focus:border-accent"
         />
       </label>
