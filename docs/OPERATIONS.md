@@ -625,7 +625,10 @@ CLI 버전이 이 로컬 JWT 정보를 제공하지 않으면 검사는 실패�
 10. 승인된 SHA만 릴리스하고 관찰·중단 기준과 담당자를 지정한다. 이 저장소 작업은 배포 승인이 아니다.
 11. DB가 먼저다. 손으로 `supabase link --project-ref nndvspgnljivkvihxlzj` 후 `supabase db push`
     (2절 — 전용 npm 스크립트를 두지 않았다). 0015·0016처럼 **스키마가 코드보다 먼저** 가야 하는 변경은 순서를 지킨다.
-12. 앱을 배포하고 배포 후 확인 4단계를 다시 돌린다. 끝났으면 작업 디렉터리의 link를
+12. 앱을 배포하고 배포 후 확인 4단계를 다시 돌린다. health는 **`APP_URL`(운영 도메인, 10절 · 1절 주소 표)로**
+    부른다 — `curl -s "$APP_URL/api/health"`. Vercel이 배포마다 내주는 전용 URL(`chairman-os-<hash>-….vercel.app`)은
+    Vercel 배포 보호에 막혀 health JSON 대신 인증 페이지를 돌려주므로 확인이 되지 않는다(2026-09-29 0047 릴리스에서 겪음).
+    운영 도메인이 새 배포를 가리키는지는 Vercel 대시보드에서 그 배포가 Production(Current)인지로 본다. 끝났으면 작업 디렉터리의 link를
     `npm run db:push:staging`으로 staging에 되돌려 둔다 — 다음 사람이 production에 link된 채로 시작하지 않게.
 
 ### 되돌리는 길 — 한 줄
@@ -642,7 +645,7 @@ CLI 버전이 이 로컬 JWT 정보를 제공하지 않으면 검사는 실패�
 산출물이 없으면 기록된 SHA로 별도 깨끗한 checkout/worktree를 만들고 해당 환경변수로 다시 빌드한다.
 현재 작업 트리를 `git reset --hard`로 지우거나, production DB를 local reset 명령으로 되돌리지 않는다.
 새 DB 스키마가 구버전 앱과 호환되는지 먼저 확인한다. 앱 롤백은 DB 롤백이 아니다.
-복구 후 health의 익명 접근 차단, 로그인, 회사 격리, 문서 등급, 주요 읽기 및 승인 상태를 확인한다.
+복구 후 health(`APP_URL` 기준, 위 12번)의 익명 접근 차단, 로그인, 회사 격리, 문서 등급, 주요 읽기 및 승인 상태를 확인한다.
 민감 정보가 포함될 수 있는 로그는 접근을 제한하고 사고 기록·감사 기록을 보존한다.
 
 ### DB 마이그레이션 실패
