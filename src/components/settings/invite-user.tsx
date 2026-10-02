@@ -59,6 +59,68 @@ const GRANTABLE_CLASS = SECURITY_CLASS.filter((c) => c !== 'Public')
 
 const LANGUAGES: PersonLanguage[] = ['ko', 'en']
 
+/**
+ * 초대 저장 뒤 «가입 안내 문구 복사»가 넣는 글(회장 승인 2026-10-02). 카톡 · 문자에 그대로 붙인다.
+ * 내용은 직원 안내서(docs/onboarding/staff-ko.md 1~2절)와 같다 — 한쪽을 고치면 다른 쪽도 고친다.
+ * 주소는 지금 열려 있는 앱의 주소다(production이면 운영 도메인, staging Preview면 그 주소).
+ */
+function signupGuideText({ name, email, origin }: { name: string; email: string; origin: string }): string {
+  return [
+    `[DY 그룹웨어] ${name}님, 가입 안내입니다.`,
+    '',
+    `1. ${origin}/signup 을 엽니다.`,
+    `2. 초대받은 이메일 ${email} 로 가입합니다. 다른 이메일로는 가입되지 않습니다.`,
+    '3. 받은편지함의 인증 메일 링크를 누릅니다. 몇 분 안에 안 오면 스팸함을 보세요. 가입을 시작한 그 기기 · 그 브라우저에서 여는 것이 가장 확실합니다.',
+    '4. 비밀번호는 12자 이상입니다. 유출된 적 있는 비밀번호는 거절됩니다.',
+    '',
+    `로그인하면 «내 홈»이 열립니다. 폰에서는 «홈 화면에 추가»로 앱처럼 쓸 수 있습니다.`,
+  ].join('\n')
+}
+
+/** 저장한 초대 하나에 붙는 복사 버튼. 클립보드가 막힌 브라우저에서는 글을 펼쳐 손으로 고르게 한다. */
+function CopySignupGuide({ name, email }: { name: string; email: string }) {
+  const [state, setState] = useState<'idle' | 'copied' | 'manual'>('idle')
+  const [text, setText] = useState('')
+
+  async function copy() {
+    const value = signupGuideText({ name, email, origin: window.location.origin })
+    setText(value)
+    try {
+      await navigator.clipboard.writeText(value)
+      setState('copied')
+    } catch {
+      setState('manual')
+    }
+  }
+
+  return (
+    <div className="mt-2">
+      <button
+        type="button"
+        onClick={copy}
+        className="flex items-center gap-1.5 rounded-md border border-line bg-panel px-2.5 py-1 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
+      >
+        <Icon name="clipboard" className="size-3.5" />
+        {state === 'copied' ? '복사했습니다' : '가입 안내 문구 복사'}
+      </button>
+      {state === 'manual' ? (
+        <>
+          <p className="mt-1.5 text-t10h text-ink-muted">
+            이 브라우저가 자동 복사를 막았습니다. 아래 글을 길게 눌러 전부 골라 복사하세요.
+          </p>
+          <textarea
+            readOnly
+            value={text}
+            rows={9}
+            onFocus={(e) => e.currentTarget.select()}
+            className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t11 text-ink outline-none"
+          />
+        </>
+      ) : null}
+    </div>
+  )
+}
+
 export function InviteUser({
   businesses,
   teams,
@@ -104,6 +166,7 @@ export function InviteUser({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState<string | null>(null)
+  const [doneName, setDoneName] = useState('')
   const [queued, setQueued] = useState(false)
 
   const groupScope = GROUP_SCOPE.includes(role)
@@ -146,6 +209,7 @@ export function InviteUser({
 
     // 목록은 서버가 다시 그린다(revalidatePath). 여기서는 다음에 할 일만 말한다.
     setDone(result.invitation?.email ?? email)
+    setDoneName(result.invitation?.display_name ?? displayName.trim())
     // 결재가 붙었는지는 **서버가 돌려준 행**을 본다. 화면의 예고와 실제가 갈리면
     // 갈린 쪽이 사실이어야 한다(그 값은 0026의 트리거가 정한다).
     setQueued(Boolean(result.invitation?.chairman_approval_required && !result.invitation.chairman_approved_at))
@@ -173,12 +237,14 @@ export function InviteUser({
 
         {/* 초대만으로 끝나지 않는다. 다음 한 걸음을 여기서 말한다. */}
         {done ? (
-          <p className="rounded-lg border border-ok/40 bg-ok/10 px-3 py-2.5 text-t11h leading-relaxed text-ink-dim">
+          <div className="rounded-lg border border-ok/40 bg-ok/10 px-3 py-2.5 text-t11h leading-relaxed text-ink-dim">
             <span className="font-semibold text-ink">{done}</span> 초대를 저장했습니다.
             {queued
               ? ' 회장 결재 대기로 들어갔습니다 — 승인 전에는 계정이 생겨도 권한이 붙지 않습니다.'
-              : ' 아직 계정은 없습니다 — Supabase Dashboard → Authentication → Users에서 이 주소로 계정을 만들거나 초대 메일을 보내세요. 계정이 생기는 순간 권한이 자동으로 붙습니다(0011 on_auth_user_created).'}
-          </p>
+              : ' 아직 계정은 없습니다 — 아래 안내 문구를 본인에게 보내면 본인이 /signup에서 가입합니다. 계정이 생기는 순간 권한이 자동으로 붙습니다(0011 on_auth_user_created).'}
+            {/* 결재 대기 초대는 승인 전에 가입해도 권한이 없다 — 그때 보낼 글이 아니라서 버튼을 그리지 않는다. */}
+            {queued ? null : <CopySignupGuide name={doneName} email={done} />}
+          </div>
         ) : null}
       </div>
     )

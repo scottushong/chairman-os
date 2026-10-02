@@ -165,11 +165,14 @@ export function AutonomyEditor({
   businessId,
   quarter,
   current,
+  canSeeRules,
 }: {
   businessId: string
   /** 이번 분기(YYYY-Qn). 화면이 KST 기준으로 계산해 내려 준다. */
   quarter: string
   current: string | null
+  /** 세는 규칙(/dependency/settings)은 회장 화면이다. 아니면 링크 대신 글만 둔다. */
+  canSeeRules: boolean
 }) {
   const [level, setLevel] = useState(current ?? '')
   const [note, setNote] = useState('')
@@ -191,11 +194,17 @@ export function AutonomyEditor({
   return (
     <form onSubmit={submit} className="mt-2 rounded-lg bg-raised p-2.5" aria-label="분기 자율성 평가">
       <p className="text-t10h text-ink-dim">
-        {quarter} 평가 — 등급 기준은{' '}
-        <Link href="/dependency/settings" className="underline underline-offset-2">
-          세는 규칙
-        </Link>
-        에 §9 원문 그대로 있습니다.
+        {canSeeRules ? (
+          <>
+            {quarter} 평가 — 등급 기준은{' '}
+            <Link href="/dependency/settings" className="underline underline-offset-2">
+              세는 규칙
+            </Link>
+            에 §9 원문 그대로 있습니다.
+          </>
+        ) : (
+          `${quarter} 평가 — 등급 기준은 §9 L1~L5입니다.`
+        )}
       </p>
       <div className="mt-1.5 flex flex-wrap items-end gap-2">
         <select

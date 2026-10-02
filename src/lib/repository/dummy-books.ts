@@ -425,8 +425,21 @@ const processCharts: ProcessChart[] = [
 ]
 let processSeq = processCharts.length
 
+/** 0021 can_read_process_charts(target). Executive 이상 + 자기 회사 — TeamLead 이하는 0행. */
+function canReadProcessCharts(businessId: string): boolean {
+  const viewer = dummyViewer()
+  return !viewer.revoked_at && RESTRICTED_READER.includes(viewer.role) && dummyHasBusiness(viewer, businessId)
+}
+
+/** 0021 can_write_process_charts(). Chairman · GroupCFO뿐(회사 범위를 보지 않는다). */
+function canWriteProcessCharts(): boolean {
+  const viewer = dummyViewer()
+  return !viewer.revoked_at && (viewer.role === 'Chairman' || viewer.role === 'GroupCFO')
+}
+
 export async function listProcessCharts(): Promise<ProcessChart[]> {
   return processCharts
+    .filter((c) => canReadProcessCharts(c.business_id))
     .map((c) => ({ ...c }))
     .sort((a, b) => a.business_id.localeCompare(b.business_id) || a.sort_order - b.sort_order)
 }
@@ -435,6 +448,8 @@ export async function saveProcessChart(input: ProcessChartInput, actor: AuditAct
   // 링크 검증은 화면과 DB가 한다. dummy는 DB 자리라 여기서 한 번 더 본다 —
   // dummy에서 통과한 값이 live에서 막히면 dummy 검증의 뜻이 없다.
   if (embedProblem(input.embed_url) !== null) throw new Error('invalid_embed_url')
+  // live는 RLS 거부(42501)다. 같은 낱말로 던져야 액션이 같은 «권한이 없습니다» 문장을 고른다.
+  if (!canWriteProcessCharts()) throw new Error('new row violates row-level security policy (0021 can_write_process_charts)')
 
   const existing = input.id ? processCharts.find((c) => c.id === input.id) : undefined
   const now = new Date().toISOString()
@@ -467,6 +482,8 @@ export async function saveProcessChart(input: ProcessChartInput, actor: AuditAct
 }
 
 export async function deleteProcessChart(id: number, actor: AuditActor): Promise<void> {
+  // live의 delete는 RLS에 걸리면 오류 없이 0행이다 — dummy도 조용히 아무것도 지우지 않는다.
+  if (!canWriteProcessCharts()) return
   const at = processCharts.findIndex((c) => c.id === id)
   if (at >= 0) processCharts.splice(at, 1)
   note(actor, `process chart delete ${id}`)

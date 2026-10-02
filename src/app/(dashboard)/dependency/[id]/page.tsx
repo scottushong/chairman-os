@@ -188,7 +188,12 @@ export default async function DependencyDetailPage({ params }: { params: Promise
           </Missing>
         )}
         {canWrite ? (
-          <AutonomyEditor businessId={id} quarter={quarter} current={myAutonomy[0]?.level ?? null} />
+          <AutonomyEditor
+            businessId={id}
+            quarter={quarter}
+            current={myAutonomy[0]?.level ?? null}
+            canSeeRules={user?.role === 'Chairman'}
+          />
         ) : null}
         {myAutonomy.length > 1 ? (
           <ul className="mt-2 space-y-0.5 text-t10h text-ink-muted tnum">

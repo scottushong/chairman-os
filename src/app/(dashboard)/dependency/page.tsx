@@ -69,6 +69,9 @@ export default async function DependencyPage() {
    * 그 자리에 다른 문장을 쓸 수 있다. (CEO는 자기 회사만 보지만, 그 사람의 목록에는
    * 애초에 자기 회사만 들어 있다 — 승계 표 넷이 같은 판정으로 걸러져 온다.)
    */
+  // 세는 규칙(/dependency/settings)은 회장 화면이다 — 다른 역할에게는 링크를 그리지 않는다.
+  const canSeeRules = user?.role === 'Chairman'
+
   const canSeeInterventions =
     user?.role === 'Chairman' || user?.role === 'GroupCFO' || user?.role === 'BusinessCEO'
 
@@ -87,12 +90,14 @@ export default async function DependencyPage() {
         code="§7 Founder Dependency"
         description="회장님 없이 각 회사가 얼마나 돌아가는지를 셉니다. 회사를 누르면 그 회사의 이양 계획과 Direction이 열립니다."
       >
-        <Link
-          href="/dependency/settings"
-          className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
-        >
-          세는 규칙
-        </Link>
+        {canSeeRules ? (
+          <Link
+            href="/dependency/settings"
+            className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          >
+            세는 규칙
+          </Link>
+        ) : null}
       </PageHeader>
 
       {/* ───────── 그룹 한 줄 ───────── */}
@@ -128,10 +133,15 @@ export default async function DependencyPage() {
 
       {unknownTotal > 0 ? (
         <p className="mt-2 rounded-lg bg-raised px-3 py-2 text-t11 leading-relaxed text-ink-dim">
-          {BACKFILL_UNREACHED_KO}{' '}
-          <Link href="/dependency/settings" className="underline underline-offset-2">
-            역산 규칙 보기
-          </Link>
+          {BACKFILL_UNREACHED_KO}
+          {canSeeRules ? (
+            <>
+              {' '}
+              <Link href="/dependency/settings" className="underline underline-offset-2">
+                역산 규칙 보기
+              </Link>
+            </>
+          ) : null}
         </p>
       ) : null}
 
