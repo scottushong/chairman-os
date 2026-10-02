@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { STAFF_BRAND } from "@/lib/brand";
 import { supabaseConfig } from "@/lib/supabase/config";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
@@ -43,7 +44,8 @@ export function MfaPanel({ next }: { next: string }) {
           await sb.auth.mfa.unenroll({ factorId: f.id });
       const { data: en, error: enError } = await sb.auth.mfa.enroll({
         factorType: "totp",
-        friendlyName: "Chairman OS",
+        // 인증 앱에는 보이지 않는 요소 이름이다(앱의 발급자 칸은 Supabase Site URL 호스트). 그래도 직원 이름으로 둔다(lib/brand.ts).
+        friendlyName: STAFF_BRAND,
       });
       if (enError || !en) {
         setError(

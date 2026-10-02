@@ -1,6 +1,8 @@
 import type { Metadata, Viewport } from 'next'
 import { Noto_Serif_KR } from 'next/font/google'
 
+import { STAFF_BRAND } from '@/lib/brand'
+
 import './globals.css'
 
 /**
@@ -19,12 +21,17 @@ const notoSerifKR = Noto_Serif_KR({
   display: 'swap',
 })
 
+/**
+ * 탭 제목 · 홈 화면 이름은 직원 이름(«DY 그룹웨어»)이 기본이다 — 로그인 · 가입 · 개인정보 화면은 역할을 모른다(lib/brand.ts).
+ * 회장의 «Chairman OS»는 (dashboard) · (morning) 레이아웃의 generateMetadata가 세션 역할로 덮어쓴다.
+ * 화면이 자기 title을 두면 template이 서비스 이름을 뒤에 붙인다(예: 개인정보 처리방침 · DY 그룹웨어).
+ */
 export const metadata: Metadata = {
-  title: 'Chairman OS',
+  title: { default: STAFF_BRAND, template: `%s · ${STAFF_BRAND}` },
   description: '그룹 통합 관제 + Business 전용 OS 연동 + AI Overnight Workforce',
   // Phase 6-2 PWA — iOS는 manifest 아이콘을 안 읽고 apple-touch-icon을 본다.
   icons: { apple: '/icons/apple-touch-icon.png' },
-  appleWebApp: { capable: true, title: 'Chairman OS', statusBarStyle: 'black-translucent' },
+  appleWebApp: { capable: true, title: STAFF_BRAND, statusBarStyle: 'black-translucent' },
 }
 
 /**

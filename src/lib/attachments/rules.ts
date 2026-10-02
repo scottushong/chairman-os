@@ -1,4 +1,4 @@
-import type { AttachmentClass, AttachmentEntity } from '@/types'
+import { SECURITY_CLASS, type AttachmentClass, type AttachmentEntity, type SecurityClass } from '@/types'
 
 /**
  * 첨부 규칙 — 화면(드롭 · 버튼)과 서버 액션이 같은 값을 본다. DB(0045 check 제약)가 마지막 문지기다.
@@ -67,3 +67,19 @@ export function formatBytes(n: number): string {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
   return `${(n / 1024 / 1024).toFixed(1)} MB`
 }
+
+/**
+ * 파일로 올릴 수 있는 등급 중 «본인 보안등급 이하에서 가장 높은 것» — 첨부 칸의 기본값.
+ * Vault는 파일을 받지 않으므로(링크 등록 길) 기본값이 될 수 없다: 회장(Vault) → 제한, 일반 직원 → 일반.
+ * 0045 attachment_class_ok가 본인 등급보다 높은 줄을 42501로 막는다 — 기본이 «제한»이면
+ * 일반 등급 직원은 첫 업로드에서 바로 걸렸다. 올릴 등급이 하나도 없으면(Public) null.
+ */
+export function defaultAttachmentClass(maxClass: SecurityClass): AttachmentClass | null {
+  const max = SECURITY_CLASS.indexOf(maxClass)
+  const fileClasses: AttachmentClass[] = ['Restricted', 'Normal']
+  return fileClasses.find((c) => SECURITY_CLASS.indexOf(c) <= max) ?? null
+}
+
+/** 본인 보안등급보다 높은 등급은 고를 수 없다(0045가 어차피 막는다). */
+export const attachmentClassAllowed = (cls: AttachmentClass, maxClass: SecurityClass) =>
+  SECURITY_CLASS.indexOf(cls) <= SECURITY_CLASS.indexOf(maxClass)

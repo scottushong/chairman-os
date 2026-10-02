@@ -1,11 +1,11 @@
 import Link from 'next/link'
 
-import { Icon } from '@/components/ui/icon'
 import {
   ACTIVITY_DEDUP_MINUTES,
   ACTIVITY_RETENTION_DAYS,
   ACTIVITY_TIMELINE_DAYS,
 } from '@/lib/activity'
+import { STAFF_BRAND } from '@/lib/brand'
 
 /**
  * /privacy — 개인정보 처리방침 (블록 7).
@@ -24,7 +24,8 @@ import {
  * 법률 자문을 받은 문서가 아니다 — 그 사실도 아래에 적었다.
  */
 export const metadata = {
-  title: '개인정보 처리방침 · Chairman OS',
+  // 루트 layout의 title.template이 서비스 이름(DY 그룹웨어)을 뒤에 붙인다.
+  title: '개인정보 처리방침',
 }
 
 export default function PrivacyPage() {
@@ -32,13 +33,13 @@ export default function PrivacyPage() {
     <main className="min-h-full bg-app px-5 py-10">
       <div className="mx-auto w-full max-w-[760px]">
         <Link href="/login" className="flex items-center gap-2">
-          <Icon name="crown" className="size-5 text-gold" filled />
-          <span className="text-t16 font-bold tracking-tight">CHAIRMAN OS</span>
+          {/* 로그인 전 화면이라 직원 이름이 기본이다(lib/brand.ts). */}
+          <span className="text-t16 font-bold tracking-tight">{STAFF_BRAND}</span>
         </Link>
 
         <h1 className="mt-6 text-t22 font-bold tracking-tight">개인정보 처리방침</h1>
         <p className="mt-1.5 text-t12 leading-relaxed text-ink-dim">
-          Chairman OS는 그룹 내부 업무 시스템입니다. 이 문서는 이 시스템이 무엇을 남기고,
+          {STAFF_BRAND}는 그룹 내부 업무 시스템입니다. 이 문서는 이 시스템이 무엇을 남기고,
           왜 남기며, 누가 보고, 얼마나 두는지를 적습니다. 지키지 않을 문장은 적지
           않았습니다 — 아래의 모든 항목은 코드와 데이터베이스 정책이 그대로 집행합니다.
         </p>
@@ -228,7 +229,7 @@ export default function PrivacyPage() {
         <section className="mt-6 rounded-xl border border-line-soft bg-panel p-4">
           <h2 className="text-t13 font-semibold">Privacy notice (English summary)</h2>
           <p className="mt-1.5 text-t11 leading-relaxed text-ink-dim">
-            Chairman OS records which screens you open: your account, the time, the path, the
+            This system records which screens you open: your account, the time, the path, the
             document id if any, a short device summary (e.g. &quot;Chrome · Windows&quot;), the city
             (never the raw IP address) and your time zone. Repeat visits to the same screen within{' '}
             {ACTIVITY_DEDUP_MINUTES} minutes count as one. These records are kept for{' '}

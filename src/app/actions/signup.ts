@@ -76,5 +76,5 @@ export async function setPassword(_prev: SetPasswordState, form: FormData): Prom
     return { error: '비밀번호를 정하지 못했습니다.' }
   }
   const { data: profile } = await sb.from('user_profiles').select('role').eq('user_id', userData.user.id).maybeSingle<{ role: string }>()
-  redirect(profile?.role === 'Member' || profile?.role === 'TeamLead' ? '/me' : '/')
+  redirect(profile?.role === 'Chairman' ? '/' : '/me')
 }

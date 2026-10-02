@@ -6,7 +6,9 @@ import { GlobalSearch } from '@/components/layout/global-search'
 import { MenuButton } from '@/components/layout/menu-button'
 import { NotificationBell } from '@/components/layout/notification-bell'
 import { Icon } from '@/components/ui/icon'
+import { brandFor } from '@/lib/brand'
 import { getFxStrip } from '@/lib/fx'
+import { homeHref } from '@/lib/nav'
 import { getRepository } from '@/lib/repository'
 import { loadUiPrefs } from '@/lib/ui-prefs-server'
 import { ROLE_LABEL_KO, type SessionUser } from '@/types'
@@ -59,9 +61,19 @@ export async function Header({ user }: { user: SessionUser | null }) {
     // 노치 자리만큼 위를 비운다(safe-top) — iOS 홈 화면 앱은 상태 막대가 비치는 black-translucent다.
     <header className="glass-nav safe-top box-content flex h-14 shrink-0 items-center gap-1 border-b border-line-soft px-2 md:gap-4 md:px-5">
       <MenuButton />
-      <Link href="/" aria-label="대시보드" className="flex min-h-11 items-center gap-1.5 px-1 lg:hidden">
-        <Icon name="crown" className="size-5 text-gold" filled />
-        <span className="hidden text-t13 font-bold tracking-[0.04em] text-ink min-[400px]:inline md:hidden">CHAIRMAN OS</span>
+      <Link
+        href={homeHref(user?.role)}
+        aria-label={user?.role === 'Chairman' ? '대시보드' : '내 홈'}
+        className="flex min-h-11 items-center gap-1.5 px-1 lg:hidden"
+      >
+        {/* 왕관은 회장 화면에만(회장 메모 2026-10). 직원은 집 모양 — 폭이 좁으면 글자가 숨어 빈 칸이 되므로 아이콘은 늘 하나 선다. */}
+        {user?.role === 'Chairman' ? (
+          <Icon name="crown" className="size-5 text-gold" filled />
+        ) : (
+          <Icon name="home" className="size-5 text-ink-dim" />
+        )}
+        {/* 서비스 이름 — 회장은 Chairman OS, 그 밖은 DY 그룹웨어(lib/brand.ts). 사이드바 워드마크와 같은 값. */}
+        <span className="hidden text-t13 font-bold tracking-[0.04em] text-ink uppercase min-[400px]:inline md:hidden">{brandFor(user?.role)}</span>
       </Link>
       {/* CH-043. 이 헤더는 서버 컴포넌트로 두고 검색창만 클라이언트로 떼어 낸다 —
           세션(user)은 여기서 그리고, 입력·드롭다운만 브라우저로 내려간다. */}

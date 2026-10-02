@@ -2,7 +2,8 @@ import Link from 'next/link'
 
 import { PageHeader } from '@/components/layout/page-header'
 import { SidebarMenuForm, type MenuRow } from '@/components/settings/sidebar-menu-form'
-import { NAV } from '@/lib/nav'
+import { currentUser } from '@/lib/auth/session'
+import { navFor } from '@/lib/nav'
 import { loadUiPrefs } from '@/lib/ui-prefs-server'
 
 /**
@@ -15,9 +16,10 @@ import { loadUiPrefs } from '@/lib/ui-prefs-server'
  * 화면과 판정이 두 벌이 되고, Phase 7이 목록을 갈아 끼울 때 한쪽만 따라간다.
  */
 export default async function SidebarSettingsPage() {
-  const prefs = await loadUiPrefs()
+  const [prefs, user] = await Promise.all([loadUiPrefs(), currentUser()])
 
-  const rows: MenuRow[] = NAV.flatMap((group) =>
+  // 사이드바와 같은 목록 — 회장이 아니면 회장 전용 메뉴는 여기에도 없다(lib/nav.ts navFor).
+  const rows: MenuRow[] = navFor(user?.role).flatMap((group) =>
     group.items.map((item) => ({
       key: item.key,
       label: item.label,

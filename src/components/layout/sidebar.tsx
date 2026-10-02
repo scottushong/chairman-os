@@ -6,8 +6,11 @@ import { useState, useTransition } from 'react'
 
 import { signOut } from '@/app/actions/auth'
 import { saveGroupCollapsed } from '@/app/actions/ui-prefs'
+import { CompaniesSection, InitiativesSection } from '@/components/layout/sidebar-sections'
 import { Icon } from '@/components/ui/icon'
-import { NAV, navHref, type NavItem } from '@/lib/nav'
+import { brandFor } from '@/lib/brand'
+import { homeHref, navFor, navHref, type NavItem } from '@/lib/nav'
+import type { SidebarData } from '@/lib/sidebar-data'
 import { isCollapsed, isHidden, type SidebarPrefs } from '@/lib/ui-prefs'
 import { ROLE_LABEL_KO, type SessionUser } from '@/types'
 
@@ -29,11 +32,23 @@ import { ROLE_LABEL_KO, type SessionUser } from '@/types'
  * 아무 항목과도 맞지 않아 조용히 무시되고, 새 항목은 키가 목록에 없으니 그냥 보인다.
  * 판정 규칙은 lib/ui-prefs.ts 한 곳에만 있다 — 여기에 복사하면 두 벌이 된다.
  */
-export function Sidebar({ user, prefs, drawer = false }: { user: SessionUser | null; prefs: SidebarPrefs; drawer?: boolean }) {
+export function Sidebar({
+  user,
+  prefs,
+  sections,
+  drawer = false,
+}: {
+  user: SessionUser | null
+  prefs: SidebarPrefs
+  /** «회사» · «이니셔티브» 펼침 목록. 레이아웃이 요청당 한 번 읽는다(lib/sidebar-data.ts). */
+  sections: SidebarData
+  drawer?: boolean
+}) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const router = useRouter()
   const [, startTransition] = useTransition()
+  const isChairman = user?.role === 'Chairman'
 
   /**
    * 접힘은 서버(user_settings)에 있지만 화면은 기다리지 않는다.
@@ -71,21 +86,31 @@ export function Sidebar({ user, prefs, drawer = false }: { user: SessionUser | n
     // glass-nav = --color-nav 면 + backdrop-blur. 셸은 배경 그라데이션 위에 얹힌 유리 틀이고,
     // 그림자는 주지 않는다 — 고정된 틀이 떠 보이면 그 위의 카드가 뜨지 못한다.
     <aside className={`glass-nav flex shrink-0 flex-col border-r border-line-soft ${drawer ? 'h-full w-[min(84vw,320px)]' : 'w-[212px]'}`}>
-      {/* 워드마크. 대시보드로 간다. 높이 14는 헤더와 같아야 한다. 다르면 셸 두 장의 아랫선이 어긋난다. */}
+      {/* 워드마크. 회장은 대시보드, 나머지는 직원 홈(/me)으로 간다. 높이 14는 헤더와 같아야 한다. 다르면 셸 두 장의 아랫선이 어긋난다. */}
       <Link
-        href="/"
+        href={homeHref(user?.role)}
         className="flex h-14 items-center gap-2 border-b border-line-soft px-4 rounded-md transition-colors hover:bg-raised focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-accent"
       >
-        <Icon name="crown" className="size-5 text-gold" filled />
-        <span className="text-t15 font-bold tracking-[0.04em] text-ink">CHAIRMAN OS</span>
+        {/* 왕관은 회장 화면에만(회장 메모 2026-10). */}
+        {isChairman ? <Icon name="crown" className="size-5 text-gold" filled /> : null}
+        {/* 서비스 이름 — 회장은 Chairman OS, 그 밖은 DY 그룹웨어(lib/brand.ts). 대문자 표기는 예전 워드마크 그대로. */}
+        <span className="min-w-0 truncate text-t15 font-bold tracking-[0.04em] text-ink uppercase">{brandFor(user?.role)}</span>
       </Link>
 
       <nav className="flex-1 overflow-y-auto px-2.5 pb-3">
-        {NAV.map((group, i) => {
+        {/* 회장 전용 메뉴(아침 루틴 · 의존 · 주의 · 회장 루틴)는 회장에게만, 이니셔티브는 읽는 역할에게만 — lib/nav.ts navFor. */}
+        {navFor(user?.role).map((group, i) => {
           // 숨긴 항목은 아예 그리지 않는다. 회색으로 죽여 두면 '숨김'이 아니라 '고장'으로 읽힌다.
           // 지금 보고 있는 화면의 메뉴는 숨겨도 남는다 — 길을 잃지 않게(isHidden의 active).
           const items = group.items.filter(
-            (item) => !isHidden(item, { ...prefs, collapsed_groups: collapsed }, isActive(item)),
+            (item) =>
+              !isHidden(
+                // «회사»는 목록 화면이 아직 없지만(ready=false) 펼치면 진짜 회사 화면으로 간다 —
+                // «준비 중 숨기기»에 같이 쓸려 가지 않게 보이는 회사가 있으면 준비된 항목으로 본다.
+                item.key === 'nav_businesses' && sections.companies.length > 0 ? { ...item, ready: true } : item,
+                { ...prefs, collapsed_groups: collapsed },
+                isActive(item),
+              ),
           )
           if (items.length === 0) return null
 
@@ -122,6 +147,33 @@ export function Sidebar({ user, prefs, drawer = false }: { user: SessionUser | n
                 <ul className="space-y-0.5">
                   {items.map((item) => {
                     const active = isActive(item)
+                    // 펼침 칸 둘(사이드바 개편 2026-10). 세션이 없으면 저장 키를 못 만드니 예전 한 줄로 그린다.
+                    if (user && item.key === 'nav_businesses') {
+                      return (
+                        <li key={item.key}>
+                          <CompaniesSection
+                            item={item}
+                            companies={sections.companies}
+                            userId={user.user_id}
+                            pathname={pathname}
+                            titleActive={active}
+                          />
+                        </li>
+                      )
+                    }
+                    if (user && item.key === 'nav_initiatives' && sections.initiatives) {
+                      return (
+                        <li key={item.key}>
+                          <InitiativesSection
+                            item={item}
+                            initiatives={sections.initiatives}
+                            userId={user.user_id}
+                            pathname={pathname}
+                            titleActive={active}
+                          />
+                        </li>
+                      )
+                    }
                     return (
                       <li key={item.key}>
                         <Link

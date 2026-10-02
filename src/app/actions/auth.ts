@@ -113,8 +113,9 @@ export async function signIn(_prev: SignInState, formData: FormData): Promise<Si
     console.error(`[audit] login 기록 실패 ${auditError.code ?? '?'}: ${auditError.message}`)
   }
 
-  // Phase 6-2 블록 1. Member · TeamLead의 기본은 직원 홈(/me). 다른 곳을 보려던 참이면(next) 그리로.
-  const landing = next === '/' && (profile.role === 'Member' || profile.role === 'TeamLead') ? '/me' : next
+  // Phase 6-2 블록 1 → 회장 메모(2026-10). 회장이 아니면 기본은 직원 홈(/me) — /는 회장 대시보드라 어차피 /me로 돌아간다.
+  // 다른 곳을 보려던 참이면(next) 그리로.
+  const landing = next === '/' && profile.role !== 'Chairman' ? '/me' : next
 
   // redirect()는 예외를 던져 흐름을 끊는다. try 안에 두면 안 된다.
   redirect(landing)

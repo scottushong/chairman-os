@@ -60,7 +60,7 @@ export default async function ComingSoonPage(props: PageProps<'/coming-soon'>) {
             <p className="mt-4 rounded-lg bg-raised px-3 py-2.5 text-t11h leading-relaxed text-ink-muted">
               계획된 주소는 <span className="text-ink-dim tnum">{item.href}</span> 입니다.
               메뉴를 지우지 않은 것은 05_Architecture의 모듈 경로를 화면 구조로 그대로 두기로
-              했기 때문입니다 — 메뉴가 있어야 Chairman OS가 최종적으로 무엇을 덮는지 보입니다.
+              했기 때문입니다 — 메뉴가 있어야 이 시스템이 최종적으로 무엇을 덮는지 보입니다.
             </p>
           ) : null}
         </section>

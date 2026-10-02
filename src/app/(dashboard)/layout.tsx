@@ -1,3 +1,5 @@
+import type { Metadata } from 'next'
+
 import { AssistantDock } from '@/components/assistant/assistant-dock'
 import { MobileTabs } from '@/components/layout/mobile-tabs'
 import { NavDrawer } from '@/components/layout/nav-drawer'
@@ -6,6 +8,8 @@ import { Sidebar } from '@/components/layout/sidebar'
 import { SystemBar } from '@/components/layout/system-bar'
 import { TimezoneBeacon } from '@/components/settings/timezone-beacon'
 import { currentUser } from '@/lib/auth/session'
+import { brandFor } from '@/lib/brand'
+import { loadSidebarData } from '@/lib/sidebar-data'
 import { loadUiPrefs } from '@/lib/ui-prefs-server'
 
 /**
@@ -25,8 +29,24 @@ import { loadUiPrefs } from '@/lib/ui-prefs-server'
  * 남는다(회장 지시 원문: "테마(라이트/다크/자동 — /ai는 항상 다크)").
  * /login도 이 셸 밖이라 늘 라이트다.
  */
+/**
+ * 탭 제목 · iOS 홈 화면 제목 — 회장은 «Chairman OS», 그 밖은 «DY 그룹웨어»(lib/brand.ts, 2026-10-02 회장 지시).
+ * 루트 layout의 기본값(직원 이름)을 역할로 덮는다. currentUser()는 요청 단위 cache라 아래 레이아웃과 같은 한 번을 쓴다.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const brand = brandFor((await currentUser())?.role)
+  // absolute — default로 두면 루트의 template이 붙어 «Chairman OS · DY 그룹웨어»가 된다.
+  // appleWebApp은 통째로 갈아 끼워진다(메타데이터 병합은 키 단위 얕은 병합) — 루트의 나머지 두 값도 같이 적는다.
+  return {
+    title: { absolute: brand, template: `%s · ${brand}` },
+    appleWebApp: { capable: true, title: brand, statusBarStyle: 'black-translucent' },
+  }
+}
+
 export default async function DashboardLayout({ children }: LayoutProps<'/'>) {
   const [user, prefs] = await Promise.all([currentUser(), loadUiPrefs()])
+  // 사이드바 «회사» · «이니셔티브» 펼침 목록. 붙박이와 서랍이 같은 값을 받는다(요청당 한 번 — lib/sidebar-data.ts).
+  const sections = await loadSidebarData(user?.role ?? null)
 
   /**
    * '자동'은 서버가 답할 수 없는 값이다 — prefers-color-scheme은 브라우저만 안다.
@@ -55,10 +75,10 @@ export default async function DashboardLayout({ children }: LayoutProps<'/'>) {
       <TimezoneBeacon />
       {/* 1024px 이상은 붙박이 사이드바, 그 아래는 같은 사이드바를 서랍으로(햄버거 · 하단 탭 «더보기»). */}
       <div className="hidden lg:flex">
-        <Sidebar user={user} prefs={prefs.sidebar} />
+        <Sidebar user={user} prefs={prefs.sidebar} sections={sections} />
       </div>
       <NavDrawer>
-        <Sidebar user={user} prefs={prefs.sidebar} drawer />
+        <Sidebar user={user} prefs={prefs.sidebar} sections={sections} drawer />
       </NavDrawer>
       <div className="flex min-w-0 flex-1 flex-col">
         <Header user={user} />
@@ -67,7 +87,7 @@ export default async function DashboardLayout({ children }: LayoutProps<'/'>) {
         <div className="hidden lg:block">
           <SystemBar />
         </div>
-        <MobileTabs />
+        <MobileTabs role={user?.role} />
       </div>
       {/* Phase 11 — 모든 화면의 AI 어시스턴트(오른쪽 아래 버튼 → 패널). 셸에 한 번만 둔다: 화면마다 넣으면 빠지는 화면이 생긴다.
           로그인 없는 화면(/login 등)은 이 셸 밖이라 뜨지 않는다. */}

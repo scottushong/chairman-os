@@ -1,3 +1,5 @@
+import type { Metadata } from 'next'
+
 import { AssistantDock } from '@/components/assistant/assistant-dock'
 import { MobileTabs } from '@/components/layout/mobile-tabs'
 import { NavDrawer } from '@/components/layout/nav-drawer'
@@ -5,6 +7,8 @@ import { RailSidebar } from '@/components/layout/rail-sidebar'
 import { Sidebar } from '@/components/layout/sidebar'
 import { TimezoneBeacon } from '@/components/settings/timezone-beacon'
 import { currentUser } from '@/lib/auth/session'
+import { brandFor } from '@/lib/brand'
+import { loadSidebarData } from '@/lib/sidebar-data'
 import { loadUiPrefs } from '@/lib/ui-prefs-server'
 
 /**
@@ -29,8 +33,19 @@ import { loadUiPrefs } from '@/lib/ui-prefs-server'
  * 세션은 여기서 한 번만 읽어 레일에 내려 준다((dashboard)/layout.tsx와 같은 이유).
  * currentUser()는 요청 단위로 캐시되므로 page.tsx가 다시 불러도 왕복이 늘지 않는다.
  */
+/** 탭 제목 — (dashboard)/layout.tsx의 generateMetadata와 같다(회장 Chairman OS · 그 밖 DY 그룹웨어). */
+export async function generateMetadata(): Promise<Metadata> {
+  const brand = brandFor((await currentUser())?.role)
+  return {
+    title: { absolute: brand, template: `%s · ${brand}` },
+    appleWebApp: { capable: true, title: brand, statusBarStyle: 'black-translucent' },
+  }
+}
+
 export default async function MorningLayout({ children }: LayoutProps<'/'>) {
   const [user, prefs] = await Promise.all([currentUser(), loadUiPrefs()])
+  // 사이드바 «회사» · «이니셔티브» 펼침 목록. 붙박이와 서랍이 같은 값을 받는다(요청당 한 번 — lib/sidebar-data.ts).
+  const sections = await loadSidebarData(user?.role ?? null)
 
   return (
     <div data-theme="dark" className="safe-x flex h-full">
@@ -42,7 +57,7 @@ export default async function MorningLayout({ children }: LayoutProps<'/'>) {
         <RailSidebar user={user} />
       </div>
       <NavDrawer>
-        <Sidebar user={user} prefs={prefs.sidebar} drawer />
+        <Sidebar user={user} prefs={prefs.sidebar} sections={sections} drawer />
       </NavDrawer>
       {/* 세로 칸을 한 겹 둔다. 지금은 main 하나뿐이지만 (dashboard)와 같은 골격이라야
           나중에 이 셸에 바가 붙을 때 자리가 분명하고, 그때 아래 높이 계산도 여기서부터 다시 센다. */}
@@ -57,7 +72,7 @@ export default async function MorningLayout({ children }: LayoutProps<'/'>) {
          * 안 줄이면 sticky 칸이 <main>보다 커져 스크롤 끝에서 조용히 고정이 풀린다.
          */}
         <main className="flex-1 overflow-y-auto">{children}</main>
-        <MobileTabs />
+        <MobileTabs role={user?.role} />
       </div>
       {/* Phase 11 — 모든 화면의 AI 어시스턴트(오른쪽 아래 버튼 → 패널). 셸에 한 번만 둔다: 화면마다 넣으면 빠지는 화면이 생긴다.
           로그인 없는 화면(/login 등)은 이 셸 밖이라 뜨지 않는다. */}

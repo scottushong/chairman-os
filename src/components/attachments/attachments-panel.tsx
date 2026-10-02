@@ -21,7 +21,9 @@ import {
   ATTACHMENT_CLASS_LABEL,
   ATTACHMENT_MAX_BYTES,
   IMAGE_SOFT_MAX_BYTES,
+  attachmentClassAllowed,
   attachmentMime,
+  defaultAttachmentClass,
   formatBytes,
   isImageMime,
 } from '@/lib/attachments/rules'
@@ -32,12 +34,14 @@ import {
   type AttachmentClass,
   type AttachmentEntity,
   type AttachmentViewer,
+  type SecurityClass,
 } from '@/types'
 
 /**
  * Phase 10 «첨부» 칸 — 이니셔티브 · 회사 · 문서 · 결재 상세가 같이 쓴다.
  *
- * 드래그 앤 드롭 + 버튼 + (폰) 카메라. 등급 기본은 «제한»(회장 지시). 올리면 곧바로 요약을 부른다 —
+ * 드래그 앤 드롭 + 버튼 + (폰) 카메라. 등급 기본은 «본인 보안등급 이하에서 가장 높은 것»
+ * (회장 → 제한, 일반 직원 → 일반 — Vault는 파일을 받지 않으므로 기본이 아니다). 본인 등급보다 높은 등급은 못 고른다. 올리면 곧바로 요약을 부른다 —
  * 요약이 실패해도 파일은 남고 «다시 요약»이 선다. 요약은 늘 «결정 아님» 표시와 같이 그린다.
  *
  * 바이트 길: live는 브라우저가 Supabase Storage로 바로(0045 버킷 정책이 «줄을 만든 본인»만 받는다),
@@ -52,7 +56,8 @@ export interface AttachmentsPanelProps {
   entityId: string
   attachments: Attachment[]
   mode: 'dummy' | 'live'
-  viewer: { user_id: string; role: string }
+  /** max_security_class — 등급 기본값과 고를 수 있는 등급을 정한다(0045 attachment_class_ok). */
+  viewer: { user_id: string; role: string; maxClass: SecurityClass }
   names: Record<string, string>
   /** 회장에게만 — Vault 지정자 목록과 고를 사람. */
   vaultViewers?: Record<string, AttachmentViewer[]>
@@ -79,8 +84,10 @@ export function AttachmentsPanel(props: AttachmentsPanelProps) {
   const { entityTable, entityId, attachments, mode, viewer } = props
   const router = useRouter()
   const isChairman = viewer.role === 'Chairman'
-  const canUpload = viewer.role !== 'AIAgent' && viewer.role !== 'Integration'
-  const [cls, setCls] = useState<AttachmentClass>('Restricted')
+  const defaultCls = defaultAttachmentClass(viewer.maxClass)
+  // 올릴 수 있는 등급이 하나도 없으면(Public) 올리기 칸을 그리지 않는다 — 0045가 어차피 막는다.
+  const canUpload = viewer.role !== 'AIAgent' && viewer.role !== 'Integration' && defaultCls !== null
+  const [cls, setCls] = useState<AttachmentClass>(defaultCls ?? 'Normal')
   const [drag, setDrag] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -197,7 +204,9 @@ export function AttachmentsPanel(props: AttachmentsPanelProps) {
                 className="min-h-11 rounded-md border border-line bg-panel px-2 text-t11h text-ink lg:min-h-0 lg:py-1"
               >
                 <option value="Normal">{ATTACHMENT_CLASS_LABEL.Normal}</option>
-                <option value="Restricted">{ATTACHMENT_CLASS_LABEL.Restricted}</option>
+                <option value="Restricted" disabled={!attachmentClassAllowed('Restricted', viewer.maxClass)}>
+                  {`${ATTACHMENT_CLASS_LABEL.Restricted}${attachmentClassAllowed('Restricted', viewer.maxClass) ? '' : ' (보안등급 밖)'}`}
+                </option>
                 {isChairman ? <option value="Vault">{ATTACHMENT_CLASS_LABEL.Vault}</option> : null}
               </select>
             </label>

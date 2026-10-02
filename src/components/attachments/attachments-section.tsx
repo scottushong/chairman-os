@@ -22,10 +22,12 @@ export async function AttachmentsSection({
   const [repo, user] = await Promise.all([getRepository(), currentUser()])
   if (!user) return null
   const isChairman = user.role === 'Chairman'
-  const [attachments, people] = await Promise.all([
+  const [attachments, people, me] = await Promise.all([
     repo.listAttachments(entityTable, entityId),
     // 이름표는 조직도가 보이는 범위(0026)만큼. 못 읽으면 «올린 사람»으로 떨어진다.
     repo.listUserAccounts().catch(() => []),
+    // 첨부 등급 기본값 = 본인 보안등급 이하에서 가장 높은 것. 못 읽으면 «일반»으로(가장 덜 막히는 쪽).
+    repo.getMyProfile().catch(() => null),
   ])
   const names = Object.fromEntries(people.map((p) => [p.user_id, p.display_name]))
   names[user.user_id] = user.name
@@ -46,7 +48,7 @@ export async function AttachmentsSection({
       entityId={entityId}
       attachments={attachments}
       mode={repo.mode}
-      viewer={{ user_id: user.user_id, role: user.role }}
+      viewer={{ user_id: user.user_id, role: user.role, maxClass: me?.max_security_class ?? 'Normal' }}
       names={names}
       vaultViewers={vaultViewers}
       people={isChairman ? people.filter((p) => !p.revoked_at && p.user_id !== user.user_id).map((p) => ({ user_id: p.user_id, display_name: p.display_name })) : undefined}

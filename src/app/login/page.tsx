@@ -1,7 +1,7 @@
 import Link from 'next/link'
 
-import { Icon } from '@/components/ui/icon'
 import { ACTIVITY_RETENTION_DAYS } from '@/lib/activity'
+import { STAFF_BRAND } from '@/lib/brand'
 import { citySrc, citySrcSet } from '@/lib/city'
 import { cityPhase } from '@/lib/city-phase'
 import { DATA_MODE } from '@/lib/env'
@@ -45,11 +45,11 @@ export default async function LoginPage({ searchParams }: PageProps<'/login'>) {
       />
       <div className="glass relative w-full max-w-[420px] rounded-glass p-5 shadow-2xl">
         <div className="flex items-center gap-2">
-          <Icon name="crown" className="size-6 text-gold" filled />
-          <span className="text-t19 font-bold tracking-tight">CHAIRMAN OS</span>
+          {/* 로그인 전에는 누구인지 모르므로 직원 이름이 기본이다(lib/brand.ts). 왕관은 회장 화면에만 둔다(사이드바와 같은 규칙). */}
+          <span className="text-t19 font-bold tracking-tight">{STAFF_BRAND}</span>
         </div>
         <p className="mt-2 text-t12 leading-relaxed text-ink-muted">
-          그룹 통합 관제 화면입니다. 계정이 있는 분만 열 수 있습니다.
+          그룹 내부 업무 시스템입니다. 계정이 있는 분만 열 수 있습니다.
         </p>
 
         <div className="mt-6 rounded-xl border border-line-soft bg-panel p-5">

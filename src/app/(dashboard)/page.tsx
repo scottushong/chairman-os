@@ -1,3 +1,5 @@
+import { redirect } from 'next/navigation'
+
 import { CityStrip } from '@/components/city/city-strip'
 import { AiNightPanel } from '@/components/dashboard/ai-night-panel'
 import { AlertPanel } from '@/components/dashboard/alert-panel'
@@ -40,6 +42,12 @@ import { getCurrentLocationWeather } from '@/lib/weather'
  */
 
 export default async function DashboardPage() {
+  // 회장 메모(2026-10) — 이 대시보드는 회장 화면이다. 다른 역할은 직원 홈으로 보낸다(로그인 착지와 같은 곳).
+  // 기록(recordScreenRead)보다 먼저 — 들르지 않은 화면을 «열었다»로 남기지 않는다.
+  // 안내일 뿐 판정은 RLS다. 세션이 없으면(live에서 user_profiles 행 없음) 예전처럼 그린다 — RLS가 빈 손을 준다.
+  const viewer = await currentUser()
+  if (viewer && viewer.role !== 'Chairman') redirect('/me')
+
   // 블록 7. 페이지 진입. 회장이 하루에 가장 자주 여는 화면이라 5분 억제가 실제로
   // 일하는 자리이기도 하다 — 없으면 이 한 줄이 기록의 절반을 차지한다.
   await recordScreenRead({ path: '/', kind: 'page' })

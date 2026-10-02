@@ -204,7 +204,7 @@ export function DraftDecision({ businesses }: { businesses: Business[] }) {
               className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"
             />
             <span className="mt-1 block text-t10h text-ink-muted">
-              파일은 올리지 않습니다. Chairman OS는 문서의 주소만 보관합니다.
+              파일은 올리지 않습니다. 이 시스템은 문서의 주소만 보관합니다.
             </span>
           </label>
 

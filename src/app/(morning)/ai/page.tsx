@@ -1,5 +1,6 @@
 import { roomOf } from '@/lib/meet'
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 
 import { RunNightBrief } from '@/components/ai/run-night-brief'
 import { Manifesto } from '@/components/chairman/manifesto'
@@ -65,6 +66,8 @@ export default async function AiPage(props: PageProps<'/ai'>) {
    * currentUser()는 요청 단위로 캐시되므로 레이아웃이 이미 읽은 값을 그대로 받는다.
    */
   const user = await currentUser()
+  // 회장 메모(2026-10) — 아침 루틴은 회장 화면이다. 다른 역할은 직원 홈으로(대시보드 /와 같다).
+  if (user && user.role !== 'Chairman') redirect('/me')
   const isChairman = user?.role === 'Chairman'
 
   // 위치는 헤더를 읽는 서버 함수다(P5-5b). 날씨가 이 결과에 걸려 있어 먼저 기다린다 —

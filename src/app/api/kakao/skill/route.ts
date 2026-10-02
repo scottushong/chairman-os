@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
   }
   const who = body.userRequest?.user?.id ?? ''
   const question = (body.userRequest?.utterance ?? '').trim()
-  if (!config.users.has(who)) return NextResponse.json(say('이 카카오 계정은 Chairman OS 어시스턴트에 연결되어 있지 않습니다.'))
+  if (!config.users.has(who)) return NextResponse.json(say('이 카카오 계정은 어시스턴트에 연결되어 있지 않습니다.'))
   if (!question) return NextResponse.json(say('무엇을 물어볼까요?'))
 
   const callbackUrl = body.userRequest?.callbackUrl

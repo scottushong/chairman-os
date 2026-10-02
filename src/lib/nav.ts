@@ -1,4 +1,5 @@
 import type { IconName } from '@/components/ui/icon'
+import type { Role } from '@/types'
 
 /**
  * 좌측 네비의 메뉴 한 벌. 05_Architecture의 모듈 경로를 그대로 화면 메뉴로 편다.
@@ -85,13 +86,15 @@ export const NAV: readonly NavGroup[] = [
           '업무 상세나 검색 결과에서 열립니다. 남은 것은 전사 프로젝트를 한 판에 보는 목록입니다.',
       },
       {
-        key: 'nav_businesses', label: '기업 관리 (A,B,C)',
+        // 사이드바 개편(2026-10) — «기업 관리 (A,B,C)» → «회사». 펼치면 보이는 회사가 나열된다(sidebar-sections.tsx).
+        // 이 항목 자체(제목 링크)는 여전히 준비 중 화면으로 간다 — 회사 목록 · 순서 · Archive가 붙을 자리.
+        key: 'nav_businesses', label: '회사',
         href: '/businesses',
         icon: 'building',
         expandable: true,
         ready: false,
         waitingFor:
-          '회사 하나하나는 대시보드 카드의 "상세 보기"(CH-023~024)로 이미 열립니다. 이 메뉴는 회사 목록·순서·Archive(CH-057)가 붙는 자리입니다.',
+          '회사 하나하나는 사이드바 «회사»를 펼치거나 대시보드 카드의 "상세 보기"(CH-023~024)로 이미 열립니다. 이 메뉴는 회사 목록·순서·Archive(CH-057)가 붙는 자리입니다.',
       },
     ],
   },
@@ -219,6 +222,52 @@ export const SYSTEM_LINKS: readonly NavItem[] = [
     key: 'sys_chat', label: '커뮤니케이션', href: '/chat', icon: 'message', ready: true,
   },
 ] as const
+
+/**
+ * 회장 전용 메뉴(회장 메모 2026-10 «의존 · 주의 등»). 회장이 아닌 사람의 사이드바 · 서랍 · 메뉴 설정에서 뺀다.
+ *   아침 루틴(/ai)      회장이 아니면 /me로 돌린다((morning)/ai/page.tsx).
+ *   의존 · 주의         회장이 매일 보는 관제 화면(§7 · §18-19). 직원에게는 판단 재료가 아니다.
+ *   회장 루틴           /settings/chairman — 회장이 아니면 404다.
+ * «회사»는 여기 없다 — 펼치면 그 사람이 볼 수 있는 회사(0002 has_business)만 나온다.
+ * **화면 안내일 뿐 권한이 아니다** — 주소로 들어가면 각 화면과 RLS가 판정한다.
+ */
+const CHAIRMAN_ONLY_NAV: ReadonlySet<string> = new Set(['nav_morning', 'nav_dependency', 'nav_attention', 'nav_chairman'])
+
+/**
+ * 이니셔티브를 읽는 역할 — 0017 can_read_initiatives()(Chairman · GroupCFO · AIAgent)의 거울.
+ * 사람이 아닌 AIAgent는 화면을 쓰지 않으므로 뺀다. 이 밖의 사람에게는 이니셔티브 메뉴 · 사이드바 목록 · 하단 탭을 그리지 않는다
+ * (live에서는 RLS가 0행을 주는 빈 화면이었다). 안내일 뿐 판정은 DB다.
+ */
+const INITIATIVE_READERS: readonly Role[] = ['Chairman', 'GroupCFO']
+export const canReadInitiatives = (role: Role | null | undefined) => !!role && INITIATIVE_READERS.includes(role)
+
+/**
+ * 회장이 아닌 사람에게 바꿔 보여 줄 항목. key는 그대로라 숨김 · 순서(0030)는 같은 칸을 가리킨다.
+ *   대시보드 → 내 홈(/me). 회장이 아니면 /가 /me로 돌아가므로(page.tsx) 메뉴도 처음부터 그리로 건다.
+ *   내 결정 사항 → 전자결재. 같은 화면(/approvals)이지만 «내 결정»은 회장의 말이다(시스템 바와 같은 이름).
+ */
+const STAFF_NAV_OVERRIDE: Readonly<Record<string, Partial<NavItem>>> = {
+  nav_dashboard: { label: '내 홈', href: '/me' },
+  nav_decisions: { label: '전자결재' },
+}
+
+/**
+ * 이 역할이 보는 메뉴 한 벌. 회장은 NAV 그대로, 나머지(세션이 없을 때 포함)는 회장 전용을 빼고,
+ * 이니셔티브를 못 읽는 역할에게서는 «이니셔티브»도 뺀다.
+ */
+export function navFor(role: Role | null | undefined): readonly NavGroup[] {
+  if (role === 'Chairman') return NAV
+  const initiatives = canReadInitiatives(role)
+  return NAV.map((group) => ({
+    ...group,
+    items: group.items
+      .filter((item) => !CHAIRMAN_ONLY_NAV.has(item.key) && (initiatives || item.key !== 'nav_initiatives'))
+      .map((item) => (STAFF_NAV_OVERRIDE[item.key] ? { ...item, ...STAFF_NAV_OVERRIDE[item.key] } : item)),
+  })).filter((group) => group.items.length > 0)
+}
+
+/** 홈(로고 · 하단 탭 «홈»)이 가는 곳. 회장은 대시보드, 나머지는 직원 홈. */
+export const homeHref = (role: Role | null | undefined) => (role === 'Chairman' ? '/' : '/me')
 
 /** 사이드바가 실제로 거는 주소. 아직 없는 화면은 404 대신 '준비 중'으로 보낸다(D-14 선택지 B). */
 export function navHref(item: NavItem): string {
