@@ -4152,6 +4152,190 @@ async function financeGrants() {
 }
 
 /**
+ * 0048 문서 모듈 권한 — 사람 × 회사 ('/documents/<business_id>').
+ *
+ * DY 경영지원 팀장(Normal)이 '/documents/biz_dy' 쓰기 줄로 DY 문서 · 폴더를 등록 · 고친다. 줄 없는 팀장은 거부.
+ * 다른 회사는 줄만으로도, 회사 접근만으로도 안 열린다(둘 다 있어야). Vault · Restricted 등급은 열람 등급이 모자라면
+ * 넣지도 올리지도 못한다. 시스템 계정은 줄이 있어도 그대로. 옛 '/core/search' 줄은 줄어들지 않는다(회귀).
+ * 회수하면 문서 줄도 지워지고 감사가 그 회사로 걸린다. documents의 hard delete는 0042대로 닫혀 있다.
+ */
+const DG = {
+  chair: '00000000-0000-0000-0000-0000000048a1',
+  lead: '00000000-0000-0000-0000-0000000048a2', // DY 경영지원 팀장 — '/documents/biz_dy' 쓰기
+  sales: '00000000-0000-0000-0000-0000000048a3', // DY 영업팀장 — 줄 없음
+  agent: '00000000-0000-0000-0000-0000000048a4',
+  integration: '00000000-0000-0000-0000-0000000048a5',
+  legacy: '00000000-0000-0000-0000-0000000048a6', // 옛 '/core/search' 쓰기 줄을 가진 DY 직원
+  cfo: '00000000-0000-0000-0000-0000000048a7',
+}
+
+async function documentGrants() {
+  const db = new PGlite({ extensions: { pg_trgm } })
+  await applyAll(db)
+  await db.exec(`
+    grant usage on schema public, auth to authenticated, anon;
+    grant select, insert, update, delete on all tables in schema public to authenticated;
+    grant usage, select on all sequences in schema public to authenticated;
+    insert into auth.users values
+      ('${DG.chair}', 'd1@x'), ('${DG.lead}', 'd2@x'), ('${DG.sales}', 'd3@x'), ('${DG.agent}', 'd4@x'),
+      ('${DG.integration}', 'd5@x'), ('${DG.legacy}', 'd6@x'), ('${DG.cfo}', 'd7@x');
+    insert into user_profiles (user_id, role, display_name, max_security_class, team_id) values
+      ('${DG.chair}', 'Chairman', 'ch', 'Vault', null),
+      ('${DG.lead}', 'TeamLead', '경영지원팀장', 'Normal', 'team_dy_support'),
+      ('${DG.sales}', 'TeamLead', '영업팀장', 'Normal', 'team_dy_sales'),
+      ('${DG.agent}', 'AIAgent', 'ai', 'Restricted', null),
+      ('${DG.integration}', 'Integration', 'sync', 'Restricted', null),
+      ('${DG.legacy}', 'Member', '옛 줄', 'Normal', 'team_dy_sales'),
+      ('${DG.cfo}', 'GroupCFO', 'cfo', 'Restricted', null);
+    -- 팀장 둘은 회장 아래다 — 회장이 그 문서를 보는 길(0026 subtree)이 실제와 같게.
+    update user_profiles set reports_to = '${DG.chair}' where user_id in ('${DG.lead}', '${DG.sales}');
+    insert into user_business_access values
+      ('${DG.lead}', 'biz_dy'), ('${DG.sales}', 'biz_dy'), ('${DG.legacy}', 'biz_dy');
+    insert into user_business_access select '${DG.agent}', business_id from businesses;
+    insert into user_business_access select '${DG.integration}', business_id from businesses;
+    insert into user_module_access (user_id, module, can_write, can_approve) values
+      ('${DG.lead}', '/documents/biz_dy', true, false),
+      ('${DG.legacy}', '/core/search', true, false),
+      -- 누가 실수로 시스템 계정에 문서 줄을 넣었다 — 그래도 쓰기가 열리면 안 된다.
+      ('${DG.agent}', '/documents/biz_dy', true, false), ('${DG.integration}', '/documents/biz_dy', true, false);
+  `)
+
+  async function as(uid: string, steps: string[]): Promise<'denied' | number> {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
+    try {
+      let last: Record<string, unknown>[] = []
+      let affected = 0
+      for (const s of steps) {
+        if (s.startsWith('@')) { await db.exec(`select set_config('request.jwt.claim.sub', '${s.slice(1)}', true)`); continue }
+        if (s.startsWith('!')) { await db.exec(`reset role; ${s.slice(1)}; set local role authenticated;`); continue }
+        const res = await db.query<Record<string, unknown>>(s)
+        last = res.rows
+        affected = res.affectedRows ?? 0
+      }
+      return last.length ? Number(Object.values(last[0])[0]) : affected
+    } catch (e) {
+      if (/row-level security/.test(e instanceof Error ? e.message : '')) return 'denied'
+      throw e
+    } finally {
+      await db.exec('rollback')
+    }
+  }
+  const owner = async (sql: string) => (await db.query<Record<string, unknown>>(sql)).rows
+
+  const doc = (biz: string | null, cls = 'Normal', id = 'doc_g48', by = DG.lead) =>
+    `insert into documents (document_id, business_id, title, doc_type, security_class, storage_url, uploaded_by)
+       values ('${id}', ${biz ? `'${biz}'` : 'null'}, '0048 문서', 'Contract', '${cls}', 'https://drive.example/48', '${by}')`
+  const folder = (biz: string) => `insert into doc_folders (business_id, name) values ('${biz}', '0048 폴더')`
+  const vanaAccess = `!insert into user_business_access values ('${DG.lead}', 'biz_vana')`
+  const vanaRow = `!insert into user_module_access (user_id, module, can_write) values ('${DG.lead}', '/documents/biz_vana', true)`
+
+  // ── documents insert: 그 회사만 · 줄 있는 사람만 ──
+  assert.equal(await as(DG.lead, [doc('biz_dy')]), 1, '0048: 문서 줄 있는 경영지원 팀장이 DY 문서를 못 넣는다')
+  assert.equal(await as(DG.sales, [doc('biz_dy', 'Normal', 'doc_g48', DG.sales)]), 'denied', '0048: 줄 없는 TeamLead가 DY 문서를 넣는다')
+  assert.equal(await as(DG.lead, [`!update user_module_access set can_write = false where user_id = '${DG.lead}'`, doc('biz_dy')]), 'denied',
+    '0048: can_write=false 줄로 문서가 들어간다')
+  assert.equal(await as(DG.lead, [doc('biz_vana')]), 'denied', '0048: DY 줄로 VANA 문서가 들어간다')
+  assert.equal(await as(DG.lead, [vanaRow, doc('biz_vana')]), 'denied', '0048: 회사 접근 없이 VANA 줄만으로 VANA 문서가 들어간다')
+  assert.equal(await as(DG.lead, [vanaAccess, doc('biz_vana')]), 'denied', '0048: VANA 접근만 더했는데 VANA 문서가 들어간다')
+  assert.equal(await as(DG.lead, [vanaAccess, vanaRow, doc('biz_vana')]), 1, '0048: VANA 접근 + VANA 줄인데 VANA 문서가 안 들어간다')
+  assert.equal(await as(DG.lead, [doc(null)]), 'denied', '0048: 팀장이 그룹 공통 문서를 넣는다')
+
+  // ── 등급: 열람 등급 위로는 넣지도 올리지도 못한다 ──
+  assert.equal(await as(DG.lead, [doc('biz_dy', 'Vault')]), 'denied', '0048: Normal 직원이 Vault 문서를 넣는다')
+  assert.equal(await as(DG.lead, [doc('biz_dy', 'Restricted')]), 'denied', '0048: Normal 직원이 Restricted 문서를 넣는다')
+  assert.equal(await as(DG.chair, [doc('biz_dy', 'Vault', 'doc_g48', DG.chair)]), 1, '0048: 회장이 Vault 링크를 못 넣는다(회귀)')
+  assert.equal(await as(DG.lead, [doc('biz_dy'), `update documents set security_class = 'Vault' where document_id = 'doc_g48'`]), 'denied',
+    '0048: Normal 직원이 문서 등급을 Vault로 올린다')
+
+  // ── update · soft delete · hard delete ──
+  assert.equal(await as(DG.lead, [doc('biz_dy'), `update documents set title = '0048 고침' where document_id = 'doc_g48'`]), 1,
+    '0048: 경영지원 팀장이 DY 문서를 못 고친다')
+  assert.equal(await as(DG.lead, [doc('biz_dy'), `@${DG.sales}`, `update documents set title = 'x' where document_id = 'doc_g48'`]), 0,
+    '0048: 줄 없는 팀장이 DY 문서를 고친다')
+  assert.equal(await as(DG.lead, [doc('biz_dy'), `select soft_delete('documents', 'doc_g48')::int`]), 1, '0048: 경영지원 팀장이 DY 문서를 못 지운다(soft delete)')
+  assert.equal(await as(DG.lead, [doc('biz_dy'), `delete from documents where document_id = 'doc_g48'`]), 0,
+    '0048: documents hard delete가 열렸다(0042 soft delete 회귀)')
+  assert.deepEqual(await owner(`select policyname from pg_policies where tablename = 'documents' and cmd = 'DELETE' and permissive = 'PERMISSIVE'`), [],
+    '0048: documents에 permissive DELETE 정책이 되살아났다')
+
+  // ── 리뷰 I1 · I2: 등록자는 본인 · 고치기는 자기 것만(회장은 전부) · 주인 칸은 회장만 ──
+  assert.equal(await as(DG.lead, [doc('biz_dy', 'Normal', 'doc_g48', DG.sales)]), 'denied', '0048: 남의 이름(uploaded_by)으로 문서가 들어간다')
+  assert.equal(await as(DG.lead, [doc('biz_dy', 'Normal', 'doc_g48', DG.chair)]), 'denied', '0048: 회장 이름(uploaded_by)으로 문서가 들어간다')
+  assert.equal(await as(DG.chair, [doc('biz_dy', 'Normal', 'doc_g48', DG.lead)]), 'denied', '0048: 회장도 남의 이름으로 등록한다(uploaded_by는 본인)')
+  // 동료(같은 DY 문서 줄)가 볼 수 있는 공개 문서 — 보이지만 고치지도 지우지도 못한다.
+  const salesRow = `!insert into user_module_access (user_id, module, can_write) values ('${DG.sales}', '/documents/biz_dy', true)`
+  const colleague = (step: string) => as(DG.lead, [salesRow, doc('biz_dy', 'Public'), `@${DG.sales}`, step])
+  assert.equal(await colleague(`select count(*)::int from documents where document_id = 'doc_g48'`), 1, '0048 검사 전제: 동료에게 공개 문서가 보인다')
+  assert.equal(await colleague(`update documents set storage_url = 'https://evil.example' where document_id = 'doc_g48'`), 0, '0048: 동료가 남의 문서 링크를 바꾼다')
+  assert.equal(await colleague(`update documents set security_class = 'Normal' where document_id = 'doc_g48'`), 0, '0048: 동료가 남의 문서 등급을 바꾼다')
+  assert.equal(await colleague(`select soft_delete('documents', 'doc_g48')::int`), 0, '0048: 동료가 남의 문서를 지운다(soft delete)')
+  // 자기 문서는 고치지만 주인 · 등록자 칸은 못 바꾼다.
+  await assert.rejects(as(DG.lead, [doc('biz_dy'), `update documents set owner_user_id = '${DG.sales}' where document_id = 'doc_g48'`]),
+    /document_owner_change_forbidden/, '0048: 직원이 자기 문서의 주인을 바꾼다')
+  await assert.rejects(as(DG.lead, [doc('biz_dy'), `update documents set uploaded_by = '${DG.sales}' where document_id = 'doc_g48'`]),
+    /document_owner_change_forbidden/, '0048: 직원이 자기 문서의 등록자를 바꾼다')
+  assert.equal(await as(DG.lead, [doc('biz_dy'), `update documents set owner_user_id = owner_user_id, title = 'x' where document_id = 'doc_g48'`]), 1,
+    '0048: 주인 칸을 그대로 둔 수정이 막힌다')
+  // 회장은 남의 문서를 고치고 주인을 다시 정한다.
+  assert.equal(await as(DG.lead, [doc('biz_dy'), `@${DG.chair}`,
+    `update documents set title = '회장 고침', owner_user_id = '${DG.chair}', uploaded_by = '${DG.chair}' where document_id = 'doc_g48'`]), 1,
+  '0048: 회장이 남의 문서를 고치거나 주인을 다시 정하지 못한다')
+  assert.equal(await as(DG.lead, [doc('biz_dy'), `@${DG.chair}`, `select soft_delete('documents', 'doc_g48')::int`]), 1, '0048: 회장이 남의 문서를 못 지운다')
+  // 세션 없는 수정(마이그레이션 · SQL 편집기 백필)은 트리거가 막지 않는다.
+  await owner(`insert into documents (document_id, business_id, title, doc_type, storage_url) values ('doc_o48', 'biz_dy', 'o', 'x', 'https://x/o')`)
+  await owner(`update documents set owner_user_id = '${DG.lead}' where document_id = 'doc_o48'`)
+  await owner(`delete from documents where document_id = 'doc_o48'`)
+
+  // ── 시스템 계정 · 옛 줄 · GroupCFO ──
+  assert.equal(await as(DG.agent, [doc('biz_dy', 'Normal', 'doc_g48', DG.agent)]), 'denied', '0048: 문서 줄 있는 AIAgent가 문서를 넣는다')
+  assert.equal(await as(DG.agent, [`select document_grant('biz_dy', true)::int`]), 0, '0048: AIAgent에게 document_grant가 참이다')
+  assert.equal(await as(DG.integration, [doc('biz_dy', 'Normal', 'doc_g48', DG.integration)]), 'denied', '0048: 문서 줄 있는 Integration이 문서를 넣는다')
+  assert.equal(await as(DG.legacy, [doc('biz_dy', 'Normal', 'doc_g48', DG.legacy)]), 1, '0048: 옛 /core/search 쓰기 줄이 줄어들었다(회귀)')
+  assert.equal(await as(DG.legacy, [doc('biz_vana', 'Normal', 'doc_g48', DG.legacy)]), 'denied', '0048: 옛 /core/search 줄이 회사 범위를 넘는다')
+  assert.equal(await as(DG.cfo, [doc('biz_dy', 'Normal', 'doc_g48', DG.cfo)]), 'denied', '0048: 줄 없는 GroupCFO가 문서를 넣는다(역할로 넓히지 않았다)')
+  assert.equal(await as(DG.cfo, [`!insert into user_module_access (user_id, module, can_write) values ('${DG.cfo}', '/documents/biz_vana', true)`,
+    doc('biz_vana', 'Normal', 'doc_g48', DG.cfo)]), 1, '0048: VANA 줄 받은 GroupCFO가 VANA 문서를 못 넣는다')
+
+  // ── doc_folders: 같은 판정 ──
+  assert.equal(await as(DG.lead, [folder('biz_dy')]), 1, '0048: 경영지원 팀장이 DY 폴더를 못 만든다')
+  assert.equal(await as(DG.sales, [folder('biz_dy')]), 'denied', '0048: 줄 없는 팀장이 DY 폴더를 만든다')
+  assert.equal(await as(DG.lead, [folder('biz_vana')]), 'denied', '0048: 경영지원 팀장이 VANA 폴더를 만든다')
+  assert.equal(await as(DG.lead, [vanaAccess, folder('biz_vana')]), 'denied', '0048: VANA 접근만으로 VANA 폴더가 선다')
+  assert.equal(await as(DG.lead, [`insert into doc_folders (business_id, name, created_by) values ('biz_dy', 'x', '${DG.sales}')`]), 'denied',
+    '0048: 남의 이름(created_by)으로 폴더가 선다')
+  assert.equal(await as(DG.lead, [folder('biz_dy'), `update doc_folders set name = '0048 고침' where name = '0048 폴더'`]), 1, '0048: 경영지원 팀장이 DY 폴더를 못 고친다')
+  assert.equal(await as(DG.lead, [folder('biz_dy'), `delete from doc_folders where name = '0048 폴더'`]), 1, '0048: 경영지원 팀장이 DY 폴더를 못 지운다')
+  assert.equal(await as(DG.lead, [folder('biz_dy'), `@${DG.sales}`, `delete from doc_folders where name = '0048 폴더'`]), 0, '0048: 줄 없는 팀장이 DY 폴더를 지운다')
+  // 리뷰 M4: 폴더 고치기 · 지우기는 만든 사람 또는 회장.
+  const colleagueFolder = (step: string) => as(DG.lead, [salesRow, folder('biz_dy'), `@${DG.sales}`, step])
+  assert.equal(await colleagueFolder(`update doc_folders set name = 'x' where name = '0048 폴더'`), 0, '0048: 동료가 남의 폴더 이름을 바꾼다')
+  assert.equal(await colleagueFolder(`delete from doc_folders where name = '0048 폴더'`), 0, '0048: 동료가 남의 폴더를 지운다')
+  assert.equal(await as(DG.lead, [folder('biz_dy'), `@${DG.chair}`, `update doc_folders set name = '회장 고침' where name = '0048 폴더'`]), 1, '0048: 회장이 남의 폴더를 못 고친다')
+  assert.equal(await as(DG.lead, [folder('biz_dy'), `@${DG.chair}`, `delete from doc_folders where name = '0048 폴더'`]), 1, '0048: 회장이 남의 폴더를 못 지운다')
+  assert.equal(await as(DG.agent, [folder('biz_dy')]), 'denied', '0048: 문서 줄 있는 AIAgent가 폴더를 만든다')
+  assert.equal(await as(DG.legacy, [folder('biz_dy')]), 1, '0048: 옛 /core/search 줄로 폴더가 안 선다(회귀)')
+
+  // ── 거두기: 회수하면 문서 줄도 지워지고 감사가 그 회사로 ──
+  assert.equal(await as(DG.chair, [`update user_profiles set revoked_at = now() where user_id = '${DG.lead}'`,
+    `select (select count(*)::int from user_module_access where user_id = '${DG.lead}')
+          + (select count(*)::int from audit_log where entity_table = 'user_module_access' and entity_id = '${DG.lead}'
+               and business_id = 'biz_dy' and note like '계정 회수%') * 10`]), 10,
+  '0048: 회수했는데 문서 줄이 남거나 감사가 DY로 안 걸린다')
+  assert.equal(await as(DG.lead, [`!update user_profiles set revoked_at = now() where user_id = '${DG.lead}'`, doc('biz_dy')]), 'denied',
+    '0048: 회수된 사람이 문서를 넣는다')
+
+  // ── 카탈로그: force 새로 없음 · 판정 함수는 anon에게서 걷지 않았다(0047 머리 주석) ──
+  assert.deepEqual(await owner(`select relname, relforcerowsecurity as f from pg_class where relname in ('doc_folders', 'user_module_access') order by 1`),
+    [{ relname: 'doc_folders', f: false }, { relname: 'user_module_access', f: false }], '0048: force가 새로 걸렸다(0035 함정)')
+  for (const fn of ['can_write_documents(text)', 'document_grant(text, boolean)']) {
+    assert.deepEqual(await owner(`select has_function_privilege('authenticated', '${fn}', 'execute') as ok`), [{ ok: true }], `0048: ${fn}을 authenticated가 못 부른다`)
+  }
+  assert.deepEqual(await owner(`select has_function_privilege('authenticated', 'module_grant_audit(uuid, text, jsonb, jsonb, text)', 'execute') as ok`),
+    [{ ok: false }], '0048: module_grant_audit을 authenticated가 부를 수 있다')
+  await db.close()
+}
+
+/**
  * 화면이 말하는 마이그레이션 번호가 실제 마지막 파일과 같은가 (Phase 5-E 4절).
  *
  * `/settings`의 '이 웹에 대해' 절이 `src/lib/version.ts`의 LATEST_MIGRATION을 그대로 보여 준다.
@@ -4191,8 +4375,9 @@ async function main() {
   await attachments()
   await aiAssistant()
   await financeGrants()
+  await documentGrants()
   console.log(
-    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단)`,
+    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단), 0048 문서 모듈 권한(사람 × 회사 · 문서 · 폴더 쓰기 · 줄 없는 팀장 거부 · 회사 접근과 줄 둘 다 · 열람 등급 위 insert/update 차단 · 등록자는 본인 · 고치기 · 지우기는 자기 것만(회장 전부) · 주인 칸은 회장만 · 폴더는 만든 사람만 · 시스템 계정 불변 · 옛 /core/search 회귀 · 회수 감사 · hard delete 닫힘)`,
   )
 }
 

@@ -51,6 +51,7 @@ import {
   DUMMY_SHARE_SEED,
   DUMMY_TASKS,
   DUMMY_TEAMS,
+  dummyCanWriteDocuments,
   dummyHasBusiness,
   clearDummyModuleGrants,
   dummyModuleGrants,
@@ -875,6 +876,14 @@ export const dummyRepository: ChairmanRepository = {
 
   /** CH-042. id는 live에서 DB 시퀀스가 준다. 여기서는 같은 모양(doc_001)을 흉내 낸다. */
   async createDocument(input: NewDocument, actor: AuditActor): Promise<DocumentRecord> {
+    // 0048 documents_insert의 거울 — 그 회사의 문서 등록 권한 AND 등급 ≤ 내 열람 등급('group' = 그룹 공통 = null).
+    const viewer = memoryPerson(dummyViewer().user_id)
+    if (
+      !dummyCanWriteDocuments(viewer, input.business_id === 'group' ? null : input.business_id) ||
+      CLASS_RANK[input.security_class] > CLASS_RANK[viewer.max_security_class]
+    ) {
+      throw new Error('row-level security: documents_insert')
+    }
     // 0038 documents_version 트리거의 거울 — 보이는 판 가운데 같은 회사 · 폴더 · 제목 · 유형 · 등급.
     const visible = await this.listDocuments()
     const folder = input.folder_id ?? null

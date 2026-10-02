@@ -25,3 +25,23 @@ export function financeByBusiness(grants: ModuleGrant[]): Record<string, { write
   }
   return out
 }
+
+/**
+ * 0048. 모듈 줄 → 회사별 문서 등록 칸(SessionUser.documents). '/documents/<business_id>'의 can_write만 본다
+ * (can_approve는 문서에서 쓰지 않는다). 줄이 없는 회사는 키가 없다.
+ */
+export function documentsByBusiness(grants: ModuleGrant[]): Record<string, { write: boolean }> {
+  const out: Record<string, { write: boolean }> = {}
+  for (const g of grants) {
+    const biz = businessOfModule('/documents', g.module)
+    if (biz) out[biz] = { write: g.can_write }
+  }
+  return out
+}
+
+/** 0048 옛 전역 키. can_write_documents()가 남겨 둔 분기와 같다 — 이 줄의 쓰기 칸이면 회사 범위 안 전부. */
+export const LEGACY_DOCUMENTS_MODULE = '/core/search'
+
+export function hasLegacyDocumentWrite(grants: ModuleGrant[]): boolean {
+  return grants.some((g) => g.module === LEGACY_DOCUMENTS_MODULE && g.can_write)
+}

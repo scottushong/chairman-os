@@ -9,7 +9,7 @@ import type {
   NoticeRead,
 } from '@/types'
 
-import { DUMMY_PEOPLE, DUMMY_TEAMS, DUMMY_UID, dummyHasBusiness, dummyPerson, dummyViewer } from './dummy-org'
+import { DUMMY_PEOPLE, DUMMY_TEAMS, DUMMY_UID, dummyCanWriteDocuments, dummyHasBusiness, dummyPerson, dummyViewer } from './dummy-org'
 import type { AuditActor } from './types'
 
 /**
@@ -217,7 +217,8 @@ export async function saveDocFolder(
   input: Omit<DocFolder, 'folder_id'>,
   actor: AuditActor,
 ): Promise<number> {
-  if (!dummyHasBusiness(dummyViewer(), input.business_id)) throw new Error('row-level security: doc_folders')
+  // 0048 doc_folders_insert = can_write_documents(business_id) — 회사 범위 AND 그 회사의 문서 등록 권한.
+  if (!dummyCanWriteDocuments(dummyViewer(), input.business_id)) throw new Error('row-level security: doc_folders')
   void actor
   if (input.team_id && !DUMMY_TEAMS.some((t) => t.team_id === input.team_id && t.business_id === input.business_id)) {
     throw new Error('doc_folder_team_business_mismatch')

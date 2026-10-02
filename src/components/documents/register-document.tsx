@@ -27,11 +27,15 @@ const GROUP = 'group'
 
 export function RegisterDocument({
   businesses,
+  allowGroup = true,
   folders = [],
   folderPaths = {},
   initialClass,
 }: {
+  /** 0048. 이 사람이 문서를 등록할 수 있는 회사만(화면이 거른다 — 판정은 DB). */
   businesses: Business[]
+  /** 0048. 그룹 공통(business_id null)에 등록할 수 있는가 — 회장(과 옛 전역 줄의 CFO)만. */
+  allowGroup?: boolean
   /** 0038. 고른 소속의 폴더만 보여 준다(트리거가 같은 회사인지 한 번 더 본다). */
   folders?: DocFolder[]
   /** folder_id → «팀 / 폴더 / 하위» 경로. 서버가 만든다(함수는 클라이언트로 못 넘긴다). */
@@ -41,7 +45,7 @@ export function RegisterDocument({
 }) {
   const [open, setOpen] = useState(!!initialClass)
   const [title, setTitle] = useState('')
-  const [businessId, setBusinessId] = useState<string>(GROUP)
+  const [businessId, setBusinessId] = useState<string>(allowGroup ? GROUP : (businesses[0]?.business_id ?? GROUP))
   const [docType, setDocType] = useState('')
   const [securityClass, setSecurityClass] = useState<SecurityClass>(initialClass ?? 'Normal')
   const [storageUrl, setStorageUrl] = useState('')
@@ -114,7 +118,7 @@ export function RegisterDocument({
         </button>
       </div>
       <p className="mt-1 text-t11 text-ink-muted">
-        파일은 올리지 않습니다. Chairman OS는 문서의 주소만 보관합니다.
+        파일은 올리지 않습니다. 이 시스템은 문서의 주소만 보관합니다.
       </p>
 
       <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -142,9 +146,11 @@ export function RegisterDocument({
             className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none focus:border-accent disabled:opacity-50"
           >
             {/* DB에서는 NULL이 그룹 공통이다. 화면에서는 'group'으로 부른다(어댑터가 옮긴다). */}
-            <option value={GROUP} className="bg-panel">
-              그룹 공통
-            </option>
+            {allowGroup ? (
+              <option value={GROUP} className="bg-panel">
+                그룹 공통
+              </option>
+            ) : null}
             {businesses.map((b) => (
               <option key={b.business_id} value={b.business_id} className="bg-panel">
                 {b.name}
@@ -228,10 +234,9 @@ export function RegisterDocument({
               </button>
             ))}
           </div>
-          {/* 등급을 올리면 자기도 못 보게 될 수 있다. 저장 전에 말해 준다. */}
+          {/* 0048부터 DB가 자기 열람 등급 위의 등록을 거부한다(documents_insert). 저장 전에 말해 준다. */}
           <p className="mt-1.5 text-t10h text-ink-muted">
-            등급이 자기 열람 등급보다 높으면 등록한 본인에게도 목록에 뜨지 않습니다(0002
-            documents_read).
+            자기 열람 등급보다 높은 등급으로는 등록할 수 없습니다(0048 documents_insert).
           </p>
         </fieldset>
       </div>

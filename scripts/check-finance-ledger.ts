@@ -26,7 +26,10 @@ import { STANDARD_CHART } from '../src/lib/ledger/standard-chart'
 import { SECTION_CATEGORIES } from '../src/lib/ledger/accounts'
 import { balanceSheet, cashFlowStatement } from '../src/lib/ledger/statements'
 import { dummyRepository } from '../src/lib/repository/dummy'
-import { DUMMY_UID, dummyModuleGrants, dummyPerson } from '../src/lib/repository/dummy-org'
+import { DUMMY_UID, dummyCanWriteDocuments, dummyModuleGrants, dummyPerson, setDummyModuleGrant } from '../src/lib/repository/dummy-org'
+import { canWriteAnyDocuments, canWriteDocuments } from '../src/lib/auth/roles'
+import { documentsByBusiness, hasLegacyDocumentWrite } from '../src/lib/module-grants'
+import type { SessionUser } from '../src/types'
 
 const BUSINESSES = ['biz_dy', 'biz_vana', 'biz_sticky', 'biz_hof', 'biz_boram']
 
@@ -295,6 +298,89 @@ async function financeGrantsDummy() {
   }
 }
 
+/**
+ * 0048 — dummy가 문서 등록 권한을 흉내 내는가(documents_insert · doc_folders_insert = can_write_documents + 등급).
+ * 경영지원 팀장(DY 문서 줄): DY 문서 · 폴더 O, VANA · 그룹 공통 X, 등급 위(Restricted · Vault) X.
+ * 줄 없는 팀장(sales_lead): 전부 X. 세션 안내(roles.ts canWriteDocuments)도 같은 답을 낸다.
+ */
+async function documentGrantsDummy() {
+  const repo = dummyRepository
+  const prev = process.env.DUMMY_USER
+  const chair = { user_id: 'chair', role: 'Chairman' }
+  const doc = (business_id: string, security_class: 'Normal' | 'Restricted' | 'Vault' = 'Normal') => ({
+    title: '0048 검증', business_id, doc_type: 'Contract', security_class, storage_url: 'https://drive.example/48', folder_id: null, tags: [],
+  })
+  const session = (uid: string, role: SessionUser['role']): SessionUser => {
+    const grants = dummyModuleGrants(uid)
+    return { user_id: uid, name: '', role, title_ko: '', display_name_en: null, language: 'ko', finance: {},
+      documents: documentsByBusiness(grants), documents_legacy_write: hasLegacyDocumentWrite(grants) }
+  }
+  try {
+    process.env.DUMMY_USER = 'support_lead'
+    const actor = { user_id: 'support', role: 'TeamLead' }
+    const lead = session(DUMMY_UID.supportLead, 'TeamLead')
+    assert.equal(canWriteDocuments(lead, 'biz_dy'), true, '0048 안내: 경영지원 팀장에게 DY 등록이 안 열린다')
+    assert.equal(canWriteDocuments(lead, 'biz_vana'), false, '0048 안내: 경영지원 팀장에게 VANA 등록이 열린다')
+    assert.equal(canWriteDocuments(lead, 'group'), false, '0048 안내: 경영지원 팀장에게 그룹 공통 등록이 열린다')
+    assert.ok((await repo.createDocument(doc('biz_dy'), actor)).document_id, '0048 dummy: 경영지원 팀장이 DY 문서를 못 넣는다')
+    await assert.rejects(repo.createDocument(doc('biz_dy', 'Vault'), actor), /row-level security/, '0048 dummy: Normal 팀장이 Vault 문서를 넣는다')
+    await assert.rejects(repo.createDocument(doc('biz_dy', 'Restricted'), actor), /row-level security/, '0048 dummy: Normal 팀장이 Restricted 문서를 넣는다')
+    await assert.rejects(repo.createDocument(doc('biz_vana'), actor), /row-level security/, '0048 dummy: DY 줄로 VANA 문서가 들어간다')
+    await assert.rejects(repo.createDocument(doc('group'), actor), /row-level security/, '0048 dummy: 팀장이 그룹 공통 문서를 넣는다')
+    assert.ok((await repo.saveDocFolder({ business_id: 'biz_dy', team_id: null, parent_id: null, name: '0048 폴더' }, actor)) > 0,
+      '0048 dummy: 경영지원 팀장이 DY 폴더를 못 만든다')
+
+    // 회사 접근(VANA)만 더해도 VANA 줄이 없으면 닫혀 있다. 회장이 켜면 열린다.
+    const me = dummyPerson(DUMMY_UID.supportLead)!
+    me.business_ids.push('biz_vana')
+    try {
+      await assert.rejects(repo.createDocument(doc('biz_vana'), actor), /row-level security/, '0048 dummy: VANA 접근만으로 VANA 문서가 들어간다')
+      await repo.setModuleGrant(DUMMY_UID.supportLead, { module: '/documents/biz_vana', can_write: true, can_approve: false }, chair)
+      assert.ok((await repo.createDocument(doc('biz_vana'), actor)).document_id, '0048 dummy: VANA 줄을 켰는데 VANA 문서가 안 들어간다')
+      assert.equal(canWriteDocuments(session(DUMMY_UID.supportLead, 'TeamLead'), 'biz_vana'), true, '0048 안내: 켠 VANA 줄이 세션에 안 붙는다')
+      await repo.setModuleGrant(DUMMY_UID.supportLead, { module: '/documents/biz_vana', can_write: false, can_approve: false }, chair)
+      assert.equal(dummyModuleGrants(DUMMY_UID.supportLead).some((m) => m.module === '/documents/biz_vana'), false, '0048 dummy: 끈 문서 줄이 남는다')
+    } finally {
+      me.business_ids.splice(me.business_ids.indexOf('biz_vana'), 1)
+    }
+
+    process.env.DUMMY_USER = 'sales_lead'
+    const sales = session(DUMMY_UID.salesLead, 'TeamLead')
+    assert.equal(canWriteAnyDocuments(sales), false, '0048 안내: 줄 없는 팀장에게 «링크 등록»이 그려진다')
+    await assert.rejects(repo.createDocument(doc('biz_dy'), { user_id: 'sales', role: 'TeamLead' }), /row-level security/, '0048 dummy: 줄 없는 팀장이 문서를 넣는다')
+    await assert.rejects(repo.saveDocFolder({ business_id: 'biz_dy', team_id: null, parent_id: null, name: '0048 x' }, { user_id: 'sales', role: 'TeamLead' }),
+      /row-level security/, '0048 dummy: 줄 없는 팀장이 폴더를 만든다')
+    // 옛 전역 줄('/core/search')은 그대로 연다(회귀) — 회사 범위 안에서만.
+    setDummyModuleGrant(DUMMY_UID.salesLead, { module: '/core/search', can_write: true, can_approve: false })
+    try {
+      assert.equal(canWriteDocuments(session(DUMMY_UID.salesLead, 'TeamLead'), 'biz_dy'), true, '0048 안내: 옛 /core/search 줄이 줄어들었다')
+      assert.ok((await repo.createDocument(doc('biz_dy'), { user_id: 'sales', role: 'TeamLead' })).document_id, '0048 dummy: 옛 /core/search 줄로 문서가 안 들어간다')
+      await assert.rejects(repo.createDocument(doc('biz_vana'), { user_id: 'sales', role: 'TeamLead' }), /row-level security/, '0048 dummy: 옛 줄이 회사 범위를 넘는다')
+    } finally {
+      setDummyModuleGrant(DUMMY_UID.salesLead, { module: '/core/search', can_write: false, can_approve: false })
+    }
+
+    // 시스템 계정은 줄이 있어도 안내도 dummy 판정도 false(리뷰 M1 — 옛 '/core/search' 줄이어도).
+    assert.equal(canWriteDocuments({ ...lead, role: 'AIAgent' }, 'biz_dy'), false, '0048 안내: 문서 줄 있는 AIAgent에게 등록이 열린다')
+    assert.equal(canWriteDocuments({ ...lead, role: 'AIAgent', documents_legacy_write: true }, 'biz_dy'), false, '0048 안내: 옛 줄 있는 AIAgent에게 등록이 열린다')
+    const agent = dummyPerson(DUMMY_UID.aiAgent)!
+    setDummyModuleGrant(agent.user_id, { module: '/core/search', can_write: true, can_approve: false })
+    setDummyModuleGrant(agent.user_id, { module: '/documents/biz_dy', can_write: true, can_approve: false })
+    try {
+      assert.equal(dummyCanWriteDocuments(agent, 'biz_dy'), false, '0048 dummy: 옛 줄 · 문서 줄 있는 AIAgent가 문서를 쓴다')
+    } finally {
+      setDummyModuleGrant(agent.user_id, { module: '/core/search', can_write: false, can_approve: false })
+      setDummyModuleGrant(agent.user_id, { module: '/documents/biz_dy', can_write: false, can_approve: false })
+    }
+    // 회장은 역할로.
+    process.env.DUMMY_USER = 'chairman'
+    assert.ok((await repo.createDocument(doc('group', 'Vault'), chair)).document_id, '0048 dummy: 회장이 그룹 공통 Vault 링크를 못 넣는다')
+  } finally {
+    if (prev === undefined) delete process.env.DUMMY_USER
+    else process.env.DUMMY_USER = prev
+  }
+}
+
 async function main() {
   await sheetWins()
   await statementsClose()
@@ -303,8 +389,10 @@ async function main() {
   standardChart()
   await provisionalGap()
   await books()
+  // 0048을 먼저 — financeGrantsDummy가 마지막에 경영지원 팀장을 회수해 모듈 줄을 전부 지운다.
+  await documentGrantsDummy()
   await financeGrantsDummy()
-  console.log('PASS: sheet 480 cells = ledger, statements close, basis rules, ECOUNT mapping boundaries, standard chart, provisional→confirmed gap, dummy books, 0047 dummy finance grants')
+  console.log('PASS: sheet 480 cells = ledger, statements close, basis rules, ECOUNT mapping boundaries, standard chart, provisional→confirmed gap, dummy books, 0047 dummy finance grants, 0048 dummy document grants')
 }
 
 main().catch((e) => {

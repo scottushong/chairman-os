@@ -75,8 +75,11 @@ export const MODULE_GRANT_OPTIONS: readonly {
   prefix: string
   label: string
   write: string
-  approve: string
+  /** null이면 그 모듈은 can_approve를 쓰지 않는다 — 화면은 칸 하나만 그리고 늘 false로 보낸다(0048 문서). */
+  approve: string | null
   note: string
+  /** 역할로 이미 전부 되는 사람 — 이 모듈 칸을 그리지 않는다. */
+  roleCovers: readonly Role[]
 }[] = [
   {
     prefix: '/finance',
@@ -84,6 +87,16 @@ export const MODULE_GRANT_OPTIONS: readonly {
     write: '재무 입력',
     approve: '월 마감',
     note: '전표 · 월별 손익 · 공식 재무제표 · 계정과목 — 회사마다 따로 켭니다. 회사 범위에 있어도 여기서 켜지 않은 회사의 재무는 열리지 않습니다. 둘 다 끄면 그 회사 재무를 못 봅니다.',
+    roleCovers: ['Chairman', 'GroupCFO'],
+  },
+  {
+    // 0048. 키 '/documents/<business_id>' · can_write만 쓴다. 읽기는 이 칸과 무관하다(0026 documents_read 그대로).
+    prefix: '/documents',
+    label: '문서',
+    write: '문서 등록',
+    approve: null,
+    note: '문서 링크 · 폴더를 그 회사에 등록하고 고칩니다 — 회사마다 따로 켭니다. 회사 범위에 있어도 여기서 켜지 않은 회사에는 등록하지 못합니다. 문서를 보는 범위는 이 칸과 무관합니다(등급 · 보고 체계).',
+    roleCovers: ['Chairman'],
   },
 ]
 

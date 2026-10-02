@@ -309,9 +309,9 @@ export async function updateUserProfile(input: {
 }
 
 /**
- * 0047 — 사람 × 회사 단위 모듈 권한(재무 입력 · 월 마감 등). 회장만이다(0002 module_access_admin_write).
+ * 0047 · 0048 — 사람 × 회사 단위 모듈 권한(재무 입력 · 월 마감 · 문서 등록). 회장만이다(0002 module_access_admin_write).
  *
- * 키는 «화면 목록(MODULE_GRANT_OPTIONS)의 접두사 + 실제로 있는 회사»만 받는다('/finance/biz_dy') — 아무 경로나 받으면
+ * 키는 «화면 목록(MODULE_GRANT_OPTIONS)의 접두사 + 실제로 있는 회사»만 받는다('/finance/biz_dy' · '/documents/biz_dy') — 아무 경로나 받으면
  * 권한 표에 뜻 없는 줄이 쌓이고, 그 줄은 나중에 누가 같은 이름의 모듈 · 회사를 만드는 날 조용히 권한이 된다.
  * 두 칸이 다 false면 줄을 지운다. 판정(회장인가)은 여기서 하지 않는다 — DB가 거부하면 그 문장을 한국어로 옮긴다.
  */
@@ -343,7 +343,8 @@ export async function setModuleGrant(input: {
     }
     await repo.setModuleGrant(
       userId,
-      { module: moduleKey(option.prefix, businessId), can_write: input.canWrite, can_approve: input.canApprove },
+      // 0048. 마감 칸이 없는 모듈(문서)은 can_approve를 늘 false로 둔다 — 화면 밖에서 true를 보내도 뜻 없는 칸을 켜지 않는다.
+      { module: moduleKey(option.prefix, businessId), can_write: input.canWrite, can_approve: option.approve ? input.canApprove : false },
       { user_id: user.user_id, role: user.role },
     )
   } catch (e) {
@@ -354,6 +355,8 @@ export async function setModuleGrant(input: {
   revalidatePath('/settings/users')
   // 그 사람의 재무 화면 안내(입력 폼 · 마감 버튼)가 세션 값으로 선다 — 다음 요청에서 새로 읽는다.
   revalidatePath('/finance', 'layout')
+  // 0048. 문서 화면의 «링크 등록» · «+ 폴더»도 세션 값으로 선다.
+  revalidatePath('/documents', 'layout')
   return {}
 }
 

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 
+import { canWriteDocuments } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
 import { getRepository } from '@/lib/repository'
 import { SECURITY_CLASS, type SecurityClass } from '@/types'
@@ -13,8 +14,11 @@ import { SECURITY_CLASS, type SecurityClass } from '@/types'
  * Vault 문서의 실체는 Chairman OS에 두지 않기로 되어 있다(CLAUDE.md 데이터 원칙).
  * 업로드 경로를 만들면 그 원칙이 첫날부터 깨진다. 그래서 이 화면에는 파일 입력 자체가 없다.
  *
- * 권한은 여기서 보지 않는다. 0002의 documents_write가 회사 범위와 모듈 쓰기 권한을 같이 본다.
+ * 권한(0048): 세션 안내(canWriteDocuments — 그 회사의 '/documents/<business_id>' 줄)로 먼저 한국어 거부를 돌려주고,
+ * 진짜 판정은 0048 documents_insert(can_write_documents(business_id) AND 등급 ≤ 내 열람 등급)가 한다.
  */
+
+const NO_DOC_WRITE = '이 회사에 문서를 등록할 권한이 없습니다. 회장이 사용자 화면의 «모듈 권한 → 문서»에서 그 회사의 «문서 등록»을 켜야 합니다.'
 
 export interface CreateDocumentState {
   error?: string
@@ -65,6 +69,7 @@ export async function createDocument(input: {
 
   const user = await currentUser()
   if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  if (!canWriteDocuments(user, businessId)) return { error: NO_DOC_WRITE }
 
   try {
     const repo = await getRepository()
@@ -88,8 +93,8 @@ export async function createDocument(input: {
     console.error('[createDocument]', e)
     return {
       error:
-        e instanceof Error && /documents_write|42501|PGRST301/.test(e.message)
-          ? '이 소속에 문서를 등록할 권한이 없습니다.'
+        e instanceof Error && /documents_write|documents_insert|42501|PGRST301|row-level security/.test(e.message)
+          ? '이 소속 · 등급으로 문서를 등록할 권한이 없습니다. 자기 열람 등급보다 높은 등급으로는 등록하지 못합니다.'
           : e instanceof Error && /document_folder_mismatch/.test(e.message)
             ? '고른 폴더가 이 소속의 폴더가 아닙니다.'
             : '문서를 등록하지 못했습니다. 잠시 후 다시 시도하세요.',
@@ -113,6 +118,7 @@ export async function createDocFolder(input: {
   if (!businessId || businessId === 'group') return { error: '폴더는 회사 아래에만 만듭니다.' }
   const user = await currentUser()
   if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  if (!canWriteDocuments(user, businessId)) return { error: NO_DOC_WRITE.replace('문서를 등록할', '폴더를 만들') }
   const teamId = typeof input.teamId === 'string' && input.teamId.trim() ? input.teamId.trim() : null
   const parentId = Number(input.parentId) > 0 ? Number(input.parentId) : null
   try {

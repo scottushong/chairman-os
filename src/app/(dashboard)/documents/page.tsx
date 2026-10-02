@@ -7,6 +7,8 @@ import { RegisterDocument } from '@/components/documents/register-document'
 import { FilterChips, type FilterOption } from '@/components/ui/filter-chips'
 import { Icon } from '@/components/ui/icon'
 import { recordScreenRead } from '@/lib/activity-record'
+import { canWriteAnyDocuments, canWriteDocuments } from '@/lib/auth/roles'
+import { currentUser } from '@/lib/auth/session'
 import { companyTree, descendantIds, folderPaths, type FolderNode } from '@/lib/doc-folders'
 import { formatDateTime } from '@/lib/format'
 import { businessName } from '@/lib/lookup'
@@ -60,7 +62,8 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
   await recordScreenRead({ path: '/documents', kind: 'page' })
 
   const repo = await getRepository()
-  const [allDocuments, businesses, folders, teams, attachments] = await Promise.all([
+  const [user, allDocuments, businesses, folders, teams, attachments] = await Promise.all([
+    currentUser(),
     repo.listDocuments(),
     repo.listBusinesses(),
     repo.listDocFolders(),
@@ -69,6 +72,10 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
     repo.listRecentAttachments(null, 30),
   ])
   const paths = folderPaths(folders, teams)
+  // 0048. 등록 · 폴더 만들기는 그 회사의 «문서 등록» 권한이 있는 사람에게만, 그 회사로만 연다(안내 — DB가 마지막 문).
+  const canRegister = canWriteAnyDocuments(user)
+  const writable = businesses.filter((b) => canWriteDocuments(user, b.business_id))
+  const canRegisterGroup = canWriteDocuments(user, GROUP)
   const inFolder = folderFilter ? descendantIds(folders, folderFilter) : null
   // 폴더 · 태그 · 검색어를 먼저 거르고, 아래의 등급 · 소속 칩은 그 결과 위에서 센다.
   const documents = allDocuments.filter(
@@ -133,7 +140,19 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
         code="CH-042"
         description="사내 스토리지에 있는 문서의 링크와 보안등급을 모아 둔다. 파일 자체는 여기 없다."
       >
-        <RegisterDocument businesses={businesses} folders={folders} folderPaths={paths} initialClass={registerClass} />
+        {canRegister && (writable.length > 0 || canRegisterGroup) ? (
+          <RegisterDocument
+            businesses={writable}
+            allowGroup={canRegisterGroup}
+            folders={folders}
+            folderPaths={paths}
+            initialClass={registerClass}
+          />
+        ) : registerClass ? (
+          <p className="max-w-xs text-t11 leading-relaxed text-ink-muted">
+            문서 등록 권한이 없습니다. 회장이 사용자 화면의 «모듈 권한 → 문서»에서 회사마다 켭니다.
+          </p>
+        ) : null}
       </PageHeader>
 
       <div className="mt-4 grid grid-cols-1 items-start gap-3 lg:grid-cols-[250px_minmax(0,1fr)]">
@@ -141,12 +160,14 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
       <aside className="rounded-xl border border-line-soft bg-panel px-3 py-3 text-t12" aria-label="폴더">
         <div className="mb-1.5 flex items-center justify-between">
           <span className="text-t11 font-semibold text-ink-dim">폴더</span>
-          <FolderCreate
-            businesses={businesses.map((b) => ({ id: b.business_id, name: b.name }))}
-            teams={teams.map((t) => ({ id: t.team_id, business_id: t.business_id, name: t.name }))}
-            folders={folders}
-            paths={paths}
-          />
+          {writable.length > 0 ? (
+            <FolderCreate
+              businesses={writable.map((b) => ({ id: b.business_id, name: b.name }))}
+              teams={teams.map((t) => ({ id: t.team_id, business_id: t.business_id, name: t.name }))}
+              folders={folders}
+              paths={paths}
+            />
+          ) : null}
         </div>
         <Link href={withParams(BASE, { tag: tagFilter ?? undefined, q: q || undefined })} className={`block rounded px-1.5 py-0.5 ${!folderFilter ? 'bg-raised font-semibold' : 'text-ink-dim hover:text-ink'}`}>
           전체
@@ -210,7 +231,9 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
           <div className="px-4 py-10 text-center">
             <p className="text-t12h text-ink-muted">
               {allDocuments.length === 0
-                ? '등록된 문서가 없습니다. 오른쪽 위 «링크 등록»으로 첫 문서를 올립니다.'
+                ? canRegister
+                  ? '등록된 문서가 없습니다. 오른쪽 위 «링크 등록»으로 첫 문서를 올립니다.'
+                  : '등록된 문서가 없습니다.'
                 : '조건에 맞는 문서가 없습니다.'}
             </p>
           </div>

@@ -4,7 +4,7 @@ import { cache } from 'react'
 import { DATA_MODE } from '@/lib/env'
 import { supabaseConfig } from '@/lib/supabase/config'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import { financeByBusiness } from '@/lib/module-grants'
+import { documentsByBusiness, financeByBusiness, hasLegacyDocumentWrite, LEGACY_DOCUMENTS_MODULE } from '@/lib/module-grants'
 import { dummyModuleGrants, dummyViewer } from '@/lib/repository/dummy-org'
 import { type Role, type SessionUser } from '@/types'
 
@@ -66,12 +66,14 @@ export const currentUser = cache(async function currentUser(): Promise<SessionUs
    * 화면 안내(roles.ts)만 이 값을 쓰고 판정은 0047 can_keep_books(target) · can_close_books(target)가 한다 —
    * 여기서 못 읽으면(오류) 빈 값으로 떨어진다.
    * 버튼이 안 보일 뿐 데이터가 새지 않는 쪽이다. 한 번 더 왕복하지만 cache() 덕에 요청당 한 번이다.
+   * 0048. 같은 질의로 문서 줄('/documents/<business_id>')과 옛 전역 줄('/core/search')도 읽는다 — 판정은
+   * 0048 can_write_documents(target)가 한다.
    */
   const { data: grants } = await sb
     .from('user_module_access')
     .select('module,can_write,can_approve')
     .eq('user_id', user.id)
-    .like('module', '/finance/%')
+    .or(`module.like./finance/%,module.like./documents/%,module.eq.${LEGACY_DOCUMENTS_MODULE}`)
     .returns<{ module: string; can_write: boolean; can_approve: boolean }[]>()
 
   return {
@@ -82,6 +84,8 @@ export const currentUser = cache(async function currentUser(): Promise<SessionUs
     display_name_en: data.display_name_en ?? null,
     language: data.language === 'en' ? 'en' : 'ko',
     finance: financeByBusiness(grants ?? []),
+    documents: documentsByBusiness(grants ?? []),
+    documents_legacy_write: hasLegacyDocumentWrite(grants ?? []),
   }
 })
 
@@ -109,6 +113,7 @@ function dummyUser(): SessionUser | null {
   if (DATA_MODE !== 'dummy') return null
   const person = dummyViewer()
   // 사용자 화면에서 켜고 끈 값(서버 메모리)까지 본다 — 시드 칸이 아니라 dummy-org의 저장소.
+  const grants = dummyModuleGrants(person.user_id)
   return {
     user_id: person.user_id,
     name: person.display_name,
@@ -116,6 +121,8 @@ function dummyUser(): SessionUser | null {
     title_ko: person.title_ko,
     display_name_en: person.display_name_en,
     language: person.language === 'en' ? 'en' : 'ko',
-    finance: financeByBusiness(dummyModuleGrants(person.user_id)),
+    finance: financeByBusiness(grants),
+    documents: documentsByBusiness(grants),
+    documents_legacy_write: hasLegacyDocumentWrite(grants),
   }
 }

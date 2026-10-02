@@ -115,4 +115,12 @@ export interface SessionUser {
    * 줄이 없거나 못 읽으면 그 회사는 키가 없다(= 둘 다 false).
    */
   finance: Record<string, { write: boolean; close: boolean }>
+  /**
+   * 0048. 본인의 문서 등록 권한, 회사별(business_id → 칸 하나). user_module_access '/documents/<business_id>'의 can_write.
+   * 회장은 역할로 이미 되므로 비어 있을 수 있다. 화면 판정은 lib/auth/roles.ts canWriteDocuments가 한다.
+   * 없으면(옛 세션 객체 · 카카오 질문자) 빈 값으로 본다.
+   */
+  documents?: Record<string, { write: boolean }>
+  /** 0048. 옛 전역 키 '/core/search'의 쓰기 칸 — can_write_documents()가 남긴 분기. 회사 범위 안 전부를 연다. */
+  documents_legacy_write?: boolean
 }

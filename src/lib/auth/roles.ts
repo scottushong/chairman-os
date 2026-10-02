@@ -77,6 +77,30 @@ export function canCloseBooks(user: SessionUser | null, businessId: string): boo
 }
 
 /**
+ * 0048 문서 등록(documents · doc_folders 쓰기) — can_write_documents(target)와 같은 판정이어야 한다(안내).
+ *   역할   Chairman만(그룹 공통 문서도 회장만).
+ *   사람   user_module_access '/documents/<business_id>' 쓰기 줄 — 회장이 사용자 화면에서 사람 × 회사마다 켠다.
+ *   옛 줄  '/core/search' 쓰기(전역) — DB가 남긴 분기라 화면도 같이 본다. 회사 범위(has_business)는 화면이 흉내 내지 않는다
+ *          — 회사 고르기 목록이 이미 그 사람에게 보이는 회사뿐이다.
+ * 시스템 계정은 줄이 있어도 false(0048 document_grant()). 그룹 공통('group')은 회장 · 옛 줄만.
+ */
+export function canWriteDocuments(user: SessionUser | null, businessId: string): boolean {
+  if (user === null || SYSTEM.includes(user.role)) return false
+  if (user.role === 'Chairman') return true
+  // 그룹 공통(business_id null)은 has_business(null) — 전사 역할만. 그 위에 쓰기 분기가 있어야 한다.
+  if (businessId === 'group') return user.role === 'GroupCFO' && user.documents_legacy_write === true
+  if (user.documents_legacy_write === true) return true
+  return user.documents?.[businessId]?.write === true
+}
+
+/** 어느 회사든 문서를 등록할 수 있는가(«링크 등록» · «+ 폴더»를 그릴지). */
+export function canWriteAnyDocuments(user: SessionUser | null): boolean {
+  if (user === null || SYSTEM.includes(user.role)) return false
+  if (user.role === 'Chairman' || user.documents_legacy_write === true) return true
+  return Object.values(user.documents ?? {}).some((g) => g.write)
+}
+
+/**
  * 0026 role_rank()의 거울. Chairman 5 … Member 0, 시스템 역할 -1.
  * 화면이 «이 사람에게 이 버튼을 그릴까»만 가른다 — 판정은 DB 정책이 한다.
  */

@@ -132,7 +132,12 @@ export const DUMMY_PEOPLE: UserAccount[] = [
   // 0047. DY 경영지원 팀장 — 첫 실사용자의 자리. 가입 트리거(finance_default_grant)가 주는 기본값과 같다:
   // 재무 입력 O · 월 마감 X. biz_dy만 가진다(다른 회사 재무는 존재하지 않는 것처럼 보인다).
   person(DUMMY_UID.supportLead, 'TeamLead', '경영지원팀장', 'Management Support Team Lead', '팀장', DUMMY_UID.dyCeo, 'team_dy_support', {
-    modules: [{ module: '/finance/biz_dy', can_write: true, can_approve: false }],
+    // 0048. DY 문서 등록 — DB는 기본값으로 붙이지 않는다(회장이 사용자 화면에서 켠다). dummy는 회장이 이미 켠 상태로
+    // 시작해 첫 실사용자 흐름(문서 링크 · 폴더 등록)을 바로 눌러 볼 수 있게 한다.
+    modules: [
+      { module: '/finance/biz_dy', can_write: true, can_approve: false },
+      { module: '/documents/biz_dy', can_write: true, can_approve: false },
+    ],
   }),
   person(DUMMY_UID.exec, 'Executive', '영업본부장', 'Sales Executive', '본부장', DUMMY_UID.dyCeo, 'team_dy_sales', {
     max_security_class: 'Restricted',
@@ -231,6 +236,22 @@ export function dummyFinanceGrant(viewer: UserAccount, businessId: string, need:
   const row = dummyModuleGrants(viewer.user_id).find((m) => m.module === `/finance/${businessId}`)
   if (!row) return false
   return need === 'read' || (need === 'write' ? row.can_write : row.can_approve)
+}
+
+/**
+ * 0048 can_write_documents(target)를 옮겨 적은 것. 회사 범위 AND (회장 · 옛 '/core/search' 쓰기 · '/documents/<target>' 쓰기).
+ * 시스템 계정은 줄이 있어도 false. businessId null = 그룹 공통(전사 역할만 범위 안).
+ */
+export function dummyCanWriteDocuments(viewer: UserAccount, businessId: string | null): boolean {
+  if (viewer.revoked_at || !dummyHasBusiness(viewer, businessId)) return false
+  if (viewer.role === 'Chairman') return true
+  // 시스템 계정은 옛 줄이든 문서 줄이든 쓰지 못한다 — DB는 0013 · 0015 restrictive(ai_agent_no_* · integration_no_*)가,
+  // 화면은 roles.ts canWriteDocuments가 같은 답을 낸다(리뷰 M1).
+  if (viewer.role === 'AIAgent' || viewer.role === 'Integration') return false
+  const rows = dummyModuleGrants(viewer.user_id)
+  if (rows.some((m) => m.module === '/core/search' && m.can_write)) return true
+  if (!businessId) return false
+  return rows.some((m) => m.module === `/documents/${businessId}` && m.can_write)
 }
 
 export function dummyViewerId(): string {
