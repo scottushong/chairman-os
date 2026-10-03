@@ -2195,3 +2195,12 @@ B-4가 찾은 결함 하나를 고쳤다. **리뷰 루프가 없는 작업이고
 - **/groupware 공지 시드의 «회장실로»는 사람이 쓴 글**(dummy 시드) — 자동 치환하지 않는다(0049 원칙). 화면에는 안 보이고 영문 칸(payload)에만 있다.
 - **직원 5계정 모두 /business/biz_debutphoto 링크가 404** — 어디서 링크가 나오는지 못 찾았다(사이드바 «회사» 또는 업무 · 프로젝트의 회사 링크로 추정). 회장 화면에서도 404인지 확인 필요.
 - **dummy 시드에 GroupCFO 사람이 없어** 점검은 BusinessCEO(dy_ceo) · Executive(exec) · TeamLead(sales_lead · support_lead) · Member(sales_staff) 다섯으로 했다.
+
+## 2026-10-03 블록 — 미결
+
+- **0049 production 반영 건너뜀** — 조건 ① «직원 화면 «회장/Chairman» 노출 0건»이 서지 않았다(/privacy 14곳, 개정안 회장 확인 대기). ② 검사 전부 통과 · ④ master 기준은 섰고, ③ dry-run은 링크를 production으로 바꾸지 않으려고 돌리지 않았다(대기 예상: 0049 하나 — master에 0050 없음).
+- **master가 origin보다 6커밋 앞**(심플 스킨 · 0049 · 직원 용어 · 기능번호 숨김 · 검사 보강 · 인수인계) — push = production 앱 배포라 0049 반영과 같이 한다.
+- **check:mobile은 :3100 dummy 서버가 있어야 돈다** — 이번에는 복사본 production 빌드를 잠깐 띄워 120/120.
+- **ECOUNT 업로드** — 브랜치 DEFERRED «2026-10-03 — ECOUNT 업로드 열 지정» 절(계정 등록 한 트랜잭션 아님 · committed 전이를 앱이 함 · 연간 모호 이름 고르는 화면 없음 · 당기 한 열만 · «△»/«-» 칸 오류 등).
+- **Hook A1 결과 대기**(회장이 production SQL Editor에서) — 켜기는 첫 직원 가입 뒤.
+- **도메인 이전 보류**(첫 직원 안정 뒤).

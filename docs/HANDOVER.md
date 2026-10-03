@@ -354,12 +354,26 @@ fallback을 넣으면 화면에 시드 숫자가 뜨는데 DUMMY DATA 뱃지는 
   사용자 초대·권한 회수, 감사 기록.
 - **Phase 2-B (2026-09-17)** — 자체 장부: 계정과목 관리(표준 계정과목표), 전표 입력(템플릿·차대 검사),
   월 마감(잠정 → 확정), 정정 전표(역분개 + 정정분개). `0016_books.sql`. dummy 모드에서 끝까지 확인했다.
-- **안 되는 것** — DY ECOUNT 엑셀 업로드(실제 파일을 받으면 별도 블록), MES 연동, 외부 Staging 및 실제 복구 리허설.
+- **안 되는 것** — DY ECOUNT 엑셀 업로드(진행 중 — 아래 2026-10-03 표), MES 연동, 외부 Staging 및 실제 복구 리허설.
   ECOUNT API 연동은 **하지 않기로** 했다(D-19).
   앞의 둘은 Phase 2 범위다. D-17 로컬 격리 workflow·합성 시드·검증 스크립트와 복구 절차는
   준비됐지만 CLI/Docker 실행은 미검증이다. [OPERATIONS 8~9절](./OPERATIONS.md#8-d-17--격리된-로컬-검증)을 따른다.
 - **못 잰 것** — 두 번째 계정이 없어서 못 돌린 테스트 5건.
   회사 간 격리, Vault 등급 차단 같은 것들이다. **계정 하나만 만들면 그날 실행할 수 있다.**
+
+### 2026-10-03 기준 (첫 직원 가입 대기)
+
+| 항목 | 상태 |
+|---|---|
+| DB — production | **0048까지**(2026-10-02 릴리스, 문서 모듈 권한). 복원 지점 · 직전 SHA는 OPERATIONS 9절 표 |
+| DB — 0049 직원 화면 용어 | master에 있음 · **staging 반영 · production 미반영**. 반영 조건: 직원 화면 «회장» 노출 0건(남은 것 = /privacy, 개정안 회장 확인 대기) |
+| DB — 0050 ECOUNT 업로드 기반 | **staging에만**. 코드는 `feat/ecount-import` 브랜치(master 미병합). master에서 `db push`하면 대기 목록에 0050이 없다 — 브랜치 병합 전에는 production에 가지 않는다 |
+| master ↔ origin | 로컬 master가 origin보다 앞서 있다(심플 스킨 · 0049 · 직원 용어 · 기능번호 숨김). **`git push origin master` = production 앱 배포**라 0049 production 반영과 한 묶음으로 한다(OPERATIONS 9절 순서: DB → 앱) |
+| 직원 화면 | 이름 «DY 그룹웨어» · 심플 스킨(흰 바탕) · 용어 원칙(CLAUDE.md — 직원에게 «대표», 회장 전용 기능은 이름째 숨김, 기능번호 CH-0xx · Phase는 회장에게만 `SpecCode` · `specText`). 점검 결과 `docs/onboarding/staff-screen-check-2026-10-03.md` |
+| 가입 | 초대 → `/signup` → 인증 메일(한국어 템플릿 `docs/onboarding/auth-email-templates-ko.md`). **메일 발신은 Resend SMTP로 바꿔야 한다**(OPERATIONS 3-1 «메일 한도» — 기본 SMTP는 시간당 몇 통). 첫 직원(DY 경영지원 팀장) 가입 대기 |
+| 가입 Hook(0043) | production에 함수만 있고 **꺼져 있다**. 첫 직원 가입 뒤 `docs/onboarding/signup-hook-checklist.md` 1~6 순서로 회장이 켠다 |
+| ECOUNT 엑셀 업로드 | 브랜치 `feat/ecount-import`: 공통 기반(업로드 · 원본 첨부 · 해시) + 열 지정 화면(머리글로 짐작 → 사람이 계정코드 · 계정명 · 금액 · 월 열 확정, 회사별로 지난 지정 재사용, 단위 원/천원, 월별 당월/누계 — 누계는 앞 달을 빼 당월로). **계정과목은 등록(병합)까지**, 연간 · 월별은 **미리보기 검증까지** — 등록 RPC는 0051 이후(DB 리뷰 루프 대상). 실제 ECOUNT 파일로는 아직 안 돌려 봤다. ECOUNT API 연동은 하지 않는다(D-19) |
+| 도메인 이전 | 보류(첫 직원 안정 뒤). `docs/onboarding/domain-move-checklist.md` |
 
 ### 남은 DEFERRED
 
