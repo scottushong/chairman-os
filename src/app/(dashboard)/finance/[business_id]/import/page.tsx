@@ -6,6 +6,7 @@ import { EcountImportPanel } from '@/components/finance/ecount-import-panel'
 import { PageHeader } from '@/components/layout/page-header'
 import { canImportEcount } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
+import { parseMapping } from '@/lib/ecount/excel/mapping'
 import { outlineFromSummary } from '@/lib/ecount/excel/workbook'
 import { ECOUNT_CODE_BUSINESSES } from '@/lib/ledger/standard-chart'
 import { getRepository } from '@/lib/repository'
@@ -15,8 +16,9 @@ import { FINANCE_IMPORT_KIND } from '@/types'
  * ECOUNT 엑셀 업로드 (설계서 docs/superpowers/specs/2026-10-02-ecount-excel-import.md A절 · 0050).
  *
  * 세 단 — 계정과목 / 연간 재무제표 / 월별 손익. 계정이 먼저 들어와야 연간 · 월별이 계정에 맞춰진다.
- * 지금은 공통 기반까지다: 파일을 올리면 서버가 원본을 다시 읽어 해시 · 개요를 적고, 대상별 미리보기는
- * «열 구성 확인 후 제공». 진행 중 업로드는 아래 목록에서 취소한다.
+ * 파일을 올리면 서버가 원본을 다시 읽어 해시 · 개요를 적고, 사람이 열을 지정(짐작 · 지난 업로드 지정을 확인)한 뒤
+ * 미리보기를 한다. 계정과목은 등록까지, 연간 · 월별은 미리보기 검증까지(등록은 DB 등록 함수가 생긴 뒤).
+ * 진행 중 업로드는 아래 목록에서 이어 가거나 취소한다.
  *
  * 없는 회사 · 볼 수 없는 회사 · ECOUNT를 쓰지 않는 회사는 404(다른 재무 화면과 같다 — HANDOVER ⑤).
  * 권한이 없으면 공식 결산 입력 화면처럼 문장으로 말한다. 판정은 0050 RLS(can_keep_books)가 한다.
@@ -42,6 +44,7 @@ export default async function EcountImportPage(props: PageProps<'/finance/[busin
       created_at: r.created_at,
       hasFile: files[i].length > 0,
       checked: !!r.file_sha256,
+      mapped: parseMapping(r.summary?.mapping, r.kind) !== null,
       mine: r.created_by === user.user_id,
       outline: outlineFromSummary(r.summary),
     }))

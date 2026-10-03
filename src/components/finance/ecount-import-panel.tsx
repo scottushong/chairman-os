@@ -10,7 +10,7 @@ import { ECOUNT_XLSX_ACCEPT, ecountBytesProblem, ecountFileProblem } from '@/lib
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
 import { FINANCE_IMPORT_KIND_LABEL_KO, type FinanceImportKind } from '@/types'
 
-import { EcountOutline } from './ecount-outline'
+import { EcountImportFlow } from './ecount-import-flow'
 
 /**
  * ECOUNT 업로드 한 단(계정과목 · 연간 · 월별) — 파일 고르기 → 올리기 → 서버가 원본을 다시 읽은 개요.
@@ -19,7 +19,7 @@ import { EcountOutline } from './ecount-outline'
  * 정한다) → 바이트(live: 브라우저가 Storage로 바로 · dummy: 서버 액션). **AI 요약은 부르지 않는다.**
  * 바이트가 실패하면 첨부 줄 → 업로드 순서로 되돌린다(0050 — 끝난 업로드의 원본은 지울 수 없다).
  *
- * 대상별 미리보기(열 매핑 · 차단 · 경고)는 열 구성 확인 뒤다 — 그 전까지는 «미리보기: 열 구성 확인 후 제공».
+ * 올린 뒤에는 열 지정 → 미리보기 → 등록(ecount-import-flow). 흐름이 열리면 이 단이 한 줄을 다 차지한다 — 표가 넓다.
  */
 
 const TARGET: Record<FinanceImportKind, { source: string; target: string }> = {
@@ -104,7 +104,10 @@ export function EcountImportPanel({ businessId, kind, mode }: { businessId: stri
 
   const t = TARGET[kind]
   return (
-    <section className="flex flex-col rounded-xl border border-line-soft bg-panel p-4" aria-label={`${FINANCE_IMPORT_KIND_LABEL_KO[kind]} 업로드`}>
+    <section
+      className={`flex min-w-0 flex-col rounded-xl border border-line-soft bg-panel p-4 ${result?.mapping ? 'lg:col-span-3' : ''}`}
+      aria-label={`${FINANCE_IMPORT_KIND_LABEL_KO[kind]} 업로드`}
+    >
       <h2 className="text-t13 font-semibold">{FINANCE_IMPORT_KIND_LABEL_KO[kind]}</h2>
       <p className="mt-1 text-t11h text-ink-dim">{t.source}</p>
       <p className="mt-0.5 text-t10h text-ink-muted">→ {t.target}</p>
@@ -147,18 +150,12 @@ export function EcountImportPanel({ businessId, kind, mode }: { businessId: stri
         </p>
       ) : null}
 
-      {result ? (
-        result.pending ? (
-          <div className="mt-3 space-y-2 rounded-md border border-line-soft bg-raised/40 p-2.5">
-            <p className="text-t11h font-semibold text-ink">미리보기: 열 구성 확인 후 제공</p>
-            <p className="text-t10h text-ink-muted">원본을 받아 두었습니다. 아래 «진행 중»에서 취소할 수 있습니다.</p>
-            {result.outline ? <EcountOutline outline={result.outline} /> : null}
-          </div>
-        ) : result.error ? (
-          <p role="alert" className="mt-2 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-t11h text-critical">
-            {result.error} — 원본은 «진행 중»에 남아 있습니다. 취소하고 다시 올리세요.
-          </p>
-        ) : null
+      {result?.importId && result.mapping ? (
+        <EcountImportFlow key={result.importId} initial={result} />
+      ) : result?.error ? (
+        <p role="alert" className="mt-2 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-t11h text-critical">
+          {result.error} — 원본은 «진행 중»에 남아 있습니다. 취소하고 다시 올리세요.
+        </p>
       ) : null}
     </section>
   )

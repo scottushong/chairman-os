@@ -61,7 +61,13 @@ export function dummyFinanceImportOwnedDraft(importId: string, userId: string): 
 
 type Methods = Pick<
   ChairmanRepository,
-  'createFinanceImport' | 'getFinanceImport' | 'listFinanceImports' | 'recordFinanceImportPreview' | 'cancelFinanceImport'
+  | 'createFinanceImport'
+  | 'getFinanceImport'
+  | 'listFinanceImports'
+  | 'recordFinanceImportPreview'
+  | 'cancelFinanceImport'
+  | 'findLatestFinanceImportMapping'
+  | 'commitFinanceImport'
 >
 
 export const dummyFinanceImports: Methods = {
@@ -115,6 +121,36 @@ export const dummyFinanceImports: Methods = {
     row.summary = { ...patch.summary }
     if (patch.period_key !== undefined) row.period_key = patch.period_key
     row.updated_at = new Date().toISOString()
+    return { ...row }
+  },
+
+  async findLatestFinanceImportMapping(businessId, kind, exceptImportId) {
+    const row = store.rows
+      .filter(
+        (r) =>
+          r.business_id === businessId &&
+          r.kind === kind &&
+          r.import_id !== exceptImportId &&
+          r.status !== 'cancelled' &&
+          visible(r) &&
+          !!r.summary &&
+          typeof r.summary === 'object' &&
+          r.summary.mapping != null,
+      )
+      .sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
+    return row ? { ...row } : null
+  },
+
+  /** 0050 — 만든 사람의 draft에서만 · commit_shape(sha256 · 계정과목 아니면 period_key). */
+  async commitFinanceImport(importId, summary, actor: AuditActor) {
+    void actor
+    const row = ownDraft(importId)
+    if (!row.file_sha256 || (row.kind !== 'accounts' && !row.period_key)) throw new Error('finance_imports_commit_shape')
+    const now = new Date().toISOString()
+    row.status = 'committed'
+    row.summary = { ...summary }
+    row.committed_at = now
+    row.updated_at = now
     return { ...row }
   },
 

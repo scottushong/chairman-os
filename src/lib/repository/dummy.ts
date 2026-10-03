@@ -533,6 +533,7 @@ export const dummyRepository: ChairmanRepository = {
   createAccount: books.createAccount,
   updateAccount: books.updateAccount,
   applyStandardChart: books.applyStandardChart,
+  mergeEcountAccounts: books.mergeEcountAccounts,
   postJournalEntry: books.postJournalEntry,
   closePeriod: books.closePeriod,
   postCorrection: books.postCorrection,

@@ -3,10 +3,11 @@
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 
-import { cancelEcountImport, previewEcountImport } from '@/app/actions/ecount-import'
+import { cancelEcountImport, previewEcountImport, type EcountPreviewState } from '@/app/actions/ecount-import'
 import type { SheetOutline } from '@/lib/ecount/excel/workbook'
 import { FINANCE_IMPORT_KIND_LABEL_KO, type FinanceImportKind } from '@/types'
 
+import { EcountImportFlow } from './ecount-import-flow'
 import { EcountOutline } from './ecount-outline'
 
 /**
@@ -23,6 +24,8 @@ export interface EcountDraftRow {
   hasFile: boolean
   /** 서버가 원본을 읽어 해시를 적었는가(미리보기 공통부를 지났는가) */
   checked: boolean
+  /** 사람이 열 지정을 확정했는가(summary.mapping) */
+  mapped: boolean
   mine: boolean
   outline: SheetOutline[] | null
 }
@@ -51,8 +54,9 @@ function DraftItem({ d }: { d: EcountDraftRow }) {
   const [pending, start] = useTransition()
   const [msg, setMsg] = useState<{ text: string; tone: 'info' | 'error' } | null>(null)
   const [outline, setOutline] = useState<SheetOutline[] | null>(d.outline)
+  const [flow, setFlow] = useState<EcountPreviewState | null>(null)
 
-  const status = !d.hasFile ? '원본 없음' : d.checked ? '미리보기: 열 구성 확인 후 제공' : '원본 확인 전'
+  const status = !d.hasFile ? '원본 없음' : d.mapped ? '열 지정 확정' : d.checked ? '열 지정 전' : '원본 확인 전'
 
   return (
     <li className="py-2.5">
@@ -73,14 +77,14 @@ function DraftItem({ d }: { d: EcountDraftRow }) {
                     setMsg(null)
                     const r = await previewEcountImport(d.import_id)
                     if (r.outline) setOutline(r.outline)
-                    if (r.pending) setMsg({ text: '서버가 원본을 다시 읽었습니다. 미리보기는 열 구성 확인 후 제공합니다.', tone: 'info' })
+                    if (r.importId && r.mapping) setFlow(r)
                     else if (r.error) setMsg({ text: r.error, tone: 'error' })
                     router.refresh()
                   })
                 }
                 className="min-h-11 rounded px-1.5 text-t10h text-accent hover:underline disabled:opacity-50 lg:min-h-0 lg:py-0.5"
               >
-                다시 읽기
+                이어 가기
               </button>
             ) : null}
             <button
@@ -108,7 +112,9 @@ function DraftItem({ d }: { d: EcountDraftRow }) {
           {msg.text}
         </p>
       ) : null}
-      {outline ? (
+      {flow ? (
+        <EcountImportFlow key={flow.importId} initial={flow} />
+      ) : outline ? (
         <div className="mt-1.5">
           <EcountOutline outline={outline} />
         </div>

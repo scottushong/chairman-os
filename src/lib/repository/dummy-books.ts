@@ -31,7 +31,7 @@ import type {
 } from '@/types'
 
 import { dummyFinanceGrant, dummyHasBusiness, dummyViewer } from './dummy-org'
-import { DUPLICATE_ACCOUNT_CODE, type AccountPatch, type AuditActor, type NewAccount } from './types'
+import { DUPLICATE_ACCOUNT_CODE, type AccountPatch, type AuditActor, type EcountAccountMerge, type NewAccount } from './types'
 
 /**
  * dummy 모드의 자체 장부 (Phase 2-B). 0016이 DB에서 하는 일을 메모리에서 흉내 낸다.
@@ -197,6 +197,48 @@ export async function updateAccount(
   store.set(key(businessId, accountCode), next)
   note(actor, `update account ${businessId}:${accountCode}`)
   return { ...next }
+}
+
+/**
+ * ① ECOUNT 계정과목 병합(supabase.ts mergeEcountAccounts와 같은 규칙). 새 코드는 source='ecount' ·
+ * 이름은 계획에 든 코드만 · 분류는 건드리지 않는다. live와 같이 **전부 확인한 뒤** 쓴다 — 중간에 멈춰 반쪽이 남지 않게.
+ */
+export async function mergeEcountAccounts(
+  businessId: string,
+  merge: EcountAccountMerge,
+  actor: AuditActor,
+  auditNote: string,
+): Promise<{ added: number; renamed: number }> {
+  assertKeepBooks(businessId)
+  const store = await accountStore()
+  for (const c of merge.creates) {
+    if (c.business_id !== businessId) throw new Error('accounts: 다른 회사의 계정이 섞였다.')
+    if (store.has(key(businessId, c.account_code))) throw new Error(DUPLICATE_ACCOUNT_CODE)
+  }
+  for (const r of merge.renames) {
+    if (!store.has(key(businessId, r.account_code))) throw new Error('accounts: 고칠 계정이 없다.')
+  }
+  const fetched_at = new Date().toISOString()
+  for (const c of merge.creates) {
+    store.set(key(businessId, c.account_code), {
+      business_id: businessId,
+      account_code: c.account_code,
+      name: c.name,
+      category: c.category,
+      section: c.section,
+      cash_flow: c.cash_flow,
+      source: 'ecount',
+      fetched_at,
+      closed: false,
+      active: c.active,
+    })
+  }
+  for (const r of merge.renames) {
+    const before = store.get(key(businessId, r.account_code))!
+    store.set(key(businessId, r.account_code), { ...before, name: r.to })
+  }
+  note(actor, `${auditNote} — 더함 ${merge.creates.length} · 이름 ${merge.renames.length}`)
+  return { added: merge.creates.length, renamed: merge.renames.length }
 }
 
 export async function applyStandardChart(businessId: string, actor: AuditActor): Promise<number> {

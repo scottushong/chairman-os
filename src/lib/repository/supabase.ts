@@ -109,6 +109,7 @@ import {
   DUPLICATE_INVITATION,
   type AbsenceTestInput,
   type AccountPatch,
+  type EcountAccountMerge,
   type ActivityWeek,
   type AuditActor,
   type AutonomyAssessmentInput,
@@ -1025,6 +1026,71 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         .select('account_code')
       if (error) throw accountError(error)
       return data?.length ?? 0
+    },
+
+    /**
+     * ① ECOUNT 계정과목 병합. 기록이 먼저, 행이 나중(createAccount와 같은 순서 — 행 쓰기가 막혀도 «하려고 했다»가 남는다).
+     * 새 코드는 insert 한 번(한 문장 = 전부 아니면 전무)에 source='ecount' — 0050 accounts_books_insert가 받는다.
+     * 이름 바꿈은 코드마다 감사 + update(name만). 분류 칸은 보내지 않는다 — 있는 계정의 분류는 바꾸지 않는다.
+     * 한 트랜잭션이 아니다: 이름 바꿈 도중 끊기면 일부만 바뀐다. 다시 올려도 같은 결과로 모인다(새 코드는 이미 있고,
+     * 바뀐 이름은 «같음»이 된다) — 한 트랜잭션 RPC는 0051 이후(DEFERRED).
+     */
+    async mergeEcountAccounts(businessId: string, merge: EcountAccountMerge, actor: AuditActor, note: string) {
+      if (merge.creates.some((c) => c.business_id !== businessId)) throw new Error('accounts: 다른 회사의 계정이 섞였다.')
+      let added = 0
+      if (merge.creates.length > 0) {
+        await audit({
+          action: 'create',
+          entity_table: 'accounts',
+          entity_id: `${businessId}:ecount-upload`,
+          business_id: businessId,
+          actor,
+          after: { codes: merge.creates.map((c) => c.account_code) },
+          note: `${note} — 계정 ${merge.creates.length}개 더함`,
+        })
+        const fetched_at = new Date().toISOString()
+        const { data, error } = await sb
+          .from('accounts')
+          .insert(
+            merge.creates.map((c) => ({
+              business_id: businessId,
+              account_code: c.account_code,
+              name: c.name,
+              category: c.category,
+              section: c.section,
+              cash_flow: c.cash_flow,
+              active: c.active,
+              source: 'ecount',
+              fetched_at,
+            })),
+          )
+          .select('account_code')
+        if (error) throw accountError(error)
+        added = data?.length ?? 0
+      }
+      let renamed = 0
+      for (const r of merge.renames) {
+        await audit({
+          action: 'update',
+          entity_table: 'accounts',
+          entity_id: `${businessId}:${r.account_code}`,
+          business_id: businessId,
+          actor,
+          before: { name: r.from },
+          after: { name: r.to },
+          note: `${note} — 이름 바꿈`,
+        })
+        const { data, error } = await sb
+          .from('accounts')
+          .update({ name: r.to })
+          .eq('business_id', businessId)
+          .eq('account_code', r.account_code)
+          .select(ACCOUNT_COLUMNS)
+        if (error) throw accountError(error)
+        oneAffectedRow('accounts', data as Account[] | null, null)
+        renamed += 1
+      }
+      return { added, renamed }
     },
 
     /**

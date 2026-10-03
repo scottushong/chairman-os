@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-import type { FinanceImport, FinanceImportPreviewPatch } from '@/types'
+import type { FinanceImport, FinanceImportKind, FinanceImportPreviewPatch } from '@/types'
 
 import type { AuditActor, ChairmanRepository } from './types'
 
@@ -39,7 +39,13 @@ function fail(error: NonNullable<Err>): never {
 
 type Methods = Pick<
   ChairmanRepository,
-  'createFinanceImport' | 'getFinanceImport' | 'listFinanceImports' | 'recordFinanceImportPreview' | 'cancelFinanceImport'
+  | 'createFinanceImport'
+  | 'getFinanceImport'
+  | 'listFinanceImports'
+  | 'recordFinanceImportPreview'
+  | 'cancelFinanceImport'
+  | 'findLatestFinanceImportMapping'
+  | 'commitFinanceImport'
 >
 
 export function financeImportMethods(sb: SupabaseClient): Methods {
@@ -102,6 +108,32 @@ export function financeImportMethods(sb: SupabaseClient): Methods {
       const row: Record<string, unknown> = { file_sha256: patch.file_sha256, summary: patch.summary }
       if (patch.period_key !== undefined) row.period_key = patch.period_key
       return updateDraft(importId, row)
+    },
+
+    /** summary->mapping이 있는 가장 최근 업로드 한 줄. 0050 전 DB면 null(열 지정을 다시 쓰지 못할 뿐이다). */
+    async findLatestFinanceImportMapping(businessId: string, kind: FinanceImportKind, exceptImportId: string): Promise<FinanceImport | null> {
+      let q = sb
+        .from('finance_imports')
+        .select(COLUMNS)
+        .eq('business_id', businessId)
+        .eq('kind', kind)
+        .neq('status', 'cancelled')
+        .not('summary->mapping', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+      if (UUID.test(exceptImportId)) q = q.neq('import_id', exceptImportId)
+      const { data, error } = await q
+      if (error) {
+        if (missing('findLatestFinanceImportMapping', error)) return null
+        fail(error)
+      }
+      return ((data ?? [])[0] as unknown as FinanceImport | undefined) ?? null
+    },
+
+    /** draft → committed. committed_at은 finance_imports_guard가 적는다 · commit_shape는 DB가 본다. */
+    async commitFinanceImport(importId: string, summary: Record<string, unknown>, actor: AuditActor): Promise<FinanceImport> {
+      void actor
+      return updateDraft(importId, { status: 'committed', summary })
     },
 
     async cancelFinanceImport(importId: string, actor: AuditActor): Promise<FinanceImport> {

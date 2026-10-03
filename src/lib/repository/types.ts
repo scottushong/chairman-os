@@ -177,6 +177,23 @@ export interface ChairmanRepository {
   recordFinanceImportPreview(importId: string, patch: FinanceImportPreviewPatch, actor: AuditActor): Promise<FinanceImport>
   /** draft → cancelled. **draft에서만** — 끝난 업로드면 던진다. 원본 첨부는 호출자가 먼저 지운다(0050 머리 주석 :25). */
   cancelFinanceImport(importId: string, actor: AuditActor): Promise<FinanceImport>
+  /**
+   * 열 지정 다시 쓰기 — 이 회사 · 이 종류의 업로드 중 summary.mapping(사람이 확정한 열 지정)이 있는 **가장 최근** 것.
+   * 취소된 업로드와 exceptImportId(지금 업로드)는 뺀다. 없으면 null. 읽기는 RLS(can_read_books) 안이다 —
+   * 같은 회사의 다른 담당자가 확정한 지정도 다시 쓴다(새 표 없이 summary에 둔다).
+   */
+  findLatestFinanceImportMapping(businessId: string, kind: FinanceImportKind, exceptImportId: string): Promise<FinanceImport | null>
+  /**
+   * draft → committed(summary를 같이 적는다). **draft에서만** · 만든 사람만(0050 finance_imports_update).
+   * 0050 commit_shape — sha256이 없거나(계정과목 아닌데) period_key가 없으면 DB가 거부한다.
+   */
+  commitFinanceImport(importId: string, summary: Record<string, unknown>, actor: AuditActor): Promise<FinanceImport>
+  /**
+   * ① ECOUNT 계정과목 병합 — 새 코드는 source='ecount'로 넣고(0050 accounts_books_insert), 이름은 사람이 체크한 코드만 바꾼다.
+   * **있는 계정의 분류는 건드리지 않는다**(계획에 그런 칸이 없다) · 지우지 않는다. 감사 note는 ecountAuditNote.
+   * 권한은 DB(can_keep_books)가 본다. 넣은 수 · 이름 바꾼 수를 돌려준다.
+   */
+  mergeEcountAccounts(businessId: string, merge: EcountAccountMerge, actor: AuditActor, note: string): Promise<{ added: number; renamed: number }>
 
   /**
    * Phase 5-D — 프로세스차트(0021). 읽기는 Executive 이상 + 자기 회사(DB가 판정).
@@ -840,6 +857,12 @@ export interface BriefTimezoneSettings {
 /** CH-024 키맨 폼이 보내는 한 행. keyman_id가 없으면 새 사람이다. */
 export type NewAccount = { business_id: string; account_code: string } & AccountFields
 export type AccountPatch = Partial<AccountFields & { active: boolean }>
+
+/** ECOUNT 계정과목 업로드의 병합 한 벌(lib/ecount/excel/accounts-import.ts planAccounts가 만든다). */
+export interface EcountAccountMerge {
+  creates: (NewAccount & { active: boolean })[]
+  renames: { account_code: string; from: string; to: string }[]
+}
 
 /** 같은 회사에 같은 계정코드가 이미 있을 때. 사용자가 코드를 고쳐야 풀린다(DUPLICATE_BUSINESS_ID와 같은 이유). */
 export const DUPLICATE_ACCOUNT_CODE = 'DUPLICATE_ACCOUNT_CODE'

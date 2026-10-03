@@ -1,8 +1,13 @@
 /**
- * ECOUNT 엑셀 업로드 — 파서 공통부 검증 (오프라인, DB 없음): npm run check:ecount-import
+ * ECOUNT 엑셀 업로드 검증 (오프라인, DB 없음): npm run check:ecount-import
  *
- * 합성 xlsx를 exceljs로 **만들어서** 다시 읽는다. 대상별(계정과목 · 연간 · 월별) 열 매핑은 열 구성 확인 뒤라
- * 여기 없다 — 어느 대상이든 같은 일(셀 정규화 · 머리글 · 기간 · 단위 · 행 종류 · 받는 파일 · 감사 문구)만 잰다.
+ * 합성 xlsx를 exceljs로 **메모리에서 만들어서** 다시 읽는다. ECOUNT 열 구성 캡처가 없으므로 가짜 견본은
+ * «흔한 ECOUNT 모양»(제목 행 · 단위 줄 · 구분 열 · 로마숫자 머리 · 합계 행 · 1월~12월)을 흉내 낸다.
+ *   공통부   셀 정규화 · 머리글 · 기간 · 단위 · 행 종류 · 받는 파일 · 감사 문구
+ *   열 지정  머리글 짐작 · 지난 지정 다시 쓰기(머리글이 같을 때만) · 판정 · 믿지 않는 값 거르기
+ *   계정과목 분류 제안 · 차단/경고 · 병합 계획(분류는 안 바꿈 · 이름은 체크한 것만 · 안 지움) · dummy 끝까지
+ *
+ * ECOUNT_SAMPLE_DIR=<폴더>를 주면 견본 xlsx를 그 폴더에 써 둔다(화면에서 올려 볼 수 있게).
  *
  * 핵심 규칙 하나: **못 읽은 칸은 0이 아니라 오류다.** 0으로 읽히면 «그 달 매출 0원»이 장부에 확정된다.
  */
@@ -21,7 +26,27 @@ import {
   fullYearOf,
 } from '../src/lib/ecount/excel/detect'
 import { ecountAuditNote, ecountBytesProblem, ecountFileProblem } from '../src/lib/ecount/excel/file-rules'
-import { EcountExcelError, outlineWorkbook, readEcountWorkbook, sha256Hex } from '../src/lib/ecount/excel/workbook'
+import { EcountExcelError, outlineWorkbook, readEcountWorkbook, sha256Hex, type EcountSheet } from '../src/lib/ecount/excel/workbook'
+import {
+  codeBand,
+  parseAccountChoices,
+  parseUse,
+  planAccounts,
+  readAccountRows,
+  suggestAccountClass,
+  type ExistingAccount,
+} from '../src/lib/ecount/excel/accounts-import'
+import {
+  guessColumnsAt,
+  guessMapping,
+  mappingProblems,
+  monthOfLabel,
+  parseMapping,
+  reuseMapping,
+  sameMapping,
+  sheetGrids,
+  sheetLikeFromGrid,
+} from '../src/lib/ecount/excel/mapping'
 import { parseCell } from '../src/lib/statements/paste'
 
 async function syntheticXlsx(): Promise<Uint8Array> {
@@ -216,13 +241,284 @@ function auditNote() {
   )
 }
 
+// ---------------------------------------------------------------- 가짜 견본 (메모리)
+
+const SAMPLES: Record<string, Uint8Array> = {}
+
+/** 계정과목 견본 — 제목 행 · 회사 줄 · 단위 줄 · 구분 열 · 사용여부 · 중복 코드 · 소계/합계 · 모순 · 미분류 · 코드 빈 줄. */
+async function accountsXlsx(header = ['코드', '계정명', '구분', '사용여부'], sheetName = '계정과목'): Promise<Uint8Array> {
+  const wb = new ExcelJS.Workbook()
+  const ws = wb.addWorksheet(sheetName)
+  ws.getCell('A1').value = '계정과목 목록'
+  ws.mergeCells('A1:D1')
+  ws.getCell('A2').value = '회사 : DY'
+  ws.getCell('D3').value = '(단위 : 원)'
+  ws.getRow(4).values = header
+  const rows: (string | number)[][] = [
+    [1010, '현금', '자산', '사용'], //            5 장부 «현금및현금성자산» — 이름 다름
+    [1030, '보통예금', '자산', 'Y'], //            6 새 · 현금
+    ['1080', '외상매출금', '자산', ''], //          7 같음(글 칸 코드)
+    [2510, '미지급금', '부채', '사용'], //          8 새 · 기타부채 · 영업
+    [2600, '차입금', '부채', '사용'], //            9 같음
+    [3310, '자본금', '자본', '사용'], //            10 같음
+    [4010, '제품매출', '수익', '사용'], //          11 같음
+    [4040, '임대료수익', '수익', '사용'], //        12 새 · 영업외(이름)
+    [8110, '복리후생비', '비용', '사용'], //        13 새 · 판관비 · 인건비
+    [8210, '감가상각비', '비용', '사용'], //        14 장부에 없음(이 견본의 기존 목록 기준) · 상각
+    [9310, '이자비용', '비용', '사용'], //          15 새 · 영업외
+    [9980, '법인세비용', '법인세', '사용'], //      16 새 · 법인세
+    [1030, '보통예금(2)', '자산', '사용'], //       17 중복 코드 → 6 · 17 둘 다 막힘
+    ['', '소계', '', ''], //                       18 무시(합계 행)
+    [5110, '원재료비', '자산', '사용'], //          19 모순 — 구분 자산 · 코드 511 비용
+    ['ABC', '기타계정', '', ''], //                20 분류 미정
+    ['', '미분류계정', '비용', ''], //              21 코드 빈 줄 → 막힘
+    [1360, '가지급금', '자산', '미사용'], //        22 새 · 사용안함 → active=false
+    [1370, '선급비용', '자산', '보류'], //          23 새 · 사용여부 못 읽음 → 경고
+    ['', '합 계', '', ''], //                      24 무시
+  ]
+  rows.forEach((r, i) => (ws.getRow(5 + i).values = r))
+  return new Uint8Array(await wb.xlsx.writeBuffer())
+}
+
+const EXISTING: ExistingAccount[] = [
+  { account_code: '1010', name: '현금및현금성자산', section: 'cash', category: 'asset', cash_flow: null, active: true },
+  { account_code: '1080', name: '외상매출금', section: 'receivable', category: 'asset', cash_flow: 'operating', active: true },
+  { account_code: '2600', name: '차입금', section: 'other_liability', category: 'liability', cash_flow: 'financing', active: true },
+  { account_code: '3310', name: '자본금', section: 'equity', category: 'equity', cash_flow: 'financing', active: true },
+  // 파일은 «수익»이라는데 장부는 영업외 — 있는 계정의 분류는 바꾸지 않는다(경고만)
+  { account_code: '4010', name: '제품매출', section: 'non_operating', category: 'other', cash_flow: null, active: true },
+  { account_code: '9999', name: '옛 계정', section: 'sga', category: 'other', cash_flow: null, active: false },
+]
+
+function mappingChecks() {
+  // 월 머리글 표기
+  assert.deepEqual(monthOfLabel('1월'), { month: 1, year: null, ytd: false })
+  assert.deepEqual(monthOfLabel('01월'), { month: 1, year: null, ytd: false })
+  assert.deepEqual(monthOfLabel('2025-01'), { month: 1, year: '2025', ytd: false })
+  assert.deepEqual(monthOfLabel('2025.12'), { month: 12, year: '2025', ytd: false })
+  assert.deepEqual(monthOfLabel('202503'), { month: 3, year: '2025', ytd: false })
+  assert.deepEqual(monthOfLabel('2025년 7월'), { month: 7, year: '2025', ytd: false })
+  assert.deepEqual(monthOfLabel('2025-02-01'), { month: 2, year: '2025', ytd: false }, '날짜 칸')
+  assert.deepEqual(monthOfLabel('3월 누계'), { month: 3, year: null, ytd: true })
+  assert.equal(monthOfLabel('13월'), null)
+  assert.equal(monthOfLabel('202513'), null)
+  assert.equal(monthOfLabel('합계'), null)
+  assert.equal(monthOfLabel('1,000'), null)
+}
+
+async function accountsChecks(): Promise<void> {
+  const bytes = await accountsXlsx()
+  SAMPLES['ecount-sample-accounts.xlsx'] = bytes
+  const sheets = await readEcountWorkbook(bytes)
+
+  // 짐작 — 제목 · 회사 · 단위 줄을 건너 4행(0부터 3)이 머리글, 열 넷
+  const guess = guessMapping(sheets, 'accounts')
+  assert.equal(guess.found, true)
+  assert.deepEqual(guess.mapping.parts, [{ sheet: '계정과목', headerRow: 3, columns: { code: 0, name: 1, group: 2, use: 3 } }])
+  assert.equal(guess.detectedUnit, 'won')
+  assert.deepEqual(guess.mapping.labels, [{ code: '코드', name: '계정명', group: '구분', use: '사용여부' }])
+  assert.deepEqual(mappingProblems(guess.mapping, sheets), [])
+  // 화면 격자(글만)로도 같은 짐작이 선다 — 화면이 머리글 행을 바꿀 때 쓴다
+  const grid = sheetGrids(sheets)[0]
+  assert.deepEqual(guessColumnsAt(sheetLikeFromGrid(grid), 'accounts', 3), { code: 0, name: 1, group: 2, use: 3 })
+  assert.deepEqual(mappingProblems(guess.mapping, [sheetLikeFromGrid(grid)]), [], '격자로 판정해도 서버와 같다')
+
+  // 판정 — 필수 열 빠짐 · 같은 열 두 번 · 시트 없음
+  const m = guess.mapping
+  assert.match(mappingProblems({ ...m, parts: [{ ...m.parts[0], columns: { name: 1 } }] }, sheets)[0], /«계정코드» 열을 지정하세요/)
+  assert.match(mappingProblems({ ...m, parts: [{ ...m.parts[0], columns: { code: 1, name: 1 } }] }, sheets)[0], /같은 열/)
+  assert.match(mappingProblems({ ...m, parts: [{ ...m.parts[0], sheet: '없는 시트' }] }, sheets)[0], /파일에 없습니다/)
+  assert.match(mappingProblems({ ...m, parts: [] }, sheets)[0], /시트를 고르세요/)
+
+  // 믿지 않는 값 — JSON을 한 바퀴 돌아도 같고, 모르는 열 이름 · 음수 열 · 다른 종류는 거른다
+  const round = parseMapping(JSON.parse(JSON.stringify(m)), 'accounts')
+  assert.ok(round && sameMapping(round, m))
+  assert.equal(parseMapping({ ...m, parts: [{ ...m.parts[0], columns: { evil: 1 } }] }, 'accounts'), null)
+  assert.equal(parseMapping({ ...m, parts: [{ ...m.parts[0], columns: { code: -1 } }] }, 'accounts'), null)
+  assert.equal(parseMapping(m, 'annual'), null, '종류가 다르면 거른다')
+  assert.equal(parseMapping({ ...m, basis: 'ytd' }, 'accounts'), null, '계정과목에는 당월/누계가 없다')
+  assert.ok(!sameMapping(m, { ...m, unit: 'thousand' }))
+
+  // 다시 쓰기 — 머리글이 같으면 그대로, 시트가 하나면 이름이 달라도, 머리글 글이 바뀌면 안 쓴다
+  const again = await readEcountWorkbook(await accountsXlsx(undefined, '계정과목_20251003'))
+  const reused = reuseMapping(m, again)
+  assert.ok(reused, '같은 머리글이면 지난 지정을 다시 쓴다')
+  assert.equal(reused!.parts[0].sheet, '계정과목_20251003')
+  assert.deepEqual(reused!.parts[0].columns, m.parts[0].columns)
+  const changed = await readEcountWorkbook(await accountsXlsx(['코드', '계정 이름(한글)', '구분', '사용여부']))
+  assert.equal(reuseMapping(m, changed), null, '머리글이 바뀌면 다시 쓰지 않는다(사람이 다시 지정)')
+
+  // 분류 제안
+  assert.deepEqual(codeBand('101')?.broad, 'asset')
+  assert.deepEqual(codeBand('2510')?.broad, 'liability')
+  assert.equal(codeBand('9980')?.section, 'tax')
+  assert.equal(codeBand('AB'), null)
+  assert.deepEqual(suggestAccountClass('1030', '보통예금', '자산').suggestion, { section: 'cash', category: 'asset', cash_flow: null })
+  assert.deepEqual(suggestAccountClass('108', '외상매출금', '').suggestion, { section: 'receivable', category: 'asset', cash_flow: 'operating' })
+  assert.deepEqual(suggestAccountClass('2930', '장기차입금', '부채').suggestion, { section: 'other_liability', category: 'liability', cash_flow: 'financing' })
+  assert.deepEqual(suggestAccountClass('8110', '복리후생비', '비용').suggestion, { section: 'sga', category: 'labor', cash_flow: null })
+  assert.deepEqual(suggestAccountClass('8210', '감가상각비', '판매비와관리비').suggestion, { section: 'd_and_a', category: 'other', cash_flow: null })
+  assert.deepEqual(suggestAccountClass('4510', '원재료비', '').suggestion, { section: 'cogs', category: 'raw_material', cash_flow: null })
+  assert.deepEqual(suggestAccountClass('', '전력비', '매출원가').suggestion, { section: 'cogs', category: 'electricity', cash_flow: null })
+  assert.deepEqual(suggestAccountClass('9310', '이자비용', '비용').suggestion?.section, 'non_operating', '영업외 대역은 수익 · 비용 어느 쪽과도 맞다')
+  assert.deepEqual(suggestAccountClass('4040', '임대료수익', '수익').suggestion?.section, 'non_operating')
+  assert.deepEqual(suggestAccountClass('1410', '감가상각누계액', '자산').suggestion, { section: 'other_asset', category: 'asset', cash_flow: null })
+  assert.match(suggestAccountClass('5110', '원재료비', '자산').contradiction!, /구분 열\(자산\)과 코드 대역\(비용\)/)
+  assert.equal(suggestAccountClass('ABC', '기타계정', '').suggestion, null)
+  assert.equal(parseUse('미사용'), false)
+  assert.equal(parseUse('사용 안함'), false)
+  assert.equal(parseUse(''), true)
+  assert.equal(parseUse('보류'), null)
+
+  // 파일 행 — 머리글 아래만, 합계 · 소계는 무시(경고), 코드 빈 보통 줄은 행으로 남아 막힌다
+  const { rows, ignored } = readAccountRows(sheets[0], m.parts[0])
+  assert.deepEqual(ignored.map((r) => [r.rowNo, r.why]), [[18, '합계 행'], [24, '합계 행']])
+  assert.equal(rows.length, 18)
+  assert.equal(rows.find((r) => r.rowNo === 7)!.code, '1080', '글 칸 코드')
+
+  // 계획 — 사람이 아무것도 안 고른 상태
+  const plan = planAccounts({ rows, ignored, existing: EXISTING })
+  const at = (rowNo: number) => plan.lines.find((l) => l.rowNo === rowNo)!
+  assert.equal(at(5).status, 'name_differs')
+  assert.match(at(5).warnings[0], /이름이 다릅니다 — 장부 «현금및현금성자산» · 파일 «현금»/)
+  assert.equal(at(5).final, null, '있는 계정은 분류를 정하지 않는다')
+  assert.equal(at(6).status, 'blocked')
+  assert.match(at(6).blocks[0], /같은 코드 1030가 2번/)
+  assert.equal(at(17).status, 'blocked')
+  assert.equal(at(7).status, 'same')
+  assert.equal(at(11).status, 'same')
+  assert.match(at(11).warnings[0], /있는 계정의 분류는 바꾸지 않습니다/)
+  assert.equal(at(8).status, 'new')
+  assert.deepEqual(at(8).final, { section: 'other_liability', category: 'liability', cash_flow: 'operating' })
+  assert.match(at(19).blocks[0], /구분 열\(자산\)과 코드 대역\(비용\)이 다릅니다 — 분류를 직접 고르세요/)
+  assert.match(at(20).blocks[0], /분류를 정하지 못했습니다/)
+  assert.match(at(21).blocks[0], /계정코드가 비어 있습니다/)
+  assert.equal(at(22).active, false)
+  assert.match(at(23).warnings[0], /사용여부 «보류»를 읽지 못해/)
+  assert.deepEqual(plan.missing, [{ code: '9999', name: '옛 계정' }], '파일에 없는 기존 계정 — 목록만')
+  assert.equal(plan.blockCount, 5, '중복 둘 · 모순 · 미분류 · 코드 빈 줄')
+
+  // 사람의 선택 — 모순 · 미분류 줄을 고르고, 1010 이름 바꾸기를 체크. 있는 코드(1010)에 보낸 분류 고침은 무시된다
+  const picked = parseAccountChoices(
+    {
+      '5110': { section: 'cogs', category: 'raw_material', cash_flow: null },
+      ABC: { section: 'sga', category: 'other', cash_flow: null },
+      '1010': { section: 'sga', category: 'other', cash_flow: null },
+      '8110': { section: 'revenue', category: 'labor', cash_flow: null }, // 구분↔대분류 모순 — 걸러진다
+      'bad code!': { section: 'sga', category: 'other', cash_flow: null },
+    },
+    ['1010', 1234, 'bad code!', '1010'],
+  )
+  assert.deepEqual(Object.keys(picked.overrides).sort(), ['1010', '5110', 'ABC'])
+  assert.deepEqual(picked.renames, ['1010'])
+  // 중복 줄(17)과 코드 빈 줄(21)은 사람이 파일을 고쳐야 한다 — 여기서는 그 두 줄을 뺀 파일로 본다
+  const fixedRows = rows.filter((r) => r.rowNo !== 17 && r.rowNo !== 21)
+  const fixed = planAccounts({ rows: fixedRows, ignored, existing: EXISTING, ...picked })
+  assert.equal(fixed.blockCount, 0)
+  assert.deepEqual(
+    fixed.creates.map((c) => [c.account_code, c.section, c.category, c.cash_flow, c.active]),
+    [
+      ['1030', 'cash', 'asset', null, true],
+      ['2510', 'other_liability', 'liability', 'operating', true],
+      ['4040', 'non_operating', 'other', null, true],
+      ['8110', 'sga', 'labor', null, true],
+      ['8210', 'd_and_a', 'other', null, true],
+      ['9310', 'non_operating', 'other', null, true],
+      ['9980', 'tax', 'other', null, true],
+      ['5110', 'cogs', 'raw_material', null, true],
+      ['ABC', 'sga', 'other', null, true],
+      ['1360', 'other_asset', 'asset', 'operating', false],
+      ['1370', 'other_asset', 'asset', 'operating', true],
+    ],
+  )
+  assert.ok(!fixed.creates.some((c) => EXISTING.some((e) => e.account_code === c.account_code)), '있는 코드는 새로 넣지 않는다')
+  assert.deepEqual(fixed.renames, [{ account_code: '1010', from: '현금및현금성자산', to: '현금' }])
+  assert.equal(fixed.lines.find((l) => l.code === '1010')!.final, null, '이름을 바꿔도 분류는 그대로')
+  // 체크하지 않으면 이름은 그대로
+  assert.deepEqual(planAccounts({ rows: fixedRows, ignored, existing: EXISTING, overrides: picked.overrides }).renames, [])
+
+  await dummyAccountsEndToEnd(sheets, m, fixedRows, ignored, picked)
+}
+
+/** dummy 어댑터 끝까지 — 업로드 · 확정 지정 기록 · 다시 쓰기 조회 · 병합(source='ecount') · committed. */
+async function dummyAccountsEndToEnd(
+  sheets: EcountSheet[],
+  m: NonNullable<ReturnType<typeof parseMapping>>,
+  rows: ReturnType<typeof readAccountRows>['rows'],
+  ignored: ReturnType<typeof readAccountRows>['ignored'],
+  picked: ReturnType<typeof parseAccountChoices>,
+) {
+  const { dummyRepository: repo } = await import('../src/lib/repository/dummy')
+  const actor = { user_id: 'dummy', role: 'Chairman' as const }
+  const imp = await repo.createFinanceImport({ business_id: 'biz_dy', kind: 'accounts', file_name: '계정.xlsx' }, actor)
+  assert.equal(await repo.findLatestFinanceImportMapping('biz_dy', 'accounts', imp.import_id), null, '처음에는 다시 쓸 지정이 없다')
+  const sha = 'a'.repeat(64)
+  await repo.recordFinanceImportPreview(imp.import_id, { file_sha256: sha, summary: { stage: 'preview', mapping: m } }, actor)
+
+  const ledger = await repo.loadFinanceLedger()
+  const existing = ledger.accounts.filter((a) => a.business_id === 'biz_dy')
+  const plan = planAccounts({ rows, ignored, existing, ...picked })
+  assert.equal(plan.blockCount, 0)
+  const result = await repo.mergeEcountAccounts(
+    'biz_dy',
+    { creates: plan.creates.map((c) => ({ ...c, business_id: 'biz_dy' })), renames: plan.renames },
+    actor,
+    'ECOUNT 엑셀 업로드 — 계정과목 · 파일 계정.xlsx · import x',
+  )
+  assert.equal(result.added, plan.creates.length)
+  await repo.commitFinanceImport(imp.import_id, { stage: 'committed', mapping: m, result }, actor)
+  assert.equal((await repo.getFinanceImport(imp.import_id))!.status, 'committed')
+
+  const after = (await repo.loadFinanceLedger()).accounts.filter((a) => a.business_id === 'biz_dy')
+  const before1010 = existing.find((a) => a.account_code === '1010')!
+  const now1010 = after.find((a) => a.account_code === '1010')!
+  assert.equal(now1010.name, '현금', '체크한 이름은 바뀐다')
+  assert.deepEqual([now1010.section, now1010.category, now1010.cash_flow, now1010.source], [before1010.section, before1010.category, before1010.cash_flow, before1010.source], '분류 · 출처는 그대로')
+  const added = after.find((a) => a.account_code === '1360')!
+  assert.deepEqual([added.source, added.active], ['ecount', false])
+  assert.equal(after.length, existing.length + plan.creates.length, '아무것도 지우지 않았다')
+
+  // 다음 업로드 — 확정 지정을 다시 쓴다(취소 · 지금 업로드는 빼고)
+  const next = await repo.createFinanceImport({ business_id: 'biz_dy', kind: 'accounts', file_name: '계정2.xlsx' }, actor)
+  const found = await repo.findLatestFinanceImportMapping('biz_dy', 'accounts', next.import_id)
+  assert.equal(found?.import_id, imp.import_id)
+  const savedMapping = parseMapping(found!.summary?.mapping, 'accounts')
+  assert.ok(savedMapping && reuseMapping(savedMapping, sheets), '지난 업로드의 열 지정을 불러온다')
+  assert.equal(await repo.findLatestFinanceImportMapping('biz_dy', 'annual', next.import_id), null, '종류가 다르면 없다')
+  // 같은 계획을 한 번 더 넣으면 중복으로 막힌다(이미 있다) — 다시 미리보기하면 «같음»이 된다
+  await assert.rejects(
+    repo.mergeEcountAccounts('biz_dy', { creates: plan.creates.slice(0, 1).map((c) => ({ ...c, business_id: 'biz_dy' })), renames: [] }, actor, 'x'),
+    /DUPLICATE_ACCOUNT_CODE/,
+  )
+  const replan = planAccounts({ rows, ignored, existing: after, ...picked })
+  assert.equal(replan.creates.length, 0)
+  assert.equal(replan.renames.length, 0)
+  await repo.cancelFinanceImport(next.import_id, actor)
+}
+
+/** ECOUNT_SAMPLE_DIR가 있으면 견본을 써 둔다 — 화면에서 직접 올려 볼 수 있게(저장소 밖 폴더를 준다). */
+async function writeSamples() {
+  const dir = process.env.ECOUNT_SAMPLE_DIR
+  if (!dir) return
+  const { mkdirSync, writeFileSync } = await import('node:fs')
+  const { join } = await import('node:path')
+  mkdirSync(dir, { recursive: true })
+  for (const [name, bytes] of Object.entries(SAMPLES)) writeFileSync(join(dir, name), bytes)
+  console.log(`견본 ${Object.keys(SAMPLES).length}개 → ${dir}`)
+}
+
 async function main() {
   cells()
   detect()
   auditNote()
   await rejects()
   await workbook()
+  mappingChecks()
+  await accountsChecks()
+  await writeSamples()
   console.log('PASS: 셀 정규화(수식 result · 쉼표 · 괄호 음수 · ₩ · 못 읽은 칸은 오류) · 병합 칸 한 번만 · 기간 · 단위 · 머리글 · 행 종류(합계 · 소계 · 로마숫자 · 이익) · .xls · csv · HTML 거절 · sha256 · 감사 문구')
+  console.log('PASS: 열 지정 — 머리글 짐작(제목 · 단위 줄 건너뜀) · 월 머리글 표기 · 지난 지정 다시 쓰기(머리글 같을 때만) · 판정 · 믿지 않는 값 거르기')
+  console.log('PASS: 계정과목 — 분류 제안(구분 열 · 코드 대역 · 이름) · 차단(코드 공백 · 중복 · 미분류 · 모순) · 경고(이름 다름 · 사용여부 · 합계 행 · 파일에 없는 계정) · 병합(분류 안 바꿈 · 체크한 이름만 · 안 지움) · dummy 끝까지')
 }
 
 main().catch((e) => {

@@ -7,6 +7,27 @@ import { canImportEcount, canKeepBooks } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
 import { ecountAuditNote, ecountFileProblem } from '@/lib/ecount/excel/file-rules'
 import {
+  parseAccountChoices,
+  planAccounts,
+  readAccountRows,
+  type AccountFileRow,
+  type ExistingAccount,
+  type IgnoredRow,
+} from '@/lib/ecount/excel/accounts-import'
+import type { EcountUnit } from '@/lib/ecount/excel/cells'
+import {
+  guessMapping,
+  mappingProblems,
+  parseMapping,
+  reuseMapping,
+  sameMapping,
+  sheetGrids,
+  withLabels,
+  type EcountMapping,
+  type MappingSource,
+  type SheetGrid,
+} from '@/lib/ecount/excel/mapping'
+import {
   EcountExcelError,
   outlineWorkbook,
   readEcountWorkbook,
@@ -14,7 +35,7 @@ import {
   type EcountSheet,
   type SheetOutline,
 } from '@/lib/ecount/excel/workbook'
-import { getRepository, type ChairmanRepository } from '@/lib/repository'
+import { DUPLICATE_ACCOUNT_CODE, getRepository, type ChairmanRepository } from '@/lib/repository'
 import { FINANCE_IMPORT_KIND, FINANCE_IMPORT_KIND_LABEL_KO, type FinanceImport, type FinanceImportKind, type SessionUser } from '@/types'
 
 /**
@@ -27,8 +48,9 @@ import { FINANCE_IMPORT_KIND, FINANCE_IMPORT_KIND_LABEL_KO, type FinanceImport, 
  *   4. commitEcountImport  → 같은 원본을 다시 읽고 sha256이 미리보기 때와 같은지 본 뒤 대상별 등록
  *   5. cancelEcountImport  → 원본 첨부 취소 **먼저** → cancelled(0050 머리 주석 :25 — cancelled 뒤에는 원본을 못 지운다)
  *
- * **대상별(계정과목 · 연간 · 월별) 파싱 · 판정 · 등록 RPC는 아직 없다** — 열 구성(ECOUNT 화면 캡처) 확인 뒤
- * 단계마다 KIND_STAGES에 붙인다. 그 전까지 미리보기 · 등록은 공통부까지 하고 «아직 지원하지 않는 종류»로 멈춘다.
+ * ECOUNT 열 구성(화면 캡처)이 없어서 **열은 사람이 지정한다**(lib/ecount/excel/mapping.ts) — 머리글로 짐작하거나
+ * 같은 회사의 지난 업로드 지정을 불러오고, 사람이 «이 열 지정으로 미리보기»를 눌러 확정한다(summary.mapping).
+ * 등록은 확정한 지정으로만 한다. 계정과목은 등록까지, 연간 · 월별은 미리보기 검증까지(등록 RPC는 0051 이후).
  *
  * 믿지 않는 것: 화면이 보낸 business_id · import_id · 행. 회사는 업로드 줄(DB가 RLS로 내준 것)에서 다시 읽고,
  * 업로드는 «본인 · draft · 그 회사 장부 권한»을 매번 다시 판정한다. 최종 판정은 0050 RLS(can_keep_books)다.
@@ -39,18 +61,46 @@ export interface EcountImportState {
   importId?: string
 }
 
+/** 미리보기 때 사람이 고른 것 — 열 지정 하나. 행 · 금액은 받지 않는다(서버가 원본에서 읽는다). */
+export interface EcountPreviewChoices {
+  mapping?: unknown
+}
+
+/** 등록 때 사람이 고른 것 — 열 지정(미리보기에서 확정한 것과 같아야 한다) · 새 계정 분류 고침 · 이름 바꿀 코드. */
+export interface EcountCommitChoices {
+  mapping?: unknown
+  overrides?: unknown
+  renames?: unknown
+}
+
 export interface EcountPreviewState extends EcountImportState {
+  kind?: FinanceImportKind
   /** 공통부가 읽은 시트 개요(금액 원문 없음). */
   outline?: SheetOutline[]
-  /** 대상별 미리보기가 아직 없으면 true(error에 «아직 지원하지 않는 종류») — 화면이 «미리보기: 열 구성 확인 후 제공»을 보여 준다. */
-  pending?: boolean
+  /** 열 지정 화면이 쓰는 시트 머리(위 30행의 글) */
+  grids?: SheetGrid[]
+  /** 지금 열 지정 — 짐작 · 지난 업로드 · 확정 중 하나(mappingSource) */
+  mapping?: EcountMapping
+  mappingSource?: MappingSource
+  /** 파일 머리에서 찾은 단위(없으면 null) */
+  detectedUnit?: EcountUnit | null
+  /** 확정하려던 지정이 이 파일에서 읽을 수 없는 이유들 — 있으면 미리보기를 만들지 않았다 */
+  mappingProblems?: string[]
+  /** 계정과목 미리보기 재료 — 화면이 사람의 분류 고침마다 planAccounts를 다시 돌린다 */
+  accounts?: { rows: AccountFileRow[]; ignored: IgnoredRow[]; existing: ExistingAccount[] }
+}
+
+export interface EcountCommitState extends EcountImportState {
+  added?: number
+  renamed?: number
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /** 직원 화면이다 — «회장»이 아니라 «대표»(CLAUDE.md 직원 화면 용어 원칙). statements.ts와 같은 문장. */
 const NO_BOOKS = '이 회사의 재무를 넣을 권한이 없습니다. (대표 · 그룹 CFO · 해당 회사 대표이사 · 대표가 재무 입력 권한을 준 사람)'
-const UNSUPPORTED = '아직 지원하지 않는 종류입니다 — 미리보기와 등록은 ECOUNT 열 구성을 확인한 뒤 제공합니다.'
+/** 연간 · 월별 등록 — DB 등록 함수(official_statement_import_ecount · ecount_monthly_import)는 0051 이후다. */
+const COMMIT_PENDING = '등록은 다음 단계(DB 반영 후)에 열립니다. 지금은 미리보기 검증까지만 합니다.'
 
 function denied(where: string, e: unknown, fallback: string): EcountImportState {
   console.error(`[ecount-import] ${where}`, e)
@@ -121,17 +171,6 @@ async function parse(bytes: Uint8Array): Promise<{ sheets: EcountSheet[] } | { e
   }
 }
 
-/**
- * 대상별 단계 — 열 구성 확인 뒤 하나씩 붙인다(설계서 B · E 2~4단계). 비어 있는 종류는 «아직 지원하지 않는 종류».
- *   preview  파싱한 시트 → 판정(차단 · 경고 · 매핑 제안). DB 쓰기 없음.
- *   commit   같은 판정을 다시 한 뒤 대상별 RPC 한 트랜잭션(감사 note = ecountAuditNote). committed 전이는 RPC가 한다.
- */
-interface KindStage {
-  preview(ctx: { imp: FinanceImport; sheets: EcountSheet[] }): Promise<EcountPreviewState>
-  commit(ctx: { imp: FinanceImport; sheets: EcountSheet[]; sha: string; note: (period: string | null) => string }): Promise<EcountImportState>
-}
-const KIND_STAGES: Partial<Record<FinanceImportKind, KindStage>> = {}
-
 export async function startEcountImport(businessId: unknown, kind: unknown, fileName: unknown): Promise<EcountImportState> {
   const user = await currentUser()
   if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
@@ -188,8 +227,31 @@ export async function cancelEcountImport(importId: unknown): Promise<EcountImpor
   }
 }
 
-/** 미리보기 — 공통부(원본 다시 읽기 · sha256 · 개요 기록)까지. 대상별 판정은 열 구성 확인 뒤. */
-export async function previewEcountImport(importId: unknown): Promise<EcountPreviewState> {
+/** 이 업로드의 summary에 사람이 확정해 둔 열 지정(없거나 모양이 틀리면 null). */
+function confirmedMapping(imp: FinanceImport): EcountMapping | null {
+  return parseMapping(imp.summary?.mapping, imp.kind)
+}
+
+/** 계정과목 판정 재료 — 파일 행 + 그 회사의 기존 계정(비활성 포함 — 코드는 비활성이어도 이미 있다). */
+async function accountsInput(repo: ChairmanRepository, imp: FinanceImport, sheets: EcountSheet[], mapping: EcountMapping) {
+  const part = mapping.parts[0]
+  const sheet = sheets.find((s) => s.name === part.sheet)!
+  const { rows, ignored } = readAccountRows(sheet, part)
+  const ledger = await repo.loadFinanceLedger()
+  const existing: ExistingAccount[] = ledger.accounts
+    .filter((a) => a.business_id === imp.business_id)
+    .map((a) => ({ account_code: a.account_code, name: a.name, section: a.section, category: a.category, cash_flow: a.cash_flow, active: a.active }))
+  return { rows, ignored, existing }
+}
+
+/**
+ * 미리보기 — 원본을 다시 읽고(sha256) 열 지정을 정한다.
+ *   choices.mapping 없음  짐작한다: 이 업로드에 확정해 둔 지정 > 같은 회사 · 종류의 지난 업로드 지정(머리글이 그대로일 때) > 머리글 짐작.
+ *                          확정해 둔 지정이 아니면 **미리보기를 만들지 않는다** — 사람이 열 지정 화면에서 확인해야 한다.
+ *   choices.mapping 있음  사람이 «이 열 지정으로 미리보기»를 눌렀다 — 판정하고 summary.mapping에 확정으로 적는다.
+ * DB 쓰기는 그 draft 한 줄(sha256 · summary · period_key)뿐이다.
+ */
+export async function previewEcountImport(importId: unknown, choices?: EcountPreviewChoices): Promise<EcountPreviewState> {
   const user = await currentUser()
   if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
   try {
@@ -203,30 +265,71 @@ export async function previewEcountImport(importId: unknown): Promise<EcountPrev
     if (imp.file_sha256 && imp.file_sha256 !== original.sha) return { error: '미리보기 때와 다른 파일입니다. 취소하고 새로 올리세요.' }
     const parsed = await parse(original.bytes)
     if ('error' in parsed) return parsed
+    const { sheets } = parsed
+    const actor = { user_id: user.user_id, role: user.role }
 
-    const outline = outlineWorkbook(parsed.sheets)
+    const outline = outlineWorkbook(sheets)
+    const guess = guessMapping(sheets, imp.kind)
+    const base: EcountPreviewState = {
+      importId: imp.import_id,
+      kind: imp.kind,
+      outline,
+      grids: sheetGrids(sheets),
+      detectedUnit: guess.detectedUnit,
+    }
+
+    let mapping: EcountMapping | null = null
+    if (choices?.mapping !== undefined) {
+      const sent = parseMapping(choices.mapping, imp.kind)
+      if (!sent) return { ...base, error: '열 지정을 읽지 못했습니다. 화면을 새로 고친 뒤 다시 지정하세요.' }
+      mapping = withLabels(sent, sheets)
+    } else {
+      // «진행 중»에서 이어 가기 — 이 업로드에서 이미 확정한 지정이 있으면 그대로 미리보기까지.
+      const mine = confirmedMapping(imp)
+      if (mine && mappingProblems(mine, sheets).length === 0) mapping = withLabels(mine, sheets)
+    }
+
+    if (!mapping) {
+      // 아직 확정 전 — 짐작만 보여 준다. 지난 업로드의 지정이 이 파일 머리글과 맞으면 그것을 먼저.
+      const prev = await repo.findLatestFinanceImportMapping(imp.business_id, imp.kind, imp.import_id)
+      const saved = prev ? parseMapping(prev.summary?.mapping, imp.kind) : null
+      const reused = saved ? reuseMapping(saved, sheets) : null
+      await repo.recordFinanceImportPreview(imp.import_id, { file_sha256: original.sha, summary: { stage: 'outline', sheets: outline } }, actor)
+      revalidatePath(importPath(imp.business_id))
+      if (reused) return { ...base, mapping: reused, mappingSource: 'reused' }
+      return { ...base, mapping: guess.mapping, mappingSource: guess.found ? 'guessed' : 'none' }
+    }
+
+    const problems = mappingProblems(mapping, sheets)
+    if (problems.length > 0) return { ...base, mapping, mappingSource: 'confirmed', mappingProblems: problems }
+
+    const state: EcountPreviewState = { ...base, mapping, mappingSource: 'confirmed' }
+    const summary: Record<string, unknown> = { stage: 'preview', sheets: outline, mapping }
+    if (imp.kind === 'accounts') {
+      const input = await accountsInput(repo, imp, sheets, mapping)
+      const plan = planAccounts(input)
+      state.accounts = input
+      summary.counts = { rows: input.rows.length, creates: plan.creates.length, blocks: plan.blockCount, warnings: plan.warningCount }
+    }
     await repo.recordFinanceImportPreview(
       imp.import_id,
-      { file_sha256: original.sha, summary: { stage: 'outline', sheets: outline } },
-      { user_id: user.user_id, role: user.role },
+      { file_sha256: original.sha, summary, period_key: imp.kind === 'accounts' ? null : mapping.year },
+      actor,
     )
     revalidatePath(importPath(imp.business_id))
-
-    const stage = KIND_STAGES[imp.kind]
-    // 공통부는 끝났다(원본 · 해시 · 개요). 대상별 판정이 없으면 «아직 지원하지 않는 종류» — 화면은 pending을 보고
-    // 빨간 오류가 아니라 «미리보기: 열 구성 확인 후 제공» 상태로 그린다.
-    if (!stage) return { importId: imp.import_id, outline, pending: true, error: `${FINANCE_IMPORT_KIND_LABEL_KO[imp.kind]}: ${UNSUPPORTED}` }
-    return { ...(await stage.preview({ imp, sheets: parsed.sheets })), importId: imp.import_id, outline }
+    return state
   } catch (e) {
     return denied('preview', e, '미리보기를 만들지 못했습니다. 잠시 후 다시 시도하세요.')
   }
 }
 
 /**
- * 등록 — 같은 원본을 다시 읽고 다시 판정한다. 화면이 보낸 행은 받지 않는다(받는 것은 import_id뿐).
- * 미리보기가 적은 sha256과 지금 읽은 파일이 같아야 한다.
+ * 등록 — 같은 원본을 다시 읽고(sha256이 미리보기 때와 같아야 한다) **처음부터 다시** 판정한다.
+ * 화면이 보낸 것은 사람의 선택(열 지정 · 분류 고침 · 이름 바꿀 코드)뿐이고, 열 지정은 미리보기에서 확정해
+ * summary에 적힌 것과 같아야 한다 — 짐작한 지정으로는 등록하지 않는다.
+ * 지금은 계정과목만 등록한다. 연간 · 월별은 DB 등록 함수(0051 이후)가 생긴 뒤.
  */
-export async function commitEcountImport(importId: unknown): Promise<EcountImportState> {
+export async function commitEcountImport(importId: unknown, choices?: EcountCommitChoices): Promise<EcountCommitState> {
   const user = await currentUser()
   if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
   try {
@@ -234,25 +337,54 @@ export async function commitEcountImport(importId: unknown): Promise<EcountImpor
     const own = await ownDraft(repo, user, importId)
     if ('error' in own) return own
     const { imp } = own
+    if (imp.kind !== 'accounts') return { error: `${FINANCE_IMPORT_KIND_LABEL_KO[imp.kind]}: ${COMMIT_PENDING}` }
     if (!imp.file_sha256) return { error: '미리보기를 먼저 하세요.' }
     const original = await readOriginal(repo, imp, user)
     if ('error' in original) return original
     if (original.sha !== imp.file_sha256) return { error: '미리보기 때와 다른 파일입니다. 취소하고 새로 올리세요.' }
 
-    const stage = KIND_STAGES[imp.kind]
-    if (!stage) return { error: `${FINANCE_IMPORT_KIND_LABEL_KO[imp.kind]}: ${UNSUPPORTED}` }
-
+    const saved = confirmedMapping(imp)
+    const sent = parseMapping(choices?.mapping, imp.kind)
+    if (!saved || !sent || !sameMapping(saved, sent)) {
+      return { error: '열 지정이 미리보기 때와 다릅니다. «이 열 지정으로 미리보기»를 다시 누른 뒤 등록하세요.' }
+    }
     const parsed = await parse(original.bytes)
     if ('error' in parsed) return parsed
-    const note = (period: string | null) =>
-      ecountAuditNote({ kind: imp.kind, period, fileName: original.fileName, importId: imp.import_id })
-    const result = await stage.commit({ imp, sheets: parsed.sheets, sha: original.sha, note })
+    const problems = mappingProblems(saved, parsed.sheets)
+    if (problems.length > 0) return { error: problems[0] }
+
+    const input = await accountsInput(repo, imp, parsed.sheets, saved)
+    const picked = parseAccountChoices(choices?.overrides, choices?.renames)
+    const plan = planAccounts({ ...input, ...picked })
+    if (plan.blockCount > 0) return { error: `막힌 줄이 ${plan.blockCount}개 있습니다. 미리보기에서 고친 뒤 등록하세요.` }
+
+    const actor = { user_id: user.user_id, role: user.role }
+    const note = ecountAuditNote({ kind: imp.kind, period: null, fileName: original.fileName, importId: imp.import_id })
+    const result = await repo.mergeEcountAccounts(
+      imp.business_id,
+      { creates: plan.creates.map((c) => ({ ...c, business_id: imp.business_id })), renames: plan.renames },
+      actor,
+      note,
+    )
+    await repo.commitFinanceImport(
+      imp.import_id,
+      {
+        ...(imp.summary ?? {}),
+        stage: 'committed',
+        mapping: saved,
+        result: { ...result, unchanged: plan.lines.length - plan.creates.length - plan.renames.length },
+      },
+      actor,
+    )
     const base = `/finance/${encodeURIComponent(imp.business_id)}`
     revalidatePath(importPath(imp.business_id))
+    revalidatePath(`${base}/accounts`)
     revalidatePath(base, 'layout')
     revalidatePath('/finance')
-    return { ...result, importId: imp.import_id }
+    return { importId: imp.import_id, ...result }
   } catch (e) {
+    const m = e instanceof Error ? e.message : ''
+    if (m === DUPLICATE_ACCOUNT_CODE) return { error: '그 사이에 같은 계정코드가 장부에 생겼습니다. 미리보기를 다시 하세요.' }
     return denied('commit', e, '등록하지 못했습니다. 잠시 후 다시 시도하세요.')
   }
 }
