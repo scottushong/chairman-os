@@ -322,6 +322,14 @@ async function renderPage(path: string, repo: ChairmanRepository) {
     // 요청 밖에서 페이지 JSX만 돌리므로 '로그인하지 않은 상태'로 세운다 — 공유 패널의
     // 회수 버튼을 누가 보는가는 여기서 재는 것이 아니다.
     if (name === '@/lib/auth/session') return { currentUser: async () => null }
+    // 기능번호(SpecCode)는 세션을 읽는 async 서버 컴포넌트라 renderToStaticMarkup이 못 그린다.
+    // 로그인하지 않은 상태면 어차피 안 그리므로 같은 결과로 비운다. PageHeader는 그 SpecCode를 품고 있어
+    // 제목 · 설명 · 버튼만 그리는 같은 모양으로 세운다 — 이 검사가 재는 것은 마감 칸이다.
+    if (name === '@/components/layout/spec-code') return { SpecCode: () => null }
+    if (name === '@/components/layout/page-header') {
+      return { PageHeader: ({ title, description, children }: { title: string; description: string; children?: ReactNode }) =>
+        createElement('div', null, createElement('h1', null, title), createElement('p', null, description), children) }
+    }
     return requireFromHere(name.startsWith('@/') ? resolve('src', name.slice(2)) : name)
   } }, { filename })
   return renderToStaticMarkup(await exports.default!({ params: Promise.resolve({ id: '0000' }) }))
