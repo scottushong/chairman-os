@@ -80,6 +80,17 @@ function assertCloseBooks(businessId: string) {
   if (!ok) throw new Error('close_forbidden')
 }
 
+/** 0050 finance_imports 정책이 부르는 두 판정 — dummy-finance-imports.ts · 첨부 대상 판정이 같은 잣대를 쓴다. */
+export const dummyCanReadBooks = canReadBooks
+export function dummyCanKeepBooks(businessId: string): boolean {
+  try {
+    assertKeepBooks(businessId)
+    return true
+  } catch {
+    return false
+  }
+}
+
 const key = (businessId: string, code: string) => `${businessId}|${code}`
 
 /** mock 계정 위에 얹은 계정들. 키는 business|code. mock 계정을 고치면 여기 복사본이 선다. */

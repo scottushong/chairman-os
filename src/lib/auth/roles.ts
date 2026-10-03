@@ -1,3 +1,4 @@
+import { ECOUNT_CODE_BUSINESSES } from '@/lib/ledger/standard-chart'
 import type { Role, SessionUser } from '@/types'
 
 /**
@@ -67,6 +68,14 @@ export function canKeepBooks(user: SessionUser | null, businessId: string): bool
   if (user === null) return false
   if (BOOKKEEPER.includes(user.role)) return true
   return !SYSTEM.includes(user.role) && user.finance[businessId]?.write === true
+}
+
+/**
+ * ECOUNT 엑셀 업로드 화면(/finance/<회사>/import)을 열 수 있는가(안내). ECOUNT 코드 체계를 쓰는 회사(DY) +
+ * 그 회사 재무 쓰기 권한. 판정은 0050 finance_imports_insert(can_keep_books)가 한다.
+ */
+export function canImportEcount(user: SessionUser | null, businessId: string): boolean {
+  return ECOUNT_CODE_BUSINESSES.includes(businessId) && canKeepBooks(user, businessId)
 }
 
 /** 이 회사의 월을 마감할 수 있는가(안내). 0047 can_close_books(target)와 같다 — 역할 둘 + 그 회사의 can_approve. */

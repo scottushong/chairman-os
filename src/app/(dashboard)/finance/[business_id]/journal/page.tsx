@@ -6,7 +6,7 @@ import { JournalForm } from '@/components/finance/journal-form'
 import { MonthSelect } from '@/components/finance/month-select'
 import { SlipList } from '@/components/finance/slip-list'
 import { PageHeader } from '@/components/layout/page-header'
-import { canKeepBooks } from '@/lib/auth/roles'
+import { canImportEcount, canKeepBooks } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
 import { periodOfDate } from '@/lib/ledger/basis'
 import {
@@ -70,7 +70,7 @@ export default async function JournalPage(props: PageProps<'/finance/[business_i
         {/* PageHeader의 오른쪽 칸은 줄을 접지 않는다. 폰에서는 버튼들이 한 줄에 못 들어가 탭이 한 글자씩 눌렸다 —
             여기서 한 번 감싸 좁을 때만 다음 줄로 넘긴다(넓은 화면은 한 줄 그대로). */}
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <BooksNav businessId={business_id} current="journal" />
+          <BooksNav businessId={business_id} current="journal" canImport={canImportEcount(user, business_id)} />
           <Link
             href="/finance"
             className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"

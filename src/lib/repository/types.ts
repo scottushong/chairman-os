@@ -43,6 +43,9 @@ import type {
   ExceptionRecord,
   ExceptionRule,
   ExceptionTriage,
+  FinanceImport,
+  FinanceImportKind,
+  FinanceImportPreviewPatch,
   FinanceKpi,
   FinanceLedger,
   Initiative,
@@ -159,6 +162,21 @@ export interface ChairmanRepository {
 
   /** 그 회사의 **활성** 공식 재무제표 목록(정정으로 밀려난 것은 뺀다). 월별 화면의 잠금 판정이 쓴다. */
   listOfficialStatements(businessId: string): Promise<OfficialStatement[]>
+
+  /**
+   * ECOUNT 엑셀 업로드 한 건(0050 finance_imports). 읽기는 can_read_books, 넣기는 can_keep_books 본인 draft,
+   * 고치기는 만든 사람의 draft에서만 — 권한은 여기서 보지 않는다(DB가 본다 · dummy는 옮겨 적는다).
+   * 읽기는 0050이 없는 DB를 견딘다(master push = production 배포가 DB보다 먼저 나간다). 쓰기는 견디지 않는다.
+   * 지우기는 없다 — 취소는 cancelled다. committed 전이는 대상별 등록 RPC(0051 이후)가 한다.
+   */
+  createFinanceImport(input: { business_id: string; kind: FinanceImportKind; file_name: string }, actor: AuditActor): Promise<FinanceImport>
+  getFinanceImport(importId: string): Promise<FinanceImport | null>
+  /** 그 회사의 업로드(최근 것부터). status를 주면 그 상태만. */
+  listFinanceImports(businessId: string, status?: FinanceImport['status']): Promise<FinanceImport[]>
+  /** 미리보기 결과(sha256 · 개요)를 적는다. **draft에서만** — 끝난 업로드면 던진다. 바뀐 줄을 돌려준다. */
+  recordFinanceImportPreview(importId: string, patch: FinanceImportPreviewPatch, actor: AuditActor): Promise<FinanceImport>
+  /** draft → cancelled. **draft에서만** — 끝난 업로드면 던진다. 원본 첨부는 호출자가 먼저 지운다(0050 머리 주석 :25). */
+  cancelFinanceImport(importId: string, actor: AuditActor): Promise<FinanceImport>
 
   /**
    * Phase 5-D — 프로세스차트(0021). 읽기는 Executive 이상 + 자기 회사(DB가 판정).

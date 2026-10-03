@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import { BooksNav } from '@/components/finance/books-nav'
 import { MonthlyGrid } from '@/components/finance/monthly-grid'
 import { PageHeader } from '@/components/layout/page-header'
-import { canKeepBooks } from '@/lib/auth/roles'
+import { canImportEcount, canKeepBooks } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
 import { kstToday } from '@/lib/chairman-project'
 import { ECOUNT_CODE_BUSINESSES } from '@/lib/ledger/standard-chart'
@@ -49,7 +49,7 @@ export default async function MonthlyPage(props: PageProps<'/finance/[business_i
         code="CH-026"
         description={`${year}년 열두 달을 채우면 달마다 요약 전표가 잠정으로 들어갑니다. 공식 결산이 있는 달은 잠깁니다.`}
       >
-        <BooksNav businessId={business_id} current="monthly" />
+        <BooksNav businessId={business_id} current="monthly" canImport={canImportEcount(user, business_id)} />
       </PageHeader>
 
       <div className="mt-4">

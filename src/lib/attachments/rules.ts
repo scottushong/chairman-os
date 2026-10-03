@@ -66,9 +66,15 @@ export const ATTACHMENT_CLASS_HINT: Record<AttachmentClass, string> = {
   Vault: '파일은 받지 않음 · 링크로 등록',
 }
 
-/** 대상 상세 화면 경로 — 저장 뒤 다시 그릴 자리. */
-export function entityPath(table: AttachmentEntity, id: string): string {
+/**
+ * 대상 상세 화면 경로 — 저장 뒤 다시 그릴 자리.
+ * finance_imports(0050 ECOUNT 업로드 원본)는 업로드 id가 아니라 회사의 업로드 화면으로 간다 — 첨부 줄의
+ * business_id(DB 트리거가 업로드에서 낸 값)를 넘긴다. 없으면 그룹 재무.
+ */
+export function entityPath(table: AttachmentEntity, id: string, businessId?: string | null): string {
   switch (table) {
+    case 'finance_imports':
+      return businessId ? `/finance/${encodeURIComponent(businessId)}/import` : '/finance'
     case 'initiatives':
       return `/initiatives/${id}`
     case 'businesses':

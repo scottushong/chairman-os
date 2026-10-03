@@ -6,7 +6,7 @@ import { CloseMonth } from '@/components/finance/close-month'
 import { FinanceView } from '@/components/finance/finance-view'
 import { PageHeader } from '@/components/layout/page-header'
 import { recordScreenRead } from '@/lib/activity-record'
-import { canCloseBooks } from '@/lib/auth/roles'
+import { canCloseBooks, canImportEcount } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
 import { closablePeriod } from '@/lib/ledger/closing'
 import { todayKst } from '@/lib/ledger/journal'
@@ -58,7 +58,7 @@ export default async function BusinessFinancePage(props: PageProps<'/finance/[bu
             여기서 한 번 감싸 좁을 때만 다음 줄로 넘긴다(넓은 화면은 한 줄 그대로). */}
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           {closable ? <CloseMonth businessId={business_id} period={closable} /> : null}
-          <BooksNav businessId={business_id} current="statements" />
+          <BooksNav businessId={business_id} current="statements" canImport={canImportEcount(user, business_id)} />
           <Link
             href="/finance"
             className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"

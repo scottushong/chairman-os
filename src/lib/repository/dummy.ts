@@ -37,6 +37,7 @@ import {
   dummyInterventions,
 } from './dummy-succession'
 import { attachmentSearchText, dummyAttachments } from './dummy-attachments'
+import { dummyFinanceImportEntity, dummyFinanceImports } from './dummy-finance-imports'
 import * as books from './dummy-books'
 import { dummyAssistant } from './dummy-assistant'
 import * as chat from './dummy-chat'
@@ -500,9 +501,13 @@ export const dummyRepository: ChairmanRepository = {
       const d = (await dummyRepository.listDocuments()).find((x) => x.document_id === id)
       return { visible: !!d, business_id: d && d.business_id !== 'group' ? d.business_id : null }
     }
+    // 0050 — ECOUNT 업로드 원본. 업로드가 보이는가(finance_imports_read = can_read_books).
+    if (table === 'finance_imports') return dummyFinanceImportEntity(id)
     const d = (await dummyRepository.listDecisions()).find((x) => x.decision_id === id)
     return { visible: !!d && dummyHasBusiness(viewer, d.business_id), business_id: d?.business_id ?? null }
   }),
+  // ECOUNT 엑셀 업로드(0050 finance_imports) — 권한을 옮겨 적었다(dummy-finance-imports.ts).
+  ...dummyFinanceImports,
 
   /**
    * 0002 businesses_read = has_business(). 0047 전까지 dummy는 회사를 가르지 않았다 — 그래서 dummy의 DY 팀장이

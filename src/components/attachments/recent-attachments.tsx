@@ -5,6 +5,7 @@ import { ATTACHMENT_STATUS_LABEL_KO, type Attachment } from '@/types'
 
 /**
  * /documents의 «첨부 · AI 요약» — 상세 화면들(이니셔티브 · 회사 · 문서 · 결재)에 붙은 파일을 한곳에서.
+ * ECOUNT 업로드 원본(0050 finance_imports)은 재무 읽기 권한자에게만 오고, 누르면 그 회사의 업로드 화면으로 간다.
  * 링크 방식 문서 목록 옆에 둔다(회장 지시: «기존 링크 방식과 나란히»). 올리기는 각 상세 화면에서 한다 —
  * 첨부의 권한이 «붙은 대상»에서 오므로 대상 없이 올리는 길을 만들지 않는다.
  */
@@ -14,6 +15,7 @@ const ENTITY_LABEL: Record<Attachment['entity_table'], string> = {
   businesses: '회사',
   documents: '문서',
   decisions: '결재',
+  finance_imports: 'ECOUNT 업로드',
 }
 
 export function RecentAttachments({ attachments, scopeName }: { attachments: Attachment[]; scopeName: (id: string | null) => string }) {
@@ -31,7 +33,7 @@ export function RecentAttachments({ attachments, scopeName }: { attachments: Att
         <ul className="mt-3 divide-y divide-line-soft">
           {attachments.map((a) => {
             const s = a.ai_summary
-            const href = a.entity_table === 'decisions' ? `/approvals?id=${encodeURIComponent(a.entity_id)}` : entityPath(a.entity_table, a.entity_id)
+            const href = a.entity_table === 'decisions' ? `/approvals?id=${encodeURIComponent(a.entity_id)}` : entityPath(a.entity_table, a.entity_id, a.business_id)
             return (
               <li key={a.attachment_id} className="py-2.5">
                 <div className="flex flex-wrap items-center gap-x-2 gap-y-1">

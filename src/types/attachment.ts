@@ -4,8 +4,8 @@
  * 값은 0045의 check 제약과 같은 목록이다. 한쪽만 늘면 화면이 받는 파일을 DB가 거부한다.
  */
 
-/** 첨부가 붙는 대상 넷. 표 이름 그대로 — 0045 attachments_entity_check. */
-export const ATTACHMENT_ENTITY = ['initiatives', 'businesses', 'documents', 'decisions'] as const
+/** 첨부가 붙는 대상 다섯. 표 이름 그대로 — 0045 attachments_entity_check(0050이 finance_imports를 더했다 — ECOUNT 업로드 원본). */
+export const ATTACHMENT_ENTITY = ['initiatives', 'businesses', 'documents', 'decisions', 'finance_imports'] as const
 export type AttachmentEntity = (typeof ATTACHMENT_ENTITY)[number]
 
 export const ATTACHMENT_STATUS = ['uploaded', 'extracting', 'summarized', 'skipped_vault', 'failed'] as const

@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache'
 
 import { structureMemo, summarizeAttachment } from '@/lib/attachments/summarize'
-import { ATTACHMENT_MAX_BYTES, attachmentMime, entityPath } from '@/lib/attachments/rules'
+import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MIME, attachmentMime, entityPath } from '@/lib/attachments/rules'
 import { currentUser } from '@/lib/auth/session'
 import { getRepository } from '@/lib/repository'
 import { ATTACHMENT_CLASS, ATTACHMENT_ENTITY, type AttachmentClass, type AttachmentEntity } from '@/types'
@@ -50,10 +50,15 @@ export async function beginAttachment(input: unknown): Promise<BeginResult> {
   const entity_id = typeof f.entity_id === 'string' ? f.entity_id.trim() : ''
   const file_name = typeof f.file_name === 'string' ? f.file_name.trim().slice(0, 255) : ''
   const size_bytes = typeof f.size_bytes === 'number' ? Math.floor(f.size_bytes) : 0
-  const security_class = f.security_class as AttachmentClass
+  const forImport = entity_table === 'finance_imports'
+  // ECOUNT 업로드 원본(0050)의 등급은 앱이 정한다 — «일반». 보이는 범위는 업로드의 재무 읽기 권한
+  // (attachment_entity_visible → finance_imports_read = can_read_books)이 이미 좁힌다. «제한»이면 보안등급
+  // 일반인 재무 팀장(첫 실사용자)이 자기 원본을 못 올리고 못 본다(리뷰 M-6). 화면이 보낸 등급은 믿지 않는다.
+  const security_class = (forImport ? 'Normal' : f.security_class) as AttachmentClass
   const mime = attachmentMime(file_name, typeof f.mime === 'string' ? f.mime : '')
 
   if (!ATTACHMENT_ENTITY.includes(entity_table) || !/^[A-Za-z0-9_-]{1,64}$/.test(entity_id)) return { error: '어디에 붙일지 알 수 없습니다.' }
+  if (forImport && mime !== ATTACHMENT_MIME.xlsx) return { error: 'ECOUNT 업로드는 .xlsx 파일만 받습니다. ECOUNT에서 «엑셀(xlsx)»로 저장해 올리세요.' }
   if (!ATTACHMENT_CLASS.includes(security_class)) return { error: '등급을 고르세요.' }
   // CLAUDE.md — Vault는 링크만. 앱 레벨 암호화(회사 보유 키)가 생기면 이 줄을 걷는다.
   if (security_class === 'Vault') return { error: 'Vault 파일은 올리지 않습니다. 문서 화면에서 링크로 등록하세요.' }
@@ -65,6 +70,17 @@ export async function beginAttachment(input: unknown): Promise<BeginResult> {
   if (!who) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
   try {
     const repo = await getRepository()
+    if (forImport) {
+      // 원본은 업로드 한 건에 하나 — 둘이면 미리보기 · 등록이 어느 파일을 읽을지 흐려진다.
+      // 본인 draft인지는 0050 attachments_finance_import_owner가 최종 판정한다(여기는 사람의 말로 먼저).
+      const imp = await repo.getFinanceImport(entity_id)
+      if (!imp || imp.status !== 'draft' || imp.created_by !== who.user_id) {
+        return { error: '진행 중인 본인 업로드에만 원본을 올릴 수 있습니다.' }
+      }
+      if ((await repo.listAttachments('finance_imports', entity_id)).length > 0) {
+        return { error: '이 업로드에는 이미 원본이 있습니다. 다른 파일이면 취소하고 새로 올리세요.' }
+      }
+    }
     const a = await repo.createAttachment({ entity_table, entity_id, file_name, mime, size_bytes, security_class }, who)
     return { id: a.attachment_id, path: a.storage_path, status: a.status }
   } catch (e) {
@@ -109,8 +125,11 @@ export async function summarizeAttachmentAction(attachmentId: string): Promise<S
   const repo = await getRepository()
   const a = await repo.getAttachment(attachmentId)
   if (!a) return { error: '첨부를 찾지 못했습니다.' }
+  // ECOUNT 업로드 원본(0050)은 장부 숫자 원문이다 — 외부 AI로 보내지 않는다(설계서 A «AI 요약은 부르지 않는다»).
+  // AI 어시스턴트의 «요약 제안» 실행(execute.ts)도 이 문을 지난다.
+  if (a.entity_table === 'finance_imports') return { error: 'ECOUNT 업로드 원본은 AI 요약을 하지 않습니다.' }
   const result = await summarizeAttachment(repo, attachmentId)
-  revalidatePath(entityPath(a.entity_table, a.entity_id))
+  revalidatePath(entityPath(a.entity_table, a.entity_id, a.business_id))
   revalidatePath('/documents')
   return { status: result.status, error: result.error }
 }
@@ -122,7 +141,7 @@ export async function deleteAttachmentAction(attachmentId: string): Promise<Atta
     const repo = await getRepository()
     const a = await repo.getAttachment(attachmentId)
     await repo.deleteAttachment(attachmentId, who)
-    if (a) revalidatePath(entityPath(a.entity_table, a.entity_id))
+    if (a) revalidatePath(entityPath(a.entity_table, a.entity_id, a.business_id))
     revalidatePath('/documents')
     return {}
   } catch (e) {
@@ -149,7 +168,7 @@ export async function setAttachmentViewerAction(attachmentId: string, userId: st
     const repo = await getRepository()
     await repo.setAttachmentViewer(attachmentId, userId, on, who)
     const a = await repo.getAttachment(attachmentId)
-    if (a) revalidatePath(entityPath(a.entity_table, a.entity_id))
+    if (a) revalidatePath(entityPath(a.entity_table, a.entity_id, a.business_id))
     return {}
   } catch (e) {
     return denied(e, '지정하지 못했습니다.')
