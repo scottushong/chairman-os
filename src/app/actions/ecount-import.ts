@@ -14,6 +14,7 @@ import {
   type ExistingAccount,
   type IgnoredRow,
 } from '@/lib/ecount/excel/accounts-import'
+import { planAnnual } from '@/lib/ecount/excel/annual-import'
 import type { EcountUnit } from '@/lib/ecount/excel/cells'
 import {
   guessMapping,
@@ -27,6 +28,7 @@ import {
   type MappingSource,
   type SheetGrid,
 } from '@/lib/ecount/excel/mapping'
+import type { AmountsPreview } from '@/lib/ecount/excel/statement-lines'
 import {
   EcountExcelError,
   outlineWorkbook,
@@ -88,6 +90,8 @@ export interface EcountPreviewState extends EcountImportState {
   mappingProblems?: string[]
   /** 계정과목 미리보기 재료 — 화면이 사람의 분류 고침마다 planAccounts를 다시 돌린다 */
   accounts?: { rows: AccountFileRow[]; ignored: IgnoredRow[]; existing: ExistingAccount[] }
+  /** 연간 · 월별 미리보기(검증만 — 등록은 DB 등록 함수가 생긴 뒤) */
+  amounts?: AmountsPreview
 }
 
 export interface EcountCommitState extends EcountImportState {
@@ -232,16 +236,30 @@ function confirmedMapping(imp: FinanceImport): EcountMapping | null {
   return parseMapping(imp.summary?.mapping, imp.kind)
 }
 
+/** 그 회사 계정(비활성 포함)을 판정 모양으로. */
+async function companyAccounts(repo: ChairmanRepository, businessId: string): Promise<ExistingAccount[]> {
+  const ledger = await repo.loadFinanceLedger()
+  return ledger.accounts
+    .filter((a) => a.business_id === businessId)
+    .map((a) => ({ account_code: a.account_code, name: a.name, section: a.section, category: a.category, cash_flow: a.cash_flow, active: a.active }))
+}
+
 /** 계정과목 판정 재료 — 파일 행 + 그 회사의 기존 계정(비활성 포함 — 코드는 비활성이어도 이미 있다). */
 async function accountsInput(repo: ChairmanRepository, imp: FinanceImport, sheets: EcountSheet[], mapping: EcountMapping) {
   const part = mapping.parts[0]
   const sheet = sheets.find((s) => s.name === part.sheet)!
   const { rows, ignored } = readAccountRows(sheet, part)
-  const ledger = await repo.loadFinanceLedger()
-  const existing: ExistingAccount[] = ledger.accounts
-    .filter((a) => a.business_id === imp.business_id)
-    .map((a) => ({ account_code: a.account_code, name: a.name, section: a.section, category: a.category, cash_flow: a.cash_flow, active: a.active }))
-  return { rows, ignored, existing }
+  return { rows, ignored, existing: await companyAccounts(repo, imp.business_id) }
+}
+
+/**
+ * 연간 미리보기 — 검증만. 세무사 확정 결산(활성 · 한 해)이 있는 해는 막는다(설계서 B-② «확정과의 관계»).
+ * 0050 전 목록에는 basis 칸이 없다 — 지금 있는 공식 결산은 전부 세무사 확정이다.
+ */
+async function annualPreview(repo: ChairmanRepository, imp: FinanceImport, sheets: EcountSheet[], mapping: EcountMapping): Promise<AmountsPreview> {
+  const [accounts, officials] = await Promise.all([companyAccounts(repo, imp.business_id), repo.listOfficialStatements(imp.business_id)])
+  const officialKeys = officials.filter((o) => o.period_kind === 'year').map((o) => o.period_key)
+  return planAnnual(sheets, mapping, { accounts, officialKeys })
 }
 
 /**
@@ -310,6 +328,11 @@ export async function previewEcountImport(importId: unknown, choices?: EcountPre
       const plan = planAccounts(input)
       state.accounts = input
       summary.counts = { rows: input.rows.length, creates: plan.creates.length, blocks: plan.blockCount, warnings: plan.warningCount }
+    } else if (imp.kind === 'annual') {
+      const amounts = await annualPreview(repo, imp, sheets, mapping)
+      state.amounts = amounts
+      // 금액 원문은 summary에 두지 않는다(원본은 첨부다) — 줄 수 · 차단 수만.
+      summary.counts = { lines: amounts.lines.length, blocks: amounts.blockCount, warnings: amounts.warningCount }
     }
     await repo.recordFinanceImportPreview(
       imp.import_id,

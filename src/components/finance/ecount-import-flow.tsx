@@ -8,6 +8,7 @@ import type { AccountOverrides } from '@/lib/ecount/excel/accounts-import'
 import type { EcountMapping } from '@/lib/ecount/excel/mapping'
 
 import { EcountAccountsPreview } from './ecount-accounts-preview'
+import { EcountAmountsPreview } from './ecount-amounts-preview'
 import { EcountMappingEditor } from './ecount-mapping-editor'
 import { EcountOutline } from './ecount-outline'
 
@@ -112,16 +113,11 @@ export function EcountImportFlow({ initial }: { initial: EcountPreviewState }) {
       {confirmed && !editing && state.accounts ? (
         <EcountAccountsPreview key={JSON.stringify(state.mapping)} input={state.accounts} busy={!!busy} onCommit={(c) => void commitAccounts(c)} />
       ) : null}
-      {confirmed && !editing && state.kind !== 'accounts' ? (
-        <div className="space-y-2">
-          <button
-            type="button"
-            disabled
-            className="min-h-11 rounded-md bg-accent px-3 text-t11h font-semibold text-ink opacity-40 lg:min-h-0 lg:py-1.5"
-          >
-            등록은 다음 단계(DB 반영 후)에 열립니다
-          </button>
-        </div>
+      {confirmed && !editing && state.amounts ? <EcountAmountsPreview preview={state.amounts} /> : null}
+      {confirmed && !editing && state.kind !== 'accounts' && !state.amounts ? (
+        <button type="button" disabled className="min-h-11 rounded-md bg-accent px-3 text-t11h font-semibold text-ink opacity-40 lg:min-h-0 lg:py-1.5">
+          등록은 다음 단계(DB 반영 후)에 열립니다
+        </button>
       ) : null}
     </div>
   )

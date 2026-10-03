@@ -6,6 +6,7 @@
  *   공통부   셀 정규화 · 머리글 · 기간 · 단위 · 행 종류 · 받는 파일 · 감사 문구
  *   열 지정  머리글 짐작 · 지난 지정 다시 쓰기(머리글이 같을 때만) · 판정 · 믿지 않는 값 거르기
  *   계정과목 분류 제안 · 차단/경고 · 병합 계획(분류는 안 바꿈 · 이름은 체크한 것만 · 안 지움) · dummy 끝까지
+ *   연간     계정 맞추기 · 단위 · 로마숫자 머리 · 묶음 줄 · 합계 행 대조 · 불균형 · 세무사 확정 해(등록은 0051 이후)
  *
  * ECOUNT_SAMPLE_DIR=<폴더>를 주면 견본 xlsx를 그 폴더에 써 둔다(화면에서 올려 볼 수 있게).
  *
@@ -47,6 +48,8 @@ import {
   sheetGrids,
   sheetLikeFromGrid,
 } from '../src/lib/ecount/excel/mapping'
+import { planAnnual } from '../src/lib/ecount/excel/annual-import'
+import { matchAccount } from '../src/lib/ecount/excel/statement-lines'
 import { parseCell } from '../src/lib/statements/paste'
 
 async function syntheticXlsx(): Promise<Uint8Array> {
@@ -274,7 +277,10 @@ async function accountsXlsx(header = ['코드', '계정명', '구분', '사용�
     ['', '미분류계정', '비용', ''], //              21 코드 빈 줄 → 막힘
     [1360, '가지급금', '자산', '미사용'], //        22 새 · 사용안함 → active=false
     [1370, '선급비용', '자산', '보류'], //          23 새 · 사용여부 못 읽음 → 경고
-    ['', '합 계', '', ''], //                      24 무시
+    [3750, '이월이익잉여금', '자본', '사용'], //    24 새 · 자본
+    [8020, '급여', '판매비와관리비', '사용'], //    25 새 · 판관비 · 인건비
+    [9020, '이자수익', '영업외수익', '사용'], //    26 새 · 영업외
+    ['', '합 계', '', ''], //                      27 무시
   ]
   rows.forEach((r, i) => (ws.getRow(5 + i).values = r))
   return new Uint8Array(await wb.xlsx.writeBuffer())
@@ -372,8 +378,8 @@ async function accountsChecks(): Promise<void> {
 
   // 파일 행 — 머리글 아래만, 합계 · 소계는 무시(경고), 코드 빈 보통 줄은 행으로 남아 막힌다
   const { rows, ignored } = readAccountRows(sheets[0], m.parts[0])
-  assert.deepEqual(ignored.map((r) => [r.rowNo, r.why]), [[18, '합계 행'], [24, '합계 행']])
-  assert.equal(rows.length, 18)
+  assert.deepEqual(ignored.map((r) => [r.rowNo, r.why]), [[18, '합계 행'], [27, '합계 행']])
+  assert.equal(rows.length, 21)
   assert.equal(rows.find((r) => r.rowNo === 7)!.code, '1080', '글 칸 코드')
 
   // 계획 — 사람이 아무것도 안 고른 상태
@@ -429,6 +435,9 @@ async function accountsChecks(): Promise<void> {
       ['ABC', 'sga', 'other', null, true],
       ['1360', 'other_asset', 'asset', 'operating', false],
       ['1370', 'other_asset', 'asset', 'operating', true],
+      ['3750', 'equity', 'equity', 'financing', true],
+      ['8020', 'sga', 'labor', null, true],
+      ['9020', 'non_operating', 'other', null, true],
     ],
   )
   assert.ok(!fixed.creates.some((c) => EXISTING.some((e) => e.account_code === c.account_code)), '있는 코드는 새로 넣지 않는다')
@@ -496,6 +505,167 @@ async function dummyAccountsEndToEnd(
   await repo.cancelFinanceImport(next.import_id, actor)
 }
 
+// ---------------------------------------------------------------- ② 연간
+
+/** 연간 견본 — 재무상태표 · 손익계산서 두 시트, 제목 · 기간 · 단위(천원) · 로마숫자 머리 · 묶음 줄 · 합계 · 이익 줄. */
+async function annualXlsx(netIncome = 500): Promise<Uint8Array> {
+  const wb = new ExcelJS.Workbook()
+  const bs = wb.addWorksheet('재무상태표')
+  bs.getCell('A1').value = '재 무 상 태 표'
+  bs.getCell('A2').value = '제 10 기  2025년 1월 1일 ~ 2025년 12월 31일'
+  bs.getCell('A3').value = '회사명 : DY'
+  bs.getCell('C3').value = '(단위 : 천원)'
+  bs.getRow(4).values = ['과 목', '당기', '전기']
+  const bsRows: (string | number)[][] = [
+    ['Ⅰ. 유동자산', 1500, 1200], //    5 머리
+    ['(1) 당좌자산', 1500, 1200], //   6 묶음 → 소계
+    ['현금', 1000, 900], //            7
+    ['외상매출금', 500, 300], //       8
+    ['Ⅱ. 비유동자산', 800, 700], //   9 머리
+    ['유형자산', 1000, 900], //        10 계정과 같은 이름 → 계정 줄
+    ['감가상각누계액', '(200)', '(100)'], // 11 차감 — 괄호 음수
+    ['자산총계', 2300, 1900], //       12
+    ['Ⅰ. 유동부채', 1000, 900], //    13
+    ['외상매입금', 400, 300], //       14
+    ['차입금', 600, 600], //           15
+    ['부채총계', 1000, 900], //        16
+    ['Ⅰ. 자본금', 1000, 1000], //     17 혼자 선 머리 → 계정 줄(자본금)
+    ['Ⅱ. 이익잉여금', 300, 0], //     18 머리
+    ['이월이익잉여금', 300, 0], //     19
+    ['자본총계', 1300, 1000], //       20
+    ['부채와 자본 총계', 2300, 1900], // 21
+  ]
+  bsRows.forEach((r, i) => (bs.getRow(5 + i).values = r))
+
+  const pl = wb.addWorksheet('손익계산서')
+  pl.getCell('A1').value = '손 익 계 산 서'
+  pl.getCell('A2').value = '2025/01/01 ~ 2025/12/31'
+  pl.getCell('B3').value = '(단위 : 천원)'
+  pl.getRow(4).values = ['과목', '당기금액']
+  const plRows: (string | number)[][] = [
+    ['Ⅰ. 매출액', 5000], //                 5
+    ['제품매출', 5000], //                   6
+    ['Ⅱ. 매출원가', 3000], //               7
+    ['원재료비', 3000], //                   8
+    ['Ⅲ. 매출총이익', 2000], //             9 이익(로마숫자가 붙어도)
+    ['Ⅳ. 판매비와관리비', 1200], //         10
+    ['급여', 1000], //                       11
+    ['감가상각비', 200], //                  12
+    ['Ⅴ. 영업이익', 800], //                13
+    ['Ⅵ. 영업외수익', 100], //              14
+    ['이자수익', 100], //                    15
+    ['Ⅶ. 영업외비용', 300], //              16
+    ['이자비용', 300], //                    17
+    ['Ⅷ. 법인세비용차감전순이익', 600], //  18
+    ['Ⅸ. 법인세비용', 100], //              19 혼자 선 머리 → 계정 줄
+    ['Ⅹ. 당기순이익', netIncome], //        20
+    ['잡손실', 0], //                        21 0원 줄 — 싣지 않음(계정 없어도 막지 않음)
+  ]
+  plRows.forEach((r, i) => (pl.getRow(5 + i).values = r))
+  return new Uint8Array(await wb.xlsx.writeBuffer())
+}
+
+/** ① 계정과목 업로드가 끝난 뒤의 장부라고 본다. */
+const BOOK: ExistingAccount[] = [
+  ['1010', '현금', 'cash', 'asset'],
+  ['1080', '외상매출금', 'receivable', 'asset'],
+  ['1400', '유형자산', 'other_asset', 'asset'],
+  ['1410', '감가상각누계액', 'other_asset', 'asset'],
+  ['2010', '외상매입금', 'payable', 'liability'],
+  ['2600', '차입금', 'other_liability', 'liability'],
+  ['3310', '자본금', 'equity', 'equity'],
+  ['3750', '이월이익잉여금', 'equity', 'equity'],
+  ['4010', '제품매출', 'revenue', 'revenue'],
+  ['4510', '원재료비', 'cogs', 'raw_material'],
+  ['8010', '급여', 'sga', 'labor'],
+  ['8210', '감가상각비', 'd_and_a', 'other'],
+  ['9020', '이자수익', 'non_operating', 'other'],
+  ['9310', '이자비용', 'non_operating', 'other'],
+  ['9980', '법인세비용', 'tax', 'other'],
+].map(([account_code, name, section, category]) => ({
+  account_code,
+  name,
+  section: section as ExistingAccount['section'],
+  category: category as ExistingAccount['category'],
+  cash_flow: null,
+  active: true,
+}))
+
+async function annualChecks() {
+  const bytes = await annualXlsx()
+  SAMPLES['ecount-sample-annual.xlsx'] = bytes
+  const sheets = await readEcountWorkbook(bytes)
+
+  // 짐작 — 두 시트 다(연간), 4행 머리글, 단위 천원, 해 2025
+  const guess = guessMapping(sheets, 'annual')
+  assert.deepEqual(guess.mapping.parts, [
+    { sheet: '재무상태표', headerRow: 3, columns: { name: 0, amount: 1 } },
+    { sheet: '손익계산서', headerRow: 3, columns: { name: 0, amount: 1 } },
+  ])
+  assert.equal(guess.mapping.unit, 'thousand')
+  assert.equal(guess.detectedUnit, 'thousand')
+  assert.equal(guess.mapping.year, '2025')
+  assert.equal(guess.mapping.basis, null)
+  assert.deepEqual(mappingProblems(guess.mapping, sheets), [])
+  assert.match(mappingProblems({ ...guess.mapping, year: null }, sheets)[0], /몇 년도/)
+  const m = guess.mapping
+
+  // 계정 맞추기
+  assert.equal(matchAccount({ code: '', name: '현 금' }, BOOK).account?.code, '1010', '이름은 공백을 걷고 정확히')
+  assert.equal(matchAccount({ code: '1080', name: '아무 이름' }, BOOK).how, 'code', '코드가 먼저')
+  assert.match(matchAccount({ code: '', name: '잡손실' }, BOOK).problem!, /장부에 «잡손실» 계정이 없습니다/)
+  assert.match(matchAccount({ code: '7777', name: '없는코드' }, BOOK).problem!, /계정코드 7777/)
+  const twin = [...BOOK, { ...BOOK[0], account_code: '1011' }]
+  assert.match(matchAccount({ code: '', name: '현금' }, twin).problem!, /계정 2개\(1010 · 1011\)/)
+
+  const plan = planAnnual(sheets, m, { accounts: BOOK, officialKeys: [] })
+  assert.deepEqual(plan.blocks, [])
+  assert.equal(plan.blockCount, 0)
+  const amt = (name: string) => plan.lines.find((l) => l.name === name)?.amounts[0]
+  assert.equal(amt('현금'), 1_000_000, '천원 → 원')
+  assert.equal(amt('감가상각누계액'), -200_000, '괄호 음수 차감')
+  assert.equal(amt('자본금'), 1_000_000, '혼자 선 머리 «Ⅰ. 자본금»은 계정 줄')
+  assert.equal(amt('법인세비용'), 100_000, '혼자 선 머리 «Ⅸ. 법인세비용»은 계정 줄')
+  assert.equal(amt('유형자산'), 1_000_000, '계정과 같은 이름이면 묶음이 아니다')
+  assert.equal(amt('잡손실'), undefined, '0원 줄은 싣지 않는다')
+  assert.equal(plan.lines.length, 15)
+  assert.ok(plan.others.some((o) => o.name === '당좌자산' && o.kind === 'subtotal'), '«(1) 당좌자산»은 소계')
+  assert.ok(plan.warnings.some((w) => /당좌자산.*묶음/.test(w)))
+  assert.ok(plan.others.some((o) => o.name === '매출총이익' && o.kind === 'profit'), '«Ⅲ. 매출총이익»은 이익 줄')
+  // 합계 대조 — 다 맞음
+  const labels = plan.checks.map((c) => c.label)
+  for (const l of ['자산총계', '부채총계', '자본총계', '부채와자본총계', '매출액', '매출원가', '매출총이익', '판매비와관리비', '영업이익', '영업외수익', '영업외비용', '법인세비용차감전순이익', '당기순이익']) {
+    assert.ok(labels.includes(l), `${l} 대조`)
+  }
+  assert.ok(plan.checks.every((c) => c.diff === 0), JSON.stringify(plan.checks.filter((c) => c.diff)))
+
+  // 파일 합계와 계산이 다르면 차액을 말하며 막는다
+  const off = planAnnual(await readEcountWorkbook(await annualXlsx(550)), m, { accounts: BOOK, officialKeys: [] })
+  assert.equal(off.blockCount, 1)
+  assert.match(off.blocks[0], /손익계산서 20행 당기순이익: 파일 550,000원 · 계산 500,000원 \(차액 50,000원\)/)
+
+  // 단위를 원으로 잘못 고르면 금액이 1/1000 — 대조는 여전히 맞으므로 사람 눈에 보이게 금액을 그대로 보여 준다
+  assert.equal(planAnnual(sheets, { ...m, unit: 'won' }, { accounts: BOOK, officialKeys: [] }).lines[0].amounts[0], 1000)
+
+  // 계정을 못 맞추면 그 줄이 막히고 합계 대조는 미룬다
+  const missing = planAnnual(sheets, m, { accounts: BOOK.filter((a) => a.name !== '외상매출금'), officialKeys: [] })
+  assert.ok(missing.lines.find((l) => l.name === '외상매출금')!.blocks[0].includes('계정이 없습니다'))
+  assert.equal(missing.checks.length, 0)
+  assert.ok(missing.warnings.includes('계정을 다 맞춘 뒤에 합계 행과 대조합니다'))
+
+  // 세무사 확정이 있는 해는 받지 않는다
+  assert.match(planAnnual(sheets, m, { accounts: BOOK, officialKeys: ['2025'] }).blocks[0], /세무사 확정 결산이 이미 있습니다/)
+  // 지정한 해와 파일 기간이 다르면 경고
+  assert.ok(planAnnual(sheets, { ...m, year: '2024' }, { accounts: BOOK, officialKeys: [] }).warnings.some((w) => /2025년인데 2024년/.test(w)))
+
+  // 재무상태표 불균형 — 자본금을 빼면 합계 대조(부채와자본총계)와 균형 둘 다 막는다
+  const unbalanced = planAnnual(sheets, { ...m, parts: [m.parts[0]] }, { accounts: BOOK.map((a) => (a.name === '자본금' ? { ...a, section: 'other_liability' as const } : a)), officialKeys: [] })
+  assert.ok(unbalanced.blocks.some((b) => /부채총계: 파일 1,000,000원 · 계산 2,000,000원/.test(b)))
+  assert.ok(!unbalanced.blocks.some((b) => /재무상태표가 맞지 않습니다/.test(b)), '자산 = 부채 + 자본은 여전히 맞다(구분만 옮겼다)')
+  const lopsided = planAnnual(sheets, { ...m, parts: [m.parts[0]] }, { accounts: BOOK.map((a) => (a.name === '자본금' ? { ...a, section: 'other_asset' as const } : a)), officialKeys: [] })
+  assert.ok(lopsided.blocks.some((b) => /재무상태표가 맞지 않습니다: 자산 3,300,000원 · 부채\+자본 1,300,000원/.test(b)))
+}
+
 /** ECOUNT_SAMPLE_DIR가 있으면 견본을 써 둔다 — 화면에서 직접 올려 볼 수 있게(저장소 밖 폴더를 준다). */
 async function writeSamples() {
   const dir = process.env.ECOUNT_SAMPLE_DIR
@@ -515,10 +685,12 @@ async function main() {
   await workbook()
   mappingChecks()
   await accountsChecks()
+  await annualChecks()
   await writeSamples()
   console.log('PASS: 셀 정규화(수식 result · 쉼표 · 괄호 음수 · ₩ · 못 읽은 칸은 오류) · 병합 칸 한 번만 · 기간 · 단위 · 머리글 · 행 종류(합계 · 소계 · 로마숫자 · 이익) · .xls · csv · HTML 거절 · sha256 · 감사 문구')
   console.log('PASS: 열 지정 — 머리글 짐작(제목 · 단위 줄 건너뜀) · 월 머리글 표기 · 지난 지정 다시 쓰기(머리글 같을 때만) · 판정 · 믿지 않는 값 거르기')
   console.log('PASS: 계정과목 — 분류 제안(구분 열 · 코드 대역 · 이름) · 차단(코드 공백 · 중복 · 미분류 · 모순) · 경고(이름 다름 · 사용여부 · 합계 행 · 파일에 없는 계정) · 병합(분류 안 바꿈 · 체크한 이름만 · 안 지움) · dummy 끝까지')
+  console.log('PASS: 연간 — 두 시트 짐작 · 천원 → 원 · 로마숫자 머리(혼자 선 머리 = 계정 줄 · 로마숫자 이익 줄) · 묶음 줄 = 소계 · 0원 줄 제외 · 계정 맞추기(코드 · 이름 · 모호) · 합계 행 대조(차액) · 불균형 · 세무사 확정 해 거부')
 }
 
 main().catch((e) => {
