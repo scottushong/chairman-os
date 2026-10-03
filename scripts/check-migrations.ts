@@ -4354,6 +4354,93 @@ function latestMigrationConstant(files: string[]) {
     `Phase 5-E: src/lib/version.ts의 LATEST_MIGRATION('${found[1]}')이 마지막 마이그레이션('${last}')과 다르다 — /settings의 '이 웹에 대해'가 조용히 틀린 번호를 말한다`)
 }
 
+/**
+ * 0049 직원 화면 용어 — DB가 적는 «회장»을 «대표»로.
+ *
+ * **적용 순간의 DB 상태가 입력이다**(0026 백필과 같다). 0048까지 올린 DB에 옛 문구(«회장»)로 결재선 · 취합을 심고,
+ * 0049를 올린 뒤에 잰다: 문구는 «대표»가 되고 · 사람 · 단계 · 순서 · updated_at은 그대로 · 얼림 트리거는 다시 켜져 있고 ·
+ * 그 뒤의 새 결재선과 감사 메모는 처음부터 «대표»다.
+ */
+async function staffTerms() {
+  const T = { chair: '00000000-0000-0000-0000-0000000d4901', lead: '00000000-0000-0000-0000-0000000d4902', req: '00000000-0000-0000-0000-0000000d4903' }
+  const db = new PGlite({ extensions: { pg_trgm } })
+  await applyAll(db, '0048_document_module_grants.sql')
+  await db.exec(`
+    grant usage on schema public, auth to authenticated, anon;
+    grant select, insert, update, delete on all tables in schema public to authenticated;
+    grant usage, select on all sequences in schema public to authenticated;
+    insert into auth.users values ('${T.chair}', 't1@x'), ('${T.lead}', 't2@x'), ('${T.req}', 't3@x');
+    insert into teams (team_id, business_id, name, name_en, lead_user_id) values ('team_49', 'biz_dy', '생산', 'Prod', '${T.lead}');
+    insert into user_profiles (user_id, role, display_name, max_security_class, team_id) values
+      ('${T.chair}', 'Chairman', 'ch', 'Vault', null),
+      ('${T.lead}', 'TeamLead', '생산팀장', 'Normal', 'team_49'),
+      ('${T.req}', 'Member', '생산직원', 'Normal', 'team_49');
+    update user_profiles set reports_to = '${T.chair}' where user_id in ('${T.lead}', '${T.req}');
+    insert into user_business_access values ('${T.lead}', 'biz_dy'), ('${T.req}', 'biz_dy');
+    insert into user_module_access (user_id, module, can_write) values ('${T.req}', '/chairman/decisions', true);
+  `)
+  const commitAs = async (uid: string, sql: string) => {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
+    try {
+      const r = await db.query<{ v: string }>(sql)
+      await db.exec('commit')
+      return r.rows[0]?.v ?? null
+    } catch (e) {
+      await db.exec('rollback')
+      throw e
+    }
+  }
+  const request = (id: string, amount: string) =>
+    `insert into decisions (decision_id, business_id, title, template_key, form, attachment_url, created_by)
+       values ('${id}', 'biz_dy', '요청 ${id}', 'expense', '{"amount":"${amount}","purpose":"설비","spent_on":"2026-10-01"}'::jsonb, 'https://x/a', '${T.req}') returning decision_id as v`
+  // 0048까지의 함수로 옛 문구를 심는다 — 큰 금액 둘(회장 칸 있음) + 작은 금액 하나(회장 칸 없음).
+  await commitAs(T.req, request('dec_49a', '6000000'))
+  await commitAs(T.req, request('dec_49b', '7000000'))
+  await commitAs(T.req, request('dec_49c', '100000'))
+  await commitAs(T.lead, `select lead_decide('dec_49a', true) as v`)
+  await commitAs(T.lead, `select lead_decide('dec_49b', true) as v`)
+  const bundle = await commitAs(T.lead, `select lead_bundle(array['dec_49a', 'dec_49b'], '회장 기안 — 설비 둘') as v`)
+  const snap = async () => (await db.query<{ id: string; line: string; title: string; upd: string }>(
+    `select decision_id as id, approval_line::text as line, title, updated_at::text as upd from decisions where decision_id like 'dec_49%' or decision_id = '${bundle}' order by decision_id`,
+  )).rows
+  const before = await snap()
+  assert.ok(before.find((r) => r.id === 'dec_49a')?.line.includes('회장'), '전제가 깨졌다 — 0048의 결재선에 «회장»이 없다')
+
+  await applyOne(db, '0049_staff_terms.sql')
+  const after = await snap()
+  for (const r of after) {
+    assert.ok(!r.line?.includes('회장'), `0049: ${r.id}의 결재선에 «회장»이 남았다 — ${r.line}`)
+    assert.ok(!r.title.includes('회장'), `0049: ${r.id}의 제목에 «회장»이 남았다 — ${r.title}`)
+    const b = before.find((x) => x.id === r.id)!
+    assert.equal(r.upd, b.upd, `0049: ${r.id}의 updated_at이 바뀌었다 — 문구 교체가 «최근 갱신»으로 보인다`)
+    // 문구 말고는 한 글자도 바뀌지 않는다: «회장»을 «대표»로 바꾼 옛 줄이 새 줄과 같아야 한다.
+    assert.equal(r.line, b.line?.replaceAll('회장', '대표') ?? null, `0049: ${r.id}의 결재선이 문구 말고도 바뀌었다`)
+  }
+  const a = JSON.parse(after.find((r) => r.id === 'dec_49a')!.line) as { step: string; name: string; why: string; user_id: string | null }[]
+  assert.deepEqual(a.map((s) => s.step), ['lead', 'rule', 'chairman'], '0049: 결재선의 단계가 바뀌었다')
+  assert.equal(a[2].name, '대표', '0049: 마지막 칸 이름이 «대표»가 아니다')
+  assert.equal(a[2].user_id, T.chair, '0049: 마지막 칸의 사람이 바뀌었다')
+  assert.equal(after.find((r) => r.id === bundle)?.title, '대표 기안 — 설비 둘', '0049: 취합 묶음 제목이 «대표 기안»이 아니다')
+  assert.equal(after.find((r) => r.id === 'dec_49c')?.title, '요청 dec_49c', '0049: 묶음이 아닌 결재의 제목을 건드렸다')
+
+  // 얼림은 다시 켜져 있다.
+  await assert.rejects(
+    db.exec(`update decisions set approval_line = '[]'::jsonb where decision_id = 'dec_49a'`),
+    /approval_line_frozen/, '0049: 백필 뒤 결재선 얼림 트리거가 꺼진 채다',
+  )
+  await db.exec(`update decisions set title = title || ' ' where decision_id = 'dec_49c'`)
+  const touched = await db.query<{ upd: string }>(`select updated_at::text as upd from decisions where decision_id = 'dec_49c'`)
+  assert.notEqual(touched.rows[0].upd, before.find((r) => r.id === 'dec_49c')!.upd, '0049: 백필 뒤 updated_at 트리거가 꺼진 채다')
+  // 새 결재선 · 감사 메모는 처음부터 «대표»다.
+  await commitAs(T.req, request('dec_49d', '6000000'))
+  await commitAs(T.lead, `select lead_decide('dec_49d', true, true) as v`)
+  const fresh = await db.query<{ line: string }>(`select approval_line::text as line from decisions where decision_id = 'dec_49d'`)
+  assert.ok(fresh.rows[0].line.includes('규칙이 대표까지 올린다') && !fresh.rows[0].line.includes('회장'), '0049: 새 결재선에 «회장»이 적힌다')
+  const notes = await db.query<{ note: string }>(`select note from audit_log where entity_table = 'decisions' and entity_id = 'dec_49d' and note like '팀장 승인%'`)
+  assert.equal(notes.rows[0]?.note, '팀장 승인 · 대표 확인 요청', '0049: 팀장 단계 감사 메모에 «회장»이 적힌다')
+  await db.close()
+}
+
 async function main() {
   const db = new PGlite({ extensions: { pg_trgm } })
   const files = await applyAll(db)
@@ -4376,8 +4463,9 @@ async function main() {
   await aiAssistant()
   await financeGrants()
   await documentGrants()
+  await staffTerms()
   console.log(
-    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단), 0048 문서 모듈 권한(사람 × 회사 · 문서 · 폴더 쓰기 · 줄 없는 팀장 거부 · 회사 접근과 줄 둘 다 · 열람 등급 위 insert/update 차단 · 등록자는 본인 · 고치기 · 지우기는 자기 것만(회장 전부) · 주인 칸은 회장만 · 폴더는 만든 사람만 · 시스템 계정 불변 · 옛 /core/search 회귀 · 회수 감사 · hard delete 닫힘)`,
+    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단), 0048 문서 모듈 권한(사람 × 회사 · 문서 · 폴더 쓰기 · 줄 없는 팀장 거부 · 회사 접근과 줄 둘 다 · 열람 등급 위 insert/update 차단 · 등록자는 본인 · 고치기 · 지우기는 자기 것만(회장 전부) · 주인 칸은 회장만 · 폴더는 만든 사람만 · 시스템 계정 불변 · 옛 /core/search 회귀 · 회수 감사 · hard delete 닫힘), 0049 직원 화면 용어(결재선 · 취합 제목 «회장»→«대표» 백필 — 사람 · 단계 · updated_at 그대로 · 얼림 재가동 · 새 결재선 · 감사 메모도 «대표»)`,
   )
 }
 
