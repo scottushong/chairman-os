@@ -7,6 +7,7 @@
  *   열 지정  머리글 짐작 · 지난 지정 다시 쓰기(머리글이 같을 때만) · 판정 · 믿지 않는 값 거르기
  *   계정과목 분류 제안 · 차단/경고 · 병합 계획(분류는 안 바꿈 · 이름은 체크한 것만 · 안 지움) · dummy 끝까지
  *   연간     계정 맞추기 · 단위 · 로마숫자 머리 · 묶음 줄 · 합계 행 대조 · 불균형 · 세무사 확정 해(등록은 0051 이후)
+ *   월별     당월/누계 · 누계 → 당월 · 합계 열 · 마감 달 · 세무사 확정 달 · 수기 전표 · 이익 줄 대조(등록은 0051 이후)
  *
  * ECOUNT_SAMPLE_DIR=<폴더>를 주면 견본 xlsx를 그 폴더에 써 둔다(화면에서 올려 볼 수 있게).
  *
@@ -38,6 +39,7 @@ import {
   type ExistingAccount,
 } from '../src/lib/ecount/excel/accounts-import'
 import {
+  MONTH_KEYS,
   guessColumnsAt,
   guessMapping,
   mappingProblems,
@@ -49,6 +51,7 @@ import {
   sheetLikeFromGrid,
 } from '../src/lib/ecount/excel/mapping'
 import { planAnnual } from '../src/lib/ecount/excel/annual-import'
+import { planMonthly, ytdToMonthly } from '../src/lib/ecount/excel/monthly-import'
 import { matchAccount } from '../src/lib/ecount/excel/statement-lines'
 import { parseCell } from '../src/lib/statements/paste'
 
@@ -249,7 +252,7 @@ function auditNote() {
 const SAMPLES: Record<string, Uint8Array> = {}
 
 /** 계정과목 견본 — 제목 행 · 회사 줄 · 단위 줄 · 구분 열 · 사용여부 · 중복 코드 · 소계/합계 · 모순 · 미분류 · 코드 빈 줄. */
-async function accountsXlsx(header = ['코드', '계정명', '구분', '사용여부'], sheetName = '계정과목'): Promise<Uint8Array> {
+async function accountsXlsx(header = ['코드', '계정명', '구분', '사용여부'], sheetName = '계정과목', clean = false): Promise<Uint8Array> {
   const wb = new ExcelJS.Workbook()
   const ws = wb.addWorksheet(sheetName)
   ws.getCell('A1').value = '계정과목 목록'
@@ -272,7 +275,7 @@ async function accountsXlsx(header = ['코드', '계정명', '구분', '사용�
     [9980, '법인세비용', '법인세', '사용'], //      16 새 · 법인세
     [1030, '보통예금(2)', '자산', '사용'], //       17 중복 코드 → 6 · 17 둘 다 막힘
     ['', '소계', '', ''], //                       18 무시(합계 행)
-    [5110, '원재료비', '자산', '사용'], //          19 모순 — 구분 자산 · 코드 511 비용
+    [5110, '부재료비', '자산', '사용'], //          19 모순 — 구분 자산 · 코드 511 비용
     ['ABC', '기타계정', '', ''], //                20 분류 미정
     ['', '미분류계정', '비용', ''], //              21 코드 빈 줄 → 막힘
     [1360, '가지급금', '자산', '미사용'], //        22 새 · 사용안함 → active=false
@@ -282,7 +285,9 @@ async function accountsXlsx(header = ['코드', '계정명', '구분', '사용�
     [9020, '이자수익', '영업외수익', '사용'], //    26 새 · 영업외
     ['', '합 계', '', ''], //                      27 무시
   ]
-  rows.forEach((r, i) => (ws.getRow(5 + i).values = r))
+  // clean: 파일을 고쳐야만 풀리는 두 줄(중복 코드 · 코드 빈 줄)을 뺀 판 — 화면에서 분류만 골라 끝까지 등록해 볼 수 있다.
+  const shown = clean ? rows.filter((r) => r[1] !== '보통예금(2)' && r[1] !== '미분류계정') : rows
+  shown.forEach((r, i) => (ws.getRow(5 + i).values = r))
   return new Uint8Array(await wb.xlsx.writeBuffer())
 }
 
@@ -316,6 +321,8 @@ async function accountsChecks(): Promise<void> {
   const bytes = await accountsXlsx()
   SAMPLES['ecount-sample-accounts.xlsx'] = bytes
   const sheets = await readEcountWorkbook(bytes)
+  const cleanBytes = await accountsXlsx(undefined, undefined, true)
+  SAMPLES['ecount-sample-accounts-clean.xlsx'] = cleanBytes
 
   // 짐작 — 제목 · 회사 · 단위 줄을 건너 4행(0부터 3)이 머리글, 열 넷
   const guess = guessMapping(sheets, 'accounts')
@@ -443,6 +450,12 @@ async function accountsChecks(): Promise<void> {
   assert.ok(!fixed.creates.some((c) => EXISTING.some((e) => e.account_code === c.account_code)), '있는 코드는 새로 넣지 않는다')
   assert.deepEqual(fixed.renames, [{ account_code: '1010', from: '현금및현금성자산', to: '현금' }])
   assert.equal(fixed.lines.find((l) => l.code === '1010')!.final, null, '이름을 바꿔도 분류는 그대로')
+  // clean 견본 — 남는 차단은 사람이 화면에서 고를 수 있는 둘(모순 · 미분류)뿐
+  const cleanSheet = (await readEcountWorkbook(cleanBytes))[0]
+  const cleanRead = readAccountRows(cleanSheet, m.parts[0])
+  const cleanPlan = planAccounts({ ...cleanRead, existing: EXISTING })
+  assert.deepEqual(cleanPlan.lines.filter((l) => l.blocks.length).map((l) => l.code), ['5110', 'ABC'])
+  assert.equal(planAccounts({ ...cleanRead, existing: EXISTING, ...picked }).blockCount, 0)
   // 체크하지 않으면 이름은 그대로
   assert.deepEqual(planAccounts({ rows: fixedRows, ignored, existing: EXISTING, overrides: picked.overrides }).renames, [])
 
@@ -666,6 +679,135 @@ async function annualChecks() {
   assert.ok(lopsided.blocks.some((b) => /재무상태표가 맞지 않습니다: 자산 3,300,000원 · 부채\+자본 1,300,000원/.test(b)))
 }
 
+// ---------------------------------------------------------------- ③ 월별
+
+/**
+ * 월별 견본 — 천원, 1월~12월. 당월판은 «1월»~«12월» + 합계 열, 누계판은 «2025-01»~«2025-12»(제목에 «누계»)이고
+ * 같은 숫자를 누계로 적었다. 누계를 당월로 바꾸면 두 파일이 같은 금액이어야 한다.
+ */
+async function monthlyXlsx(opts: { ytd?: boolean; badTotal?: boolean } = {}): Promise<Uint8Array> {
+  const wb = new ExcelJS.Workbook()
+  const ws = wb.addWorksheet('월별손익')
+  ws.getCell('A1').value = opts.ytd ? '월별 손익계산서 (누계)' : '월별 손익계산서'
+  ws.getCell('A2').value = '2025/01/01 ~ 2025/12/31'
+  ws.getCell('N3').value = '(단위 : 천원)'
+  const months = Array.from({ length: 12 }, (_, i) => i + 1)
+  ws.getRow(4).values = ['과목명', ...months.map((m) => (opts.ytd ? `2025-${String(m).padStart(2, '0')}` : `${m}월`)), ...(opts.ytd ? [] : ['합계'])]
+  const series: [string, (m: number) => number][] = [
+    ['Ⅰ. 매출액', (m) => 100 * m],
+    ['제품매출', (m) => 100 * m],
+    ['Ⅱ. 매출원가', (m) => 60 * m],
+    ['원재료비', (m) => 60 * m],
+    ['Ⅲ. 매출총이익', (m) => 40 * m],
+    ['Ⅳ. 판매비와관리비', () => 10],
+    ['급여', () => 10],
+    ['Ⅴ. 영업이익', (m) => 40 * m - 10],
+    ['Ⅵ. 영업외수익', () => 1],
+    ['이자수익', () => 1],
+    ['Ⅶ. 영업외비용', () => 2],
+    ['이자비용', () => 2],
+    ['Ⅷ. 당기순이익', (m) => 40 * m - 11],
+  ]
+  series.forEach(([name, f], i) => {
+    const monthly = months.map(f)
+    let run = 0
+    const vals = opts.ytd ? monthly.map((v) => (run += v)) : monthly
+    const total = monthly.reduce((a, v) => a + v, 0) + (opts.badTotal && name === '급여' ? 10 : 0)
+    ws.getRow(5 + i).values = [name, ...vals, ...(opts.ytd ? [] : [total])]
+  })
+  return new Uint8Array(await wb.xlsx.writeBuffer())
+}
+
+const NO_LOCKS = { lastClosed: null, officials: [], journalMonths: [] }
+
+async function monthlyChecks() {
+  assert.deepEqual(ytdToMonthly([100, 300, null, 600, 600]), [100, 200, null, 300, 0], '빈 달은 빈 칸 · 다음 달은 마지막 누계를 뺀다')
+  assert.deepEqual(ytdToMonthly([-5, -5]), [-5, 0])
+
+  const plainBytes = await monthlyXlsx()
+  const ytdBytes = await monthlyXlsx({ ytd: true })
+  SAMPLES['ecount-sample-monthly.xlsx'] = plainBytes
+  SAMPLES['ecount-sample-monthly-ytd.xlsx'] = ytdBytes
+  const plain = await readEcountWorkbook(plainBytes)
+  const ytd = await readEcountWorkbook(ytdBytes)
+
+  // 짐작 — 월 열 열둘 · 합계 열 · 단위 천원 · 해 2025 · 당월/누계
+  const g = guessMapping(plain, 'monthly')
+  const monthCols = Object.fromEntries(MONTH_KEYS.map((k, i) => [k, i + 1]))
+  assert.deepEqual(g.mapping.parts, [{ sheet: '월별손익', headerRow: 3, columns: { ...monthCols, name: 0, total: 13 } }])
+  assert.equal(g.mapping.basis, 'monthly')
+  assert.equal(g.mapping.year, '2025')
+  assert.equal(g.mapping.unit, 'thousand')
+  const gy = guessMapping(ytd, 'monthly')
+  assert.deepEqual(gy.mapping.parts[0].columns, { ...monthCols, name: 0 })
+  assert.equal(gy.mapping.basis, 'ytd', '제목의 «누계»로 짐작')
+  assert.equal(gy.mapping.year, '2025', '«2025-01» 머리글에서 해')
+  assert.match(mappingProblems({ ...g.mapping, basis: null }, plain)[0], /당월 금액인지 누계인지/)
+  assert.match(mappingProblems({ ...g.mapping, parts: [{ ...g.mapping.parts[0], columns: { name: 0 } }] }, plain)[0], /월 열을 하나 이상/)
+  // 지난 지정 다시 쓰기 — 같은 모양의 다음 해 파일
+  assert.ok(reuseMapping(g.mapping, await readEcountWorkbook(await monthlyXlsx({ badTotal: true }))))
+  assert.equal(reuseMapping(g.mapping, ytd), null, '머리글 표기가 다르면(1월 ↔ 2025-01) 다시 쓰지 않는다')
+
+  const p = planMonthly(plain, g.mapping, { accounts: BOOK, ...NO_LOCKS })
+  assert.deepEqual(p.blocks, [])
+  assert.equal(p.blockCount, 0)
+  assert.equal(p.converted, false)
+  assert.deepEqual(p.lines.map((l) => l.name), ['제품매출', '원재료비', '급여', '이자수익', '이자비용'])
+  assert.deepEqual(p.lines[0].amounts.slice(0, 3), [100_000, 200_000, 300_000], '천원 → 원')
+  assert.equal(p.checks.filter((c) => c.label === '당기순이익').length, 12, '달마다 당기순이익 대조')
+  assert.ok(p.checks.length > 0 && p.checks.every((c) => c.diff === 0))
+
+  // 누계 → 당월: 같은 금액이 나와야 한다(이익 줄도 바꿔서 대조한다)
+  const py = planMonthly(ytd, gy.mapping, { accounts: BOOK, ...NO_LOCKS })
+  assert.equal(py.converted, true)
+  assert.deepEqual(py.blocks, [])
+  assert.deepEqual(py.lines.map((l) => l.amounts), p.lines.map((l) => l.amounts), '누계를 당월로 바꾸면 당월판과 같다')
+  assert.ok(py.checks.every((c) => c.diff === 0))
+  // 누계를 당월로 잘못 고르면 이익 줄은 맞아도(둘 다 누계) 금액이 커진다 — 사람이 «누계 → 당월» 표시로 확인한다
+  const wrong = planMonthly(ytd, { ...gy.mapping, basis: 'monthly' }, { accounts: BOOK, ...NO_LOCKS })
+  assert.equal(wrong.converted, false)
+  assert.equal(wrong.lines[0].amounts[11], 7_800_000, '12월 누계 그대로')
+
+  // 누계인데 달이 비면 바꾸지 않고 막는다
+  const gapColumns: Record<string, number> = { ...gy.mapping.parts[0].columns }
+  delete gapColumns.m02
+  const gap = { ...gy.mapping, parts: [{ ...gy.mapping.parts[0], columns: gapColumns }] }
+  const pg = planMonthly(ytd, gap, { accounts: BOOK, ...NO_LOCKS })
+  assert.equal(pg.converted, false)
+  assert.ok(pg.blocks.some((b) => /1월부터 빈 달 없이/.test(b)))
+
+  // 합계 열 — 달의 합과 다르면 그 줄이 막힌다
+  const bad = planMonthly(await readEcountWorkbook(await monthlyXlsx({ badTotal: true })), g.mapping, { accounts: BOOK, ...NO_LOCKS })
+  assert.match(bad.lines.find((l) => l.name === '급여')!.blocks[0], /달의 합 120,000원 ≠ 합계 열 130,000원 \(차액 10,000원\)/)
+
+  // 마감된 달 · 세무사 확정이 덮은 달 · 수기 전표가 있는 달
+  const locked = planMonthly(plain, g.mapping, {
+    accounts: BOOK,
+    lastClosed: '2025-02',
+    officials: [{ kind: 'quarter', key: '2025-Q2' }],
+    journalMonths: ['2025-07', '2024-07'],
+  })
+  assert.deepEqual(
+    locked.blocks,
+    [
+      '2025-01은 마감된 달입니다 — 받지 않습니다(고칠 것은 당월 정정 전표로)',
+      '2025-02은 마감된 달입니다 — 받지 않습니다(고칠 것은 당월 정정 전표로)',
+      '2025-04은 세무사 확정 결산이 덮은 달입니다 — 받지 않습니다',
+      '2025-05은 세무사 확정 결산이 덮은 달입니다 — 받지 않습니다',
+      '2025-06은 세무사 확정 결산이 덮은 달입니다 — 받지 않습니다',
+    ],
+  )
+  assert.ok(locked.warnings.includes('2025-07에 수기 전표가 이미 있습니다 — 등록하면 두 번 셀 수 있습니다'))
+  assert.ok(!locked.warnings.some((w) => w.startsWith('2024-07')))
+
+  // 단위를 원으로 고르면 곱하지 않는다
+  assert.equal(planMonthly(plain, { ...g.mapping, unit: 'won' }, { accounts: BOOK, ...NO_LOCKS }).lines[0].amounts[0], 100)
+  // 계정을 못 맞추면 그 줄이 막히고 이익 줄 대조는 미룬다
+  const miss = planMonthly(plain, g.mapping, { accounts: BOOK.filter((a) => a.name !== '급여'), ...NO_LOCKS })
+  assert.ok(miss.lines.find((l) => l.name === '급여')!.blocks.some((b) => /계정이 없습니다/.test(b)))
+  assert.equal(miss.checks.length, 0)
+}
+
 /** ECOUNT_SAMPLE_DIR가 있으면 견본을 써 둔다 — 화면에서 직접 올려 볼 수 있게(저장소 밖 폴더를 준다). */
 async function writeSamples() {
   const dir = process.env.ECOUNT_SAMPLE_DIR
@@ -686,11 +828,13 @@ async function main() {
   mappingChecks()
   await accountsChecks()
   await annualChecks()
+  await monthlyChecks()
   await writeSamples()
   console.log('PASS: 셀 정규화(수식 result · 쉼표 · 괄호 음수 · ₩ · 못 읽은 칸은 오류) · 병합 칸 한 번만 · 기간 · 단위 · 머리글 · 행 종류(합계 · 소계 · 로마숫자 · 이익) · .xls · csv · HTML 거절 · sha256 · 감사 문구')
   console.log('PASS: 열 지정 — 머리글 짐작(제목 · 단위 줄 건너뜀) · 월 머리글 표기 · 지난 지정 다시 쓰기(머리글 같을 때만) · 판정 · 믿지 않는 값 거르기')
   console.log('PASS: 계정과목 — 분류 제안(구분 열 · 코드 대역 · 이름) · 차단(코드 공백 · 중복 · 미분류 · 모순) · 경고(이름 다름 · 사용여부 · 합계 행 · 파일에 없는 계정) · 병합(분류 안 바꿈 · 체크한 이름만 · 안 지움) · dummy 끝까지')
   console.log('PASS: 연간 — 두 시트 짐작 · 천원 → 원 · 로마숫자 머리(혼자 선 머리 = 계정 줄 · 로마숫자 이익 줄) · 묶음 줄 = 소계 · 0원 줄 제외 · 계정 맞추기(코드 · 이름 · 모호) · 합계 행 대조(차액) · 불균형 · 세무사 확정 해 거부')
+  console.log('PASS: 월별 — 월 열 열둘 · 합계 열 · 당월/누계 짐작 · 천원 → 원 · 누계 → 당월(앞 달 빼기 · 이익 줄도) · 빈 달 누계 차단 · 행 합 ≠ 합계 열 · 마감 달 · 세무사 확정 달 · 수기 전표 경고 · 달마다 이익 줄 대조')
 }
 
 main().catch((e) => {

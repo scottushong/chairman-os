@@ -16,6 +16,7 @@ import {
 } from '@/lib/ecount/excel/accounts-import'
 import { planAnnual } from '@/lib/ecount/excel/annual-import'
 import type { EcountUnit } from '@/lib/ecount/excel/cells'
+import { planMonthly } from '@/lib/ecount/excel/monthly-import'
 import {
   guessMapping,
   mappingProblems,
@@ -37,8 +38,17 @@ import {
   type EcountSheet,
   type SheetOutline,
 } from '@/lib/ecount/excel/workbook'
+import { periodOfDate } from '@/lib/ledger/basis'
+import { lastClosedPeriod } from '@/lib/ledger/journal'
 import { DUPLICATE_ACCOUNT_CODE, getRepository, type ChairmanRepository } from '@/lib/repository'
-import { FINANCE_IMPORT_KIND, FINANCE_IMPORT_KIND_LABEL_KO, type FinanceImport, type FinanceImportKind, type SessionUser } from '@/types'
+import {
+  FINANCE_IMPORT_KIND,
+  FINANCE_IMPORT_KIND_LABEL_KO,
+  type FinanceImport,
+  type FinanceImportKind,
+  type FinanceLedger,
+  type SessionUser,
+} from '@/types'
 
 /**
  * ECOUNT 엑셀 업로드 — 공통 기반(설계서 docs/superpowers/specs/2026-10-02-ecount-excel-import.md A절 · E절 1단계).
@@ -237,9 +247,8 @@ function confirmedMapping(imp: FinanceImport): EcountMapping | null {
 }
 
 /** 그 회사 계정(비활성 포함)을 판정 모양으로. */
-async function companyAccounts(repo: ChairmanRepository, businessId: string): Promise<ExistingAccount[]> {
-  const ledger = await repo.loadFinanceLedger()
-  return ledger.accounts
+async function companyAccounts(repo: ChairmanRepository, businessId: string, ledger?: FinanceLedger): Promise<ExistingAccount[]> {
+  return (ledger ?? (await repo.loadFinanceLedger())).accounts
     .filter((a) => a.business_id === businessId)
     .map((a) => ({ account_code: a.account_code, name: a.name, section: a.section, category: a.category, cash_flow: a.cash_flow, active: a.active }))
 }
@@ -260,6 +269,23 @@ async function annualPreview(repo: ChairmanRepository, imp: FinanceImport, sheet
   const [accounts, officials] = await Promise.all([companyAccounts(repo, imp.business_id), repo.listOfficialStatements(imp.business_id)])
   const officialKeys = officials.filter((o) => o.period_kind === 'year').map((o) => o.period_key)
   return planAnnual(sheets, mapping, { accounts, officialKeys })
+}
+
+/**
+ * 월별 미리보기 — 검증만. 마감된 달(0016 closed_period와 같은 판정) · 세무사 확정이 덮은 달 · 수기 전표가 있는 달을
+ * 원장에서 읽어 넘긴다. 최종 판정은 등록 RPC(0051 이후)가 DB에서 다시 한다.
+ */
+async function monthlyPreview(repo: ChairmanRepository, imp: FinanceImport, sheets: EcountSheet[], mapping: EcountMapping): Promise<AmountsPreview> {
+  const [ledger, officials] = await Promise.all([repo.loadFinanceLedger(), repo.listOfficialStatements(imp.business_id)])
+  const journalMonths = [
+    ...new Set(ledger.journal.filter((j) => j.business_id === imp.business_id && j.source === 'manual').map((j) => periodOfDate(j.entry_date))),
+  ]
+  return planMonthly(sheets, mapping, {
+    accounts: await companyAccounts(repo, imp.business_id, ledger),
+    lastClosed: lastClosedPeriod(ledger, imp.business_id),
+    officials: officials.map((o) => ({ kind: o.period_kind, key: o.period_key })),
+    journalMonths,
+  })
 }
 
 /**
@@ -328,8 +354,8 @@ export async function previewEcountImport(importId: unknown, choices?: EcountPre
       const plan = planAccounts(input)
       state.accounts = input
       summary.counts = { rows: input.rows.length, creates: plan.creates.length, blocks: plan.blockCount, warnings: plan.warningCount }
-    } else if (imp.kind === 'annual') {
-      const amounts = await annualPreview(repo, imp, sheets, mapping)
+    } else {
+      const amounts = imp.kind === 'annual' ? await annualPreview(repo, imp, sheets, mapping) : await monthlyPreview(repo, imp, sheets, mapping)
       state.amounts = amounts
       // 금액 원문은 summary에 두지 않는다(원본은 첨부다) — 줄 수 · 차단 수만.
       summary.counts = { lines: amounts.lines.length, blocks: amounts.blockCount, warnings: amounts.warningCount }
