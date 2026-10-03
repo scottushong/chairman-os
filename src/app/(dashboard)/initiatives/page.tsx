@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { FilterChips, type FilterOption } from '@/components/ui/filter-chips'
 import { GlassCard } from '@/components/ui/glass-card'
 import { currentUser } from '@/lib/auth/session'
+import { isChairman } from '@/lib/boss'
 import { kstToday } from '@/lib/chairman-project'
 import { orderInitiatives } from '@/lib/initiative'
 import { firstParam, oneOf, withParams } from '@/lib/query'
@@ -123,7 +124,7 @@ export default async function InitiativesPage(props: PageProps<'/initiatives'>) 
         icon="target"
         code="Phase 4-A"
         title="이니셔티브"
-        description="회사 다섯 곳 밖에서 회장이 직접 굴리는 건입니다."
+        description={`회사 다섯 곳 밖에서 ${isChairman(user?.role) ? '회장이' : '대표가'} 직접 굴리는 건입니다.`}
       >
         {/* PageHeader는 카드 밖, 배경 그라데이션 위에 바로 놓인다(그 파일 주석). 골드
             (.text-accent → #855a11)는 그 자리에서 3.39:1이라 유리 없이는 못 쓴다
@@ -174,7 +175,7 @@ export default async function InitiativesPage(props: PageProps<'/initiatives'>) 
       )}
 
       <p className="mt-6 text-t11 text-ink-dim">
-        보이는 범위는 이 화면이 아니라 0017의 RLS가 정합니다. 회장과 그룹 CFO만 읽습니다.
+        보이는 범위는 이 화면이 아니라 0017의 RLS가 정합니다. {isChairman(user?.role) ? '회장과' : '대표와'} 그룹 CFO만 읽습니다.
       </p>
     </div>
   )

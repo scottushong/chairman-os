@@ -150,7 +150,7 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
           />
         ) : registerClass ? (
           <p className="max-w-xs text-t11 leading-relaxed text-ink-muted">
-            문서 등록 권한이 없습니다. 회장이 사용자 화면의 «모듈 권한 → 문서»에서 회사마다 켭니다.
+            문서 등록 권한이 없습니다. 대표가 사용자 화면의 «모듈 권한 → 문서»에서 회사마다 켭니다.
           </p>
         ) : null}
       </PageHeader>

@@ -23,7 +23,7 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/
 function explain(e: unknown, fallback: string): NoticeState {
   const message = e instanceof Error ? e.message : ''
   if (/42501|PGRST301|row-level security/.test(message)) {
-    return { error: '이 공지를 쓸 권한이 없습니다. 공지는 임원(Executive) 이상이 자기 회사에, 그룹 전체 공지는 회장 · 그룹 CFO가 씁니다.' }
+    return { error: '이 공지를 쓸 권한이 없습니다. 공지는 임원(Executive) 이상이 자기 회사에, 그룹 전체 공지는 대표 · 그룹 CFO가 씁니다.' }
   }
   return { error: fallback }
 }

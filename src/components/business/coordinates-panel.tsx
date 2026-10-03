@@ -34,11 +34,17 @@ export function CoordinatesPanel({
   strategy,
   businessId,
   canEdit,
+  chair,
 }: {
   strategy: BusinessStrategy | null
   businessId: string
   /** Chairman / BusinessCEO인가. 아니면 읽기 전용으로 그린다. */
   canEdit: boolean
+  /**
+   * 회장 세션인가. 회장 메모 칸은 회장에게만 그린다 — 직원 세션에는 페이지가 본문을 비워 보낸다
+   * (직원 화면 용어 원칙, CLAUDE.md).
+   */
+  chair: boolean
 }) {
   const [editing, setEditing] = useState<StrategyField | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -59,7 +65,7 @@ export function CoordinatesPanel({
           이 회사의 전략 좌표가 아직 등록되지 않았습니다.
         </p>
         <p className="mt-1 text-t11 text-ink-muted">
-          채우는 일은 Chairman / Business CEO만 할 수 있습니다(0008 business_strategy_write).
+          채우는 일은 {chair ? 'Chairman / Business CEO' : '대표 / 대표이사'}만 할 수 있습니다(0008 business_strategy_write).
         </p>
       </section>
     )
@@ -177,7 +183,7 @@ export function CoordinatesPanel({
       </div>
 
       {/* 메모는 비어 있으면 읽기 전용에서 아예 뺀다. 고칠 수 있는 사람에게만 빈 자리를 남긴다. */}
-      {valueOf('chairman_comment') || canEdit ? (
+      {chair && (valueOf('chairman_comment') || canEdit) ? (
         <div className="mt-3 flex items-start gap-2 rounded-lg bg-raised px-3 py-2.5 text-t12 leading-relaxed text-ink-dim">
           <Icon name="crown" className="mt-0.5 size-3.5 shrink-0 text-gold" filled />
           <div className="min-w-0 flex-1">{body('chairman_comment')}</div>

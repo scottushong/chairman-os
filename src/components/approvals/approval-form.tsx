@@ -6,8 +6,9 @@ import { useMemo, useState, useTransition } from 'react'
 import { submitApprovalForm } from '@/app/actions/approval-form'
 import { StepHeader, StepNav, useMobileSteps } from '@/components/ui/mobile-steps'
 import { approvalLine, missingFields } from '@/lib/approval-line'
+import { boss, bossEn, bossText } from '@/lib/boss'
 import { tr, type Lang } from '@/lib/i18n'
-import type { ApprovalLead, ApprovalTemplate } from '@/types'
+import type { ApprovalLead, ApprovalTemplate, Role } from '@/types'
 
 /**
  * /approvals/new — 양식 고르기 → 항목 채우기 → **결재선 미리보기** → 올리기 (Phase 9 블록 2).
@@ -21,6 +22,7 @@ export function ApprovalForm({
   businesses,
   defaultDeadline,
   lang,
+  viewerRole,
   afterSubmit,
 }: {
   templates: ApprovalTemplate[]
@@ -28,6 +30,8 @@ export function ApprovalForm({
   businesses: { id: string; name: string }[]
   defaultDeadline: string
   lang: Lang
+  /** 결재선의 호칭(회장/대표)을 보는 사람에 맞춘다 — 직원 화면 용어 원칙(CLAUDE.md). */
+  viewerRole: Role | null
   /** 올린 뒤 갈 곳. 없으면 그 결재의 상세(/approvals?id=). 직원 홈은 /me?tab=requests로 돌아간다. */
   afterSubmit?: string
 }) {
@@ -190,15 +194,15 @@ export function ApprovalForm({
                   {i + 1}
                 </span>
                 <span className="min-w-0">
-                  <span className="block text-t12h font-semibold">{s.name}</span>
-                  <span className="block text-t11 text-ink-dim">{s.why}</span>
+                  <span className="block text-t12h font-semibold">{s.step === 'chairman' ? bossText(s.name, viewerRole) : s.name}</span>
+                  <span className="block text-t11 text-ink-dim">{bossText(s.why, viewerRole)}</span>
                 </span>
               </li>
             ))}
           </ol>
           {line.every((s) => s.step !== 'chairman') ? (
             <p className="rounded-md bg-raised px-2 py-1.5 text-t11 text-ink-dim">
-              {tr(lang, '회장까지 올라가지 않는 결재입니다.', 'This does not go up to the Chairman.')}
+              {tr(lang, `${boss(viewerRole)}까지 올라가지 않는 결재입니다.`, `This does not go up to ${bossEn(viewerRole)}.`)}
             </p>
           ) : null}
           <p className="text-t10h leading-relaxed text-ink-muted">

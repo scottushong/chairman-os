@@ -41,6 +41,11 @@ export interface ToolContext {
 
 export interface AssistantTool {
   def: Anthropic.Tool
+  /**
+   * 회장이 아닌 사람에게 줄 때의 설명(def.description 대신). 설명에 «회장»이 들어간 도구만 단다 —
+   * 모델이 도구 설명의 말을 답에 옮기지 않게(직원 화면 용어 원칙, CLAUDE.md).
+   */
+  staffDescription?: string
   /** 이 사람 · 이 창구에 이 도구를 줄 것인가. 주지 않은 도구는 모델이 존재도 모른다. */
   available(ctx: ToolContext): boolean
   run(input: Record<string, unknown>, ctx: ToolContext): Promise<unknown>

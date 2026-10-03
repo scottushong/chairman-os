@@ -4,6 +4,7 @@ import { useState } from 'react'
 
 import { inviteUser } from '@/app/actions/users'
 import { Icon } from '@/components/ui/icon'
+import { boss, roleLabelFor } from '@/lib/boss'
 import { kstToday } from '@/lib/chairman-project'
 import {
   INVITABLE_ROLE,
@@ -144,6 +145,10 @@ export function InviteUser({
   initiallyOpen?: boolean
 }) {
   const isChairman = viewer?.role === 'Chairman'
+  // 직원 화면 용어 원칙(CLAUDE.md): 회장 본인 = 회장, 그 외 = 대표.
+  const bossName = boss(viewer?.role)
+  // 회장 자리는 하나다 — 회장 외에게는 그 옵션을 아예 그리지 않는다(같은 원칙).
+  const roleChoices = isChairman ? INVITABLE_ROLE : INVITABLE_ROLE.filter((r) => r !== 'Chairman')
   /** 팀장 위임: 자기 팀으로, 자기보다 아래 역할만. 회장은 고정되지 않는다. */
   const fixedTeam = !isChairman ? (viewerAccount?.team_id ?? null) : null
   // 처음에 고를 값은 '직원'이다. 대부분의 초대가 그것이고, 위 역할은 고르는 순간
@@ -240,7 +245,7 @@ export function InviteUser({
           <div className="rounded-lg border border-ok/40 bg-ok/10 px-3 py-2.5 text-t11h leading-relaxed text-ink-dim">
             <span className="font-semibold text-ink">{done}</span> 초대를 저장했습니다.
             {queued
-              ? ' 회장 결재 대기로 들어갔습니다 — 승인 전에는 계정이 생겨도 권한이 붙지 않습니다.'
+              ? ` ${bossName} 결재 대기로 들어갔습니다 — 승인 전에는 계정이 생겨도 권한이 붙지 않습니다.`
               : ' 아직 계정은 없습니다 — 아래 안내 문구를 본인에게 보내면 본인이 /signup에서 가입합니다. 계정이 생기는 순간 권한이 자동으로 붙습니다(0011 on_auth_user_created).'}
             {/* 결재 대기 초대는 승인 전에 가입해도 권한이 없다 — 그때 보낼 글이 아니라서 버튼을 그리지 않는다. */}
             {queued ? null : <CopySignupGuide name={doneName} email={done} />}
@@ -331,7 +336,7 @@ export function InviteUser({
 
         <label className="block">
           <span className="text-t11 text-ink-dim">
-            역할 {isChairman ? '' : '— 자기보다 위 역할은 회장 결재로 갑니다'}
+            역할 {isChairman ? '' : '— 자기보다 위 역할은 대표 결재로 갑니다'}
           </span>
           <select
             value={role}
@@ -339,7 +344,7 @@ export function InviteUser({
             disabled={busy}
             className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none focus:border-accent disabled:opacity-50"
           >
-            {INVITABLE_ROLE.map((r) => (
+            {roleChoices.map((r) => (
               <option key={r} value={r} className="bg-panel">
                 {ROLE_LABEL_KO[r]}
               </option>
@@ -385,7 +390,7 @@ export function InviteUser({
               .filter((p) => p.user_id !== viewer?.user_id && !p.revoked_at)
               .map((p) => (
                 <option key={p.user_id} value={p.user_id} className="bg-panel">
-                  {p.display_name} · {ROLE_LABEL_KO[p.role]}
+                  {p.display_name} · {roleLabelFor(ROLE_LABEL_KO[p.role], p.role, viewer?.role)}
                 </option>
               ))}
           </select>
@@ -440,8 +445,14 @@ export function InviteUser({
           </legend>
           {groupScope ? (
             <p className="mt-1.5 rounded-lg bg-raised px-3 py-2 text-t11h text-ink-muted">
-              {ROLE_LABEL_KO[role]}은(는) 04_권한 시트에서 Business 범위가 &lsquo;전체&rsquo;입니다.
-              회사를 지정해도 0002의 has_business()가 그 목록을 보지 않습니다.
+              {isChairman ? (
+                <>
+                  {ROLE_LABEL_KO[role]}은(는) 04_권한 시트에서 Business 범위가 &lsquo;전체&rsquo;입니다.
+                  회사를 지정해도 0002의 has_business()가 그 목록을 보지 않습니다.
+                </>
+              ) : (
+                <>{ROLE_LABEL_KO[role]}은(는) 전사 역할이라 모든 회사를 봅니다. 회사를 지정해도 쓰이지 않습니다.</>
+              )}
             </p>
           ) : (
             <div className="mt-1.5 flex flex-wrap gap-1.5">
@@ -501,7 +512,7 @@ export function InviteUser({
       {/* 보내기 전에 말한다. 판정 기준은 0026의 트리거와 같다(role_rank >= 2). */}
       {approval ? (
         <p className="mt-3 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-2 text-t11h leading-relaxed text-ink-dim">
-          <span className="font-semibold text-ink">회장 결재가 필요합니다.</span>{' '}
+          <span className="font-semibold text-ink">{bossName} 결재가 필요합니다.</span>{' '}
           {ROLE_LABEL_KO[role]} 이상은 결재 큐로 갑니다 — 승인 전에는 계정이 생겨도 권한이 붙지
           않습니다. {isChairman ? '회장이 직접 넣은 초대는 그 자리에서 결재된 것으로 남습니다.' : ''}
         </p>

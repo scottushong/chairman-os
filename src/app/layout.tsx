@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Noto_Serif_KR } from 'next/font/google'
 
-import { STAFF_BRAND } from '@/lib/brand'
+import { STAFF_BRAND, STAFF_DESCRIPTION } from '@/lib/brand'
 
 import './globals.css'
 
@@ -28,7 +28,8 @@ const notoSerifKR = Noto_Serif_KR({
  */
 export const metadata: Metadata = {
   title: { default: STAFF_BRAND, template: `%s · ${STAFF_BRAND}` },
-  description: '그룹 통합 관제 + Business 전용 OS 연동 + AI Overnight Workforce',
+  // 설명도 역할을 모르는 화면의 값(직원 쪽)이 기본이다 — 회장 설명은 (dashboard) · (morning)의 generateMetadata가 덮는다.
+  description: STAFF_DESCRIPTION,
   // Phase 6-2 PWA — iOS는 manifest 아이콘을 안 읽고 apple-touch-icon을 본다.
   icons: { apple: '/icons/apple-touch-icon.png' },
   appleWebApp: { capable: true, title: STAFF_BRAND, statusBarStyle: 'black-translucent' },

@@ -203,6 +203,10 @@ export const initiativesTool: AssistantTool = {
       },
     },
   },
+  staffDescription:
+    '그룹 이니셔티브(신사업 · 딜 · 투자유치 등) 목록. filter: all · no_target_date(목표일 없음 = «기한 없는») · ' +
+    'no_next_action_date(다음 행동 날짜 없음) · overdue_next_action(다음 행동 날짜 지남) · stale(14일 이상 안 고침). ' +
+    '기본은 진행 중(Active)만, include_closed=true면 종료 · 접음도.',
   // 카카오도 목록은 읽는다(AI Agent 세션은 0017에서 이니셔티브 읽기가 있다). 상세(메모 · 첨부)는 앱에서만.
   available: (ctx) => INITIATIVE_ROLES.has(ctx.user.role),
   async run(input, ctx) {
@@ -237,6 +241,9 @@ export const initiativeTool: AssistantTool = {
       '못 찾으면 found=false와 후보를 준다 — 없는 건을 지어내지 말 것.',
     input_schema: { type: 'object', properties: { id_or_title: { type: 'string' } }, required: ['id_or_title'] },
   },
+  staffDescription:
+    '이니셔티브 한 건의 전부(칸 · 키맨 · 문서 링크 · 일정 · 첨부 요약). id 또는 제목으로 찾는다. ' +
+    '못 찾으면 found=false와 후보를 준다 — 없는 건을 지어내지 말 것.',
   available: (ctx) => INITIATIVE_ROLES.has(ctx.user.role) && ctx.channel === 'web',
   async run(input, ctx) {
     const { hit, candidates } = await findInitiative(ctx, str(input.id_or_title))
@@ -263,7 +270,8 @@ export const initiativeTool: AssistantTool = {
       keymen: keymen.filter((k) => k.initiative_id === hit.initiative_id).map((k) => ({ name: k.name, relation: k.relation, last_contact_on: k.last_contact_on })),
       docs: docs.filter((d) => d.initiative_id === hit.initiative_id).map((d) => ({ title: d.title })),
       events: events.filter((e) => e.initiative_id === hit.initiative_id).map((e) => ({ title: e.title, starts_on: e.starts_on, kind: e.kind })),
-      chairman_note: note,
+      // 회장 메모 칸은 회장에게만 싣는다 — 다른 역할에는 칸 이름도 보내지 않는다(직원 화면 용어 원칙).
+      ...(ctx.user.role === 'Chairman' ? { chairman_note: note } : {}),
       attachments: attachments
         .filter((a) => a.security_class !== 'Vault')
         .map((a) => ({ id: a.attachment_id, file_name: a.file_name, status: a.status, security_class: a.security_class, summary: a.ai_summary?.summary ?? null })),

@@ -6,8 +6,9 @@ import { useSyncExternalStore } from 'react'
 
 import { signOut } from '@/app/actions/auth'
 import { Icon } from '@/components/ui/icon'
-import { NAV, navHref, readyItems, type NavItem } from '@/lib/nav'
-import { ROLE_LABEL_KO, type SessionUser } from '@/types'
+import { brandFor } from '@/lib/brand'
+import { homeHref, navFor, navHref, readyItems, type NavItem } from '@/lib/nav'
+import { ROLE_LABEL_KO, type Role, type SessionUser } from '@/types'
 
 /**
  * 아침 루틴 셸의 사이드바. 접으면 76px 아이콘 레일, 펼치면 212px 라벨 메뉴다.
@@ -94,6 +95,7 @@ export function RailSidebar({ user }: { user: SessionUser | null }) {
   const expanded = useSyncExternalStore(subscribe, readExpanded, readExpandedOnServer)
 
   const toggle = () => writeExpanded(!expanded)
+  const isChairman = user?.role === 'Chairman'
 
   return (
     // glass-nav = --color-nav 면 + backdrop-blur. 다크에서는 같은 이름이 흰색 4%로 뒤집힌다.
@@ -103,19 +105,20 @@ export function RailSidebar({ user }: { user: SessionUser | null }) {
         expanded ? 'w-[212px]' : 'w-[76px] items-center'
       }`}
     >
-      {/* 워드마크 자리. 76px에는 글자가 안 들어가 왕관만 남긴다. 대시보드로 간다. */}
+      {/* 워드마크 자리. 76px에는 글자가 안 들어가 왕관만 남긴다. 대시보드로 간다.
+          이 셸은 /ai(회장 전용)만 쓰지만, 왕관 · 이름은 (dashboard) 사이드바처럼 역할로 가른다(직원 화면 용어 원칙, CLAUDE.md). */}
       <Link
-        href="/"
-        title="대시보드로"
-        aria-label="대시보드로"
+        href={homeHref(user?.role)}
+        title={isChairman ? '대시보드로' : '내 홈으로'}
+        aria-label={isChairman ? '대시보드로' : '내 홈으로'}
         className={`flex h-14 w-full items-center border-b border-line-soft rounded-xl transition-colors hover:bg-raised focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-accent ${
           expanded ? 'gap-2 px-4' : 'justify-center'
         }`}
       >
-        <Icon name="crown" className="size-5 shrink-0 text-gold" filled />
+        <Icon name={isChairman ? 'crown' : 'home'} className="size-5 shrink-0 text-gold" filled={isChairman} />
         {expanded ? (
-          <span className="truncate text-t15 font-bold tracking-[0.04em] text-ink">
-            CHAIRMAN OS
+          <span className="truncate text-t15 font-bold tracking-[0.04em] text-ink uppercase">
+            {brandFor(user?.role)}
           </span>
         ) : null}
       </Link>
@@ -125,9 +128,9 @@ export function RailSidebar({ user }: { user: SessionUser | null }) {
         className={`flex-1 overflow-y-auto py-3 ${expanded ? 'px-2.5' : ''}`}
       >
         {expanded ? (
-          <ExpandedMenu pathname={pathname} />
+          <ExpandedMenu pathname={pathname} role={user?.role ?? null} />
         ) : (
-          <CollapsedMenu pathname={pathname} />
+          <CollapsedMenu pathname={pathname} role={user?.role ?? null} />
         )}
       </nav>
 
@@ -211,10 +214,10 @@ export function RailSidebar({ user }: { user: SessionUser | null }) {
  * 확인하는 이름이고, aria-label은 스크린 리더가 읽는 이름이다. 아이콘만 있는 내비게이션은
  * 둘 중 하나만 있으면 한쪽 사용자에게는 이름 없는 그림이 된다.
  */
-function CollapsedMenu({ pathname }: { pathname: string }) {
+function CollapsedMenu({ pathname, role }: { pathname: string; role: Role | null }) {
   return (
     <ul className="space-y-1">
-      {readyItems().map((item) => (
+      {readyItems(role).map((item) => (
         <li key={item.label}>
           <Link
             href={item.href}
@@ -241,12 +244,12 @@ function CollapsedMenu({ pathname }: { pathname: string }) {
 }
 
 /** 펼침 — (dashboard) Sidebar와 같은 항목·같은 그룹·같은 농도 규칙. */
-function ExpandedMenu({ pathname }: { pathname: string }) {
+function ExpandedMenu({ pathname, role }: { pathname: string; role: Role | null }) {
   const active = (item: NavItem) => item.ready && pathname === item.href
 
   return (
     <>
-      {NAV.map((group, i) => (
+      {navFor(role).map((group, i) => (
         <div key={group.title ?? i} className={i > 0 ? 'mt-4' : ''}>
           {group.title ? (
             <p className="px-2.5 pb-1.5 text-t10 font-semibold tracking-[0.12em] text-ink-muted">

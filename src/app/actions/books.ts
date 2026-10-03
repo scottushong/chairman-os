@@ -44,7 +44,7 @@ function failure(e: unknown, fallback: string): string {
   if (message === DUPLICATE_ACCOUNT_CODE) return '이 회사에 같은 계정코드가 이미 있습니다.'
   if (/account_code_immutable/.test(message)) return '계정코드는 바꿀 수 없습니다. 새 계정을 만들고 옛 계정을 비활성화하세요.'
   if (/42501|PGRST301|row-level security|accounts: 고칠 계정이 없다/.test(message)) {
-    return '이 회사의 계정과목을 고칠 권한이 없습니다. (Chairman · Group CFO · 해당 회사 Business CEO · 회장이 재무 입력 권한을 준 사람)'
+    return '이 회사의 계정과목을 고칠 권한이 없습니다. (대표 · 그룹 CFO · 해당 회사 대표이사 · 대표가 재무 입력 권한을 준 사람)'
   }
   return fallback
 }
@@ -175,7 +175,7 @@ function journalFailure(e: unknown): string {
   const invalid = /invalid_entry: (.+)$/.exec(message)
   if (invalid) return invalid[1]
   if (/42501|PGRST301|row-level security/.test(message)) {
-    return '이 회사의 전표를 입력할 권한이 없습니다. (Chairman · Group CFO · 해당 회사 Business CEO · 회장이 재무 입력 권한을 준 사람)'
+    return '이 회사의 전표를 입력할 권한이 없습니다. (대표 · 그룹 CFO · 해당 회사 대표이사 · 대표가 재무 입력 권한을 준 사람)'
   }
   return '전표를 저장하지 못했습니다. 잠시 후 다시 시도하세요.'
 }

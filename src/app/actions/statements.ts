@@ -137,7 +137,7 @@ export async function saveOfficialStatement(input: {
     const message = e instanceof Error ? e.message : ''
     if (/닫히지 않습니다/.test(message)) return { error: message }
     if (/42501|PGRST301|row-level security/.test(message)) {
-      return { error: '이 회사의 결산을 넣을 권한이 없습니다. (Chairman · Group CFO · 해당 회사 Business CEO · 회장이 재무 입력 권한을 준 사람)' }
+      return { error: '이 회사의 결산을 넣을 권한이 없습니다. (대표 · 그룹 CFO · 해당 회사 대표이사 · 대표가 재무 입력 권한을 준 사람)' }
     }
     return { error: '재무제표를 저장하지 못했습니다.' }
   }

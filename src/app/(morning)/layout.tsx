@@ -7,7 +7,7 @@ import { RailSidebar } from '@/components/layout/rail-sidebar'
 import { Sidebar } from '@/components/layout/sidebar'
 import { TimezoneBeacon } from '@/components/settings/timezone-beacon'
 import { currentUser } from '@/lib/auth/session'
-import { brandFor } from '@/lib/brand'
+import { brandFor, descriptionFor } from '@/lib/brand'
 import { loadSidebarData } from '@/lib/sidebar-data'
 import { loadUiPrefs } from '@/lib/ui-prefs-server'
 
@@ -35,9 +35,11 @@ import { loadUiPrefs } from '@/lib/ui-prefs-server'
  */
 /** 탭 제목 — (dashboard)/layout.tsx의 generateMetadata와 같다(회장 Chairman OS · 그 밖 DY 그룹웨어). */
 export async function generateMetadata(): Promise<Metadata> {
-  const brand = brandFor((await currentUser())?.role)
+  const role = (await currentUser())?.role
+  const brand = brandFor(role)
   return {
     title: { absolute: brand, template: `%s · ${brand}` },
+    description: descriptionFor(role),
     appleWebApp: { capable: true, title: brand, statusBarStyle: 'black-translucent' },
   }
 }

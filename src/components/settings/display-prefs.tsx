@@ -7,8 +7,8 @@ import { saveCityMotion, saveNotifySwitch, saveTheme } from '@/app/actions/ui-pr
 import { THEME_CHOICE, THEME_LABEL_KO, type ThemeChoice } from '@/lib/ui-prefs'
 import {
   NOTIFICATION_KIND,
-  NOTIFICATION_KIND_HINT_KO,
   NOTIFICATION_KIND_LABEL_KO,
+  notificationKindHint,
   type NotificationKind,
   type NotificationSwitches,
 } from '@/types'
@@ -20,7 +20,11 @@ import {
  * 나가는 날이 온다). 못 저장하면 화면도 되돌린다.
  */
 
-export function ThemePicker({ value }: { value: ThemeChoice }) {
+/**
+ * `chairman` — 아침 루틴(/ai)은 회장 전용 화면이라 그 안내도 회장에게만 그린다
+ * (직원 화면 용어 원칙(CLAUDE.md): 회장 전용 기능은 존재 자체를 꺼내지 않는다).
+ */
+export function ThemePicker({ value, chairman }: { value: ThemeChoice; chairman: boolean }) {
   const router = useRouter()
   const [theme, setTheme] = useState<ThemeChoice>(value)
   const [error, setError] = useState<string | null>(null)
@@ -63,8 +67,13 @@ export function ThemePicker({ value }: { value: ThemeChoice }) {
         ))}
       </div>
       <p className="mt-1.5 text-t10h text-ink-muted">
-        아침 루틴(<code>/ai</code>)은 이 설정과 무관하게 언제나 다크입니다 — 그 화면은 어두운
-        방에서 읽는 것을 전제로 짜여 있습니다. 로그인 화면도 늘 라이트입니다.
+        {chairman ? (
+          <>
+            아침 루틴(<code>/ai</code>)은 이 설정과 무관하게 언제나 다크입니다 — 그 화면은 어두운
+            방에서 읽는 것을 전제로 짜여 있습니다.{' '}
+          </>
+        ) : null}
+        로그인 화면은 이 설정과 무관하게 늘 라이트입니다.
       </p>
       {error ? (
         <p role="alert" className="mt-1 text-t11 text-critical">
@@ -75,7 +84,8 @@ export function ThemePicker({ value }: { value: ThemeChoice }) {
   )
 }
 
-export function NotifySwitches({ value }: { value: NotificationSwitches }) {
+/** `bossName` — 보는 사람에 맞는 호칭(lib/boss.ts boss()). 직원 화면 용어 원칙(CLAUDE.md). */
+export function NotifySwitches({ value, bossName }: { value: NotificationSwitches; bossName: string }) {
   const router = useRouter()
   const [on, setOn] = useState<NotificationSwitches>(value)
   const [error, setError] = useState<string | null>(null)
@@ -113,7 +123,7 @@ export function NotifySwitches({ value }: { value: NotificationSwitches }) {
           <span>
             <span className="block text-t12 text-ink">{NOTIFICATION_KIND_LABEL_KO[kind]}</span>
             <span className="mt-0.5 block text-t10 text-ink-muted">
-              {NOTIFICATION_KIND_HINT_KO[kind]}
+              {notificationKindHint(kind, bossName)}
             </span>
           </span>
         </label>

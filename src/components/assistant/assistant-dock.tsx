@@ -59,11 +59,12 @@ function writeLast(id: string | null) {
 
 const EMPTY: AssistantThread = { chatId: null, chats: [], messages: [], actions: [] }
 
-function examples(kind: string, lang: Lang): string[] {
-  if (lang === 'en') return ['Anything wrong on this screen?', 'Initiatives without a deadline', 'Why is DY yellow?']
+/** chair: 회장 세션인가(loadAssistant가 screenLabels를 줬나). «왜 yellow»는 회장 전용 도구(주의)로만 답하므로 회장에게만 보인다. */
+function examples(kind: string, lang: Lang, chair: boolean): string[] {
+  if (lang === 'en') return ['Anything wrong on this screen?', 'Initiatives without a deadline', chair ? 'Why is DY yellow?' : 'Approvals due this month']
   if (kind === 'initiative') return ['이 건 요약해 줘', '이 화면에 틀린 것 있어?', '다음 행동을 바꿔 줘']
   if (kind === 'finance_business' || kind === 'business') return ['이 회사 최근 3개월 영업이익 합계', '이 화면에 틀린 것 있어?', '잠정과 확정이 다른 달']
-  return ['VANA 9월 손익 합계', '기한 없는 이니셔티브', '왜 DY가 yellow인가', '이 화면에 틀린 것 있어?']
+  return ['VANA 9월 손익 합계', '기한 없는 이니셔티브', chair ? '왜 DY가 yellow인가' : '이번 달 마감 결재', '이 화면에 틀린 것 있어?']
 }
 
 export function AssistantDock({ lang }: { lang: Lang }) {
@@ -71,6 +72,8 @@ export function AssistantDock({ lang }: { lang: Lang }) {
   const [open, setOpen] = useState(false)
   const [showChats, setShowChats] = useState(false)
   const [data, setData] = useState<AssistantThread>(EMPTY)
+  // 회장 전용 화면의 이름은 서버가 회장 세션에만 내려 준다(loadAssistant). 새 대화로 data를 비워도 남게 따로 든다.
+  const [screenLabels, setScreenLabels] = useState<AssistantThread['screenLabels']>(undefined)
   const [q, setQ] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [listening, setListening] = useState(false)
@@ -84,6 +87,7 @@ export function AssistantDock({ lang }: { lang: Lang }) {
     start(async () => {
       const r = await loadAssistant(chatId)
       if (r.error) setError(r.error)
+      if (r.screenLabels) setScreenLabels(r.screenLabels)
       setData(r)
       writeLast(r.chatId)
     })
@@ -172,7 +176,7 @@ export function AssistantDock({ lang }: { lang: Lang }) {
               <div className="min-w-0 flex-1">
                 <p className="text-t13 font-semibold text-ink">{tr(lang, 'AI 어시스턴트', 'AI assistant')}</p>
                 <p className="truncate text-t10h text-ink-muted">
-                  {tr(lang, '지금 화면', 'Screen')}: {SCREEN_LABEL_KO[screen.kind]}
+                  {tr(lang, '지금 화면', 'Screen')}: {screenLabels?.[screen.kind] ?? SCREEN_LABEL_KO[screen.kind]}
                   {screen.id ? ` · ${screen.id}` : ''}
                 </p>
               </div>
@@ -222,7 +226,7 @@ export function AssistantDock({ lang }: { lang: Lang }) {
                 <div className="space-y-2 py-6 text-center">
                   <p className="text-t12h text-ink-dim">{tr(lang, '이 화면에 대해 물어보세요.', 'Ask about this screen.')}</p>
                   <div className="flex flex-wrap justify-center gap-1.5">
-                    {examples(screen.kind, lang).map((e) => (
+                    {examples(screen.kind, lang, !!screenLabels).map((e) => (
                       <button key={e} type="button" onClick={() => ask(e)} className="min-h-11 rounded-full border border-line bg-raised px-3 text-t11h hover:border-accent">
                         {e}
                       </button>

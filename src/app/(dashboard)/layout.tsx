@@ -8,7 +8,7 @@ import { Sidebar } from '@/components/layout/sidebar'
 import { SystemBar } from '@/components/layout/system-bar'
 import { TimezoneBeacon } from '@/components/settings/timezone-beacon'
 import { currentUser } from '@/lib/auth/session'
-import { brandFor } from '@/lib/brand'
+import { brandFor, descriptionFor } from '@/lib/brand'
 import { loadSidebarData } from '@/lib/sidebar-data'
 import { loadUiPrefs } from '@/lib/ui-prefs-server'
 
@@ -34,11 +34,13 @@ import { loadUiPrefs } from '@/lib/ui-prefs-server'
  * 루트 layout의 기본값(직원 이름)을 역할로 덮는다. currentUser()는 요청 단위 cache라 아래 레이아웃과 같은 한 번을 쓴다.
  */
 export async function generateMetadata(): Promise<Metadata> {
-  const brand = brandFor((await currentUser())?.role)
+  const role = (await currentUser())?.role
+  const brand = brandFor(role)
   // absolute — default로 두면 루트의 template이 붙어 «Chairman OS · DY 그룹웨어»가 된다.
   // appleWebApp은 통째로 갈아 끼워진다(메타데이터 병합은 키 단위 얕은 병합) — 루트의 나머지 두 값도 같이 적는다.
   return {
     title: { absolute: brand, template: `%s · ${brand}` },
+    description: descriptionFor(role),
     appleWebApp: { capable: true, title: brand, statusBarStyle: 'black-translucent' },
   }
 }

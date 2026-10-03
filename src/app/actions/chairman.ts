@@ -32,9 +32,10 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+// 권한 오류는 회장이 아닌 사람만 본다 — «대표»로 쓰고 회장 전용 기능 이름은 꺼내지 않는다(직원 화면 용어 원칙, CLAUDE.md).
 function permissionError(e: unknown, fallback: string): string {
   return e instanceof Error && /chairman_|42501|PGRST301/.test(e.message)
-    ? '회장 루틴을 고칠 권한이 없습니다. (Chairman만 가능합니다)'
+    ? '이 설정을 고칠 권한이 없습니다. (대표만 가능합니다)'
     : fallback
 }
 

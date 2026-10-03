@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 
 import { AutonomyGauge, CompanyLink, Missing, Percent, Section } from '@/components/dependency/pieces'
 import { Icon } from '@/components/ui/icon'
@@ -33,6 +34,9 @@ import { TRANSFER_STATUS_LABEL_KO, type AutonomyLevel } from '@/types'
  * 그래프는 회사당 한 줄, 축도 눈금도 없다 — "Too many graphs"가 §32의 금지 목록에 있다.
  */
 export default async function DependencyPage() {
+  // 회장 전용 화면이다 — 다른 역할은 이 화면의 존재를 몰라야 한다(직원 화면 용어 원칙, 2026-10-02). 기록 전에 돌려보낸다.
+  const viewer = await currentUser()
+  if (viewer?.role !== 'Chairman') redirect('/me')
   await recordScreenRead({ path: '/dependency', kind: 'page' })
 
   const [user, repo] = await Promise.all([currentUser(), getRepository()])

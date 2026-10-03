@@ -251,6 +251,6 @@ export async function draftApprovalLine(input: {
   const chairman = DUMMY_PEOPLE.find((p) => p.role === 'Chairman' && !p.revoked_at)
   return approvalLine(template, form, await myApprovalLead(), {
     user_id: chairman?.user_id ?? null,
-    name: '회장',
+    name: '대표',
   })
 }

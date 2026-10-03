@@ -65,7 +65,7 @@ export default async function NewStatementPage(
         )
       ) : (
         <p className="mt-4 rounded-md bg-panel px-3 py-2 text-t12 text-ink-dim">
-          이 회사의 결산을 넣을 권한이 없습니다. (Chairman · Group CFO · 해당 회사 Business CEO · 회장이 재무 입력 권한을 준 사람)
+          이 회사의 결산을 넣을 권한이 없습니다. (대표 · 그룹 CFO · 해당 회사 대표이사 · 대표가 재무 입력 권한을 준 사람)
         </p>
       )}
     </div>

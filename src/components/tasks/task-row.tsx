@@ -5,11 +5,13 @@ import { useState, useTransition } from 'react'
 
 import { setChairmanNeeded, setTaskStatus } from '@/app/actions/tasks'
 import { Icon } from '@/components/ui/icon'
+import { boss, isChairman } from '@/lib/boss'
 import { dDay, formatDDay, isOverdue } from '@/lib/format'
 import {
   TASK_STATUS,
   TASK_STATUS_LABEL_KO,
   WORK_PRIORITY_LABEL_KO,
+  type Role,
   type Task,
   type TaskStatus,
   type WorkPriority,
@@ -50,12 +52,16 @@ export function TaskRow({
   businessName,
   projectName,
   onError,
+  viewerRole,
 }: {
   task: Task
   businessName: string
   projectName: string
   onError: (message: string | null) => void
+  viewerRole: Role | null
 }) {
+  // 호칭 · 왕관은 보는 사람에 맞춘다 — 직원 화면 용어 원칙(CLAUDE.md).
+  const b = boss(viewerRole)
   const [pending, startTransition] = useTransition()
   const [draftStatus, setDraftStatus] = useState<TaskStatus | null>(null)
   const [draftNeeded, setDraftNeeded] = useState<boolean | null>(null)
@@ -151,20 +157,20 @@ export function TaskRow({
         {formatDDay(task.deadline)}
       </td>
 
-      <td className="px-3 py-2 text-center" data-label="회장 확인">
+      <td className="px-3 py-2 text-center" data-label={`${b} 확인`}>
         {/* CH-017. 이 플래그 하나가 그 업무를 회장 화면으로 올리는 유일한 조건이다. */}
         <button
           type="button"
           onClick={toggleNeeded}
           disabled={pending}
           aria-pressed={needed}
-          title={needed ? '회장 확인 대기에서 내린다' : '회장 확인 대기로 올린다'}
-          aria-label={`${task.title} 회장 확인`}
+          title={needed ? `${b} 확인 대기에서 내린다` : `${b} 확인 대기로 올린다`}
+          aria-label={`${task.title} ${b} 확인`}
           className={`rounded-md p-1.5 transition-colors disabled:opacity-50 ${
             needed ? 'bg-gold/15 text-gold' : 'text-ink-muted hover:bg-raised hover:text-ink-dim'
           }`}
         >
-          <Icon name="crown" className="size-4" filled={needed} />
+          <Icon name={isChairman(viewerRole) ? 'crown' : 'stamp'} className="size-4" filled={needed} />
         </button>
       </td>
     </tr>

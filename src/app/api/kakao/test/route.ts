@@ -31,7 +31,7 @@ const SAMPLE =
 export async function POST() {
   const user = await currentUser()
   if (!user || user.role !== 'Chairman') {
-    return NextResponse.json({ error: '테스트 발송은 Chairman만 할 수 있습니다.' }, { status: 403 })
+    return NextResponse.json({ error: '권한이 없습니다.' }, { status: 403 })
   }
 
   // runDate는 KST 그대로다 — 링크(/ai?date=)가 가리키는 축이 ai_night_outputs.run_date라서다.

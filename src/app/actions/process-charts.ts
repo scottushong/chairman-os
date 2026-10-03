@@ -76,7 +76,7 @@ export async function saveProcessChart(input: {
       return { error: '이 회사에 같은 팀 이름이 이미 있습니다.' }
     }
     if (/42501|PGRST301|row-level security/.test(message)) {
-      return { error: '프로세스차트를 고칠 권한이 없습니다. (Chairman · Group CFO)' }
+      return { error: '프로세스차트를 고칠 권한이 없습니다. (대표 · 그룹 CFO)' }
     }
     return { error: '프로세스차트를 저장하지 못했습니다.' }
   }

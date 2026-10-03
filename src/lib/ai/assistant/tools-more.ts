@@ -151,7 +151,8 @@ export const dependencyTool: AssistantTool = {
     description: '회사 하나의 회장 의존도(§7 영역별 수준 · 이양 상태 · 목표일)와 분기 자율성 평가.',
     input_schema: { type: 'object', properties: { business: { type: 'string' } }, required: ['business'] },
   },
-  available: (ctx) => ctx.channel === 'web',
+  // 의존도 · 주의는 회장 전용 화면이다 — 다른 역할에게는 도구째 주지 않는다(근거 링크 /dependency · /attention도 함께 닫힌다).
+  available: (ctx) => ctx.user.role === 'Chairman' && ctx.channel === 'web',
   async run(input, ctx) {
     const biz = resolveBusiness(str(input.business), await ctx.businesses())
     if (!biz) return { error: `회사를 찾지 못했습니다: «${str(input.business)}»` }
@@ -174,10 +175,10 @@ export const attentionTool: AssistantTool = {
       '«왜 DY yellow» 같은 질문은 이것으로 근거를 설명한다.',
     input_schema: { type: 'object', properties: { business: { type: 'string' }, include_closed: { type: 'boolean' } } },
   },
-  available: (ctx) => ctx.channel === 'web',
+  available: (ctx) => ctx.user.role === 'Chairman' && ctx.channel === 'web',
   async run(input, ctx) {
     // 0035: 예외의 독자는 [제한] 등급 독자뿐 — 그 밖의 역할에게 «0건»이라 말하면 거짓이다.
-    if (!canReadExceptions(ctx.user.role)) return { readable: false, note: '이 계정은 주의(예외) 표를 볼 수 없습니다 — 0건이 아니라 권한 밖입니다.' }
+    if (!canReadExceptions(ctx.user.role)) return { readable: false, note: '이 계정은 이 자료를 볼 수 없습니다 — 0건이 아니라 권한 밖입니다.' }
     const businesses = await ctx.businesses()
     const biz = str(input.business) ? resolveBusiness(str(input.business), businesses) : null
     if (str(input.business) && !biz) return { error: `회사를 찾지 못했습니다: «${str(input.business)}»` }

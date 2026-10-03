@@ -4,15 +4,19 @@ import Link from 'next/link'
 import { useState, useTransition } from 'react'
 
 import { leadBundleAction, leadDecideAction } from '@/app/actions/lead'
+import { boss, bossEn, bossText } from '@/lib/boss'
 import { tr, type Lang } from '@/lib/i18n'
-import type { Decision } from '@/types'
+import type { Decision, Role } from '@/types'
 
 /**
  * 팀장 요청함 (Phase 6-2). 팀원이 올린 요청 가운데 내가 결재선 첫 칸인 것.
  * 승인하면 DB가 규칙으로 판정한다 — 이 화면은 그 결과(팀 선 종결 / 회장 결재)를 한 줄로 알려 준다.
  * 규칙 결과를 미리 보여 준다: 얼린 결재선의 «규칙 판정» 칸 그대로.
  */
-export function TeamInbox({ pending, lang }: { pending: Decision[]; lang: Lang }) {
+export function TeamInbox({ pending, lang, viewerRole }: { pending: Decision[]; lang: Lang; viewerRole: Role | null }) {
+  // 호칭은 보는 사람에 맞춘다 — 직원 화면 용어 원칙(CLAUDE.md).
+  const b = boss(viewerRole)
+  const bEn = bossEn(viewerRole)
   const [msg, setMsg] = useState<Record<string, string>>({})
   const [pendingUi, start] = useTransition()
 
@@ -38,7 +42,7 @@ export function TeamInbox({ pending, lang }: { pending: Decision[]; lang: Lang }
             </Link>
             {rule ? (
               <p className="mt-0.5 text-t11h text-ink-dim">
-                {tr(lang, '규칙:', 'Rule:')} {rule.why} → {d.chairman_required ? tr(lang, '회장 결재', 'to Chairman') : tr(lang, '팀 선 종결', 'closes at team level')}
+                {tr(lang, '규칙:', 'Rule:')} {bossText(rule.why, viewerRole)} → {d.chairman_required ? tr(lang, `${b} 결재`, `to ${bEn}`) : tr(lang, '팀 선 종결', 'closes at team level')}
               </p>
             ) : null}
             {msg[d.decision_id] ? (
@@ -53,7 +57,7 @@ export function TeamInbox({ pending, lang }: { pending: Decision[]; lang: Lang }
                 </button>
                 {!d.chairman_required ? (
                   <button type="button" disabled={pendingUi} onClick={() => act(d, true, true)} className="rounded-md border border-line bg-panel px-3 py-1.5 text-t12 text-ink-dim">
-                    {tr(lang, '승인 + 회장 확인 요청', 'Approve + ask Chairman')}
+                    {tr(lang, `승인 + ${b} 확인 요청`, `Approve + ask ${bEn}`)}
                   </button>
                 ) : null}
               </div>
@@ -66,7 +70,9 @@ export function TeamInbox({ pending, lang }: { pending: Decision[]; lang: Lang }
 }
 
 /** 회장 기안(취합) — 내가 승인해 회장 큐에 올린 열린 요청들을 한 건으로 묶는다. */
-export function BundleComposer({ candidates, lang }: { candidates: Decision[]; lang: Lang }) {
+export function BundleComposer({ candidates, lang, viewerRole }: { candidates: Decision[]; lang: Lang; viewerRole: Role | null }) {
+  const b = boss(viewerRole)
+  const bEn = bossEn(viewerRole)
   const [picked, setPicked] = useState<string[]>([])
   const [title, setTitle] = useState('')
   const [result, setResult] = useState<string | null>(null)
@@ -75,7 +81,7 @@ export function BundleComposer({ candidates, lang }: { candidates: Decision[]; l
   if (candidates.length < 2) {
     return (
       <p className="py-6 text-center text-t12h text-ink-muted">
-        {tr(lang, '묶을 수 있는 요청이 두 건 이상일 때 씁니다(내가 승인해 회장 결재로 올린, 아직 열린 요청).', 'Needs two or more requests you approved up to the Chairman.')}
+        {tr(lang, `묶을 수 있는 요청이 두 건 이상일 때 씁니다(내가 승인해 ${b} 결재로 올린, 아직 열린 요청).`, `Needs two or more requests you approved up to ${bEn}.`)}
       </p>
     )
   }
@@ -103,12 +109,12 @@ export function BundleComposer({ candidates, lang }: { candidates: Decision[]; l
         onClick={() =>
           start(async () => {
             const r = await leadBundleAction({ decisionIds: picked, title })
-            setResult(r.error ?? tr(lang, `회장 기안으로 올렸습니다 (${r.id}).`, `Sent to Chairman (${r.id}).`))
+            setResult(r.error ?? tr(lang, `${b} 기안으로 올렸습니다 (${r.id}).`, `Sent to ${bEn} (${r.id}).`))
           })
         }
         className="w-full rounded-md bg-accent px-3 py-2 text-t12h font-semibold text-white disabled:opacity-40"
       >
-        {tr(lang, `${picked.length}건 묶어 회장에게 올리기`, `Bundle ${picked.length} to Chairman`)}
+        {tr(lang, `${picked.length}건 묶어 ${b}에게 올리기`, `Bundle ${picked.length} to ${bEn}`)}
       </button>
       {result ? <p className="text-t12 font-semibold">{result}</p> : null}
     </div>

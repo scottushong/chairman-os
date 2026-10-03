@@ -114,7 +114,7 @@ function tickHeaders(decision: Awaited<ReturnType<typeof decideBriefTickNow>>): 
 export async function POST() {
   const user = await currentUser()
   if (!user || user.role !== 'Chairman') {
-    return NextResponse.json({ error: '수동 실행은 Chairman만 할 수 있습니다.' }, { status: 403 })
+    return NextResponse.json({ error: '권한이 없습니다.' }, { status: 403 })
   }
   // local을 넘기지 않는다. 수동 실행은 카톡을 보내지 않고(night-brief.ts ④) 장부도 건드리지
   // 않는다 — 회장이 낮에 버튼을 눌렀다고 다음 날 아침이 조용히 사라지면 안 된다.

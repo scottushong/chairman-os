@@ -21,7 +21,8 @@ import {
  * 더할 수 있는 도시는 lib/world-cities.ts의 표에 있는 것뿐이다 — 날씨에 좌표가, 시계에 시간대가
  * 있어야 해서 이름만 받아 적을 수는 없다.
  */
-export function WorldCitiesEditor({ value }: { value: string[] }) {
+/** `chairman` — 아침 루틴은 회장 전용이라 그 언급도 회장에게만(직원 화면 용어 원칙, CLAUDE.md). */
+export function WorldCitiesEditor({ value, chairman }: { value: string[]; chairman: boolean }) {
   const router = useRouter()
   const [ids, setIds] = useState<string[]>(value)
   const [adding, setAdding] = useState('')
@@ -150,7 +151,10 @@ export function WorldCitiesEditor({ value }: { value: string[] }) {
         </button>
       </div>
       <p className="mt-1.5 text-t10h text-ink-muted">
-        대시보드 «날씨와 세계시간» 카드와 아침 루틴의 시계 · 관심 도시 날씨가 이 목록을 이 순서로 씁니다.
+        {chairman
+          ? '대시보드 «날씨와 세계시간» 카드와 아침 루틴의 시계 · 관심 도시 날씨가'
+          : '대시보드 «날씨와 세계시간» 카드가'}{' '}
+        이 목록을 이 순서로 씁니다.
         도시 옆 «+8h»는 지금 보고 있는 기기 시각과의 차이입니다.
       </p>
       {error ? (

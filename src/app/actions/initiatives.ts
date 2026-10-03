@@ -86,8 +86,8 @@ function failure(e: unknown, action: 'write' | 'delete' = 'write'): ActionState 
     return {
       error:
         action === 'delete'
-          ? '지울 권한이 없습니다. (회장 / 그룹 CFO만 가능합니다)'
-          : '이 건을 고칠 권한이 없습니다. (회장 / 그룹 CFO만 가능합니다)',
+          ? '지울 권한이 없습니다. (대표 / 그룹 CFO만 가능합니다)'
+          : '이 건을 고칠 권한이 없습니다. (대표 / 그룹 CFO만 가능합니다)',
     }
   }
   return { error: '저장하지 못했습니다. 잠시 후 다시 시도하세요.' }
@@ -446,7 +446,7 @@ export async function createEventVideoLinkAction(
   } catch (e) {
     const message = e instanceof Error ? e.message : ''
     if (/event_not_meeting/.test(message)) return { error: '화상 링크는 «미팅» 일정에만 만듭니다.' }
-    if (/event_video_forbidden|42501/.test(message)) return { error: '일정을 고칠 권한이 없습니다. (회장 · 그룹 CFO)' }
+    if (/event_video_forbidden|42501/.test(message)) return { error: '일정을 고칠 권한이 없습니다. (대표 · 그룹 CFO)' }
     console.error('[createEventVideoLinkAction]', e)
     return { error: '화상 링크를 만들지 못했습니다.' }
   }

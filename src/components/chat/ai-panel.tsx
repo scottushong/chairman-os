@@ -5,8 +5,9 @@ import { useState, useTransition } from 'react'
 
 import { askAssistant } from '@/app/actions/assistant'
 import { AssistantMessages } from '@/components/assistant/assistant-messages'
+import { boss, bossEn } from '@/lib/boss'
 import { tr, type Lang } from '@/lib/i18n'
-import type { AiActionView, AiChatMessage } from '@/types'
+import type { AiActionView, AiChatMessage, Role } from '@/types'
 
 /**
  * /chat의 «AI» 탭 (CH-044). Phase 11부터 떠 있는 어시스턴트와 **같은 엔진 · 같은 대화 줄기**를 쓴다
@@ -19,11 +20,14 @@ export function AiPanel({
   chatId,
   messages,
   actions,
+  role,
   lang,
 }: {
   chatId: string | null
   messages: AiChatMessage[]
   actions: AiActionView[]
+  /** 보는 사람의 역할 — 직원 화면 용어 원칙(CLAUDE.md): 회장 외에는 «대표». */
+  role: Role | null | undefined
   lang: Lang
 }) {
   const router = useRouter()
@@ -50,8 +54,8 @@ export function AiPanel({
       <p className="rounded-md bg-raised px-2.5 py-1.5 text-t11 text-ink-dim">
         {tr(
           lang,
-          'AI는 내가 볼 수 있는 데이터만 봅니다(권한 밖 자료는 AI에게도 보이지 않습니다). 답은 참고용이며 결정이 아닙니다. 고치는 제안은 [확인]을 눌러야 저장됩니다. 질문의 앞부분은 감사 기록에 남고 본인과 회장만 봅니다.',
-          'AI only sees data you are allowed to see. Answers are for reference, not decisions. Proposed changes are saved only when you press Confirm. A summary of each question is audit-logged (visible to you and the Chairman).',
+          `AI는 내가 볼 수 있는 데이터만 봅니다(권한 밖 자료는 AI에게도 보이지 않습니다). 답은 참고용이며 결정이 아닙니다. 고치는 제안은 [확인]을 눌러야 저장됩니다. 질문의 앞부분은 감사 기록에 남고 본인과 ${boss(role)}만 봅니다.`,
+          `AI only sees data you are allowed to see. Answers are for reference, not decisions. Proposed changes are saved only when you press Confirm. A summary of each question is audit-logged (visible to you and ${bossEn(role)}).`,
         )}
       </p>
       <div className="flex-1 overflow-y-auto">

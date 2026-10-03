@@ -61,10 +61,13 @@ export function KeymenPanel({
   scope,
   keymen,
   canEdit,
+  chair = false,
 }: {
   scope: KeymenScope
   keymen: KeymanRow[]
   canEdit: boolean
+  /** 회장 세션인가. 아니면 안내 문구에 «대표»를 쓴다(직원 화면 용어 원칙, CLAUDE.md). 안 주면 직원 문구. */
+  chair?: boolean
 }) {
   const [list, setList] = useState<KeymanRow[]>(keymen)
   const [draft, setDraft] = useState<Draft | null>(null)
@@ -79,7 +82,10 @@ export function KeymenPanel({
     return a.last_contact_on.localeCompare(b.last_contact_on)
   })
 
-  const roleHint = scope.kind === 'business' ? 'Chairman / Business CEO' : '회장 / 그룹 CFO'
+  const roleHint =
+    scope.kind === 'business'
+      ? chair ? 'Chairman / Business CEO' : '대표 / 대표이사'
+      : chair ? '회장 / 그룹 CFO' : '대표 / 그룹 CFO'
 
   async function submit() {
     if (!draft || busy) return

@@ -88,7 +88,7 @@ export default async function InitiativePage(props: PageProps<'/initiatives/[id]
 
           {isChairman ? <InitiativeNotePanel initiativeId={id} note={note ?? ''} /> : null}
 
-          <KeymenPanel scope={{ kind: 'initiative', initiativeId: id }} keymen={ownKeymen} canEdit={canEdit} />
+          <KeymenPanel scope={{ kind: 'initiative', initiativeId: id }} keymen={ownKeymen} canEdit={canEdit} chair={isChairman} />
 
           <InitiativeDocsPanel initiativeId={id} docs={ownDocs} canEdit={canEdit} />
 
@@ -113,7 +113,7 @@ export default async function InitiativePage(props: PageProps<'/initiatives/[id]
             <p className="mt-1 mb-3 text-t11 text-ink-muted">
               감사 기록(audit_log)을 이 건으로 되짚은 것이다. 지워지지 않는다.
             </p>
-            <AuditTimeline records={audit} emptyMessage="아직 이 건을 고친 기록이 없습니다." />
+            <AuditTimeline viewerRole={user?.role} records={audit} emptyMessage="아직 이 건을 고친 기록이 없습니다." />
           </section>
         </div>
 

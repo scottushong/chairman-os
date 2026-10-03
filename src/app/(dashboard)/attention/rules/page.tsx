@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 
 import { RuleEditor } from '@/components/attention/rule-editor'
 import { PageHeader } from '@/components/layout/page-header'
@@ -38,6 +39,9 @@ import { ATTENTION_LEVEL_LABEL_KO } from '@/types'
  * 묻게 된다.
  */
 export default async function AttentionRulesPage() {
+  // 회장 전용 화면이다 — 다른 역할은 이 화면의 존재를 몰라야 한다(직원 화면 용어 원칙, 2026-10-02). 기록 전에 돌려보낸다.
+  const viewer = await currentUser()
+  if (viewer?.role !== 'Chairman') redirect('/me')
   await recordScreenRead({ path: '/attention/rules', kind: 'page' })
 
   const [user, repo] = await Promise.all([currentUser(), getRepository()])

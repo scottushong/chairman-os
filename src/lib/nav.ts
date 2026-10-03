@@ -279,16 +279,21 @@ export function navHref(item: NavItem): string {
  * /coming-soon이 ?menu= 로 받은 라벨을 되찾는다. 없으면 null이다.
  * 시스템 바의 여덟 칸도 같이 본다 — 그쪽에서 눌러 온 사람에게 '사이드바에 없는 메뉴입니다'라고
  * 답하면, 방금 누른 것이 버젓이 화면 아래에 있는데 없다고 말하는 꼴이 된다.
+ * 그 역할의 메뉴(navFor)에서만 찾는다 — ?menu=주의 처럼 손으로 친 라벨로 회장 전용 메뉴의 이름 · 주소가
+ * 드러나지 않게(직원 화면 용어 원칙, CLAUDE.md).
  */
-export function findNavItem(label: string): NavItem | null {
-  for (const group of NAV) {
+export function findNavItem(label: string, role: Role | null | undefined): NavItem | null {
+  for (const group of navFor(role)) {
     const found = group.items.find((i) => i.label === label)
     if (found) return found
   }
   return SYSTEM_LINKS.find((i) => i.label === label) ?? null
 }
 
-/** '준비 중' 화면이 "지금 쓸 수 있는 건 이것들입니다"로 안내할 목록. */
-export function readyItems(): NavItem[] {
-  return NAV.flatMap((g) => g.items).filter((i) => i.ready)
+/**
+ * '준비 중' 화면이 "지금 쓸 수 있는 건 이것들입니다"로 안내할 목록. 그 역할의 메뉴(navFor)에서 고른다 —
+ * NAV를 그대로 쓰면 직원에게 그룹 · 아침 루틴 · 의존 · 주의 · 회장 루틴이 링크로 샌다(직원 화면 용어 원칙, CLAUDE.md).
+ */
+export function readyItems(role: Role | null | undefined): NavItem[] {
+  return navFor(role).flatMap((g) => g.items).filter((i) => i.ready)
 }

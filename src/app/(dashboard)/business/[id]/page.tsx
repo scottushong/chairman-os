@@ -11,6 +11,7 @@ import { basisLine } from '@/lib/statements/basis-line'
 import { Icon } from '@/components/ui/icon'
 import { currentUser } from '@/lib/auth/session'
 import { canEditStrategy } from '@/lib/auth/roles'
+import { isChairman } from '@/lib/boss'
 import { dDay, formatDDay, formatPct, isOverdue } from '@/lib/format'
 import { getRepository } from '@/lib/repository'
 import {
@@ -64,7 +65,11 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
   const business = businesses.find((b) => b.business_id === id)
   if (!business) notFound()
 
-  const strategy = strategies.find((s) => s.business_id === id) ?? null
+  const chair = isChairman(user?.role)
+  const found = strategies.find((s) => s.business_id === id) ?? null
+  // 회장 메모는 회장에게만 내려 보낸다 — 직원 세션에는 본문을 비워서 보내고 칸도 그리지 않는다
+  // (직원 화면 용어 원칙, CLAUDE.md). 클라이언트 컴포넌트로 값이 넘어가지 않게 여기서 자른다.
+  const strategy = found && !chair ? { ...found, chairman_comment: '' } : found
 
   /**
    * "기준: 2025 결산(확정) + 2026 1~8월(잠정)".
@@ -137,12 +142,14 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
           strategy={strategy}
           businessId={id}
           canEdit={canEditStrategy(user)}
+          chair={chair}
         />
         {/* 0015. 쓰기 판정은 business_keymen_write(can_approve)라 좌표와 같은 안내 함수를 쓴다. */}
         <KeymenPanel
           scope={{ kind: 'business', businessId: id }}
           keymen={keymen.filter((k) => k.business_id === id)}
           canEdit={canEditStrategy(user)}
+          chair={chair}
         />
         {/* Phase 10 — 회사에 붙인 파일 + AI 요약(0045: 회사가 보이고 AND 등급). */}
         <AttachmentsSection entityTable="businesses" entityId={id} />
@@ -174,6 +181,7 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
               key={t.task_id}
               task={t}
               projectName={projectName.get(t.project_id) ?? t.project_id}
+              chair={chair}
             />
           ))}
         </Card>
@@ -282,14 +290,19 @@ function ProjectItem({ project }: { project: Project }) {
   )
 }
 
-function TaskItem({ task, projectName }: { task: Task; projectName: string }) {
+function TaskItem({ task, projectName, chair }: { task: Task; projectName: string; chair: boolean }) {
   return (
     <li className="rounded-lg px-1.5 py-1.5 transition-colors hover:bg-raised/60">
       <div className="flex items-center gap-1.5">
         <p className="min-w-0 flex-1 truncate text-t12h font-semibold">{task.title}</p>
         {/* CH-017로 올라가 있는 업무는 표식을 준다. 회장 화면에 이미 떠 있다는 뜻이다. */}
         {task.chairman_needed && task.status !== 'Done' ? (
-          <Icon name="crown" className="size-3.5 shrink-0 text-gold" filled />
+          // 왕관은 회장 화면에서만. 직원에게는 중립 아이콘(직원 화면 용어 원칙, CLAUDE.md).
+          chair ? (
+            <Icon name="crown" className="size-3.5 shrink-0 text-gold" filled />
+          ) : (
+            <Icon name="arrow-up" className="size-3.5 shrink-0 text-gold" />
+          )
         ) : null}
         <span
           className={`shrink-0 rounded bg-raised px-1.5 py-0.5 text-t10 ${

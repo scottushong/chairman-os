@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { PhotoUpload } from '@/components/settings/photo-upload'
 import { ProfileForm } from '@/components/settings/profile-form'
 import { Icon } from '@/components/ui/icon'
+import { boss } from '@/lib/boss'
 import { decideChairmanTimezone } from '@/lib/chairman-timezone'
 import { formatDateTime } from '@/lib/format'
 import { getRepository } from '@/lib/repository'
@@ -45,6 +46,8 @@ export default async function ProfileSettingsPage() {
     now: new Date(),
   })
   const chairman = profile.role === 'Chairman'
+  // 직원 화면 용어 원칙(CLAUDE.md): 회장 본인 = 회장, 그 외 = 대표.
+  const bossName = boss(profile.role)
 
   // 한 장짜리도 signProfilePhotos로 서명한다 — 별도의 단건 서명 API를 새로 만들지 않는다
   // (/initiatives/[id]가 로고 한 장에 signInitiativeLogos를 쓰는 것과 같다).
@@ -57,7 +60,7 @@ export default async function ProfileSettingsPage() {
         icon="users"
         title="내 프로필"
         code="Phase 5-E"
-        description="이름·직함·생년월일은 본인이 고칩니다. 역할과 보안등급은 회장님만 바꿀 수 있습니다."
+        description={`이름·직함·생년월일은 본인이 고칩니다. 역할과 보안등급은 ${bossName}님만 바꿀 수 있습니다.`}
       >
         <Link
           href="/settings"
@@ -72,7 +75,7 @@ export default async function ProfileSettingsPage() {
           <Icon name="pencil" className="size-4 text-ink-dim" />
           기본 정보
         </h2>
-        <ProfileForm profile={profile} />
+        <ProfileForm profile={profile} bossName={bossName} />
       </section>
 
       <section className="mt-3.5 rounded-xl border border-line-soft bg-panel p-3.5">
@@ -82,7 +85,7 @@ export default async function ProfileSettingsPage() {
         </h2>
         <p className="mt-1 mb-2 text-t10h text-ink-muted">
           역할과 보안등급은 권한 그 자체입니다. 본인이 올릴 수 있으면 권한 체계가 아니게
-          되므로, 이 두 칸은 회장님의 사용자·권한 화면에서만 바뀝니다.
+          되므로, 이 두 칸은 {bossName}님의 사용자·권한 화면에서만 바뀝니다.
         </p>
         <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-t12 sm:grid-cols-4">
           <Readonly label="역할" value={ROLE_LABEL_KO[profile.role]} />
@@ -101,7 +104,7 @@ export default async function ProfileSettingsPage() {
         <p className="mt-1 text-t10h text-ink-muted">
           {chairman
             ? '아침 브리핑이 갈 시간대입니다. 수동으로 지정하거나 자동(출장 → 마지막 접속 기기)으로 둘 수 있고, 그 설정은 회장 루틴 화면에 있습니다 — 같은 값을 두 화면에서 고칠 수 있게 하면 한쪽이 낡습니다.'
-            : '지금 이 기기가 보낸 시간대입니다. 아침 브리핑의 시각 판정은 회장님 설정만 씁니다.'}
+            : '지금 이 기기가 보낸 시간대입니다.'}
         </p>
         {chairman ? (
           <Link
@@ -140,7 +143,7 @@ export default async function ProfileSettingsPage() {
           조직도와 사람 목록에 이 사진이 뜹니다. <b className="font-semibold text-ink-dim">보이는
           범위는 이름이 보이는 범위와 같습니다</b> — 조직도에 이름이 안 보이는 사람에게는 얼굴도
           보이지 않고, 그 판정은 화면이 아니라 데이터베이스가 합니다.
-          사진은 <b className="font-semibold text-ink-dim">본인만</b> 올리고 내립니다. 회장님도
+          사진은 <b className="font-semibold text-ink-dim">본인만</b> 올리고 내립니다. {bossName}님도
           남의 사진은 바꾸지 못합니다. 올리지 않으면 이름의 첫 글자가 대신 섭니다.
         </p>
         <PhotoUpload name={profile.display_name} path={profile.photo_path} url={photoUrl} />

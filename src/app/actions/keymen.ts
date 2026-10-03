@@ -33,7 +33,7 @@ function text(value: unknown): string {
 
 function failure(e: unknown, fallback: string): string {
   return e instanceof Error && /business_keymen|42501|PGRST301/.test(e.message)
-    ? '키맨을 고칠 권한이 없습니다. (Chairman / Business CEO만 가능합니다)'
+    ? '키맨을 고칠 권한이 없습니다. (대표 / 대표이사만 가능합니다)'
     : fallback
 }
 
@@ -127,7 +127,7 @@ export interface InitiativeKeymanState {
 
 function initiativeFailure(e: unknown, fallback: string): string {
   return e instanceof Error && /initiative_keymen|42501|PGRST301/.test(e.message)
-    ? '이 건의 키맨을 고칠 권한이 없습니다. (회장 / 그룹 CFO만 가능합니다)'
+    ? '이 건의 키맨을 고칠 권한이 없습니다. (대표 / 그룹 CFO만 가능합니다)'
     : fallback
 }
 

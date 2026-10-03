@@ -47,8 +47,9 @@ function text(value: unknown): string | null {
 
 function explain(e: unknown, fallback: string): CityActionState {
   const message = e instanceof Error ? e.message : ''
+  // 권한 오류는 회장이 아닌 사람만 본다 — 도시(회장 전용)의 이름을 꺼내지 않는다(직원 화면 용어 원칙, CLAUDE.md).
   if (/42501|PGRST301|row-level security/.test(message)) {
-    return { error: '도시 배치는 회장님만 고칠 수 있습니다.' }
+    return { error: '이 작업을 할 권한이 없습니다.' }
   }
   if (/city_layout_business_unique|city_layout_initiative_unique|duplicate key/.test(message)) {
     return { error: '같은 회사(또는 이니셔티브)가 도시에 두 번 설 수 없습니다.' }
@@ -71,7 +72,7 @@ function explain(e: unknown, fallback: string): CityActionState {
 export async function saveCityLayout(input: { upserts: unknown; deletes: unknown }): Promise<CityActionState> {
   const user = await currentUser()
   if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
-  if (user.role !== 'Chairman') return { error: '도시 배치는 회장님만 고칠 수 있습니다.' }
+  if (user.role !== 'Chairman') return { error: '이 작업을 할 권한이 없습니다.' }
 
   const rawUpserts = Array.isArray(input.upserts) ? input.upserts : []
   const deletes = (Array.isArray(input.deletes) ? input.deletes : [])
@@ -116,7 +117,7 @@ export async function saveCityLayout(input: { upserts: unknown; deletes: unknown
 export async function promoteCityLot(id: unknown, businessId: unknown): Promise<CityActionState> {
   const user = await currentUser()
   if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
-  if (user.role !== 'Chairman') return { error: '승격은 회장님만 할 수 있습니다.' }
+  if (user.role !== 'Chairman') return { error: '이 작업을 할 권한이 없습니다.' }
 
   const layoutId = Number(id)
   const target = text(businessId)

@@ -27,7 +27,7 @@ function denied(e: unknown, fallback = '저장하지 못했습니다. 잠시 후
   console.error('[attachments]', e)
   const m = e instanceof Error ? e.message : ''
   if (/row-level security|42501|attachments_insert|permission denied/.test(m)) {
-    return { error: '권한이 없습니다. (대상을 볼 수 없거나, 이 등급을 다룰 수 없거나, 올린 사람 · 회장이 아닙니다)' }
+    return { error: '권한이 없습니다. (대상을 볼 수 없거나, 이 등급을 다룰 수 없거나, 올린 사람 · 대표가 아닙니다)' }
   }
   if (/attachments_(mime|size|class|entity)/.test(m)) return { error: '받지 않는 파일입니다. (PDF · Word · Excel · PowerPoint · PNG · JPG, 20MB까지)' }
   return { error: fallback }
@@ -161,7 +161,7 @@ export async function structureMemoAction(initiativeId: string, memo: string): P
   const user = await currentUser()
   if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
   // 회장 메모는 회장만 읽고 쓴다(0017 initiative_notes_all) — 남의 손으로 메모가 AI에 나가지 않게.
-  if (user.role !== 'Chairman') return { error: '회장 메모는 회장만 정리합니다.' }
+  if (user.role !== 'Chairman') return { error: '권한이 없습니다.' }
   if (memo.length > 5_000) return { error: '5,000자를 넘는 메모는 정리하지 않습니다.' }
   return structureMemo(await getRepository(), initiativeId, memo)
 }

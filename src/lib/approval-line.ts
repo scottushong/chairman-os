@@ -1,4 +1,6 @@
-import type { ApprovalLead, ApprovalStep, ApprovalTemplate } from '@/types'
+// scripts/check-migrations.ts가 이 파일을 바로 import한다 — 런타임 import는 상대 경로로 둔다.
+import { isChairman } from './boss'
+import type { ApprovalLead, ApprovalStep, ApprovalTemplate, Role } from '@/types'
 
 /**
  * 결재선 미리보기 — "팀장 → (규칙 판정) → 회장"을 **제출 전에** 보여 준다 (Phase 9 블록 2).
@@ -25,8 +27,8 @@ export function toChairman(template: ApprovalTemplate, form: Record<string, stri
 
 export function ruleWhy(template: ApprovalTemplate, form: Record<string, string>): string {
   const amount = formAmount(form)
-  if (template.chairman_always) return `${template.name_ko} 양식은 금액과 상관없이 회장 결재`
-  if (template.chairman_over === null) return `${template.name_ko} 양식은 회장 규칙 없음`
+  if (template.chairman_always) return `${template.name_ko} 양식은 금액과 상관없이 대표 결재`
+  if (template.chairman_over === null) return `${template.name_ko} 양식은 대표 규칙 없음`
   const a = amount === null ? '—' : String(amount)
   return toChairman(template, form)
     ? `금액 ${a}원 ≥ 기준 ${template.chairman_over}원`
@@ -37,7 +39,7 @@ export function approvalLine(
   template: ApprovalTemplate,
   form: Record<string, string>,
   lead: ApprovalLead | null,
-  chairman: { user_id: string | null; name: string } = { user_id: null, name: '회장' },
+  chairman: { user_id: string | null; name: string } = { user_id: null, name: '대표' },
 ): ApprovalStep[] {
   const steps: ApprovalStep[] = [
     lead
@@ -51,9 +53,18 @@ export function approvalLine(
     { step: 'rule', user_id: null, name: '규칙 판정', why: ruleWhy(template, form) },
   ]
   if (toChairman(template, form)) {
-    steps.push({ step: 'chairman', user_id: chairman.user_id, name: chairman.name, why: '규칙이 회장까지 올린다' })
+    steps.push({ step: 'chairman', user_id: chairman.user_id, name: chairman.name, why: '규칙이 대표까지 올린다' })
   }
   return steps
+}
+
+/**
+ * 취합 묶음 제목의 «대표 기안 / 회장 기안»을 보는 사람에 맞춘다 — 직원 화면 용어 원칙(CLAUDE.md).
+ * 0049부터 DB는 «대표 기안»으로 적는다. 제목은 사람이 쓴 글이라 bossText처럼 «대표»를 통째로 바꾸지 않고
+ * 이 한 낱말만 바꾼다(«VANA 대표 보고»의 대표는 회사 대표다).
+ */
+export function bundleTitle(title: string, viewer: Role | null | undefined): string {
+  return isChairman(viewer) ? title.replace(/대표 기안/g, '회장 기안') : title.replace(/회장 기안/g, '대표 기안')
 }
 
 /** 비어 있는 필수 항목의 key. 트리거의 approval_form_missing과 같은 판정. */

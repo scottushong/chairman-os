@@ -8,6 +8,7 @@ import { OrgChart } from '@/components/settings/org-chart'
 import { RevokeButton } from '@/components/settings/revoke-button'
 import { Icon } from '@/components/ui/icon'
 import { currentUser } from '@/lib/auth/session'
+import { boss, roleLabelFor } from '@/lib/boss'
 import { kstToday } from '@/lib/chairman-project'
 import { formatDateTime } from '@/lib/format'
 import { businessName } from '@/lib/lookup'
@@ -16,6 +17,7 @@ import {
   ROLE_LABEL_KO,
   SECURITY_CLASS_LABEL_KO,
   type Business,
+  type Role,
   type UserInvitation,
 } from '@/types'
 
@@ -137,7 +139,7 @@ export default async function UsersPage(props: PageProps<'/settings/users'>) {
         </h2>
         <p className="mt-1 text-t10h leading-relaxed text-ink-muted">
           계정이 아직 없는 사람들입니다. Supabase Dashboard에서 이 주소로 계정이 만들어지는 순간
-          아래 권한이 자동으로 붙습니다(0011 on_auth_user_created). 회장 결재가 붙은 초대는
+          아래 권한이 자동으로 붙습니다(0011 on_auth_user_created). {boss(user.role)} 결재가 붙은 초대는
           승인 전에는 계정이 생겨도 권한이 붙지 않습니다(0026).
         </p>
 
@@ -153,6 +155,7 @@ export default async function UsersPage(props: PageProps<'/settings/users'>) {
                 inviterName={nameOf(i.invited_by)}
                 bossName={nameOf(i.reports_to)}
                 canManage={isChairman}
+                viewerRole={user.role}
               />
             ))}
           </ul>
@@ -187,7 +190,9 @@ export default async function UsersPage(props: PageProps<'/settings/users'>) {
                   {m.kind === 'in' ? '입사' : '퇴사'}
                 </span>
                 <span className="text-t12h font-semibold">{m.person.display_name}</span>
-                <span className="text-t11 text-ink-dim">{ROLE_LABEL_KO[m.person.role]}</span>
+                <span className="text-t11 text-ink-dim">
+                  {roleLabelFor(ROLE_LABEL_KO[m.person.role], m.person.role, user.role)}
+                </span>
                 <span className="ml-auto text-t11 text-ink-muted tnum">{m.on}</span>
               </li>
             ))}
@@ -211,6 +216,7 @@ export default async function UsersPage(props: PageProps<'/settings/users'>) {
                 inviterName={nameOf(i.invited_by)}
                 bossName={nameOf(i.reports_to)}
                 canManage={isChairman}
+                viewerRole={user.role}
               />
             ))}
           </ul>
@@ -233,6 +239,7 @@ function InvitationRow({
   inviterName,
   bossName,
   canManage,
+  viewerRole,
 }: {
   invitation: UserInvitation
   businesses: Business[]
@@ -241,6 +248,8 @@ function InvitationRow({
   bossName: string | null
   /** 재발송·취소·승인은 아직 회장만 된다(0026이 update/delete 정책을 넓히지 않았다). */
   canManage: boolean
+  /** 보는 사람의 역할 — 호칭과 역할 라벨을 그에 맞춘다(직원 화면 용어 원칙, CLAUDE.md). */
+  viewerRole: Role
 }) {
   const groupScope = invitation.role === 'Chairman' || invitation.role === 'GroupCFO'
   const settled = Boolean(invitation.accepted_at || invitation.revoked_at)
@@ -255,14 +264,14 @@ function InvitationRow({
         ) : null}
         <span className="text-t11 text-ink-dim">{invitation.email}</span>
         <span className="rounded bg-raised px-1.5 py-0.5 text-t10 text-ink-dim">
-          {ROLE_LABEL_KO[invitation.role]}
+          {roleLabelFor(ROLE_LABEL_KO[invitation.role], invitation.role, viewerRole)}
         </span>
         <span className="rounded bg-raised px-1.5 py-0.5 text-t10 text-ink-muted">
           {SECURITY_CLASS_LABEL_KO[invitation.max_security_class]}
         </span>
         {waiting ? (
           <span className="rounded bg-warning/15 px-1.5 py-0.5 text-t10 font-semibold text-warning">
-            회장 결재 대기
+            {boss(viewerRole)} 결재 대기
           </span>
         ) : null}
         {invitation.accepted_at ? (
@@ -294,7 +303,7 @@ function InvitationRow({
             </>
           ) : (
             <span className="text-t10h text-ink-muted">
-              취소·승인은 회장만 할 수 있습니다
+              취소·승인은 대표만 할 수 있습니다
             </span>
           )}
         </span>

@@ -4,9 +4,11 @@ import { useState, useTransition } from 'react'
 
 import { setChairmanNeeded, setTaskStatus } from '@/app/actions/tasks'
 import { Icon } from '@/components/ui/icon'
+import { boss, isChairman } from '@/lib/boss'
 import {
   TASK_STATUS,
   TASK_STATUS_LABEL_KO,
+  type Role,
   type Task,
   type TaskStatus,
 } from '@/types'
@@ -20,7 +22,7 @@ import {
  * 목록의 줄과 달리 여기서는 실패 문장을 자기 안에 그린다. 단건 화면에는
  * 실패를 올려 보낼 표 머리가 없고, 화면에 조작할 것이 이것뿐이라 옆에 붙는 편이 읽힌다.
  */
-export function TaskControls({ task }: { task: Task }) {
+export function TaskControls({ task, viewerRole }: { task: Task; viewerRole: Role | null }) {
   const [pending, startTransition] = useTransition()
   const [draftStatus, setDraftStatus] = useState<TaskStatus | null>(null)
   const [draftNeeded, setDraftNeeded] = useState<boolean | null>(null)
@@ -77,7 +79,7 @@ export function TaskControls({ task }: { task: Task }) {
       </label>
 
       <div>
-        <span className="text-t11 text-ink-dim">회장 확인</span>
+        <span className="text-t11 text-ink-dim">{boss(viewerRole)} 확인</span>
         {/* CH-017. 이 플래그 하나가 그 업무를 회장 화면으로 올리는 유일한 조건이다. */}
         <button
           type="button"
@@ -90,7 +92,8 @@ export function TaskControls({ task }: { task: Task }) {
               : 'border-line bg-raised text-ink-muted hover:text-ink-dim'
           }`}
         >
-          <Icon name="crown" className="size-4 shrink-0" filled={needed} />
+          {/* 왕관은 회장 화면에만 — 직원 화면 용어 원칙(CLAUDE.md). */}
+          <Icon name={isChairman(viewerRole) ? 'crown' : 'stamp'} className="size-4 shrink-0" filled={needed} />
           {needed ? '대기 중 — 누르면 내린다' : '올리지 않음 — 누르면 올린다'}
         </button>
       </div>

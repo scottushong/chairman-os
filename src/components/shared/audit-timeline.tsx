@@ -1,6 +1,8 @@
 import { AUDIT_ACTION_LABEL_KO, fieldChanges, type EntityAuditRecord } from '@/lib/audit-log'
 import { Icon } from '@/components/ui/icon'
+import { bossText, isChairman } from '@/lib/boss'
 import { formatDateTime } from '@/lib/format'
+import type { Role } from '@/types'
 
 /**
  * audit_log 역조회를 그리는 자리 (DEFERRED D-12).
@@ -14,18 +16,24 @@ import { formatDateTime } from '@/lib/format'
 export function AuditTimeline({
   records,
   emptyMessage,
+  viewerRole,
 }: {
   records: EntityAuditRecord[]
   emptyMessage: string
+  /** 보는 사람의 역할. 감사 기록의 «회장» 문구 · 역할을 그 사람에 맞춘다(lib/boss.ts). */
+  viewerRole: Role | null | undefined
 }) {
   if (records.length === 0) {
     return <p className="text-t12 text-ink-muted">{emptyMessage}</p>
   }
+  // 감사 기록의 «회장» 문구 · 역할은 보는 사람에 맞춘다 — 직원 화면 용어 원칙(CLAUDE.md).
+  const viewer = viewerRole ?? null
+  const roleOf = (r: string) => (r === 'Chairman' && !isChairman(viewer) ? '대표' : r)
 
   return (
     <ol className="space-y-2.5">
       {records.map((record) => {
-        const changes = fieldChanges(record)
+        const changes = fieldChanges(record, viewer)
         return (
           <li key={record.id} className="flex gap-2.5">
             {/* 시간축. 점 하나로 '언제'가 세로로 읽히게 한다. */}
@@ -38,7 +46,7 @@ export function AuditTimeline({
                 </span>
                 <span className="text-ink-muted">
                   {record.actor_name}
-                  {record.actor_role ? ` · ${record.actor_role}` : ''}
+                  {record.actor_role ? ` · ${roleOf(record.actor_role)}` : ''}
                 </span>
                 <span className="ml-auto shrink-0 text-t10h text-ink-muted tnum">
                   {formatDateTime(record.occurred_at)}
@@ -62,7 +70,7 @@ export function AuditTimeline({
               ) : null}
 
               {record.note ? (
-                <p className="mt-1 text-t11 leading-snug text-ink-muted">{record.note}</p>
+                <p className="mt-1 text-t11 leading-snug text-ink-muted">{bossText(record.note, viewer)}</p>
               ) : null}
             </div>
           </li>

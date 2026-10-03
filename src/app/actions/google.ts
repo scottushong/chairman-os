@@ -11,7 +11,7 @@ import { createSupabaseServerClient } from '@/lib/supabase/server'
  */
 export async function disconnectGmail(): Promise<{ error?: string }> {
   const user = await currentUser()
-  if (!user || user.role !== 'Chairman') return { error: 'Gmail 연결은 회장님만 관리합니다.' }
+  if (!user || user.role !== 'Chairman') return { error: 'Gmail 연결을 관리할 권한이 없습니다.' } // 회장이 아닌 사람만 본다(직원 화면 용어 원칙)
   const sb = await createSupabaseServerClient()
   const { data, error } = await sb.rpc('google_token_clear')
   if (error || data !== true) {

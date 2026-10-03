@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 
 import { AbsenceEditor, AutonomyEditor } from '@/components/dependency/absence-editor'
 import { AreaEditor } from '@/components/dependency/area-editor'
@@ -43,6 +43,9 @@ import {
  */
 export default async function DependencyDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
+  // 회장 전용 화면이다 — 다른 역할은 이 화면의 존재를 몰라야 한다(직원 화면 용어 원칙, 2026-10-02). 기록 전에 돌려보낸다.
+  const viewer = await currentUser()
+  if (viewer?.role !== 'Chairman') redirect('/me')
   await recordScreenRead({ path: `/dependency/${id}`, kind: 'page', business_id: id })
 
   const [user, repo] = await Promise.all([currentUser(), getRepository()])

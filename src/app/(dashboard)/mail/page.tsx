@@ -54,6 +54,8 @@ export default async function MailPage({ searchParams }: PageProps<'/mail'>) {
   const params = await searchParams
   const notice = NOTICE[String(params.google ?? '')]
 
+  // 하단 시스템 바 «메일»은 직원에게도 보인다 — 그래서 돌려보내지 않고 중립 안내만 한다.
+  // 누구의 메일이 이 화면에 붙어 있는지는 말하지 않는다(직원 화면 용어 원칙, CLAUDE.md).
   if (user?.role !== 'Chairman') {
     return (
       <div className="mx-auto max-w-[900px] px-6 py-10">
@@ -61,7 +63,7 @@ export default async function MailPage({ searchParams }: PageProps<'/mail'>) {
           icon="mail"
           title={tr(lang, '메일', 'Mail')}
           code="Phase 9 · Block 4"
-          description={tr(lang, '이 화면은 회장님의 Gmail을 읽기 전용으로 보여 줍니다. 직원 메일은 범위 밖입니다.', 'Chairman’s Gmail (read-only). Staff mail is out of scope.')}
+          description={tr(lang, '메일 연동은 아직 준비 중입니다. 지금은 쓰시던 메일 프로그램을 그대로 써 주세요.', 'Mail integration is not ready yet. Please keep using your usual mail app for now.')}
         />
       </div>
     )

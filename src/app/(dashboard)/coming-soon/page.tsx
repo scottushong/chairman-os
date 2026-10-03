@@ -2,7 +2,8 @@ import Link from 'next/link'
 
 import { PageHeader } from '@/components/layout/page-header'
 import { Icon } from '@/components/ui/icon'
-import { findNavItem, readyItems } from '@/lib/nav'
+import { currentUser } from '@/lib/auth/session'
+import { findNavItem, homeHref, readyItems } from '@/lib/nav'
 import { firstParam } from '@/lib/query'
 
 /**
@@ -25,8 +26,10 @@ import { firstParam } from '@/lib/query'
 export default async function ComingSoonPage(props: PageProps<'/coming-soon'>) {
   const params = await props.searchParams
   const label = firstParam(params.menu) ?? ''
-  const item = findNavItem(label)
-  const ready = readyItems()
+  // 메뉴는 역할마다 다르다 — 직원에게 회장 전용 메뉴를 안내하지 않는다(lib/nav.ts navFor).
+  const role = (await currentUser())?.role ?? null
+  const item = findNavItem(label, role)
+  const ready = readyItems(role)
 
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-5">
@@ -37,10 +40,10 @@ export default async function ComingSoonPage(props: PageProps<'/coming-soon'>) {
         description="이 메뉴는 아직 화면이 없습니다. 고장이 아니라 아직 만들지 않은 것입니다."
       >
         <Link
-          href="/"
+          href={homeHref(role)}
           className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
-          대시보드로
+          {role === 'Chairman' ? '대시보드로' : '내 홈으로'}
         </Link>
       </PageHeader>
 

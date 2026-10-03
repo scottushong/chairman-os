@@ -45,7 +45,7 @@ async function main() {
   assert.ok(s.ruled && s.answer.startsWith('권한 없음'), `직원의 재무 질문이 «권한 없음»이 아니다: ${s.answer}`)
   const staffCtx = makeContext({ question: '', repo, user: staff, path: '/', chatId: null, history: [] })
   const staffTools = ALL_TOOLS.filter((t) => t.available(staffCtx)).map((t) => t.def.name)
-  for (const n of ['finance_query', 'chairman_direction', 'list_initiatives', 'propose_checkin', 'propose_memo_tidy']) {
+  for (const n of ['finance_query', 'chairman_direction', 'list_initiatives', 'propose_checkin', 'propose_memo_tidy', 'dependency', 'attention']) {
     assert.ok(!staffTools.includes(n), `직원에게 ${n} 도구가 열린다`)
   }
   const staffAttention = (await tool('attention').run({}, staffCtx)) as { readable: boolean }

@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 
 import { currentUser } from '@/lib/auth/session'
+import { isChairman } from '@/lib/boss'
 import { getRepository } from '@/lib/repository'
 import { isStrategyField } from '@/lib/strategy-fields'
 
@@ -47,6 +48,9 @@ export async function saveStrategyField(
 
   const user = await currentUser()
   if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  // 회장 메모 칸은 회장만 쓴다. 0008 RLS는 BusinessCEO에게도 이 행의 쓰기를 열어 두므로 여기서 막는다.
+  // 직원에게는 칸 이름을 말하지 않는다(직원 화면 용어 원칙, CLAUDE.md).
+  if (field === 'chairman_comment' && !isChairman(user.role)) return { error: '알 수 없는 항목입니다.' }
 
   try {
     const repo = await getRepository()
@@ -60,7 +64,7 @@ export async function saveStrategyField(
     return {
       error:
         e instanceof Error && /business_strategy_write|42501|PGRST301/.test(e.message)
-          ? '전략 좌표를 고칠 권한이 없습니다. (Chairman / Business CEO만 가능합니다)'
+          ? '전략 좌표를 고칠 권한이 없습니다. (대표 / 대표이사만 가능합니다)'
           : '저장하지 못했습니다. 잠시 후 다시 시도하세요.',
     }
   }

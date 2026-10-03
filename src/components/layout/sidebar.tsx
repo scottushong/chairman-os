@@ -157,6 +157,7 @@ export function Sidebar({
                             userId={user.user_id}
                             pathname={pathname}
                             titleActive={active}
+                            chairman={isChairman}
                           />
                         </li>
                       )

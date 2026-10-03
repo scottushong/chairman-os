@@ -3,8 +3,9 @@
 import { useState, useTransition } from 'react'
 
 import { deleteNotice, markNoticeRead } from '@/app/actions/notices'
+import { boss, bossEn } from '@/lib/boss'
 import { pickText, tr, type Lang } from '@/lib/i18n'
-import type { Notice, NoticeRead } from '@/types'
+import type { Notice, NoticeRead, Role } from '@/types'
 
 /**
  * 공지 목록 (Phase 9 블록 1). 펼치는 순간 한 번 «읽음»을 찍는다.
@@ -17,6 +18,7 @@ export function NoticeList({
   businessNames,
   reads,
   canDelete,
+  role,
   lang,
 }: {
   notices: Notice[]
@@ -25,6 +27,8 @@ export function NoticeList({
   reads: Record<number, NoticeRead[]>
   /** 지울 수 있는 공지 id(작성자 본인 또는 회장). */
   canDelete: number[]
+  /** 보는 사람의 역할 — 직원 화면 용어 원칙(CLAUDE.md): 회장 외에는 «대표». */
+  role: Role | null | undefined
   lang: Lang
 }) {
   const [open, setOpen] = useState<number | null>(null)
@@ -87,7 +91,7 @@ export function NoticeList({
                   <details className="text-t11 text-ink-dim">
                     <summary className="cursor-pointer">
                       {tr(lang, `읽음 ${who.length}명`, `Read by ${who.length}`)}
-                      <span className="ml-1 text-ink-muted">{tr(lang, '(작성자 · 회장만 봅니다)', '(author and Chairman only)')}</span>
+                      <span className="ml-1 text-ink-muted">{tr(lang, `(작성자 · ${boss(role)}만 봅니다)`, `(author and ${bossEn(role).replace(/^the /, '')} only)`)}</span>
                     </summary>
                     <p className="mt-1">{who.map((r) => r.name).join(', ') || '—'}</p>
                   </details>

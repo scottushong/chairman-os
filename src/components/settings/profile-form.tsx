@@ -16,7 +16,8 @@ import { PERSON_LANGUAGE_LABEL_KO, type MyProfile } from '@/types'
  * 회장 지시는 "월일은 설정에서 수정"이었지만 연도만 잠글 이유가 따로 없고,
  * 잠긴 칸 하나는 "왜 이건 안 되지"로 남는다.
  */
-export function ProfileForm({ profile }: { profile: MyProfile }) {
+/** `bossName` — 보는 사람에 맞는 호칭(lib/boss.ts boss()). 직원 화면 용어 원칙(CLAUDE.md). */
+export function ProfileForm({ profile, bossName }: { profile: MyProfile; bossName: string }) {
   const [state, action, pending] = useActionState<ProfileState, FormData>(saveMyProfile, {})
 
   return (
@@ -44,11 +45,11 @@ export function ProfileForm({ profile }: { profile: MyProfile }) {
           />
         </Field>
 
-        <Field label="직함" hint="비워 두면 역할명(회장·대표이사 등)으로 대신합니다.">
+        <Field label="직함" hint={`비워 두면 역할명(${bossName === '회장' ? '회장·대표이사' : '대표이사·팀장'} 등)으로 대신합니다.`}>
           <input name="title_ko" defaultValue={profile.title_ko} maxLength={40} className={INPUT} />
         </Field>
 
-        <Field label="생년월일" hint="비워 둘 수 있습니다. 본인과 회장님만 볼 수 있는 값입니다.">
+        <Field label="생년월일" hint={`비워 둘 수 있습니다. 본인과 ${bossName}님만 볼 수 있는 값입니다.`}>
           <input
             type="date"
             name="birth_date"

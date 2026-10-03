@@ -144,7 +144,7 @@ export default async function DocumentDetailPage(props: PageProps<'/documents/[i
               <span className="text-t11 font-normal text-ink-muted tnum">{audit.length}건</span>
             </h2>
             <div className="mt-3">
-              <AuditTimeline records={audit} emptyMessage="아직 이 문서를 고친 기록이 없습니다." />
+              <AuditTimeline viewerRole={viewer?.role} records={audit} emptyMessage="아직 이 문서를 고친 기록이 없습니다." />
             </div>
           </section>
         </div>

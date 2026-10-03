@@ -18,7 +18,7 @@ import { SECURITY_CLASS, type SecurityClass } from '@/types'
  * 진짜 판정은 0048 documents_insert(can_write_documents(business_id) AND 등급 ≤ 내 열람 등급)가 한다.
  */
 
-const NO_DOC_WRITE = '이 회사에 문서를 등록할 권한이 없습니다. 회장이 사용자 화면의 «모듈 권한 → 문서»에서 그 회사의 «문서 등록»을 켜야 합니다.'
+const NO_DOC_WRITE = '이 회사에 문서를 등록할 권한이 없습니다. 대표가 사용자 화면의 «모듈 권한 → 문서»에서 그 회사의 «문서 등록»을 켜야 합니다.'
 
 export interface CreateDocumentState {
   error?: string

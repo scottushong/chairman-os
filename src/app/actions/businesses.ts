@@ -68,7 +68,7 @@ export async function createBusiness(input: {
     return {
       error:
         e instanceof Error && /businesses_write|42501|PGRST301/.test(e.message)
-          ? '기업을 추가할 권한이 없습니다. (CH-002는 Chairman만 가능합니다)'
+          ? '기업을 추가할 권한이 없습니다. (CH-002는 대표만 가능합니다)'
           : '기업을 추가하지 못했습니다. 잠시 후 다시 시도하세요.',
     }
   }

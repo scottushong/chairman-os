@@ -8,6 +8,7 @@ import { Icon } from '@/components/ui/icon'
 import { dDay, formatDDay, formatPct, isOverdue, compareDeadlines } from '@/lib/format'
 import { businessName } from '@/lib/lookup'
 import { currentUser } from '@/lib/auth/session'
+import { boss, isChairman } from '@/lib/boss'
 import { getRepository } from '@/lib/repository'
 import {
   TASK_STATUS,
@@ -145,7 +146,7 @@ export default async function ProjectDetailPage(props: PageProps<'/projects/[id]
               {/* 진행률은 프로젝트가 들고 있는 값이다. 업무 완료 수와 자동으로 맞물리지 않는다. */}
               <p className="mt-1.5 text-t10h text-ink-muted tnum">
                 업무 {own.length}건 중 완료 {done}건
-                {waiting > 0 ? ` · 회장 확인 대기 ${waiting}건` : ''}
+                {waiting > 0 ? ` · ${boss(viewer?.role)} 확인 대기 ${waiting}건` : ''}
               </p>
             </div>
           </section>
@@ -168,7 +169,7 @@ export default async function ProjectDetailPage(props: PageProps<'/projects/[id]
                       className="flex items-center gap-2 rounded-lg border border-line-soft bg-raised px-3 py-2 transition-colors hover:border-accent"
                     >
                       {t.chairman_needed && t.status !== 'Done' ? (
-                        <Icon name="crown" className="size-3.5 shrink-0 text-gold" filled />
+                        <Icon name={isChairman(viewer?.role) ? 'crown' : 'stamp'} className="size-3.5 shrink-0 text-gold" filled />
                       ) : null}
                       <span className="min-w-0 flex-1 truncate text-t12h font-semibold">
                         {t.title}
@@ -231,7 +232,7 @@ export default async function ProjectDetailPage(props: PageProps<'/projects/[id]
               <span className="text-t9 font-normal text-ink-muted tnum">CH-051</span>
             </h2>
             <div className="mt-3">
-              <AuditTimeline
+              <AuditTimeline viewerRole={viewer?.role}
                 records={audit}
                 emptyMessage="이 프로젝트를 고친 기록이 없습니다. 프로젝트를 고치는 경로는 Business OS(Layer 1)에 있습니다."
               />

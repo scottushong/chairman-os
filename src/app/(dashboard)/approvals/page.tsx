@@ -6,6 +6,7 @@ import { DraftDecision } from '@/components/approvals/draft-decision'
 import { PageHeader } from '@/components/layout/page-header'
 import { FilterChips, type FilterOption } from '@/components/ui/filter-chips'
 import { Icon } from '@/components/ui/icon'
+import { bundleTitle } from '@/lib/approval-line'
 import { canDraftDecision } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
 import { countOn, type DecisionAuditRecord } from '@/lib/decision-log'
@@ -191,7 +192,7 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
                       </span>
                     </span>
                     <span className="mt-1 block text-t13 leading-snug font-semibold">
-                      {d.title}
+                      {bundleTitle(d.title, user?.role)}
                     </span>
                     {d.attachment_url ? (
                       <span className="mt-1 flex items-center gap-1 text-t10h text-ink-muted">
@@ -212,6 +213,7 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
               decision={selected}
               businessName={businessName(businesses, selected.business_id)}
               history={history}
+              viewerRole={user?.role ?? null}
             />
           ) : null}
           {/* Phase 10 — 결재 근거 파일 + AI 요약(0045: 결재가 보이고 AND 등급). 링크 첨부(attachment_url)는 그대로다. */}

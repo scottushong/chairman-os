@@ -3,17 +3,20 @@
 import { revalidatePath } from 'next/cache'
 
 import { currentUser } from '@/lib/auth/session'
+import { boss } from '@/lib/boss'
 import { getRepository } from '@/lib/repository'
 
 /**
  * 팀장 요청함 · 회장 기안(취합) (Phase 6-2, 0042). 판정은 DB다 — 팀장 = 얼린 결재선의 첫 칸.
  */
 
-const RESULT_KO = {
-  closed_by_rule: '승인했습니다 — 규칙 판정으로 팀 선에서 종결됐습니다.',
-  to_chairman: '승인했습니다 — 규칙 판정으로 회장 결재에 올라갔습니다.',
-  rejected: '반려했습니다.',
-} as const
+/** 호칭은 보는 사람에 맞춘다 — 직원 화면 용어 원칙(CLAUDE.md). */
+const resultKo = (b: string) =>
+  ({
+    closed_by_rule: '승인했습니다 — 규칙 판정으로 팀 선에서 종결됐습니다.',
+    to_chairman: `승인했습니다 — 규칙 판정으로 ${b} 결재에 올라갔습니다.`,
+    rejected: '반려했습니다.',
+  }) as const
 
 export async function leadDecideAction(input: { decisionId: unknown; approve: unknown; escalate?: unknown }): Promise<{
   error?: string
@@ -28,7 +31,8 @@ export async function leadDecideAction(input: { decisionId: unknown; approve: un
     const r = await repo.leadDecide(id, input.approve === true, input.escalate === true, { user_id: user.user_id, role: user.role })
     revalidatePath('/me')
     revalidatePath('/approvals')
-    return { message: input.escalate === true && r === 'to_chairman' ? '회장 확인 요청으로 올렸습니다.' : RESULT_KO[r] }
+    const b = boss(user.role)
+    return { message: input.escalate === true && r === 'to_chairman' ? `${b} 확인 요청으로 올렸습니다.` : resultKo(b)[r] }
   } catch (e) {
     const m = e instanceof Error ? e.message : ''
     if (/lead_forbidden/.test(m)) return { error: '이 요청의 팀장이 아닙니다.' }
@@ -54,7 +58,7 @@ export async function leadBundleAction(input: { decisionIds: unknown; title: unk
   } catch (e) {
     const m = e instanceof Error ? e.message : ''
     if (/bundle_mixed_business/.test(m)) return { error: '같은 회사의 요청끼리만 묶을 수 있습니다.' }
-    if (/bundle_forbidden/.test(m)) return { error: '내가 승인해 회장에게 올린, 아직 열린 요청만 묶을 수 있습니다.' }
+    if (/bundle_forbidden/.test(m)) return { error: `내가 승인해 ${boss(user.role)}에게 올린, 아직 열린 요청만 묶을 수 있습니다.` }
     console.error('[leadBundleAction]', e)
     return { error: '묶지 못했습니다.' }
   }

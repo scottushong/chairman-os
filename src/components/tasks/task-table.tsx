@@ -3,7 +3,8 @@
 import { useState } from 'react'
 
 import { TaskRow } from '@/components/tasks/task-row'
-import type { Task } from '@/types'
+import { boss } from '@/lib/boss'
+import type { Role, Task } from '@/types'
 
 /**
  * CH-040 업무 목록.
@@ -21,7 +22,7 @@ export interface TaskListItem {
   projectName: string
 }
 
-export function TaskTable({ items }: { items: TaskListItem[] }) {
+export function TaskTable({ items, viewerRole }: { items: TaskListItem[]; viewerRole: Role | null }) {
   const [error, setError] = useState<string | null>(null)
 
   return (
@@ -54,7 +55,7 @@ export function TaskTable({ items }: { items: TaskListItem[] }) {
                 <th className="px-3 py-2 text-left font-semibold">상태</th>
                 <th className="px-3 py-2 text-right font-semibold">경과</th>
                 <th className="px-3 py-2 text-right font-semibold">마감</th>
-                <th className="px-3 py-2 text-center font-semibold">회장확인</th>
+                <th className="px-3 py-2 text-center font-semibold">{boss(viewerRole)}확인</th>
               </tr>
             </thead>
             <tbody>
@@ -65,6 +66,7 @@ export function TaskTable({ items }: { items: TaskListItem[] }) {
                   businessName={it.businessName}
                   projectName={it.projectName}
                   onError={setError}
+                  viewerRole={viewerRole}
                 />
               ))}
             </tbody>

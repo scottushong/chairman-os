@@ -1,4 +1,6 @@
 import { compareDeadlines } from '@/lib/format'
+import { currentUser } from '@/lib/auth/session'
+import { boss } from '@/lib/boss'
 import { PageHeader } from '@/components/layout/page-header'
 import { TaskTable, type TaskListItem } from '@/components/tasks/task-table'
 import { FilterChips, type FilterOption } from '@/components/ui/filter-chips'
@@ -29,11 +31,14 @@ export default async function TasksPage(props: PageProps<'/tasks'>) {
   const needMine = firstParam(params.needed) === '1' ? '1' : undefined
 
   const repo = await getRepository()
-  const [tasks, projects, businesses] = await Promise.all([
+  const [tasks, projects, businesses, user] = await Promise.all([
     repo.listTasks(),
     repo.listProjects(),
     repo.listBusinesses(),
+    currentUser(),
   ])
+  // 호칭은 보는 사람에 맞춘다 — 직원 화면 용어 원칙(CLAUDE.md).
+  const viewerRole = user?.role ?? null
 
   // Task는 회사를 직접 들고 있지 않다. project를 거쳐야 회사가 나온다.
   const projectOf = new Map(projects.map((p) => [p.project_id, p]))
@@ -60,7 +65,7 @@ export default async function TasksPage(props: PageProps<'/tasks'>) {
       count: tasks.length,
     },
     {
-      label: '회장 확인 대기',
+      label: `${boss(viewerRole)} 확인 대기`,
       href: withParams(BASE, { business: businessFilter, status: statusFilter, needed: '1' }),
       active: Boolean(needMine),
       count: tasks.filter(waitsOnChairman).length,
@@ -133,7 +138,7 @@ export default async function TasksPage(props: PageProps<'/tasks'>) {
         icon="clipboard"
         title="업무 관리"
         code="CH-040"
-        description="회사·상태로 걸러 보고, 상태와 회장 확인 여부를 여기서 바꾼다. 변경은 감사 기록에 남는다."
+        description={`회사·상태로 걸러 보고, 상태와 ${boss(viewerRole)} 확인 여부를 여기서 바꾼다. 변경은 감사 기록에 남는다.`}
       />
 
       <div className="mt-4 space-y-2 rounded-xl border border-line-soft bg-panel px-3.5 py-3">
@@ -142,7 +147,7 @@ export default async function TasksPage(props: PageProps<'/tasks'>) {
         <FilterChips label="회사" options={businessOptions} />
       </div>
 
-      <TaskTable items={items} />
+      <TaskTable items={items} viewerRole={viewerRole} />
 
       <p className="mt-3 pb-6 text-t11 text-ink-dim">
         {items.length}건 표시 중. 보이는 범위는 권한(RLS)이 정한다 — 자기 회사 밖의 업무는 목록에

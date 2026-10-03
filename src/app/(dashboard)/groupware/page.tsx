@@ -147,6 +147,7 @@ export default async function GroupwarePage() {
             canDelete={liveNotices
               .filter((n) => isChairman || n.created_by === user?.user_id)
               .map((n) => n.notice_id)}
+            role={user?.role}
             lang={lang}
           />
         </Panel>

@@ -1,11 +1,14 @@
 import { ApprovalActions } from '@/components/approvals/approval-actions'
 import { Icon } from '@/components/ui/icon'
+import { bundleTitle } from '@/lib/approval-line'
+import { bossText } from '@/lib/boss'
 import { DECISION_ACTION_LABEL_KO, type DecisionAuditRecord } from '@/lib/decision-log'
 import { dDay, formatDateTime, formatDDay } from '@/lib/format'
 import {
   DECISION_STATUS_LABEL_KO,
   WORK_PRIORITY_LABEL_KO,
   type Decision,
+  type Role,
   type WorkPriority,
 } from '@/types'
 
@@ -46,11 +49,14 @@ export function ApprovalDetail({
   decision,
   businessName,
   history,
+  viewerRole,
 }: {
   decision: Decision
   businessName: string
   /** 이 결정에 달린 audit_log 줄들. 최신이 먼저다. */
   history: DecisionAuditRecord[]
+  /** 얼린 결재선의 «회장/대표» 문구를 보는 사람에 맞춘다 — 직원 화면 용어 원칙(CLAUDE.md). */
+  viewerRole: Role | null
 }) {
   const overdue = dDay(decision.deadline) < 0 && decision.status === 'Open'
 
@@ -73,7 +79,7 @@ export function ApprovalDetail({
             마감 {decision.deadline} · {formatDDay(decision.deadline)}
           </span>
         </div>
-        <h2 className="mt-1.5 text-t16 leading-snug font-bold">{decision.title}</h2>
+        <h2 className="mt-1.5 text-t16 leading-snug font-bold">{bundleTitle(decision.title, viewerRole)}</h2>
         <p className="mt-1 text-t11h text-ink-muted">
           현재 상태 <span className="text-ink-dim">{DECISION_STATUS_LABEL_KO[decision.status]}</span>
         </p>
@@ -125,9 +131,9 @@ export function ApprovalDetail({
               {decision.approval_line.map((s, i) => (
                 <li key={s.step} className="flex items-center gap-1.5">
                   {i > 0 ? <span className="text-ink-muted">→</span> : null}
-                  <span className="rounded-md border border-line-soft bg-raised px-2 py-1" title={s.why}>
-                    <span className="font-semibold">{s.name}</span>
-                    <span className="ml-1 text-t10h text-ink-muted">{s.why}</span>
+                  <span className="rounded-md border border-line-soft bg-raised px-2 py-1" title={bossText(s.why, viewerRole)}>
+                    <span className="font-semibold">{s.step === 'chairman' ? bossText(s.name, viewerRole) : s.name}</span>
+                    <span className="ml-1 text-t10h text-ink-muted">{bossText(s.why, viewerRole)}</span>
                   </span>
                 </li>
               ))}

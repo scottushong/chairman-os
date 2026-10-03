@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 
 import { currentUser } from '@/lib/auth/session'
+import { bossText } from '@/lib/boss'
 import { moduleKey } from '@/lib/module-grants'
 import { DUPLICATE_INVITATION, getRepository } from '@/lib/repository'
 import {
@@ -91,11 +92,12 @@ const GROUP_SCOPE: readonly Role[] = ['Chairman', 'GroupCFO']
  * 트리거가 던지는 한국어 문구(0025의 순환 금지, 0026의 결재 도장)는 **그대로 보여 준다** —
  * 그 문장들은 이미 사람이 읽으라고 쓴 것이고, 여기서 다시 쓰면 두 벌이 갈라진다.
  */
-function denialMessage(e: unknown, fallback: string): string {
+function denialMessage(e: unknown, fallback: string, viewer: Role): string {
   const message = e instanceof Error ? e.message : ''
   if (/순환|자기 자신|회장 승인 칸/.test(message)) {
     // DB가 한국어로 말한 자리. 접두사(Supabase user_profiles 23514: …)만 걷어낸다.
-    return message.replace(/^Supabase [^:]+: /, '')
+    // 호칭만 보는 사람에 맞춘다 — 직원에게는 «대표»(직원 화면 용어 원칙, CLAUDE.md).
+    return bossText(message.replace(/^Supabase [^:]+: /, ''), viewer)
   }
   if (/42501|row-level security|PGRST301|_admin|_write|delegated_insert/.test(message)) {
     return fallback
@@ -179,6 +181,7 @@ export async function inviteUser(input: {
         e,
         '이 사람을 초대할 수 없습니다. 초대는 자기 아래(직속·그 아래)로만 할 수 있고, ' +
           '자기보다 높은 보안등급이나 자기가 못 보는 회사는 줄 수 없습니다.',
+        user.role,
       ),
     }
   }
@@ -225,7 +228,7 @@ export async function revokeUser(input: {
   } catch (e) {
     console.error('[revokeUser]', e)
     return {
-      error: denialMessage(e, '권한을 회수할 권한이 없습니다. (Chairman만 가능합니다)'),
+      error: denialMessage(e, '권한을 회수할 권한이 없습니다. (대표만 가능합니다)', user.role),
     }
   }
 
@@ -242,7 +245,7 @@ export async function forceLogoutUser(input: { userId: unknown }): Promise<Revok
   if (!id) return { error: '대상을 알 수 없습니다.' }
   const user = await currentUser()
   if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
-  if (user.role !== 'Chairman') return { error: '회장만 할 수 있습니다.' }
+  if (user.role !== 'Chairman') return { error: '대표만 할 수 있습니다.' }
   try {
     const repo = await getRepository()
     if (!(await repo.forceLogout(id))) return { error: '로그아웃시키지 못했습니다(대상이 없거나 권한이 없습니다).' }
@@ -300,7 +303,7 @@ export async function updateUserProfile(input: {
   } catch (e) {
     console.error('[updateUserProfile]', e)
     return {
-      error: denialMessage(e, '조직도를 바꿀 권한이 없습니다. (Chairman만 가능합니다)'),
+      error: denialMessage(e, '조직도를 바꿀 권한이 없습니다. (대표만 가능합니다)', user.role),
     }
   }
 
@@ -349,7 +352,7 @@ export async function setModuleGrant(input: {
     )
   } catch (e) {
     console.error('[setModuleGrant]', e)
-    return { error: denialMessage(e, '모듈 권한을 바꿀 권한이 없습니다. (Chairman만 가능합니다)') }
+    return { error: denialMessage(e, '모듈 권한을 바꿀 권한이 없습니다. (대표만 가능합니다)', user.role) }
   }
 
   revalidatePath('/settings/users')
@@ -404,7 +407,7 @@ export async function saveTeam(input: {
     )
   } catch (e) {
     console.error('[saveTeam]', e)
-    return { error: denialMessage(e, '팀을 만들거나 고칠 권한이 없습니다. (Chairman만 가능합니다)') }
+    return { error: denialMessage(e, '팀을 만들거나 고칠 권한이 없습니다. (대표만 가능합니다)', user.role) }
   }
 
   revalidatePath('/settings/users')
@@ -430,7 +433,7 @@ export async function approveInvitation(input: { invitationId: unknown }): Promi
     await repo.approveInvitation(id, { user_id: user.user_id, role: user.role })
   } catch (e) {
     console.error('[approveInvitation]', e)
-    return { error: denialMessage(e, '초대를 승인할 권한이 없습니다. (Chairman만 가능합니다)') }
+    return { error: denialMessage(e, '초대를 승인할 권한이 없습니다. (대표만 가능합니다)', user.role) }
   }
 
   revalidatePath('/settings/users')

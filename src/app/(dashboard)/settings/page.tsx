@@ -9,6 +9,7 @@ import { WorldCitiesEditor } from '@/components/settings/world-cities-editor'
 import { Icon, type IconName } from '@/components/ui/icon'
 import { canEditChairmanRoutine, canManageUsers } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
+import { boss } from '@/lib/boss'
 import { formatDateTime } from '@/lib/format'
 import { getRepository } from '@/lib/repository'
 import { readSessionInfo } from '@/lib/session-info'
@@ -57,6 +58,8 @@ export default async function SettingsHubPage() {
   const version = appVersion()
   const isChairman = canEditChairmanRoutine(user)
   const isAdmin = canManageUsers(user)
+  // 직원 화면 용어 원칙(CLAUDE.md): 회장 본인 = 회장, 그 외 = 대표.
+  const bossName = boss(user.role)
 
   return (
     <div className="mx-auto max-w-[900px] px-6 py-5">
@@ -101,7 +104,7 @@ export default async function SettingsHubPage() {
           <li>
             · <b className="font-semibold">지난 로그인 목록</b>을 보여 주는 화면은 아직
             없습니다. 블록 7부터 로그인 줄에 기기 요약과 도시가 같이 남지만(IP 원본은 남기지
-            않습니다), 그것을 한 판에 늘어놓는 화면은 회장 전용 접속 현황뿐입니다. 본인용
+            않습니다), 그것을 한 판에 늘어놓는 화면은 {isChairman ? '회장 전용 접속 현황' : '관리자 화면'}뿐입니다. 본인용
             목록 화면은 필요해지는 날 세웁니다 — 지금은 목록이 없다고 말하는 쪽이 맞습니다.
           </li>
           <li>
@@ -133,7 +136,7 @@ export default async function SettingsHubPage() {
       {/* ───────── 알림 ───────── */}
       <Section icon="bell" title="알림" scope="전 사용자 공통">
         <p className="text-t11 text-ink-dim">앱 안의 알림(헤더 종)에서 무엇을 받을지 고릅니다.</p>
-        <NotifySwitches value={prefs.app.notify} />
+        <NotifySwitches value={prefs.app.notify} bossName={bossName} />
         {isChairman ? (
           <div className="mt-2.5 rounded-lg bg-raised px-3 py-2.5">
             <p className="text-t11h font-semibold text-ink">
@@ -151,11 +154,12 @@ export default async function SettingsHubPage() {
       {/* ───────── 화면 ───────── */}
       <Section icon="grid" title="화면" scope="전 사용자 공통">
         <p className="text-t11 text-ink-dim">테마</p>
-        <ThemePicker value={prefs.app.theme} />
-        <CityMotionSwitch value={prefs.app.city_motion} />
+        <ThemePicker value={prefs.app.theme} chairman={isChairman} />
+        {/* 그룹 시티는 회장 전용 화면이다 — 그 스위치도 회장에게만(직원 화면 용어 원칙, CLAUDE.md). */}
+        {isChairman ? <CityMotionSwitch value={prefs.app.city_motion} /> : null}
 
         <p className="mt-3 text-t11 text-ink-dim">관심 도시 · 세계시간</p>
-        <WorldCitiesEditor value={prefs.app.world_cities} />
+        <WorldCitiesEditor value={prefs.app.world_cities} chairman={isChairman} />
 
         <div className="mt-3 space-y-1.5">
           <Row
@@ -218,7 +222,7 @@ export default async function SettingsHubPage() {
         ) : null}
         <p className="mt-2 rounded-lg bg-raised px-3 py-2.5 text-t10h text-ink-muted">
           <b className="font-semibold text-ink-dim">내보내기는 없습니다.</b> 이 시스템에 나가는
-          통로를 만들지 않는다는 것이 회장님 지시입니다. 파일로 받아 가는 버튼도, 그 코드도
+          통로를 만들지 않는다는 것이 {bossName}님 지시입니다. 파일로 받아 가는 버튼도, 그 코드도
           두지 않았습니다.
         </p>
       </Section>
@@ -232,7 +236,11 @@ export default async function SettingsHubPage() {
 
       {/* ───────── 관리 (권한 있는 사람에게만) ───────── */}
       {isAdmin || isChairman ? (
-        <Section icon="crown" title="관리" scope={isChairman ? '회장 전용' : '회장·GroupCFO'}>
+        <Section
+          icon={isChairman ? 'crown' : 'shield'}
+          title="관리"
+          scope={isChairman ? '회장 전용' : `${bossName}·GroupCFO`}
+        >
           <div className="space-y-1.5">
             {isAdmin ? (
               <Row
@@ -304,7 +312,7 @@ export default async function SettingsHubPage() {
           <div className="rounded-lg bg-raised px-3 py-2.5">
             <p className="text-t11h font-semibold text-ink">문의</p>
             <p className="mt-0.5 text-t10h text-ink-muted">
-              화면이 이상하면 회장님께 직접 말씀해 주세요. 별도의 문의 창구(메일 주소·티켓)는
+              화면이 이상하면 {bossName}님께 직접 말씀해 주세요. 별도의 문의 창구(메일 주소·티켓)는
               아직 정해지지 않았습니다 — 없는 주소를 적어 두지 않았습니다.
             </p>
           </div>

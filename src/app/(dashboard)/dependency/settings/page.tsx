@@ -40,10 +40,10 @@ import {
  * 거짓말이다. 대신 **이번 분기에 평가가 없는 회사 목록**을 여기 둔다 — 그 목록이 곧 알림이다.
  */
 export default async function DependencySettingsPage() {
-  // 회장 메모(2026-10) — 세는 규칙은 회장 화면이다. 다른 역할은 의존 화면으로(대시보드 /가 /me로 보내는 것과 같은 모양).
-  // 기록보다 먼저 — 들르지 않은 화면을 «열었다»로 남기지 않는다. 세션이 없으면 예전처럼 그린다.
+  // 회장 메모(2026-10) — 세는 규칙은 회장 화면이다. 의존 화면 전체가 회장 전용이 되어(2026-10-02) 다른 역할은 /me로.
+  // 기록보다 먼저 — 들르지 않은 화면을 «열었다»로 남기지 않는다.
   const viewer = await currentUser()
-  if (viewer && viewer.role !== 'Chairman') redirect('/dependency')
+  if (viewer?.role !== 'Chairman') redirect('/me')
 
   await recordScreenRead({ path: '/dependency/settings', kind: 'page' })
 

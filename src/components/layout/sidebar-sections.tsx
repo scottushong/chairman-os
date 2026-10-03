@@ -130,6 +130,8 @@ function SectionHead({
 
 const DOT: Record<SidebarLevel, string> = { RED: 'bg-critical', YELLOW: 'bg-warning' }
 const DOT_LABEL: Record<SidebarLevel, string> = { RED: '주의 RED', YELLOW: '주의 YELLOW' }
+// 회장이 아니면 «주의»라는 이름을 꺼내지 않는다 — 회장 전용 화면이다(직원 화면 용어 원칙, CLAUDE.md). 점의 뜻만 남긴다.
+const DOT_LABEL_STAFF: Record<SidebarLevel, string> = { RED: '확인 필요 · 높음', YELLOW: '확인 필요' }
 
 /** 이 회사의 화면인가 — 회사 상세와 그 회사의 재무(장부 · 계정 · 전표). */
 function companyActive(pathname: string, id: string) {
@@ -142,13 +144,17 @@ export function CompaniesSection({
   userId,
   pathname,
   titleActive,
+  chairman,
 }: {
   item: NavItem
   companies: SidebarCompany[]
   userId: string
   pathname: string
   titleActive: boolean
+  /** 보는 사람이 회장인가 — 점의 이름(title · aria-label)을 가른다. */
+  chairman: boolean
 }) {
+  const dotLabel = chairman ? DOT_LABEL : DOT_LABEL_STAFF
   const activeId = companies.find((c) => companyActive(pathname, c.business_id))?.business_id ?? null
   const { open, toggle } = useSectionOpen(userId, 'companies', activeId !== null, pathname)
   const listId = 'sidebar-companies'
@@ -173,8 +179,8 @@ export function CompaniesSection({
                     {c.level ? (
                       <span
                         className={`ml-auto size-2 shrink-0 rounded-full ${DOT[c.level]}`}
-                        title={DOT_LABEL[c.level]}
-                        aria-label={DOT_LABEL[c.level]}
+                        title={dotLabel[c.level]}
+                        aria-label={dotLabel[c.level]}
                         role="img"
                       />
                     ) : null}

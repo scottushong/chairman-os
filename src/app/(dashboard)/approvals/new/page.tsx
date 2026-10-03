@@ -2,6 +2,7 @@ import { ApprovalForm } from '@/components/approvals/approval-form'
 import { PageHeader } from '@/components/layout/page-header'
 import { recordScreenRead } from '@/lib/activity-record'
 import { currentUser } from '@/lib/auth/session'
+import { boss } from '@/lib/boss'
 import { kstToday } from '@/lib/chairman-project'
 import { tr, type Lang } from '@/lib/i18n'
 import { getRepository } from '@/lib/repository'
@@ -34,7 +35,7 @@ export default async function NewApprovalPage() {
         code="Phase 9 · Block 2"
         description={tr(
           lang,
-          '양식을 고르고 항목을 채우면, 올리기 전에 결재선(팀장 → 규칙 판정 → 회장)을 먼저 보여 드립니다.',
+          `양식을 고르고 항목을 채우면, 올리기 전에 결재선(팀장 → 규칙 판정 → ${boss(user?.role)})을 먼저 보여 드립니다.`,
           'Pick a template, fill it in, and see the approval line before you submit.',
         )}
       />
@@ -44,6 +45,7 @@ export default async function NewApprovalPage() {
         businesses={businesses.filter((b) => b.visible).map((b) => ({ id: b.business_id, name: b.name }))}
         defaultDeadline={due.toISOString().slice(0, 10)}
         lang={lang}
+        viewerRole={user?.role ?? null}
       />
     </div>
   )

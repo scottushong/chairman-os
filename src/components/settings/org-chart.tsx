@@ -1,12 +1,13 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { createContext, useContext, useMemo, useState } from 'react'
 
 import { saveTeam, setModuleGrant, updateUserProfile } from '@/app/actions/users'
 import { ProfilePhoto } from '@/components/settings/profile-photo'
 import { ForceLogoutButton } from '@/components/settings/force-logout-button'
 import { RevokeButton } from '@/components/settings/revoke-button'
 import { Icon } from '@/components/ui/icon'
+import { roleLabelFor } from '@/lib/boss'
 import { businessName } from '@/lib/lookup'
 import { businessOfModule, moduleKey } from '@/lib/module-grants'
 import {
@@ -50,6 +51,17 @@ const TEAMLESS_BY_DESIGN: readonly Role[] = ['Chairman', 'GroupCFO', 'BusinessCE
 const UNASSIGNED = '__unassigned__'
 const GROUP_TAB = '__group__'
 const SYSTEM_TAB = '__system__'
+
+/**
+ * 보는 사람의 역할. 역할 라벨 «Chairman»을 회장 외에게는 «대표»로 그린다
+ * (직원 화면 용어 원칙(CLAUDE.md) · lib/boss.ts roleLabelFor). 줄마다 prop으로 내리지 않고 한 번 건다.
+ */
+const ViewerRoleContext = createContext<Role | null>(null)
+
+function useRoleLabel(): (role: Role) => string {
+  const viewerRole = useContext(ViewerRoleContext)
+  return (role) => roleLabelFor(ROLE_LABEL_KO[role], role, viewerRole)
+}
 
 export function OrgChart({
   people,
@@ -122,7 +134,8 @@ export function OrgChart({
   }
 
   return (
-    // 폰에서는 카드 사이를 12px로 좁힌다(회장 규칙 «카드 간격 12px»). 넓은 화면은 그대로.
+    <ViewerRoleContext.Provider value={viewer?.role ?? null}>
+    {/* 폰에서는 카드 사이를 12px로 좁힌다(회장 규칙 «카드 간격 12px»). 넓은 화면은 그대로. */}
     <div className="grid gap-3 sm:gap-3.5 xl:grid-cols-[minmax(0,1fr)_340px]">
       <div className="space-y-3 sm:space-y-3.5">
         <WarningBar
@@ -228,6 +241,7 @@ export function OrgChart({
         )}
       </aside>
     </div>
+    </ViewerRoleContext.Provider>
   )
 }
 
@@ -486,6 +500,7 @@ function PersonRow({
   onSelect: (id: string) => void
 }) {
   const revoked = Boolean(person.revoked_at)
+  const roleLabel = useRoleLabel()
   return (
     <li className="border-t border-line-soft first:border-t-0">
       <button
@@ -513,7 +528,7 @@ function PersonRow({
           </span>
         ) : null}
         <span className="rounded bg-raised px-1.5 py-0.5 text-t10 text-ink-dim">
-          {ROLE_LABEL_KO[person.role]}
+          {roleLabel(person.role)}
         </span>
         <span
           className={`rounded px-1.5 py-0.5 text-t10 ${
@@ -576,6 +591,7 @@ function PersonPanel({
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const roleLabel = useRoleLabel()
 
   async function apply(patch: { role?: Role; teamId?: string; reportsTo?: string }) {
     setBusy(true)
@@ -628,7 +644,7 @@ function PersonPanel({
       </div>
 
       <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2.5">
-        <Field label="역할">{ROLE_LABEL_KO[person.role]}</Field>
+        <Field label="역할">{roleLabel(person.role)}</Field>
         <Field label="직함">{person.title_ko || '—'}</Field>
         <Field label="보안등급">{SECURITY_CLASS_LABEL_KO[person.max_security_class]}</Field>
         <Field label="표기 언어">{PERSON_LANGUAGE_LABEL_KO[person.language]}</Field>
@@ -759,7 +775,7 @@ function PersonPanel({
             </p>
           ) : null}
           <p className="text-t11 leading-relaxed text-ink-muted">
-            역할·팀·상사·모듈 권한을 바꾸고 권한을 회수하는 것은 회장만 할 수 있습니다(0002
+            역할·팀·상사·모듈 권한을 바꾸고 권한을 회수하는 것은 대표만 할 수 있습니다(0002
             user_profiles_admin_write · module_access_admin_write). 그래서 여기 버튼이 없습니다 — 눌러도 DB가 거부합니다.
           </p>
         </div>
@@ -934,7 +950,7 @@ function TeamPanel({
           </button>
         </div>
         <p className="mt-2 text-t11 leading-relaxed text-ink-muted">
-          팀 추가·이름 변경·팀장 지정·회사 간 이동은 회장만 할 수 있습니다(0025 teams_write).
+          팀 추가·이름 변경·팀장 지정·회사 간 이동은 대표만 할 수 있습니다(0025 teams_write).
           {team && !team.lead_user_id
             ? ' 이 팀은 팀장이 공석입니다 — 상위 임원이 대신 봅니다(0026 승계).'
             : ''}

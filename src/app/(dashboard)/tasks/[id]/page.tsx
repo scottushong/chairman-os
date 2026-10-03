@@ -165,7 +165,7 @@ export default async function TaskDetailPage(props: PageProps<'/tasks/[id]'>) {
             <p className="mt-1 mb-3 text-t11 text-ink-muted">
               감사 기록(audit_log)을 이 업무로 되짚은 것이다. 지워지지 않는다.
             </p>
-            <AuditTimeline
+            <AuditTimeline viewerRole={viewer?.role}
               records={audit}
               emptyMessage="아직 이 업무를 고친 기록이 없습니다."
             />
@@ -178,7 +178,7 @@ export default async function TaskDetailPage(props: PageProps<'/tasks/[id]'>) {
             <span className="text-t9 font-normal text-ink-muted tnum">CH-040</span>
           </h2>
           <div className="mt-3">
-            <TaskControls task={task} />
+            <TaskControls task={task} viewerRole={viewer?.role ?? null} />
           </div>
 
           {/*

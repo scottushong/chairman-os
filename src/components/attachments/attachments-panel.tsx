@@ -447,7 +447,7 @@ function VaultBlock({ a, isChairman, viewers, people }: { a: Attachment; isChair
     <div className="mt-2 rounded-md border border-gold/30 bg-gold/5 p-2 text-t11 text-ink-dim">
       <p className="flex items-center gap-1 font-semibold text-gold">
         <Icon name="shield" className="size-3.5" />
-        Vault — AI로 보내지 않습니다. 회장과 지정된 사람만 봅니다.
+        Vault — AI로 보내지 않습니다. {isChairman ? '회장' : '대표'}과 지정된 사람만 봅니다.
       </p>
       {isChairman ? (
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">

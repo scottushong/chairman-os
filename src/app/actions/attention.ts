@@ -28,13 +28,14 @@ function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
 
+// 권한 오류는 회장이 아닌 사람만 본다 — «대표»로 쓰고 회장 전용 기능 이름은 꺼내지 않는다(직원 화면 용어 원칙, CLAUDE.md).
 function permissionError(e: unknown, fallback: string): string {
   const message = e instanceof Error ? e.message : String(e)
   if (/42501|PGRST301|exceptions_triage|can_approve|affected 0 rows|권한이 없습니다/.test(message)) {
-    return '이 예외를 처리할 권한이 없습니다. (회장 · 그 회사의 대표만 가능합니다)'
+    return '이 건을 처리할 권한이 없습니다. (대표 · 그 회사의 대표만 가능합니다)'
   }
   if (/exception_rules_write|규칙은 회장만/.test(message)) {
-    return '규칙은 회장만 고칠 수 있습니다.'
+    return '이 규칙은 대표만 고칠 수 있습니다.'
   }
   return `${fallback} (${message})`
 }
@@ -75,7 +76,7 @@ export async function triageException(input: {
   }
   if (!business_id) return { error: '어느 회사의 예외인지 알 수 없습니다.' }
   if (!(EXCEPTION_TRIAGE as readonly string[]).includes(action)) {
-    return { error: '회장 액션은 승인 · 관찰 · 위임 중 하나입니다.' }
+    return { error: '처리는 승인 · 관찰 · 위임 중 하나입니다.' }
   }
 
   const who = await actor()

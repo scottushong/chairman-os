@@ -202,7 +202,7 @@ export function EventPanel({
       {sorted.length === 0 && !draft ? (
         <p className="py-5 text-center text-t12 text-ink-muted">
           등록된 일정이 없습니다.
-          {canEdit ? '' : ' 등록은 회장 / 그룹 CFO만 할 수 있습니다.'}
+          {canEdit ? '' : ' 등록은 대표 / 그룹 CFO만 할 수 있습니다.'}
         </p>
       ) : (
         <ul className="mt-2 divide-y divide-line-soft">

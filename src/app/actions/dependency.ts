@@ -52,9 +52,10 @@ function isDate(value: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`))
 }
 
+// 권한 오류는 회장이 아닌 사람만 본다 — «대표»로 쓰고 회장 전용 기능 이름은 꺼내지 않는다(직원 화면 용어 원칙, CLAUDE.md).
 function permissionError(e: unknown, fallback: string): string {
   return e instanceof Error && /succession|42501|PGRST301|Chairman/.test(e.message)
-    ? '승계 자료를 고칠 권한이 없습니다. (회장 · 그룹 CFO만 가능합니다)'
+    ? '이 자료를 고칠 권한이 없습니다. (대표 · 그룹 CFO만 가능합니다)'
     : fallback
 }
 

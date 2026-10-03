@@ -27,6 +27,14 @@ export const NOTIFICATION_KIND_HINT_KO: Record<NotificationKind, string> = {
   system: '마감·동기화 등 시스템이 알려야 하는 것',
 }
 
+/**
+ * 보는 사람에 맞춘 설명. decision 줄의 호칭만 다르다 — 회장 본인 = 회장님, 그 외 = 대표님
+ * (직원 화면 용어 원칙(CLAUDE.md)). `bossName`은 lib/boss.ts boss(role)의 값.
+ */
+export function notificationKindHint(kind: NotificationKind, bossName: string): string {
+  return kind === 'decision' ? `${bossName}님의 결재·승인을 기다리는 건이 생겼을 때` : NOTIFICATION_KIND_HINT_KO[kind]
+}
+
 export interface AppNotification {
   notification_id: string
   kind: NotificationKind

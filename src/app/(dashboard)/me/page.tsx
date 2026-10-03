@@ -6,10 +6,11 @@ import { InstallHint } from '@/components/me/install-hint'
 import { BundleComposer, TeamInbox } from '@/components/me/team-inbox'
 import { recordScreenRead } from '@/lib/activity-record'
 import { currentUser } from '@/lib/auth/session'
+import { boss, bossEn } from '@/lib/boss'
 import { kstToday } from '@/lib/chairman-project'
 import { tr, type Lang } from '@/lib/i18n'
 import { getRepository } from '@/lib/repository'
-import { TASK_STATUS_LABEL_KO, type Decision } from '@/types'
+import { TASK_STATUS_LABEL_KO, type Decision, type Role } from '@/types'
 
 /**
  * `/me` — 직원 홈 (Phase 6-2 블록 1). Member · TeamLead가 로그인하면 여기로 온다.
@@ -24,9 +25,9 @@ type Tab = 'tasks' | 'requests' | 'team' | 'inbox' | 'bundle'
 
 const STATUS_KO: Record<string, string> = { Open: '진행 중', Approved: '승인', Rejected: '반려', Modified: '수정요청', Delegated: '위임' }
 
-function requestState(d: Decision, lang: Lang): string {
+function requestState(d: Decision, lang: Lang, role: Role | null): string {
   if (d.lead_status === 'pending') return tr(lang, '팀장 대기', 'Waiting for lead')
-  if (d.status === 'Open' && d.chairman_required) return tr(lang, '회장 결재 대기', 'Waiting for Chairman')
+  if (d.status === 'Open' && d.chairman_required) return tr(lang, `${boss(role)} 결재 대기`, `Waiting for ${bossEn(role)}`)
   if (d.status === 'Approved' && d.decided_by_kind === 'rule') return tr(lang, '승인 · 규칙 종결', 'Approved by rule')
   return STATUS_KO[d.status] ?? d.status
 }
@@ -70,7 +71,7 @@ export default async function MePage({ searchParams }: PageProps<'/me'>) {
     ...(isLead
       ? [
           { key: 'inbox' as Tab, label: tr(lang, '팀 요청함', 'Team inbox'), badge: inbox.length },
-          { key: 'bundle' as Tab, label: tr(lang, '회장 기안', 'To Chairman') },
+          { key: 'bundle' as Tab, label: tr(lang, `${boss(user?.role)} 기안`, `To ${bossEn(user?.role)}`) },
         ]
       : []),
   ]
@@ -128,6 +129,7 @@ export default async function MePage({ searchParams }: PageProps<'/me'>) {
               businesses={businesses.filter((b) => b.visible).map((b) => ({ id: b.business_id, name: b.name }))}
               defaultDeadline={due.toISOString().slice(0, 10)}
               lang={lang}
+              viewerRole={user?.role ?? null}
               afterSubmit="/me?tab=requests"
             />
           ) : (
@@ -143,7 +145,7 @@ export default async function MePage({ searchParams }: PageProps<'/me'>) {
                     <li key={d.decision_id}>
                       <Link href={`/approvals?id=${d.decision_id}`} className="flex items-baseline gap-2 py-2.5 text-t13">
                         <span className="min-w-0 flex-1 truncate">{d.title}</span>
-                        <span className="shrink-0 text-t11 font-semibold text-ink-dim">{requestState(d, lang)}</span>
+                        <span className="shrink-0 text-t11 font-semibold text-ink-dim">{requestState(d, lang, user?.role ?? null)}</span>
                       </Link>
                     </li>
                   ))}
@@ -178,8 +180,8 @@ export default async function MePage({ searchParams }: PageProps<'/me'>) {
           </div>
         ) : null}
 
-        {tab === 'inbox' ? <TeamInbox pending={inbox} lang={lang} /> : null}
-        {tab === 'bundle' ? <BundleComposer candidates={bundleable} lang={lang} /> : null}
+        {tab === 'inbox' ? <TeamInbox pending={inbox} lang={lang} viewerRole={user?.role ?? null} /> : null}
+        {tab === 'bundle' ? <BundleComposer candidates={bundleable} lang={lang} viewerRole={user?.role ?? null} /> : null}
       </section>
     </div>
   )

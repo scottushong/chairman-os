@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
     // 이 분기는 카카오가 아니라 남이 이 콜백 URL을 직접 두드릴 때만 뜬다(회장 흐름 밖).
     // 아래(state/save/forbidden/failed)는 회장이 방금 카카오 화면에서 돌아온 자기 브라우저 안이라
     // JSON이 아니라 /settings/chairman 화면의 문장으로 보여야 한다.
-    return NextResponse.json({ error: '카카오 연결은 Chairman만 할 수 있습니다.' }, { status: 403 })
+    return NextResponse.json({ error: '권한이 없습니다.' }, { status: 403 })
   }
 
   const params = request.nextUrl.searchParams

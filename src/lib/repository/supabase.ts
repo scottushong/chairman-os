@@ -2917,7 +2917,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         business_id: null,
         actor_user_id: actor.user_id,
         actor_role: actor.role,
-        note: '회장 결재: 초대 승인',
+        note: '대표 결재: 초대 승인',
         after: { chairman_approved_at: now },
       })
       if (auditError) {

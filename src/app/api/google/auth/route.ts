@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
   }
   const user = await currentUser()
   if (!user || user.role !== 'Chairman') {
-    return NextResponse.json({ error: 'Gmail 연결은 Chairman만 할 수 있습니다.' }, { status: 403 })
+    return NextResponse.json({ error: '권한이 없습니다.' }, { status: 403 })
   }
 
   const base = process.env.APP_BASE_URL ?? request.nextUrl.origin

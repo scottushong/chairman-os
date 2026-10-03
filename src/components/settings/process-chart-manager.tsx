@@ -156,7 +156,7 @@ export function ProcessChartManager({
         </section>
       ) : (
         <p className="rounded-md bg-panel px-3 py-2 text-t12 text-ink-dim">
-          프로세스차트를 고칠 권한이 없습니다. (Chairman · Group CFO)
+          프로세스차트를 고칠 권한이 없습니다. (대표 · Group CFO)
         </p>
       )}
 

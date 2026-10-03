@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { redirect } from 'next/navigation'
 
 import {
   AiAnalysis,
@@ -51,6 +52,9 @@ import {
  * 답할 수 없는 자리에 모델을 붙이면 모델이 지어낸다.
  */
 export default async function AttentionPage(props: PageProps<'/attention'>) {
+  // 회장 전용 화면이다 — 다른 역할은 이 화면의 존재를 몰라야 한다(직원 화면 용어 원칙, 2026-10-02). 기록 전에 돌려보낸다.
+  const viewer = await currentUser()
+  if (viewer?.role !== 'Chairman') redirect('/me')
   await recordScreenRead({ path: '/attention', kind: 'page' })
 
   const params = await props.searchParams

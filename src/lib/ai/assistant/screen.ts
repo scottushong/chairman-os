@@ -79,6 +79,11 @@ export function screenSubject(raw: unknown): ScreenSubject {
   }
 }
 
+/**
+ * 화면(도크 머리 «지금 화면»)과 프롬프트에 쓰는 이름. 이 표는 클라이언트 번들에도 실리므로 회장 전용 화면
+ * (주의 · 의존 · 아침 루틴)은 이름을 적지 않는다 — 직원 화면 용어 원칙(CLAUDE.md). 회장 세션만
+ * CHAIRMAN_SCREEN_LABEL_KO로 덮는다(서버에서만 내려 준다).
+ */
 export const SCREEN_LABEL_KO: Record<ScreenKind, string> = {
   home: '홈 대시보드',
   initiative: '이니셔티브 상세',
@@ -89,11 +94,11 @@ export const SCREEN_LABEL_KO: Record<ScreenKind, string> = {
   approvals: '결재 목록',
   approval: '결재 상세',
   calendar: '캘린더',
-  attention: '주의(Attention)',
-  dependency: '회장 의존도',
+  attention: '기타 화면',
+  dependency: '기타 화면',
   documents: '문서',
   task: '업무 상세',
-  morning: '아침 루틴(/ai)',
+  morning: '기타 화면',
   chat: '메신저',
   other: '기타 화면',
 }

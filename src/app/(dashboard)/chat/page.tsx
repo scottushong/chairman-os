@@ -133,7 +133,7 @@ export default async function ChatPage({ searchParams }: PageProps<'/chat'>) {
 
         <section className="glass min-w-0 rounded-glass p-3">
           {tab === 'ai' ? (
-            <AiPanel chatId={aiId} messages={aiMessages} actions={aiActions} lang={lang} />
+            <AiPanel chatId={aiId} messages={aiMessages} actions={aiActions} role={user?.role} lang={lang} />
           ) : selected ? (
             <>
               <h2 className="mb-1 text-t13h font-semibold">

@@ -1,4 +1,5 @@
-import type { UserId } from '@/types'
+import { boss } from '@/lib/boss'
+import type { Role, UserId } from '@/types'
 
 /**
  * audit_log 역조회의 어휘 (DEFERRED D-12).
@@ -131,12 +132,13 @@ function displayValue(value: unknown): string {
  * after의 키를 기준으로 돈다. before에만 있는 키는 '지워진 칸'인데
  * 이 프로젝트에는 칸을 지우는 경로가 없어서 지금은 나오지 않는다.
  */
-export function fieldChanges(record: EntityAuditRecord): AuditFieldChange[] {
+export function fieldChanges(record: EntityAuditRecord, viewer?: Role | null): AuditFieldChange[] {
   const after = record.after ?? {}
   const before = record.before ?? {}
   return Object.keys(after).map((field) => ({
     field,
-    label: AUDIT_FIELD_LABEL_KO[field] ?? field,
+    // 호칭은 보는 사람에 맞춘다 — 직원 화면 용어 원칙(CLAUDE.md).
+    label: field === 'chairman_needed' ? `${boss(viewer)} 확인` : (AUDIT_FIELD_LABEL_KO[field] ?? field),
     before: displayValue(before[field]),
     after: displayValue(after[field]),
   }))

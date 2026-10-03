@@ -3,9 +3,10 @@
 import { revalidatePath } from 'next/cache'
 
 import { executeAiAction } from '@/lib/ai/assistant/execute'
-import { runAssistant } from '@/lib/ai/assistant/run'
-import { safePath } from '@/lib/ai/assistant/screen'
+import { CHAIRMAN_SCREEN_LABEL_KO, runAssistant } from '@/lib/ai/assistant/run'
+import { safePath, type ScreenKind } from '@/lib/ai/assistant/screen'
 import { currentUser } from '@/lib/auth/session'
+import { isChairman } from '@/lib/boss'
 import { getRepository } from '@/lib/repository'
 import type { AiAction, AiActionView, AiChat, AiChatMessage } from '@/types'
 
@@ -24,6 +25,8 @@ export interface AssistantThread {
   chats: AiChat[]
   messages: AiChatMessage[]
   actions: AiActionView[]
+  /** 회장 세션에만: 회장 전용 화면의 «지금 화면» 이름. 직원에게는 싣지 않는다(직원 화면 용어 원칙, CLAUDE.md). */
+  screenLabels?: Partial<Record<ScreenKind, string>>
 }
 
 const text = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
@@ -41,7 +44,8 @@ export async function loadAssistant(chatId: unknown): Promise<AssistantThread & 
   const user = await currentUser()
   if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.', chatId: null, chats: [], messages: [], actions: [] }
   try {
-    return await thread(text(chatId) || null)
+    const t = await thread(text(chatId) || null)
+    return isChairman(user.role) ? { ...t, screenLabels: CHAIRMAN_SCREEN_LABEL_KO } : t
   } catch (e) {
     console.error('[loadAssistant]', e)
     return { error: '대화를 불러오지 못했습니다.', chatId: null, chats: [], messages: [], actions: [] }

@@ -89,7 +89,7 @@ export async function saveCheckin(input: {
       e instanceof Error && /chairman_checkins|42501|PGRST301/.test(e.message)
     return {
       error: denied
-        ? '체크인을 기록할 권한이 없습니다. (Chairman만 가능합니다)'
+        ? '체크인을 기록할 권한이 없습니다. (대표만 가능합니다)' // 회장이 아닌 사람만 보는 문구(직원 화면 용어 원칙)
         : '저장하지 못했습니다. 잠시 후 다시 시도하세요.',
     }
   }
