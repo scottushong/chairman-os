@@ -64,9 +64,11 @@ interface FinanceTrendProps {
   /** 회사 한 곳만 볼 때(CH-023) 쓰는 제목과 범위 설명. KpiStrip과 같은 이유로 문장만 밖에서 받는다. */
   title?: string
   scopeNote?: string
+  /** 기능번호(CH-025~026). 회장에게만 — 직원 화면 용어 원칙(CLAUDE.md). */
+  showSpec?: boolean
 }
 
-export function FinanceTrend({ kpis: all, businessIds, title, scopeNote }: FinanceTrendProps) {
+export function FinanceTrend({ kpis: all, businessIds, title, scopeNote, showSpec = true }: FinanceTrendProps) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -113,7 +115,7 @@ export function FinanceTrend({ kpis: all, businessIds, title, scopeNote }: Finan
             최근 {periods.length}개월 · {scopeNote ?? `표시 중인 ${businessIds.length}개사 합계`}
           </span>
         </h2>
-        <span className="shrink-0 text-t9 text-ink-muted tnum">CH-025~026</span>
+        {showSpec ? <span className="shrink-0 text-t9 text-ink-muted tnum">CH-025~026</span> : null}
       </div>
 
       {/*

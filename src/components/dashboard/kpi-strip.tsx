@@ -45,9 +45,11 @@ interface KpiStripProps {
    */
   title?: string
   scopeNote?: string
+  /** 타일 구석의 기능번호(CH-0xx). 회장에게만 — 직원 화면 용어 원칙(CLAUDE.md). */
+  showSpec?: boolean
 }
 
-export function KpiStrip({ kpis: all, businessIds, title, scopeNote }: KpiStripProps) {
+export function KpiStrip({ kpis: all, businessIds, title, scopeNote, showSpec = true }: KpiStripProps) {
   const kpis = recentKpis(all, 12)
   // 표시 월은 데이터가 정한다. 상수로 박아 두면 다음 달 실적이 들어와도 화면이 안 움직인다.
   const period = latestPeriodOf(kpis)
@@ -66,7 +68,7 @@ export function KpiStrip({ kpis: all, businessIds, title, scopeNote }: KpiStripP
 
       <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4 xl:grid-cols-8">
         {KPIS.map((kpi) => (
-          <KpiTile key={kpi.metric} kpi={kpi} kpis={kpis} businessIds={businessIds} />
+          <KpiTile key={kpi.metric} kpi={kpi} kpis={kpis} businessIds={businessIds} showSpec={showSpec} />
         ))}
       </div>
     </section>
@@ -77,10 +79,12 @@ function KpiTile({
   kpi,
   kpis,
   businessIds,
+  showSpec,
 }: {
   kpi: KpiSpec
   kpis: FinanceKpi[]
   businessIds: string[]
+  showSpec: boolean
 }) {
   const series = groupSeries(kpis, kpi.metric, businessIds)
   const current = series[series.length - 1] ?? 0
@@ -96,7 +100,7 @@ function KpiTile({
     <GlassCard as="article" padding="px-3.5 py-3">
       <div className="flex items-center justify-between">
         <span className="text-t11 text-ink-dim">{kpi.label}</span>
-        <span className="text-t9 text-ink-muted tnum">{kpi.spec}</span>
+        {showSpec ? <span className="text-t9 text-ink-muted tnum">{kpi.spec}</span> : null}
       </div>
 
       <p

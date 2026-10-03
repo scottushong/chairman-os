@@ -1,3 +1,4 @@
+import { SpecCode } from '@/components/layout/spec-code'
 import { Icon, type IconName } from '@/components/ui/icon'
 
 /**
@@ -5,6 +6,7 @@ import { Icon, type IconName } from '@/components/ui/icon'
  *
  * 오른쪽 끝의 기능번호(CH-0xx)는 장식이 아니다. 이 화면이 명세의 어느 줄인지
  * 보는 사람과 만드는 사람이 같은 말로 부를 수 있어야 한다. 대시보드 패널들도 같은 표기를 쓴다.
+ * 2026-10-03: 회장에게만 그린다(SpecCode) — 직원 화면 용어 원칙(CLAUDE.md).
  *
  * 2026-09-19: 코드와 설명 줄을 ink-muted에서 ink-dim으로 올렸다.
  * 이 머리는 카드 밖, 배경 그라데이션 위에 바로 놓인다. 라이트에서 그 자리의 최암점은
@@ -30,7 +32,7 @@ export function PageHeader({
         <h1 className="flex items-center gap-2 text-t20 font-bold tracking-tight">
           <Icon name={icon} className="size-5 text-ink-dim" />
           {title}
-          <span className="text-t9 font-normal text-ink-dim tnum">{code}</span>
+          <SpecCode code={code} className="text-t9 font-normal text-ink-dim tnum" />
         </h1>
         <p className="mt-1 text-t12 text-ink-dim">{description}</p>
       </div>

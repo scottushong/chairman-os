@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { PageHeader } from '@/components/layout/page-header'
 import { Icon } from '@/components/ui/icon'
 import { currentUser } from '@/lib/auth/session'
+import { specText } from '@/lib/boss'
 import { findNavItem, homeHref, readyItems } from '@/lib/nav'
 import { firstParam } from '@/lib/query'
 
@@ -54,7 +55,7 @@ export default async function ComingSoonPage(props: PageProps<'/coming-soon'>) {
             무엇을 기다리고 있나
           </p>
           <p className="mt-2.5 text-t12h leading-relaxed text-ink-dim">
-            {item?.waitingFor ??
+            {(item?.waitingFor ? specText(item.waitingFor, role) : null) ??
               // 사이드바에 없는 라벨로 들어온 경우. 손으로 주소를 친 것이거나 목록이 바뀐 것이다.
               '사이드바에 없는 메뉴입니다. 주소를 직접 입력하셨다면 왼쪽 메뉴에서 다시 골라 주세요.'}
           </p>

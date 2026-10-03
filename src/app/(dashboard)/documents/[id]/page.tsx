@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 
 import { AttachmentsSection } from '@/components/attachments/attachments-section'
 import { PageHeader } from '@/components/layout/page-header'
+import { SpecCode } from '@/components/layout/spec-code'
 import { AuditTimeline } from '@/components/shared/audit-timeline'
 import { SharePanel } from '@/components/shared/share-panel'
 import { Icon } from '@/components/ui/icon'
@@ -10,6 +11,7 @@ import { recordScreenRead } from '@/lib/activity-record'
 import { formatDateTime } from '@/lib/format'
 import { businessName } from '@/lib/lookup'
 import { currentUser } from '@/lib/auth/session'
+import { isChairman } from '@/lib/boss'
 import { getRepository } from '@/lib/repository'
 import { SECURITY_CLASS_LABEL_KO } from '@/types'
 
@@ -127,7 +129,7 @@ export default async function DocumentDetailPage(props: PageProps<'/documents/[i
             ) : null}
             <p className="mt-3 text-t11 leading-relaxed text-ink-muted">
               이 문서의 원본은 사내 스토리지 주소입니다. 아래 «첨부»에 올린 파일은 이 시스템의 비공개
-              버킷에 있고, 첨부마다 등급이 따로 걸립니다(Phase 10).
+              버킷에 있고, 첨부마다 등급이 따로 걸립니다{isChairman(viewer?.role) ? '(Phase 10)' : ''}.
               {doc.security_class === 'Public'
                 ? ' 이 문서는 공개 등급이라 같은 회사면 누구 밑인지와 무관하게 보입니다(0026).'
                 : ''}
@@ -140,7 +142,7 @@ export default async function DocumentDetailPage(props: PageProps<'/documents/[i
           <section className="rounded-xl border border-line-soft bg-panel p-4">
             <h2 className="flex items-baseline gap-2 text-t13 font-semibold">
               이력
-              <span className="text-t9 font-normal text-ink-muted tnum">CH-051</span>
+              <SpecCode code="CH-051" className="text-t9 font-normal text-ink-muted tnum" />
               <span className="text-t11 font-normal text-ink-muted tnum">{audit.length}건</span>
             </h2>
             <div className="mt-3">

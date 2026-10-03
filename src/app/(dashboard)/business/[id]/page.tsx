@@ -130,12 +130,14 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
           businessIds={[id]}
           title="회사 KPI (당월)"
           scopeNote={`${business.name} 단독`}
+          showSpec={chair}
         />
         <FinanceTrend
           kpis={financeKpis}
           businessIds={[id]}
           title="재무 추이"
           scopeNote={`${business.name} 단독`}
+          showSpec={chair}
         />
         {/* 연필을 보여 줄지만 정한다. 실제 판정은 0008의 business_strategy_write다(D-13). */}
         <CoordinatesPanel
@@ -174,7 +176,7 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
           title="업무"
           count={ownTasks.length}
           empty="이 회사에 등록된 업무가 없습니다."
-          more={{ href: `/tasks?business=${encodeURIComponent(id)}`, label: 'CH-040에서 보기' }}
+          more={{ href: `/tasks?business=${encodeURIComponent(id)}`, label: chair ? 'CH-040에서 보기' : '업무에서 보기' }}
         >
           {ownTasks.map((t) => (
             <TaskItem
@@ -194,7 +196,7 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
           empty="이 회사에 올라온 결정이 없습니다."
           more={{
             href: `/approvals?business=${encodeURIComponent(id)}`,
-            label: 'CH-041에서 처리',
+            label: chair ? 'CH-041에서 처리' : '결재에서 처리',
           }}
         >
           {ownDecisions.map((d) => (

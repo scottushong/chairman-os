@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { PageHeader } from '@/components/layout/page-header'
+import { SpecCode } from '@/components/layout/spec-code'
 import { AuditTimeline } from '@/components/shared/audit-timeline'
 import { SharePanel } from '@/components/shared/share-panel'
 import { TaskControls } from '@/components/tasks/task-controls'
@@ -159,7 +160,7 @@ export default async function TaskDetailPage(props: PageProps<'/tasks/[id]'>) {
           <section className="rounded-xl border border-line-soft bg-panel p-4">
             <h2 className="flex items-baseline gap-2 text-t13 font-semibold">
               이력
-              <span className="text-t9 font-normal text-ink-muted tnum">CH-051</span>
+              <SpecCode code="CH-051" className="text-t9 font-normal text-ink-muted tnum" />
               <span className="text-t11 font-normal text-ink-muted tnum">{audit.length}건</span>
             </h2>
             <p className="mt-1 mb-3 text-t11 text-ink-muted">
@@ -175,7 +176,7 @@ export default async function TaskDetailPage(props: PageProps<'/tasks/[id]'>) {
         <aside className="rounded-xl border border-line-soft bg-panel p-4 xl:sticky xl:top-4 xl:self-start">
           <h2 className="flex items-baseline gap-2 text-t13 font-semibold">
             바꾸기
-            <span className="text-t9 font-normal text-ink-muted tnum">CH-040</span>
+            <SpecCode code="CH-040" className="text-t9 font-normal text-ink-muted tnum" />
           </h2>
           <div className="mt-3">
             <TaskControls task={task} viewerRole={viewer?.role ?? null} />

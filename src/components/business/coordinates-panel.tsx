@@ -122,7 +122,7 @@ export function CoordinatesPanel({
           {canEdit ? (
             <span className="text-t10h text-ink-muted">칸을 누르면 고칠 수 있습니다</span>
           ) : null}
-          <span className="text-t9 text-ink-muted tnum">CH-024</span>
+          {chair ? <span className="text-t9 text-ink-muted tnum">CH-024</span> : null}
         </span>
       </div>
 

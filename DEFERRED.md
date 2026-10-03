@@ -2185,3 +2185,13 @@ B-4가 찾은 결함 하나를 고쳤다. **리뷰 루프가 없는 작업이고
 - **야간 Job 프롬프트(exception-analysis 등)는 손대지 않았다** — 그 출력을 읽는 /attention이 회장 전용이 됐다.
 - **CH-0xx · Phase N 코드 표기는 이번 범위 밖** — 직원 화면에 약 35곳 남아 있다(2026-10-02 감사 표 B~L).
 - **0049 백필은 트리거를 잠깐 끈다**(얼림 · updated_at) — 같은 트랜잭션 안이라 실패해도 꺼진 채 남지 않고, SHARE ROW EXCLUSIVE 락 동안 다른 쓰기는 기다린다(리뷰 확인).
+
+## 2026-10-03 블록 — 직원 화면 점검 · 기능번호 숨김
+
+- **화면 제목 옆 기능번호(CH-0xx · Phase · §)는 회장에게만** — `components/layout/spec-code.tsx`(SpecCode, 서버에서 currentUser로 판정)를 PageHeader와 업무 · 프로젝트 · 문서 상세의 칸 제목이 쓴다. 회사 상세의 클라이언트 패널(KPI 타일 · 재무 추이 · 전략 좌표 · 핵심 인력)은 `showSpec`/`chair` prop으로. 다른 선택지: PageHeader에서 code prop 자체를 없애기(회장이 쓰는 표기라 버림).
+- **안내 문장 속 번호는 `specText(text, role)`로 직원에게만 걷는다**(준비 중 화면의 «무엇을 기다리고 있나» · 설정 2단계 인증 · 문서 첨부 안내). 클라이언트 컴포넌트 문장 셋(결재 처리 · 결재 올리기 · 업무 컨트롤의 «(CH-051)» · «Business OS(Layer 1)»)은 **회장 화면에서도 뺐다** — role을 내려 보내는 비용보다 번호 하나의 값이 작다.
+- **남은 «회장» 노출은 /privacy 하나(14곳)** — 로그인 전 화면이라 용어 원칙 대상이지만, 고지 문서라 `docs/privacy-revision-draft-2026-10.md` 초안을 회장이 확인한 뒤 적용한다. 그 전까지 0049 production 반영 조건 ①(노출 0건)이 서지 않는다.
+- **/settings의 «의존성»은 오탐**(소프트웨어 의존성 문장) — 그대로.
+- **/groupware 공지 시드의 «회장실로»는 사람이 쓴 글**(dummy 시드) — 자동 치환하지 않는다(0049 원칙). 화면에는 안 보이고 영문 칸(payload)에만 있다.
+- **직원 5계정 모두 /business/biz_debutphoto 링크가 404** — 어디서 링크가 나오는지 못 찾았다(사이드바 «회사» 또는 업무 · 프로젝트의 회사 링크로 추정). 회장 화면에서도 404인지 확인 필요.
+- **dummy 시드에 GroupCFO 사람이 없어** 점검은 BusinessCEO(dy_ceo) · Executive(exec) · TeamLead(sales_lead · support_lead) · Member(sales_staff) 다섯으로 했다.

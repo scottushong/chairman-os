@@ -160,7 +160,7 @@ export function KeymenPanel({
               추가
             </button>
           ) : null}
-          {scope.kind === 'business' ? (
+          {scope.kind === 'business' && chair ? (
             <span className="text-t9 text-ink-muted tnum">CH-024</span>
           ) : null}
         </span>

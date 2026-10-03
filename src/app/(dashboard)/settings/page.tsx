@@ -127,7 +127,7 @@ export default async function SettingsHubPage() {
             </span>
           </p>
           <p className="mt-0.5 text-t10h text-ink-muted">
-            Phase 6-3에서 붙습니다. 켜는 버튼을 미리 놓아 두지 않았습니다 — 눌러도 아무 일이
+            {isChairman ? 'Phase 6-3에서' : '다음 단계에서'} 붙습니다. 켜는 버튼을 미리 놓아 두지 않았습니다 — 눌러도 아무 일이
             없는 스위치는 보안 설정에서 특히 나쁜 종류의 거짓말입니다.
           </p>
         </div>

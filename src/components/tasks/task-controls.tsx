@@ -109,8 +109,9 @@ export function TaskControls({ task, viewerRole }: { task: Task; viewerRole: Rol
       ) : null}
 
       <p className="text-t10h leading-relaxed text-ink-muted">
-        바꾼 값은 감사 기록(audit_log)에 남고 지워지지 않는다(CH-051). 제목·담당자·마감은
-        여기서 고치지 않는다 — 그건 Business OS(Layer 1)가 갖는 칸이다.
+        {/* 직원도 보는 문장이라 명세 번호 · 층 이름을 뺐다 — 직원 화면 용어 원칙(CLAUDE.md). */}
+        바꾼 값은 감사 기록에 남고 지워지지 않는다. 제목·담당자·마감은
+        여기서 고치지 않는다 — 그건 각 회사 업무 시스템이 갖는 칸이다.
       </p>
     </div>
   )

@@ -118,7 +118,7 @@ export function DraftDecision({ businesses }: { businesses: Business[] }) {
         </button>
       </div>
       <p className="mt-1 text-t11 text-ink-muted">
-        올린 결재는 대기 상태로 들어가고, 올린 사실이 감사 기록에 한 줄 남습니다(CH-051).
+        올린 결재는 대기 상태로 들어가고, 올린 사실이 감사 기록에 한 줄 남습니다.
       </p>
 
       <StepHeader

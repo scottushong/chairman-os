@@ -54,7 +54,7 @@ export function ApprovalActions({
       </div>
 
       <p className="mt-2 text-t10h text-ink-muted">
-        누른 결과는 되돌릴 수 없습니다. 처리 기록은 감사 로그에 남고 지워지지 않습니다(CH-051).
+        누른 결과는 되돌릴 수 없습니다. 처리 기록은 감사 로그에 남고 지워지지 않습니다.
       </p>
 
       {error ? (
