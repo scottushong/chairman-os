@@ -2246,3 +2246,27 @@ B-4가 찾은 결함 하나를 고쳤다. **리뷰 루프가 없는 작업이고
 - **오류:** 60초 시간 상한 · 재시도 1번, 종류별 문장(키 · 크레딧 · 429 · 529 · 시간 초과 · 연결 · 400 · 5xx)과 `[assistant] model_error {kind,status,request_id}` 로그. 실패하면 질문도 저장하지 않는다(입력칸에 남는다).
 - **세션에 «결재 올리기» 줄을 읽는다**(`SessionUser.approvals_write`, 0002 module_access_self_read) — 카드 전에 «권한이 없습니다 — … 대표에게»를 먼저 말하려고. 판정은 여전히 DB. 못 읽으면 모름(DB에 맡김).
 - **남은 것:** 0054(상사 = 대표면 팀장 칸에 대표가 서는 문제)는 그대로 미작성 — 이 흐름도 그 규칙을 따른다.
+## 2026-10-03 블록 — ECOUNT 엑셀 업로드 0050(표 · 정책 · 출처 칸)
+
+- **번호는 0050** — 설계서는 0049로 적었지만 0049_staff_terms가 먼저 썼다.
+- **RPC 둘(official_statement_import_ecount · ecount_monthly_import)은 0051 이후** — 열 구성(회장 스크린샷) 확정 뒤 연간 · 월별 단계에서. 0050은 표 · 정책 · 칸 · guard · official_statement_save 수정 · 첨부 대상 · accounts_books_insert까지.
+- **finance_imports 첨부는 그 draft를 만든 본인만 올린다**(restrictive insert, 설계서에 없던 한 줄) — 0045 insert는 «대상이 보이면» 올리게 해서 재무 읽기 권한자가 남의 업로드에 파일을 끼울 수 있었다. 다른 선택지: 앱에서만 uploaded_by로 고르기(DB가 못 막음).
+- **ECOUNT 잠정 결산의 증빙은 import_id(원본 첨부)이고 링크는 선택** — accountant는 0020 그대로 링크 필수 + import_id 없음. 다른 선택지: 첨부 서명 URL을 evidence_url에 넣기(만료되는 링크라 버림).
+- **official_statements update guard는 «superseded_at 말고 전부»를 to_jsonb로 잰다** — 칸 목록을 적으면 나중 칸이 새는 구멍이 된다.
+- **남은 구멍 — 0050에서 고치지 않는다, 0051에서 헤더 · 줄 insert를 RPC로만 + 복합 FK(리뷰 I-3)**:
+  - `official_statements_insert`(0020)로 basis='accountant' 헤더를 균형 검사 · 감사 없이 직접 넣을 수 있다(0020부터).
+  - `official_statement_lines`에 (statement_id, business_id) 복합 FK가 없어 다른 회사 결산에 줄을 붙일 수 있다 — 회사 격리 위반(앱이 lines를 아직 안 읽어 화면엔 안 보인다).
+  - 0050 이후 basis='ecount_excel' 헤더도 업로드의 상태 · 종류 · 만든 사람 확인 없이 직접 insert된다(import_id FK는 같은 회사만 본다).
+- **«빈 committed»(리뷰 M-1)**: 만든 사람이 PostgREST로 draft를 곧장 committed로 바꿀 수 있다(해시만 있으면). 0051 RPC는 finance_imports의 status · summary를 증거로 믿지 않는다 — 가능하면 commit은 definer RPC가 하고 사람 정책 with check는 status in ('draft', 'cancelled')로 좁힌다.
+- **앱의 basis 대응은 ecount_excel 행을 만드는 첫 RPC · 화면과 같이 나간다(리뷰 M-5)**: listOfficialStatements의 basis 필터(월별 잠금 · 기준 문구는 accountant만), evidence_url nullable 타입.
+- **첨부 라벨 · 경로에 finance_imports 추가(리뷰 M-6)**: 앱의 첨부 대상 라벨 · 경로 표에 finance_imports를 더하고, 업로드 원본 첨부의 등급(security_class)은 앱이 정해 보낸다(DB 기본 «제한»).
+- **업로드 전표 잇기 · 내리기의 실제 조건**(리뷰 I-1 · 2차 I-1):
+  - 잇기: 본인 monthly draft 업로드 + **이 트랜잭션에서 본인이 세운**(`created_at = now()`) 그 달 전표 + 역분개 아님. 정정분개(restatement)는 잇는다 — 재업로드가 세우는 새 활성 전표라서(리뷰 문구는 «역분개/정정 전표가 아님»이었지만 막으면 재업로드가 새 활성 줄을 못 세운다).
+  - 내리기(supersede): 그 전표를 가리키는 역분개가 있고, 그 역분개를 **본인이** 세웠고, 그 줄이 **원 전표 줄의 정확한 반대**다 — line_no로 full join해 계정 · 금액 · 적요가 같고 차변↔대변만 바뀐 것(post_correction 0016:691-708이 만드는 모양 그대로). journal_entry_insert(invoker, 누구나 부름)로 세운 1원 · 다른 계정 · 순서만 다른 가짜 역분개로는 못 내린다. 손으로 세웠어도 정확한 반대면 진짜 역분개로 본다(판정은 줄의 모양이다).
+- **범위 밖 기존 구멍(0016부터)**: journal_entry_insert를 직접 불러 아무 전표에나 가짜 역분개를 세우면 journal_entries_one_reversal(전표당 역분개 하나) 때문에 그 전표의 진짜 정정(post_correction)이 already_corrected로 막힌다. 0050은 이 구멍을 넓히지 않는다(가짜 역분개로 업로드 줄은 못 내린다). 고치려면 journal_entry_insert를 definer 내부 함수로 돌리거나 역분개 모양 검사를 트리거로 — 장부 블록에서.
+- **0051 월별 RPC가 챙길 것**:
+  - 활성 업로드 줄의 전표가 **이미 역분개된 경우**(누가 손으로 post_correction했거나 위 가짜 역분개로 막힌 경우) — 정정 전표를 또 세우지 말고 그 상태를 보고 멈추거나 이어 처리한다.
+  - **역분개를 세운 사람만 줄을 내릴 수 있다** — 그 사람이 권한을 잃거나 떠나면 그 달 줄이 활성으로 남는다(운영 리스크). RPC가 역분개와 supersede를 한 트랜잭션에서 같은 사람으로 하면 평소엔 문제 없다.
+  - commit RPC는 첨부 줄을 `for update`로 잡고, 원본 객체가 있는지 · sha256이 미리보기 때 적은 값과 같은지 다시 확인한 뒤 싣는다.
+- **committed · cancelled 업로드 원본은 줄 삭제 · 객체 삭제 · 재업로드 창이 다 닫힌다**(리뷰 I-2) — 그래서 취소는 «첨부 취소 → cancelled» 순서다. 판정 함수 finance_import_is_draft는 definer(Storage 정책을 anon도 거친다 — 0045 8절과 같은 이유).
+- **finance_imports 상태 변화는 감사하지 않는다** — 감사는 대상별 쓰기(계정 · 결산 · 전표)가 같은 트랜잭션에서 남긴다(설계서 A). 업로드 기록 자체는 지우지 않는다.

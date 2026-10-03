@@ -1505,9 +1505,9 @@ async function books(db: Db, as: As) {
   assert.equal(await as(UID.member, account('biz_dy', '8888')), 'denied', 'Member는 계정을 못 만든다')
   assert.equal(await as(UID.agent, account('biz_dy', '8888')), 'denied', 'AIAgent는 계정을 못 만든다')
   assert.equal(
-    await as(UID.chairman, `insert into accounts (business_id, account_code, name, category, section, source, fetched_at) values ('biz_dy', '8889', 'x', 'other', 'sga', 'ecount', now())`),
+    await as(UID.chairman, `insert into accounts (business_id, account_code, name, category, section, source, fetched_at) values ('biz_dy', '8889', 'x', 'other', 'sga', 'estimate', now())`),
     'denied',
-    '사람이 만드는 계정은 manual',
+    '사람이 만드는 계정은 manual 또는 ecount(0050 — ECOUNT 엑셀 업로드)',
   )
   assert.equal(await as(UID.chairman, `update accounts set name = '급여', active = false where business_id = 'biz_dy' and account_code = '8010'`), 1, '이름·활성은 고친다')
   await assert.rejects(
@@ -4441,6 +4441,362 @@ async function staffTerms() {
   await db.close()
 }
 
+/**
+ * 0050 ECOUNT 엑셀 업로드 — 표 · 정책 · 출처 칸 · 첨부 대상 (RPC 둘은 0051 이후).
+ *
+ * 새 PGlite 한 벌이고 **일괄 grant를 하지 않는다** — 0050의 revoke · 칸 단위 grant가 그대로 자물쇠인지 재야 한다.
+ * finance_imports: 재무 쓰기 권한자만 본인 draft를 넣고, 남의 draft · 끝난 업로드는 못 고치고, 지우지 못한다.
+ * finance_import_slips: 활성 (회사, 달) 하나 · 본인 월별 draft + 그 달 전표만 · supersede만.
+ * 첨부(finance_imports): 재무 읽기 권한 없는 사람에게 안 보이고, 그 draft를 만든 본인만 올린다.
+ * accounts: 사람도 source='ecount'로 넣는다(쓰기 권한자만) · source는 여전히 못 바꾼다.
+ * official_statements: basis 기본 accountant · 활성 unique가 basis별 · update는 supersede만 ·
+ *   official_statement_save가 ECOUNT 잠정 행을 밀어내지 않는다.
+ */
+const EI = {
+  chair: '00000000-0000-0000-0000-0000000050a1',
+  lead: '00000000-0000-0000-0000-0000000050a2', // DY 경영지원 팀장 — '/finance/biz_dy' 쓰기
+  lead2: '00000000-0000-0000-0000-0000000050a3', // DY 또 한 사람 — '/finance/biz_dy' 쓰기
+  reader: '00000000-0000-0000-0000-0000000050a4', // DY — '/finance/biz_dy' 읽기만
+  member: '00000000-0000-0000-0000-0000000050a5', // DY 직원 — 재무 줄 없음
+  agent: '00000000-0000-0000-0000-0000000050a6',
+  integration: '00000000-0000-0000-0000-0000000050a7',
+}
+const IMP = {
+  annual: '00000000-0000-0000-0000-00000050b001', // lead · annual 2025 · draft · 해시 있음
+  monthly: '00000000-0000-0000-0000-00000050b002', // lead · monthly 2026 · draft
+  done: '00000000-0000-0000-0000-00000050b003', // lead · accounts · committed
+  other: '00000000-0000-0000-0000-00000050b004', // lead2 · monthly 2026 · draft
+  vana: '00000000-0000-0000-0000-00000050b005', // biz_vana · 회장
+}
+const SHA = 'a'.repeat(64)
+
+async function ecountImport() {
+  const db = new PGlite({ extensions: { pg_trgm } })
+  await applyAll(db)
+  await db.exec(`
+    grant usage on schema public, auth to authenticated, anon;
+    insert into auth.users values
+      ('${EI.chair}', 'e1@x'), ('${EI.lead}', 'e2@x'), ('${EI.lead2}', 'e3@x'), ('${EI.reader}', 'e4@x'),
+      ('${EI.member}', 'e5@x'), ('${EI.agent}', 'e6@x'), ('${EI.integration}', 'e7@x');
+    insert into user_profiles (user_id, role, display_name, max_security_class, team_id) values
+      ('${EI.chair}', 'Chairman', 'ch', 'Vault', null),
+      ('${EI.lead}', 'TeamLead', '경영지원팀장', 'Normal', 'team_dy_sales'),
+      ('${EI.lead2}', 'TeamLead', '경영지원2', 'Normal', 'team_dy_sales'),
+      ('${EI.reader}', 'TeamLead', '읽기만', 'Normal', 'team_dy_sales'),
+      ('${EI.member}', 'Member', '직원', 'Normal', 'team_dy_production'),
+      ('${EI.agent}', 'AIAgent', 'ai', 'Restricted', null),
+      ('${EI.integration}', 'Integration', 'sync', 'Restricted', null);
+    insert into user_business_access values
+      ('${EI.lead}', 'biz_dy'), ('${EI.lead2}', 'biz_dy'), ('${EI.reader}', 'biz_dy'), ('${EI.member}', 'biz_dy');
+    insert into user_business_access select '${EI.agent}', business_id from businesses;
+    insert into user_business_access select '${EI.integration}', business_id from businesses;
+    insert into user_module_access (user_id, module, can_write, can_approve) values
+      ('${EI.lead}', '/finance/biz_dy', true, false), ('${EI.lead2}', '/finance/biz_dy', true, false),
+      ('${EI.reader}', '/finance/biz_dy', false, false),
+      ('${EI.agent}', '/finance/biz_dy', true, true), ('${EI.integration}', '/finance/biz_dy', true, true);
+    insert into accounts (business_id, account_code, name, category, section, cash_flow, source, fetched_at) values
+      ('biz_dy', '1010', '현금', 'asset', 'cash', null, 'ecount', now()),
+      ('biz_dy', '3010', '자본금', 'equity', 'equity', null, 'ecount', now()),
+      ('biz_dy', '4010', '매출', 'revenue', 'revenue', null, 'ecount', now());
+    insert into finance_imports (import_id, business_id, kind, period_key, status, file_name, file_sha256, created_by) values
+      ('${IMP.annual}', 'biz_dy', 'annual', '2025', 'draft', 'bs-2025.xlsx', '${SHA}', '${EI.lead}'),
+      ('${IMP.monthly}', 'biz_dy', 'monthly', '2026', 'draft', 'pl-2026.xlsx', null, '${EI.lead}'),
+      ('${IMP.done}', 'biz_dy', 'accounts', null, 'committed', 'accounts.xlsx', '${SHA}', '${EI.lead}'),
+      ('${IMP.other}', 'biz_dy', 'monthly', '2026', 'draft', 'pl-2026b.xlsx', null, '${EI.lead2}'),
+      ('${IMP.vana}', 'biz_vana', 'annual', '2025', 'draft', 'vana.xlsx', null, '${EI.chair}');
+  `)
+
+  // 한 트랜잭션 안에서 여러 문장. '@<uid>' 사람 바꾸기 · '!<sql>' 소유자로 잠깐 나가기(financeGrants와 같은 모양).
+  async function as(uid: string | null, steps: string[]): Promise<'denied' | number> {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid ?? ''}', true); set local role ${uid ? 'authenticated' : 'anon'};`)
+    try {
+      let last: Record<string, unknown>[] = []
+      let affected = 0
+      for (const s of steps) {
+        if (s.startsWith('@')) { await db.exec(`select set_config('request.jwt.claim.sub', '${s.slice(1)}', true)`); continue }
+        if (s.startsWith('!')) { await db.exec(`reset role; ${s.slice(1)}; set local role authenticated;`); continue }
+        const res = await db.query<Record<string, unknown>>(s)
+        last = res.rows
+        affected = res.affectedRows ?? 0
+      }
+      await db.exec('set constraints all immediate')
+      return last.length ? Number(Object.values(last[0])[0]) : affected
+    } catch (e) {
+      if (/row-level security/.test(e instanceof Error ? e.message : '')) return 'denied'
+      throw e
+    } finally {
+      await db.exec('rollback')
+    }
+  }
+  const owner = async (sql: string) => (await db.query<Record<string, unknown>>(sql)).rows
+
+  // ── 자물쇠: force 없음(0035) · anon 표 권한 없음 · authenticated는 delete 없음 · update는 칸 단위 ──
+  const lock = await owner(`
+    select c.relname as t, c.relforcerowsecurity as forced, c.relrowsecurity as rls,
+           has_table_privilege('anon', c.oid, 'select') or has_table_privilege('anon', c.oid, 'insert')
+             or has_table_privilege('anon', c.oid, 'update') or has_table_privilege('anon', c.oid, 'delete') as anon,
+           has_table_privilege('authenticated', c.oid, 'delete') or has_table_privilege('authenticated', c.oid, 'truncate')
+             or has_table_privilege('authenticated', c.oid, 'update') as auth_wide
+      from pg_class c where c.relname in ('finance_imports', 'finance_import_slips') order by 1`)
+  assert.equal(lock.length, 2, '0050: 새 표 둘이 다 있어야 한다')
+  for (const r of lock) {
+    assert.deepEqual([r.forced, r.rls, r.anon, r.auth_wide], [false, true, false, false],
+      `0050: ${r.t} — force가 걸렸거나 · RLS가 꺼졌거나 · anon에게 열렸거나 · authenticated에게 표 전체 update/delete가 있다`)
+  }
+  await assert.rejects(as(null, [`select count(*)::int from finance_imports`]), /permission denied/, '0050: anon이 finance_imports를 읽는다')
+  await assert.rejects(as(null, [`select count(*)::int from finance_import_slips`]), /permission denied/, '0050: anon이 finance_import_slips를 읽는다')
+  const kinds = new Map((await owner(`select tablename || '.' || policyname as k, permissive as p from pg_policies
+      where tablename in ('finance_imports', 'finance_import_slips')`)).map((r) => [String(r.k), String(r.p)]))
+  for (const t of ['finance_imports', 'finance_import_slips']) {
+    for (const who of ['ai_agent', 'integration']) {
+      for (const op of ['insert', 'update', 'delete']) {
+        assert.equal(kinds.get(`${t}.${who}_no_${op}`), 'RESTRICTIVE', `0050: ${t}에 ${who}_no_${op}가 restrictive로 있어야 한다`)
+      }
+    }
+  }
+
+  // ── finance_imports 읽기: can_read_books ──
+  const imports = `select count(*)::int from finance_imports`
+  assert.equal(await as(EI.reader, [imports]), 4, '0050: 재무 읽기 권한자가 DY 업로드 넷을 못 본다(또는 VANA가 보인다)')
+  assert.equal(await as(EI.member, [imports]), 0, '0050: 재무 줄 없는 직원에게 업로드가 보인다')
+  assert.equal(await as(EI.chair, [imports]), 5, '0050: 회장이 업로드를 다 못 본다')
+
+  // ── finance_imports 넣기: can_keep_books · 본인 · draft ──
+  const start = (biz: string, status = 'draft') =>
+    `insert into finance_imports (business_id, kind, file_name, status) values ('${biz}', 'accounts', 'a.xlsx', '${status}')`
+  assert.equal(await as(EI.lead, [start('biz_dy')]), 1, '0050: 재무 쓰기 권한자가 draft를 못 만든다')
+  assert.deepEqual(await as(EI.lead, [`insert into finance_imports (business_id, kind, file_name, created_by) values ('biz_dy', 'accounts', 'b.xlsx', '${EI.lead2}')`,
+    `select count(*)::int from finance_imports where file_name = 'b.xlsx' and created_by = '${EI.lead}' and status = 'draft'`]), 1,
+  '0050: 업로드의 만든 사람이 본인으로 적히지 않는다(남의 이름으로 draft를 만든다)')
+  assert.equal(await as(EI.lead, [start('biz_dy', 'committed')]), 'denied', '0050: 처음부터 committed로 넣는다')
+  assert.equal(await as(EI.lead, [start('biz_vana')]), 'denied', '0050: 다른 회사 업로드를 만든다')
+  assert.equal(await as(EI.reader, [start('biz_dy')]), 'denied', '0050: 재무 읽기만 가진 사람이 업로드를 만든다')
+  assert.equal(await as(EI.member, [start('biz_dy')]), 'denied', '0050: 재무 줄 없는 직원이 업로드를 만든다')
+  assert.equal(await as(EI.agent, [start('biz_dy')]), 'denied', '0050: 재무 줄 있는 AIAgent가 업로드를 만든다')
+  assert.equal(await as(EI.integration, [start('biz_dy')]), 'denied', '0050: 재무 줄 있는 Integration이 업로드를 만든다')
+
+  // ── finance_imports 고치기: 만든 사람의 draft만 · 칸 넷만 · 해시는 한 번 ──
+  const upd = (id: string, set: string) => `update finance_imports set ${set} where import_id = '${id}'`
+  assert.equal(await as(EI.lead, [upd(IMP.annual, `summary = '{"rows":3}'::jsonb`)]), 1, '0050: 만든 사람이 자기 draft를 못 고친다')
+  assert.equal(await as(EI.lead, [upd(IMP.other, `summary = '{"rows":3}'::jsonb`)]), 0, '0050: 남의 draft를 고친다')
+  assert.equal(await as(EI.chair, [upd(IMP.annual, `status = 'cancelled'`)]), 0, '0050: 회장이라도 남의 draft를 고친다(만든 사람만)')
+  assert.equal(await as(EI.lead, [upd(IMP.done, `summary = '{"rows":9}'::jsonb`)]), 0, '0050: committed 업로드를 고친다')
+  assert.equal(await as(EI.lead, [upd(IMP.annual, `status = 'cancelled'`),
+    `select count(*)::int from finance_imports where import_id = '${IMP.annual}' and cancelled_at is not null and committed_at is null`]), 1,
+  '0050: 취소가 안 되거나 cancelled_at이 안 찍힌다')
+  assert.equal(await as(EI.lead, [upd(IMP.annual, `status = 'cancelled'`), upd(IMP.annual, `status = 'draft'`)]), 0, '0050: 취소한 업로드를 draft로 되살린다')
+  assert.equal(await as(EI.lead, [upd(IMP.annual, `status = 'committed'`),
+    `select count(*)::int from finance_imports where import_id = '${IMP.annual}' and committed_at is not null`]), 1, '0050: commit에 committed_at이 안 찍힌다')
+  await assert.rejects(as(EI.lead, [upd(IMP.monthly, `status = 'committed'`)]), /finance_imports_commit_shape/, '0050: 해시 없는 업로드가 committed가 된다')
+  await assert.rejects(as(EI.lead, [upd(IMP.annual, `file_sha256 = '${'b'.repeat(64)}'`)]), /finance_import_hash_immutable/, '0050: 적힌 해시를 바꾼다')
+  assert.equal(await as(EI.lead, [upd(IMP.monthly, `file_sha256 = '${SHA}', period_key = '2026-08'`)]), 1, '0050: 미리보기가 해시 · 기간을 못 적는다')
+  await assert.rejects(as(EI.lead, [upd(IMP.annual, `business_id = 'biz_vana'`)]), /permission denied/, '0050: 업로드의 회사를 바꾼다(칸 grant)')
+  await assert.rejects(as(EI.lead, [upd(IMP.annual, `created_by = '${EI.lead2}'`)]), /permission denied/, '0050: 업로드의 만든 사람을 바꾼다(칸 grant)')
+  await assert.rejects(owner(upd(IMP.done, `status = 'draft'`)), /finance_import_closed/, '0050: 소유자도 끝난 업로드를 되살린다(트리거)')
+  await assert.rejects(owner(upd(IMP.other, `file_name = 'x.xlsx'`)), /finance_import_immutable/, '0050: 소유자가 파일 이름을 바꾼다(트리거)')
+  assert.equal(await as(EI.reader, [upd(IMP.annual, `summary = '{}'::jsonb`)]), 0, '0050: 읽기만 가진 사람이 업로드를 고친다')
+  assert.equal(await as(EI.agent, [upd(IMP.annual, `summary = '{}'::jsonb`)]), 0, '0050: AIAgent가 업로드를 고친다')
+  // 지우기: grant가 없다(정책도 없다).
+  await assert.rejects(as(EI.lead, [`delete from finance_imports where import_id = '${IMP.annual}'`]), /permission denied/, '0050: 만든 사람이 업로드를 지운다')
+  await assert.rejects(as(EI.chair, [`delete from finance_imports where import_id = '${IMP.other}'`]), /permission denied/, '0050: 회장이 업로드를 지운다')
+
+  // 이미 있던 수기 전표(lead가 지난 트랜잭션에서 넣었다) — 업로드 전표로 둔갑하면 안 된다.
+  await db.exec(`begin; select set_config('request.jwt.claim.sub', '${EI.lead}', true); set local role authenticated;
+    select post_journal_entry('biz_dy', '2026-08-15', '수기 8월', null,
+      '[{"account_code":"1010","side":"debit","amount":500},{"account_code":"4010","side":"credit","amount":500}]'::jsonb);
+    commit;`)
+  // ── finance_import_slips: 본인 월별 draft + 그 달 전표 · 활성 (회사, 달) 하나 · supersede만 ──
+  // 전표의 차대 검사는 deferred다 — 사람을 바꾸기(@) 전에 넣은 사람의 권한으로 끝내고 다시 미룬다(다음 전표를 위해).
+  const post = (date: string, memo: string) => [
+    `select count(*)::int from (select post_journal_entry('biz_dy', '${date}', '${memo}', null,
+       '[{"account_code":"1010","side":"debit","amount":1000},{"account_code":"4010","side":"credit","amount":1000}]'::jsonb)) x`,
+    'set constraints all immediate',
+    'set constraints all deferred',
+  ]
+  const link = (month: string, memo: string, imp: string = IMP.monthly) =>
+    `insert into finance_import_slips (business_id, month, slip_no, import_id)
+       select 'biz_dy', '${month}', slip_no, '${imp}' from journal_entries where memo = '${memo}'`
+  const slips = `select count(*)::int from finance_import_slips`
+  assert.equal(await as(EI.lead, [...post('2026-08-31', '[ECOUNT 엑셀] 8월'), link('2026-08', '[ECOUNT 엑셀] 8월')]), 1,
+    '0050: 본인 월별 draft로 그 달 전표를 못 잇는다')
+  await assert.rejects(as(EI.lead, [...post('2026-08-31', 'e1'), link('2026-08', 'e1'), ...post('2026-08-30', 'e2'), link('2026-08', 'e2')]),
+    /finance_import_slips_one_active/, '0050: 같은 달에 활성 업로드 전표가 둘 선다')
+  // 재업로드 = 정정: 역분개 + 정정분개를 세운 사람만 옛 줄을 내리고, 정정분개를 새 활성 줄로 잇는다(리뷰 I-1).
+  const correct = (orig: string, memo: string) => [
+    `select count(*)::int from (select post_correction('biz_dy', (select slip_no from journal_entries where memo = '${orig}'), '2026-08-31', '${memo}', null,
+       '[{"account_code":"1010","side":"debit","amount":2000},{"account_code":"4010","side":"credit","amount":2000}]'::jsonb)) x`,
+    'set constraints all immediate',
+    'set constraints all deferred',
+  ]
+  const drop = `update finance_import_slips set superseded_at = now() where month = '2026-08' and superseded_at is null`
+  assert.equal(await as(EI.lead, [...post('2026-08-31', 'e1'), link('2026-08', 'e1'), ...correct('e1', 'e2'), drop, link('2026-08', 'e2'),
+    `select count(*)::int * 10 + count(*) filter (where superseded_at is null)::int from finance_import_slips where month = '2026-08'`]), 21,
+  '0050: 역분개 뒤 옛 줄을 supersede하고 정정분개를 새 줄로 잇지 못한다(재업로드 = 정정)')
+  assert.equal(await as(EI.lead, [...post('2026-08-31', 'e1'), link('2026-08', 'e1'), drop]), 'denied',
+    '0050: 역분개 없이 업로드 전표 줄을 내린다 — 원장엔 옛 전표가 살아 있는데 다음 업로드가 같은 달을 또 싣는다')
+  assert.equal(await as(EI.lead, [...post('2026-08-31', 'e1'), link('2026-08', 'e1'), `@${EI.lead2}`, drop]), 'denied',
+    '0050: 다른 쓰기 권한자가 남의 업로드 전표 줄을 내린다(역분개 없이)')
+  assert.equal(await as(EI.lead, [...post('2026-08-31', 'e1'), link('2026-08', 'e1'), ...correct('e1', 'e2'), `@${EI.lead2}`, drop]), 'denied',
+    '0050: 남이 세운 역분개로 다른 쓰기 권한자가 업로드 전표 줄을 내린다')
+  // 역분개 없이 정정분개만 직접 세워도(journal_entry_insert는 누구나 부른다) 줄을 못 내린다.
+  assert.equal(await as(EI.lead, [...post('2026-08-31', 'e1'), link('2026-08', 'e1'),
+    `select count(*)::int from (select journal_entry_insert('biz_dy', '2026-08-31', 'fake', null,
+       '[{"account_code":"1010","side":"debit","amount":1},{"account_code":"4010","side":"credit","amount":1}]'::jsonb,
+       (select slip_no from journal_entries where memo = 'e1'), 'restatement')) x`,
+    'set constraints all immediate', 'set constraints all deferred', drop]), 'denied',
+  '0050: 역분개 없이 정정분개만 세우고 업로드 전표 줄을 내린다')
+  // 가짜 역분개(journal_entry_insert를 직접 불러 'reversal')로는 못 내린다 — 원 줄의 정확한 반대여야 한다(2차 리뷰 I-1).
+  const fakeReversal = (lines: string) => [
+    `select count(*)::int from (select journal_entry_insert('biz_dy', '2026-08-31', '[역분개] e1', null, '${lines}'::jsonb,
+       (select slip_no from journal_entries where memo = 'e1'), 'reversal')) x`,
+    'set constraints all immediate', 'set constraints all deferred',
+  ]
+  // 원 전표 e1 = [1: 1010 차변 1000 'e1', 2: 4010 대변 1000 'e1']. 아래 가짜는 각각 **한 가지만** 어긋난다.
+  const L = (...rows: [string, string, number, string][]) =>
+    JSON.stringify(rows.map(([account_code, side, amount, memo]) => ({ account_code, side, amount, memo })))
+  const fakes: [string, string][] = [
+    [L(['1010', 'credit', 1, 'e1'], ['4010', 'debit', 1, 'e1']), '1원짜리(금액만 다른)'],
+    [L(['3010', 'credit', 1000, 'e1'], ['4010', 'debit', 1000, 'e1']), '금액은 같고 계정이 다른'],
+    [L(['1010', 'debit', 1000, 'e1'], ['4010', 'credit', 1000, 'e1']), '차변 · 대변을 안 바꾼'],
+    [L(['4010', 'debit', 1000, 'e1'], ['1010', 'credit', 1000, 'e1']), '줄 순서가 post_correction과 다른'],
+    [L(['1010', 'credit', 1000, 'x'], ['4010', 'debit', 1000, 'x']), '적요가 다른'],
+    [L(['1010', 'credit', 1000, 'e1'], ['4010', 'debit', 1000, 'e1'], ['3010', 'debit', 5, 'e1'], ['3010', 'credit', 5, 'e1']), '줄이 더 많은'],
+  ]
+  for (const [lines, what] of fakes) {
+    assert.equal(await as(EI.lead, [...post('2026-08-31', 'e1'), link('2026-08', 'e1'), ...fakeReversal(lines), drop]), 'denied',
+      `0050: 본인이 ${what} 가짜 역분개를 세우고 업로드 전표 줄을 내린다`)
+  }
+  assert.equal(await as(EI.lead, [...post('2026-08-31', 'e1'), link('2026-08', 'e1'), `@${EI.lead2}`, ...fakeReversal(fakes[0][0]), drop]), 'denied',
+    '0050: 다른 쓰기 권한자가 1원짜리 가짜 역분개로 남의 업로드 전표 줄을 내린다')
+  const exact = L(['1010', 'credit', 1000, 'e1'], ['4010', 'debit', 1000, 'e1'])
+  // 손으로 세웠어도 원 줄의 정확한 반대면 진짜 역분개다 — 판정은 누가 불렀는지가 아니라 줄의 모양이다.
+  assert.equal(await as(EI.lead, [...post('2026-08-31', 'e1'), link('2026-08', 'e1'), ...fakeReversal(exact), drop]), 1,
+    '0050: 원 줄의 정확한 반대인 역분개로 업로드 전표 줄을 못 내린다')
+  assert.equal(await as(EI.lead, [link('2026-08', '수기 8월')]), 'denied', '0050: 이미 있던 수기 전표를 업로드 전표로 잇는다')
+  assert.equal(await as(EI.lead2, [...post('2026-08-31', 'e9'), `@${EI.lead}`, link('2026-08', 'e9')]), 'denied', '0050: 남이 세운 전표를 업로드 전표로 잇는다')
+  assert.equal(await as(EI.lead, [...post('2026-08-31', 'e1'), ...correct('e1', 'e2'), link('2026-08', '[역분개] e1')]), 'denied',
+    '0050: 역분개 전표를 업로드 전표로 잇는다')
+  assert.equal(await as(EI.lead, [...post('2026-08-31', 'e1'), link('2026-07', 'e1')]), 'denied', '0050: 다른 달 전표를 그 달 업로드로 잇는다')
+  assert.equal(await as(EI.lead, [...post('2026-08-31', 'e1'), link('2026-08', 'e1', IMP.other)]), 'denied', '0050: 남의 업로드로 전표를 잇는다')
+  assert.equal(await as(EI.lead, [...post('2026-08-31', 'e1'), link('2026-08', 'e1', IMP.annual)]), 'denied', '0050: 연간 업로드로 월별 전표를 잇는다')
+  assert.equal(await as(EI.lead, [...post('2026-08-31', 'e1'), `!update finance_imports set status = 'cancelled' where import_id = '${IMP.monthly}'`, link('2026-08', 'e1')]),
+    'denied', '0050: 끝난(취소된) 업로드로 전표를 잇는다')
+  assert.equal(await as(EI.lead, [...post('2026-08-31', 'e1'), `@${EI.reader}`, link('2026-08', 'e1')]), 'denied', '0050: 재무 읽기만 가진 사람이 전표를 잇는다')
+  assert.equal(await as(EI.lead, [...post('2026-08-31', 'e1'), `@${EI.agent}`, link('2026-08', 'e1')]), 'denied', '0050: AIAgent가 전표를 잇는다')
+  assert.equal(await as(EI.lead, [...post('2026-08-31', 'e1'), link('2026-08', 'e1'), `@${EI.member}`, slips]), 0, '0050: 재무 줄 없는 직원에게 업로드 전표가 보인다')
+  assert.equal(await as(EI.lead, [...post('2026-08-31', 'e1'), link('2026-08', 'e1'), `@${EI.reader}`, slips]), 1, '0050: 재무 읽기 권한자가 업로드 전표를 못 본다')
+  assert.equal(await as(EI.lead, [...post('2026-08-31', 'e1'), link('2026-08', 'e1'), ...correct('e1', 'e2'),
+    `update finance_import_slips set superseded_at = now()`, `update finance_import_slips set superseded_at = null`]), 0,
+  '0050: supersede한 줄을 되살린다')
+  await assert.rejects(as(EI.lead, [...post('2026-08-31', 'e1'), link('2026-08', 'e1'), `update finance_import_slips set month = '2026-09'`]),
+    /permission denied/, '0050: 업로드 전표의 달을 바꾼다(칸 grant)')
+  await assert.rejects(as(EI.lead, [...post('2026-08-31', 'e1'), link('2026-08', 'e1'), `delete from finance_import_slips`]),
+    /permission denied/, '0050: 업로드 전표 줄을 지운다')
+
+  // ── 첨부: finance_imports 원본은 재무 읽기 권한자에게만 · 올리기는 그 draft를 만든 본인만 ──
+  await db.exec(`
+    insert into attachments (entity_table, entity_id, file_name, mime, size_bytes, security_class, uploaded_by) values
+      ('finance_imports', '${IMP.monthly}', 'pl-2026.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 100, 'Normal', '${EI.lead}'),
+      ('businesses', 'biz_dy', 'brochure.pdf', 'application/pdf', 100, 'Normal', '${EI.chair}');
+  `)
+  const att = `select count(*)::int from attachments where entity_table = 'finance_imports'`
+  assert.deepEqual(await owner(`select business_id from attachments where entity_table = 'finance_imports'`), [{ business_id: 'biz_dy' }],
+    '0050: finance_imports 첨부에 회사가 안 찍힌다(attachments_stamp)')
+  assert.equal(await as(EI.member, [`select count(*)::int from attachments`]), 1, '0050 검사 전제: 직원은 DY 회사 첨부(일반)는 본다')
+  assert.equal(await as(EI.member, [att]), 0, '0050: 재무 읽기 권한 없는 직원에게 업로드 원본이 보인다')
+  assert.equal(await as(EI.reader, [att]), 1, '0050: 재무 읽기 권한자가 업로드 원본을 못 본다')
+  assert.equal(await as(EI.integration, [att]), 0, '0050: Integration에게 업로드 원본이 보인다')
+  const attach = (imp: string) =>
+    `insert into attachments (entity_table, entity_id, file_name, mime, size_bytes, security_class)
+       values ('finance_imports', '${imp}', 'up.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 100, 'Normal')`
+  assert.equal(await as(EI.lead, [attach(IMP.annual)]), 1, '0050: 만든 사람이 자기 draft에 원본을 못 올린다')
+  assert.equal(await as(EI.lead2, [attach(IMP.annual)]), 'denied', '0050: 남의 draft에 원본을 끼워 넣는다')
+  assert.equal(await as(EI.reader, [attach(IMP.annual)]), 'denied', '0050: 재무 읽기만 가진 사람이 업로드에 원본을 올린다')
+  assert.equal(await as(EI.lead, [attach(IMP.done)]), 'denied', '0050: 끝난 업로드에 원본을 더 올린다')
+  assert.equal(await as(EI.member, [attach(IMP.monthly)]), 'denied', '0050: 재무 줄 없는 직원이 업로드에 원본을 올린다')
+
+  // ── committed · cancelled 업로드의 원본은 증빙이다 — 줄 삭제 · 객체 삭제 · 재업로드는 draft일 때만(리뷰 I-2) ──
+  const [{ id: attId }] = await owner(`select attachment_id::text as id from attachments where entity_table = 'finance_imports'`) as { id: string }[]
+  const path = `finance_imports/${IMP.monthly}/${attId}`
+  await db.exec(`insert into storage.objects (bucket_id, name) values ('attachments', '${path}')`)
+  const commitMonthly = `!update finance_imports set file_sha256 = '${SHA}', status = 'committed' where import_id = '${IMP.monthly}'`
+  const cancelMonthly = `!update finance_imports set status = 'cancelled' where import_id = '${IMP.monthly}'`
+  const delRow = `delete from attachments where attachment_id = '${attId}'`
+  const delObj = `delete from storage.objects where bucket_id = 'attachments' and name = '${path}'`
+  const reup = [`!delete from storage.objects where name = '${path}'`, `insert into storage.objects (bucket_id, name) values ('attachments', '${path}')`]
+  assert.equal(await as(EI.lead, [delRow]), 1, '0050: draft 업로드의 원본 첨부를 올린 사람이 못 지운다(취소 흐름)')
+  assert.equal(await as(EI.lead, [delObj]), 1, '0050: draft 업로드의 원본 객체를 올린 사람이 못 지운다(취소 흐름)')
+  assert.equal(await as(EI.lead, reup), 1, '0050: draft 업로드의 원본을 한 시간 안에 다시 못 올린다')
+  assert.equal(await as(EI.lead, [commitMonthly, delRow]), 0, '0050: committed 업로드의 원본 첨부 줄을 지운다')
+  assert.equal(await as(EI.chair, [commitMonthly, delRow]), 0, '0050: 회장이 committed 업로드의 원본 첨부 줄을 지운다')
+  assert.equal(await as(EI.lead, [commitMonthly, delObj]), 0, '0050: committed 업로드의 원본 객체를 지운다')
+  assert.equal(await as(EI.lead, [commitMonthly, ...reup]), 'denied', '0050: committed 업로드의 원본을 바꿔치기한다(재업로드 창)')
+  assert.equal(await as(EI.lead, [cancelMonthly, delRow]), 0, '0050: cancelled 업로드의 원본 첨부 줄을 지운다(순서는 첨부 취소 → cancelled)')
+  assert.equal(await as(EI.lead, [cancelMonthly, delObj]), 0, '0050: cancelled 업로드의 원본 객체를 지운다')
+  assert.equal(await as(EI.lead, [`select count(*)::int from attachments where entity_table = 'businesses'`]), 1, '0050 검사 전제: 다른 대상 첨부 판정이 그대로다')
+  assert.equal(await as(EI.chair, [`delete from attachments where entity_table = 'businesses'`]), 1, '0050: 다른 대상의 첨부 삭제까지 막혔다')
+
+  // ── accounts: 사람도 source='ecount'(쓰기 권한자만) · source는 못 바꾼다 ──
+  const acct = (code: string, src: string) =>
+    `insert into accounts (business_id, account_code, name, category, section, source, fetched_at) values ('biz_dy', '${code}', 'x', 'other', 'sga', '${src}', now())`
+  assert.equal(await as(EI.lead, [acct('8110', 'ecount')]), 1, '0050: 재무 쓰기 권한자가 ECOUNT 계정을 못 넣는다')
+  assert.equal(await as(EI.lead, [acct('8111', 'manual')]), 1, '0050: 화면 수기 계정(manual)이 막혔다(회귀)')
+  assert.equal(await as(EI.lead, [acct('8112', 'estimate')]), 'denied', '0050: 사람이 estimate 계정을 넣는다')
+  assert.equal(await as(EI.reader, [acct('8113', 'ecount')]), 'denied', '0050: 재무 읽기만 가진 사람이 ECOUNT 계정을 넣는다')
+  assert.equal(await as(EI.member, [acct('8114', 'ecount')]), 'denied', '0050: 재무 줄 없는 직원이 ECOUNT 계정을 넣는다')
+  assert.equal(await as(EI.agent, [acct('8115', 'ecount')]), 'denied', '0050: AIAgent가 계정을 넣는다')
+  await assert.rejects(as(EI.lead, [acct('8116', 'ecount'), `update accounts set source = 'manual' where account_code = '8116'`]),
+    /account_source_immutable/, '0050: accounts_guard가 source 변경을 더는 막지 않는다')
+
+  // ── official_statements: basis · 증빙 · 활성 unique(basis별) · update는 supersede만 · 세무사 저장은 세무사 행만 ──
+  const save = (memo: string) =>
+    `select count(*)::int from (select official_statement_save('biz_dy', 'year', '2025', 'https://drive.example/audit', '${memo}',
+       '[{"account_code":"4010","amount":-5000}]'::jsonb)) x`
+  const ecount = (imp: string = IMP.annual, extra = '') =>
+    `insert into official_statements (business_id, period_kind, period_key, evidence_url, memo, basis, import_id)
+       values ('biz_dy', 'year', '2025', ${extra || 'null'}, 'ECOUNT 엑셀 2025', 'ecount_excel', '${imp}')`
+  assert.equal(await as(EI.lead, [save('세무사 2025'), `select count(*)::int from official_statements where basis = 'accountant' and import_id is null`]), 1,
+    '0050: official_statement_save의 행이 basis accountant가 아니다')
+  assert.equal(await as(EI.lead, [ecount()]), 1, '0050: 업로드가 있는 ECOUNT 잠정 결산(링크 없이)을 못 넣는다')
+  await assert.rejects(as(EI.lead, [`insert into official_statements (business_id, period_kind, period_key, evidence_url, memo, basis)
+      values ('biz_dy', 'year', '2025', 'https://x/y', 'e', 'ecount_excel')`]), /official_statements_evidence_check/, '0050: 업로드 없는 ECOUNT 결산이 들어간다')
+  await assert.rejects(as(EI.lead, [`insert into official_statements (business_id, period_kind, period_key, evidence_url, memo)
+      values ('biz_dy', 'year', '2025', null, 'e')`]), /official_statements_evidence_check/, '0050: 증빙 링크 없는 세무사 결산이 들어간다')
+  await assert.rejects(as(EI.lead, [`insert into official_statements (business_id, period_kind, period_key, evidence_url, memo, import_id)
+      values ('biz_dy', 'year', '2025', 'https://x/y', 'e', '${IMP.annual}')`]), /official_statements_evidence_check/, '0050: 세무사 결산에 업로드가 붙는다')
+  await assert.rejects(as(EI.lead, [ecount(IMP.annual, `'ftp://x'`)]), /official_statements_evidence_check/, '0050: http(s) 아닌 링크가 들어간다')
+  await assert.rejects(as(EI.lead, [`insert into official_statements (business_id, period_kind, period_key, memo, basis, import_id)
+       values ('biz_dy', 'year', '2025', 'e', 'ecount_excel', '${IMP.vana}')`]), /official_statements_import_fk/,
+  '0050: 다른 회사 업로드로 결산을 넣는다')
+  await assert.rejects(as(EI.lead, [`insert into official_statements (business_id, period_kind, period_key, memo, basis) values ('biz_dy', 'year', '2025', 'e', 'other')`]),
+    /check constraint/, '0050: 모르는 basis가 들어간다')
+  // 활성 unique는 basis별: 세무사 하나 + ECOUNT 하나는 같이 서고, ECOUNT 둘은 안 된다.
+  assert.equal(await as(EI.lead, [save('세무사 2025'), ecount(),
+    `select count(*)::int from official_statements where period_key = '2025' and superseded_at is null`]), 2, '0050: 세무사 확정과 ECOUNT 잠정이 같은 기간에 같이 서지 못한다')
+  await assert.rejects(as(EI.lead, [ecount(), ecount()]), /official_statements_one_active/, '0050: 같은 기간 ECOUNT 활성 결산이 둘 선다')
+  // update는 superseded_at 채우기만.
+  for (const set of [`memo = '위조'`, `evidence_url = 'https://evil/x'`, `basis = 'accountant'`, `memo = '위조', superseded_at = now()`]) {
+    await assert.rejects(as(EI.lead, [ecount(), `update official_statements set ${set} where basis = 'ecount_excel'`]),
+      /official_statement_immutable/, `0050: 공식 재무제표를 고친다 (${set})`)
+  }
+  await assert.rejects(as(EI.lead, [save('세무사 2025'), `update official_statements set memo = '위조'`]), /official_statement_immutable/,
+    '0050: 세무사 결산의 memo를 고친다(0020 supersede 정책의 칸 구멍)')
+  assert.equal(await as(EI.lead, [ecount(), `update official_statements set superseded_at = now() where basis = 'ecount_excel'`]), 1, '0050: supersede가 막혔다')
+  assert.equal(await as(EI.lead, [ecount(), `update official_statements set superseded_at = now() where basis = 'ecount_excel'`,
+    `update official_statements set superseded_at = now() where basis = 'ecount_excel'`]), 0, '0050: supersede된 결산을 다시 고친다')
+  await assert.rejects(as(EI.lead, [ecount(), `!update official_statements set superseded_at = now() where basis = 'ecount_excel'`,
+    `!update official_statements set superseded_at = null where basis = 'ecount_excel'`]), /official_statement_immutable/, '0050: 소유자가 supersede를 되돌린다(트리거)')
+  // 세무사 저장(두 번 = 정정)은 ECOUNT 잠정 행을 건드리지 않는다.
+  assert.equal(await as(EI.lead, [ecount(), save('세무사 2025'), save('세무사 2025 정정'),
+    `select (select count(*)::int from official_statements where basis = 'ecount_excel' and superseded_at is null) * 100
+          + (select count(*)::int from official_statements where basis = 'accountant' and superseded_at is null) * 10
+          + (select count(*)::int from official_statements where basis = 'accountant' and superseded_at is not null)`]), 111,
+  '0050: official_statement_save가 ECOUNT 잠정 행을 supersede한다(또는 세무사 정정이 안 된다)')
+  assert.equal(await as(EI.integration, [ecount()]), 'denied', '0050: Integration이 ECOUNT 결산을 넣는다')
+  assert.equal(await as(EI.reader, [ecount()]), 'denied', '0050: 재무 읽기만 가진 사람이 ECOUNT 결산을 넣는다')
+  await db.close()
+}
+
 async function main() {
   const db = new PGlite({ extensions: { pg_trgm } })
   const files = await applyAll(db)
@@ -4464,8 +4820,9 @@ async function main() {
   await financeGrants()
   await documentGrants()
   await staffTerms()
+  await ecountImport()
   console.log(
-    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단), 0048 문서 모듈 권한(사람 × 회사 · 문서 · 폴더 쓰기 · 줄 없는 팀장 거부 · 회사 접근과 줄 둘 다 · 열람 등급 위 insert/update 차단 · 등록자는 본인 · 고치기 · 지우기는 자기 것만(회장 전부) · 주인 칸은 회장만 · 폴더는 만든 사람만 · 시스템 계정 불변 · 옛 /core/search 회귀 · 회수 감사 · hard delete 닫힘), 0049 직원 화면 용어(결재선 · 취합 제목 «회장»→«대표» 백필 — 사람 · 단계 · updated_at 그대로 · 얼림 재가동 · 새 결재선 · 감사 메모도 «대표»)`,
+    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단), 0048 문서 모듈 권한(사람 × 회사 · 문서 · 폴더 쓰기 · 줄 없는 팀장 거부 · 회사 접근과 줄 둘 다 · 열람 등급 위 insert/update 차단 · 등록자는 본인 · 고치기 · 지우기는 자기 것만(회장 전부) · 주인 칸은 회장만 · 폴더는 만든 사람만 · 시스템 계정 불변 · 옛 /core/search 회귀 · 회수 감사 · hard delete 닫힘), 0049 직원 화면 용어(결재선 · 취합 제목 «회장»→«대표» 백필 — 사람 · 단계 · updated_at 그대로 · 얼림 재가동 · 새 결재선 · 감사 메모도 «대표»), 0050 ECOUNT 업로드(업로드 표 — 쓰기 권한자 본인 draft만 · 남의 draft/끝난 업로드 못 고침 · 지우기 없음 · 칸 단위 update · 해시 한 번 · 재무 읽기 없으면 0행 · 시스템 계정 restrictive · anon 잠금 · 업로드 전표 활성 (회사, 달) 하나 · 이 트랜잭션에 본인이 세운 그 달 전표만 잇고(수기 · 남의 · 역분개 거부) 본인이 세운 정확한 반대 역분개 뒤에만 내림(가짜 역분개 거부) · 첨부 원본은 재무 권한자만 보고 본인만 올림 · committed/cancelled 원본은 줄 · 객체 삭제와 재업로드 거부 · 사람의 ECOUNT 계정 + source 불변 · 공식 재무제표 basis/증빙/활성 unique basis별 · update는 supersede만 · 세무사 저장이 ECOUNT 잠정을 안 밈)`,
   )
 }
 
