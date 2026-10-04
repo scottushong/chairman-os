@@ -8,7 +8,8 @@
  *   계정과목 분류 제안 · 차단/경고 · 병합 계획(분류는 안 바꿈 · 이름은 체크한 것만 · 안 지움) · dummy 끝까지
  *   연간     계정 맞추기 · 줄마다 계정 고르기(이름이 둘 이상과 맞을 때) · 한 계정 한 줄 · 단위 · 로마숫자 머리 · 묶음 줄 ·
  *            합계 행 대조 · 불균형 · 세무사 확정 해 · 원장 부호 · dummy 등록 끝까지(0051과 같은 거부 낱말)
- *   월별     당월/누계 · 누계 → 당월 · 합계 열 · 마감 달 · 세무사 확정 달 · 수기 전표 · 이익 줄 대조(등록은 0051 이후)
+ *   월별     당월/누계 · 누계 → 당월 · 합계 열 · 마감 달 · 세무사 확정 달 · 수기 전표 · 이익 줄 대조 · 등록 줄(원장 부호) ·
+ *            재무상태표/비활성/한 계정 두 줄/대응 계정 차단 · dummy 등록 끝까지(0052와 같은 거부 낱말 · 재업로드 = 정정 전표 · 두 번 세지 않음)
  *
  * ECOUNT_SAMPLE_DIR=<폴더>를 주면 견본 xlsx를 그 폴더에 써 둔다(화면에서 올려 볼 수 있게).
  *
@@ -53,7 +54,7 @@ import {
   sheetLikeFromGrid,
 } from '../src/lib/ecount/excel/mapping'
 import { annualLedgerLines, ledgerSign, planAnnual } from '../src/lib/ecount/excel/annual-import'
-import { planMonthly, ytdToMonthly } from '../src/lib/ecount/excel/monthly-import'
+import { ECOUNT_MONTHLY_COUNTER, monthlyLedgerMonths, planMonthly, ytdToMonthly, type MonthlyLedgerMonth } from '../src/lib/ecount/excel/monthly-import'
 import { matchAccount, parsePicks, pickKey } from '../src/lib/ecount/excel/statement-lines'
 import { parseCell } from '../src/lib/statements/paste'
 
@@ -571,11 +572,17 @@ function errorMessages() {
   assert.match(ecountImportErrorMessage('Supabase x PGRST202: Could not find the function')!, /DB 반영 전/)
   assert.equal(ecountImportErrorMessage('뭔지 모를 오류'), null)
   // 리뷰 m-2 · m-3: 바뀐 해 · 같은 해 동시 등록(활성 unique 23505 · supersede 가드)
-  assert.match(ecountImportErrorMessage('Supabase official_statement_import_ecount P0001: import_changed')!, /해가 바뀌었습니다/)
+  assert.match(ecountImportErrorMessage('Supabase official_statement_import_ecount P0001: import_changed')!, /해나 당월\/누계 표시가 바뀌었습니다/)
   for (const raw of ['Supabase x 23505: duplicate key value violates unique constraint "official_statements_one_active"', 'official_statement_immutable']) {
     assert.equal(ecountImportErrorMessage(raw), '다른 사람이 같은 해 결산을 방금 등록했습니다. 새로 고친 뒤 다시 확인해 주세요.', raw)
   }
-  for (const m of [NO_BOOKS_MESSAGE, ...['finance_import_closed', 'official_confirmed', 'statement_unbalanced'].map((c) => ecountImportErrorMessage(c)!)]) {
+  // 0052 월별 — 낱말마다 제 문장(모르는 오류로 떨어지지 않는다)
+  const monthlyCodes = ['ecount_month_reversed', 'ecount_monthly_bs_account', 'official_month_locked', 'closed_period', 'inactive_account',
+    'ecount_original_missing', 'ecount_counter_account_invalid', 'finance_import_slips_one_active']
+  for (const c of monthlyCodes) assert.ok(ecountImportErrorMessage(`Supabase ecount_monthly_import P0001: ${c}`), c)
+  assert.match(ecountImportErrorMessage('Supabase x 23505: duplicate key value violates unique constraint "finance_import_slips_one_active"')!, /같은 달 월별 손익/)
+  assert.match(ecountImportErrorMessage('finance_import_closed: 업로드 x는 이미 committed다')!, /이미 등록되었거나/, 'finance_import_closed가 closed_period로 읽히면 안 된다')
+  for (const m of [NO_BOOKS_MESSAGE, ...['finance_import_closed', 'official_confirmed', 'statement_unbalanced', ...monthlyCodes].map((c) => ecountImportErrorMessage(c)!)]) {
     assert.ok(!/회장|Chairman|CH-\d/.test(m), `직원 화면 문장에 «회장» · 기능번호: ${m}`)
   }
 }
@@ -965,6 +972,138 @@ async function monthlyChecks() {
   const miss = planMonthly(plain, g.mapping, { accounts: BOOK.filter((a) => a.name !== '급여'), ...NO_LOCKS })
   assert.ok(miss.lines.find((l) => l.name === '급여')!.blocks.some((b) => /계정이 없습니다/.test(b)))
   assert.equal(miss.checks.length, 0)
+
+  // ── 0052 등록 재료: 당월 금액 · 원장 부호 · 금액 있는 달만 ──
+  const months = monthlyLedgerMonths(p)
+  assert.equal(months.length, 12, '열두 달 모두 금액이 있다')
+  assert.deepEqual(months[2], {
+    month: '2025-03',
+    lines: [
+      { account_code: '4010', amount: -300_000 },
+      { account_code: '4510', amount: 180_000 },
+      { account_code: '8010', amount: 10_000 },
+      { account_code: '9020', amount: -1_000 },
+      { account_code: '9310', amount: 2_000 },
+    ],
+  }, '3월 — 수익 −(대변) · 비용 +(차변) · 영업외는 소속 머리로 부호')
+  assert.equal(months[2].lines.reduce((t, l) => t + l.amount, 0), -(40 * 3 - 11) * 1000, '손익 줄의 합 = −당기순이익(대응 줄은 DB가 그 반대로 세운다)')
+  assert.deepEqual(monthlyLedgerMonths(py), months, '누계 파일을 당월로 바꾼 등록 줄 = 당월 파일의 등록 줄(두 번 세지 않는다)')
+  assert.throws(() => monthlyLedgerMonths(pg), /막힌 줄/, '막힌 미리보기로는 등록 줄을 만들지 않는다')
+  // 금액이 없는 달은 보내지 않는다(그 달은 손대지 않는다)
+  const twoMonths = { ...g.mapping, parts: [{ ...g.mapping.parts[0], columns: { name: 0, m01: 1, m02: 2 } }] }
+  assert.deepEqual(monthlyLedgerMonths(planMonthly(plain, twoMonths, { accounts: BOOK, ...NO_LOCKS })).map((m) => m.month), ['2025-01', '2025-02'])
+
+  // 0052 RPC가 거부하는 줄은 미리보기가 먼저 막는다 — 재무상태표 계정 · 비활성 · 한 계정에 줄 둘 · 대응 계정
+  const bsBook = BOOK.map((a) => (a.name === '급여' ? { ...a, section: 'other_liability' as const, category: 'liability' as const } : a))
+  assert.ok(planMonthly(plain, g.mapping, { accounts: bsBook, ...NO_LOCKS }).lines.find((l) => l.name === '급여')!.blocks.some((b) => /재무상태표 계정 8010/.test(b)),
+    '재무상태표 계정이 섞이면 막는다(경고가 아니다)')
+  const inactive = BOOK.map((a) => (a.name === '급여' ? { ...a, active: false } : a))
+  assert.ok(planMonthly(plain, g.mapping, { accounts: inactive, ...NO_LOCKS }).lines.find((l) => l.name === '급여')!.blocks.some((b) => /비활성 계정 8010/.test(b)),
+    '비활성 계정에 금액이 있으면 막는다(장부가 받지 않는다)')
+  const twin = BOOK.map((a) => (a.name === '이자수익' ? { ...a, account_code: '9310', name: '이자수익' } : a.account_code === '9310' ? { ...a, name: '이자비용' } : a))
+  assert.ok(planMonthly(plain, g.mapping, { accounts: twin, ...NO_LOCKS }).lines.some((l) => l.blocks.some((b) => /계정 9310에 줄이 2개/.test(b))),
+    '두 줄이 한 계정으로 모이면 막는다')
+  const counterBook = BOOK.map((a) => (a.name === '급여' ? { ...a, account_code: ECOUNT_MONTHLY_COUNTER.code, section: 'sga' as const } : a))
+  assert.ok(planMonthly(plain, g.mapping, { accounts: counterBook, ...NO_LOCKS }).lines.some((l) => l.blocks.some((b) => /대응 계정에는 금액을 싣지 않습니다/.test(b))),
+    '대응 계정 줄은 막는다')
+
+  await dummyMonthlyEndToEnd()
+}
+
+/**
+ * dummy 월별 등록 끝까지 — 0052 ecount_monthly_import와 같은 순서 · 같은 거부 낱말 · 같은 «두 번 세지 않음».
+ * dummy DY 장부는 2026-07까지 마감이라 8월 · 9월에 싣는다. 원본 첨부는 dummy 첨부 저장소에 실제로 올린다(DB처럼 확인한다).
+ */
+async function dummyMonthlyEndToEnd() {
+  const { dummyRepository: repo } = await import('../src/lib/repository/dummy')
+  const { dummyImportSlips } = await import('../src/lib/repository/dummy-books')
+  const actor = { user_id: 'dummy', role: 'Chairman' as const }
+  const sha = 'e'.repeat(64)
+  const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  const start = async (basis: 'monthly' | 'ytd' = 'monthly', withOriginal = true) => {
+    const imp = await repo.createFinanceImport({ business_id: 'biz_dy', kind: 'monthly', file_name: 'DY 월별.xlsx' }, actor)
+    if (withOriginal) {
+      const a = await repo.createAttachment({ entity_table: 'finance_imports', entity_id: imp.import_id, file_name: 'DY 월별.xlsx', mime: XLSX, size_bytes: 3, security_class: 'Normal' }, actor)
+      await repo.putAttachmentObject(a.storage_path, new Uint8Array([1, 2, 3]).buffer, XLSX)
+    }
+    await repo.recordFinanceImportPreview(imp.import_id, { file_sha256: sha, summary: { stage: 'preview', mapping: { basis } }, period_key: '2026' }, actor)
+    return imp.import_id
+  }
+  const net = async (month: string, code: string) =>
+    (await repo.loadFinanceLedger()).journal
+      .filter((j) => j.business_id === 'biz_dy' && j.account_code === code && j.entry_date.startsWith(month))
+      .reduce((t, j) => t + (j.side === 'debit' ? j.amount : -j.amount), 0)
+  const reg = (id: string, months: MonthlyLedgerMonth[], o: { basis?: 'monthly' | 'ytd'; year?: string; sha?: string } = {}) =>
+    repo.registerEcountMonthly(id, { file_sha256: o.sha ?? sha, period_key: o.year ?? '2026', basis: o.basis ?? 'monthly', months }, actor)
+  const AUG: MonthlyLedgerMonth = { month: '2026-08', lines: [{ account_code: '4010', amount: -1000 }, { account_code: '4510', amount: 400 }, { account_code: '8010', amount: 100 }] }
+  const AUG2: MonthlyLedgerMonth = { month: '2026-08', lines: [{ account_code: '4010', amount: -1500 }, { account_code: '4510', amount: 600 }] }
+  const C = ECOUNT_MONTHLY_COUNTER.code
+  const before = { rev: await net('2026-08', '4010'), sga: await net('2026-08', '8010'), counter: await net('2026-08', C) }
+
+  // 거부 — DB와 같은 낱말 · 아무것도 남지 않는다
+  const m1 = await start()
+  for (const [months, re] of [
+    [[{ ...AUG, lines: [...AUG.lines, { account_code: '1010', amount: 5 }] }], /ecount_monthly_bs_account/],
+    [[{ ...AUG, lines: [...AUG.lines, { account_code: '없는코드', amount: 5 }] }], /statement_unknown_account/],
+    [[{ ...AUG, month: '2025-08' }], /ecount_plan_invalid/],
+    [[AUG, AUG], /ecount_plan_invalid/],
+    [[{ ...AUG, lines: [...AUG.lines, { account_code: C, amount: 5 }] }], /ecount_plan_invalid/],
+    [[{ ...AUG, lines: [...AUG.lines, { account_code: '4010', amount: -1 }] }], /ecount_plan_invalid/],
+    [[], /statement_empty/],
+    [[{ ...AUG, month: '2026-07' }], /closed_period/],
+  ] as [MonthlyLedgerMonth[], RegExp][]) {
+    await assert.rejects(reg(m1, months), re, String(re))
+  }
+  await assert.rejects(reg(m1, [AUG], { basis: 'ytd' }), /import_changed/, '당월로 확정한 업로드를 누계라며 싣는다')
+  await assert.rejects(reg(m1, [AUG], { year: '2025' }), /import_changed/)
+  await assert.rejects(reg(m1, [AUG], { sha: 'f'.repeat(64) }), /finance_import_hash_mismatch/)
+  await assert.rejects(reg(await start('monthly', false), [AUG]), /ecount_original_missing/, '원본 첨부 없는 업로드를 싣는다')
+  assert.equal((await repo.getFinanceImport(m1))!.status, 'draft', 'dummy: 막힌 월별 등록이 committed를 남겼다')
+  assert.equal(await net('2026-08', '4010'), before.rev, 'dummy: 막힌 월별 등록이 전표를 남겼다')
+
+  // 등록 — 전표 한 장 + 대응 한 줄 · 대응 계정 자동
+  const r1 = await reg(m1, [AUG])
+  assert.deepEqual([r1.posted, r1.corrected, r1.unchanged], [1, 0, 0])
+  assert.equal(await net('2026-08', '4010'), before.rev - 1000)
+  assert.equal(await net('2026-08', C), before.counter + 500, '대응 = 순이익만큼 차변')
+  const counter = (await repo.loadFinanceLedger()).accounts.find((a) => a.business_id === 'biz_dy' && a.account_code === C)!
+  assert.deepEqual([counter.name, counter.section, counter.cash_flow, counter.source, counter.active], [ECOUNT_MONTHLY_COUNTER.name, 'equity', 'operating', 'ecount', true])
+  assert.equal((await repo.getFinanceImport(m1))!.status, 'committed')
+  await assert.rejects(reg(m1, [AUG]), /finance_import_closed/)
+
+  // 재업로드 — 정정 전표 · 두 배가 아니다 · 활성 줄 하나
+  const r2 = await reg(await start(), [AUG2])
+  assert.deepEqual([r2.posted, r2.corrected], [0, 1])
+  assert.equal(await net('2026-08', '4010'), before.rev - 1500, 'dummy: 재업로드 뒤 8월 매출이 새 업로드가 아니다(두 번 셌다)')
+  assert.equal(await net('2026-08', '8010'), before.sga, 'dummy: 재업로드에서 빠진 계정이 남았다')
+  assert.equal(await net('2026-08', C), before.counter + 900)
+  assert.equal(dummyImportSlips('biz_dy').filter((x) => x.month === '2026-08' && x.superseded_at === null).length, 1)
+  const entries = (await repo.loadFinanceLedger()).entries
+  assert.ok(entries.some((e) => e.corrects_id === r2.months[0].previous && e.correction_kind === 'reversal'), 'dummy: 옛 업로드 전표에 역분개가 없다')
+  // 같은 내용이면 건너뛴다
+  const n = entries.length
+  const r3 = await reg(await start(), [AUG2])
+  assert.deepEqual([r3.posted, r3.corrected, r3.unchanged], [0, 0, 1])
+  assert.equal((await repo.loadFinanceLedger()).entries.length, n, 'dummy: 같은 내용 재업로드가 전표를 쌓는다')
+  // 누계로 확정한 업로드는 누계로(앱이 바꾼 당월 금액)
+  const sep = await net('2026-09', '4010')
+  await reg(await start('ytd'), [{ month: '2026-09', lines: [{ account_code: '4010', amount: -200 }] }], { basis: 'ytd' })
+  assert.equal(await net('2026-09', '4010'), sep - 200, 'dummy: 누계로 확정한 업로드가 안 실린다')
+
+  // 이미 역분개된 업로드 전표 — 또 뒤집지 않고 멈춘다
+  const active = dummyImportSlips('biz_dy').find((x) => x.month === '2026-08' && x.superseded_at === null)!
+  await repo.postCorrection({ business_id: 'biz_dy', corrects_id: active.slip_no, entry_date: '2026-08-31', memo: '손으로 취소', evidence_url: null, lines: [] }, actor)
+  const m4 = await start()
+  await assert.rejects(reg(m4, [AUG]), /ecount_month_reversed/)
+  assert.equal((await repo.getFinanceImport(m4))!.status, 'draft')
+
+  // 세무사 확정이 덮은 달은 받지 않는다
+  await repo.saveOfficialStatement(
+    { business_id: 'biz_dy', period_kind: 'quarter', period_key: '2026-Q4', evidence_url: 'https://drive.example/q', memo: '세무사 Q4', lines: [{ account_code: '4010', amount: -1 }] },
+    actor,
+  )
+  await assert.rejects(reg(m4, [{ ...AUG, month: '2026-10' }]), /official_month_locked/)
+  for (const id of [m4]) await repo.cancelFinanceImport(id, actor).catch(() => undefined)
 }
 
 /** ECOUNT_SAMPLE_DIR가 있으면 견본을 써 둔다 — 화면에서 직접 올려 볼 수 있게(저장소 밖 폴더를 준다). */
@@ -995,7 +1134,7 @@ async function main() {
   console.log('PASS: 계정과목 — 분류 제안(구분 열 · 코드 대역 · 이름) · 차단(코드 공백 · 중복 · 미분류 · 모순) · 경고(이름 다름 · 사용여부 · 합계 행 · 파일에 없는 계정) · 병합(분류 안 바꿈 · 체크한 이름만 · 안 지움) · dummy 끝까지')
   console.log('PASS: 연간 — 두 시트 짐작 · 천원 → 원 · 로마숫자 머리(혼자 선 머리 = 계정 줄 · 로마숫자 이익 줄) · 묶음 줄 = 소계 · 0원 줄 제외 · 계정 맞추기(코드 · 이름 · 모호 → 줄마다 고르기 · 후보 밖 거부) · 한 계정 한 줄 · 합계 행 대조(차액) · 불균형 · 세무사 확정 해 거부 · 원장 부호 · dummy 등록(거부 낱말 · supersede · 기본 목록은 확정만)')
   console.log('PASS: 등록 — dummy 계정과목 한 번(전부 아니면 전무 · 해시 · 이미 있는 코드 · 바뀐 이름 · 남의 업로드 · AIAgent · 두 번 등록) · 거부 낱말 → 직원 화면 문장(«회장» 없음)')
-  console.log('PASS: 월별 — 월 열 열둘 · 합계 열 · 당월/누계 짐작 · 천원 → 원 · 누계 → 당월(앞 달 빼기 · 이익 줄도) · 빈 달 누계 차단 · 행 합 ≠ 합계 열 · 마감 달 · 세무사 확정 달 · 수기 전표 경고 · 달마다 이익 줄 대조')
+  console.log('PASS: 월별 — 월 열 열둘 · 합계 열 · 당월/누계 짐작 · 천원 → 원 · 누계 → 당월(앞 달 빼기 · 이익 줄도) · 빈 달 누계 차단 · 행 합 ≠ 합계 열 · 마감 달 · 세무사 확정 달 · 수기 전표 경고 · 달마다 이익 줄 대조 · 등록 줄(당월 · 원장 부호 · 누계판 = 당월판) · 재무상태표/비활성/두 줄/대응 계정 차단 · dummy 등록(거부 낱말 · 대응 계정 · 재업로드 정정 전표 · 같은 내용 건너뜀 · 역분개된 달 멈춤 · 세무사 확정 달)')
 }
 
 main().catch((e) => {

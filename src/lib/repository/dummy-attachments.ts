@@ -34,6 +34,16 @@ interface Store {
 const g = globalThis as unknown as { __chairmanDummyAttachments?: Store }
 const store: Store = (g.__chairmanDummyAttachments ??= { rows: [], bytes: new Map(), viewers: [], audit: [], usage: [] })
 
+/**
+ * 0052 ecount_monthly_import의 원본 확인 자리 — 그 업로드의 첨부 줄(보는 사람과 상관없이 전부) · Storage 바이트가 있는가.
+ * DB는 첨부 줄을 for update로 잡고 «정확히 하나 · 올린 사람 = 만든 사람 · 같은 회사 · xlsx · 객체 있음»을 본다.
+ */
+export function dummyFinanceImportOriginals(importId: string): { uploaded_by: string; business_id: string | null; mime: string; hasObject: boolean }[] {
+  return store.rows
+    .filter((a) => a.entity_table === 'finance_imports' && a.entity_id === importId)
+    .map((a) => ({ uploaded_by: a.uploaded_by, business_id: a.business_id, mime: a.mime, hasObject: store.bytes.has(a.storage_path) }))
+}
+
 /** Phase 11 /settings 일별 비용이 읽는다(dummy-assistant.ts). 줄을 고치지 못하게 사본을 준다. */
 export function dummyUsageRows(): (AiUsageInput & { user_id: string; created_at: string })[] {
   return store.usage.map((u) => ({ ...u }))

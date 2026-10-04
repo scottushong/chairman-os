@@ -16,7 +16,7 @@ import {
 } from '@/lib/ecount/excel/accounts-import'
 import { annualLedgerLines, planAnnual } from '@/lib/ecount/excel/annual-import'
 import type { EcountUnit } from '@/lib/ecount/excel/cells'
-import { planMonthly } from '@/lib/ecount/excel/monthly-import'
+import { monthlyLedgerMonths, planMonthly } from '@/lib/ecount/excel/monthly-import'
 import {
   guessMapping,
   mappingProblems,
@@ -64,7 +64,7 @@ import {
  *
  * ECOUNT 열 구성(화면 캡처)이 없어서 **열은 사람이 지정한다**(lib/ecount/excel/mapping.ts) — 머리글로 짐작하거나
  * 같은 회사의 지난 업로드 지정을 불러오고, 사람이 «이 열 지정으로 미리보기»를 눌러 확정한다(summary.mapping).
- * 등록은 확정한 지정으로만 한다. 계정과목 · 연간은 등록까지(0051 RPC), 월별은 미리보기 검증까지(월별 RPC는 다음).
+ * 등록은 확정한 지정으로만 한다. 계정과목 · 연간은 0051 RPC, 월별은 0052 RPC(ecount_monthly_import)로 등록한다.
  *
  * 믿지 않는 것: 화면이 보낸 business_id · import_id · 행. 회사는 업로드 줄(DB가 RLS로 내준 것)에서 다시 읽고,
  * 업로드는 «본인 · draft · 그 회사 장부 권한»을 매번 다시 판정한다. 최종 판정은 0050 RLS(can_keep_books)다.
@@ -107,7 +107,7 @@ export interface EcountPreviewState extends EcountImportState {
   mappingProblems?: string[]
   /** 계정과목 미리보기 재료 — 화면이 사람의 분류 고침마다 planAccounts를 다시 돌린다 */
   accounts?: { rows: AccountFileRow[]; ignored: IgnoredRow[]; existing: ExistingAccount[] }
-  /** 연간 · 월별 미리보기(월별은 검증만 — 등록은 월별 RPC가 생긴 뒤) */
+  /** 연간 · 월별 미리보기 */
   amounts?: AmountsPreview
   /** 연간 — 이 미리보기에 쓰인 계정 고르기(서버가 후보 안의 것만 남긴 값) */
   picks?: Record<string, string>
@@ -119,14 +119,14 @@ export interface EcountCommitState extends EcountImportState {
   /** 연간 — 새 결산 id · 실은 줄 수 */
   statementId?: number
   lines?: number
+  /** 월별 — 새 전표 달 수 · 정정 전표 달 수(재업로드) · 같아서 건너뛴 달 수 */
+  monthly?: { posted: number; corrected: number; unchanged: number }
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /** 직원 화면이다 — «회장»이 아니라 «대표»(CLAUDE.md 직원 화면 용어 원칙). statements.ts와 같은 문장. */
 const NO_BOOKS = NO_BOOKS_MESSAGE
-/** 월별 등록 — DB 등록 함수(ecount_monthly_import)는 다음 마이그레이션이다. */
-const COMMIT_PENDING = '등록은 다음 단계(DB 반영 후)에 열립니다. 지금은 미리보기 검증까지만 합니다.'
 
 /** 거부 낱말(0051 RPC · dummy가 같은 것을 던진다) → 화면 문장. lib/ecount/import-errors.ts 한 곳에서 고른다. */
 function denied(where: string, e: unknown, fallback: string): EcountImportState {
@@ -297,13 +297,22 @@ function usedPicks(amounts: AmountsPreview, picks: Record<string, string>): Reco
 }
 
 /**
- * 월별 미리보기 — 검증만. 마감된 달(0016 closed_period와 같은 판정) · 세무사 확정이 덮은 달 · 수기 전표가 있는 달을
- * 원장에서 읽어 넘긴다. 최종 판정은 등록 RPC(0051 이후)가 DB에서 다시 한다.
+ * 월별 미리보기 · 등록 재료. 마감된 달(0016 closed_period와 같은 판정) · 세무사 확정이 덮은 달 · 수기 전표가 있는 달을
+ * 원장에서 읽어 넘긴다. 최종 판정은 등록 RPC(0052 ecount_monthly_import)가 DB에서 다시 한다.
+ * 수기 전표 경고는 업로드 전표(memo «[ECOUNT 엑셀]»)를 빼고 센다 — 지난 업로드는 재업로드가 정정하므로 겹침이 아니다.
  */
 async function monthlyPreview(repo: ChairmanRepository, imp: FinanceImport, sheets: EcountSheet[], mapping: EcountMapping): Promise<AmountsPreview> {
   const [ledger, officials] = await Promise.all([repo.loadFinanceLedger(), repo.listOfficialStatements(imp.business_id)])
+  // 업로드 전표와 그 역분개 · 정정분개(적요 머리 «[ECOUNT 엑셀]» · «[역분개] [ECOUNT 엑셀]»)
+  const uploadSlips = new Set(
+    ledger.entries.filter((e) => e.business_id === imp.business_id && /^(\[역분개\] )?\[ECOUNT 엑셀\]/.test(e.memo)).map((e) => e.slip_no),
+  )
   const journalMonths = [
-    ...new Set(ledger.journal.filter((j) => j.business_id === imp.business_id && j.source === 'manual').map((j) => periodOfDate(j.entry_date))),
+    ...new Set(
+      ledger.journal
+        .filter((j) => j.business_id === imp.business_id && j.source === 'manual' && !uploadSlips.has(j.slip_no))
+        .map((j) => periodOfDate(j.entry_date)),
+    ),
   ]
   return planMonthly(sheets, mapping, {
     accounts: await companyAccounts(repo, imp.business_id, ledger),
@@ -407,7 +416,7 @@ export async function previewEcountImport(importId: unknown, choices?: EcountPre
  * 등록 — 같은 원본을 다시 읽고(sha256이 미리보기 때와 같아야 한다) **처음부터 다시** 판정한다.
  * 화면이 보낸 것은 사람의 선택(열 지정 · 분류 고침 · 이름 바꿀 코드 · 연간 계정 고르기)뿐이고, 열 지정은 미리보기에서 확정해
  * summary에 적힌 것과 같아야 한다 — 짐작한 지정으로는 등록하지 않는다. 금액 · 행은 늘 원본에서 다시 읽는다(summary를 믿지 않는다).
- * 쓰기는 대상별 RPC 한 번(0051): 판정 · 감사 · 장부 · committed가 한 트랜잭션이라 반쪽 등록이 없다. 월별은 월별 RPC가 생긴 뒤.
+ * 쓰기는 대상별 RPC 한 번(0051 · 0052): 판정 · 감사 · 장부 · committed가 한 트랜잭션이라 반쪽 등록이 없다.
  */
 export async function commitEcountImport(importId: unknown, choices?: EcountCommitChoices): Promise<EcountCommitState> {
   const user = await currentUser()
@@ -417,7 +426,6 @@ export async function commitEcountImport(importId: unknown, choices?: EcountComm
     const own = await ownDraft(repo, user, importId)
     if ('error' in own) return own
     const { imp } = own
-    if (imp.kind === 'monthly') return { error: `${FINANCE_IMPORT_KIND_LABEL_KO[imp.kind]}: ${COMMIT_PENDING}` }
     if (!imp.file_sha256) return { error: '미리보기를 먼저 하세요.' }
     const original = await readOriginal(repo, imp, user)
     if ('error' in original) return original
@@ -434,6 +442,23 @@ export async function commitEcountImport(importId: unknown, choices?: EcountComm
     if (problems.length > 0) return { error: problems[0] }
     const actor = { user_id: user.user_id, role: user.role }
     const base = `/finance/${encodeURIComponent(imp.business_id)}`
+
+    if (imp.kind === 'monthly') {
+      const amounts = await monthlyPreview(repo, imp, parsed.sheets, saved)
+      if (amounts.blockCount > 0) return { error: `막힌 줄이 ${amounts.blockCount}개 있습니다. 미리보기에서 고친 뒤 등록하세요.` }
+      if (!saved.year || !saved.basis) return { error: '몇 년도 · 당월/누계를 정하지 않았습니다. 열 지정을 고른 뒤 미리보기를 다시 하세요.' }
+      const months = monthlyLedgerMonths(amounts)
+      if (months.length === 0) return { error: `${FINANCE_IMPORT_KIND_LABEL_KO[imp.kind]}: 실을 금액 줄이 없습니다. 열 지정(과목명 · 월 열)을 확인하세요.` }
+      const r = await repo.registerEcountMonthly(imp.import_id, { file_sha256: original.sha, period_key: saved.year, basis: saved.basis, months }, actor)
+      revalidatePath(importPath(imp.business_id))
+      revalidatePath(`${base}/journal`)
+      revalidatePath(`${base}/monthly`)
+      revalidatePath(`${base}/accounts`)
+      revalidatePath(base, 'layout')
+      revalidatePath('/finance')
+      revalidatePath(`/business/${encodeURIComponent(imp.business_id)}`)
+      return { importId: imp.import_id, monthly: { posted: r.posted, corrected: r.corrected, unchanged: r.unchanged } }
+    }
 
     if (imp.kind === 'annual') {
       // 고른 계정은 화면 값이지만 후보(원본 + 지금 장부)는 여기서 다시 만든다 — 후보 밖의 코드는 «안 고름»으로 막힌다.

@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 import type { FinanceImport, FinanceImportKind, FinanceImportPreviewPatch } from '@/types'
 
-import type { AuditActor, ChairmanRepository } from './types'
+import type { AuditActor, ChairmanRepository, EcountMonthlyResult } from './types'
 
 /**
  * 0050 finance_imports(ECOUNT 엑셀 업로드 한 건)의 live 어댑터 조각. supabase.ts가 펼쳐 넣는다.
@@ -16,7 +16,8 @@ import type { AuditActor, ChairmanRepository } from './types'
  *
  * 상태 전이는 늘 `status = 'draft'` 조건을 같이 건다 — 끝난 업로드를 건드리는 길이 앱에 없게(트리거가 한 번 더 막는다).
  * **committed는 여기서 못 만든다**(0051 — 사람의 update with check가 draft · cancelled뿐). 등록은 대상별 RPC 한 번이다:
- *   계정과목 ecount_accounts_import · 연간 official_statement_import_ecount. 판정 · 감사 · committed가 그 안에서 한 트랜잭션이다.
+ *   계정과목 ecount_accounts_import · 연간 official_statement_import_ecount · 월별 ecount_monthly_import(0052).
+ *   판정 · 감사 · committed가 그 안에서 한 트랜잭션이다.
  */
 
 const COLUMNS =
@@ -49,6 +50,7 @@ type Methods = Pick<
   | 'findLatestFinanceImportMapping'
   | 'registerEcountAccounts'
   | 'registerEcountAnnual'
+  | 'registerEcountMonthly'
 >
 
 /** RPC 오류를 거부 낱말(message)이 보이게 던진다 — 액션이 lib/ecount/import-errors.ts로 문장을 고른다. */
@@ -173,6 +175,24 @@ export function financeImportMethods(sb: SupabaseClient): Methods {
       const id = Number(data)
       if (!Number.isFinite(id)) throw new Error('official_statement_import_ecount: id가 오지 않았다.')
       return id
+    },
+
+    /** 0052 ecount_monthly_import — 한 트랜잭션(마감 · 확정 달 · 손익만 · 달마다 전표 + 대응 · 재업로드는 정정 전표 · committed). */
+    async registerEcountMonthly(importId, input, actor: AuditActor): Promise<EcountMonthlyResult> {
+      void actor
+      const { data, error } = await sb.rpc('ecount_monthly_import', {
+        p_import_id: importId,
+        p_file_sha256: input.file_sha256,
+        p_period_key: input.period_key,
+        p_basis: input.basis,
+        p_months: input.months.map((m) => ({ month: m.month, lines: m.lines.map((l) => ({ account_code: l.account_code, amount: l.amount })) })),
+      })
+      if (error) rpcFail('ecount_monthly_import', error)
+      const r = (data ?? {}) as Partial<EcountMonthlyResult>
+      if (typeof r.posted !== 'number' || typeof r.corrected !== 'number' || typeof r.unchanged !== 'number' || !Array.isArray(r.months)) {
+        throw new Error('ecount_monthly_import: 결과가 오지 않았다.')
+      }
+      return { posted: r.posted, corrected: r.corrected, unchanged: r.unchanged, months: r.months }
     },
 
     async cancelFinanceImport(importId: string, actor: AuditActor): Promise<FinanceImport> {

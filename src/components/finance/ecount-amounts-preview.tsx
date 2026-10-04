@@ -6,7 +6,7 @@ import { pickKey, type AmountsPreview } from '@/lib/ecount/excel/statement-lines
 /**
  * ② 연간 · ③ 월별 미리보기. 줄마다 맞춘 계정 · 금액(원 단위로 바꾼 값), 파일 합계와 계산의 대조, 차단 · 경고.
  * 연간: 이름이 계정 둘 이상과 맞은 줄은 «맞춘 계정» 칸이 고르기다(onPick — 서버가 다시 미리보기한다). 막힌 줄이
- *   하나도 없으면 등록(onCommit — 0051 RPC). 월별: 검증만 — 등록 버튼은 월별 RPC가 생긴 뒤에 연다.
+ *   하나도 없으면 등록(onCommit — 0051 RPC). 월별: 막힌 것이 없으면 등록(onCommit — 0052 RPC · 달마다 요약 전표).
  */
 
 const won = (v: number | null) => (v === null ? '' : v.toLocaleString('ko-KR'))
@@ -195,14 +195,23 @@ export function EcountAmountsPreview({
               : '서버가 원본을 다시 읽어 같은 판정을 한 번 더 한 뒤 등록합니다. 세무사 확정 결산과는 따로 보관되고, 같은 해를 다시 올리면 새 버전이 됩니다.'}
           </span>
         </div>
-      ) : (
+      ) : p.kind === 'monthly' && onCommit ? (
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" disabled className="min-h-11 rounded-md bg-accent px-3 text-t11h font-semibold text-ink opacity-40 lg:min-h-0 lg:py-1.5">
-            등록은 다음 단계(DB 반영 후)에 열립니다
+          <button
+            type="button"
+            disabled={busy || p.blockCount > 0 || p.lines.length === 0}
+            onClick={onCommit}
+            className="min-h-11 rounded-md bg-accent px-3 text-t11h font-semibold text-ink disabled:opacity-40 lg:min-h-0 lg:py-1.5"
+          >
+            {p.year ?? ''}년 월별 손익 등록(ECOUNT 엑셀 · 잠정)
           </button>
-          <span className="text-t10h text-ink-muted">지금은 검증까지입니다. 원본과 열 지정은 남아 있어 다음 단계에서 그대로 등록합니다.</span>
+          <span className="text-t10h text-ink-muted">
+            {p.blockCount > 0
+              ? '막힌 것을 다 푼 뒤에 등록할 수 있습니다.'
+              : '금액이 있는 달마다 요약 전표 한 장(손익 줄 + «ECOUNT 월별손익 대응» 한 줄)으로 장부에 실립니다. 월 마감 전까지 잠정입니다. 같은 달을 다시 올리면 이전 업로드 전표를 정정 전표(역분개 + 새 전표)로 바꿔 두 번 세지 않고, 내용이 같으면 건너뜁니다.'}
+          </span>
         </div>
-      )}
+      ) : null}
     </div>
   )
 }

@@ -1,5 +1,7 @@
 import type { ActivityEvent, ActivityKind } from '@/lib/activity'
 import type { EntityAuditRecord } from '@/lib/audit-log'
+import type { MonthlyBasis } from '@/lib/ecount/excel/mapping'
+import type { MonthlyLedgerMonth } from '@/lib/ecount/excel/monthly-import'
 import type { AccountFields } from '@/lib/ledger/accounts'
 import type { CorrectionResult, NewCorrection, NewJournalEntry } from '@/lib/ledger/journal'
 import type { DecisionAuditRecord, DecisionAction } from '@/lib/decision-log'
@@ -206,6 +208,18 @@ export interface ChairmanRepository {
     input: { file_sha256: string; period_key: string; lines: { account_code: string; amount: number }[] },
     actor: AuditActor,
   ): Promise<number>
+  /**
+   * ③ ECOUNT 월별 손익 등록 — live는 0052 ecount_monthly_import() 한 트랜잭션: 판정 · 원본 첨부 확인 · 마감 달 · 세무사 확정 달 ·
+   * 손익 계정만 → 달마다 요약 전표(손익 줄 + «ECOUNT 월별손익 대응» 한 줄, 대응 계정이 없으면 만든다) · 감사 먼저 → committed.
+   * **같은 달을 다시 올리면** 그 달 활성 업로드 전표를 역분개 + 정정분개(post_correction)하고 옛 줄을 내린다 — 두 번 세지 않는다.
+   * 내용이 같으면 건너뛴다. 활성 업로드 전표가 이미 역분개됐으면 ecount_month_reversed로 멈춘다.
+   * months의 amount는 당월 금액 · 원장 규약(차변 − 대변 — monthlyLedgerMonths). basis는 미리보기에서 확정한 당월/누계.
+   */
+  registerEcountMonthly(
+    importId: string,
+    input: { file_sha256: string; period_key: string; basis: MonthlyBasis; months: MonthlyLedgerMonth[] },
+    actor: AuditActor,
+  ): Promise<EcountMonthlyResult>
 
   /**
    * Phase 5-D — 프로세스차트(0021). 읽기는 Executive 이상 + 자기 회사(DB가 판정).
@@ -874,6 +888,14 @@ export type AccountPatch = Partial<AccountFields & { active: boolean }>
 export interface EcountAccountMerge {
   creates: ({ account_code: string; active: boolean } & AccountFields)[]
   renames: { account_code: string; from: string; to: string }[]
+}
+
+/** 0052 ecount_monthly_import의 결과 — 달마다 무엇을 했나(새 전표 · 정정 전표 · 같아서 건너뜀). */
+export interface EcountMonthlyResult {
+  posted: number
+  corrected: number
+  unchanged: number
+  months: { month: string; action: 'posted' | 'corrected' | 'unchanged'; slip_no: string; reversal?: string; previous?: string }[]
 }
 
 /** 같은 회사에 같은 계정코드가 이미 있을 때. 사용자가 코드를 고쳐야 풀린다(DUPLICATE_BUSINESS_ID와 같은 이유). */

@@ -2,7 +2,8 @@
  * ECOUNT 엑셀 업로드 등록의 거부 낱말 → 화면 문장. **live(0051 RPC)와 dummy가 같은 낱말을 던진다** —
  * 그래야 dummy에서 본 거부 문장이 live에서도 같다(화면을 dummy로 검증하는 뜻).
  *
- * 낱말은 0051 finance_import_claim · ecount_accounts_import · official_statement_import_ecount의 message다.
+ * 낱말은 0051 finance_import_claim · ecount_accounts_import · official_statement_import_ecount ·
+ * 0052 ecount_monthly_import의 message다.
  * 직원 화면이다 — «회장»이 아니라 «대표»(CLAUDE.md 직원 화면 용어 원칙).
  */
 
@@ -11,6 +12,9 @@ export const NO_BOOKS_MESSAGE =
 
 /** 같은 해 결산을 다른 사람이 방금 등록했다(활성 unique 23505 · 이미 밀려난 행을 또 밀기). 0051 리뷰 m-3. */
 export const SAME_YEAR_RACE_MESSAGE = '다른 사람이 같은 해 결산을 방금 등록했습니다. 새로 고친 뒤 다시 확인해 주세요.'
+
+/** 같은 달 월별 손익을 다른 사람이 방금 등록했다(업로드 전표 활성 unique). 0052 RPC는 회사 단위로 줄을 세워 드물다. */
+export const SAME_MONTH_RACE_MESSAGE = '다른 사람이 같은 달 월별 손익을 방금 등록했습니다. 새로 고친 뒤 미리보기를 다시 하세요.'
 
 /** 순서가 뜻이다 — 앞의 낱말이 먼저 맞는다(not_owner도 42501이라 일반 권한 거부보다 앞에 둔다). */
 export const ECOUNT_IMPORT_ERRORS: readonly (readonly [code: string, message: string])[] = [
@@ -21,7 +25,8 @@ export const ECOUNT_IMPORT_ERRORS: readonly (readonly [code: string, message: st
   ['finance_import_hash_mismatch', '미리보기 때와 다른 파일입니다. 취소하고 새로 올리세요.'],
   ['finance_import_kind', '업로드 종류가 맞지 않습니다. 화면을 새로 고친 뒤 다시 하세요.'],
   ['finance_import_period', '몇 년도 자료인지 정하지 않았습니다. 열 지정에서 해를 고른 뒤 미리보기를 다시 하세요.'],
-  ['import_changed', '미리보기 뒤에 업로드의 해가 바뀌었습니다. 미리보기를 다시 한 뒤 등록하세요.'],
+  ['import_changed', '미리보기 뒤에 업로드의 해나 당월/누계 표시가 바뀌었습니다. 미리보기를 다시 한 뒤 등록하세요.'],
+  ['finance_import_slips_one_active', SAME_MONTH_RACE_MESSAGE],
   ['official_statements_one_active', SAME_YEAR_RACE_MESSAGE],
   ['official_statement_immutable', SAME_YEAR_RACE_MESSAGE],
   ['ecount_business_only', 'ECOUNT 업로드는 ECOUNT를 쓰는 회사만 합니다.'],
@@ -32,6 +37,14 @@ export const ECOUNT_IMPORT_ERRORS: readonly (readonly [code: string, message: st
   ['statement_unbalanced', '재무상태표가 닫히지 않습니다. 미리보기의 차액을 확인하세요.'],
   ['statement_unknown_account', '장부에 없는 계정이 있습니다. 계정과목을 먼저 올린 뒤 미리보기를 다시 하세요.'],
   ['statement_empty', '실을 금액 줄이 없습니다. 열 지정(과목명 · 금액)을 확인하세요.'],
+  // 0052 월별
+  ['ecount_month_reversed', '그 달의 업로드 전표가 이미 정정(역분개)되어 있습니다. 전표 화면에서 그 정정을 확인한 뒤 다시 올리세요 — 두 번 뒤집지 않습니다.'],
+  ['ecount_monthly_bs_account', '재무상태표 계정이 섞여 있습니다. 월별 업로드는 손익 계정만 싣습니다 — 열 지정이나 파일을 고친 뒤 다시 하세요.'],
+  ['official_month_locked', '세무사 확정 결산이 덮은 달이 있습니다 — 그 달의 월별 손익은 받지 않습니다.'],
+  ['closed_period', '마감된 달이 있습니다 — 마감된 달의 월별 손익은 받지 않습니다(고칠 것은 당월 정정 전표로).'],
+  ['inactive_account', '비활성 계정에 금액이 있습니다. 계정과목에서 다시 쓰기로 바꾸거나 열 지정을 고친 뒤 다시 하세요.'],
+  ['ecount_original_missing', '업로드 원본 파일을 확인하지 못했습니다. 취소하고 새로 올리세요.'],
+  ['ecount_counter_account_invalid', 'ECOUNT 월별손익 대응 계정이 비활성이거나 자본 계정이 아닙니다. 계정과목에서 확인하세요.'],
   ['books_forbidden', NO_BOOKS_MESSAGE],
 ]
 

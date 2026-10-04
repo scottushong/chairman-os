@@ -89,6 +89,25 @@ export function EcountImportFlow({ initial }: { initial: EcountPreviewState }) {
     }
   }
 
+  async function commitMonthly() {
+    if (!state.mapping) return
+    setBusy('서버가 원본을 다시 읽고 달마다 전표를 싣는 중…')
+    setError(null)
+    try {
+      const r = await commitEcountImport(importId, { mapping: state.mapping })
+      if (r.error) setError(r.error)
+      else {
+        const m = r.monthly ?? { posted: 0, corrected: 0, unchanged: 0 }
+        setDone(
+          `등록했습니다 — ${state.amounts?.year ?? ''}년 월별 손익: 새 전표 ${m.posted}달 · 정정 전표 ${m.corrected}달 · 같아서 건너뜀 ${m.unchanged}달(ECOUNT 엑셀 · 잠정). 전표 화면에서 «[ECOUNT 엑셀]» 적요로 보입니다.`,
+        )
+      }
+    } finally {
+      setBusy(null)
+      router.refresh()
+    }
+  }
+
   async function commitAnnual() {
     if (!state.mapping) return
     setBusy('서버가 원본을 다시 읽고 등록하는 중…')
@@ -158,13 +177,8 @@ export function EcountImportFlow({ initial }: { initial: EcountPreviewState }) {
           picks={picks}
           busy={!!busy}
           onPick={state.kind === 'annual' ? (k, c) => void pick(k, c) : undefined}
-          onCommit={state.kind === 'annual' ? () => void commitAnnual() : undefined}
+          onCommit={state.kind === 'annual' ? () => void commitAnnual() : state.kind === 'monthly' ? () => void commitMonthly() : undefined}
         />
-      ) : null}
-      {confirmed && !editing && state.kind !== 'accounts' && !state.amounts ? (
-        <button type="button" disabled className="min-h-11 rounded-md bg-accent px-3 text-t11h font-semibold text-ink opacity-40 lg:min-h-0 lg:py-1.5">
-          등록은 다음 단계(DB 반영 후)에 열립니다
-        </button>
       ) : null}
     </div>
   )

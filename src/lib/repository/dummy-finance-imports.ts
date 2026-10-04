@@ -2,7 +2,8 @@ import { ecountAuditNote } from '@/lib/ecount/excel/file-rules'
 import { ECOUNT_CODE_BUSINESSES } from '@/lib/ledger/standard-chart'
 import { FINANCE_IMPORT_KIND, type FinanceImport, type FinanceImportPreviewPatch } from '@/types'
 
-import { dummyApplyEcountAccounts, dummyCanKeepBooks, dummyCanReadBooks, dummyImportEcountAnnual } from './dummy-books'
+import { dummyFinanceImportOriginals } from './dummy-attachments'
+import { dummyApplyEcountAccounts, dummyCanKeepBooks, dummyCanReadBooks, dummyImportEcountAnnual, dummyImportEcountMonthly } from './dummy-books'
 import { dummyViewer } from './dummy-org'
 import type { AuditActor, ChairmanRepository } from './types'
 
@@ -98,6 +99,7 @@ type Methods = Pick<
   | 'findLatestFinanceImportMapping'
   | 'registerEcountAccounts'
   | 'registerEcountAnnual'
+  | 'registerEcountMonthly'
 >
 
 export const dummyFinanceImports: Methods = {
@@ -193,6 +195,30 @@ export const dummyFinanceImports: Methods = {
     )
     commit(row, { result: { statement_id: id, lines: input.lines.length } })
     return id
+  },
+
+  /** 0052 ecount_monthly_import — claim → 해 · 당월/누계 → 원본 → 장부(확인 다 한 뒤 쓰기) → committed. 같은 거부 낱말. */
+  async registerEcountMonthly(importId, input, actor: AuditActor) {
+    const row = claim(importId, 'monthly', input.file_sha256)
+    if (!row.period_key) throw new Error('finance_import_period')
+    if (input.period_key !== row.period_key) throw new Error('import_changed')
+    const mapping = row.summary?.mapping as { basis?: unknown } | undefined
+    if ((input.basis !== 'monthly' && input.basis !== 'ytd') || input.basis !== mapping?.basis) throw new Error('import_changed: 당월/누계')
+    const originals = dummyFinanceImportOriginals(row.import_id)
+    const o = originals[0]
+    if (
+      originals.length !== 1 || o.uploaded_by !== row.created_by || o.business_id !== row.business_id || !o.hasObject ||
+      o.mime !== 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ) {
+      throw new Error('ecount_original_missing')
+    }
+    const result = await dummyImportEcountMonthly(
+      { business_id: row.business_id, period_key: row.period_key, import_id: row.import_id, file_name: row.file_name },
+      input.months,
+      actor,
+    )
+    commit(row, { result })
+    return result
   },
 
   async cancelFinanceImport(importId, actor: AuditActor) {
