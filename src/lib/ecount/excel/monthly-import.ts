@@ -44,15 +44,26 @@ export interface MonthlyContext {
   journalMonths: readonly string[]
 }
 
-/** 누계 → 당월. 빈 칸은 빈 칸으로 두고(그 달 자료 없음), 다음 달은 마지막으로 보인 누계를 뺀다. 1월은 그대로. */
-export function ytdToMonthly(values: readonly (number | null)[]): (number | null)[] {
+/**
+ * 누계 → 당월. 앞 달 누계를 뺀다(1월은 그대로).
+ * reported(달마다 «파일이 그 달을 말하는가» — 0052 리뷰): 파일이 말하는 달 안의 빈 칸은 **누계 0**이다(ECOUNT 누계표는 0을 비워 둔다).
+ * 그래서 «1월 100 · 2월 빈 칸 · 3월 50»은 +100 · −100 · +50이고, 11월까지 100 · 12월 빈 칸이면 12월은 −100(한 해 합 0)이다.
+ * 파일이 아예 말하지 않는 달(열 전체가 빈 칸 — 아직 안 온 달)만 빈 칸(null)으로 남는다. reported를 주지 않으면 빈 칸은 모두 «자료 없음».
+ */
+export function ytdToMonthly(values: readonly (number | null)[], reported?: readonly boolean[]): (number | null)[] {
   let prev = 0
-  return values.map((v) => {
+  return values.map((raw, i) => {
+    const v = raw === null && reported?.[i] ? 0 : raw
     if (v === null) return null
     const m = v - prev
     prev = v
     return m === 0 ? 0 : m
   })
+}
+
+/** 누계 파일이 말하는 달 — 계정 줄(합계 · 소계 · 이익 줄 말고) 중 하나라도 그 달 칸이 차 있으면(오류 칸 포함) 말한다. */
+export function reportedMonths(lines: readonly StatementLine[], monthKeys: readonly string[]): boolean[] {
+  return monthKeys.map((k) => lines.some((l) => l.kind === 'line' && (l.amounts[k] !== null || !!l.errors[k])))
 }
 
 const won = (v: number) => `${v.toLocaleString('ko-KR')}원`
@@ -76,14 +87,18 @@ export function planMonthly(sheets: readonly SheetLike[], mapping: EcountMapping
   const contiguous = monthKeys.every((k, i) => k === MONTH_KEYS[i])
   if (ytd && !contiguous) blocks.push('누계 자료는 1월부터 빈 달 없이 월 열을 지정해야 당월로 바꿀 수 있습니다')
 
-  // 합계 열 대조 — 바꾸기 전 파일 값으로. 당월이면 달의 합, 누계면 마지막 달 누계와 같아야 한다.
+  // 누계 파일이 말하는 달 — 그 안의 빈 칸은 누계 0(ytdToMonthly).
+  const reported = reportedMonths(all, monthKeys)
+  const lastReported = reported.lastIndexOf(true)
+
+  // 합계 열 대조 — 바꾸기 전 파일 값으로. 당월이면 달의 합, 누계면 마지막으로 말한 달의 누계(빈 칸 = 0)와 같아야 한다.
   const totalProblem = new Map<StatementLine, string>()
   if (hasTotal) {
     for (const l of all) {
       const total = l.amounts.total
       if (total === null || l.errors.total) continue
       const vals = monthKeys.map((k) => l.amounts[k])
-      const expected = ytd ? ([...vals].reverse().find((v) => v !== null) ?? 0) : vals.reduce<number>((a, v) => a + (v ?? 0), 0)
+      const expected = ytd ? (lastReported < 0 ? 0 : (vals[lastReported] ?? 0)) : vals.reduce<number>((a, v) => a + (v ?? 0), 0)
       if (expected !== total) {
         const what = ytd ? '마지막 달 누계' : '달의 합'
         totalProblem.set(l, `${what} ${won(expected)} ≠ 합계 열 ${won(total)} (차액 ${won(total - expected)})`)
@@ -95,7 +110,7 @@ export function planMonthly(sheets: readonly SheetLike[], mapping: EcountMapping
   const converted = ytd && contiguous
   if (converted) {
     all = all.map((l) => {
-      const m = ytdToMonthly(monthKeys.map((k) => l.amounts[k]))
+      const m = ytdToMonthly(monthKeys.map((k) => l.amounts[k]), reported)
       return { ...l, amounts: { ...l.amounts, ...Object.fromEntries(monthKeys.map((k, i) => [k, m[i]])) } }
     })
   }

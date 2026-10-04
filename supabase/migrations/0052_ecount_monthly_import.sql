@@ -44,8 +44,9 @@
 --   finance_import_slips · finance_imports · attachments · official_statements  force 없음 → 소유자는 정책을 안 탄다.
 --       그래서 판정(본인 업로드 · 역분개 · 첨부 주인)을 몸통이 한다. finance_import_slips의 0050 정책(사람의 insert ·
 --       supersede)은 그대로 둔다 — 사람이 정확한 역분개 뒤에 줄을 내리는 길(0050 2절)은 남는다.
---   storage.objects   Supabase에서는 소유자가 아니다 — 소유자(postgres)에게 select 권한이 있을 때만 객체를 확인하고,
---       그 읽기는 호출자의 Storage 정책(attachments_objects_read — 올린 본인은 통행증 없이 본다)을 탄다.
+--   storage.objects   Supabase에서는 소유자가 아니다 — 소유자(postgres)가 select 권한으로 객체를 확인한다(권한이 없으면
+--       ecount_original_missing — 닫힌 쪽으로 실패, 리뷰 m-1). 그 표는 force가 아니어도 postgres는 소유자가 아니라
+--       읽기가 호출자의 Storage 정책(attachments_objects_read — 올린 본인은 통행증 없이 본다)을 탄다.
 --
 -- ■ 하지 않는 것 ■
 --   * 마감된 달의 «당월 자동 정정» — 손익을 엉뚱한 달로 옮긴다(설계서 B-③). 거부만 한다.
@@ -136,11 +137,16 @@ begin
     raise exception using errcode = 'P0001', message = 'ecount_original_missing',
       detail = format('업로드 원본 첨부가 %s개이거나 올린 사람 · 회사 · 형식이 업로드와 다르다.', v_n);
   end if;
+  -- 리뷰 m-1: 닫힌 쪽으로 실패한다 — storage.objects가 있는데 소유자가 못 읽으면 «확인 못 함»이지 «있음»이 아니다.
+  -- (staging 확인: postgres는 storage.objects select 권한이 있고 그 표는 force가 아니다.) storage 스키마 자체가 없을 때만
+  -- 건너뛴다 — Storage 없는 Postgres(로컬 흉내 · 다른 harness)에는 잴 객체가 없고, 원본 줄 · 해시는 위에서 이미 봤다.
   if to_regclass('storage.objects') is not null then
-    if has_table_privilege('storage.objects', 'select') then
-      if not exists (select 1 from storage.objects where bucket_id = 'attachments' and name = v_att.storage_path) then
-        raise exception using errcode = 'P0001', message = 'ecount_original_missing', detail = '원본 파일 객체가 Storage에 없다.';
-      end if;
+    if not has_table_privilege('storage.objects', 'select') then
+      raise exception using errcode = 'P0001', message = 'ecount_original_missing',
+        detail = 'Storage 객체를 확인할 권한이 없다(storage.objects select). 확인하지 못한 원본으로는 싣지 않는다.';
+    end if;
+    if not exists (select 1 from storage.objects where bucket_id = 'attachments' and name = v_att.storage_path) then
+      raise exception using errcode = 'P0001', message = 'ecount_original_missing', detail = '원본 파일 객체가 Storage에 없다.';
     end if;
   end if;
 

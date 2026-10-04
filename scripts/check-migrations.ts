@@ -5323,6 +5323,16 @@ async function ecountMonthlyRpc() {
   const ytdPlan: MonthPlan = Object.fromEntries(ytdRevenue.map((v, i) => [`2026-0${i + 5}`, [['4010', -(v ?? 0)], ['8010', 10]]]))
   assert.equal(await as(EI.lead, [monthRpc(MI.m3, ytdPlan, { basis: 'ytd' }), net('2026-06', '4010')]), -200, '0052: 누계 300(6월) − 100(5월) = 당월 200이 아니다')
   assert.equal(await as(EI.lead, [monthRpc(MI.m3, ytdPlan, { basis: 'ytd' }), net('2026-07', '4010')]), -300, '0052: 7월 당월이 300이 아니다(누계 600이 실렸다)')
+  // 0052 리뷰: 파일이 말하는 달 안의 빈 칸 = 누계 0. 1월 100 · 2월 빈 칸 · 3월 50 → +100 · −100 · +50(장부의 달 금액).
+  const gapRevenue = ytdToMonthly([100, null, 50], [true, true, true])
+  const gapPlan: MonthPlan = Object.fromEntries(gapRevenue.map((v, i) => [`2026-0${i + 1}`, [['4010', -(v ?? 0)]]]))
+  assert.equal(await as(EI.lead, [monthRpc(MI.m3, gapPlan, { basis: 'ytd' }), net('2026-02', '4010')]), 100, '0052: 누계 빈 칸(2월)이 −100(매출 차변)으로 안 실린다')
+  assert.equal(await as(EI.lead, [monthRpc(MI.m3, gapPlan, { basis: 'ytd' }),
+    `select coalesce(sum(case side when 'debit' then amount else -amount end), 0)::int from journal_lines where account_code = '4010' and entry_date between '2026-01-01' and '2026-03-31'`]),
+  -50, '0052: 1~3월 매출 합이 3월 누계(50)가 아니다')
+  // 11월까지 100 · 12월 빈 칸 → 12월 −100 · 한 해 합 0
+  const decPlan: MonthPlan = { '2026-12': [['8010', ytdToMonthly([...Array(11).fill(100), null], Array(12).fill(true))[11]!]] }
+  assert.equal(await as(EI.lead, [monthRpc(MI.m3, decPlan, { basis: 'ytd' }), net('2026-12', '8010')]), -100, '0052: 12월 빈 칸 누계가 급여 −100으로 안 실린다')
   await assert.rejects(as(EI.lead, [monthRpc(MI.m3, ytdPlan, { basis: 'monthly' })]), /import_changed/, '0052: 누계로 확정한 업로드를 당월이라며 싣는다')
   await assert.rejects(as(EI.lead, [monthRpc(MI.m1, { '2026-03': MARCH }, { basis: 'ytd' })]), /import_changed/, '0052: 당월로 확정한 업로드를 누계라며 싣는다')
   await assert.rejects(as(EI.lead, [monthRpc(MI.m1, { '2026-03': MARCH }, { year: '2025' })]), /import_changed/, '0052: 미리보기 뒤 바뀐 해로 싣는다')
@@ -5422,6 +5432,8 @@ async function ecountMonthlyRpc() {
     /ecount_original_missing/, '0052: Storage 객체가 사라진 원본으로 싣는다')
   await assert.rejects(as(EI.lead, [`!update attachments set uploaded_by = '${EI.lead2}' where entity_id = '${MI.m1}'`, monthRpc(MI.m1, { '2026-03': MARCH })]),
     /ecount_original_missing/, '0052: 남이 올린 원본으로 싣는다')
+  // 리뷰 m-1: storage.objects가 있는데 소유자가 못 읽으면 건너뛰지 않고 멈춘다(닫힌 쪽 실패). 이 harness의 소유자는 superuser라
+  // 권한을 걷을 수 없어서, 소유자를 바꾼 실험(ecountMonthlyUnderNonBypassOwner)에서 잰다.
 
   // ── 전부 아니면 전무: 뒤 달이 막히면 앞 달 · 대응 계정 · 감사 · committed가 남지 않는다 ──
   const swallow = (sql: string) => `do $$ begin perform (${sql.replace(/^select /, '').replace(/::text$/, '')}); exception when others then null; end $$`
@@ -5514,6 +5526,10 @@ async function ecountMonthlyUnderNonBypassOwner() {
   // Storage 객체 확인도 이 소유자로 돈다(select 권한이 있으니 건너뛰지 않는다) — 객체가 없으면 멈춘다.
   await db.exec(`delete from storage.objects where name like 'finance_imports/${MI.m4}/%'`)
   await assert.rejects(as([monthRpc(MI.m4, { '2026-03': MARCH })]), /ecount_original_missing/, '0052: 소유자 권한으로 Storage 객체 확인을 건너뛴다')
+  // 리뷰 m-1: 소유자가 storage.objects를 못 읽으면 «확인 못 함» — 건너뛰지 않고 멈춘다. 권한을 돌려주면 다시 된다.
+  await db.exec(`revoke select on storage.objects from app_owner`)
+  await assert.rejects(as([first]), /ecount_original_missing/, '0052: storage.objects 권한이 없는데 원본 확인을 건너뛰고 싣는다(열린 쪽 실패)')
+  await db.exec(`grant select on storage.objects to app_owner`)
 
   await db.exec(`alter table public.finance_import_slips force row level security;`)
   assert.equal(await as([first, second, net('2026-03', '4010')]), '-1500',

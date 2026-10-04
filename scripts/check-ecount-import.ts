@@ -884,6 +884,23 @@ async function monthlyXlsx(opts: { ytd?: boolean; badTotal?: boolean } = {}): Pr
   return new Uint8Array(await wb.xlsx.writeBuffer())
 }
 
+/**
+ * 누계 견본(원 단위) — 빈 칸이 «누계 0»인 경우(0052 리뷰). 매출: 1월 100 · 2월 빈 칸 · 3월부터 50. 급여: 11월까지 100 · 12월 빈 칸.
+ * upTo(=말하는 달 수)를 11로 주면 12월 열은 머리글만 있고 칸이 다 비어 «파일이 말하지 않는 달»이 된다.
+ */
+async function ytdGapXlsx(upTo = 12): Promise<Uint8Array> {
+  const wb = new ExcelJS.Workbook()
+  const ws = wb.addWorksheet('월별손익')
+  ws.getCell('A1').value = '월별 손익계산서 (누계)'
+  ws.getCell('A2').value = '2025/01/01 ~ 2025/12/31'
+  const months = Array.from({ length: 12 }, (_, i) => i + 1)
+  ws.getRow(4).values = ['과목명', ...months.map((m) => `2025-${String(m).padStart(2, '0')}`)]
+  const cut = (vals: (number | null)[]) => vals.map((v, i) => (i < upTo ? v : null))
+  ws.getRow(5).values = ['제품매출', ...cut([100, null, ...Array(10).fill(50)])]
+  ws.getRow(6).values = ['급여', ...cut([...Array(11).fill(100), null])]
+  return new Uint8Array(await wb.xlsx.writeBuffer())
+}
+
 const NO_LOCKS = { lastClosed: null, officials: [], journalMonths: [] }
 
 async function monthlyChecks() {
@@ -972,6 +989,32 @@ async function monthlyChecks() {
   const miss = planMonthly(plain, g.mapping, { accounts: BOOK.filter((a) => a.name !== '급여'), ...NO_LOCKS })
   assert.ok(miss.lines.find((l) => l.name === '급여')!.blocks.some((b) => /계정이 없습니다/.test(b)))
   assert.equal(miss.checks.length, 0)
+
+  // ── 0052 리뷰: 누계 파일이 말하는 달 안의 빈 칸은 누계 0 ──
+  assert.deepEqual(ytdToMonthly([100, null, 50], [true, true, true]), [100, -100, 50], '1월 100 · 2월 빈 칸 · 3월 50 → +100 · −100 · +50')
+  const novOnly = [...Array(11).fill(100), null] as (number | null)[]
+  const dec = ytdToMonthly(novOnly, Array(12).fill(true))
+  assert.equal(dec[11], -100, '11월까지 100 · 12월 빈 칸 → 12월 −100')
+  assert.equal(dec.reduce<number>((a, v) => a + (v ?? 0), 0), 0, '한 해 합 0')
+  assert.deepEqual(ytdToMonthly([100, null], [true, false]), [100, null], '파일이 말하지 않는 달은 빈 칸 그대로')
+  const gapBytes = await ytdGapXlsx()
+  const gapSheets = await readEcountWorkbook(gapBytes)
+  const gm = guessMapping(gapSheets, 'monthly').mapping
+  assert.equal(gm.basis, 'ytd')
+  const gp = planMonthly(gapSheets, { ...gm, unit: 'won' }, { accounts: BOOK, ...NO_LOCKS })
+  assert.deepEqual(gp.blocks, [], gp.blocks.join(' / '))
+  const amt = (name: string) => gp.lines.find((l) => l.name === name)!.amounts
+  assert.deepEqual(amt('제품매출').slice(0, 4), [100, -100, 50, 0], '미리보기가 바꾼 값(2월 빈 칸 = 누계 0 → −100)을 보인다')
+  assert.deepEqual([amt('급여')[10], amt('급여')[11]], [0, -100], '12월 빈 칸 = 누계 0 → −100')
+  assert.equal(amt('급여').reduce<number>((a, v) => a + (v ?? 0), 0), 0, '급여 한 해 합 0')
+  const gapMonths = monthlyLedgerMonths(gp)
+  assert.deepEqual(gapMonths.find((m) => m.month === '2025-02')!.lines, [{ account_code: '4010', amount: 100 }], '2월 매출 −100은 차변 100(원장 규약)')
+  assert.deepEqual(gapMonths.find((m) => m.month === '2025-12')!.lines, [{ account_code: '8010', amount: -100 }], '12월 급여 −100은 대변 100')
+  // 열 전체가 빈 달(파일이 말하지 않는 달)은 빈 칸 그대로 — 등록 줄도 없다
+  const shortBytes = await ytdGapXlsx(11)
+  const sp = planMonthly(await readEcountWorkbook(shortBytes), { ...gm, unit: 'won' }, { accounts: BOOK, ...NO_LOCKS })
+  assert.equal(sp.lines.find((l) => l.name === '급여')!.amounts[11], null, '열 전체가 빈 12월은 «자료 없음»')
+  assert.ok(!monthlyLedgerMonths(sp).some((m) => m.month === '2025-12'))
 
   // ── 0052 등록 재료: 당월 금액 · 원장 부호 · 금액 있는 달만 ──
   const months = monthlyLedgerMonths(p)
