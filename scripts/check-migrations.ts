@@ -31,6 +31,7 @@ import { kstToday } from '../src/lib/chairman-project'
 import { loadMockLedger } from '../src/lib/ecount/mock-ledger'
 import { kpisFromLedger } from '../src/lib/ledger/cells'
 import { ecountAuditNote } from '../src/lib/ecount/excel/file-rules'
+import { ECOUNT_MONTHLY_COUNTER, ytdToMonthly } from '../src/lib/ecount/excel/monthly-import'
 import { ECOUNT_CODE_BUSINESSES, STANDARD_CHART, STANDARD_CHART_BUSINESSES } from '../src/lib/ledger/standard-chart'
 
 const BUSINESSES = ['biz_dy', 'biz_vana', 'biz_sticky', 'biz_hof', 'biz_boram']
@@ -5188,6 +5189,340 @@ async function ecountRpcUnderNonBypassOwner() {
   await db.close()
 }
 
+/**
+ * 0052 ECOUNT 월별 손익 등록 RPC — ecount_monthly_import.
+ *
+ * 0051 검사와 같은 사람들 · 시드(ecountRpcSeed) 위에 손익 계정 셋 · 월별 업로드 여섯 · 원본 첨부 + Storage 객체.
+ * superuser harness라 force는 여기서 못 본다 — ecountMonthlyUnderNonBypassOwner()가 따로 잰다.
+ *   카탈로그  definer · search_path(public, pg_temp) · anon 실행 없음 · 대응 코드 도우미는 아무도 못 부름 · 앱 상수와 같은 코드
+ *   등록      달마다 전표 한 장(손익 줄 + 대응 한 줄) · 대응 계정 자동(equity · operating · ECOUNT) · 업로드 전표 줄 · 감사 · committed
+ *   누계      앱 ytdToMonthly로 바꾼 당월 금액이 장부의 달 금액이 된다 · basis가 확정한 열 지정과 다르면 import_changed
+ *   재업로드  같은 달 다시 → 역분개 + 정정분개 · 옛 줄 supersede · 장부의 달 합 = 새 업로드(두 배 아님) · 같은 내용이면 건너뜀
+ *   거부      마감 달 · 세무사 확정 달(해 · 분기) · 이미 역분개된 업로드 전표 · 재무상태표 계정 · 모르는/비활성 계정 · 모양 ·
+ *             원본 없음 · 대응 계정 망가짐 · 권한(본인 · 없음 · 권한 · 시스템 계정 · anon · 회수) · 종류 · 해시 · 끝남 · 전부 아니면 전무
+ */
+const MI = {
+  m1: '00000000-0000-0000-0000-00000052b001', // lead · monthly 2026 · 당월
+  m2: '00000000-0000-0000-0000-00000052b002', // lead · monthly 2026 · 당월(재업로드)
+  m3: '00000000-0000-0000-0000-00000052b003', // lead · monthly 2026 · 누계
+  m4: '00000000-0000-0000-0000-00000052b004', // lead · monthly 2026 · 당월(세 번째)
+  other: '00000000-0000-0000-0000-00000052b005', // lead2 · monthly 2026 · 당월
+  bare: '00000000-0000-0000-0000-00000052b006', // lead · monthly 2026 · 당월 · 원본 첨부 없음
+}
+const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+
+async function ecountMonthlySeed(db: Db) {
+  await ecountRpcSeed(db)
+  const imp = (id: string, by: string, basis: string, name: string) =>
+    `('${id}', 'biz_dy', 'monthly', '2026', 'draft', '${name}', '${SHA}', '{"stage":"preview","mapping":{"basis":"${basis}"}}'::jsonb, '${by}')`
+  await db.exec(`
+    insert into accounts (business_id, account_code, name, category, section, cash_flow, active, source, fetched_at) values
+      ('biz_dy', '4510', '원재료비', 'raw_material', 'cogs', null, true, 'ecount', now()),
+      ('biz_dy', '8010', '급여', 'labor', 'sga', null, true, 'ecount', now()),
+      ('biz_dy', '8999', '안 쓰는 비용', 'other', 'sga', null, false, 'ecount', now());
+    insert into finance_imports (import_id, business_id, kind, period_key, status, file_name, file_sha256, summary, created_by) values
+      ${imp(MI.m1, EI.lead, 'monthly', 'pl 2026.xlsx')}, ${imp(MI.m2, EI.lead, 'monthly', 'pl 2026 v2.xlsx')},
+      ${imp(MI.m3, EI.lead, 'ytd', 'pl 2026 누계.xlsx')}, ${imp(MI.m4, EI.lead, 'monthly', 'pl 2026 v3.xlsx')},
+      ${imp(MI.other, EI.lead2, 'monthly', 'pl 남.xlsx')}, ${imp(MI.bare, EI.lead, 'monthly', 'pl 원본 없음.xlsx')};
+    insert into attachments (entity_table, entity_id, file_name, mime, size_bytes, security_class, uploaded_by)
+      select 'finance_imports', i.import_id::text, i.file_name, '${XLSX}', 100, 'Normal', i.created_by
+        from finance_imports i where i.kind = 'monthly' and i.import_id <> '${MI.bare}';
+    insert into storage.objects (bucket_id, name) select 'attachments', storage_path from attachments;
+  `)
+}
+
+type MonthPlan = Record<string, [string, number][]>
+const monthRpc = (imp: string, months: MonthPlan, o: { sha?: string; year?: string; basis?: string } = {}) =>
+  `select ecount_monthly_import('${imp}', '${o.sha ?? SHA}', '${o.year ?? '2026'}', '${o.basis ?? 'monthly'}', '${JSON.stringify(
+    Object.entries(months).map(([month, lines]) => ({ month, lines: lines.map(([account_code, amount]) => ({ account_code, amount })) })),
+  )}'::jsonb)::text`
+/** RPC 결과(jsonb)의 한 칸 */
+const monthField = (sql: string, field: string) => `select (${sql.replace(/^select /, '').replace(/::text$/, '')})->>'${field}'`
+/** 3월: 매출 1000 · 원재료 400 · 급여 100 → 순이익 500. 원장 규약(차변 − 대변). */
+const MARCH: [string, number][] = [['4010', -1000], ['4510', 400], ['8010', 100]]
+const MARCH2: [string, number][] = [['4010', -1500], ['4510', 600], ['9310', 50]]
+/** 그 달 계정의 장부 순액(차변 − 대변) — 역분개 · 정정분개까지 다 더한 값. */
+const net = (month: string, code: string) => `select coalesce(sum(case side when 'debit' then amount else -amount end), 0)::int
+    from journal_lines where business_id = 'biz_dy' and account_code = '${code}' and to_char(entry_date, 'YYYY-MM') = '${month}'`
+
+async function ecountMonthlyRpc() {
+  const db = new PGlite({ extensions: { pg_trgm } })
+  await applyAll(db)
+  await ecountMonthlySeed(db)
+
+  async function as(uid: string | null, steps: string[]): Promise<'denied' | number | string> {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid ?? ''}', true); set local role ${uid ? 'authenticated' : 'anon'};`)
+    try {
+      let last: Record<string, unknown>[] = []
+      let affected = 0
+      for (const s of steps) {
+        if (s.startsWith('@')) { await db.exec(`select set_config('request.jwt.claim.sub', '${s.slice(1)}', true)`); continue }
+        if (s.startsWith('!')) { await db.exec(`reset role; ${s.slice(1)}; set local role authenticated;`); continue }
+        const res = await db.query<Record<string, unknown>>(s)
+        last = res.rows
+        affected = res.affectedRows ?? 0
+      }
+      await db.exec('set constraints all immediate')
+      if (!last.length) return affected
+      const v = Object.values(last[0])[0]
+      return typeof v === 'string' && !/^-?\d+$/.test(v) ? v : Number(v)
+    } catch (e) {
+      if (/row-level security/.test(e instanceof Error ? e.message : '')) return 'denied'
+      throw e
+    } finally {
+      await db.exec('rollback')
+    }
+  }
+  const owner = async (sql: string) => (await db.query<Record<string, unknown>>(sql)).rows
+  const C = ECOUNT_MONTHLY_COUNTER.code
+
+  // ── 카탈로그 ──
+  const fns = await owner(`
+    select p.proname as f, p.prosecdef as definer, array_to_string(p.proconfig, ',') as cfg,
+           has_function_privilege('anon', p.oid, 'execute') as anon, has_function_privilege('authenticated', p.oid, 'execute') as auth
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.proname in ('ecount_monthly_import', 'ecount_monthly_counter_code') order by 1`)
+  assert.deepEqual(fns.map((r) => [r.f, r.definer, r.cfg, r.anon, r.auth]), [
+    ['ecount_monthly_counter_code', false, 'search_path=public', false, false],
+    ['ecount_monthly_import', true, 'search_path=public, pg_temp', false, true],
+  ], '0052: 월별 RPC는 definer · search_path(public, pg_temp) · authenticated만 · 대응 코드 도우미는 아무도 못 부른다')
+  assert.equal((await owner(`select ecount_monthly_counter_code() as v`))[0].v, C, '0052: DB 대응 계정 코드가 앱 ECOUNT_MONTHLY_COUNTER와 다르다')
+
+  // ── 등록: 달마다 전표 한 장 + 대응 한 줄 ──
+  const first = monthRpc(MI.m1, { '2026-03': MARCH, '2026-04': [['4010', -200], ['8010', 300]] })
+  assert.equal(await as(EI.lead, [monthField(first, 'posted')]), 2, '0052: 두 달이 전표 두 장으로 안 선다')
+  const slip03 = `(select slip_no from finance_import_slips where month = '2026-03' and superseded_at is null)`
+  assert.equal(await as(EI.lead, [first, `select string_agg(account_code || ':' || side || ':' || amount::int || ':' || line_no, ' ' order by line_no)
+      from journal_lines where slip_no = ${slip03}`]), `4010:credit:1000:1 4510:debit:400:2 8010:debit:100:3 ${C}:debit:500:4`,
+  '0052: 3월 전표 줄이 손익(계정 순) + 대응 한 줄(순이익만큼 차변)이 아니다')
+  assert.equal(await as(EI.lead, [first, `select count(*)::int from journal_entries e join finance_import_slips s on s.slip_no = e.slip_no
+      where e.entry_date = '2026-03-31' and e.created_by = '${EI.lead}' and e.corrects_id is null and s.import_id = '${MI.m1}'
+        and e.memo = '[ECOUNT 엑셀] 2026-03 월별 손익 · import ${MI.m1}'`]), 1, '0052: 전표가 말일 · 본인 · [ECOUNT 엑셀] 적요 · 업로드 줄이 아니다')
+  assert.equal(await as(EI.lead, [first, net('2026-04', C)]), -100, '0052: 4월(손실 100)의 대응이 대변 100이 아니다')
+  assert.equal(await as(EI.lead, [first, `select name || ':' || section || ':' || category || ':' || cash_flow || ':' || active || ':' || source
+      from accounts where business_id = 'biz_dy' and account_code = '${C}'`]), `${ECOUNT_MONTHLY_COUNTER.name}:equity:equity:operating:true:ecount`,
+  '0052: 대응 계정이 «ECOUNT 월별손익 대응» · equity · operating · 활성 · ECOUNT로 안 생긴다')
+  assert.equal(await as(EI.lead, [first, `select status || ':' || (summary->'result'->>'posted') || ':' || (summary->'result'->>'corrected') || ':' || (summary->'mapping'->>'basis')
+      from finance_imports where import_id = '${MI.m1}'`]), 'committed:2:0:monthly', '0052: 업로드가 committed(+결과 · 열 지정 그대로)로 안 바뀐다')
+  const noteM = ecountAuditNote({ kind: 'monthly', period: '2026-03', fileName: 'pl 2026.xlsx', importId: MI.m1 })
+  assert.equal(await as(EI.lead, [first, `select string_agg(action::text || '|' || entity_table || '|' || entity_id || '|' || actor_user_id, ' ## ' order by id) from audit_log`]),
+    [`create|accounts|biz_dy:${C}|${EI.lead}`, `create|finance_import_slips|biz_dy:2026-03|${EI.lead}`,
+      `create|finance_import_slips|biz_dy:2026-04|${EI.lead}`].join(' ## '), '0052: 감사가 대응 계정 + 달마다 한 줄이 아니다')
+  assert.equal(await as(EI.lead, [first, `select note from audit_log where entity_id = 'biz_dy:2026-03'`]), noteM, '0052: 감사 note가 DB가 만든 업로드 문구가 아니다')
+  // 잠정 — 마감 전이라 KPI 꼬리표는 provisional, 매출은 그 달 1000.
+  assert.equal(await as(EI.lead, [first, `select value::int || ':' || basis from finance_kpis where business_id = 'biz_dy' and period = '2026-03' and metric = 'Revenue'`]),
+    '1000:provisional', '0052: 업로드한 달의 매출이 잠정 1000으로 안 보인다')
+  assert.equal(await as(EI.lead, [first, `select count(*)::int from finance_kpis where business_id = 'biz_dy' and period = '2026-03' and metric in ('Cash', 'AR', 'AP')`]), 0,
+    '0052: 대응 계정이 현금 · 채권 · 채무 KPI를 건드린다')
+  // 대응 계정이 이미 있으면 다시 만들지 않는다(감사도 없다).
+  assert.equal(await as(EI.lead, [first, monthRpc(MI.m2, { '2026-05': MARCH }), `select count(*)::int from audit_log where entity_table = 'accounts'`]), 1,
+    '0052: 대응 계정을 두 번 만든다')
+
+  // ── 누계 → 당월: 앱(ytdToMonthly)이 바꾼 금액이 장부의 달 금액 ──
+  const ytdRevenue = ytdToMonthly([100, 300, 600])
+  const ytdPlan: MonthPlan = Object.fromEntries(ytdRevenue.map((v, i) => [`2026-0${i + 5}`, [['4010', -(v ?? 0)], ['8010', 10]]]))
+  assert.equal(await as(EI.lead, [monthRpc(MI.m3, ytdPlan, { basis: 'ytd' }), net('2026-06', '4010')]), -200, '0052: 누계 300(6월) − 100(5월) = 당월 200이 아니다')
+  assert.equal(await as(EI.lead, [monthRpc(MI.m3, ytdPlan, { basis: 'ytd' }), net('2026-07', '4010')]), -300, '0052: 7월 당월이 300이 아니다(누계 600이 실렸다)')
+  await assert.rejects(as(EI.lead, [monthRpc(MI.m3, ytdPlan, { basis: 'monthly' })]), /import_changed/, '0052: 누계로 확정한 업로드를 당월이라며 싣는다')
+  await assert.rejects(as(EI.lead, [monthRpc(MI.m1, { '2026-03': MARCH }, { basis: 'ytd' })]), /import_changed/, '0052: 당월로 확정한 업로드를 누계라며 싣는다')
+  await assert.rejects(as(EI.lead, [monthRpc(MI.m1, { '2026-03': MARCH }, { year: '2025' })]), /import_changed/, '0052: 미리보기 뒤 바뀐 해로 싣는다')
+
+  // ── 재업로드: 같은 달은 정정 전표 · 두 배가 아니다 ──
+  const second = monthRpc(MI.m2, { '2026-03': MARCH2 })
+  assert.equal(await as(EI.lead, [first, monthField(second, 'corrected')]), 1, '0052: 같은 달 재업로드가 정정으로 안 간다')
+  for (const [code, want] of [['4010', -1500], ['4510', 600], ['8010', 0], ['9310', 50], [C, 850]] as const) {
+    assert.equal(await as(EI.lead, [first, second, net('2026-03', code)]), want, `0052: 재업로드 뒤 3월 ${code}의 장부 순액이 새 업로드(${want})가 아니다 — 두 번 셌다`)
+  }
+  assert.equal(await as(EI.lead, [first, second, `select value::int from finance_kpis where business_id = 'biz_dy' and period = '2026-03' and metric = 'Revenue'`]), 1500,
+    '0052: 재업로드 뒤 3월 매출이 1500이 아니다(2500이면 두 배)')
+  assert.equal(await as(EI.lead, [first, second, `select
+        (select count(*) from finance_import_slips where month = '2026-03' and superseded_at is null)::int * 100
+      + (select count(*) from finance_import_slips where month = '2026-03' and superseded_at is not null and import_id = '${MI.m1}')::int * 10
+      + (select count(*) from finance_import_slips s join journal_entries e on e.slip_no = s.slip_no
+          where s.month = '2026-03' and s.superseded_at is null and s.import_id = '${MI.m2}' and e.correction_kind = 'restatement')::int`]), 111,
+  '0052: 활성 줄이 하나(새 정정분개)이고 옛 줄이 내려가야 한다')
+  assert.equal(await as(EI.lead, [first, second, `select count(*)::int from journal_entries r join finance_import_slips s on s.slip_no = r.corrects_id
+      where s.import_id = '${MI.m1}' and s.month = '2026-03' and r.correction_kind = 'reversal' and r.created_by = '${EI.lead}'`]), 1,
+  '0052: 옛 업로드 전표에 같은 호출자의 역분개가 없다')
+  assert.equal(await as(EI.lead, [first, second, `select count(*)::int from audit_log where entity_table = 'finance_import_slips' and action = 'update'
+      and entity_id = 'biz_dy:2026-03' and before->>'slip_no' is not null and note like '% — 이전 전표 % 정정'`]), 1, '0052: 재업로드 감사(이전 전표)가 없다')
+  // 세 번째 — 정정분개를 다시 정정한다(사슬). 여전히 활성 하나 · 장부 = 마지막 업로드.
+  const third = monthRpc(MI.m4, { '2026-03': MARCH })
+  assert.equal(await as(EI.lead, [first, second, third, net('2026-03', '4010')]), -1000, '0052: 세 번째 업로드 뒤 3월 매출이 마지막 업로드가 아니다')
+  assert.equal(await as(EI.lead, [first, second, third, net('2026-03', C)]), 500, '0052: 세 번째 업로드 뒤 대응이 마지막 업로드가 아니다')
+  assert.equal(await as(EI.lead, [first, second, third, `select count(*)::int from finance_import_slips where month = '2026-03' and superseded_at is null`]), 1,
+    '0052: 세 번 올린 달에 활성 줄이 하나가 아니다')
+  // 같은 내용이면 건너뛴다 — 새 전표 · 감사 없이 committed.
+  const same = monthRpc(MI.m2, { '2026-03': MARCH })
+  const entries = `select (select count(*) from journal_entries)::int * 100 + (select count(*) from audit_log where entity_table = 'finance_import_slips')::int`
+  const afterFirst = await as(EI.lead, [first, entries])
+  assert.equal(await as(EI.lead, [first, same, entries]), afterFirst, '0052: 같은 내용 재업로드가 정정 전표 · 감사를 쌓는다')
+  assert.equal(await as(EI.lead, [first, monthField(same, 'unchanged')]), 1, '0052: 같은 내용이 unchanged로 안 셈해진다')
+  assert.equal(await as(EI.lead, [first, same, `select status from finance_imports where import_id = '${MI.m2}'`]), 'committed', '0052: 바뀐 것 없는 업로드도 committed여야 한다')
+  // 다른 사람이 올린 달도 같은 길(재업로드 = 정정) — 역분개 · 정정분개는 이번 호출자 것.
+  assert.equal(await as(EI.lead, [first, `@${EI.lead2}`, monthRpc(MI.other, { '2026-03': MARCH2 }), net('2026-03', '4010')]), -1500, '0052: 남이 올린 달의 재업로드가 두 번 센다')
+
+  // ── 이미 역분개된 업로드 전표: 또 뒤집지 않고 멈춘다 ──
+  const manualReverse = `select post_correction('biz_dy', ${slip03}, '2026-03-31', '손으로 취소', null, '[]'::jsonb)`
+  await assert.rejects(as(EI.lead, [first, `@${EI.lead2}`, manualReverse, `@${EI.lead}`, second]), /ecount_month_reversed/,
+    '0052: 남이 손으로 역분개한 업로드 전표를 또 뒤집는다')
+  await assert.rejects(as(EI.lead, [first, manualReverse, second]), /ecount_month_reversed/, '0052: 이미 역분개된 업로드 전표를 또 뒤집는다(본인이 손으로 한 정정)')
+  const fakeReverse = `select journal_entry_insert('biz_dy', '2026-03-31', '가짜', null,
+      '[{"account_code":"4010","side":"debit","amount":1},{"account_code":"8010","side":"credit","amount":1}]'::jsonb, ${slip03}, 'reversal')`
+  await assert.rejects(as(EI.lead, [first, `@${EI.lead2}`, fakeReverse, `@${EI.lead}`, second]), /ecount_month_reversed/,
+    '0052: 가짜 역분개로 막힌 업로드 전표를 넘어 싣는다')
+
+  // ── 마감 달 · 세무사 확정 달 ──
+  const close = (period: string) => `!insert into closings (business_id, period, account_code, amount, closed_on, provisional_amount, source, fetched_at, closed)
+      values ('biz_dy', '${period}', '4010', 0, '2026-09-01', 0, 'manual', now(), true)`
+  await assert.rejects(as(EI.lead, [close('2026-03'), monthRpc(MI.m1, { '2026-03': MARCH })]), /closed_period/, '0052: 마감된 달에 싣는다')
+  await assert.rejects(as(EI.lead, [close('2026-04'), monthRpc(MI.m1, { '2026-03': MARCH })]), /closed_period/, '0052: 뒤 달이 마감된 달에 싣는다')
+  assert.equal(await as(EI.lead, [close('2026-02'), monthRpc(MI.m1, { '2026-03': MARCH }), net('2026-03', '4010')]), -1000, '0052: 마감 뒤의 열린 달이 막힌다')
+  const officialSave = (kind: string, key: string) =>
+    `select official_statement_save('biz_dy', '${kind}', '${key}', 'https://drive.example/a', '세무사', '[{"account_code":"4010","amount":-1}]'::jsonb)`
+  await assert.rejects(as(EI.lead, [officialSave('year', '2026'), monthRpc(MI.m1, { '2026-03': MARCH })]), /official_month_locked/, '0052: 세무사 확정 해의 달에 싣는다')
+  await assert.rejects(as(EI.lead, [officialSave('quarter', '2026-Q2'), monthRpc(MI.m1, { '2026-03': MARCH, '2026-05': MARCH })]), /official_month_locked/,
+    '0052: 세무사 확정 분기의 달에 싣는다')
+  assert.equal(await as(EI.lead, [officialSave('quarter', '2026-Q2'), monthRpc(MI.m1, { '2026-03': MARCH }), net('2026-03', '4010')]), -1000,
+    '0052: 다른 분기의 세무사 확정이 그 달을 막는다')
+  // ECOUNT 잠정 연간(basis=ecount_excel)은 월을 잠그지 않는다.
+  assert.equal(await as(EI.lead, [`!insert into finance_imports (import_id, business_id, kind, period_key, status, file_name, file_sha256, created_by)
+      values ('00000000-0000-0000-0000-00000052b0a1', 'biz_dy', 'annual', '2026', 'draft', 'a.xlsx', '${SHA}', '${EI.lead}')`,
+  `select official_statement_import_ecount('00000000-0000-0000-0000-00000052b0a1', '${SHA}', '2026', '[{"account_code":"4010","amount":-1}]'::jsonb)`,
+  monthRpc(MI.m1, { '2026-03': MARCH }), net('2026-03', '4010')]), -1000, '0052: ECOUNT 잠정 연간이 월별 등록을 잠근다')
+
+  // ── 모양 · 계정 ──
+  const shapes: [MonthPlan | string, RegExp, string][] = [
+    [{ '2026-03': [...MARCH, ['1010', 50]] }, /ecount_monthly_bs_account/, '재무상태표 계정(현금)'],
+    [{ '2026-03': [...MARCH, ['7777', 5]] }, /statement_unknown_account/, '장부에 없는 계정'],
+    [{ '2026-03': [...MARCH, ['8999', 5]] }, /inactive_account/, '비활성 계정'],
+    [{ '2025-03': MARCH }, /ecount_plan_invalid/, '업로드의 해 밖의 달'],
+    [{ '2026-13': MARCH }, /ecount_plan_invalid/, '없는 달'],
+    [{ '2026-03': [...MARCH, ['4010', -1]] }, /ecount_plan_invalid/, '한 달 한 계정에 줄 둘'],
+    [{ '2026-03': [...MARCH, ['9310', 0.001]] }, /ecount_plan_invalid/, '0원 줄'],
+    [{ '2026-03': [...MARCH, [C, 5]] }, /ecount_plan_invalid/, '대응 계정 줄을 보냄'],
+    [{ '2026-03': [] }, /ecount_plan_invalid/, '줄 없는 달'],
+    [{}, /statement_empty/, '달 없음'],
+    [`select ecount_monthly_import('${MI.m1}', '${SHA}', '2026', 'monthly', '[{"month":"2026-03","lines":[{"account_code":"4010","amount":"-1000"}]}]'::jsonb)::text`,
+      /ecount_plan_invalid/, '금액이 숫자 아님'],
+    [`select ecount_monthly_import('${MI.m1}', '${SHA}', '2026', 'monthly', '[{"month":"2026-03","lines":[["4010",1]]}]'::jsonb)::text`,
+      /ecount_plan_invalid/, '줄이 객체 아님'],
+    [`select ecount_monthly_import('${MI.m1}', '${SHA}', '2026', 'monthly', '[{"month":"2026-03","lines":[{"account_code":"4010","amount":-1}]},{"month":"2026-03","lines":[{"account_code":"8010","amount":1}]}]'::jsonb)::text`,
+      /ecount_plan_invalid/, '같은 달 둘'],
+  ]
+  for (const [plan, re, what] of shapes) {
+    await assert.rejects(as(EI.lead, [typeof plan === 'string' ? plan : monthRpc(MI.m1, plan)]), re, `0052: 틀린 계획(${what})이 들어간다`)
+  }
+  // 대응 계정이 망가졌으면(비활성 · 다른 구분) 멈춘다.
+  await assert.rejects(as(EI.lead, [first, `!update accounts set active = false where account_code = '${C}'`, monthRpc(MI.m2, { '2026-05': MARCH })]),
+    /ecount_counter_account_invalid/, '0052: 비활성 대응 계정에 싣는다')
+  // 원본: 첨부 줄이 없거나 Storage 객체가 없거나 남이 올렸으면 멈춘다.
+  await assert.rejects(as(EI.lead, [monthRpc(MI.bare, { '2026-03': MARCH })]), /ecount_original_missing/, '0052: 원본 첨부 없는 업로드를 싣는다')
+  await assert.rejects(as(EI.lead, [`!delete from storage.objects where name like 'finance_imports/${MI.m1}/%'`, monthRpc(MI.m1, { '2026-03': MARCH })]),
+    /ecount_original_missing/, '0052: Storage 객체가 사라진 원본으로 싣는다')
+  await assert.rejects(as(EI.lead, [`!update attachments set uploaded_by = '${EI.lead2}' where entity_id = '${MI.m1}'`, monthRpc(MI.m1, { '2026-03': MARCH })]),
+    /ecount_original_missing/, '0052: 남이 올린 원본으로 싣는다')
+
+  // ── 전부 아니면 전무: 뒤 달이 막히면 앞 달 · 대응 계정 · 감사 · committed가 남지 않는다 ──
+  const swallow = (sql: string) => `do $$ begin perform (${sql.replace(/^select /, '').replace(/::text$/, '')}); exception when others then null; end $$`
+  const leftovers = `select (select count(*) from audit_log)::int * 1000 + (select count(*) from journal_entries)::int * 100
+      + (select count(*) from accounts where account_code = '${C}')::int * 10 + (select count(*) from finance_imports where status = 'committed')::int`
+  const before = await as(EI.lead, [leftovers])
+  assert.equal(await as(EI.lead, [close('2026-04'), swallow(monthRpc(MI.m1, { '2026-05': MARCH, '2026-04': MARCH })), leftovers]), before,
+    '0052: 막힌 월별 등록이 앞 달 전표 · 대응 계정 · 감사 · committed를 남긴다')
+  // 재업로드가 중간에 막혀도 옛 줄은 활성 그대로(역분개 · supersede 되돌아감).
+  assert.equal(await as(EI.lead, [first, swallow(monthRpc(MI.m2, { '2026-03': MARCH2, '2026-06': [['7777', 1]] })),
+    `select count(*)::int from finance_import_slips where import_id = '${MI.m1}' and month = '2026-03' and superseded_at is null`]), 1,
+  '0052: 막힌 재업로드가 옛 업로드 줄을 내려 둔다(그 달이 비거나 다음 업로드가 두 번 센다)')
+
+  // ── 권한 · 판정 ──
+  const plan = monthRpc(MI.m1, { '2026-03': MARCH })
+  const refusals: [string | null, string, RegExp, string][] = [
+    [EI.lead2, plan, /finance_import_not_owner/, '남의 월별 업로드를 등록한다'],
+    [EI.reader, plan, /finance_import_not_owner/, '재무 읽기만 가진 사람이 등록한다'],
+    [EI.member, plan, /finance_import_not_found/, '재무 줄 없는 직원에게 업로드가 «있다»고 말한다'],
+    [EI.agent, plan, /books_forbidden/, 'AIAgent가 월별을 등록한다'],
+    [EI.integration, plan, /books_forbidden/, 'Integration이 월별을 등록한다'],
+    [null, plan, /permission denied/, 'anon이 월별 RPC를 부른다'],
+    [EI.lead, monthRpc(MI.m1, { '2026-03': MARCH }, { sha: 'b'.repeat(64) }), /finance_import_hash_mismatch/, '다른 파일로 등록한다'],
+    [EI.lead, monthRpc(RI.annual, { '2026-03': MARCH }), /finance_import_kind/, '연간 업로드를 월별로 등록한다'],
+    [EI.lead, monthRpc('00000000-0000-0000-0000-000000000000', { '2026-03': MARCH }), /finance_import_not_found/, '없는 업로드를 등록한다'],
+  ]
+  for (const [uid, sql, re, what] of refusals) await assert.rejects(as(uid, [sql]), re, `0052: ${what}`)
+  await assert.rejects(as(EI.lead, [first, first]), /finance_import_closed/, '0052: 같은 업로드를 두 번 등록한다')
+  await assert.rejects(as(EI.lead, [`!update user_module_access set can_write = false where user_id = '${EI.lead}'`, plan]), /books_forbidden/,
+    '0052: 쓰기 권한을 잃은 만든 사람이 등록한다')
+  await assert.rejects(as(EI.lead, [`!update user_profiles set revoked_at = now() where user_id = '${EI.lead}'`, plan]), /books_forbidden/, '0052: 회수된 사람이 등록한다')
+  await db.close()
+}
+
+/**
+ * 0052 RPC가 **BYPASSRLS 없는 소유자**로 돌 때도 등록 · 재업로드하는가 — ecountRpcUnderNonBypassOwner()와 같은 실험.
+ *   journal_entries · journal_lines · accounts · closings · audit_log는 force 그대로 — 정책이 호출자의 auth.uid()로 다시 재고
+ *   쓰기 권한자는 통과한다. finance_import_slips · finance_imports · attachments는 force 없음(소유자).
+ *   대조군 ① finance_import_slips에 force를 걸어도 된다 — 0050 정책(이 트랜잭션 본인 전표 · 본인의 정확한 역분개)이 RPC와 같은 말을 한다.
+ *   대조군 ② finance_imports에 force를 걸면 committed가 사람의 with check(draft · cancelled)에 막힌다 — 실험이 force를 재고 있다.
+ */
+async function ecountMonthlyUnderNonBypassOwner() {
+  const db = new PGlite({ extensions: { pg_trgm } })
+  await applyAll(db)
+  await ecountMonthlySeed(db)
+  await db.exec(`
+    create role app_owner nosuperuser nobypassrls nologin;
+    grant usage on schema auth, storage to app_owner;
+    grant select on storage.objects to app_owner;
+    grant execute on all functions in schema public to app_owner;
+    grant usage, select on all sequences in schema public to app_owner;
+    -- Supabase의 postgres는 public 표를 다 읽는다(소유자 아닌 표도). Storage 정책이 부르는 판정 함수(invoker)가 그 권한으로 돈다.
+    grant select on all tables in schema public to app_owner;
+    alter table public.accounts             owner to app_owner;
+    alter table public.audit_log            owner to app_owner;
+    alter table public.finance_imports      owner to app_owner;
+    alter table public.finance_import_slips owner to app_owner;
+    alter table public.journal_entries      owner to app_owner;
+    alter table public.journal_lines        owner to app_owner;
+    alter table public.closings             owner to app_owner;
+    alter table public.attachments          owner to app_owner;
+    alter table public.official_statements  owner to app_owner;
+    alter function public.ecount_monthly_import(uuid, text, text, text, jsonb) owner to app_owner;
+    alter function public.ecount_monthly_counter_code()                       owner to app_owner;
+    alter function public.finance_import_claim(uuid, text, text)              owner to app_owner;
+    alter function public.ecount_audit_note(text, text, text, uuid)           owner to app_owner;
+    alter function public.ecount_code_business(text)                          owner to app_owner;
+  `)
+  const forced = await db.query<{ t: string; f: boolean }>(`select relname as t, relforcerowsecurity as f from pg_class
+      where relname in ('journal_entries', 'journal_lines', 'accounts', 'audit_log', 'finance_import_slips', 'finance_imports') order by 1`)
+  assert.deepEqual(forced.rows.map((r) => [r.t, r.f]), [['accounts', true], ['audit_log', true], ['finance_import_slips', false], ['finance_imports', false],
+    ['journal_entries', true], ['journal_lines', true]], '0052 실험 전제: 장부 · 감사는 force · 업로드 두 표는 force 없음')
+
+  async function as(steps: string[]): Promise<string> {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${EI.lead}', true); set local role authenticated;`)
+    try {
+      let out = ''
+      for (const s of steps) out = String(Object.values((await db.query<Record<string, unknown>>(s)).rows[0] ?? {})[0])
+      await db.exec('set constraints all immediate')
+      return out
+    } finally {
+      await db.exec('rollback')
+    }
+  }
+  const first = monthRpc(MI.m1, { '2026-03': MARCH })
+  const second = monthRpc(MI.m2, { '2026-03': MARCH2 })
+  assert.equal(await as([first, net('2026-03', ECOUNT_MONTHLY_COUNTER.code)]), '500',
+    '0052: BYPASSRLS 없는 소유자에서 월별 등록이 안 된다(장부 · 감사 force 아래에서 호출자 정책을 못 넘는다)')
+  assert.equal(await as([first, second, net('2026-03', '4010')]), '-1500', '0052: BYPASSRLS 없는 소유자에서 재업로드(정정 전표)가 안 되거나 두 번 센다')
+  // Storage 객체 확인도 이 소유자로 돈다(select 권한이 있으니 건너뛰지 않는다) — 객체가 없으면 멈춘다.
+  await db.exec(`delete from storage.objects where name like 'finance_imports/${MI.m4}/%'`)
+  await assert.rejects(as([monthRpc(MI.m4, { '2026-03': MARCH })]), /ecount_original_missing/, '0052: 소유자 권한으로 Storage 객체 확인을 건너뛴다')
+
+  await db.exec(`alter table public.finance_import_slips force row level security;`)
+  assert.equal(await as([first, second, net('2026-03', '4010')]), '-1500',
+    '대조군 ①: finance_import_slips에 force를 걸면 막힌다 — 0050 정책(잇기 · 내리기)이 RPC가 하는 일과 어긋난다')
+  await db.exec(`alter table public.finance_import_slips no force row level security; alter table public.finance_imports force row level security;`)
+  await assert.rejects(as([first]), /row-level security/, '대조군 ②가 성립하지 않는다 — finance_imports에 force를 걸어도 committed가 된다면 실험이 force를 재고 있지 않다')
+  await db.close()
+}
+
 async function main() {
   const db = new PGlite({ extensions: { pg_trgm } })
   const files = await applyAll(db)
@@ -5214,8 +5549,10 @@ async function main() {
   await ecountImport()
   await ecountImportRpc()
   await ecountRpcUnderNonBypassOwner()
+  await ecountMonthlyRpc()
+  await ecountMonthlyUnderNonBypassOwner()
   console.log(
-    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단), 0048 문서 모듈 권한(사람 × 회사 · 문서 · 폴더 쓰기 · 줄 없는 팀장 거부 · 회사 접근과 줄 둘 다 · 열람 등급 위 insert/update 차단 · 등록자는 본인 · 고치기 · 지우기는 자기 것만(회장 전부) · 주인 칸은 회장만 · 폴더는 만든 사람만 · 시스템 계정 불변 · 옛 /core/search 회귀 · 회수 감사 · hard delete 닫힘), 0049 직원 화면 용어(결재선 · 취합 제목 «회장»→«대표» 백필 — 사람 · 단계 · updated_at 그대로 · 얼림 재가동 · 새 결재선 · 감사 메모도 «대표»), 0050 ECOUNT 업로드(업로드 표 — 쓰기 권한자 본인 draft만 · 남의 draft/끝난 업로드 못 고침 · 지우기 없음 · 칸 단위 update · 해시 한 번 · 재무 읽기 없으면 0행 · 시스템 계정 restrictive · anon 잠금 · 업로드 전표 활성 (회사, 달) 하나 · 이 트랜잭션에 본인이 세운 그 달 전표만 잇고(수기 · 남의 · 역분개 거부) 본인이 세운 정확한 반대 역분개 뒤에만 내림(가짜 역분개 거부) · 첨부 원본은 재무 권한자만 보고 본인만 올림 · committed/cancelled 원본은 줄 · 객체 삭제와 재업로드 거부 · 사람의 ECOUNT 계정 + source 불변 · 공식 재무제표 basis/증빙/활성 unique basis별 · update는 supersede만 · 세무사 저장이 ECOUNT 잠정을 안 밈), 0051 ECOUNT 등록 RPC(계정과목 · 연간 한 트랜잭션 · 감사 먼저 · 본인 draft · 종류 · 해시 · 장부 권한 · ECOUNT 회사 · 시스템 계정 거부 · 이미 있는 코드 · 바뀐 이름 · 세무사 확정 해 · 균형 · ECOUNT 재업로드 supersede · 헤더/줄 직접 쓰기 닫힘 · 복합 FK · 사람의 committed 닫힘 · 세무사 저장 definer · BYPASSRLS 없는 소유자에서도 등록 + force 대조군)`,
+    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단), 0048 문서 모듈 권한(사람 × 회사 · 문서 · 폴더 쓰기 · 줄 없는 팀장 거부 · 회사 접근과 줄 둘 다 · 열람 등급 위 insert/update 차단 · 등록자는 본인 · 고치기 · 지우기는 자기 것만(회장 전부) · 주인 칸은 회장만 · 폴더는 만든 사람만 · 시스템 계정 불변 · 옛 /core/search 회귀 · 회수 감사 · hard delete 닫힘), 0049 직원 화면 용어(결재선 · 취합 제목 «회장»→«대표» 백필 — 사람 · 단계 · updated_at 그대로 · 얼림 재가동 · 새 결재선 · 감사 메모도 «대표»), 0050 ECOUNT 업로드(업로드 표 — 쓰기 권한자 본인 draft만 · 남의 draft/끝난 업로드 못 고침 · 지우기 없음 · 칸 단위 update · 해시 한 번 · 재무 읽기 없으면 0행 · 시스템 계정 restrictive · anon 잠금 · 업로드 전표 활성 (회사, 달) 하나 · 이 트랜잭션에 본인이 세운 그 달 전표만 잇고(수기 · 남의 · 역분개 거부) 본인이 세운 정확한 반대 역분개 뒤에만 내림(가짜 역분개 거부) · 첨부 원본은 재무 권한자만 보고 본인만 올림 · committed/cancelled 원본은 줄 · 객체 삭제와 재업로드 거부 · 사람의 ECOUNT 계정 + source 불변 · 공식 재무제표 basis/증빙/활성 unique basis별 · update는 supersede만 · 세무사 저장이 ECOUNT 잠정을 안 밈), 0051 ECOUNT 등록 RPC(계정과목 · 연간 한 트랜잭션 · 감사 먼저 · 본인 draft · 종류 · 해시 · 장부 권한 · ECOUNT 회사 · 시스템 계정 거부 · 이미 있는 코드 · 바뀐 이름 · 세무사 확정 해 · 균형 · ECOUNT 재업로드 supersede · 헤더/줄 직접 쓰기 닫힘 · 복합 FK · 사람의 committed 닫힘 · 세무사 저장 definer · BYPASSRLS 없는 소유자에서도 등록 + force 대조군), 0052 ECOUNT 월별 RPC(달마다 전표 + 대응 계정 · 누계 → 당월 · 재업로드 = 역분개 + 정정분개 + 옛 줄 내림 — 두 번 세지 않음 · 같은 내용 건너뜀 · 이미 역분개된 달 멈춤 · 마감 달 · 세무사 확정 달 · 재무상태표/비활성/모르는 계정 · 원본 첨부 · 권한 · 전부 아니면 전무 · BYPASSRLS 없는 소유자 + force 대조군)`,
   )
 }
 
