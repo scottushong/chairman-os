@@ -18,14 +18,28 @@ import { EcountOutline } from './ecount-outline'
  * 서버가 짐작(또는 지난 업로드의 지정)을 주면 열 지정 화면을 먼저 띄운다. 미리보기는 사람이 «이 열 지정으로
  * 미리보기»를 누른 뒤에만 선다 — 짐작으로는 미리보기 · 등록을 하지 않는다.
  */
-export function EcountImportFlow({ initial }: { initial: EcountPreviewState }) {
+export function EcountImportFlow({
+  initial,
+  onDone,
+}: {
+  initial: EcountPreviewState
+  /**
+   * 등록이 끝났을 때 결과 문장을 부모에게도 알린다. «진행 중» 목록에서 이어 간 업로드는 등록 뒤 router.refresh()가 그 줄을
+   * 목록(draft만)에서 빼서 이 컴포넌트가 사라진다 — 문장을 목록 단에 올려 두어야 사람이 결과를 본다.
+   */
+  onDone?: (text: string) => void
+}) {
   const router = useRouter()
   const [state, setState] = useState<EcountPreviewState>(initial)
   const [draft, setDraft] = useState<EcountMapping | null>(initial.mapping ?? null)
   const [editing, setEditing] = useState(initial.mappingSource !== 'confirmed' || !!initial.mappingProblems?.length)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [done, setDone] = useState<string | null>(null)
+  const [done, setDoneText] = useState<string | null>(null)
+  function setDone(text: string) {
+    setDoneText(text)
+    onDone?.(text)
+  }
   // 연간 — 이름이 계정 둘 이상과 맞은 줄에 고른 계정. 고를 때마다 서버가 원본을 다시 읽어 미리보기(합계 대조까지)를 다시 만든다.
   const [picks, setPicks] = useState<Record<string, string>>(initial.picks ?? {})
 

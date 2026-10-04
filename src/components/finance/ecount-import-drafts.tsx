@@ -31,17 +31,39 @@ export interface EcountDraftRow {
 }
 
 export function EcountImportDrafts({ drafts }: { drafts: EcountDraftRow[] }) {
+  // 방금 등록한 업로드의 결과 — 등록 뒤 새로 고침에서 그 줄은 목록(draft만)에서 빠지므로 문장을 여기(목록 단)에 둔다.
+  // 사람이 닫을 때까지 남는다. 목록 컴포넌트는 새로 고침에도 그대로라 상태가 유지된다.
+  const [recent, setRecent] = useState<{ import_id: string; file_name: string; text: string }[]>([])
+  const shown = new Set(drafts.map((d) => d.import_id))
   return (
     <section className="rounded-xl border border-line-soft bg-panel p-4" aria-label="진행 중인 업로드">
       <h2 className="text-t13 font-semibold">
         진행 중 <span className="text-t11 font-normal text-ink-muted">{drafts.length}건</span>
       </h2>
+      {recent.filter((r) => !shown.has(r.import_id)).map((r) => (
+        <div key={r.import_id} role="status" className="mt-2 flex items-start gap-2 rounded-md border border-accent/40 bg-accent/10 px-2.5 py-1.5 text-t11h text-ink">
+          <p className="min-w-0 flex-1">
+            <span className="font-semibold">방금 등록됨 · {r.file_name}</span> — {r.text}
+          </p>
+          <button
+            type="button"
+            onClick={() => setRecent((all) => all.filter((x) => x.import_id !== r.import_id))}
+            className="min-h-11 shrink-0 rounded px-1.5 text-t10h text-accent hover:underline lg:min-h-0 lg:py-0.5"
+          >
+            닫기
+          </button>
+        </div>
+      ))}
       {drafts.length === 0 ? (
         <p className="mt-2 text-t11 text-ink-muted">진행 중인 업로드가 없습니다.</p>
       ) : (
         <ul className="mt-2 divide-y divide-line-soft">
           {drafts.map((d) => (
-            <DraftItem key={d.import_id} d={d} />
+            <DraftItem
+              key={d.import_id}
+              d={d}
+              onDone={(text) => setRecent((all) => [...all.filter((x) => x.import_id !== d.import_id), { import_id: d.import_id, file_name: d.file_name, text }])}
+            />
           ))}
         </ul>
       )}
@@ -49,7 +71,7 @@ export function EcountImportDrafts({ drafts }: { drafts: EcountDraftRow[] }) {
   )
 }
 
-function DraftItem({ d }: { d: EcountDraftRow }) {
+function DraftItem({ d, onDone }: { d: EcountDraftRow; onDone: (text: string) => void }) {
   const router = useRouter()
   const [pending, start] = useTransition()
   const [msg, setMsg] = useState<{ text: string; tone: 'info' | 'error' } | null>(null)
@@ -113,7 +135,7 @@ function DraftItem({ d }: { d: EcountDraftRow }) {
         </p>
       ) : null}
       {flow ? (
-        <EcountImportFlow key={flow.importId} initial={flow} />
+        <EcountImportFlow key={flow.importId} initial={flow} onDone={onDone} />
       ) : outline ? (
         <div className="mt-1.5">
           <EcountOutline outline={outline} />
