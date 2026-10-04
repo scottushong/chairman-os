@@ -36,3 +36,23 @@ dummy 시드에 GroupCFO 사람이 없어 다섯 계정으로 했다.
 - /privacy 개정 적용(회장 확인 대기).
 - 다섯 계정 모두 `/business/biz_debutphoto` 링크가 404 — 링크 출처 미확인(DEFERRED).
 - 직원 안내서 PDF(`staff-ko.pdf`)를 다시 만들었다(md 13:41 개정 반영). 화면 캡처 검토는 안 했다.
+
+## 2026-10-04 재점검 (/privacy 개정 · 다른 회사 노출 차단 뒤)
+
+**방법:** 같은 방식(dummy production 빌드, 계정마다 `DUMMY_USER`, 링크를 따라 220화면). 찾는 낱말에 «Founder · Attention»과
+**자기 회사 밖 회사 이름**(VANA · Sticky · HOF · Boram/보람 · 데뷔포토/DEBUT PHOTO)을 더했고, 링크(`href`)에서 다른 회사 id ·
+`/group` · `/dependency` · `/attention` · `/initiatives`를 찾았다.
+
+| 계정 | 역할 | 화면 | 낱말 | 다른 회사 이름 | 다른 회사 · 회장 전용 링크 |
+|---|---|---|---|---|---|
+| dy_ceo | BusinessCEO | 220 | 0 | 0 | 0 |
+| exec | Executive | 220 | 0 | 0 | 0 |
+| sales_lead | TeamLead | 220 | 0 | 0 | 0 |
+| sales_staff | Member | 220 | 0 | 0 | 0 |
+| support_lead | TeamLead(경영지원) | 220 | 0 | 0 | 0 |
+
+- **`/business/biz_debutphoto` 링크의 출처:** dummy 어댑터의 목록 일부가 회사로 거르지 않았다 — `/calendar`의 마일스톤(그 링크) ·
+  `/approvals`의 다른 회사 결재(VANA · Sticky · Boram). live는 RLS(has_business 등)가 이미 자른다. dummy에 같은 문을 옮겨 적었다(f23b3f3).
+- 같은 원인 전수: AI 도우미 직원 예시(«VANA 9월 손익 합계» · 이니셔티브) · 문서 등록 placeholder(«Sticky Alliance») · AI 도구 설명의 회사 예시를 뺐다.
+- /privacy 개정 적용(1176f82) — «회장» · 회장 전용 기능명 · 내부 코드 배지 0건.
+- /settings «의존성» 오탐은 문장을 «쓰는 라이브러리»로 바꿔 없앴다.
