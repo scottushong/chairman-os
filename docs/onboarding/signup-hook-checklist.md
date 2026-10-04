@@ -7,7 +7,7 @@
 
 1. https://supabase.com/dashboard → 프로젝트 **nndvspgnljivkvihxlzj**(production · Tokyo)를 고른다. staging(itpenmxyracfhyormcep · Seoul)이 아닌지 주소창으로 확인.
 2. 왼쪽 세로 메뉴 **SQL Editor** → 위쪽 **+ New query**.
-3. 아래를 붙여 넣고 오른쪽 아래 **Run**(또는 Ctrl+Enter).
+3. 아래를 붙여 넣고 오른쪽 아래 **Run**(또는 Ctrl+Enter). 같은 쿼리가 `docs/onboarding/hook-a1.sql`에 파일로 있다.
 
 ```sql
 select has_function_privilege('supabase_auth_admin','public.before_user_created_hook(jsonb)','execute') as auth_exec,
