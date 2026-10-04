@@ -1,5 +1,7 @@
+import { ecountAuditNote } from '@/lib/ecount/excel/file-rules'
 import { MOCK_FETCHED_AT } from '@/lib/ecount/mock'
 import { loadMockLedger } from '@/lib/ecount/mock-ledger'
+import { SECTION_CATEGORIES } from '@/lib/ledger/accounts'
 import { STANDARD_CHART, STANDARD_CHART_BUSINESSES, type StandardAccount } from '@/lib/ledger/standard-chart'
 import { periodOfDate } from '@/lib/ledger/basis'
 import { closeProblem, closingRows } from '@/lib/ledger/closing'
@@ -25,6 +27,7 @@ import type {
   JournalLine,
   NewOfficialStatement,
   OfficialStatement,
+  OfficialStatementBasis,
   OfficialStatementLine,
   ProcessChart,
   ProcessChartInput,
@@ -200,30 +203,50 @@ export async function updateAccount(
 }
 
 /**
- * ① ECOUNT 계정과목 병합(supabase.ts mergeEcountAccounts와 같은 규칙). 새 코드는 source='ecount' ·
- * 이름은 계획에 든 코드만 · 분류는 건드리지 않는다. live와 같이 **전부 확인한 뒤** 쓴다 — 중간에 멈춰 반쪽이 남지 않게.
+ * ① ECOUNT 계정과목 등록의 장부 쪽 — 0051 ecount_accounts_import()의 «계획 확인 → 새 코드 → 이름»과 같은 순서 · 같은 거부 낱말.
+ * 판정(본인 · draft · 종류 · sha256 · 권한 · ECOUNT 회사)은 부르는 쪽(dummy-finance-imports registerEcountAccounts)이 끝냈다.
+ * **전부 확인한 뒤에 쓴다** — 확인과 쓰기 사이에 await가 없어서 중간에 멈춰 반쪽이 남지 않는다(DB의 한 트랜잭션 자리).
+ * 감사는 dummy에 없다(콘솔 note뿐) — live는 같은 트랜잭션에서 먼저 남긴다.
  */
-export async function mergeEcountAccounts(
+export async function dummyApplyEcountAccounts(
   businessId: string,
   merge: EcountAccountMerge,
   actor: AuditActor,
   auditNote: string,
 ): Promise<{ added: number; renamed: number }> {
-  assertKeepBooks(businessId)
   const store = await accountStore()
+  const seen = new Set<string>()
   for (const c of merge.creates) {
-    if (c.business_id !== businessId) throw new Error('accounts: 다른 회사의 계정이 섞였다.')
-    if (store.has(key(businessId, c.account_code))) throw new Error(DUPLICATE_ACCOUNT_CODE)
+    const ok =
+      typeof c.account_code === 'string' && c.account_code !== '' && c.account_code === c.account_code.trim() &&
+      typeof c.name === 'string' && c.name.trim() !== '' && typeof c.active === 'boolean' && !!c.category && !!c.section
+    if (!ok || seen.has(c.account_code)) throw new Error(`ecount_plan_invalid: 새 계정 ${c.account_code}`)
+    seen.add(c.account_code)
   }
   for (const r of merge.renames) {
-    if (!store.has(key(businessId, r.account_code))) throw new Error('accounts: 고칠 계정이 없다.')
+    const ok =
+      typeof r.account_code === 'string' && r.account_code !== '' && typeof r.from === 'string' &&
+      typeof r.to === 'string' && r.to.trim() !== '' && r.to !== r.from
+    if (!ok || seen.has(r.account_code)) throw new Error(`ecount_plan_invalid: 이름 바꿈 ${r.account_code}`)
+    seen.add(r.account_code)
   }
+  for (const c of merge.creates) {
+    if (store.has(key(businessId, c.account_code))) throw new Error(`account_exists: ${c.account_code}`)
+  }
+  for (const r of merge.renames) {
+    if (store.get(key(businessId, r.account_code))?.name !== r.from) throw new Error(`account_changed: ${r.account_code}`)
+  }
+  // 0015 accounts_category_section 제약
+  for (const c of merge.creates) {
+    if (!SECTION_CATEGORIES[c.section]?.includes(c.category)) throw new Error('new row violates check constraint "accounts_category_section"')
+  }
+
   const fetched_at = new Date().toISOString()
   for (const c of merge.creates) {
     store.set(key(businessId, c.account_code), {
       business_id: businessId,
       account_code: c.account_code,
-      name: c.name,
+      name: c.name.trim(),
       category: c.category,
       section: c.section,
       cash_flow: c.cash_flow,
@@ -235,7 +258,7 @@ export async function mergeEcountAccounts(
   }
   for (const r of merge.renames) {
     const before = store.get(key(businessId, r.account_code))!
-    store.set(key(businessId, r.account_code), { ...before, name: r.to })
+    store.set(key(businessId, r.account_code), { ...before, name: r.to.trim() })
   }
   note(actor, `${auditNote} — 더함 ${merge.creates.length} · 이름 ${merge.renames.length}`)
   return { added: merge.creates.length, renamed: merge.renames.length }
@@ -383,11 +406,13 @@ export async function saveOfficialStatement(
   if (balance !== 0) throw new Error(`재무상태표가 닫히지 않습니다. 차이 ${balance}원`)
 
   const now = new Date().toISOString()
+  // 0050: 세무사 저장은 세무사 행만 supersede한다 — ECOUNT 잠정 행은 그대로.
   const prev = officialStatements.find(
     (s) =>
       s.business_id === input.business_id &&
       s.period_kind === input.period_kind &&
       s.period_key === input.period_key &&
+      s.basis === 'accountant' &&
       s.superseded_at === null,
   )
   if (prev) prev.superseded_at = now
@@ -404,6 +429,8 @@ export async function saveOfficialStatement(
     created_at: now,
     superseded_at: null,
     supersedes_id: prev?.id ?? null,
+    basis: 'accountant',
+    import_id: null,
   })
   officialLines.push(
     ...input.lines.map((l) => ({
@@ -417,11 +444,67 @@ export async function saveOfficialStatement(
   return id
 }
 
-/** 활성 행만. 정정으로 밀려난 것은 목록에 없다 — 잠금 판정이 옛 결산을 보면 안 된다. */
-export async function listOfficialStatements(businessId: string): Promise<OfficialStatement[]> {
+/**
+ * ② ECOUNT 연간 등록의 결산 쪽 — 0051 official_statement_import_ecount()와 같은 순서 · 같은 거부 낱말:
+ * 줄 모양 · 한 계정 한 줄 · 장부에 있는 계정 → 세무사 확정 해 → 균형 → 같은 해 ECOUNT 활성 행 supersede → 헤더 · 줄.
+ * 판정(본인 · draft · 종류 · 해시 · 권한)은 부르는 쪽이 끝냈다. 확인을 다 한 뒤에 쓴다(반쪽 없음).
+ */
+export async function dummyImportEcountAnnual(
+  imp: { business_id: string; period_key: string; import_id: string; file_name: string },
+  lines: { account_code: string; amount: number }[],
+  actor: AuditActor,
+): Promise<number> {
+  if (!Array.isArray(lines) || lines.length === 0) throw new Error('statement_empty')
+  const codes = new Set<string>()
+  for (const l of lines) {
+    if (!l || typeof l.account_code !== 'string' || l.account_code === '' || typeof l.amount !== 'number' || !Number.isFinite(l.amount)) {
+      throw new Error(`ecount_plan_invalid: 줄 ${l?.account_code ?? '?'}`)
+    }
+    if (codes.has(l.account_code)) throw new Error(`ecount_plan_invalid: 계정 ${l.account_code}에 줄 둘`)
+    codes.add(l.account_code)
+  }
+  const store = await accountStore()
+  for (const l of lines) if (!store.has(key(imp.business_id, l.account_code))) throw new Error(`statement_unknown_account: ${l.account_code}`)
+  const active = (basis: OfficialStatementBasis) =>
+    officialStatements.find(
+      (s) =>
+        s.business_id === imp.business_id && s.period_kind === 'year' && s.period_key === imp.period_key && s.basis === basis && s.superseded_at === null,
+    )
+  if (active('accountant')) throw new Error('official_confirmed')
+  const balance = lines.reduce((t, l) => {
+    const section = store.get(key(imp.business_id, l.account_code))!.section
+    return BALANCE_SHEET_SECTIONS.includes(section) ? t + l.amount : t
+  }, 0)
+  if (balance !== 0) throw new Error(`statement_unbalanced: 차이 ${balance}원`)
+
+  const now = new Date().toISOString()
+  const prev = active('ecount_excel')
+  if (prev) prev.superseded_at = now
+  const id = ++officialSeq
+  officialStatements.push({
+    id,
+    business_id: imp.business_id,
+    period_kind: 'year',
+    period_key: imp.period_key,
+    evidence_url: null,
+    memo: ecountAuditNote({ kind: 'annual', period: imp.period_key, fileName: imp.file_name, importId: imp.import_id }),
+    created_by: actor.user_id,
+    created_at: now,
+    superseded_at: null,
+    supersedes_id: prev?.id ?? null,
+    basis: 'ecount_excel',
+    import_id: imp.import_id,
+  })
+  officialLines.push(...lines.map((l) => ({ statement_id: id, business_id: imp.business_id, account_code: l.account_code, amount: l.amount })))
+  note(actor, `official ECOUNT ${imp.business_id}:${imp.period_key}${prev ? ` (이전 #${prev.id})` : ''}`)
+  return id
+}
+
+/** 활성 행만. 정정으로 밀려난 것은 목록에 없다 — 잠금 판정이 옛 결산을 보면 안 된다. 기본은 세무사 확정만(live와 같다). */
+export async function listOfficialStatements(businessId: string, basis: OfficialStatementBasis | 'all' = 'accountant'): Promise<OfficialStatement[]> {
   if (!canReadBooks(businessId)) return []
   return officialStatements
-    .filter((s) => s.business_id === businessId && s.superseded_at === null)
+    .filter((s) => s.business_id === businessId && s.superseded_at === null && (basis === 'all' || (s.basis ?? 'accountant') === basis))
     .map((s) => ({ ...s }))
 }
 

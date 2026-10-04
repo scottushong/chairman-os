@@ -72,6 +72,7 @@ import type {
   MonthlyPriority,
   NewOfficialStatement,
   OfficialStatement,
+  OfficialStatementBasis,
   ProcessChart,
   ProcessChartInput,
   CityLayout,
@@ -109,7 +110,6 @@ import {
   DUPLICATE_INVITATION,
   type AbsenceTestInput,
   type AccountPatch,
-  type EcountAccountMerge,
   type ActivityWeek,
   type AuditActor,
   type AutonomyAssessmentInput,
@@ -1029,71 +1029,6 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     },
 
     /**
-     * ① ECOUNT 계정과목 병합. 기록이 먼저, 행이 나중(createAccount와 같은 순서 — 행 쓰기가 막혀도 «하려고 했다»가 남는다).
-     * 새 코드는 insert 한 번(한 문장 = 전부 아니면 전무)에 source='ecount' — 0050 accounts_books_insert가 받는다.
-     * 이름 바꿈은 코드마다 감사 + update(name만). 분류 칸은 보내지 않는다 — 있는 계정의 분류는 바꾸지 않는다.
-     * 한 트랜잭션이 아니다: 이름 바꿈 도중 끊기면 일부만 바뀐다. 다시 올려도 같은 결과로 모인다(새 코드는 이미 있고,
-     * 바뀐 이름은 «같음»이 된다) — 한 트랜잭션 RPC는 0051 이후(DEFERRED).
-     */
-    async mergeEcountAccounts(businessId: string, merge: EcountAccountMerge, actor: AuditActor, note: string) {
-      if (merge.creates.some((c) => c.business_id !== businessId)) throw new Error('accounts: 다른 회사의 계정이 섞였다.')
-      let added = 0
-      if (merge.creates.length > 0) {
-        await audit({
-          action: 'create',
-          entity_table: 'accounts',
-          entity_id: `${businessId}:ecount-upload`,
-          business_id: businessId,
-          actor,
-          after: { codes: merge.creates.map((c) => c.account_code) },
-          note: `${note} — 계정 ${merge.creates.length}개 더함`,
-        })
-        const fetched_at = new Date().toISOString()
-        const { data, error } = await sb
-          .from('accounts')
-          .insert(
-            merge.creates.map((c) => ({
-              business_id: businessId,
-              account_code: c.account_code,
-              name: c.name,
-              category: c.category,
-              section: c.section,
-              cash_flow: c.cash_flow,
-              active: c.active,
-              source: 'ecount',
-              fetched_at,
-            })),
-          )
-          .select('account_code')
-        if (error) throw accountError(error)
-        added = data?.length ?? 0
-      }
-      let renamed = 0
-      for (const r of merge.renames) {
-        await audit({
-          action: 'update',
-          entity_table: 'accounts',
-          entity_id: `${businessId}:${r.account_code}`,
-          business_id: businessId,
-          actor,
-          before: { name: r.from },
-          after: { name: r.to },
-          note: `${note} — 이름 바꿈`,
-        })
-        const { data, error } = await sb
-          .from('accounts')
-          .update({ name: r.to })
-          .eq('business_id', businessId)
-          .eq('account_code', r.account_code)
-          .select(ACCOUNT_COLUMNS)
-        if (error) throw accountError(error)
-        oneAffectedRow('accounts', data as Account[] | null, null)
-        renamed += 1
-      }
-      return { added, renamed }
-    },
-
-    /**
      * 블록 2. 감사 기록·헤더·라인이 0016 post_journal_entry() 한 번(한 트랜잭션)이다 —
      * 여기서 audit()를 따로 부르면 전표가 거부돼도 '입력했다'가 남고, 반대로 두 HTTP 사이에서 끊기면 반쪽 전표가 남는다.
      * DB의 거부 사유(closed_period / unbalanced_slip / inactive_account)는 message에 그대로 싣는다.
@@ -1161,8 +1096,12 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       return id
     },
 
-    /** 활성 행만 읽는다. 정정으로 밀려난 결산이 잠금 판정에 끼면 이미 고친 기간이 계속 잠긴다. */
-    async listOfficialStatements(businessId: string): Promise<OfficialStatement[]> {
+    /**
+     * 활성 행만 읽는다. 정정으로 밀려난 결산이 잠금 판정에 끼면 이미 고친 기간이 계속 잠긴다.
+     * basis는 앱에서 거른다 — 0050 전 DB에는 basis 칸이 없어서 .eq('basis')가 오류다(master push = production 앱이
+     * DB보다 먼저 나간다). 칸이 없는 행은 세무사 확정(accountant)이다.
+     */
+    async listOfficialStatements(businessId: string, basis: OfficialStatementBasis | 'all' = 'accountant'): Promise<OfficialStatement[]> {
       const { data, error } = await sb
         .from('official_statements')
         .select('*')
@@ -1170,7 +1109,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         .is('superseded_at', null)
         .order('period_key', { ascending: true })
       if (error) throw new Error(`Supabase official_statements ${error.code ?? '?'}: ${error.message}`)
-      return (data ?? []) as OfficialStatement[]
+      const rows = (data ?? []) as OfficialStatement[]
+      return basis === 'all' ? rows : rows.filter((r) => (r.basis ?? 'accountant') === basis)
     },
 
     /**

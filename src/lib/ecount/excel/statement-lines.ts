@@ -1,3 +1,4 @@
+import { ACCOUNT_CODE_PATTERN } from '@/lib/ledger/accounts'
 import type { AccountSection } from '@/types'
 
 import type { ExistingAccount } from './accounts-import'
@@ -98,8 +99,11 @@ const GROUP_NAMES = new Set(
 
 export interface LineMatch {
   account: { code: string; name: string; section: AccountSection; active: boolean } | null
-  how: 'code' | 'name' | null
+  /** pick = 이름이 계정 둘 이상과 맞아 사람이 고른 것(연간) */
+  how: 'code' | 'name' | 'pick' | null
   problem: string | null
+  /** 이름이 계정 둘 이상과 맞았을 때 그 후보들(코드 · 이름) — 연간 미리보기가 줄마다 고르게 한다 */
+  candidates?: { code: string; name: string }[]
 }
 
 /**
@@ -116,7 +120,12 @@ export function matchAccount(line: Pick<StatementLine, 'code' | 'name'>, account
   const hits = key ? accounts.filter((a) => normalizeLabel(a.name) === key) : []
   if (hits.length === 1) return { account: pick(hits[0]), how: 'name', problem: null }
   if (hits.length > 1) {
-    return { account: null, how: null, problem: `이름 «${line.name}»이 계정 ${hits.length}개(${hits.map((h) => h.account_code).join(' · ')})와 맞습니다 — 계정코드 열을 지정하세요` }
+    return {
+      account: null,
+      how: null,
+      problem: `이름 «${line.name}»이 계정 ${hits.length}개(${hits.map((h) => h.account_code).join(' · ')})와 맞습니다 — 계정코드 열을 지정하세요`,
+      candidates: hits.map((h) => ({ code: h.account_code, name: h.name })),
+    }
   }
   if (line.code) return { account: null, how: null, problem: `계정코드 ${line.code}(«${line.name}»)가 장부에 없습니다 — 계정과목을 먼저 올리세요` }
   return { account: null, how: null, problem: `장부에 «${line.name}» 계정이 없습니다 — 계정과목을 먼저 올리거나 계정코드 열을 지정하세요` }
@@ -262,6 +271,10 @@ export interface PreviewLine {
   code: string
   account: LineMatch['account']
   how: LineMatch['how']
+  /** 이름이 계정 둘 이상과 맞은 줄 — 사람이 고를 후보(연간만). 고른 값은 picks[pickKey(줄)]로 온다 */
+  candidates?: { code: string; name: string }[]
+  /** 영업외 계정이면 수익 쪽인가 비용 쪽인가(소속 머리 · 이름) — 연간 등록의 부호가 이것으로 갈린다 */
+  nonOp?: 'income' | 'expense'
   /** keys와 같은 순서 */
   amounts: (number | null)[]
   blocks: string[]
@@ -288,11 +301,31 @@ export interface AmountsPreview {
   warningCount: number
 }
 
-/** 줄을 계정에 맞추고, 묶음 이름은 소계로 돌린다. 숫자 오류는 차단. 0원 · 빈 줄은 싣지 않는다(경고 없이). */
+/** 줄 하나를 가리키는 열쇠 — 사람이 고른 계정(picks)의 키. 시트 이름 + 엑셀 행 번호. */
+export function pickKey(line: Pick<StatementLine, 'sheet' | 'rowNo'>): string {
+  return `${line.sheet}!${line.rowNo}`
+}
+
+/** 사람이 고른 계정(줄 열쇠 → 계정코드)을 화면이 보낸 값에서 거른다. 믿지 않는다 — 후보인지는 matchLines가 다시 본다. */
+export function parsePicks(raw: unknown): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>).slice(0, 5000)) {
+    if (typeof v === 'string' && /^.{1,120}!\d{1,6}$/.test(k) && ACCOUNT_CODE_PATTERN.test(v)) out[k] = v
+  }
+  return out
+}
+
+/**
+ * 줄을 계정에 맞추고, 묶음 이름은 소계로 돌린다. 숫자 오류는 차단. 0원 · 빈 줄은 싣지 않는다(경고 없이).
+ * pickable(연간): 이름이 계정 둘 이상과 맞은 줄은 후보를 들고 «고르세요»로 막히고, picks에 **그 줄의 후보 중 하나**가
+ * 있으면 그 계정으로 맞춘다(how='pick'). 후보가 아닌 값은 못 본 것으로 한다 — 화면이 보낸 코드를 믿지 않는다.
+ */
 export function matchLines(
   lines: StatementLine[],
   keys: readonly string[],
   accounts: readonly ExistingAccount[],
+  opts: { pickable?: boolean; picks?: Readonly<Record<string, string>> } = {},
 ): { matched: (PreviewLine & { src: StatementLine })[]; others: StatementLine[] } {
   const matched: (PreviewLine & { src: StatementLine })[] = []
   const others: StatementLine[] = []
@@ -301,8 +334,15 @@ export function matchLines(
       others.push(l)
       continue
     }
-    const m = matchAccount(l, accounts)
-    if (!m.account && !l.code && isGroupName(l.name)) {
+    let m = matchAccount(l, accounts)
+    if (opts.pickable && m.candidates) {
+      const picked = opts.picks?.[pickKey(l)]
+      const hit = picked && m.candidates.some((c) => c.code === picked) ? accounts.find((a) => a.account_code === picked) : undefined
+      m = hit
+        ? { account: { code: hit.account_code, name: hit.name, section: hit.section, active: hit.active }, how: 'pick', problem: null, candidates: m.candidates }
+        : { ...m, problem: `이름 «${l.name}»이 계정 ${m.candidates.length}개와 맞습니다 — «맞춘 계정» 칸에서 하나를 고르세요` }
+    }
+    if (!m.account && !m.candidates && !l.code && isGroupName(l.name)) {
       others.push({ ...l, kind: 'subtotal' })
       continue
     }
@@ -314,7 +354,20 @@ export function matchLines(
     const warnings: string[] = []
     if (m.problem) blocks.push(m.problem)
     if (m.account && !m.account.active) warnings.push(`비활성 계정 ${m.account.code}에 금액이 있습니다`)
-    matched.push({ sheet: l.sheet, rowNo: l.rowNo, name: l.name, code: l.code, account: m.account, how: m.how, amounts, blocks, warnings, src: l })
+    matched.push({
+      sheet: l.sheet,
+      rowNo: l.rowNo,
+      name: l.name,
+      code: l.code,
+      account: m.account,
+      how: m.how,
+      ...(opts.pickable && m.candidates ? { candidates: m.candidates } : {}),
+      ...(m.account?.section === 'non_operating' ? { nonOp: nonOpDirection(l) } : {}),
+      amounts,
+      blocks,
+      warnings,
+      src: l,
+    })
   }
   return { matched, others }
 }

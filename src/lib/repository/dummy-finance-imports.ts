@@ -1,6 +1,8 @@
+import { ecountAuditNote } from '@/lib/ecount/excel/file-rules'
+import { ECOUNT_CODE_BUSINESSES } from '@/lib/ledger/standard-chart'
 import { FINANCE_IMPORT_KIND, type FinanceImport, type FinanceImportPreviewPatch } from '@/types'
 
-import { dummyCanKeepBooks, dummyCanReadBooks } from './dummy-books'
+import { dummyApplyEcountAccounts, dummyCanKeepBooks, dummyCanReadBooks, dummyImportEcountAnnual } from './dummy-books'
 import { dummyViewer } from './dummy-org'
 import type { AuditActor, ChairmanRepository } from './types'
 
@@ -59,6 +61,33 @@ export function dummyFinanceImportOwnedDraft(importId: string, userId: string): 
   return store.rows.some((r) => r.import_id === importId && r.status === 'draft' && r.created_by === userId)
 }
 
+/**
+ * 0051 finance_import_claim — 등록 RPC 둘이 같이 쓰는 판정. **순서와 낱말이 DB와 같다**(lib/ecount/import-errors.ts가
+ * 같은 문장을 고른다): 사람 · 활성 → 없음(못 읽으면 없음) → 만든 사람 → 장부 쓰기 → ECOUNT 회사 → draft → 종류 → sha256.
+ */
+function claim(importId: string, kind: FinanceImport['kind'], sha: string): FinanceImport {
+  const viewer = dummyViewer()
+  if (viewer.revoked_at || NO_WRITE.has(viewer.role)) throw new Error('books_forbidden')
+  const row = store.rows.find((r) => r.import_id === importId)
+  if (!row || !dummyCanReadBooks(row.business_id)) throw new Error('finance_import_not_found')
+  if (row.created_by !== viewer.user_id) throw new Error('finance_import_not_owner')
+  if (!dummyCanKeepBooks(row.business_id)) throw new Error('books_forbidden')
+  if (!ECOUNT_CODE_BUSINESSES.includes(row.business_id)) throw new Error('ecount_business_only')
+  if (row.status !== 'draft') throw new Error(`finance_import_closed: 업로드 ${row.import_id}는 이미 ${row.status}다`)
+  if (row.kind !== kind) throw new Error('finance_import_kind')
+  if (!row.file_sha256 || typeof sha !== 'string' || row.file_sha256 !== sha.toLowerCase()) throw new Error('finance_import_hash_mismatch')
+  return row
+}
+
+/** draft → committed. summary에 단계 · 결과를 더한다(0051 RPC와 같은 모양). */
+function commit(row: FinanceImport, extra: Record<string, unknown>) {
+  const now = new Date().toISOString()
+  row.status = 'committed'
+  row.summary = { ...(row.summary ?? {}), stage: 'committed', ...extra }
+  row.committed_at = now
+  row.updated_at = now
+}
+
 type Methods = Pick<
   ChairmanRepository,
   | 'createFinanceImport'
@@ -67,7 +96,8 @@ type Methods = Pick<
   | 'recordFinanceImportPreview'
   | 'cancelFinanceImport'
   | 'findLatestFinanceImportMapping'
-  | 'commitFinanceImport'
+  | 'registerEcountAccounts'
+  | 'registerEcountAnnual'
 >
 
 export const dummyFinanceImports: Methods = {
@@ -141,17 +171,26 @@ export const dummyFinanceImports: Methods = {
     return row ? { ...row } : null
   },
 
-  /** 0050 — 만든 사람의 draft에서만 · commit_shape(sha256 · 계정과목 아니면 period_key). */
-  async commitFinanceImport(importId, summary, actor: AuditActor) {
-    void actor
-    const row = ownDraft(importId)
-    if (!row.file_sha256 || (row.kind !== 'accounts' && !row.period_key)) throw new Error('finance_imports_commit_shape')
-    const now = new Date().toISOString()
-    row.status = 'committed'
-    row.summary = { ...summary }
-    row.committed_at = now
-    row.updated_at = now
-    return { ...row }
+  /** 0051 ecount_accounts_import — claim → 장부(확인 다 한 뒤 쓰기) → committed. 같은 거부 낱말. */
+  async registerEcountAccounts(importId, input, actor: AuditActor) {
+    const row = claim(importId, 'accounts', input.file_sha256)
+    const note = ecountAuditNote({ kind: 'accounts', period: null, fileName: row.file_name, importId: row.import_id })
+    const result = await dummyApplyEcountAccounts(row.business_id, { creates: input.creates, renames: input.renames }, actor, note)
+    commit(row, { result })
+    return result
+  },
+
+  /** 0051 official_statement_import_ecount — claim → 해 → 결산(확인 다 한 뒤 쓰기) → committed. */
+  async registerEcountAnnual(importId, input, actor: AuditActor) {
+    const row = claim(importId, 'annual', input.file_sha256)
+    if (!row.period_key) throw new Error('finance_import_period')
+    const id = await dummyImportEcountAnnual(
+      { business_id: row.business_id, period_key: row.period_key, import_id: row.import_id, file_name: row.file_name },
+      input.lines,
+      actor,
+    )
+    commit(row, { result: { statement_id: id, lines: input.lines.length } })
+    return id
   },
 
   async cancelFinanceImport(importId, actor: AuditActor) {

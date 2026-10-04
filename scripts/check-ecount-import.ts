@@ -6,7 +6,8 @@
  *   공통부   셀 정규화 · 머리글 · 기간 · 단위 · 행 종류 · 받는 파일 · 감사 문구
  *   열 지정  머리글 짐작 · 지난 지정 다시 쓰기(머리글이 같을 때만) · 판정 · 믿지 않는 값 거르기
  *   계정과목 분류 제안 · 차단/경고 · 병합 계획(분류는 안 바꿈 · 이름은 체크한 것만 · 안 지움) · dummy 끝까지
- *   연간     계정 맞추기 · 단위 · 로마숫자 머리 · 묶음 줄 · 합계 행 대조 · 불균형 · 세무사 확정 해(등록은 0051 이후)
+ *   연간     계정 맞추기 · 줄마다 계정 고르기(이름이 둘 이상과 맞을 때) · 한 계정 한 줄 · 단위 · 로마숫자 머리 · 묶음 줄 ·
+ *            합계 행 대조 · 불균형 · 세무사 확정 해 · 원장 부호 · dummy 등록 끝까지(0051과 같은 거부 낱말)
  *   월별     당월/누계 · 누계 → 당월 · 합계 열 · 마감 달 · 세무사 확정 달 · 수기 전표 · 이익 줄 대조(등록은 0051 이후)
  *
  * ECOUNT_SAMPLE_DIR=<폴더>를 주면 견본 xlsx를 그 폴더에 써 둔다(화면에서 올려 볼 수 있게).
@@ -17,7 +18,8 @@ import assert from 'node:assert/strict'
 
 import ExcelJS from 'exceljs'
 
-import { cellAmount, cellText, normalizeCell, type EcountCell } from '../src/lib/ecount/excel/cells'
+import { cellAmount, cellText, normalizeCell, parseEcountNumber, type EcountCell } from '../src/lib/ecount/excel/cells'
+import { ecountImportErrorMessage, NO_BOOKS_MESSAGE } from '../src/lib/ecount/import-errors'
 import {
   classifyRowLabel,
   detectPeriod,
@@ -50,9 +52,9 @@ import {
   sheetGrids,
   sheetLikeFromGrid,
 } from '../src/lib/ecount/excel/mapping'
-import { planAnnual } from '../src/lib/ecount/excel/annual-import'
+import { annualLedgerLines, ledgerSign, planAnnual } from '../src/lib/ecount/excel/annual-import'
 import { planMonthly, ytdToMonthly } from '../src/lib/ecount/excel/monthly-import'
-import { matchAccount } from '../src/lib/ecount/excel/statement-lines'
+import { matchAccount, parsePicks, pickKey } from '../src/lib/ecount/excel/statement-lines'
 import { parseCell } from '../src/lib/statements/paste'
 
 async function syntheticXlsx(): Promise<Uint8Array> {
@@ -182,9 +184,20 @@ function cells() {
   assert.deepEqual(normalizeCell({ text: '링크', hyperlink: 'https://x' }), { t: 'text', v: '링크' })
   assert.equal(normalizeCell(Number.NaN).t, 'error')
   assert.equal(normalizeCell(Symbol('x')).t, 'error')
-  // 회계 표기의 다른 꼴 — 아직 열 구성 확인 전이라 받지 않는다(△ · - 단독은 오류)
-  assert.equal(cellAmount({ t: 'text', v: '△1,000' }).ok, false)
-  assert.equal(cellAmount({ t: 'text', v: '-' }).ok, false)
+  // 한국 재무제표 관례(2026-10-04 결정): «△1,000» = −1,000 · 칸 전체가 «-»/«–» = 0. 그 밖의 못 읽는 칸은 여전히 오류.
+  assert.deepEqual(cellAmount({ t: 'text', v: '△1,000' }), { ok: true, value: -1000 })
+  assert.deepEqual(cellAmount({ t: 'text', v: '△ 1,000' }), { ok: true, value: -1000 }, '△ 뒤 공백')
+  assert.deepEqual(cellAmount({ t: 'text', v: ' △1,234.5 ' }, 'thousand'), { ok: true, value: -1_234_500 }, '△ × 천원 — 곱한 뒤 반올림')
+  assert.deepEqual(cellAmount({ t: 'text', v: '△₩2,000' }), { ok: true, value: -2000 })
+  assert.deepEqual(cellAmount({ t: 'text', v: '-' }), { ok: true, value: 0 }, '«-» 단독 = 0')
+  assert.deepEqual(cellAmount({ t: 'text', v: ' – ' }), { ok: true, value: 0 }, '«–»(en dash) 단독 = 0')
+  assert.deepEqual(cellAmount({ t: 'text', v: '△0' }), { ok: true, value: 0 }, '△0은 −0이 아니라 0')
+  for (const bad of ['▲1,000', '△', '△(100)', '△-100', '△△100', '--', '—', '−', '- -', '1,000△', '△ abc']) {
+    assert.equal(cellAmount({ t: 'text', v: bad }).ok, false, `«${bad}»는 여전히 오류`)
+  }
+  assert.equal(parseEcountNumber('(1,200)'), -1200, 'paste.ts 규칙은 그대로')
+  assert.equal(parseCell('-'), undefined, 'paste.ts(손으로 붙여 넣기)의 «-»는 여전히 못 읽음 — ECOUNT 칸만 0')
+  assert.equal(parseCell('△1,000'), undefined, 'paste.ts의 «△»는 여전히 못 읽음')
   assert.deepEqual(cellAmount({ t: 'number', v: -0.4 }), { ok: true, value: 0 })
   assert.equal(cellAmount({ t: 'number', v: 1e300 }).ok, false)
   // paste.ts parseCell 규칙은 그대로(반올림만 parseCell에 남았다)
@@ -475,21 +488,44 @@ async function dummyAccountsEndToEnd(
   const imp = await repo.createFinanceImport({ business_id: 'biz_dy', kind: 'accounts', file_name: '계정.xlsx' }, actor)
   assert.equal(await repo.findLatestFinanceImportMapping('biz_dy', 'accounts', imp.import_id), null, '처음에는 다시 쓸 지정이 없다')
   const sha = 'a'.repeat(64)
-  await repo.recordFinanceImportPreview(imp.import_id, { file_sha256: sha, summary: { stage: 'preview', mapping: m } }, actor)
-
   const ledger = await repo.loadFinanceLedger()
   const existing = ledger.accounts.filter((a) => a.business_id === 'biz_dy')
   const plan = planAccounts({ rows, ignored, existing, ...picked })
   assert.equal(plan.blockCount, 0)
-  const result = await repo.mergeEcountAccounts(
-    'biz_dy',
-    { creates: plan.creates.map((c) => ({ ...c, business_id: 'biz_dy' })), renames: plan.renames },
-    actor,
-    'ECOUNT 엑셀 업로드 — 계정과목 · 파일 계정.xlsx · import x',
-  )
+  const register = (id: string, p: Pick<typeof plan, 'creates' | 'renames'> = plan, h = sha) =>
+    repo.registerEcountAccounts(id, { file_sha256: h, creates: p.creates, renames: p.renames }, actor)
+  // 미리보기 전(해시 없음)에는 등록하지 않는다 — 0051 claim과 같은 낱말 · 같은 문장
+  await assert.rejects(register(imp.import_id), /finance_import_hash_mismatch/)
+  await repo.recordFinanceImportPreview(imp.import_id, { file_sha256: sha, summary: { stage: 'preview', mapping: m } }, actor)
+  await assert.rejects(register(imp.import_id, plan, 'b'.repeat(64)), /finance_import_hash_mismatch/, '다른 파일')
+
+  // 전부 아니면 전무 — 둘째 새 코드가 이미 있는 코드면 첫째 코드도 · 이름 바꿈도 · committed도 남지 않는다
+  const poisoned = { creates: [plan.creates[0], { ...plan.creates[1], account_code: existing.find((a) => !plan.renames.some((r) => r.account_code === a.account_code))!.account_code }], renames: plan.renames }
+  await assert.rejects(register(imp.import_id, poisoned), /account_exists/)
+  const untouched = (await repo.loadFinanceLedger()).accounts.filter((a) => a.business_id === 'biz_dy')
+  assert.equal(untouched.length, existing.length, 'dummy: 막힌 등록이 새 코드를 남겼다')
+  assert.equal(untouched.find((a) => a.account_code === '1010')!.name, existing.find((a) => a.account_code === '1010')!.name, 'dummy: 막힌 등록이 이름을 바꿨다')
+  assert.equal((await repo.getFinanceImport(imp.import_id))!.status, 'draft')
+  await assert.rejects(register(imp.import_id, { creates: [], renames: [{ ...plan.renames[0], from: '옛 이름' }] }), /account_changed/)
+  await assert.rejects(register(imp.import_id, { creates: [plan.creates[0], plan.creates[0]], renames: [] }), /ecount_plan_invalid/)
+  // 다른 사람(같은 회사 쓰기 권한자 — DY 대표이사)은 남의 업로드를 등록하지 못한다 · AIAgent는 아예 못 한다.
+  // (dummy 시드에 GroupCFO 사람이 없어서 DUMMY_ROLE=GroupCFO는 회장으로 떨어진다 — 그래서 BusinessCEO)
+  for (const [role, re] of [['BusinessCEO', /finance_import_not_owner/], ['AIAgent', /books_forbidden/]] as const) {
+    process.env.DUMMY_ROLE = role
+    try {
+      await assert.rejects(register(imp.import_id), re, `dummy: ${role}`)
+    } finally {
+      delete process.env.DUMMY_ROLE
+    }
+  }
+
+  const result = await register(imp.import_id)
   assert.equal(result.added, plan.creates.length)
-  await repo.commitFinanceImport(imp.import_id, { stage: 'committed', mapping: m, result }, actor)
-  assert.equal((await repo.getFinanceImport(imp.import_id))!.status, 'committed')
+  const committed = (await repo.getFinanceImport(imp.import_id))!
+  assert.equal(committed.status, 'committed')
+  assert.deepEqual([committed.summary?.stage, (committed.summary?.result as { added: number }).added, !!committed.summary?.mapping], ['committed', plan.creates.length, true],
+    'dummy: committed summary에 단계 · 결과가 붙고 열 지정은 남는다')
+  await assert.rejects(register(imp.import_id), /finance_import_closed/, '같은 업로드를 두 번 등록한다')
 
   const after = (await repo.loadFinanceLedger()).accounts.filter((a) => a.business_id === 'biz_dy')
   const before1010 = existing.find((a) => a.account_code === '1010')!
@@ -507,15 +543,27 @@ async function dummyAccountsEndToEnd(
   const savedMapping = parseMapping(found!.summary?.mapping, 'accounts')
   assert.ok(savedMapping && reuseMapping(savedMapping, sheets), '지난 업로드의 열 지정을 불러온다')
   assert.equal(await repo.findLatestFinanceImportMapping('biz_dy', 'annual', next.import_id), null, '종류가 다르면 없다')
-  // 같은 계획을 한 번 더 넣으면 중복으로 막힌다(이미 있다) — 다시 미리보기하면 «같음»이 된다
-  await assert.rejects(
-    repo.mergeEcountAccounts('biz_dy', { creates: plan.creates.slice(0, 1).map((c) => ({ ...c, business_id: 'biz_dy' })), renames: [] }, actor, 'x'),
-    /DUPLICATE_ACCOUNT_CODE/,
-  )
+  // 같은 계획을 새 업로드로 한 번 더 넣으면 «이미 있는 코드»로 막힌다 — 다시 미리보기하면 «같음»이 된다
+  await repo.recordFinanceImportPreview(next.import_id, { file_sha256: sha, summary: { stage: 'preview', mapping: m } }, actor)
+  await assert.rejects(register(next.import_id, { creates: plan.creates.slice(0, 1), renames: [] }), /account_exists/)
   const replan = planAccounts({ rows, ignored, existing: after, ...picked })
   assert.equal(replan.creates.length, 0)
   assert.equal(replan.renames.length, 0)
   await repo.cancelFinanceImport(next.import_id, actor)
+}
+
+/** 거부 낱말 → 화면 문장(live RPC · dummy 공통). 앞의 낱말이 먼저 — not_owner(42501)가 일반 권한 문장으로 새지 않는다. */
+function errorMessages() {
+  assert.equal(ecountImportErrorMessage('Supabase ecount_accounts_import 42501: finance_import_not_owner — 올린 사람만'), '올린 사람만 이 업로드를 이어 가거나 취소할 수 있습니다.')
+  assert.equal(ecountImportErrorMessage('Supabase x 42501: books_forbidden'), NO_BOOKS_MESSAGE)
+  assert.equal(ecountImportErrorMessage('new row violates row-level security policy (0047 can_keep_books)'), NO_BOOKS_MESSAGE)
+  assert.match(ecountImportErrorMessage('account_exists: 1030')!, /같은 계정코드가 장부에 생겼습니다/)
+  assert.match(ecountImportErrorMessage('Supabase official_statement_import_ecount P0001: official_confirmed')!, /세무사 확정 결산이 이미 있습니다/)
+  assert.match(ecountImportErrorMessage('Supabase x PGRST202: Could not find the function')!, /DB 반영 전/)
+  assert.equal(ecountImportErrorMessage('뭔지 모를 오류'), null)
+  for (const m of [NO_BOOKS_MESSAGE, ...['finance_import_closed', 'official_confirmed', 'statement_unbalanced'].map((c) => ecountImportErrorMessage(c)!)]) {
+    assert.ok(!/회장|Chairman|CH-\d/.test(m), `직원 화면 문장에 «회장» · 기능번호: ${m}`)
+  }
 }
 
 // ---------------------------------------------------------------- ② 연간
@@ -630,6 +678,7 @@ async function annualChecks() {
   assert.match(matchAccount({ code: '7777', name: '없는코드' }, BOOK).problem!, /계정코드 7777/)
   const twin = [...BOOK, { ...BOOK[0], account_code: '1011' }]
   assert.match(matchAccount({ code: '', name: '현금' }, twin).problem!, /계정 2개\(1010 · 1011\)/)
+  assert.deepEqual(matchAccount({ code: '', name: '현금' }, twin).candidates, [{ code: '1010', name: '현금' }, { code: '1011', name: '현금' }])
 
   const plan = planAnnual(sheets, m, { accounts: BOOK, officialKeys: [] })
   assert.deepEqual(plan.blocks, [])
@@ -666,6 +715,41 @@ async function annualChecks() {
   assert.equal(missing.checks.length, 0)
   assert.ok(missing.warnings.includes('계정을 다 맞춘 뒤에 합계 행과 대조합니다'))
 
+  // 이름이 계정 둘 이상과 맞으면 그 줄만 막히고(후보를 들고) — 사람이 후보 중 하나를 고르면 풀린다. 후보 밖 코드는 무시.
+  const twinBook = [...BOOK, { ...BOOK[0], account_code: '1011', name: '현금' }]
+  const amb = planAnnual(sheets, m, { accounts: twinBook, officialKeys: [] })
+  const cashLine = amb.lines.find((l) => l.name === '현금')!
+  assert.deepEqual(cashLine.candidates, [{ code: '1010', name: '현금' }, { code: '1011', name: '현금' }])
+  assert.match(cashLine.blocks[0], /계정 2개와 맞습니다 — «맞춘 계정» 칸에서 하나를 고르세요/)
+  assert.equal(amb.blockCount, 1, '고를 줄 하나만 막힌다(다른 줄 · 미리보기 전체는 그대로)')
+  const key = pickKey(cashLine)
+  assert.equal(key, '재무상태표!7')
+  const picked = planAnnual(sheets, m, { accounts: twinBook, officialKeys: [], picks: parsePicks({ [key]: '1011' }) })
+  assert.equal(picked.blockCount, 0)
+  assert.deepEqual([picked.lines.find((l) => l.name === '현금')!.account?.code, picked.lines.find((l) => l.name === '현금')!.how], ['1011', 'pick'])
+  assert.equal(planAnnual(sheets, m, { accounts: twinBook, officialKeys: [], picks: { [key]: '4010' } }).blockCount, 1, '후보가 아닌 코드(4010)는 고른 것이 아니다')
+  assert.equal(planAnnual(sheets, m, { accounts: twinBook, officialKeys: [], picks: { '재무상태표!8': '1011' } }).blockCount, 1, '다른 줄의 고르기는 이 줄을 풀지 않는다')
+  assert.deepEqual(parsePicks({ [key]: '1011', 'x!1': 'bad code!', nope: '1010', 'y!2': 5 }), { [key]: '1011' }, '믿지 않는 값은 거른다')
+  assert.deepEqual(parsePicks(['a']), {})
+  // 한 계정에 줄 둘 — 두 줄이 한 계정으로 모이면 둘 다 막는다(0051 RPC도 막는다)
+  const dupSheets = sheets.map((sh, i) => (i === 0 ? { ...sh, rows: sh.rows.map((r, ri) => (ri === 7 ? [{ t: 'text', v: '현금' } as EcountCell, ...r.slice(1)] : r)) } : sh))
+  const dup = planAnnual(dupSheets, m, { accounts: BOOK, officialKeys: [] })
+  const dupLines = dup.lines.filter((l) => l.account?.code === '1010')
+  assert.ok(dupLines.length === 2 && dupLines.every((l) => l.blocks.some((b) => /계정 1010에 줄이 2개\(7 · 8행\)/.test(b))), '두 줄이 한 계정으로 모이면 막는다')
+
+  // 원장 부호 — 자산 · 비용 +, 부채 · 자본 · 수익 −, 영업외는 소속 머리(수익 −, 비용 +), 차감 계정은 파일 음수 그대로
+  assert.deepEqual([ledgerSign('cash'), ledgerSign('payable'), ledgerSign('equity'), ledgerSign('revenue'), ledgerSign('cogs'), ledgerSign('tax'),
+    ledgerSign('non_operating', 'income'), ledgerSign('non_operating', 'expense')], [1, -1, -1, -1, 1, 1, -1, 1])
+  const ledgerLines = annualLedgerLines(plan)
+  const amtOf = (code: string) => ledgerLines.find((l) => l.account_code === code)?.amount
+  assert.deepEqual([amtOf('1010'), amtOf('1410'), amtOf('2010'), amtOf('3310'), amtOf('4010'), amtOf('8010'), amtOf('9020'), amtOf('9310')],
+    [1_000_000, -200_000, -400_000, -1_000_000, -5_000_000, 1_000_000, -100_000, 300_000])
+  const bsCodes = new Set(BOOK.filter((a) => ['cash', 'receivable', 'other_asset', 'payable', 'other_liability', 'equity'].includes(a.section)).map((a) => a.account_code))
+  assert.equal(ledgerLines.filter((l) => bsCodes.has(l.account_code)).reduce((t, l) => t + l.amount, 0), 0, '원장 규약에서 재무상태표가 닫힌다(0051 균형 검사와 같은 식)')
+  const plTotal = ledgerLines.filter((l) => !bsCodes.has(l.account_code)).reduce((t, l) => t + l.amount, 0)
+  assert.equal(plTotal, -500_000, '손익 줄의 합 = −당기순이익(대변)')
+  assert.throws(() => annualLedgerLines(off), /막힌 줄/, '막힌 미리보기로는 등록 줄을 만들지 않는다')
+
   // 세무사 확정이 있는 해는 받지 않는다
   assert.match(planAnnual(sheets, m, { accounts: BOOK, officialKeys: ['2025'] }).blocks[0], /세무사 확정 결산이 이미 있습니다/)
   // 지정한 해와 파일 기간이 다르면 경고
@@ -677,6 +761,62 @@ async function annualChecks() {
   assert.ok(!unbalanced.blocks.some((b) => /재무상태표가 맞지 않습니다/.test(b)), '자산 = 부채 + 자본은 여전히 맞다(구분만 옮겼다)')
   const lopsided = planAnnual(sheets, { ...m, parts: [m.parts[0]] }, { accounts: BOOK.map((a) => (a.name === '자본금' ? { ...a, section: 'other_asset' as const } : a)), officialKeys: [] })
   assert.ok(lopsided.blocks.some((b) => /재무상태표가 맞지 않습니다: 자산 3,300,000원 · 부채\+자본 1,300,000원/.test(b)))
+
+  await dummyAnnualEndToEnd()
+}
+
+/**
+ * dummy 연간 등록 끝까지 — 0051 official_statement_import_ecount와 같은 순서 · 같은 거부 낱말.
+ * 금액은 dummy DY 장부에 실제로 있는 계정으로 만든다(견본 BOOK 코드는 dummy 장부에 없을 수 있다).
+ */
+async function dummyAnnualEndToEnd() {
+  const { dummyRepository: repo } = await import('../src/lib/repository/dummy')
+  const actor = { user_id: 'dummy', role: 'Chairman' as const }
+  const accounts = (await repo.loadFinanceLedger()).accounts.filter((a) => a.business_id === 'biz_dy' && a.active)
+  const of = (section: string) => accounts.find((a) => a.section === section)!.account_code
+  const lines = [
+    { account_code: of('cash'), amount: 1000 },
+    { account_code: of('equity'), amount: -1000 },
+    { account_code: of('revenue'), amount: -500 },
+    { account_code: of('sga'), amount: 500 },
+  ]
+  const sha = 'c'.repeat(64)
+  const start = async (period = '2024') => {
+    const imp = await repo.createFinanceImport({ business_id: 'biz_dy', kind: 'annual', file_name: `DY ${period}.xlsx` }, actor)
+    await repo.recordFinanceImportPreview(imp.import_id, { file_sha256: sha, summary: { stage: 'preview' }, period_key: period }, actor)
+    return imp.import_id
+  }
+  const a1 = await start()
+  await assert.rejects(repo.registerEcountAnnual(a1, { file_sha256: sha, lines: [lines[0], lines[2]] }, actor), /statement_unbalanced/)
+  await assert.rejects(repo.registerEcountAnnual(a1, { file_sha256: sha, lines: [...lines, { account_code: '없는코드', amount: 0 }] }, actor), /statement_unknown_account/)
+  await assert.rejects(repo.registerEcountAnnual(a1, { file_sha256: sha, lines: [...lines, lines[0]] }, actor), /ecount_plan_invalid/)
+  await assert.rejects(repo.registerEcountAnnual(a1, { file_sha256: sha, lines: [] }, actor), /statement_empty/)
+  await assert.rejects(repo.registerEcountAnnual(a1, { file_sha256: 'd'.repeat(64), lines }, actor), /finance_import_hash_mismatch/)
+  const acc = await repo.createFinanceImport({ business_id: 'biz_dy', kind: 'accounts', file_name: 'a.xlsx' }, actor)
+  await repo.recordFinanceImportPreview(acc.import_id, { file_sha256: sha, summary: {} }, actor)
+  await assert.rejects(repo.registerEcountAnnual(acc.import_id, { file_sha256: sha, lines }, actor), /finance_import_kind/)
+  assert.equal((await repo.getFinanceImport(a1))!.status, 'draft', 'dummy: 막힌 연간 등록이 committed를 남겼다')
+  assert.equal((await repo.listOfficialStatements('biz_dy', 'all')).length, 0, 'dummy: 막힌 연간 등록이 결산을 남겼다')
+
+  const id1 = await repo.registerEcountAnnual(a1, { file_sha256: sha, lines }, actor)
+  const ecount = await repo.listOfficialStatements('biz_dy', 'ecount_excel')
+  assert.deepEqual(ecount.map((s) => [s.id, s.basis, s.import_id, s.evidence_url, s.period_key]), [[id1, 'ecount_excel', a1, null, '2024']])
+  assert.match(ecount[0].memo, /^ECOUNT 엑셀 업로드 — 연간 재무제표 2024 · 파일 DY 2024\.xlsx · import /)
+  assert.equal((await repo.listOfficialStatements('biz_dy')).length, 0, '기본 목록(월별 잠금 · 기준 문구)은 세무사 확정만 — ECOUNT 잠정이 월을 잠그면 안 된다')
+  assert.equal((await repo.getFinanceImport(a1))!.status, 'committed')
+  await assert.rejects(repo.registerEcountAnnual(a1, { file_sha256: sha, lines }, actor), /finance_import_closed/)
+  // 재업로드 = 새 버전(supersede) — 활성 ECOUNT 행은 하나
+  const a2 = await start()
+  const id2 = await repo.registerEcountAnnual(a2, { file_sha256: sha, lines }, actor)
+  const now = await repo.listOfficialStatements('biz_dy', 'ecount_excel')
+  assert.deepEqual(now.map((s) => [s.id, s.supersedes_id]), [[id2, id1]])
+  // 세무사 확정이 서면 그 해의 ECOUNT 업로드는 거부 · 세무사 저장은 ECOUNT 행을 안 민다
+  await repo.saveOfficialStatement({ business_id: 'biz_dy', period_kind: 'year', period_key: '2024', evidence_url: 'https://drive.example/a', memo: '세무사 2024', lines }, actor)
+  assert.equal((await repo.listOfficialStatements('biz_dy', 'all')).length, 2, '세무사 확정과 ECOUNT 잠정이 같이 선다')
+  const a3 = await start()
+  await assert.rejects(repo.registerEcountAnnual(a3, { file_sha256: sha, lines }, actor), /official_confirmed/)
+  await repo.cancelFinanceImport(a3, actor)
+  await repo.cancelFinanceImport(acc.import_id, actor)
 }
 
 // ---------------------------------------------------------------- ③ 월별
@@ -821,6 +961,7 @@ async function writeSamples() {
 
 async function main() {
   cells()
+  errorMessages()
   detect()
   auditNote()
   await rejects()
@@ -830,10 +971,11 @@ async function main() {
   await annualChecks()
   await monthlyChecks()
   await writeSamples()
-  console.log('PASS: 셀 정규화(수식 result · 쉼표 · 괄호 음수 · ₩ · 못 읽은 칸은 오류) · 병합 칸 한 번만 · 기간 · 단위 · 머리글 · 행 종류(합계 · 소계 · 로마숫자 · 이익) · .xls · csv · HTML 거절 · sha256 · 감사 문구')
+  console.log('PASS: 셀 정규화(수식 result · 쉼표 · 괄호 음수 · ₩ · «△» 음수 · «-» 단독 0 · 그 밖의 못 읽은 칸은 오류) · 병합 칸 한 번만 · 기간 · 단위 · 머리글 · 행 종류(합계 · 소계 · 로마숫자 · 이익) · .xls · csv · HTML 거절 · sha256 · 감사 문구')
   console.log('PASS: 열 지정 — 머리글 짐작(제목 · 단위 줄 건너뜀) · 월 머리글 표기 · 지난 지정 다시 쓰기(머리글 같을 때만) · 판정 · 믿지 않는 값 거르기')
   console.log('PASS: 계정과목 — 분류 제안(구분 열 · 코드 대역 · 이름) · 차단(코드 공백 · 중복 · 미분류 · 모순) · 경고(이름 다름 · 사용여부 · 합계 행 · 파일에 없는 계정) · 병합(분류 안 바꿈 · 체크한 이름만 · 안 지움) · dummy 끝까지')
-  console.log('PASS: 연간 — 두 시트 짐작 · 천원 → 원 · 로마숫자 머리(혼자 선 머리 = 계정 줄 · 로마숫자 이익 줄) · 묶음 줄 = 소계 · 0원 줄 제외 · 계정 맞추기(코드 · 이름 · 모호) · 합계 행 대조(차액) · 불균형 · 세무사 확정 해 거부')
+  console.log('PASS: 연간 — 두 시트 짐작 · 천원 → 원 · 로마숫자 머리(혼자 선 머리 = 계정 줄 · 로마숫자 이익 줄) · 묶음 줄 = 소계 · 0원 줄 제외 · 계정 맞추기(코드 · 이름 · 모호 → 줄마다 고르기 · 후보 밖 거부) · 한 계정 한 줄 · 합계 행 대조(차액) · 불균형 · 세무사 확정 해 거부 · 원장 부호 · dummy 등록(거부 낱말 · supersede · 기본 목록은 확정만)')
+  console.log('PASS: 등록 — dummy 계정과목 한 번(전부 아니면 전무 · 해시 · 이미 있는 코드 · 바뀐 이름 · 남의 업로드 · AIAgent · 두 번 등록) · 거부 낱말 → 직원 화면 문장(«회장» 없음)')
   console.log('PASS: 월별 — 월 열 열둘 · 합계 열 · 당월/누계 짐작 · 천원 → 원 · 누계 → 당월(앞 달 빼기 · 이익 줄도) · 빈 달 누계 차단 · 행 합 ≠ 합계 열 · 마감 달 · 세무사 확정 달 · 수기 전표 경고 · 달마다 이익 줄 대조')
 }
 

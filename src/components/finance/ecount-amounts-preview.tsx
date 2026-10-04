@@ -1,11 +1,12 @@
 'use client'
 
 import { UNIT_LABEL_KO } from '@/lib/ecount/excel/cells'
-import type { AmountsPreview } from '@/lib/ecount/excel/statement-lines'
+import { pickKey, type AmountsPreview } from '@/lib/ecount/excel/statement-lines'
 
 /**
- * ② 연간 · ③ 월별 미리보기 — **검증만**. 줄마다 맞춘 계정 · 금액(원 단위로 바꾼 값), 파일 합계와 계산의 대조,
- * 차단 · 경고. 등록 버튼은 잠겨 있다 — DB 등록 함수(0051 이후)가 생긴 뒤에 연다.
+ * ② 연간 · ③ 월별 미리보기. 줄마다 맞춘 계정 · 금액(원 단위로 바꾼 값), 파일 합계와 계산의 대조, 차단 · 경고.
+ * 연간: 이름이 계정 둘 이상과 맞은 줄은 «맞춘 계정» 칸이 고르기다(onPick — 서버가 다시 미리보기한다). 막힌 줄이
+ *   하나도 없으면 등록(onCommit — 0051 RPC). 월별: 검증만 — 등록 버튼은 월별 RPC가 생긴 뒤에 연다.
  */
 
 const won = (v: number | null) => (v === null ? '' : v.toLocaleString('ko-KR'))
@@ -14,8 +15,22 @@ function keyLabel(k: string): string {
   return k === 'amount' ? '당기' : `${Number(k.slice(1))}월`
 }
 
-export function EcountAmountsPreview({ preview }: { preview: AmountsPreview }) {
+export function EcountAmountsPreview({
+  preview,
+  picks = {},
+  busy = false,
+  onPick,
+  onCommit,
+}: {
+  preview: AmountsPreview
+  /** 연간 — 줄 열쇠(pickKey) → 고른 계정코드 */
+  picks?: Record<string, string>
+  busy?: boolean
+  onPick?: (key: string, code: string) => void
+  onCommit?: () => void
+}) {
   const p = preview
+  const unpicked = p.lines.filter((l) => l.candidates && l.how !== 'pick').length
   const lineBlocks = p.lines.filter((l) => l.blocks.length).length
   const failedChecks = p.checks.filter((c) => c.diff !== 0)
   return (
@@ -101,10 +116,27 @@ export function EcountAmountsPreview({ preview }: { preview: AmountsPreview }) {
                 <td className="px-2 py-0.5 text-ink-muted">{l.rowNo}</td>
                 <td className="px-2 py-0.5 text-ink">{l.name}</td>
                 <td className="px-2 py-0.5 text-ink-dim">
-                  {l.account ? (
+                  {l.candidates && onPick ? (
+                    <label className="flex flex-col gap-0.5">
+                      <span className="sr-only">{l.rowNo}행 «{l.name}»에 맞출 계정</span>
+                      <select
+                        value={l.how === 'pick' && l.account ? l.account.code : (picks[pickKey(l)] ?? '')}
+                        disabled={busy}
+                        onChange={(e) => onPick(pickKey(l), e.target.value)}
+                        className={`min-h-11 rounded border bg-panel px-1.5 text-t11 lg:min-h-0 lg:py-0.5 ${l.how === 'pick' ? 'border-line-soft text-ink' : 'border-critical/60 text-critical'}`}
+                      >
+                        <option value="">계정을 고르세요 ({l.candidates.length}개 후보)</option>
+                        {l.candidates.map((c) => (
+                          <option key={c.code} value={c.code}>
+                            {c.code} · {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : l.account ? (
                     <>
                       <span className="font-mono">{l.account.code}</span> {l.account.name}
-                      <span className="text-t10h text-ink-muted"> ({l.how === 'code' ? '코드' : '이름'})</span>
+                      <span className="text-t10h text-ink-muted"> ({l.how === 'code' ? '코드' : l.how === 'pick' ? '고름' : '이름'})</span>
                     </>
                   ) : (
                     <span className="text-critical">못 맞춤</span>
@@ -128,7 +160,11 @@ export function EcountAmountsPreview({ preview }: { preview: AmountsPreview }) {
           </tbody>
         </table>
       </div>
-      {lineBlocks ? <p className="text-t10h text-critical">막힌 줄 {lineBlocks}개 — 계정을 먼저 올리거나(계정과목 업로드) 열 지정을 고치세요.</p> : null}
+      {lineBlocks ? (
+        <p className="text-t10h text-critical">
+          막힌 줄 {lineBlocks}개 — {unpicked ? `계정을 고를 줄 ${unpicked}개 · ` : ''}계정을 먼저 올리거나(계정과목 업로드) 열 지정을 고치세요.
+        </p>
+      ) : null}
 
       {p.others.length ? (
         <details className="text-t11 text-ink-dim">
@@ -143,12 +179,30 @@ export function EcountAmountsPreview({ preview }: { preview: AmountsPreview }) {
         </details>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <button type="button" disabled className="min-h-11 rounded-md bg-accent px-3 text-t11h font-semibold text-ink opacity-40 lg:min-h-0 lg:py-1.5">
-          등록은 다음 단계(DB 반영 후)에 열립니다
-        </button>
-        <span className="text-t10h text-ink-muted">지금은 검증까지입니다. 원본과 열 지정은 남아 있어 다음 단계에서 그대로 등록합니다.</span>
-      </div>
+      {p.kind === 'annual' && onCommit ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            disabled={busy || p.blockCount > 0}
+            onClick={onCommit}
+            className="min-h-11 rounded-md bg-accent px-3 text-t11h font-semibold text-ink disabled:opacity-40 lg:min-h-0 lg:py-1.5"
+          >
+            {p.year ?? ''}년 연간 재무제표 등록(ECOUNT 엑셀 · 잠정)
+          </button>
+          <span className="text-t10h text-ink-muted">
+            {p.blockCount > 0
+              ? '막힌 것을 다 푼 뒤에 등록할 수 있습니다.'
+              : '서버가 원본을 다시 읽어 같은 판정을 한 번 더 한 뒤 등록합니다. 세무사 확정 결산과는 따로 보관되고, 같은 해를 다시 올리면 새 버전이 됩니다.'}
+          </span>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" disabled className="min-h-11 rounded-md bg-accent px-3 text-t11h font-semibold text-ink opacity-40 lg:min-h-0 lg:py-1.5">
+            등록은 다음 단계(DB 반영 후)에 열립니다
+          </button>
+          <span className="text-t10h text-ink-muted">지금은 검증까지입니다. 원본과 열 지정은 남아 있어 다음 단계에서 그대로 등록합니다.</span>
+        </div>
+      )}
     </div>
   )
 }

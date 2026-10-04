@@ -15,6 +15,8 @@ import type { AuditActor, ChairmanRepository } from './types'
  * 쓰기는 견디지 않는다 — 표 없이 «만들었다»고 말하면 거짓말이다.
  *
  * 상태 전이는 늘 `status = 'draft'` 조건을 같이 건다 — 끝난 업로드를 건드리는 길이 앱에 없게(트리거가 한 번 더 막는다).
+ * **committed는 여기서 못 만든다**(0051 — 사람의 update with check가 draft · cancelled뿐). 등록은 대상별 RPC 한 번이다:
+ *   계정과목 ecount_accounts_import · 연간 official_statement_import_ecount. 판정 · 감사 · committed가 그 안에서 한 트랜잭션이다.
  */
 
 const COLUMNS =
@@ -45,8 +47,14 @@ type Methods = Pick<
   | 'recordFinanceImportPreview'
   | 'cancelFinanceImport'
   | 'findLatestFinanceImportMapping'
-  | 'commitFinanceImport'
+  | 'registerEcountAccounts'
+  | 'registerEcountAnnual'
 >
+
+/** RPC 오류를 거부 낱말(message)이 보이게 던진다 — 액션이 lib/ecount/import-errors.ts로 문장을 고른다. */
+function rpcFail(fn: string, error: { code?: string; message: string; details?: string | null }): never {
+  throw new Error(`Supabase ${fn} ${error.code ?? '?'}: ${error.message}${error.details ? ` — ${error.details}` : ''}`)
+}
 
 export function financeImportMethods(sb: SupabaseClient): Methods {
   /** draft 한 줄을 고친다. 0줄이면(남의 것 · 끝난 것 · 안 보임) 던진다 — 조용히 넘어가면 «취소했다»가 거짓이 된다. */
@@ -130,10 +138,40 @@ export function financeImportMethods(sb: SupabaseClient): Methods {
       return ((data ?? [])[0] as unknown as FinanceImport | undefined) ?? null
     },
 
-    /** draft → committed. committed_at은 finance_imports_guard가 적는다 · commit_shape는 DB가 본다. */
-    async commitFinanceImport(importId: string, summary: Record<string, unknown>, actor: AuditActor): Promise<FinanceImport> {
+    /** 0051 ecount_accounts_import — 한 트랜잭션(감사 → 새 코드 → 이름 → committed). 행위자는 DB가 auth.uid()로 적는다. */
+    async registerEcountAccounts(importId, input, actor: AuditActor) {
       void actor
-      return updateDraft(importId, { status: 'committed', summary })
+      const { data, error } = await sb.rpc('ecount_accounts_import', {
+        p_import_id: importId,
+        p_file_sha256: input.file_sha256,
+        p_creates: input.creates.map((c) => ({
+          account_code: c.account_code,
+          name: c.name,
+          category: c.category,
+          section: c.section,
+          cash_flow: c.cash_flow,
+          active: c.active,
+        })),
+        p_renames: input.renames.map((r) => ({ account_code: r.account_code, from: r.from, to: r.to })),
+      })
+      if (error) rpcFail('ecount_accounts_import', error)
+      const r = (data ?? {}) as { added?: unknown; renamed?: unknown }
+      if (typeof r.added !== 'number' || typeof r.renamed !== 'number') throw new Error('ecount_accounts_import: 결과가 오지 않았다.')
+      return { added: r.added, renamed: r.renamed }
+    },
+
+    /** 0051 official_statement_import_ecount — 한 트랜잭션(확정 해 · 균형 · supersede · 감사 · 헤더 · 줄 · committed). */
+    async registerEcountAnnual(importId, input, actor: AuditActor) {
+      void actor
+      const { data, error } = await sb.rpc('official_statement_import_ecount', {
+        p_import_id: importId,
+        p_file_sha256: input.file_sha256,
+        p_lines: input.lines.map((l) => ({ account_code: l.account_code, amount: l.amount })),
+      })
+      if (error) rpcFail('official_statement_import_ecount', error)
+      const id = Number(data)
+      if (!Number.isFinite(id)) throw new Error('official_statement_import_ecount: id가 오지 않았다.')
+      return id
     },
 
     async cancelFinanceImport(importId: string, actor: AuditActor): Promise<FinanceImport> {

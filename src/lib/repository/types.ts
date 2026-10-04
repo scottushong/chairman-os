@@ -60,6 +60,7 @@ import type {
   NotificationInbox,
   NewOfficialStatement,
   OfficialStatement,
+  OfficialStatementBasis,
   ProcessChart,
   ProcessChartInput,
   CityLayout,
@@ -160,14 +161,18 @@ export interface ChairmanRepository {
    */
   saveOfficialStatement(input: NewOfficialStatement, actor: AuditActor): Promise<number>
 
-  /** 그 회사의 **활성** 공식 재무제표 목록(정정으로 밀려난 것은 뺀다). 월별 화면의 잠금 판정이 쓴다. */
-  listOfficialStatements(businessId: string): Promise<OfficialStatement[]>
+  /**
+   * 그 회사의 **활성** 공식 재무제표 목록(정정으로 밀려난 것은 뺀다). 월별 화면의 잠금 판정이 쓴다.
+   * 기본은 **세무사 확정(accountant)만** — 월별 잠금 · «기준» 문구는 확정만 센다(0050 리뷰 M-5). ECOUNT 엑셀(잠정)이
+   * 필요하면 basis를 준다. 0050 전 DB(basis 칸 없음)의 행은 accountant로 읽는다.
+   */
+  listOfficialStatements(businessId: string, basis?: OfficialStatementBasis | 'all'): Promise<OfficialStatement[]>
 
   /**
    * ECOUNT 엑셀 업로드 한 건(0050 finance_imports). 읽기는 can_read_books, 넣기는 can_keep_books 본인 draft,
    * 고치기는 만든 사람의 draft에서만 — 권한은 여기서 보지 않는다(DB가 본다 · dummy는 옮겨 적는다).
    * 읽기는 0050이 없는 DB를 견딘다(master push = production 배포가 DB보다 먼저 나간다). 쓰기는 견디지 않는다.
-   * 지우기는 없다 — 취소는 cancelled다. committed 전이는 대상별 등록 RPC(0051 이후)가 한다.
+   * 지우기는 없다 — 취소는 cancelled다. committed 전이는 대상별 등록 RPC(0051)만 한다 — 사람은 못 한다.
    */
   createFinanceImport(input: { business_id: string; kind: FinanceImportKind; file_name: string }, actor: AuditActor): Promise<FinanceImport>
   getFinanceImport(importId: string): Promise<FinanceImport | null>
@@ -184,16 +189,18 @@ export interface ChairmanRepository {
    */
   findLatestFinanceImportMapping(businessId: string, kind: FinanceImportKind, exceptImportId: string): Promise<FinanceImport | null>
   /**
-   * draft → committed(summary를 같이 적는다). **draft에서만** · 만든 사람만(0050 finance_imports_update).
-   * 0050 commit_shape — sha256이 없거나(계정과목 아닌데) period_key가 없으면 DB가 거부한다.
+   * ① ECOUNT 계정과목 등록 — live는 0051 ecount_accounts_import() **한 트랜잭션**: 감사(새 코드 묶음 한 줄 + 이름 바꿈마다)
+   * → 새 코드(source='ecount') → 이름(사람이 체크한 코드만) → 업로드 committed. 하나라도 어긋나면 아무것도 남지 않는다.
+   * **있는 계정의 분류는 건드리지 않는다** · 지우지 않는다. 판정(본인 · draft · 종류 · sha256 · 장부 권한 · ECOUNT 회사)과
+   * 감사 문구는 DB가 한다. 거부 낱말은 lib/ecount/import-errors.ts(dummy도 같은 낱말). 넣은 수 · 이름 바꾼 수를 돌려준다.
    */
-  commitFinanceImport(importId: string, summary: Record<string, unknown>, actor: AuditActor): Promise<FinanceImport>
+  registerEcountAccounts(importId: string, input: { file_sha256: string } & EcountAccountMerge, actor: AuditActor): Promise<{ added: number; renamed: number }>
   /**
-   * ① ECOUNT 계정과목 병합 — 새 코드는 source='ecount'로 넣고(0050 accounts_books_insert), 이름은 사람이 체크한 코드만 바꾼다.
-   * **있는 계정의 분류는 건드리지 않는다**(계획에 그런 칸이 없다) · 지우지 않는다. 감사 note는 ecountAuditNote.
-   * 권한은 DB(can_keep_books)가 본다. 넣은 수 · 이름 바꾼 수를 돌려준다.
+   * ② ECOUNT 연간 재무제표 등록 — live는 0051 official_statement_import_ecount() 한 트랜잭션: 세무사 확정 해 거부 · 균형 ·
+   * 같은 해 ECOUNT 활성 결산 supersede · 감사 먼저 · 헤더(basis='ecount_excel') · 줄 · 업로드 committed. 새 결산 id를 돌려준다.
+   * lines의 amount는 원장 규약(차변 − 대변 — annualLedgerLines).
    */
-  mergeEcountAccounts(businessId: string, merge: EcountAccountMerge, actor: AuditActor, note: string): Promise<{ added: number; renamed: number }>
+  registerEcountAnnual(importId: string, input: { file_sha256: string; lines: { account_code: string; amount: number }[] }, actor: AuditActor): Promise<number>
 
   /**
    * Phase 5-D — 프로세스차트(0021). 읽기는 Executive 이상 + 자기 회사(DB가 판정).
@@ -858,9 +865,9 @@ export interface BriefTimezoneSettings {
 export type NewAccount = { business_id: string; account_code: string } & AccountFields
 export type AccountPatch = Partial<AccountFields & { active: boolean }>
 
-/** ECOUNT 계정과목 업로드의 병합 한 벌(lib/ecount/excel/accounts-import.ts planAccounts가 만든다). */
+/** ECOUNT 계정과목 업로드의 병합 한 벌(lib/ecount/excel/accounts-import.ts planAccounts가 만든다). 회사는 업로드 줄에서 온다. */
 export interface EcountAccountMerge {
-  creates: (NewAccount & { active: boolean })[]
+  creates: ({ account_code: string; active: boolean } & AccountFields)[]
   renames: { account_code: string; from: string; to: string }[]
 }
 

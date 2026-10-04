@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { ATTACHMENT_MIME } from '@/lib/attachments/rules'
 import { canImportEcount, canKeepBooks } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
-import { ecountAuditNote, ecountFileProblem } from '@/lib/ecount/excel/file-rules'
+import { ecountFileProblem } from '@/lib/ecount/excel/file-rules'
 import {
   parseAccountChoices,
   planAccounts,
@@ -14,7 +14,7 @@ import {
   type ExistingAccount,
   type IgnoredRow,
 } from '@/lib/ecount/excel/accounts-import'
-import { planAnnual } from '@/lib/ecount/excel/annual-import'
+import { annualLedgerLines, planAnnual } from '@/lib/ecount/excel/annual-import'
 import type { EcountUnit } from '@/lib/ecount/excel/cells'
 import { planMonthly } from '@/lib/ecount/excel/monthly-import'
 import {
@@ -29,7 +29,8 @@ import {
   type MappingSource,
   type SheetGrid,
 } from '@/lib/ecount/excel/mapping'
-import type { AmountsPreview } from '@/lib/ecount/excel/statement-lines'
+import { parsePicks, pickKey, type AmountsPreview } from '@/lib/ecount/excel/statement-lines'
+import { ecountImportErrorMessage, NO_BOOKS_MESSAGE } from '@/lib/ecount/import-errors'
 import {
   EcountExcelError,
   outlineWorkbook,
@@ -40,7 +41,7 @@ import {
 } from '@/lib/ecount/excel/workbook'
 import { periodOfDate } from '@/lib/ledger/basis'
 import { lastClosedPeriod } from '@/lib/ledger/journal'
-import { DUPLICATE_ACCOUNT_CODE, getRepository, type ChairmanRepository } from '@/lib/repository'
+import { getRepository, type ChairmanRepository } from '@/lib/repository'
 import {
   FINANCE_IMPORT_KIND,
   FINANCE_IMPORT_KIND_LABEL_KO,
@@ -57,12 +58,13 @@ import {
  *   1. startEcountImport   → finance_imports draft 한 줄(0050)
  *   2. beginAttachment(entity_table='finance_imports') → 브라우저가 Storage로 직접 업로드. **AI 요약은 부르지 않는다.**
  *   3. previewEcountImport → 서버가 Storage에서 원본을 다시 읽어 sha256 · 개요를 적는다(DB 쓰기는 그 draft 한 줄뿐)
- *   4. commitEcountImport  → 같은 원본을 다시 읽고 sha256이 미리보기 때와 같은지 본 뒤 대상별 등록
+ *   4. commitEcountImport  → 같은 원본을 다시 읽고 sha256이 미리보기 때와 같은지 본 뒤 계획을 **원본에서 다시** 만들어
+ *                            대상별 등록 RPC 한 번(0051 — 판정 · 감사 · 쓰기 · committed가 한 트랜잭션)
  *   5. cancelEcountImport  → 원본 첨부 취소 **먼저** → cancelled(0050 머리 주석 :25 — cancelled 뒤에는 원본을 못 지운다)
  *
  * ECOUNT 열 구성(화면 캡처)이 없어서 **열은 사람이 지정한다**(lib/ecount/excel/mapping.ts) — 머리글로 짐작하거나
  * 같은 회사의 지난 업로드 지정을 불러오고, 사람이 «이 열 지정으로 미리보기»를 눌러 확정한다(summary.mapping).
- * 등록은 확정한 지정으로만 한다. 계정과목은 등록까지, 연간 · 월별은 미리보기 검증까지(등록 RPC는 0051 이후).
+ * 등록은 확정한 지정으로만 한다. 계정과목 · 연간은 등록까지(0051 RPC), 월별은 미리보기 검증까지(월별 RPC는 다음).
  *
  * 믿지 않는 것: 화면이 보낸 business_id · import_id · 행. 회사는 업로드 줄(DB가 RLS로 내준 것)에서 다시 읽고,
  * 업로드는 «본인 · draft · 그 회사 장부 권한»을 매번 다시 판정한다. 최종 판정은 0050 RLS(can_keep_books)다.
@@ -73,16 +75,21 @@ export interface EcountImportState {
   importId?: string
 }
 
-/** 미리보기 때 사람이 고른 것 — 열 지정 하나. 행 · 금액은 받지 않는다(서버가 원본에서 읽는다). */
+/**
+ * 미리보기 때 사람이 고른 것 — 열 지정 · (연간) 이름이 계정 둘 이상과 맞은 줄에 고른 계정. 행 · 금액은 받지 않는다(서버가 원본에서 읽는다).
+ * picks는 «그 줄의 후보 중 하나»일 때만 쓴다 — 후보는 서버가 원본 + 지금 장부에서 다시 만든다.
+ */
 export interface EcountPreviewChoices {
   mapping?: unknown
+  picks?: unknown
 }
 
-/** 등록 때 사람이 고른 것 — 열 지정(미리보기에서 확정한 것과 같아야 한다) · 새 계정 분류 고침 · 이름 바꿀 코드. */
+/** 등록 때 사람이 고른 것 — 열 지정(미리보기에서 확정한 것과 같아야 한다) · 새 계정 분류 고침 · 이름 바꿀 코드 · (연간) 고른 계정. */
 export interface EcountCommitChoices {
   mapping?: unknown
   overrides?: unknown
   renames?: unknown
+  picks?: unknown
 }
 
 export interface EcountPreviewState extends EcountImportState {
@@ -100,30 +107,31 @@ export interface EcountPreviewState extends EcountImportState {
   mappingProblems?: string[]
   /** 계정과목 미리보기 재료 — 화면이 사람의 분류 고침마다 planAccounts를 다시 돌린다 */
   accounts?: { rows: AccountFileRow[]; ignored: IgnoredRow[]; existing: ExistingAccount[] }
-  /** 연간 · 월별 미리보기(검증만 — 등록은 DB 등록 함수가 생긴 뒤) */
+  /** 연간 · 월별 미리보기(월별은 검증만 — 등록은 월별 RPC가 생긴 뒤) */
   amounts?: AmountsPreview
+  /** 연간 — 이 미리보기에 쓰인 계정 고르기(서버가 후보 안의 것만 남긴 값) */
+  picks?: Record<string, string>
 }
 
 export interface EcountCommitState extends EcountImportState {
   added?: number
   renamed?: number
+  /** 연간 — 새 결산 id · 실은 줄 수 */
+  statementId?: number
+  lines?: number
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 /** 직원 화면이다 — «회장»이 아니라 «대표»(CLAUDE.md 직원 화면 용어 원칙). statements.ts와 같은 문장. */
-const NO_BOOKS = '이 회사의 재무를 넣을 권한이 없습니다. (대표 · 그룹 CFO · 해당 회사 대표이사 · 대표가 재무 입력 권한을 준 사람)'
-/** 연간 · 월별 등록 — DB 등록 함수(official_statement_import_ecount · ecount_monthly_import)는 0051 이후다. */
+const NO_BOOKS = NO_BOOKS_MESSAGE
+/** 월별 등록 — DB 등록 함수(ecount_monthly_import)는 다음 마이그레이션이다. */
 const COMMIT_PENDING = '등록은 다음 단계(DB 반영 후)에 열립니다. 지금은 미리보기 검증까지만 합니다.'
 
+/** 거부 낱말(0051 RPC · dummy가 같은 것을 던진다) → 화면 문장. lib/ecount/import-errors.ts 한 곳에서 고른다. */
 function denied(where: string, e: unknown, fallback: string): EcountImportState {
   console.error(`[ecount-import] ${where}`, e)
-  const m = e instanceof Error ? e.message : ''
-  if (/42501|row-level security|permission denied/.test(m)) return { error: NO_BOOKS }
-  if (/finance_import_closed/.test(m)) return { error: '이미 등록되었거나 취소된 업로드입니다. 다시 올리려면 새로 시작하세요.' }
-  if (/finance_import_hash_immutable/.test(m)) return { error: '미리보기 때와 다른 파일입니다. 취소하고 새로 올리세요.' }
-  if (/PGRST205|42P01/.test(m)) return { error: 'ECOUNT 업로드 준비가 아직 끝나지 않았습니다(DB 반영 전). 잠시 후 다시 시도하세요.' }
-  return { error: fallback }
+  return { error: ecountImportErrorMessage(e instanceof Error ? e.message : '') ?? fallback }
 }
 
 function importPath(businessId: string) {
@@ -262,13 +270,30 @@ async function accountsInput(repo: ChairmanRepository, imp: FinanceImport, sheet
 }
 
 /**
- * 연간 미리보기 — 검증만. 세무사 확정 결산(활성 · 한 해)이 있는 해는 막는다(설계서 B-② «확정과의 관계»).
- * 0050 전 목록에는 basis 칸이 없다 — 지금 있는 공식 결산은 전부 세무사 확정이다.
+ * 연간 미리보기 · 등록 재료. 세무사 확정 결산(활성 · 한 해)이 있는 해는 막는다(설계서 B-② «확정과의 관계»).
+ * listOfficialStatements는 기본이 세무사 확정(accountant)만이다 — ECOUNT 잠정 행은 재업로드(supersede)라 막지 않는다.
+ * picks: 이름이 계정 둘 이상과 맞은 줄에 사람이 고른 계정 — planAnnual이 그 줄의 후보 안에 있을 때만 쓴다.
  */
-async function annualPreview(repo: ChairmanRepository, imp: FinanceImport, sheets: EcountSheet[], mapping: EcountMapping): Promise<AmountsPreview> {
+async function annualPreview(
+  repo: ChairmanRepository,
+  imp: FinanceImport,
+  sheets: EcountSheet[],
+  mapping: EcountMapping,
+  picks: Record<string, string>,
+): Promise<AmountsPreview> {
   const [accounts, officials] = await Promise.all([companyAccounts(repo, imp.business_id), repo.listOfficialStatements(imp.business_id)])
   const officialKeys = officials.filter((o) => o.period_kind === 'year').map((o) => o.period_key)
-  return planAnnual(sheets, mapping, { accounts, officialKeys })
+  return planAnnual(sheets, mapping, { accounts, officialKeys, picks })
+}
+
+/** 미리보기에 실제로 쓰인 고르기(후보 안의 것)만 — summary에 남겨 «이어 가기»가 같은 화면을 보이게. */
+function usedPicks(amounts: AmountsPreview, picks: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const l of amounts.lines) {
+    const k = pickKey(l)
+    if (l.how === 'pick' && picks[k]) out[k] = picks[k]
+  }
+  return out
 }
 
 /**
@@ -323,6 +348,8 @@ export async function previewEcountImport(importId: unknown, choices?: EcountPre
     }
 
     let mapping: EcountMapping | null = null
+    // 연간 계정 고르기 — 화면이 보낸 것이 있으면 그것, 없으면(이어 가기) 이 업로드에 남겨 둔 것. 후보 안인지는 planAnnual이 본다.
+    const picks = parsePicks(choices?.picks !== undefined ? choices.picks : imp.summary?.picks)
     if (choices?.mapping !== undefined) {
       const sent = parseMapping(choices.mapping, imp.kind)
       if (!sent) return { ...base, error: '열 지정을 읽지 못했습니다. 화면을 새로 고친 뒤 다시 지정하세요.' }
@@ -355,10 +382,14 @@ export async function previewEcountImport(importId: unknown, choices?: EcountPre
       state.accounts = input
       summary.counts = { rows: input.rows.length, creates: plan.creates.length, blocks: plan.blockCount, warnings: plan.warningCount }
     } else {
-      const amounts = imp.kind === 'annual' ? await annualPreview(repo, imp, sheets, mapping) : await monthlyPreview(repo, imp, sheets, mapping)
+      const amounts = imp.kind === 'annual' ? await annualPreview(repo, imp, sheets, mapping, picks) : await monthlyPreview(repo, imp, sheets, mapping)
       state.amounts = amounts
-      // 금액 원문은 summary에 두지 않는다(원본은 첨부다) — 줄 수 · 차단 수만.
+      // 금액 원문은 summary에 두지 않는다(원본은 첨부다) — 줄 수 · 차단 수 · (연간) 사람이 고른 계정만.
       summary.counts = { lines: amounts.lines.length, blocks: amounts.blockCount, warnings: amounts.warningCount }
+      if (imp.kind === 'annual') {
+        state.picks = usedPicks(amounts, picks)
+        summary.picks = state.picks
+      }
     }
     await repo.recordFinanceImportPreview(
       imp.import_id,
@@ -374,9 +405,9 @@ export async function previewEcountImport(importId: unknown, choices?: EcountPre
 
 /**
  * 등록 — 같은 원본을 다시 읽고(sha256이 미리보기 때와 같아야 한다) **처음부터 다시** 판정한다.
- * 화면이 보낸 것은 사람의 선택(열 지정 · 분류 고침 · 이름 바꿀 코드)뿐이고, 열 지정은 미리보기에서 확정해
- * summary에 적힌 것과 같아야 한다 — 짐작한 지정으로는 등록하지 않는다.
- * 지금은 계정과목만 등록한다. 연간 · 월별은 DB 등록 함수(0051 이후)가 생긴 뒤.
+ * 화면이 보낸 것은 사람의 선택(열 지정 · 분류 고침 · 이름 바꿀 코드 · 연간 계정 고르기)뿐이고, 열 지정은 미리보기에서 확정해
+ * summary에 적힌 것과 같아야 한다 — 짐작한 지정으로는 등록하지 않는다. 금액 · 행은 늘 원본에서 다시 읽는다(summary를 믿지 않는다).
+ * 쓰기는 대상별 RPC 한 번(0051): 판정 · 감사 · 장부 · committed가 한 트랜잭션이라 반쪽 등록이 없다. 월별은 월별 RPC가 생긴 뒤.
  */
 export async function commitEcountImport(importId: unknown, choices?: EcountCommitChoices): Promise<EcountCommitState> {
   const user = await currentUser()
@@ -386,7 +417,7 @@ export async function commitEcountImport(importId: unknown, choices?: EcountComm
     const own = await ownDraft(repo, user, importId)
     if ('error' in own) return own
     const { imp } = own
-    if (imp.kind !== 'accounts') return { error: `${FINANCE_IMPORT_KIND_LABEL_KO[imp.kind]}: ${COMMIT_PENDING}` }
+    if (imp.kind === 'monthly') return { error: `${FINANCE_IMPORT_KIND_LABEL_KO[imp.kind]}: ${COMMIT_PENDING}` }
     if (!imp.file_sha256) return { error: '미리보기를 먼저 하세요.' }
     const original = await readOriginal(repo, imp, user)
     if ('error' in original) return original
@@ -401,39 +432,38 @@ export async function commitEcountImport(importId: unknown, choices?: EcountComm
     if ('error' in parsed) return parsed
     const problems = mappingProblems(saved, parsed.sheets)
     if (problems.length > 0) return { error: problems[0] }
+    const actor = { user_id: user.user_id, role: user.role }
+    const base = `/finance/${encodeURIComponent(imp.business_id)}`
+
+    if (imp.kind === 'annual') {
+      // 고른 계정은 화면 값이지만 후보(원본 + 지금 장부)는 여기서 다시 만든다 — 후보 밖의 코드는 «안 고름»으로 막힌다.
+      const amounts = await annualPreview(repo, imp, parsed.sheets, saved, parsePicks(choices?.picks))
+      if (amounts.blockCount > 0) return { error: `막힌 줄이 ${amounts.blockCount}개 있습니다. 미리보기에서 고친 뒤 등록하세요.` }
+      const lines = annualLedgerLines(amounts)
+      const statementId = await repo.registerEcountAnnual(imp.import_id, { file_sha256: original.sha, lines }, actor)
+      revalidatePath(importPath(imp.business_id))
+      revalidatePath(`${base}/statements`)
+      revalidatePath(base, 'layout')
+      revalidatePath('/finance')
+      return { importId: imp.import_id, statementId, lines: lines.length }
+    }
 
     const input = await accountsInput(repo, imp, parsed.sheets, saved)
     const picked = parseAccountChoices(choices?.overrides, choices?.renames)
     const plan = planAccounts({ ...input, ...picked })
     if (plan.blockCount > 0) return { error: `막힌 줄이 ${plan.blockCount}개 있습니다. 미리보기에서 고친 뒤 등록하세요.` }
 
-    const actor = { user_id: user.user_id, role: user.role }
-    const note = ecountAuditNote({ kind: imp.kind, period: null, fileName: original.fileName, importId: imp.import_id })
-    const result = await repo.mergeEcountAccounts(
-      imp.business_id,
-      { creates: plan.creates.map((c) => ({ ...c, business_id: imp.business_id })), renames: plan.renames },
-      actor,
-      note,
-    )
-    await repo.commitFinanceImport(
+    const result = await repo.registerEcountAccounts(
       imp.import_id,
-      {
-        ...(imp.summary ?? {}),
-        stage: 'committed',
-        mapping: saved,
-        result: { ...result, unchanged: plan.lines.length - plan.creates.length - plan.renames.length },
-      },
+      { file_sha256: original.sha, creates: plan.creates, renames: plan.renames },
       actor,
     )
-    const base = `/finance/${encodeURIComponent(imp.business_id)}`
     revalidatePath(importPath(imp.business_id))
     revalidatePath(`${base}/accounts`)
     revalidatePath(base, 'layout')
     revalidatePath('/finance')
     return { importId: imp.import_id, ...result }
   } catch (e) {
-    const m = e instanceof Error ? e.message : ''
-    if (m === DUPLICATE_ACCOUNT_CODE) return { error: '그 사이에 같은 계정코드가 장부에 생겼습니다. 미리보기를 다시 하세요.' }
     return denied('commit', e, '등록하지 못했습니다. 잠시 후 다시 시도하세요.')
   }
 }

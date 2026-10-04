@@ -26,6 +26,8 @@ export function EcountImportFlow({ initial }: { initial: EcountPreviewState }) {
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState<string | null>(null)
+  // 연간 — 이름이 계정 둘 이상과 맞은 줄에 고른 계정. 고를 때마다 서버가 원본을 다시 읽어 미리보기(합계 대조까지)를 다시 만든다.
+  const [picks, setPicks] = useState<Record<string, string>>(initial.picks ?? {})
 
   const importId = state.importId!
   const confirmed = state.mappingSource === 'confirmed' && !state.mappingProblems?.length
@@ -58,6 +60,43 @@ export function EcountImportFlow({ initial }: { initial: EcountPreviewState }) {
       const r = await commitEcountImport(importId, { mapping: state.mapping, ...choices })
       if (r.error) setError(r.error)
       else setDone(`등록했습니다 — 새 계정 ${r.added ?? 0}개 · 이름 바꿈 ${r.renamed ?? 0}개. 계정과목 화면에서 «ECOUNT» 출처로 보입니다.`)
+    } finally {
+      setBusy(null)
+      router.refresh()
+    }
+  }
+
+  async function pick(key: string, code: string) {
+    if (!state.mapping) return
+    const next = { ...picks }
+    if (code) next[key] = code
+    else delete next[key]
+    setPicks(next)
+    setBusy('고른 계정으로 미리보기를 다시 만드는 중…')
+    setError(null)
+    try {
+      const r = await previewEcountImport(importId, { mapping: state.mapping, picks: next })
+      if (r.error && !r.mapping) {
+        setError(r.error)
+        return
+      }
+      setState(r)
+      setPicks(r.picks ?? next)
+      if (r.error) setError(r.error)
+    } finally {
+      setBusy(null)
+      router.refresh()
+    }
+  }
+
+  async function commitAnnual() {
+    if (!state.mapping) return
+    setBusy('서버가 원본을 다시 읽고 등록하는 중…')
+    setError(null)
+    try {
+      const r = await commitEcountImport(importId, { mapping: state.mapping, picks })
+      if (r.error) setError(r.error)
+      else setDone(`등록했습니다 — ${state.amounts?.year ?? ''}년 연간 재무제표 ${r.lines ?? 0}줄(ECOUNT 엑셀 · 잠정). 세무사 확정 결산과는 따로 보관됩니다.`)
     } finally {
       setBusy(null)
       router.refresh()
@@ -113,7 +152,15 @@ export function EcountImportFlow({ initial }: { initial: EcountPreviewState }) {
       {confirmed && !editing && state.accounts ? (
         <EcountAccountsPreview key={JSON.stringify(state.mapping)} input={state.accounts} busy={!!busy} onCommit={(c) => void commitAccounts(c)} />
       ) : null}
-      {confirmed && !editing && state.amounts ? <EcountAmountsPreview preview={state.amounts} /> : null}
+      {confirmed && !editing && state.amounts ? (
+        <EcountAmountsPreview
+          preview={state.amounts}
+          picks={picks}
+          busy={!!busy}
+          onPick={state.kind === 'annual' ? (k, c) => void pick(k, c) : undefined}
+          onCommit={state.kind === 'annual' ? () => void commitAnnual() : undefined}
+        />
+      ) : null}
       {confirmed && !editing && state.kind !== 'accounts' && !state.amounts ? (
         <button type="button" disabled className="min-h-11 rounded-md bg-accent px-3 text-t11h font-semibold text-ink opacity-40 lg:min-h-0 lg:py-1.5">
           등록은 다음 단계(DB 반영 후)에 열립니다

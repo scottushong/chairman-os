@@ -81,14 +81,32 @@ export function cellText(cell: EcountCell | undefined): string {
 export type AmountResult = { ok: true; value: number | null } | { ok: false; reason: string }
 
 /**
+ * ECOUNT 글 금액 — paste.ts 규칙(쉼표 · 괄호 음수 · ₩ · 공백)에 **한국 재무제표 관례 둘**을 더한다(2026-10-04 결정):
+ *   «△1,000» · «△ 1,000» = −1,000   (△ 하나만. «▲»는 «증가»로도 쓰여 짐작하지 않는다 — 오류 그대로)
+ *   칸 전체가 «-» 또는 «–»(en dash)  = 0   (재무제표의 «해당 없음/0» 표기)
+ * △ 뒤가 다시 음수(«△(100)» · «△-100»)면 부호가 두 번이라 뜻이 갈린다 — 오류(undefined)다.
+ * paste.ts는 바꾸지 않는다 — 손으로 붙여 넣는 칸에서 «-»가 0이 되면 지운 줄 알고 넣은 빈 칸이 0원으로 확정된다.
+ */
+export function parseEcountNumber(raw: string): number | null | undefined {
+  const text = raw.trim()
+  if (text === '-' || text === '–') return 0
+  if (text.startsWith('△')) {
+    const rest = parseAccountingNumber(text.slice(1))
+    if (rest === null || rest === undefined || rest < 0 || Object.is(rest, -0)) return undefined
+    return rest === 0 ? 0 : -rest
+  }
+  return parseAccountingNumber(text)
+}
+
+/**
  * 금액 칸을 원 단위로. 빈 칸은 null(0이 아니다 — 0인지 빈 칸인지는 대상별 판정이 정한다).
- * 글 칸은 paste.ts 규칙(쉼표 · 괄호 음수 · ₩ · 공백)으로 읽는다. 단위를 곱한 **뒤에** 반올림한다.
+ * 글 칸은 parseEcountNumber(paste.ts 규칙 + «△» 음수 · «-» 0)로 읽는다. 단위를 곱한 **뒤에** 반올림한다.
  */
 export function cellAmount(cell: EcountCell | undefined, unit: EcountUnit = 'won'): AmountResult {
   if (!cell || cell.t === 'empty') return { ok: true, value: null }
   if (cell.t === 'date') return { ok: false, reason: `금액 자리에 날짜(${cell.v})` }
   if (cell.t === 'error') return { ok: false, reason: cell.v }
-  const raw = cell.t === 'number' ? cell.v : parseAccountingNumber(cell.v)
+  const raw = cell.t === 'number' ? cell.v : parseEcountNumber(cell.v)
   if (raw === null) return { ok: true, value: null }
   if (raw === undefined) return { ok: false, reason: `숫자로 읽지 못함: «${String(cell.v).slice(0, 40)}»` }
   const value = Math.round(raw * UNIT_MULTIPLIER[unit])
