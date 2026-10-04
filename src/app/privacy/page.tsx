@@ -45,7 +45,7 @@ export default function PrivacyPage() {
         </p>
 
         {/* ───────── 1. 열람 기록 ───────── */}
-        <Article title="1. 열람 기록 (접속 현황)" badge="블록 7 · 0031">
+        <Article title="1. 열람 기록 (접속 현황)">
           <P>
             로그인한 사람이 어떤 화면을 열었는지를 감사 기록(<Code>audit_log</Code>)에
             남깁니다. 시스템 안에서 무슨 일이 있었는지에 답할 수 없는 업무 시스템은
@@ -86,21 +86,21 @@ export default function PrivacyPage() {
 
           <H>누가 보나</H>
           <P>
-            접속 현황 화면(<Code>/settings/activity</Code>)은{' '}
-            <b className="font-semibold text-ink">회장 전용</b>입니다. 그 화면에 데이터를
-            내주는 데이터베이스 함수는 회장이 아닌 세션에는 0건을 돌려줍니다.
+            접속 현황은{' '}
+            <b className="font-semibold text-ink">대표만 보는 관리자 화면</b>에 나옵니다. 그 화면에
+            데이터를 내주는 데이터베이스 함수는 대표가 아닌 세션에는 0건을 돌려줍니다.
           </P>
           <P>
             그 밖에 본인은 자기 기록을 볼 수 있고, 조직 위계상 직속·간접 상사는 자기 아래
-            사람의 감사 기록을 볼 수 있습니다(위계 정책, 0026). 야간 AI 작업은{' '}
-            <b className="font-semibold text-ink">개별 기록을 한 줄도 읽지 못합니다</b> — 주간
-            브리핑에는 건수만 집계된 숫자가 갑니다(사람도 경로도 도시도 없습니다).
+            사람의 감사 기록을 볼 수 있습니다(위계 정책). AI 작업은{' '}
+            <b className="font-semibold text-ink">개별 기록을 한 줄도 읽지 못합니다</b> — 관리자용
+            요약에는 건수만 집계된 숫자가 갑니다(사람도 경로도 도시도 없습니다).
           </P>
 
           <H>얼마나 두나</H>
           <P>
             <b className="font-semibold text-ink">{ACTIVITY_RETENTION_DAYS}일입니다.</b> 그
-            기간이 지난 열람 기록은 회장에게도, 본인에게도, 상사에게도 보이지 않습니다 —
+            기간이 지난 열람 기록은 대표에게도, 본인에게도, 상사에게도 보이지 않습니다 —
             읽을 수 있는 사람이 한 명도 없게 데이터베이스 정책이 막습니다.
           </P>
           <P>
@@ -116,7 +116,7 @@ export default function PrivacyPage() {
         </Article>
 
         {/* ───────── 2. 로그인 기록 ───────── */}
-        <Article title="2. 로그인 기록" badge="CH-051 · 0031">
+        <Article title="2. 로그인 기록">
           <P>
             로그인 성공과 실패를 같은 감사 기록에 남깁니다. 실패를 남기지 않으면 남의 계정에
             들어가려는 시도를 알 방법이 없습니다.
@@ -135,22 +135,22 @@ export default function PrivacyPage() {
         </Article>
 
         {/* ───────── 3. 업무 데이터 ───────── */}
-        {/* Phase 6-2 블록 2 · 3 — 그룹 시티 표시 · 새 기기 알림 · 원격 로그아웃 · 삭제 방식. */}
-        <Article title="2-1. 그룹 시티 · 새 기기 · 세션" badge="Phase 6-2 · 8 G-3">
+        {/* Phase 6-2 블록 2 · 3 — 접속 표시 · 새 기기 알림 · 원격 로그아웃 · 삭제 방식.
+            로그인 전에도 열리는 화면이라 회장 전용 기능 이름(그룹 시티 등)을 쓰지 않는다 — CLAUDE.md 직원 화면 용어 원칙. */}
+        <Article title="2-1. 접속 표시 · 새 기기 · 세션">
           <Ul>
             <li>
-              <b className="font-semibold text-ink">접속 · 활동은 그룹 시티에 표시됩니다.</b> 그룹 시티는
-              회사별 현황을 건물로 보여 주는 화면입니다. 최근 5분 안에 접속한 사람은 소속 회사 건물 앞에 작은 사람으로,
-              진행 중인 업무는 창가 자리와 진행바로, 결재는 서류를 든 사람으로 그려집니다. 접속한 사람의 모습은
-              회장만 볼 수 있고, <b className="font-semibold text-ink">이름표도 회장 화면에만</b> 붙습니다. 누가 어떤
+              <b className="font-semibold text-ink">접속 · 활동은 관리자 화면에 회사 단위로 표시됩니다.</b> 최근
+              5분 안에 접속했는지, 진행 중인 업무와 결재가 몇 건인지가 소속 회사별로 그려집니다. 이 표시는
+              대표만 볼 수 있고, <b className="font-semibold text-ink">이름도 그 관리자 화면에만</b> 붙습니다. 누가 어떤
               화면 · 문서를 열었는지는 그리지 않습니다.
             </li>
             <li>
               지난 90일 동안 쓴 적 없는 기기로 로그인하면 <b className="font-semibold text-ink">본인에게 알림</b>이
-              가고, 회장에게도 보안 알림(카카오톡)이 갑니다. 알림에 담기는 것은 기기 요약과 도시뿐입니다.
+              가고, 대표에게도 보안 알림(카카오톡)이 갑니다. 알림에 담기는 것은 기기 요약과 도시뿐입니다.
             </li>
             <li>
-              로그인은 7일 동안 유지되고 그 뒤에는 다시 로그인합니다. 회장은 특정 사용자의 모든 기기를 한 번에
+              로그인은 7일 동안 유지되고 그 뒤에는 다시 로그인합니다. 대표는 특정 사용자의 모든 기기를 한 번에
               로그아웃시킬 수 있습니다. 임원 이상은 2단계 인증(인증 앱)이 필수입니다.
             </li>
             <li>
@@ -173,7 +173,7 @@ export default function PrivacyPage() {
           </P>
           <P>
             화면 설정(테마 · 사이드바 · 대시보드 배치)은 본인 외에 아무도 읽지 못합니다.
-            회장도 읽지 못합니다 — 업무 데이터가 아니기 때문입니다.
+            대표도 읽지 못합니다 — 업무 데이터가 아니기 때문입니다.
           </P>
           <P>
             <b className="font-semibold text-ink">데이터를 내보내는 통로가 없습니다.</b> 파일로
@@ -192,10 +192,13 @@ export default function PrivacyPage() {
               않습니다.
             </li>
             <li>
-              야간 브리핑은 AI 모델을 부릅니다. 그때 나가는 것은 회사 요약과 회장 루틴이며,
+              관리자용 요약을 만들 때 AI 모델을 부릅니다. 그때 나가는 것은 회사 단위 요약이며,
               개별 열람 기록은 나가지 않습니다.
             </li>
-            <li>아침 브리핑은 회장 본인이 연결한 경우에만 카카오톡으로 갑니다.</li>
+            <li>
+              관리자용 요약은 대표 본인이 연결한 경우에만 대표의 카카오톡으로 갑니다. 직원에게는
+              가지 않습니다.
+            </li>
           </Ul>
         </Article>
 
@@ -208,7 +211,7 @@ export default function PrivacyPage() {
             고쳐야 합니다.
           </P>
           <P>
-            기록에 대한 문의는 회장님께 직접 말씀해 주세요. 별도의 문의 창구(메일 주소 ·
+            기록에 대한 문의는 대표님께 직접 말씀해 주세요. 별도의 문의 창구(메일 주소 ·
             티켓)는 아직 정해지지 않았습니다 — 없는 주소를 적어 두지 않았습니다.
           </P>
         </Article>
@@ -221,7 +224,7 @@ export default function PrivacyPage() {
             로그인으로
           </Link>
           <span className="text-t10 text-ink-muted">
-            마지막 개정: Phase 8 G-3(그룹 시티에 사람 · 업무 · 결재 표시)
+            마지막 개정: 2026-10 (표현 정리 — 관리자 화면 명칭)
           </span>
         </div>
 
@@ -233,12 +236,12 @@ export default function PrivacyPage() {
             document id if any, a short device summary (e.g. &quot;Chrome · Windows&quot;), the city
             (never the raw IP address) and your time zone. Repeat visits to the same screen within{' '}
             {ACTIVITY_DEDUP_MINUTES} minutes count as one. These records are kept for{' '}
-            {ACTIVITY_RETENTION_DAYS} days, after which no one — not even the Chairman — can read
+            {ACTIVITY_RETENTION_DAYS} days, after which no one — not even the CEO — can read
             them; the rows are not deleted because the audit log is append-only by design. The
-            activity screen is Chairman-only. You can always see your own records. Failed sign-ins
+            activity screen is an administrator screen only the CEO can open. You can always see your own records. Failed sign-ins
             are recorded for existing accounts only; passwords never are. Your presence and activity
-            appear in the Group City at company level only (never who opened what). Signing in from a device
-            unused for 90 days notifies you and the Chairman. Sessions last 7 days; Executives and above
+            appear on an administrator screen at company level only (never who opened what). Signing in from a device
+            unused for 90 days notifies you and the CEO. Sessions last 7 days; Executives and above
             must use two-step verification. Deleted work records are hidden, not erased. There is no data export
             from this system.
           </p>
