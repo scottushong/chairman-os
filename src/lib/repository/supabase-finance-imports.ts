@@ -166,6 +166,7 @@ export function financeImportMethods(sb: SupabaseClient): Methods {
       const { data, error } = await sb.rpc('official_statement_import_ecount', {
         p_import_id: importId,
         p_file_sha256: input.file_sha256,
+        p_period_key: input.period_key,
         p_lines: input.lines.map((l) => ({ account_code: l.account_code, amount: l.amount })),
       })
       if (error) rpcFail('official_statement_import_ecount', error)

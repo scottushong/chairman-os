@@ -184,6 +184,8 @@ export const dummyFinanceImports: Methods = {
   async registerEcountAnnual(importId, input, actor: AuditActor) {
     const row = claim(importId, 'annual', input.file_sha256)
     if (!row.period_key) throw new Error('finance_import_period')
+    // 0051 리뷰 m-2 — 사람이 본 해와 업로드의 해가 다르면 멈춘다.
+    if (input.period_key !== row.period_key) throw new Error('import_changed')
     const id = await dummyImportEcountAnnual(
       { business_id: row.business_id, period_key: row.period_key, import_id: row.import_id, file_name: row.file_name },
       input.lines,

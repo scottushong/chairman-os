@@ -440,7 +440,9 @@ export async function commitEcountImport(importId: unknown, choices?: EcountComm
       const amounts = await annualPreview(repo, imp, parsed.sheets, saved, parsePicks(choices?.picks))
       if (amounts.blockCount > 0) return { error: `막힌 줄이 ${amounts.blockCount}개 있습니다. 미리보기에서 고친 뒤 등록하세요.` }
       const lines = annualLedgerLines(amounts)
-      const statementId = await repo.registerEcountAnnual(imp.import_id, { file_sha256: original.sha, lines }, actor)
+      // 해는 미리보기에서 확정한 열 지정의 해(= 미리보기가 적은 period_key). DB가 업로드 줄의 해와 같은지 다시 본다.
+      if (!saved.year) return { error: '몇 년도 자료인지 정하지 않았습니다. 열 지정에서 해를 고른 뒤 미리보기를 다시 하세요.' }
+      const statementId = await repo.registerEcountAnnual(imp.import_id, { file_sha256: original.sha, period_key: saved.year, lines }, actor)
       revalidatePath(importPath(imp.business_id))
       revalidatePath(`${base}/statements`)
       revalidatePath(base, 'layout')

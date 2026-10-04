@@ -200,7 +200,12 @@ export interface ChairmanRepository {
    * 같은 해 ECOUNT 활성 결산 supersede · 감사 먼저 · 헤더(basis='ecount_excel') · 줄 · 업로드 committed. 새 결산 id를 돌려준다.
    * lines의 amount는 원장 규약(차변 − 대변 — annualLedgerLines).
    */
-  registerEcountAnnual(importId: string, input: { file_sha256: string; lines: { account_code: string; amount: number }[] }, actor: AuditActor): Promise<number>
+  registerEcountAnnual(
+    importId: string,
+    /** period_key: 미리보기 때 사람이 본 해 — 업로드 줄의 해와 다르면 import_changed(0051 리뷰 m-2) */
+    input: { file_sha256: string; period_key: string; lines: { account_code: string; amount: number }[] },
+    actor: AuditActor,
+  ): Promise<number>
 
   /**
    * Phase 5-D — 프로세스차트(0021). 읽기는 Executive 이상 + 자기 회사(DB가 판정).

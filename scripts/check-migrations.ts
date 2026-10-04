@@ -4868,8 +4868,8 @@ async function ecountRpcSeed(db: Db) {
 type Plan = { creates?: object[]; renames?: object[] }
 const accRpc = (imp: string, plan: Plan, sha = SHA) =>
   `select (ecount_accounts_import('${imp}', '${sha}', '${JSON.stringify(plan.creates ?? [])}'::jsonb, '${JSON.stringify(plan.renames ?? [])}'::jsonb))->>'added'`
-const annualRpc = (imp: string, lines: [string, number][], sha = SHA) =>
-  `select official_statement_import_ecount('${imp}', '${sha}', '${JSON.stringify(lines.map(([account_code, amount]) => ({ account_code, amount })))}'::jsonb)`
+const annualRpc = (imp: string, lines: [string, number][], sha = SHA, year = '2025') =>
+  `select official_statement_import_ecount('${imp}', '${sha}', '${year}', '${JSON.stringify(lines.map(([account_code, amount]) => ({ account_code, amount })))}'::jsonb)`
 /** 닫히는 연간 — 자산 1000 = 부채 400 + 자본 600 · 매출 5000 · 영업외 비용 300. 금액은 원장 규약(차변 − 대변). */
 const BALANCED: [string, number][] = [['1010', 1000], ['2010', -400], ['3010', -600], ['4010', -5000], ['9310', 300]]
 const NEW8110 = { account_code: '8110', name: '복리후생비', category: 'labor', section: 'sga', cash_flow: null, active: true }
@@ -4918,7 +4918,8 @@ async function ecountImportRpc() {
   assert.equal(fns.length, 6, `0051: 함수 여섯을 못 찾는다(오버로드가 생겼거나 이름이 바뀌었다): ${fns.map((r) => r.f).join(', ')}`)
   for (const r of fns) {
     const door = ['ecount_accounts_import', 'official_statement_import_ecount', 'official_statement_save'].includes(String(r.f))
-    assert.equal(r.cfg, 'search_path=public', `0051: ${r.f}에 search_path가 고정되지 않았다`)
+    // 리뷰 m-6: 문 셋은 pg_temp까지 못 박는다(임시 스키마의 같은 이름 객체가 끼어들지 못하게). 도우미는 소유자로만 돈다.
+    assert.equal(r.cfg, door ? 'search_path=public, pg_temp' : 'search_path=public', `0051: ${r.f}에 search_path가 고정되지 않았다`)
     assert.equal(r.anon, false, `0051: anon이 ${r.f}를 부른다`)
     if (door) {
       assert.deepEqual([r.definer, r.auth], [true, true], `0051: ${r.f}는 definer이고 authenticated가 불러야 한다`)
@@ -5013,13 +5014,26 @@ async function ecountImportRpc() {
   await assert.rejects(as(EI.lead, [accRpc(RI.acc, { creates: [NEW8110, { ...NEW1360, account_code: '4010' }] })]), /account_exists/, '0051: 이미 있는 코드를 넣는다')
   await assert.rejects(as(EI.lead, [accRpc(RI.acc, { renames: [{ ...rename1010, from: '옛 이름' }] })]), /account_changed/, '0051: 미리보기 뒤 바뀐 이름을 덮는다')
   await assert.rejects(as(EI.lead, [accRpc(RI.acc, { renames: [{ ...rename1010, account_code: '7777' }] })]), /account_changed/, '0051: 없는 계정의 이름을 바꾼다')
+  // 리뷰 m-1: 이름 비교는 앞뒤 공백을 걷고 한다 — «현금 »(from)은 장부 «현금»과 같다 · 공백만 다른 바꿈은 쓰기도 감사도 없다.
+  assert.equal(await as(EI.lead, [accRpc(RI.acc, { renames: [{ ...rename1010, from: ' 현금 ' }] }),
+    `select name from accounts where business_id = 'biz_dy' and account_code = '1010'`]), '현금및현금성자산', '0051: from의 앞뒤 공백 때문에 이름 바꿈이 막힌다')
+  assert.equal(await as(EI.lead, [accRpc(RI.acc, { renames: [{ ...rename1010, to: '  현금 ' }] }),
+    `select (select count(*) from audit_log where entity_table = 'accounts')::int * 10
+          + (select count(*) from accounts where business_id = 'biz_dy' and account_code = '1010' and name = '현금')::int`]), 1,
+  '0051: 공백만 다른 이름 바꿈이 감사 줄을 남기거나 이름을 고친다')
+  assert.equal(await as(EI.lead, [`select (ecount_accounts_import('${RI.acc}', '${SHA}', '[]'::jsonb, '${JSON.stringify([{ ...rename1010, to: ' 현금' }])}'::jsonb))->>'renamed'`]), 0,
+    '0051: 공백만 다른 바꿈이 renamed로 셈해진다')
+  // 경쟁(확인 뒤 · update 전에 이름이 바뀜)은 한 세션에서 재현할 수 없다 — update도 from을 다시 대고, 행 수가 모자라면
+  // account_changed로 멈춘다(본문 1절). 여기서는 그 갈래가 books_forbidden이 아니라는 것만 글로 잰다.
+  assert.match(readFileSync(join(MIGRATIONS, '0051_ecount_import_rpc.sql'), 'utf8'),
+    /and btrim\(a\.name\) = btrim\(r->>'from'\);\s+get diagnostics v_renamed = row_count;\s+if v_renamed <> jsonb_array_length\(p_renames\) then[\s\S]{0,200}message = 'account_changed'/,
+    '0051: 이름 바꿈 update가 from을 다시 대지 않거나, 행 수가 모자랄 때 account_changed로 멈추지 않는다')
   for (const [plan, what] of [
     [{ creates: [NEW8110, NEW8110] }, '같은 코드 둘'],
     [{ creates: [{ ...NEW8110, account_code: '1010' }], renames: [rename1010] }, '새 코드이면서 이름 바꿈'],
     [{ creates: [{ ...NEW8110, account_code: ' 8110' }] }, '공백 붙은 코드'],
     [{ creates: [{ ...NEW8110, active: 'Y' }] }, '사용여부가 boolean 아님'],
     [{ creates: [{ ...NEW8110, name: ' ' }] }, '이름 없음'],
-    [{ renames: [{ ...rename1010, to: '현금' }] }, '같은 이름으로 바꿈'],
   ] as [Plan, string][]) {
     await assert.rejects(as(EI.lead, [accRpc(RI.acc, plan)]), /ecount_plan_invalid/, `0051: 틀린 계획(${what})이 들어간다`)
   }
@@ -5078,7 +5092,20 @@ async function ecountImportRpc() {
   await assert.rejects(as(EI.lead, [annualRpc(RI.annual, [...BALANCED, ['7777', 0]])]), /statement_unknown_account/, '0051: 장부에 없는 계정 줄이 들어간다')
   await assert.rejects(as(EI.lead, [annualRpc(RI.annual, [...BALANCED, ['4010', 0]])]), /ecount_plan_invalid/, '0051: 한 계정에 줄 둘이 들어간다')
   await assert.rejects(as(EI.lead, [annualRpc(RI.annual, [])]), /statement_empty/, '0051: 줄 없는 결산이 들어간다')
-  await assert.rejects(as(EI.lead, [`select official_statement_import_ecount('${RI.annual}', '${SHA}', '[{"account_code":"1010","amount":"1000"}]'::jsonb)`]),
+  // 리뷰 m-2: 사람이 본 해와 업로드의 해가 다르면 멈춘다.
+  await assert.rejects(as(EI.lead, [annualRpc(RI.annual, BALANCED, SHA, '2024')]), /import_changed/, '0051: 미리보기 뒤 바뀐 해로 연간이 들어간다')
+  await assert.rejects(as(EI.lead, [`select official_statement_import_ecount('${RI.annual}', '${SHA}', null, '[{"account_code":"1010","amount":0}]'::jsonb)`]),
+    /import_changed/, '0051: 해 없이 연간이 들어간다')
+  // 리뷰 m-5: 줄마다 2자리 반올림 뒤 균형 · 칸에도 반올림된 값이 앉는다(두 함수 다).
+  const near = (v: number): [string, number][] => [['1010', v], ...BALANCED.slice(1)]
+  assert.ok(Number(await as(EI.lead, [annualRpc(RI.annual, near(1000.004))])) > 0, '0051: 2자리 반올림하면 닫히는 연간이 막힌다')
+  assert.equal(await as(EI.lead, [annualRpc(RI.annual, near(1000.004)), `select (amount * 1000)::int from official_statement_lines where account_code = '1010'`]), 1_000_000,
+    '0051: 줄 금액이 반올림된 값(1000.00)으로 안 앉는다')
+  await assert.rejects(as(EI.lead, [annualRpc(RI.annual, near(1000.006))]), /statement_unbalanced/, '0051: 반올림하면 0.01 어긋나는 연간이 들어간다')
+  const saveNear = (v: number) => `select official_statement_save('biz_dy', 'year', '2023', 'https://x/y', 'r', '${JSON.stringify([{ account_code: '1010', amount: v }, { account_code: '3010', amount: -1000 }])}'::jsonb)`
+  assert.ok(Number(await as(EI.lead, [saveNear(1000.004)])) > 0, '0051: 세무사 저장이 2자리 반올림 뒤 균형을 안 잰다')
+  await assert.rejects(as(EI.lead, [saveNear(1000.006)]), /닫히지 않습니다/, '0051: 세무사 저장이 반올림 뒤 0.01 어긋남을 놓친다')
+  await assert.rejects(as(EI.lead, [`select official_statement_import_ecount('${RI.annual}', '${SHA}', '2025', '[{"account_code":"1010","amount":"1000"}]'::jsonb)`]),
     /ecount_plan_invalid/, '0051: 금액이 숫자가 아닌 줄이 들어간다')
   await assert.rejects(as(EI.lead, [annualRpc(RI.acc, BALANCED)]), /finance_import_kind/, '0051: 계정과목 업로드를 연간으로 등록한다')
   await assert.rejects(as(EI.lead, [annualRpc(RI.monthly, BALANCED)]), /finance_import_kind/, '0051: 월별 업로드를 연간으로 등록한다')
@@ -5126,7 +5153,7 @@ async function ecountRpcUnderNonBypassOwner() {
     alter table public.official_statements      owner to app_owner;
     alter table public.official_statement_lines owner to app_owner;
     alter function public.ecount_accounts_import(uuid, text, jsonb, jsonb)            owner to app_owner;
-    alter function public.official_statement_import_ecount(uuid, text, jsonb)          owner to app_owner;
+    alter function public.official_statement_import_ecount(uuid, text, text, jsonb)    owner to app_owner;
     alter function public.official_statement_save(text, text, text, text, text, jsonb) owner to app_owner;
     alter function public.finance_import_claim(uuid, text, text)                       owner to app_owner;
     alter function public.ecount_audit_note(text, text, text, uuid)                    owner to app_owner;

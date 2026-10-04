@@ -507,6 +507,15 @@ async function dummyAccountsEndToEnd(
   assert.equal(untouched.find((a) => a.account_code === '1010')!.name, existing.find((a) => a.account_code === '1010')!.name, 'dummy: 막힌 등록이 이름을 바꿨다')
   assert.equal((await repo.getFinanceImport(imp.import_id))!.status, 'draft')
   await assert.rejects(register(imp.import_id, { creates: [], renames: [{ ...plan.renames[0], from: '옛 이름' }] }), /account_changed/)
+  // 리뷰 m-1: 이름은 앞뒤 공백을 걷고 비교한다 — 공백만 다른 바꿈은 바꿈이 아니다(쓰기 없음 · 감사 없음 · renamed 0)
+  {
+    const solo = await repo.createFinanceImport({ business_id: 'biz_dy', kind: 'accounts', file_name: 'ws.xlsx' }, actor)
+    await repo.recordFinanceImportPreview(solo.import_id, { file_sha256: sha, summary: {} }, actor)
+    const r0 = plan.renames[0]
+    const ws = await register(solo.import_id, { creates: [], renames: [{ ...r0, to: `  ${r0.from} ` }] })
+    assert.deepEqual(ws, { added: 0, renamed: 0 }, 'dummy: 공백만 다른 이름 바꿈이 쓰였다')
+    assert.equal((await repo.loadFinanceLedger()).accounts.find((a) => a.business_id === 'biz_dy' && a.account_code === r0.account_code)!.name, r0.from)
+  }
   await assert.rejects(register(imp.import_id, { creates: [plan.creates[0], plan.creates[0]], renames: [] }), /ecount_plan_invalid/)
   // 다른 사람(같은 회사 쓰기 권한자 — DY 대표이사)은 남의 업로드를 등록하지 못한다 · AIAgent는 아예 못 한다.
   // (dummy 시드에 GroupCFO 사람이 없어서 DUMMY_ROLE=GroupCFO는 회장으로 떨어진다 — 그래서 BusinessCEO)
@@ -561,6 +570,11 @@ function errorMessages() {
   assert.match(ecountImportErrorMessage('Supabase official_statement_import_ecount P0001: official_confirmed')!, /세무사 확정 결산이 이미 있습니다/)
   assert.match(ecountImportErrorMessage('Supabase x PGRST202: Could not find the function')!, /DB 반영 전/)
   assert.equal(ecountImportErrorMessage('뭔지 모를 오류'), null)
+  // 리뷰 m-2 · m-3: 바뀐 해 · 같은 해 동시 등록(활성 unique 23505 · supersede 가드)
+  assert.match(ecountImportErrorMessage('Supabase official_statement_import_ecount P0001: import_changed')!, /해가 바뀌었습니다/)
+  for (const raw of ['Supabase x 23505: duplicate key value violates unique constraint "official_statements_one_active"', 'official_statement_immutable']) {
+    assert.equal(ecountImportErrorMessage(raw), '다른 사람이 같은 해 결산을 방금 등록했습니다. 새로 고친 뒤 다시 확인해 주세요.', raw)
+  }
   for (const m of [NO_BOOKS_MESSAGE, ...['finance_import_closed', 'official_confirmed', 'statement_unbalanced'].map((c) => ecountImportErrorMessage(c)!)]) {
     assert.ok(!/회장|Chairman|CH-\d/.test(m), `직원 화면 문장에 «회장» · 기능번호: ${m}`)
   }
@@ -787,34 +801,39 @@ async function dummyAnnualEndToEnd() {
     return imp.import_id
   }
   const a1 = await start()
-  await assert.rejects(repo.registerEcountAnnual(a1, { file_sha256: sha, lines: [lines[0], lines[2]] }, actor), /statement_unbalanced/)
-  await assert.rejects(repo.registerEcountAnnual(a1, { file_sha256: sha, lines: [...lines, { account_code: '없는코드', amount: 0 }] }, actor), /statement_unknown_account/)
-  await assert.rejects(repo.registerEcountAnnual(a1, { file_sha256: sha, lines: [...lines, lines[0]] }, actor), /ecount_plan_invalid/)
-  await assert.rejects(repo.registerEcountAnnual(a1, { file_sha256: sha, lines: [] }, actor), /statement_empty/)
-  await assert.rejects(repo.registerEcountAnnual(a1, { file_sha256: 'd'.repeat(64), lines }, actor), /finance_import_hash_mismatch/)
+  await assert.rejects(repo.registerEcountAnnual(a1, { file_sha256: sha, period_key: '2024', lines: [lines[0], lines[2]] }, actor), /statement_unbalanced/)
+  await assert.rejects(repo.registerEcountAnnual(a1, { file_sha256: sha, period_key: '2024', lines: [...lines, { account_code: '없는코드', amount: 0 }] }, actor), /statement_unknown_account/)
+  await assert.rejects(repo.registerEcountAnnual(a1, { file_sha256: sha, period_key: '2024', lines: [...lines, lines[0]] }, actor), /ecount_plan_invalid/)
+  await assert.rejects(repo.registerEcountAnnual(a1, { file_sha256: sha, period_key: '2024', lines: [] }, actor), /statement_empty/)
+  await assert.rejects(repo.registerEcountAnnual(a1, { file_sha256: 'd'.repeat(64), period_key: '2024', lines }, actor), /finance_import_hash_mismatch/)
   const acc = await repo.createFinanceImport({ business_id: 'biz_dy', kind: 'accounts', file_name: 'a.xlsx' }, actor)
   await repo.recordFinanceImportPreview(acc.import_id, { file_sha256: sha, summary: {} }, actor)
-  await assert.rejects(repo.registerEcountAnnual(acc.import_id, { file_sha256: sha, lines }, actor), /finance_import_kind/)
+  await assert.rejects(repo.registerEcountAnnual(acc.import_id, { file_sha256: sha, period_key: '2024', lines }, actor), /finance_import_kind/)
   assert.equal((await repo.getFinanceImport(a1))!.status, 'draft', 'dummy: 막힌 연간 등록이 committed를 남겼다')
   assert.equal((await repo.listOfficialStatements('biz_dy', 'all')).length, 0, 'dummy: 막힌 연간 등록이 결산을 남겼다')
 
-  const id1 = await repo.registerEcountAnnual(a1, { file_sha256: sha, lines }, actor)
+  // 리뷰 m-2: 사람이 본 해와 업로드의 해가 다르면 멈춘다
+  await assert.rejects(repo.registerEcountAnnual(a1, { file_sha256: sha, period_key: '2023', lines }, actor), /import_changed/)
+  // 리뷰 m-5: 줄마다 2자리로 반올림한 뒤 균형 — 1000.004는 1000.00(닫힘), 1000.006은 1000.01(안 닫힘). DB round(x, 2)와 같다.
+  const nearly = (v: number) => [{ ...lines[0], amount: v }, ...lines.slice(1)]
+  await assert.rejects(repo.registerEcountAnnual(a1, { file_sha256: sha, period_key: '2024', lines: nearly(1000.006) }, actor), /statement_unbalanced: 차이 0.01원/)
+  const id1 = await repo.registerEcountAnnual(a1, { file_sha256: sha, period_key: '2024', lines: nearly(1000.004) }, actor)
   const ecount = await repo.listOfficialStatements('biz_dy', 'ecount_excel')
   assert.deepEqual(ecount.map((s) => [s.id, s.basis, s.import_id, s.evidence_url, s.period_key]), [[id1, 'ecount_excel', a1, null, '2024']])
   assert.match(ecount[0].memo, /^ECOUNT 엑셀 업로드 — 연간 재무제표 2024 · 파일 DY 2024\.xlsx · import /)
   assert.equal((await repo.listOfficialStatements('biz_dy')).length, 0, '기본 목록(월별 잠금 · 기준 문구)은 세무사 확정만 — ECOUNT 잠정이 월을 잠그면 안 된다')
   assert.equal((await repo.getFinanceImport(a1))!.status, 'committed')
-  await assert.rejects(repo.registerEcountAnnual(a1, { file_sha256: sha, lines }, actor), /finance_import_closed/)
+  await assert.rejects(repo.registerEcountAnnual(a1, { file_sha256: sha, period_key: '2024', lines }, actor), /finance_import_closed/)
   // 재업로드 = 새 버전(supersede) — 활성 ECOUNT 행은 하나
   const a2 = await start()
-  const id2 = await repo.registerEcountAnnual(a2, { file_sha256: sha, lines }, actor)
+  const id2 = await repo.registerEcountAnnual(a2, { file_sha256: sha, period_key: '2024', lines }, actor)
   const now = await repo.listOfficialStatements('biz_dy', 'ecount_excel')
   assert.deepEqual(now.map((s) => [s.id, s.supersedes_id]), [[id2, id1]])
   // 세무사 확정이 서면 그 해의 ECOUNT 업로드는 거부 · 세무사 저장은 ECOUNT 행을 안 민다
   await repo.saveOfficialStatement({ business_id: 'biz_dy', period_kind: 'year', period_key: '2024', evidence_url: 'https://drive.example/a', memo: '세무사 2024', lines }, actor)
   assert.equal((await repo.listOfficialStatements('biz_dy', 'all')).length, 2, '세무사 확정과 ECOUNT 잠정이 같이 선다')
   const a3 = await start()
-  await assert.rejects(repo.registerEcountAnnual(a3, { file_sha256: sha, lines }, actor), /official_confirmed/)
+  await assert.rejects(repo.registerEcountAnnual(a3, { file_sha256: sha, period_key: '2024', lines }, actor), /official_confirmed/)
   await repo.cancelFinanceImport(a3, actor)
   await repo.cancelFinanceImport(acc.import_id, actor)
 }

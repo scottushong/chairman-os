@@ -96,6 +96,12 @@ export function dummyCanKeepBooks(businessId: string): boolean {
 
 const key = (businessId: string, code: string) => `${businessId}|${code}`
 
+/** 금액을 센트 정수로 — Postgres round(x, 2)와 같게 0.5는 0에서 먼 쪽으로(0051 리뷰 m-5). */
+function cents(amount: number): number {
+  const c = Math.sign(amount) * Math.round(Math.abs(amount) * 100)
+  return c === 0 ? 0 : c
+}
+
 /** mock 계정 위에 얹은 계정들. 키는 business|code. mock 계정을 고치면 여기 복사본이 선다. */
 let accounts: Map<string, Account> | null = null
 
@@ -226,15 +232,17 @@ export async function dummyApplyEcountAccounts(
   for (const r of merge.renames) {
     const ok =
       typeof r.account_code === 'string' && r.account_code !== '' && typeof r.from === 'string' &&
-      typeof r.to === 'string' && r.to.trim() !== '' && r.to !== r.from
+      typeof r.to === 'string' && r.to.trim() !== ''
     if (!ok || seen.has(r.account_code)) throw new Error(`ecount_plan_invalid: 이름 바꿈 ${r.account_code}`)
     seen.add(r.account_code)
   }
+  // 0051 리뷰 m-1: 이름은 늘 앞뒤 공백을 걷고 비교한다. 공백만 다른 바꿈은 빠진다(쓰기도 감사도 없음).
+  const renames = merge.renames.filter((r) => r.to.trim() !== r.from.trim())
   for (const c of merge.creates) {
     if (store.has(key(businessId, c.account_code))) throw new Error(`account_exists: ${c.account_code}`)
   }
-  for (const r of merge.renames) {
-    if (store.get(key(businessId, r.account_code))?.name !== r.from) throw new Error(`account_changed: ${r.account_code}`)
+  for (const r of renames) {
+    if (store.get(key(businessId, r.account_code))?.name.trim() !== r.from.trim()) throw new Error(`account_changed: ${r.account_code}`)
   }
   // 0015 accounts_category_section 제약
   for (const c of merge.creates) {
@@ -256,12 +264,12 @@ export async function dummyApplyEcountAccounts(
       active: c.active,
     })
   }
-  for (const r of merge.renames) {
+  for (const r of renames) {
     const before = store.get(key(businessId, r.account_code))!
     store.set(key(businessId, r.account_code), { ...before, name: r.to.trim() })
   }
-  note(actor, `${auditNote} — 더함 ${merge.creates.length} · 이름 ${merge.renames.length}`)
-  return { added: merge.creates.length, renamed: merge.renames.length }
+  note(actor, `${auditNote} — 더함 ${merge.creates.length} · 이름 ${renames.length}`)
+  return { added: merge.creates.length, renamed: renames.length }
 }
 
 export async function applyStandardChart(businessId: string, actor: AuditActor): Promise<number> {
@@ -399,11 +407,12 @@ export async function saveOfficialStatement(
       .filter((a) => a.business_id === input.business_id)
       .map((a) => [a.account_code, a.section]),
   )
-  const balance = input.lines.reduce((total, l) => {
+  // 0051 리뷰 m-5: 줄마다 2자리로 반올림한 뒤 잰다(DB round(x, 2)와 같게 — 센트 정수로 더해 부동소수 오차를 없앤다).
+  const balanceCents = input.lines.reduce((total, l) => {
     const section = sectionOf.get(l.account_code)
-    return section && BALANCE_SHEET_SECTIONS.includes(section) ? total + l.amount : total
+    return section && BALANCE_SHEET_SECTIONS.includes(section) ? total + cents(l.amount) : total
   }, 0)
-  if (balance !== 0) throw new Error(`재무상태표가 닫히지 않습니다. 차이 ${balance}원`)
+  if (balanceCents !== 0) throw new Error(`재무상태표가 닫히지 않습니다. 차이 ${balanceCents / 100}원`)
 
   const now = new Date().toISOString()
   // 0050: 세무사 저장은 세무사 행만 supersede한다 — ECOUNT 잠정 행은 그대로.
@@ -437,7 +446,7 @@ export async function saveOfficialStatement(
       statement_id: id,
       business_id: input.business_id,
       account_code: l.account_code,
-      amount: l.amount,
+      amount: cents(l.amount) / 100,
     })),
   )
   note(actor, `official ${input.business_id}:${input.period_key}${prev ? ` (정정 #${prev.id})` : ''}`)
@@ -471,11 +480,11 @@ export async function dummyImportEcountAnnual(
         s.business_id === imp.business_id && s.period_kind === 'year' && s.period_key === imp.period_key && s.basis === basis && s.superseded_at === null,
     )
   if (active('accountant')) throw new Error('official_confirmed')
-  const balance = lines.reduce((t, l) => {
+  const balanceCents = lines.reduce((t, l) => {
     const section = store.get(key(imp.business_id, l.account_code))!.section
-    return BALANCE_SHEET_SECTIONS.includes(section) ? t + l.amount : t
+    return BALANCE_SHEET_SECTIONS.includes(section) ? t + cents(l.amount) : t
   }, 0)
-  if (balance !== 0) throw new Error(`statement_unbalanced: 차이 ${balance}원`)
+  if (balanceCents !== 0) throw new Error(`statement_unbalanced: 차이 ${balanceCents / 100}원`)
 
   const now = new Date().toISOString()
   const prev = active('ecount_excel')
@@ -495,7 +504,7 @@ export async function dummyImportEcountAnnual(
     basis: 'ecount_excel',
     import_id: imp.import_id,
   })
-  officialLines.push(...lines.map((l) => ({ statement_id: id, business_id: imp.business_id, account_code: l.account_code, amount: l.amount })))
+  officialLines.push(...lines.map((l) => ({ statement_id: id, business_id: imp.business_id, account_code: l.account_code, amount: cents(l.amount) / 100 })))
   note(actor, `official ECOUNT ${imp.business_id}:${imp.period_key}${prev ? ` (이전 #${prev.id})` : ''}`)
   return id
 }

@@ -2337,6 +2337,17 @@ ECOUNT 열 구성 캡처가 없어 **열은 사람이 지정한다**(머리글 �
 - **0047 검사의 «거부» 판정에 books_forbidden을 더했다** — official_statement_save가 정책 대신 몸통에서 42501로 거절한다(같은 거부).
 - **definerUnderNonBypassOwner의 force 카탈로그(표 여섯)에는 안 넣고 0051 전용 실험을 따로 세웠다**(ecountRpcUnderNonBypassOwner — 소유자 넘김 → 세 RPC 성공 → official_statements에 force를 되살리면 RLS 거부 대조군). 다른 선택지: 기존 실험에 표 둘을 더하기(그 실험의 시드가 0051 사람들과 섞인다).
 
+**0051 리뷰 반영(2026-10-04, 0051 미적용이라 파일을 그 자리에서 고침)**
+- **m-1 이름 바꿈 경쟁**: update도 `btrim(a.name) = btrim(from)`을 다시 대고, 행 수가 모자라면 `account_changed`(books_forbidden 아님). 공백만 다른 바꿈은 계획에서 빠진다(감사 · 쓰기 없음). dummy도 같다. 다른 선택지: accounts 행을 for update로 먼저 잠그기(같은 효과에 잠금이 하나 더).
+- **m-2 해**: `official_statement_import_ecount(p_import_id, p_file_sha256, p_period_key, p_lines)` — 앱이 미리보기에서 확정한 해를 보내고 업로드의 period_key와 다르면 `import_changed`.
+- **m-3**: 23505 · official_statements_one_active · official_statement_immutable → «다른 사람이 같은 해 결산을 방금 등록했습니다. 새로 고친 뒤 다시 확인해 주세요.»(import-errors.ts · statements.ts).
+- **m-4 (그대로 둠)**: official_statement_save는 여전히 감사를 **나중에** 쓴다 — 한 트랜잭션이라 결과는 같고, 0020 본문을 그대로 두는 쪽을 골랐다.
+- **m-5 반올림**: 두 함수 다 줄마다 `round(x, 2)` 뒤 균형을 재고 그 값으로 줄을 넣는다. dummy는 센트 정수(0에서 먼 쪽 반올림)로 같은 계산. 앱의 연간 금액은 원 단위 정수라 영향 없음. 다른 선택지: 소수 셋째 자리 이상이면 거부(엑셀 수식 결과의 부동소수 꼬리를 사람이 못 고친다 — 버림).
+- **m-6**: 0051의 definer 셋(ecount_accounts_import · official_statement_import_ecount · official_statement_save)은 `search_path = public, pg_temp`. 예전 마이그레이션의 definer는 손대지 않았다.
+- **m-7 배포 순서**: 0051 전 앱은 ecount_excel 행을 확정으로 센다(basis를 모름). 순서는 **DB → 앱**이고, ecount_excel 행이 생긴 뒤에는 앱을 이 릴리스 아래로 되돌리지 않는다.
+- **감사 문구 정규식 · UTF-16 차이(겉모양만)**: DB `[[:cntrl:]]` · `\s` · char_length와 앱 정규식 · `.length`는 C1 제어 문자 · 유니코드 공백 · BMP 밖 글자에서 다를 수 있다. live 문구는 DB가 만들어서 dummy 문구만 다를 수 있다.
+- **I-1 production 사전 확인(0050+0051 올리기 전, 읽기만)**: `select l.statement_id, l.business_id, s.business_id from official_statement_lines l join official_statements s on s.id = l.statement_id where l.business_id <> s.business_id;` — **0행이어야 한다**(아니면 0051의 복합 FK가 실패한다).
+
 **못 한 것 · 남은 일**
 - **월별 RPC(ecount_monthly_import)** — 대응 계정(«ECOUNT 월별손익 대응») · 정정 전표 · finance_import_slips 잇기. 월별 등록 버튼은 그대로 잠겨 있다.
 - **ECOUNT 잠정 연간을 보여 주는 화면 없음** — 등록은 되고 기본 목록에서는 빠진다(월별 잠금에 안 끼게). 공식 재무제표 화면에 «ECOUNT 엑셀(잠정)» 줄을 그리는 것은 다음.

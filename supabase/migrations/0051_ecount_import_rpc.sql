@@ -162,7 +162,7 @@ create or replace function ecount_accounts_import(
   p_creates     jsonb,
   p_renames     jsonb
 ) returns jsonb
-language plpgsql security definer set search_path = public as $fn$
+language plpgsql security definer set search_path = public, pg_temp as $fn$
 declare
   v_imp     finance_imports%rowtype;
   v_note    text;
@@ -194,11 +194,15 @@ begin
     from jsonb_array_elements(p_renames) r
    where jsonb_typeof(r) <> 'object'
       or coalesce(r->>'account_code', '') = ''
-      or coalesce(btrim(r->>'to'), '') = '' or r->>'from' is null or r->>'to' = r->>'from'
+      or coalesce(btrim(r->>'to'), '') = '' or r->>'from' is null
    limit 1;
   if found then
     raise exception using errcode = 'P0001', message = 'ecount_plan_invalid', detail = format('이름 바꿈 %s의 모양이 틀렸다.', v_bad);
   end if;
+  -- 리뷰 m-1: 이름 비교는 늘 앞뒤 공백을 걷고 한다(계획 · 장부 · update 셋 다). 공백만 다른 «바꿈»은 바꿈이 아니다 —
+  -- 감사 줄도 쓰기도 없이 빠진다(앱 planAccounts도 같은 줄을 «같음»으로 본다).
+  p_renames := coalesce((select jsonb_agg(r order by n) from jsonb_array_elements(p_renames) with ordinality e(r, n)
+                          where btrim(r->>'to') <> btrim(r->>'from')), '[]'::jsonb);
   -- 한 코드는 계획에 한 번만(새 코드 둘 · 새 코드이면서 이름 바꿈 · 이름 바꿈 둘 다 안 된다).
   select code into v_bad
     from (select c->>'account_code' as code from jsonb_array_elements(p_creates) c
@@ -223,7 +227,8 @@ begin
   select r->>'account_code' into v_bad
     from jsonb_array_elements(p_renames) r
    where not exists (select 1 from accounts a
-                      where a.business_id = v_imp.business_id and a.account_code = r->>'account_code' and a.name = r->>'from')
+                      where a.business_id = v_imp.business_id and a.account_code = r->>'account_code'
+                        and btrim(a.name) = btrim(r->>'from'))
    limit 1;
   if found then
     raise exception using errcode = 'P0001', message = 'account_changed',
@@ -242,7 +247,7 @@ begin
   end if;
   insert into audit_log (action, entity_table, entity_id, business_id, actor_user_id, actor_role, before, after, note)
   select 'update'::audit_action, 'accounts', v_imp.business_id || ':' || (r->>'account_code'), v_imp.business_id, auth.uid(), auth_role()::text,
-         jsonb_build_object('name', r->>'from'), jsonb_build_object('name', r->>'to'), v_note || ' — 이름 바꿈'
+         jsonb_build_object('name', r->>'from'), jsonb_build_object('name', btrim(r->>'to')), v_note || ' — 이름 바꿈'
     from jsonb_array_elements(p_renames) with ordinality e(r, n)
    order by n;
 
@@ -258,11 +263,13 @@ begin
   update accounts a
      set name = btrim(r->>'to')
     from jsonb_array_elements(p_renames) r
-   where a.business_id = v_imp.business_id and a.account_code = r->>'account_code';
+   where a.business_id = v_imp.business_id and a.account_code = r->>'account_code'
+     -- 리뷰 m-1: 위 확인과 이 update 사이에 다른 트랜잭션이 이름을 바꿨으면(accounts 행을 잠그지 않았다) 0행이다.
+     and btrim(a.name) = btrim(r->>'from');
   get diagnostics v_renamed = row_count;
   if v_renamed <> jsonb_array_length(p_renames) then
-    -- 위에서 다 있는 것을 봤으니 여기 오면 정책이 update를 0행으로 걸렀다는 뜻이다 — 반쪽 등록을 남기지 않는다.
-    raise exception using errcode = '42501', message = 'books_forbidden', detail = '이름을 바꿀 계정 일부를 고치지 못했다.';
+    -- 그 사이 이름이 바뀌었거나(경쟁) 정책이 걸렀다 — 반쪽 등록을 남기지 않고 «다시 미리보기»로 멈춘다(감사 줄도 되돌아간다).
+    raise exception using errcode = 'P0001', message = 'account_changed', detail = '이름을 바꿀 계정 일부가 그 사이 바뀌었다. 미리보기를 다시 한다.';
   end if;
 
   update finance_imports
@@ -292,9 +299,10 @@ grant execute on function ecount_accounts_import(uuid, text, jsonb, jsonb) to au
 create or replace function official_statement_import_ecount(
   p_import_id   uuid,
   p_file_sha256 text,
+  p_period_key  text,   -- 미리보기 때 사람이 본 해('YYYY'). 업로드 줄의 period_key와 같아야 한다(리뷰 m-2).
   p_lines       jsonb   -- [{account_code, amount}, ...]
 ) returns bigint
-language plpgsql security definer set search_path = public as $fn$
+language plpgsql security definer set search_path = public, pg_temp as $fn$
 declare
   v_imp     finance_imports%rowtype;
   v_prev    official_statements%rowtype;
@@ -308,6 +316,12 @@ begin
   -- 0050 finance_imports_period_shape가 annual이면 'YYYY'로 묶는다. 미리보기 전이면 비어 있다.
   if v_imp.period_key is null then
     raise exception using errcode = 'P0001', message = 'finance_import_period', detail = '몇 년도 자료인지 정해지지 않았다.';
+  end if;
+  -- 리뷰 m-2: 서버가 해를 고른 뒤 같은 업로드를 다른 탭에서 다른 해로 다시 미리보기했으면 period_key가 바뀐다 —
+  -- 사람이 본 해와 실을 해가 다르면 멈춘다.
+  if p_period_key is distinct from v_imp.period_key then
+    raise exception using errcode = 'P0001', message = 'import_changed',
+      detail = format('미리보기의 해(%s)와 업로드의 해(%s)가 다르다. 미리보기를 다시 한다.', p_period_key, v_imp.period_key);
   end if;
 
   if jsonb_typeof(p_lines) is distinct from 'array' or jsonb_array_length(p_lines) = 0 then
@@ -344,7 +358,8 @@ begin
   end if;
 
   -- 자산 + 부채 + 자본 = 0(원장 규약). official_statement_save와 같은 식이다.
-  select coalesce(sum((l->>'amount')::numeric), 0)
+  -- 리뷰 m-5: 줄마다 먼저 2자리로 반올림한 뒤 더한다 — 칸(numeric(20,2))에 앉는 값과 균형을 잰 값이 같아야 한다.
+  select coalesce(sum(round((l->>'amount')::numeric, 2)), 0)
     into v_balance
     from jsonb_array_elements(p_lines) l
     join accounts a
@@ -392,7 +407,7 @@ begin
   values (v_id, v_imp.business_id, 'year', v_imp.period_key, null, v_note, auth.uid(), v_prev.id, 'ecount_excel', v_imp.import_id);
 
   insert into official_statement_lines (statement_id, business_id, account_code, amount)
-  select v_id, v_imp.business_id, l->>'account_code', (l->>'amount')::numeric
+  select v_id, v_imp.business_id, l->>'account_code', round((l->>'amount')::numeric, 2)
     from jsonb_array_elements(p_lines) l;
 
   update finance_imports
@@ -407,11 +422,11 @@ begin
 end;
 $fn$;
 
-comment on function official_statement_import_ecount(uuid, text, jsonb) is
+comment on function official_statement_import_ecount(uuid, text, text, jsonb) is
   '0051. ECOUNT 연간 재무제표 업로드 등록(basis=ecount_excel · 잠정). 세무사 확정 해 거부 · 균형 · ECOUNT 활성 행 supersede · 감사 먼저 · 헤더 · 줄 · committed를 한 트랜잭션으로.';
 
-revoke all on function official_statement_import_ecount(uuid, text, jsonb) from public, anon;
-grant execute on function official_statement_import_ecount(uuid, text, jsonb) to authenticated;
+revoke all on function official_statement_import_ecount(uuid, text, text, jsonb) from public, anon;
+grant execute on function official_statement_import_ecount(uuid, text, text, jsonb) to authenticated;
 
 -- =====================================================================
 -- 3절. official_statement_save — 세무사 확정 저장을 definer로
@@ -420,6 +435,7 @@ grant execute on function official_statement_import_ecount(uuid, text, jsonb) to
 --     ① language 줄의 security invoker → definer (4절이 직접 insert 정책을 지우기 때문)
 --     ② 맨 앞 권한 판정 한 덩어리 — 0020 official_statements_insert(can_keep_books and created_by = auth.uid()) ·
 --        restrictive 둘(AIAgent · Integration)이 하던 일. created_by는 칸 기본값 auth.uid()가 그대로 적는다.
+--     ③ 리뷰 m-5: 줄 금액을 2자리로 반올림한 뒤 균형을 잰다(칸에 앉는 값과 같게) · ④ search_path에 pg_temp(리뷰 m-6)
 --   실패 낱말 books_forbidden(42501) — statements.ts가 42501을 «권한이 없습니다»로 그린다(문장 그대로).
 -- =====================================================================
 create or replace function official_statement_save(
@@ -430,7 +446,7 @@ create or replace function official_statement_save(
   p_memo         text,
   p_lines        jsonb   -- [{account_code, amount}, ...]
 ) returns bigint
-language plpgsql security definer set search_path = public as $fn$
+language plpgsql security definer set search_path = public, pg_temp as $fn$
 declare
   v_prev    official_statements%rowtype;
   v_id      bigint;
@@ -448,7 +464,7 @@ begin
   end if;
 
   -- 자산 + 부채 + 자본 = 0. 원장 규약(차변 − 대변)에서 재무상태표가 닫힌다는 뜻이 이것이다.
-  select coalesce(sum((l->>'amount')::numeric), 0)
+  select coalesce(sum(round((l->>'amount')::numeric, 2)), 0)
     into v_balance
     from jsonb_array_elements(p_lines) l
     join accounts a
@@ -484,7 +500,7 @@ begin
   returning id into v_id;
 
   insert into official_statement_lines (statement_id, business_id, account_code, amount)
-  select v_id, p_business_id, l->>'account_code', (l->>'amount')::numeric
+  select v_id, p_business_id, l->>'account_code', round((l->>'amount')::numeric, 2)
     from jsonb_array_elements(p_lines) l;
 
   insert into audit_log (action, entity_table, entity_id, business_id, actor_user_id, actor_role, before, after, note)
