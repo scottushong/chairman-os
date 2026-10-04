@@ -165,13 +165,18 @@ RLS를 **우회하는** 함수는 이 저장소에 없다. definer 함수는 전
 | `interventions_bump()` (0034·0035) | (트리거) | `intervention_counts`의 쓰기 권한이 아무에게도 없어서 definer다. 사람이 부를 수 없게 `execute`를 다시 주지 않았다. 0035가 몸통만 갈아 `monitor`를 다섯 번째로 센다 |
 | `can_write_attention()` (0035) | boolean 하나 | 정책이 부르는 판정 함수다. **예외를 올리는** 쪽(Chairman·GroupCFO·AIAgent)이고, 회사 판정은 `has_business()`에 맡긴다. `exceptions`의 insert와 **읽기의 둘째 갈래**가 이것을 부른다 — 야간 Job이 자기가 넣은 줄을 `returning`으로 못 읽으면 점수를 붙일 id를 알 수 없다 |
 | `can_score_attention()` (0035) | boolean 하나 | 정책이 부르는 판정 함수다. **점수를 매기는** 쪽으로 한 역할 더 좁다 — Chairman·AIAgent뿐이고 GroupCFO는 없다(원문: "쓰기는 규칙 엔진과 Chairman"). 역할 목록이 두 벌이 되지 않게 몸통이 `can_write_attention()`을 부른다 |
+| `ecount_accounts_import()` (0051) | (쓰는 문) `{added, renamed}` | ECOUNT 계정과목 등록 — 감사 → 새 코드 → 이름 → 업로드 committed를 **한 트랜잭션**으로. definer인 이유는 committed 전이 하나다: 사람의 `finance_imports_update` with check가 `draft`·`cancelled`뿐이라(0051) «빈 committed»를 사람이 못 만든다. 몸통의 `finance_import_claim()`이 본인 · draft · 종류 · sha256 · `can_keep_books` · ECOUNT 회사 · 사람(AIAgent/Integration 아님)을 다시 본다. accounts · audit_log는 force 그대로 — 그 쓰기는 호출자 정책을 다시 탄다 |
+| `official_statement_import_ecount()` (0051) | (쓰는 문) 결산 id 하나 | ECOUNT 연간(잠정) 등록. 공식 재무제표 헤더 · 줄은 0051부터 **직접 insert 정책이 없다**(균형 · 감사 없이 들어오던 구멍) — 그래서 definer이고, 그래서 `official_statements`·`official_statement_lines`의 **force를 내렸다**(①). 쓰기 grant는 걷었고 읽기는 0047 정책 그대로다. 세무사 확정 해 거부 · 균형 · ECOUNT 활성 행 supersede · 감사 먼저 |
+| `official_statement_save()` (0020→0051) | (쓰는 문) 결산 id 하나 | 세무사 확정 저장. 0051에서 invoker → definer — 위와 같은 이유(직접 insert 정책 없음). 정책이 하던 판정(`can_keep_books` · AIAgent/Integration 거부)을 몸통 맨 앞에서 한다 |
+| `finance_import_claim()` · `ecount_audit_note()` · `ecount_code_business()` (0051) | (도우미) | 위 두 문 안에서만 돈다 — execute를 사람에게서 다 걷었다. `ecount_code_business`는 앱 `ECOUNT_CODE_BUSINESSES`, `ecount_audit_note`는 앱 `ecountAuditNote`와 같아야 한다(check-migrations가 대조) |
 
 두 가지가 이 목록을 지탱한다.
 
 1. **FORCE가 걸린 표에서는 definer가 문이 되지 못한다.** FORCE는 소유자까지 정책 아래로
    끌어내리고, Supabase의 `postgres`는 BYPASSRLS가 아니다 — definer가 **조용히 0행**을
    받는다(0027 1절). 그래서 문을 세우는 표에서는 force를 먼저 내린다
-   (`chairman_checkins` 0023, `projects` 0027, `user_settings` 0029, `decisions` 0034).
+   (`chairman_checkins` 0023, `projects` 0027, `user_settings` 0029, `decisions` 0034,
+   `official_statements` · `official_statement_lines` 0051 — 사람의 insert 정책을 지운 표라 force가 남으면 definer가 **늘** 거부된다).
    **표가 열리는 것이 아니다**: enable도 정책도 그대로라 `authenticated`로 붙는 실제 경로는
    정책을 한 줄도 빠짐없이 탄다. 내려가는 것은 '소유자도 정책을 받는가' 하나뿐이고,
    그 자리의 자물쇠는 revoke다. `check-migrations.ts`가 이 표들을 카탈로그로 지킨다.
