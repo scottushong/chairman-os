@@ -169,6 +169,7 @@ RLS를 **우회하는** 함수는 이 저장소에 없다. definer 함수는 전
 | `official_statement_import_ecount()` (0051) | (쓰는 문) 결산 id 하나 | ECOUNT 연간(잠정) 등록. 공식 재무제표 헤더 · 줄은 0051부터 **직접 insert 정책이 없다**(균형 · 감사 없이 들어오던 구멍) — 그래서 definer이고, 그래서 `official_statements`·`official_statement_lines`의 **force를 내렸다**(①). 쓰기 grant는 걷었고 읽기는 0047 정책 그대로다. 세무사 확정 해 거부 · 균형 · ECOUNT 활성 행 supersede · 감사 먼저 |
 | `official_statement_save()` (0020→0051) | (쓰는 문) 결산 id 하나 | 세무사 확정 저장. 0051에서 invoker → definer — 위와 같은 이유(직접 insert 정책 없음). 정책이 하던 판정(`can_keep_books` · AIAgent/Integration 거부)을 몸통 맨 앞에서 한다 |
 | `finance_import_claim()` · `ecount_audit_note()` · `ecount_code_business()` (0051) | (도우미) | 위 두 문 안에서만 돈다 — execute를 사람에게서 다 걷었다. `ecount_code_business`는 앱 `ECOUNT_CODE_BUSINESSES`, `ecount_audit_note`는 앱 `ecountAuditNote`와 같아야 한다(check-migrations가 대조) |
+| `ecount_monthly_import()` (0052) | (쓰는 문) 달마다 무엇을 했나 `{posted, corrected, unchanged, months}` | ECOUNT 월별 손익 등록 — 달마다 요약 전표(손익 줄 + 대응 계정 `ECOUNT-PL` 한 줄) · 같은 달 재업로드는 `post_correction`(역분개 + 정정분개) + 옛 `finance_import_slips` 줄 supersede · committed가 **한 트랜잭션**. definer인 이유는 0051과 같다(committed 전이 · 사람이 부를 수 없는 도우미). 판정은 `finance_import_claim()` + 원본 첨부 `for update` · 마감 달 · 세무사 확정 달 · 손익 계정만을 몸통이 다시 본다. 장부 표(journal_entries · journal_lines · accounts · closings · audit_log)는 force 그대로 — 호출자 정책을 다시 탄다. 새 force 해제 없음. 도우미 `ecount_monthly_counter_code()`는 아무도 못 부른다(앱 `ECOUNT_MONTHLY_COUNTER`와 check-migrations가 대조) |
 
 두 가지가 이 목록을 지탱한다.
 

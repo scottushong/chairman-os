@@ -2349,9 +2349,39 @@ ECOUNT 열 구성 캡처가 없어 **열은 사람이 지정한다**(머리글 �
 - **I-1 production 사전 확인(0050+0051 올리기 전, 읽기만)**: `select l.statement_id, l.business_id, s.business_id from official_statement_lines l join official_statements s on s.id = l.statement_id where l.business_id <> s.business_id;` — **0행이어야 한다**(아니면 0051의 복합 FK가 실패한다).
 
 **못 한 것 · 남은 일**
-- **월별 RPC(ecount_monthly_import)** — 대응 계정(«ECOUNT 월별손익 대응») · 정정 전표 · finance_import_slips 잇기. 월별 등록 버튼은 그대로 잠겨 있다.
+- ~~**월별 RPC(ecount_monthly_import)**~~ → **[0052에서 해소]** 아래 «2026-10-04 — ECOUNT 월별 등록 RPC 0052».
 - **ECOUNT 잠정 연간을 보여 주는 화면 없음** — 등록은 되고 기본 목록에서는 빠진다(월별 잠금에 안 끼게). 공식 재무제표 화면에 «ECOUNT 엑셀(잠정)» 줄을 그리는 것은 다음.
 - **production 기존 줄의 복합 FK** — official_statement_lines의 business_id가 헤더와 어긋난 줄이 있으면 0051이 실패한다(지금까지 줄은 official_statement_save 하나가 같은 회사로만 넣어서 없을 것). staging 적용 때 확인.
 - **dummy에 감사 기록이 없다** — live는 RPC 안에서 남긴다. dummy는 콘솔 note뿐(다른 dummy 쓰기와 같은 한계).
 - **finance_imports.summary는 만든 사람이 draft일 때 PostgREST로 고칠 수 있다**(mapping · picks) — 둘 다 «그 사람의 선택»이고 금액은 늘 원본에서 다시 읽으니 그대로 둔다(0050 «열 지정» 절과 같은 판단).
 - **next build · 화면 dummy 점검(:3100)은 하지 않았다** — 이 블록은 typecheck · lint · check 스크립트까지(서버는 컨트롤러가).
+
+## 2026-10-04 — ECOUNT 월별 등록 RPC 0052
+
+`ecount_monthly_import(p_import_id, p_file_sha256, p_period_key, p_basis, p_months)` → `{posted, corrected, unchanged, months}` 한 트랜잭션. 월별 등록 버튼을 열었다(live · dummy 같은 판정 · 같은 거부 낱말 · `registerEcountMonthly`). 0050 «0051 월별 RPC가 챙길 것» 세 줄과 «업로드 전표 잇기 · 내리기»를 이 RPC가 지킨다.
+
+**고른 것(다른 선택지 — 버린 이유)**
+- **대응 계정 = `ECOUNT-PL` «ECOUNT 월별손익 대응» · equity · cash_flow operating · source ecount, 없으면 RPC가 감사 → 만든다** — 그 달 손익 합(= −순이익)의 반대쪽 한 줄. equity라 현금 · 채권 · 채무 KPI를 안 건드리고, operating이라 현금흐름표가 순이익을 되돌려 «현금 증감 0»으로 검산이 맞는다. 다른 선택지: 가지급금(1360, 월별 그리드의 미분류) — 자산이라 재무상태표가 매달 커지고 «미분류 차액» 경고와 섞인다 · cash_flow null — 현금흐름표 검산 불일치 · 숫자 코드(39xx) — ECOUNT 코드와 부딪힐 수 있다.
+- **누계 → 당월은 앱이 바꾸고(ytdToMonthly) DB는 basis가 미리보기에서 확정한 열 지정(summary.mapping.basis)과 같은지만 본다**(다르면 `import_changed`). 다른 선택지: 누계 원값을 DB로 보내 DB가 빼기(같은 규칙이 SQL · TS 두 벌 — 빈 달 처리까지 어긋날 자리가 생긴다) · 검사 없음(사람이 본 표시와 실은 금액이 갈라져도 모른다). 앱 변환은 check-ecount-import(누계판 등록 줄 = 당월판 등록 줄)와 check-migrations(ytdToMonthly 결과가 장부의 달 금액)가 잰다.
+- **재업로드 = `post_correction`을 그대로 부른다**(역분개 + 정정분개 · 같은 호출자 · 같은 트랜잭션) → 옛 줄 supersede → 정정분개를 새 활성 줄로. 다른 선택지: 역분개를 RPC가 손으로(정확한 반대 모양을 두 벌 유지) · 옛 전표를 지우기(0016 위반).
+- **내용이 같으면 건너뛴다**(계정 · 차대 · 금액의 모음이 같을 때 — 전표 · 감사 없음, 결과 unchanged). 다른 선택지: 늘 정정(같은 파일 두 번에 정정 전표가 쌓인다).
+- **활성 업로드 전표가 이미 역분개됐으면 누가 했든 `ecount_month_reversed`로 멈춘다** — 본인이 한 정확한 역분개도 이어 처리하지 않는다(그 정정분개가 손 전표로 남아 있으면 새 업로드와 두 번 센다). 다른 선택지: 본인의 정확한 역분개면 줄만 내리고 이어 싣기(DEFERRED 0050 «이어 처리») — 정정분개 쪽 겹침을 RPC가 판단할 수 없어 버림.
+- **재무상태표 계정이 섞이면 거부(`ecount_monthly_bs_account`) · 미리보기도 경고 → 차단** — 월별 손익 파일에 BS가 맞으면 거의 이름 오매칭이다. 다른 선택지: BS 줄만 빼고 싣기(사람이 모르게 줄이 사라진다).
+- **비활성 계정 · 한 달 한 계정 두 줄 · 대응 계정 줄도 미리보기가 먼저 막는다**(RPC도 거부) — 등록 단계에서 처음 알게 하지 않는다. 연간과 같은 «한 계정 한 줄».
+- **회사 단위 advisory lock**(`pg_advisory_xact_lock(hashtext('ecount_monthly_import:'||회사))`) — 같은 회사 월별 등록 둘이 같은 달 활성 줄 · 대응 계정을 동시에 만지지 않게. 기다린 쪽은 앞 등록이 끝난 장부를 보고 정정으로 이어 간다. 다른 선택지: 활성 줄 `for update`만(없던 달은 잠글 줄이 없어 unique 23505로 깨진다 — 그 경우 문장은 `SAME_MONTH_RACE_MESSAGE`로 남겨 뒀다).
+- **원본 확인 = 첨부 줄 `for update` · 정확히 하나 · 올린 사람 = 만든 사람 · 같은 회사 · xlsx · Storage 객체 있음**(`ecount_original_missing`). sha256은 0051 claim이 p_file_sha256(서버가 방금 다시 읽은 파일)과 대조. 객체 확인은 소유자에게 `storage.objects` select 권한이 있을 때만(아래 «남은 일»).
+- **마감 달(그 달 이후 closings 포함) `closed_period` · 세무사 확정(accountant 활성 · 해 또는 분기)이 덮은 달 `official_month_locked`** — 미리보기(lastClosed · isLocked)와 같은 판정. ECOUNT 잠정 연간(ecount_excel)은 월을 잠그지 않는다. 다른 선택지: 마감 달은 당월 자동 정정(설계서 B-③ — 손익이 엉뚱한 달로 간다, 버림).
+- **금액 있는 달만 보낸다**(monthlyLedgerMonths) — 0원뿐인 달은 손대지 않는다. 다른 선택지: 지정한 달 전부(빈 달이 앞 업로드를 지우는 것인지 «자료 없음»인지 파일만으로 가를 수 없다).
+- **감사**: 대응 계정 만들 때 한 줄(accounts) + 달마다 한 줄(entity `finance_import_slips` · `회사:YYYY-MM`, 정정이면 before에 옛 전표 · 줄) — 전표 번호는 insert 뒤에 정해져 entity를 달로 잡았다. 정정이면 post_correction이 자기 감사 줄을 하나 더 남긴다. note는 DB `ecount_audit_note('monthly', 달, …)`.
+- **finance_import_slips의 0050 정책(사람의 insert · supersede)은 그대로** — RPC는 소유자로 쓰지만(force 없음) 실험에서 force를 걸어도 같은 결과(정책과 RPC가 같은 말). 사람이 «정확한 역분개 뒤 줄 내리기»를 PostgREST로 하는 길은 남는다(아래).
+- **수기 전표 경고에서 업로드 전표(적요 «[ECOUNT 엑셀]» · «[역분개] [ECOUNT 엑셀]»)를 뺀다** — 지난 업로드는 재업로드가 정정하므로 겹침이 아니다. 적요는 사람이 흉내 낼 수 있지만 경고 하나에만 쓴다. 다른 선택지: finance_import_slips를 읽는 repo 메서드(다음).
+- **import_changed 문장을 «해나 당월/누계 표시가 바뀌었습니다»로 넓혔다**(연간 · 월별 같이 쓴다).
+
+**남은 일**
+- **`ecount_month_reversed`로 멈춘 달을 푸는 화면이 없다** — 그 역분개를 세운 사람이 PostgREST로 `finance_import_slips.superseded_at`을 채우면(0050 supersede 정책 — 정확한 반대일 때만) 다음 업로드가 새 전표로 싣는다. 화면 · 안내는 다음. 가짜 역분개(0016 범위 밖 구멍)로 막힌 달은 그 길도 없다 — 장부 블록에서.
+- **Storage 객체 확인은 `has_table_privilege('storage.objects','select')`일 때만** — Supabase에서 postgres가 storage.objects를 읽을 수 있고(그 읽기는 호출자의 Storage 정책을 탄다 — 올린 본인은 통행증 없이 본다) staging 리허설로 확인할 것. 권한이 없으면 조용히 건너뛴다(앱 readOriginal이 바로 앞에서 바이트 · 크기 · 해시를 봤다).
+- **0원이 된 달**(앞 업로드엔 금액, 새 파일엔 전부 0)은 되돌리지 않는다 — 사람이 그 달 업로드 전표를 전표 화면에서 정정한다. 미리보기에 «그 달 활성 업로드 전표가 있음(정정될 것)» 표시도 아직 없다.
+- **dummy 전표 금액은 정수만**(entryProblem) — DB는 소수 둘째 자리까지 받는다. ECOUNT 금액은 단위를 곱한 뒤 반올림해 정수라 화면에서는 갈리지 않는다.
+- **dummy에 감사 · advisory lock이 없다**(콘솔 note뿐 · 한 프로세스).
+- **staging 적용 · 리허설은 하지 않았다** — 0052는 파일 · PGlite까지. 적용 순서는 0051과 같다(DB → 앱). 0052 전 앱은 월별 등록 버튼이 잠겨 있어 DB가 먼저 가도 안전하고, 0052 전 DB에서 새 앱이 등록을 누르면 PGRST202 → «DB 반영 전» 문장.
+
