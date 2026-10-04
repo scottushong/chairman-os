@@ -306,7 +306,7 @@ export default async function SettingsHubPage() {
             <p className="mt-0.5 text-t10h text-ink-muted">
               Next.js · React · Supabase · Tailwind CSS를 씁니다. 전체 목록과 각 라이선스는
               저장소의 <code>package.json</code>과 <code>node_modules</code>에 있습니다 —
-              화면이 그 목록을 손으로 옮겨 적으면 의존성이 바뀌는 날 조용히 틀린 말이 됩니다.
+              화면이 그 목록을 손으로 옮겨 적으면 쓰는 라이브러리가 바뀌는 날 조용히 틀린 말이 됩니다.
             </p>
           </div>
           <div className="rounded-lg bg-raised px-3 py-2.5">

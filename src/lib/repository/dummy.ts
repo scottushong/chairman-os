@@ -351,6 +351,36 @@ function canSeeRow(businessId: string | null, ownerId: string | null): boolean {
   )
 }
 
+/**
+ * 0002 has_business()를 옮겨 적은 것 — 회사 칸 하나로만 거르는 표(goals · milestones · alerts · strategy …).
+ * 시드의 'group' 센티널은 DB의 NULL과 같은 뜻이다(전사 역할만 본다).
+ *
+ * 2026-10-04: 이 문이 없던 목록이 dummy 직원 화면에 다른 회사를 흘렸다 — /calendar의 마일스톤 링크
+ * (/business/biz_debutphoto)와 /approvals의 다른 회사 결재. live는 RLS가 이미 자른다. 직원은 자기
+ * 회사 밖의 이름 · 링크 · 존재를 보지 않아야 하고, dummy가 그 화면을 검증하는 자리라 같은 문을 둔다.
+ */
+function seesBusiness(businessId: string | null): boolean {
+  return dummyHasBusiness(memoryPerson(dummyViewer().user_id), businessId === 'group' ? null : businessId)
+}
+
+/** 0002 can_read_restricted() — 핵심 인력 · 야간 산출물처럼 [제한] 등급 표의 읽기 역할. */
+function seesRestricted(): boolean {
+  return ['Chairman', 'GroupCFO', 'BusinessCEO', 'Executive'].includes(dummyViewer().role)
+}
+
+/** 0017 can_read_initiatives() — 이니셔티브와 일정(events)은 Chairman · GroupCFO · AIAgent만 읽는다. */
+function seesInitiatives(): boolean {
+  return ['Chairman', 'GroupCFO', 'AIAgent'].includes(dummyViewer().role)
+}
+
+/**
+ * decisions_read(0026) + decisions_lead_read(0042)를 줄여 옮긴 것 — 회사 범위 안이거나, 내가 결재선 첫 줄이다.
+ * subtree 겹은 옮기지 않았다(시드 결재에 기안자가 없어 전부 '주인 없음'으로 회사 규칙만 탄다).
+ */
+function seesDecision(d: { business_id: string; approval_line?: { user_id?: string | null }[] }): boolean {
+  return seesBusiness(d.business_id) || d.approval_line?.[0]?.user_id === dummyViewer().user_id
+}
+
 /** 화면에서 상사를 옮기면 그 순간부터 subtree도 달라져야 한다 — 시드가 아니라 현재 상태를 본다. */
 function inMemorySubtree(viewerId: string, targetId: string | null): boolean {
   if (!targetId) return false
@@ -554,7 +584,8 @@ export const dummyRepository: ChairmanRepository = {
   }),
 
   async listKeymen() {
-    return memoryKeymen.map((k) => ({ ...k }))
+    // 0015 business_keymen_read = has_business AND can_read_restricted.
+    return memoryKeymen.filter((k) => seesBusiness(k.business_id) && seesRestricted()).map((k) => ({ ...k }))
   },
 
   /** live에서는 0015의 business_keymen_write가 승인권자만 통과시킨다. dummy는 판정을 흉내 내지 않는다. */
@@ -613,16 +644,16 @@ export const dummyRepository: ChairmanRepository = {
     return [...seeded, ...owned]
   },
   async listDecisions() {
-    return [...decisions, ...memoryDecisions].map((decision) => ({
+    return [...decisions, ...memoryDecisions].filter(seesDecision).map((decision) => ({
       ...decision,
       status: memoryDecisionStatuses.get(decision.decision_id) ?? decision.status,
     }))
   },
   async listAlerts() {
-    return [...alerts]
+    return alerts.filter((a) => seesBusiness(a.business_id))
   },
   async listAiNightOutputs() {
-    return [...aiNightOutputs]
+    return aiNightOutputs.filter((o) => seesBusiness(o.business_id) && seesRestricted())
   },
 
   /**
@@ -657,7 +688,10 @@ export const dummyRepository: ChairmanRepository = {
     const hit = (...fields: (string | undefined)[]) =>
       fields.some((f) => f?.toLowerCase().includes(q))
 
-    const all = [...businesses, ...memoryBusinesses]
+    // 0002 각 표의 _read 정책처럼 보이는 것만 찾는다 — 검색 결과가 회사의 존재를 알리는 통로가 되지 않게.
+    const all = [...businesses, ...memoryBusinesses].filter((b) => seesBusiness(b.business_id))
+    const visibleProjects = new Set((await this.listProjects()).map((p) => p.project_id))
+    const visibleTasks = new Set((await this.listTasks()).map((t) => t.task_id))
     const scopeName = (id: string | null) =>
       id === null ? '그룹 공통' : (all.find((b) => b.business_id === id)?.name ?? id)
 
@@ -673,7 +707,7 @@ export const dummyRepository: ChairmanRepository = {
           business_id: b.business_id,
         })),
       ...projects
-        .filter((p) => hit(p.name))
+        .filter((p) => visibleProjects.has(p.project_id) && hit(p.name))
         .slice(0, limitPerKind)
         .map((p): SearchHit => ({
           kind: 'project',
@@ -683,7 +717,7 @@ export const dummyRepository: ChairmanRepository = {
           business_id: p.business_id,
         })),
       ...tasks
-        .filter((t) => hit(t.title))
+        .filter((t) => visibleTasks.has(t.task_id) && hit(t.title))
         .slice(0, limitPerKind)
         .map((t): SearchHit => {
           const project = projects.find((p) => p.project_id === t.project_id)
@@ -698,7 +732,7 @@ export const dummyRepository: ChairmanRepository = {
           }
         }),
       ...[...decisions, ...memoryDecisions]
-        .filter((d) => hit(d.title, d.ai_recommendation))
+        .filter((d) => seesDecision(d) && hit(d.title, d.ai_recommendation))
         .slice(0, limitPerKind)
         .map((d): SearchHit => ({
           kind: 'decision',
@@ -708,7 +742,7 @@ export const dummyRepository: ChairmanRepository = {
           business_id: d.business_id,
         })),
       ...memoryDocuments
-        .filter((d) => hit(d.title, d.doc_type))
+        .filter((d) => seesBusiness(d.business_id) && hit(d.title, d.doc_type))
         .slice(0, limitPerKind)
         .map((d): SearchHit => ({
           kind: 'document',
@@ -732,16 +766,16 @@ export const dummyRepository: ChairmanRepository = {
   },
 
   async listTopGoals() {
-    return [...topGoals]
+    return topGoals.filter((g) => seesBusiness(g.business_id))
   },
   async listMonthlyPriorities() {
-    return [...monthlyPriorities]
+    return monthlyPriorities.filter((m) => seesBusiness(m.business_id))
   },
   async listCriticalRisks() {
-    return [...criticalRisks]
+    return criticalRisks.filter((r) => seesBusiness(r.business_id))
   },
   async listNextMilestones() {
-    return [...nextMilestones]
+    return nextMilestones.filter((m) => seesBusiness(m.business_id))
   },
 
   /**
@@ -760,7 +794,7 @@ export const dummyRepository: ChairmanRepository = {
     const added = [...memoryStrategyPatches.entries()]
       .filter(([id]) => !seededIds.has(id))
       .map(([id, patch]) => ({ ...emptyStrategy(id), ...patch }))
-    return [...seeded, ...added]
+    return [...seeded, ...added].filter((c) => seesBusiness(c.business_id))
   },
 
   async listDecisionAudit() {
@@ -1424,11 +1458,11 @@ export const dummyRepository: ChairmanRepository = {
   },
 
   async listInitiatives() {
-    return memoryInitiatives.map((i) => ({ ...i }))
+    return seesInitiatives() ? memoryInitiatives.map((i) => ({ ...i })) : []
   },
 
   async getInitiative(initiativeId: string) {
-    const found = memoryInitiatives.find((i) => i.initiative_id === initiativeId)
+    const found = seesInitiatives() ? memoryInitiatives.find((i) => i.initiative_id === initiativeId) : undefined
     return found ? { ...found } : null
   },
 
@@ -1578,7 +1612,7 @@ export const dummyRepository: ChairmanRepository = {
   },
 
   async listEvents() {
-    return memoryEvents.map((e) => ({ ...e }))
+    return seesInitiatives() ? memoryEvents.map((e) => ({ ...e })) : []
   },
 
   async saveEvent(input: EventInput, actor: AuditActor) {
@@ -1636,8 +1670,11 @@ export const dummyRepository: ChairmanRepository = {
       d !== null && d <= to && (endsOn ?? d) >= from
     const items: CalendarItem[] = []
 
+    // 원천마다 live 뷰(security_invoker)가 타는 RLS를 옮겨 적는다 — events · initiatives는 0017,
+    // milestones는 has_business, decisions는 위 seesDecision.
+    const initiativeRole = seesInitiatives()
     for (const e of memoryEvents) {
-      if (!within(e.starts_on, e.ends_on)) continue
+      if (!initiativeRole || !within(e.starts_on, e.ends_on)) continue
       items.push({
         kind: 'event',
         source_id: e.event_id,
@@ -1650,7 +1687,7 @@ export const dummyRepository: ChairmanRepository = {
       })
     }
     for (const i of memoryInitiatives) {
-      if (i.status !== 'Active' || !within(i.next_action_date) || !i.next_action.trim()) continue
+      if (!initiativeRole || i.status !== 'Active' || !within(i.next_action_date) || !i.next_action.trim()) continue
       items.push({
         kind: 'next_action',
         source_id: i.initiative_id,
@@ -1663,7 +1700,7 @@ export const dummyRepository: ChairmanRepository = {
       })
     }
     for (const m of nextMilestones) {
-      if (!within(m.deadline)) continue
+      if (!seesBusiness(m.business_id) || !within(m.deadline)) continue
       const businessId = m.business_id === 'group' ? null : m.business_id
       items.push({
         kind: 'milestone',
@@ -1678,7 +1715,7 @@ export const dummyRepository: ChairmanRepository = {
     }
     for (const d of [...decisions, ...memoryDecisions]) {
       const status = memoryDecisionStatuses.get(d.decision_id) ?? d.status
-      if (status !== 'Open' || !within(d.deadline)) continue
+      if (!seesDecision(d) || status !== 'Open' || !within(d.deadline)) continue
       items.push({
         kind: 'decision',
         source_id: d.decision_id,

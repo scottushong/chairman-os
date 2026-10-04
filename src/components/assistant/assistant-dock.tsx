@@ -59,12 +59,22 @@ function writeLast(id: string | null) {
 
 const EMPTY: AssistantThread = { chatId: null, chats: [], messages: [], actions: [] }
 
-/** chair: 회장 세션인가(loadAssistant가 screenLabels를 줬나). «왜 yellow»는 회장 전용 도구(주의)로만 답하므로 회장에게만 보인다. */
+/**
+ * chair: 회장 세션인가(loadAssistant가 screenLabels를 줬나). «왜 yellow»는 회장 전용 도구(주의)로만 답하므로 회장에게만 보인다.
+ * 직원 예시에는 회사 이름도 이니셔티브도 넣지 않는다 — 자기 회사 밖의 이름을 보지 않아야 하고(2026-10-04),
+ * 이니셔티브는 회장 · CFO만 읽는다(0017).
+ */
 function examples(kind: string, lang: Lang, chair: boolean): string[] {
-  if (lang === 'en') return ['Anything wrong on this screen?', 'Initiatives without a deadline', chair ? 'Why is DY yellow?' : 'Approvals due this month']
+  if (lang === 'en') {
+    return chair
+      ? ['Anything wrong on this screen?', 'Initiatives without a deadline', 'Why is DY yellow?']
+      : ['Anything wrong on this screen?', 'Approvals due this month', 'My overdue tasks']
+  }
   if (kind === 'initiative') return ['이 건 요약해 줘', '이 화면에 틀린 것 있어?', '다음 행동을 바꿔 줘']
   if (kind === 'finance_business' || kind === 'business') return ['이 회사 최근 3개월 영업이익 합계', '이 화면에 틀린 것 있어?', '잠정과 확정이 다른 달']
-  return ['VANA 9월 손익 합계', '기한 없는 이니셔티브', chair ? '왜 DY가 yellow인가' : '이번 달 마감 결재', '이 화면에 틀린 것 있어?']
+  return chair
+    ? ['VANA 9월 손익 합계', '기한 없는 이니셔티브', '왜 DY가 yellow인가', '이 화면에 틀린 것 있어?']
+    : ['이번 달 마감 결재', '마감 지난 내 업무', '이 화면에 틀린 것 있어?']
 }
 
 export function AssistantDock({ lang }: { lang: Lang }) {

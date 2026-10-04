@@ -127,7 +127,7 @@ export function RegisterDocument({
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="예: 2026 Sticky Alliance 공급계약서"
+            placeholder="예: 2026 공급계약서"
             maxLength={120}
             disabled={busy}
             className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none placeholder:text-ink-muted focus:border-accent disabled:opacity-50"

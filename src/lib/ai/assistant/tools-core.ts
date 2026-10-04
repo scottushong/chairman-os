@@ -73,7 +73,7 @@ export const financeTool: AssistantTool = {
     input_schema: {
       type: 'object',
       properties: {
-        business: { type: 'string', description: '회사 id 또는 이름(예: VANA, biz_vana)' },
+        business: { type: 'string', description: '회사 id 또는 이름(보이는 회사 목록에서)' },
         metrics: { type: 'array', items: { type: 'string', enum: [...FINANCE_METRIC] } },
         periods: { type: 'array', items: { type: 'string', description: 'YYYY-MM' } },
         month: { type: 'integer', minimum: 1, maximum: 12, description: '해 없이 달만 말했을 때' },
