@@ -2204,3 +2204,15 @@ B-4가 찾은 결함 하나를 고쳤다. **리뷰 루프가 없는 작업이고
 - **ECOUNT 업로드** — 브랜치 DEFERRED «2026-10-03 — ECOUNT 업로드 열 지정» 절(계정 등록 한 트랜잭션 아님 · committed 전이를 앱이 함 · 연간 모호 이름 고르는 화면 없음 · 당기 한 열만 · «△»/«-» 칸 오류 등).
 - **Hook A1 결과 대기**(회장이 production SQL Editor에서) — 켜기는 첫 직원 가입 뒤.
 - **도메인 이전 보류**(첫 직원 안정 뒤).
+
+## 2026-10-04 블록 — 결과 · 미결
+
+- **/privacy 개정 적용**(1176f82) — 회장 조건부 승인대로 이름만. 1절 배지 «블록 7 · 0031»도 같은 원칙(내부 코드)으로 뺐다. 다른 선택지: 배지만 남기기(직원에게 뜻 없는 코드라 버림).
+- **다른 회사 노출 원인 = dummy 어댑터**(f23b3f3) — live는 RLS가 자른다. dummy에 `seesBusiness`(has_business) · `seesDecision`(decisions_read 줄임 + 결재선 첫 줄) · `seesInitiatives` · `seesRestricted`를 옮겨 적었다. decisions의 subtree 겹은 옮기지 않았다(시드 결재가 전부 «주인 없음»). 다른 선택지: 화면에서 거르기(판정이 두 곳 — HANDOVER §5 위반이라 버림).
+- **0049 production 반영 못 함 — 미결.** 조건 ① 직원 노출 0건 ② typecheck · lint · check 15종 · build ③ dry-run 대기 = 0049 하나 ④ master 기준 — 전부 섰고, 복원 지점 `2026-10-04 02:50 UTC`(= 11:50 KST, production 0048) · 직전 SHA `d2e73ec`를 적었다. `supabase db push`(production)가 Claude 세션의 권한 분류기에 막혔다 — 우회하지 않았다. production DB는 그대로 0048. 작업 디렉터리 link는 staging으로 되돌렸다. git push도 하지 않았다(DB → 앱 순서).
+- **ECOUNT(브랜치 `feat/ecount-import`) — 0050 · 0051 · 0052 staging까지.** 결정 · 리뷰 반영은 브랜치 DEFERRED «2026-10-04 — ECOUNT 0051 등록 RPC» · «2026-10-04 — ECOUNT 월별 등록 RPC 0052». staging E2E(가짜 xlsx, 리허설 직원 계정): 계정 등록 · 연간(△ · - · 고르기 · 재업로드 대체 · 재등록 거부) · 월별(당월 · 같은 파일 재업로드 «건너뜀» · 2월만 바뀐 파일 → 2월만 역분개 + 정정 · 누계 빈 칸 → −1월 · 재무상태표 계정 차단) 전부 통과. 마감 달 거부는 staging에 마감이 없어 화면으로 못 쟀다(PGlite 검사만) — 마감은 되돌릴 수 없어 만들지 않았다.
+- **ECOUNT 남은 것(Minor):** 목록에서 이어 간 업로드의 **거절** 문구는 새로 고침에 사라진다(성공은 «방금 등록됨»으로 남음) · 월별 첫 등록은 감사가 finance_import_slips 줄만(정정은 전표 감사도) · 업로드 전표 줄의 source가 manual(출처는 적요 · 대응 계정 · slips로만 보인다) · 빈 달이 된 재업로드는 옛 전표를 안 내린다 · close_period가 회사 advisory lock을 안 잡는다(0016부터).
+- **production에 0050~0052를 올리기 전 읽기 전용 확인**(0051 복합 FK가 실패하지 않게, 0행이어야 한다):
+  `select l.statement_id, l.business_id, s.business_id from official_statement_lines l join official_statements s on s.id = l.statement_id where l.business_id <> s.business_id;`
+- **staging 테스트 데이터**(biz_dy): ECOUNT 계정 12개(ECOUNT-PL 포함) · 1010 이름 «현금» · 공식 재무제표 #1(대체됨) · #2(2024, ecount_excel) · 월별 전표 M2401-000007 ~ M2303-000014 · finance_imports 10건 · audit_log 22~51. staging이라 지우지 않는다.
+- **Hook A1** — 쿼리를 `docs/onboarding/hook-a1.sql`로. 결과 대기.
