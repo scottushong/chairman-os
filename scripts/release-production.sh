@@ -90,14 +90,24 @@ SUPABASE_DB_PASSWORD="$PROD_PASSWORD" supabase_cli link --project-ref "$PRODUCTI
 
 MIGRATION_LIST="$(SUPABASE_DB_PASSWORD="$PROD_PASSWORD" supabase_cli migration list --linked 2>&1)" \
   || { echo "$MIGRATION_LIST"; die "migration list 실패."; }
-# Outside a terminal the CLI prints {"migrations":[{"local","remote","time"}…]} instead of a table.
+# In a terminal the CLI prints a table (`0049` | ` ` | `0049`); outside one it prints
+# {"migrations":[{"local","remote","time"}…]}. Both are read; other lines (update notice,
+# "Connecting…") are ignored. A version missing on both sides (0004) simply has no row.
 # Prints three lines: highest remote version / local-only (pending) / remote-only.
 read_migrations() {
   node -e '
-    const text = require("fs").readFileSync(0, "utf8")
-    const line = text.split(/\r?\n/).find((l) => l.trim().startsWith("{\"migrations\""))
-    if (!line) process.exit(1)
-    const rows = JSON.parse(line).migrations
+    const lines = require("fs").readFileSync(0, "utf8").split(/\r?\n/)
+    const json = lines.find((l) => l.trim().startsWith("{\"migrations\""))
+    let rows
+    if (json) {
+      rows = JSON.parse(json).migrations
+    } else {
+      rows = lines
+        .map((l) => l.split("|").map((cell) => cell.replace(/[`\s]/g, "")))
+        .filter((cells) => cells.length === 3 && cells.slice(0, 2).every((c) => c === "" || /^\d+$/.test(c)) && (cells[0] || cells[1]))
+        .map(([local, remote, time]) => ({ local, remote, time }))
+    }
+    if (!rows.length) process.exit(1)
     const remote = rows.map((r) => r.remote).filter(Boolean).sort()
     console.log(remote[remote.length - 1] ?? "")
     console.log(rows.filter((r) => r.local && !r.remote).map((r) => r.local).sort().join(" "))
