@@ -56,6 +56,35 @@ export interface MonthlyReversal {
   slip_no: string
 }
 
+/** summary.reversals(미리보기가 적은 역분개)를 믿지 않고 모양만 거른다 — 대조에만 쓴다. */
+export function parseReversals(raw: unknown): MonthlyReversal[] {
+  if (!Array.isArray(raw)) return []
+  return raw.flatMap((r) =>
+    r && typeof r === 'object' && typeof (r as MonthlyReversal).month === 'string' && typeof (r as MonthlyReversal).slip_no === 'string'
+      ? [{ month: (r as MonthlyReversal).month, slip_no: (r as MonthlyReversal).slip_no }]
+      : [],
+  )
+}
+
+/** 등록 문의 역분개 판정 문장(직원 화면). */
+export const REVERSAL_UNCONFIRMED_MESSAGE = '역분개할 달을 확인하지 않았습니다. 미리보기의 «이 달들은 역분개합니다 — 확인»에 체크한 뒤 등록하세요.'
+
+/**
+ * 월별 등록의 역분개 문(0056 리뷰 I-1 · I-2 · 재리뷰 m-d) — 역분개는 «미리보기가 본 것(summary.reversals) = 지금 다시 만든 것 =
+ * 사람이 확인한 것(confirmReversals)»일 때만. 통과면 null, 아니면 화면 문장. 서버 액션 commitEcountImport가 부른다.
+ */
+export function monthlyReversalProblem(input: {
+  recomputed: readonly MonthlyReversal[] | undefined
+  saved: unknown
+  confirm: unknown
+  ledgerChangedMessage: string
+}): string | null {
+  const now = reversalKey(input.recomputed)
+  if (now !== reversalKey(parseReversals(input.saved))) return input.ledgerChangedMessage
+  if (now && (typeof input.confirm !== 'string' || input.confirm !== now)) return REVERSAL_UNCONFIRMED_MESSAGE
+  return null
+}
+
 /** 역분개 목록을 대조용 글로(달 순). 미리보기 · 사람의 확인 · 등록 때 다시 만든 것이 같아야 한다. */
 export function reversalKey(list: readonly MonthlyReversal[] | undefined): string {
   return [...(list ?? [])].map((r) => `${r.month}:${r.slip_no}`).sort().join(',')
@@ -71,6 +100,11 @@ export function spokenMonthIndexes(
   lines: readonly Pick<PreviewLine, 'amounts'>[],
   monthCount: number,
   inPeriod: (i: number) => boolean = () => true,
+  /**
+   * 누계(재리뷰 N-1): 첫 달부터 센다. 누계 파일의 앞쪽 빈 열은 «그 달까지 누계 0»이라 그 달 당월도 0이다 — 지난 업로드 전표가
+   * 있으면 확인을 거쳐 역분개해야 다음 달(누계 − 0)과 두 번 세지 않는다.
+   */
+  fromStart = false,
 ): number[] {
   const filled = (i: number) => lines.some((l) => l.amounts[i] !== null && l.amounts[i] !== undefined)
   let first = -1
@@ -81,6 +115,7 @@ export function spokenMonthIndexes(
     last = i
   }
   if (first < 0) return []
+  if (fromStart) first = 0
   return Array.from({ length: last - first + 1 }, (_, k) => first + k).filter(inPeriod)
 }
 
@@ -140,6 +175,10 @@ export function planMonthly(sheets: readonly SheetLike[], mapping: EcountMapping
   }
   // 리뷰 I-1: 머리의 기간(«2025/07/01 ~ 2025/09/30»)이 있으면 그 밖의 달은 이 파일이 말하지 않는 달이다.
   const period = sheet ? (findPeriod(sheet.rows)?.value ?? null) : null
+  // 재리뷰 m-a: 머리 기간의 해가 지정한 해와 다르면 어느 해 자료인지 흐리다 — 막는다.
+  if (period && mapping.year && (period.from.slice(0, 4) !== mapping.year || period.to.slice(0, 4) !== mapping.year)) {
+    blocks.push(`파일 머리의 기간(${period.from} ~ ${period.to})이 지정한 해(${mapping.year}년)와 다릅니다 — 열 지정에서 해를 고치거나 그 해 파일을 올리세요`)
+  }
 
   // 합계 열 대조 — 바꾸기 전 파일 값으로. 당월이면 달의 합, 누계면 마지막으로 말한 달의 누계(빈 칸 = 0)와 같아야 한다.
   const totalProblem = new Map<StatementLine, string>()
@@ -198,8 +237,9 @@ export function planMonthly(sheets: readonly SheetLike[], mapping: EcountMapping
     const month = monthOf(monthKeys[i])
     return !period || !month || (month >= period.from.slice(0, 7) && month <= period.to.slice(0, 7))
   }
-  const spoken = new Set(spokenMonthIndexes(matched, monthKeys.length, inPeriod))
+  const spoken = new Set(spokenMonthIndexes(matched, monthKeys.length, inPeriod, ytd))
   const reversals: MonthlyReversal[] = []
+  const notes: string[] = []
   monthKeys.forEach((k, i) => {
     const month = mapping.year ? `${mapping.year}-${k.slice(1)}` : null
     const used = matched.some((l) => (l.amounts[i] ?? 0) !== 0)
@@ -210,6 +250,8 @@ export function planMonthly(sheets: readonly SheetLike[], mapping: EcountMapping
     }
     // 0056: 파일이 말하는데 금액이 없는 달 + 지난 업로드 전표 → 등록이 그 전표를 역분개한다(0052까지는 옛 전표가 남았다).
     const prevSlip = month ? ctx.uploadSlips?.[month] : undefined
+    // 재리뷰 m-c: 이 파일이 말하지 않는 달(첫 칸 앞 · 마지막 칸 뒤 · 머리 기간 밖)의 지난 업로드 전표는 그대로 둔다 — 알린다.
+    if (month && !used && !spoken.has(i) && prevSlip) notes.push(`${month}: 이 파일 밖 — 지난 업로드 전표 ${prevSlip} 그대로`)
     if (month && !used && spoken.has(i) && prevSlip) {
       if (ctx.lastClosed && month <= ctx.lastClosed) {
         blocks.push(`${month}은 이 파일에 금액이 없지만 마감된 달이라 지난 업로드 전표를 되돌리지 않습니다 — 고칠 것은 당월 정정 전표로`)
@@ -248,6 +290,7 @@ export function planMonthly(sheets: readonly SheetLike[], mapping: EcountMapping
     blocks,
     warnings,
     reversals,
+    notes,
     blockCount: blocks.length + lines.reduce((n, l) => n + l.blocks.length, 0),
     warningCount: warnings.length + lines.reduce((n, l) => n + l.warnings.length, 0),
   }

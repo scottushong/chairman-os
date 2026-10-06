@@ -299,6 +299,8 @@ export interface AmountsPreview {
   warnings: string[]
   /** 월별 — 이 파일에 금액이 없어 등록이 지난 업로드 전표를 역분개할 달 · 전표(0056). 등록 전에 사람이 확인한다. 연간은 없다 */
   reversals?: { month: string; slip_no: string }[]
+  /** 월별 — 알림(막지도 경고하지도 않는다): 이 파일 밖 달의 지난 업로드 전표는 그대로 둔다(0056 재리뷰 m-c) */
+  notes?: string[]
   blockCount: number
   warningCount: number
 }

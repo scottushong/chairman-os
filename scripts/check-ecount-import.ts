@@ -58,6 +58,8 @@ import {
   ECOUNT_MONTHLY_COUNTER,
   monthlyLedgerMonths,
   planMonthly,
+  monthlyReversalProblem,
+  REVERSAL_UNCONFIRMED_MESSAGE,
   reversalKey,
   spokenMonthIndexes,
   ytdToMonthly,
@@ -1026,13 +1028,56 @@ async function emptyMonthChecks() {
   assert.equal(hm.basis, 'ytd')
   const hp = planMonthly(hole, hm, { accounts: BOOK, ...NO_LOCKS })
   assert.ok(hp.blocks.some((b) => b.startsWith('누계 자료의 2월 열이 통째로 비어 있습니다')), hp.blocks.join(' / '))
-  // 앞쪽 빈 열(누계 0 — 그 달까지 거래 없음)은 막지 않는다.
+  // 앞쪽 빈 열(누계 0 — 그 달까지 거래 없음)은 막지 않는다. 재리뷰 N-1: 누계는 1월부터 말하는 달이다 — 1월에 지난 업로드
+  // 전표(100)가 있으면 «1월 누계 0»이라 확인을 거쳐 역분개한다(안 그러면 1월 100 + 2월 150으로 두 번 센다).
   const lead = await readEcountWorkbook(await monthlyGridXlsx({
     title: '월별 손익계산서 (누계)',
     heads: ['2025-01', '2025-02', '2025-03'],
-    rows: [['제품매출', null, 100, 150]],
+    rows: [['제품매출', null, 150, 200]],
   }))
-  assert.ok(!planMonthly(lead, { ...guessMapping(lead, 'monthly').mapping, unit: 'won' as const }, { accounts: BOOK, ...NO_LOCKS }).blocks.some((b) => b.includes('통째로 비어')))
+  const leadMapping = { ...guessMapping(lead, 'monthly').mapping, unit: 'won' as const }
+  const leadPlain = planMonthly(lead, leadMapping, { accounts: BOOK, ...NO_LOCKS })
+  assert.ok(!leadPlain.blocks.some((b) => b.includes('통째로 비어')), leadPlain.blocks.join(' / '))
+  assert.deepEqual(leadPlain.reversals, [], '지난 업로드가 없으면 앞쪽 빈 달을 보내지 않는다')
+  const leadPrev = planMonthly(lead, leadMapping, { accounts: BOOK, ...NO_LOCKS, uploadSlips: { '2025-01': 'M2501-000001' } })
+  assert.deepEqual(leadPrev.blocks, [], leadPrev.blocks.join(' / '))
+  assert.deepEqual(leadPrev.reversals, [{ month: '2025-01', slip_no: 'M2501-000001' }], '재리뷰 N-1: 누계 앞쪽 빈 열(누계 0)의 지난 업로드 전표를 남겨 두 번 센다')
+  assert.deepEqual(monthlyLedgerMonths(leadPrev).map((x) => [x.month, x.lines, x.reverses ?? null]), [
+    ['2025-01', [], 'M2501-000001'],
+    ['2025-02', [{ account_code: '4010', amount: -150 }], null],
+    ['2025-03', [{ account_code: '4010', amount: -50 }], null],
+  ], '누계 2월 150 = 2월 당월 150(1월은 역분개) — 장부 1~3월 합 = 3월 누계 200')
+  // 머리 기간은 누계에도 건다 — «2025/02/01 ~ 2025/03/31» 누계 파일의 1월은 이 파일 밖(알림만).
+  const leadQ = await readEcountWorkbook(await monthlyGridXlsx({
+    title: '월별 손익계산서 (누계)',
+    period: '2025/02/01 ~ 2025/03/31',
+    heads: ['2025-01', '2025-02', '2025-03'],
+    rows: [['제품매출', null, 150, 200]],
+  }))
+  const lq = planMonthly(leadQ, { ...guessMapping(leadQ, 'monthly').mapping, unit: 'won' as const }, { accounts: BOOK, ...NO_LOCKS, uploadSlips: { '2025-01': 'M2501-000001' } })
+  assert.deepEqual(lq.reversals, [], '머리 기간 밖(1월)은 누계여도 역분개하지 않는다')
+  assert.ok(lq.notes?.includes('2025-01: 이 파일 밖 — 지난 업로드 전표 M2501-000001 그대로'), (lq.notes ?? []).join(' / '))
+
+  // 재리뷰 m-c: 당월 파일 밖(3분기 파일의 1~6월)의 지난 업로드 전표는 «그대로» 알림.
+  assert.ok(q3p.notes?.includes('2025-01: 이 파일 밖 — 지난 업로드 전표 M2501-000001 그대로'), (q3p.notes ?? []).join(' / '))
+  assert.equal(q3p.notes?.length, 6, '1~6월 여섯 달 알림')
+  // 재리뷰 m-a: 머리 기간의 해 ≠ 지정한 해 → 막는다.
+  const otherYear = planMonthly(sheets, { ...m, year: '2024' }, { accounts: BOOK, ...NO_LOCKS })
+  assert.ok(otherYear.blocks.some((b) => b.startsWith('파일 머리의 기간(2025-01-01 ~ 2025-12-31)이 지정한 해(2024년)와 다릅니다')), otherYear.blocks.join(' / '))
+
+  // 재리뷰 m-d: 등록 문의 역분개 판정(commitEcountImport가 부르는 순수 함수).
+  const R = [{ month: '2025-03', slip_no: 'M2503-000003' }]
+  const L = 'LEDGER'
+  const key = reversalKey(R)
+  assert.equal(monthlyReversalProblem({ recomputed: [], saved: [], confirm: undefined, ledgerChangedMessage: L }), null, '역분개 없음 — 확인 없이 통과')
+  assert.equal(monthlyReversalProblem({ recomputed: R, saved: R, confirm: key, ledgerChangedMessage: L }), null, '본 것 = 다시 만든 것 = 확인 — 통과')
+  assert.equal(monthlyReversalProblem({ recomputed: R, saved: R, confirm: undefined, ledgerChangedMessage: L }), REVERSAL_UNCONFIRMED_MESSAGE, '확인 없음')
+  assert.equal(monthlyReversalProblem({ recomputed: R, saved: R, confirm: '2025-03:M2503-999999', ledgerChangedMessage: L }), REVERSAL_UNCONFIRMED_MESSAGE, '다른 목록을 확인')
+  assert.equal(monthlyReversalProblem({ recomputed: R, saved: R, confirm: ['2025-03:M2503-000003'], ledgerChangedMessage: L }), REVERSAL_UNCONFIRMED_MESSAGE, '글이 아닌 확인')
+  assert.equal(monthlyReversalProblem({ recomputed: R, saved: [], confirm: key, ledgerChangedMessage: L }), L, '미리보기 뒤 장부에 역분개할 달이 생김')
+  assert.equal(monthlyReversalProblem({ recomputed: [], saved: R, confirm: key, ledgerChangedMessage: L }), L, '미리보기 뒤 역분개할 전표가 사라짐')
+  assert.equal(monthlyReversalProblem({ recomputed: [{ month: '2025-03', slip_no: 'M2503-000009' }], saved: R, confirm: key, ledgerChangedMessage: L }), L, '그 사이 다른 전표가 활성')
+  assert.equal(monthlyReversalProblem({ recomputed: R, saved: 'garbage', confirm: key, ledgerChangedMessage: L }), L, 'summary가 망가졌으면 본 것이 없다')
   assert.equal(ecountImportErrorMessage('Supabase ecount_monthly_import P0001: import_changed — ecount_ledger_changed: 2025-03 …'), '미리보기 뒤에 장부가 바뀌었습니다 — 다시 미리보기 하세요.')
 }
 

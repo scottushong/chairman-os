@@ -63,6 +63,13 @@ export function EcountAmountsPreview({
           ))}
         </ul>
       ) : null}
+      {p.notes?.length ? (
+        <ul className="space-y-0.5 rounded-md border border-line-soft bg-raised/40 px-2.5 py-1.5 text-t11h text-ink-dim" aria-label="알림">
+          {p.notes.map((n) => (
+            <li key={n}>{n}</li>
+          ))}
+        </ul>
+      ) : null}
       {p.warnings.length ? (
         <ul className="space-y-0.5 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1.5 text-t11h text-warning">
           {p.warnings.map((w) => (
