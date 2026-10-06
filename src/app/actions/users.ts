@@ -10,6 +10,8 @@ import {
   INVITABLE_ROLE,
   MODULE_GRANT_OPTIONS,
   SECURITY_CLASS,
+  STAFF_ADMIN_PREFIX,
+  STAFF_ADMIN_ROLES,
   type PersonLanguage,
   type ProfilePatch,
   type Role,
@@ -462,6 +464,139 @@ export async function approveInvitation(input: { invitationId: unknown }): Promi
     return { error: denialMessage(e, '초대를 승인할 권한이 없습니다. (대표만 가능합니다)', user.role) }
   }
 
+  revalidatePath('/settings/users')
+  return {}
+}
+
+/**
+ * 0055 «<회사> 사용자 관리자» — 오류 키를 사람 말로. 이 문장들은 직원(관리자)이 읽는다 — «대표»로 쓴다(직원 화면 용어 원칙).
+ */
+const STAFF_ADMIN_ERROR: Record<string, string> = {
+  staff_admin_denied: '이 회사의 사용자 관리자 권한이 없습니다. 대표에게 문의하세요.',
+  staff_admin_role: '사원 · 팀장만 초대할 수 있습니다. 그 위 역할은 대표가 초대합니다.',
+  staff_admin_email: '이메일 주소를 확인하세요.',
+  staff_admin_name: '이름을 입력하세요.',
+  staff_admin_exists: '이 이메일로 이미 계정이 있습니다. 새로 초대하지 않습니다 — 권한이 더 필요하면 대표에게 요청하세요.',
+  staff_admin_team: '팀을 고르세요(이 회사의 팀만 고를 수 있습니다).',
+  staff_admin_boss_missing: '상사를 고르세요. 상사 없이는 저장할 수 없습니다.',
+  staff_admin_boss_invalid: '상사는 이 회사에서 지금 일하는 사람이어야 합니다.',
+  staff_admin_boss_self: '본인이나 본인 아래 사람은 상사로 고를 수 없습니다. 실제 상사를 고르세요.',
+  staff_admin_class: '본인 등급보다 높은 보안등급은 줄 수 없습니다.',
+  staff_admin_grant: '본인이 가진 권한만 줄 수 있습니다. 월 마감은 줄 수 없습니다.',
+  staff_admin_language: '표기 언어를 확인하세요.',
+  staff_admin_not_found: '취소할 수 있는 초대가 아닙니다. 본인이 보낸, 아직 가입하지 않은 초대만 취소됩니다.',
+}
+
+function staffAdminMessage(e: unknown): string {
+  const message = e instanceof Error ? e.message : ''
+  if (message === DUPLICATE_INVITATION) return '이 이메일로 아직 가입하지 않은 초대가 이미 있습니다.'
+  const key = Object.keys(STAFF_ADMIN_ERROR).find((k) => new RegExp(`\b${k}\b`).test(message))
+  return key ? STAFF_ADMIN_ERROR[key] : '저장하지 못했습니다. 잠시 후 다시 시도하세요.'
+}
+
+/**
+ * 0055 위임 초대. 판정 · 감사 · 대표 알림은 DB 함수(staff_admin_invite) 한 자리에서 한다 — 여기서는 입력을 좁힌다.
+ * 회사는 하나, 역할은 사원 · 팀장, 팀 · 상사는 필수(빈 값이면 DB에 보내지 않고 바로 돌려보낸다).
+ */
+export async function staffAdminInvite(input: {
+  businessId: unknown
+  email: unknown
+  displayName: unknown
+  displayNameEn: unknown
+  titleKo: unknown
+  role: unknown
+  teamId: unknown
+  reportsTo: unknown
+  securityClass: unknown
+  grants: unknown
+  joinedOn: unknown
+  language: unknown
+}): Promise<InviteUserState> {
+  const businessId = typeof input.businessId === 'string' ? input.businessId.trim() : ''
+  const email = typeof input.email === 'string' ? input.email.trim().toLowerCase() : ''
+  const displayName = typeof input.displayName === 'string' ? input.displayName.trim() : ''
+  if (!/^[a-z0-9_]+$/.test(businessId)) return { error: '어느 회사인지 알 수 없습니다.' }
+  if (!isEmail(email)) return { error: STAFF_ADMIN_ERROR.staff_admin_email }
+  if (!displayName) return { error: STAFF_ADMIN_ERROR.staff_admin_name }
+  if (!STAFF_ADMIN_ROLES.includes(input.role as Role)) return { error: STAFF_ADMIN_ERROR.staff_admin_role }
+  const teamId = textOrNull(input.teamId, 60)
+  if (!teamId) return { error: STAFF_ADMIN_ERROR.staff_admin_team }
+  const reportsTo = textOrNull(input.reportsTo, 60)
+  if (!reportsTo) return { error: STAFF_ADMIN_ERROR.staff_admin_boss_missing }
+  if (!isSecurityClass(input.securityClass)) return { error: STAFF_ADMIN_ERROR.staff_admin_class }
+  const grants = Array.isArray(input.grants)
+    ? [...new Set(input.grants.filter((g): g is string => typeof g === 'string' && g.length > 0 && g.length < 80))]
+    : []
+
+  const user = await currentUser()
+  if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+
+  let invitation: UserInvitation
+  try {
+    const repo = await getRepository()
+    invitation = await repo.staffAdminInvite({
+      business_id: businessId,
+      email,
+      display_name: displayName,
+      display_name_en: textOrNull(input.displayNameEn, 60),
+      title_ko: textOrNull(input.titleKo, 60),
+      role: input.role as Role,
+      team_id: teamId,
+      reports_to: reportsTo,
+      max_security_class: input.securityClass,
+      module_grants: grants,
+      joined_on: isoDateOrNull(input.joinedOn),
+      language: input.language === 'en' ? 'en' : 'ko',
+    })
+  } catch (e) {
+    console.error('[staffAdminInvite]', e)
+    return { error: staffAdminMessage(e) }
+  }
+  revalidatePath('/settings/users')
+  return { invitation }
+}
+
+/** 0055 — 관리자가 자기가 보낸 미수락 위임 초대를 취소한다. 대표는 예전 취소 버튼(revokeUser)을 쓴다. */
+export async function staffAdminRevoke(input: { invitationId: unknown }): Promise<RevokeUserState> {
+  const id = typeof input.invitationId === 'string' ? input.invitationId.trim() : ''
+  if (!id) return { error: '대상을 알 수 없습니다.' }
+  const user = await currentUser()
+  if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  try {
+    const repo = await getRepository()
+    await repo.staffAdminRevoke(id)
+  } catch (e) {
+    console.error('[staffAdminRevoke]', e)
+    return { error: staffAdminMessage(e) }
+  }
+  revalidatePath('/settings/users')
+  return {}
+}
+
+/**
+ * 0055 «<회사> 사용자 관리자» 켜고 끄기 — 회장만(0002 module_access_admin_write). setDraftGrant와 같은 길:
+ * repo.setModuleGrant가 permission_change 감사를 먼저 남기고 '/users/<biz>' 줄을 넣거나 지운다.
+ */
+export async function setStaffAdminGrant(input: { userId: unknown; businessId: unknown; on: unknown }): Promise<RevokeUserState> {
+  const userId = typeof input.userId === 'string' ? input.userId.trim() : ''
+  if (!userId) return { error: '대상을 알 수 없습니다.' }
+  const businessId = typeof input.businessId === 'string' ? input.businessId.trim() : ''
+  if (!/^[a-z0-9_]+$/.test(businessId)) return { error: '어느 회사인지 알 수 없습니다.' }
+  if (typeof input.on !== 'boolean') return { error: '권한 값을 읽을 수 없습니다.' }
+  const user = await currentUser()
+  if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  try {
+    const repo = await getRepository()
+    if (!(await repo.listBusinesses()).some((b) => b.business_id === businessId)) return { error: '없는 회사입니다.' }
+    await repo.setModuleGrant(
+      userId,
+      { module: moduleKey(STAFF_ADMIN_PREFIX, businessId), can_write: input.on, can_approve: false },
+      { user_id: user.user_id, role: user.role },
+    )
+  } catch (e) {
+    console.error('[setStaffAdminGrant]', e)
+    return { error: denialMessage(e, '사용자 관리자를 바꿀 권한이 없습니다. (대표만 가능합니다)', user.role) }
+  }
   revalidatePath('/settings/users')
   return {}
 }

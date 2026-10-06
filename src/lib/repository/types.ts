@@ -94,6 +94,8 @@ import type {
   UserAccount,
   UserInvitation,
   WorkPriority,
+  StaffAdminInviteInput,
+  StaffAdminOptions,
 } from '@/types'
 
 /**
@@ -372,6 +374,18 @@ export interface ChairmanRepository {
    * 0002 module_access_admin_write가 Chairman만 통과시킨다. audit_log에 permission_change가 먼저 남는다.
    */
   setModuleGrant(userId: string, grant: ModuleGrant, actor: AuditActor): Promise<void>
+
+  /**
+   * 0055 «<회사> 사용자 관리자». 세션 사람이 그 능력을 가진 회사들('/users/<biz>' can_write — 0002 module_access_self_read로
+   * 본인 줄만 읽는다). 회장 · 없음이면 빈 배열. 판정은 DB(can_manage_users)가 한다 — 이 값은 화면 안내다.
+   */
+  staffAdminBusinesses(): Promise<string[]>
+  /** 0055 staff_admin_options — 위임 초대 폼의 고르기 칸(이름 · 팀 · 역할 · 줄 수 있는 권한 · 등급). 능력이 없으면 던진다. */
+  staffAdminOptions(businessId: string): Promise<StaffAdminOptions>
+  /** 0055 staff_admin_invite — 감사 · 회장 알림까지 DB가 한 트랜잭션으로 한다. 오류는 'staff_admin_*' 키로 던진다. */
+  staffAdminInvite(input: StaffAdminInviteInput): Promise<UserInvitation>
+  /** 0055 staff_admin_revoke_invitation — 본인이 넣은 미수락 위임 초대만. */
+  staffAdminRevoke(invitationId: string): Promise<void>
 
   /**
    * Phase 6-1 블록 B — 조직도(회사 > 팀 > 사람).

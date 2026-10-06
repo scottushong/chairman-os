@@ -66,6 +66,8 @@ import type {
   Team,
   TeamInput,
   UserAccount,
+  StaffAdminInviteInput,
+  StaffAdminOptions,
   UserInvitation,
   FinanceMetric,
   FigureBasis,
@@ -98,7 +100,7 @@ import type {
   WorkPriority,
 } from '@/types'
 // 값으로 쓰는 것 — 관찰 기한(0035의 check가 status와 함께 요구한다).
-import { MODULE_GRANT_OPTIONS, MONITOR_DAYS } from '@/types'
+import { MODULE_GRANT_OPTIONS, MONITOR_DAYS, STAFF_ADMIN_PREFIX } from '@/types'
 
 import type { CorrectionResult, NewCorrection, NewJournalEntry } from '@/lib/ledger/journal'
 import { STANDARD_CHART } from '@/lib/ledger/standard-chart'
@@ -401,13 +403,18 @@ interface UserInvitationRow {
   chairman_approved_at: string | null
   accepted_at: string | null
   revoked_at: string | null
+  /** 0055. 0055 전 DB에서는 칸이 없다 — 목록은 옛 칸으로 다시 읽는다(listUserInvitations). */
+  staff_admin_business?: string | null
+  module_grants?: string[] | null
 }
 
 /** 0011 + 0026 + 0028. 초대 목록과 방금 만든 초대가 같은 모양을 돌려줘야 한다. */
-const INVITATION_COLUMNS =
+const INVITATION_COLUMNS_0054 =
   'invitation_id,email,role,max_security_class,business_ids,display_name,display_name_en,title_ko,' +
   'invited_by,invited_at,reports_to,team_id,joined_on,language,' +
   'chairman_approval_required,chairman_approved_at,accepted_at,revoked_at'
+/** 0055 — «사용자 관리자» 꼬리표와 실은 권한. */
+const INVITATION_COLUMNS = INVITATION_COLUMNS_0054 + ',staff_admin_business,module_grants'
 
 /** 0011 한 행을 화면의 UserInvitation으로. 목록과 방금 만든 초대가 같은 함수를 쓴다. */
 function toInvitation(r: UserInvitationRow): UserInvitation {
@@ -430,6 +437,8 @@ function toInvitation(r: UserInvitationRow): UserInvitation {
     chairman_approved_at: r.chairman_approved_at,
     accepted_at: r.accepted_at,
     revoked_at: r.revoked_at,
+    staff_admin_business: r.staff_admin_business ?? null,
+    module_grants: Array.isArray(r.module_grants) ? r.module_grants : [],
   }
 }
 
@@ -2629,17 +2638,24 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
 
     /** CH-049. 0011의 초대장들. 수락·취소된 것도 같이 내려보낸다 — 그것도 기록이다. */
     async listUserInvitations(): Promise<UserInvitation[]> {
-      const { data, error } = await fetchAll('user_invitations', ['invitation_id'], (from, to) =>
-        sb
-          .from('user_invitations')
-          .select(INVITATION_COLUMNS, { count: 'exact' })
-          .order('invited_at', { ascending: false })
-          .order('invitation_id')
-          .range(from, to)
-          .returns<UserInvitationRow[]>(),
-      )
-
-      const rows = unwrap('user_invitations', data, error)
+      const read = (columns: string) =>
+        fetchAll('user_invitations', ['invitation_id'], (from, to) =>
+          sb
+            .from('user_invitations')
+            .select(columns, { count: 'exact' })
+            .order('invited_at', { ascending: false })
+            .order('invitation_id')
+            .range(from, to)
+            .returns<UserInvitationRow[]>(),
+        )
+      let rows: UserInvitationRow[]
+      try {
+        rows = (await read(INVITATION_COLUMNS)).data
+      } catch (e) {
+        // 0055가 아직 없는 DB(배포가 마이그레이션보다 먼저 닿은 경우) — 칸 없음(42703)이면 옛 칸으로 다시 읽는다.
+        if (!(e instanceof Error && / 42703: /.test(e.message))) throw e
+        rows = (await read(INVITATION_COLUMNS_0054)).data
+      }
       return rows.map(toInvitation)
     },
 
@@ -2760,7 +2776,10 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         entity_table: 'user_module_access',
         entity_id: userId,
         // 0047. 재무 권한은 회사마다 한 줄이라 감사도 그 회사로 건다('/finance/biz_dy' → 'biz_dy').
-        business_id: MODULE_GRANT_OPTIONS.map((o) => businessOfModule(o.prefix, grant.module)).find((b) => b !== null) ?? null,
+        business_id:
+          [...MODULE_GRANT_OPTIONS.map((o) => o.prefix), STAFF_ADMIN_PREFIX]
+            .map((prefix) => businessOfModule(prefix, grant.module))
+            .find((b) => b !== null) ?? null,
         actor_user_id: actor.user_id,
         actor_role: actor.role,
         before: before ? { module: before.module, can_write: before.can_write, can_approve: before.can_approve } : null,
@@ -2791,6 +2810,75 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         .select('user_id')
         .returns<{ user_id: string }[]>()
       oneAffectedRow('user_module_access', data, error)
+    },
+
+    /** 0055. 본인의 '/users/<biz>' 쓰기 줄(0002 module_access_self_read). 회장은 위임 길이 아니라 빈 배열. */
+    async staffAdminBusinesses(): Promise<string[]> {
+      const {
+        data: { user },
+      } = await sb.auth.getUser()
+      if (!user) return []
+      const { data, error } = await sb
+        .from('user_module_access')
+        .select('module,can_write')
+        .eq('user_id', user.id)
+        .like('module', `${STAFF_ADMIN_PREFIX}/%`)
+        .returns<{ module: string; can_write: boolean }[]>()
+      if (error) throw new Error(`Supabase user_module_access ${error.code ?? '?'}: ${error.message}`)
+      return (data ?? [])
+        .filter((m) => m.can_write)
+        .map((m) => businessOfModule(STAFF_ADMIN_PREFIX, m.module))
+        .filter((b): b is string => b !== null)
+    },
+
+    async staffAdminOptions(businessId: string): Promise<StaffAdminOptions> {
+      const { data, error } = await sb.rpc('staff_admin_options', { p_business: businessId })
+      if (error) throw new Error(`Supabase staff_admin_options ${error.code ?? '?'}: ${error.message}`)
+      const o = (data ?? {}) as Partial<Omit<StaffAdminOptions, 'business_id'>>
+      return {
+        business_id: businessId,
+        people: o.people ?? [],
+        teams: o.teams ?? [],
+        grantable: o.grantable ?? [],
+        max_class: o.max_class ?? 'Normal',
+      }
+    },
+
+    /** 감사 · 회장 알림 · 초대 insert가 DB 함수 하나 안에서 같은 트랜잭션이다(0055 3절) — 여기서 따로 쓰지 않는다. */
+    async staffAdminInvite(input: StaffAdminInviteInput): Promise<UserInvitation> {
+      const { data: id, error } = await sb.rpc('staff_admin_invite', {
+        p_business: input.business_id,
+        p_email: input.email,
+        p_display_name: input.display_name,
+        p_role: input.role,
+        p_team_id: input.team_id,
+        p_reports_to: input.reports_to,
+        p_security_class: input.max_security_class,
+        p_module_grants: input.module_grants,
+        p_display_name_en: input.display_name_en,
+        p_title_ko: input.title_ko,
+        p_joined_on: input.joined_on,
+        p_language: input.language,
+      })
+      if (error) {
+        // 23505 = 대기 중인 같은 이메일(0011 부분 유니크). staff_admin_exists도 23505지만 문장이 다르다.
+        if (error.code === '23505' && !/staff_admin_exists/.test(error.message)) throw new Error(DUPLICATE_INVITATION)
+        throw new Error(`Supabase staff_admin_invite ${error.code ?? '?'}: ${error.message}`)
+      }
+      const { data, error: readError } = await sb
+        .from('user_invitations')
+        .select(INVITATION_COLUMNS)
+        .eq('invitation_id', id as string)
+        .single<UserInvitationRow>()
+      if (readError || !data) {
+        throw new Error(`Supabase user_invitations ${readError?.code ?? '?'}: ${readError?.message ?? '방금 만든 초대가 안 읽힌다'}`)
+      }
+      return toInvitation(data)
+    },
+
+    async staffAdminRevoke(invitationId: string): Promise<void> {
+      const { error } = await sb.rpc('staff_admin_revoke_invitation', { p_invitation: invitationId })
+      if (error) throw new Error(`Supabase staff_admin_revoke_invitation ${error.code ?? '?'}: ${error.message}`)
     },
 
     async revokeUser(target: RevokeTarget, actor: AuditActor): Promise<void> {

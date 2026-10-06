@@ -128,6 +128,47 @@ export interface UserInvitation {
   accepted_at: string | null
   /** 수락 전에 취소한 시각. 이미 들어온 사람을 자르는 건 UserAccount.revoked_at이다. */
   revoked_at: string | null
+  /**
+   * 0055. «<회사> 사용자 관리자»(위임) 길로 들어온 초대의 회사. null · 없음 = 회장 초대 또는 0026 위임 초대.
+   * 회장 목록이 «위임 초대 · <관리자>» 꼬리표를 이것으로 단다.
+   */
+  staff_admin_business?: string | null
+  /** 0055. 위임 초대가 실은 모듈 키(늘 입력만 — 마감 없음). 가입 때 초대자의 지금 권한으로 다시 확인해 붙는다. */
+  module_grants?: string[]
+}
+
+/** 0055 «사용자 관리자» 능력의 모듈 키 — '/users/<business_id>' can_write. 회장만 켠다. */
+export const STAFF_ADMIN_PREFIX = '/users'
+
+/** 0055. 위임 초대로 고를 수 있는 역할 — 사원 · 팀장만(그 위는 DB가 거부한다). */
+export const STAFF_ADMIN_ROLES: readonly Role[] = ['Member', 'TeamLead']
+
+/** 0055 staff_admin_options() — 위임 초대 폼의 고르기 칸. 이름 · 팀 · 역할만 온다(결재 · 업무는 오지 않는다). */
+export interface StaffAdminOptions {
+  business_id: string
+  /** 상사 후보: 그 회사의 활성 사람(관리자 본인 · 그 아래 제외). */
+  people: { user_id: string; display_name: string; team_id: string | null; role: Role }[]
+  teams: { team_id: string; name: string }[]
+  /** 관리자가 지금 줄 수 있는 모듈 키('/finance/<biz>' · '/documents/<biz>' · '/chairman/decisions' 중 가진 것). */
+  grantable: string[]
+  /** 관리자 본인의 최고 등급 — 이보다 높게 줄 수 없다. */
+  max_class: SecurityClass
+}
+
+/** 0055 staff_admin_invite()에 보내는 값. 회사는 하나, 역할은 사원 · 팀장, 팀 · 상사는 필수다. */
+export interface StaffAdminInviteInput {
+  business_id: string
+  email: string
+  display_name: string
+  display_name_en: string | null
+  title_ko: string | null
+  role: Role
+  team_id: string
+  reports_to: string
+  max_security_class: SecurityClass
+  module_grants: string[]
+  joined_on: IsoDate | null
+  language: PersonLanguage
 }
 
 /**
