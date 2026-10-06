@@ -76,11 +76,14 @@ LINKED_PRODUCTION=0
 # Ctrl+C / TERM / HUP → exit 130, which runs the EXIT trap (relink_staging). The re-link itself
 # ignores those signals so a second Ctrl+C can't cut it short.
 PUSH_STARTED=0
+DB_APPLIED=0
 on_signal() {
   echo
   if [ "$PUSH_STARTED" = 1 ]; then
     echo "중단: $1 신호 — db push 도중이었다. 마이그레이션은 파일마다 트랜잭션이라 보통 적용 전 상태지만," >&2
     echo "      SQL Editor에서 supabase_migrations.schema_migrations 최신 버전을 확인할 것." >&2
+  elif [ "$DB_APPLIED" = 1 ]; then
+    echo "중단: $1 신호 — DB는 이미 적용됐다. 앱은 아직이다 — 준비되면 'git push origin master'." >&2
   else
     echo "중단: $1 신호 — DB 쓰기 전이다. production은 그대로다." >&2
   fi
@@ -189,6 +192,7 @@ confirm "production($PRODUCTION_REF)에 $(echo $EXPECTED) 를 적용한다. 계�
   || die "YES가 아니다. DB는 그대로다."
 PUSH_STARTED=1
 SUPABASE_DB_PASSWORD="$PROD_PASSWORD" supabase_push db push --linked --yes || die "db push 실패. OPERATIONS §9 «DB 마이그레이션 실패»를 따른다."
+DB_APPLIED=1
 SUPABASE_DB_PASSWORD="$PROD_PASSWORD" supabase_cli migration list --linked || true
 PUSH_STARTED=0
 
@@ -199,9 +203,9 @@ relink_staging
 step "7. origin 비교 → 앱 배포"
 git fetch --quiet origin master
 BEHIND="$(git rev-list --count master..origin/master)"
-[ "$BEHIND" = 0 ] || { git log --oneline master..origin/master; die "origin에만 있는 커밋이 $BEHIND 개 있다 (위). DB는 이미 적용됐다 — 합친 뒤 git push만 따로 할 것."; }
+[ "$BEHIND" = 0 ] || { git --no-pager log --oneline master..origin/master; die "origin에만 있는 커밋이 $BEHIND 개 있다 (위). DB는 이미 적용됐다 — 합친 뒤 git push만 따로 할 것."; }
 echo "나갈 커밋:"
-git log --oneline origin/master..master
+git --no-pager log --oneline origin/master..master
 confirm "git push origin master = Vercel Production 배포. 앱 배포하려면 YES 입력:" \
   || die "YES가 아니다. DB는 적용됐고 앱은 그대로다 — 준비되면 'git push origin master'."
 git push origin master
