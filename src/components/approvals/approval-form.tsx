@@ -191,13 +191,13 @@ export function ApprovalForm({
           </ol>
           {line.every((s) => s.step !== 'chairman') ? (
             <p className="rounded-md bg-raised px-2 py-1.5 text-t11 text-ink-dim">
-              {/* 0042 — 팀장 칸이 비면 팀장 단계를 건너뛰고 규칙이 바로 종결한다(decided_by_kind 'rule'). */}
+              {/* 0042/0054 — 팀장 칸이 비면(대표는 팀장 칸에 서지 않는다) 팀장 단계를 건너뛰고 규칙이 바로 종결한다(decided_by_kind 'rule'). */}
               {line[0]?.user_id
                 ? tr(lang, `${boss(viewerRole)}까지 올라가지 않는 결재입니다.`, `This does not go up to ${bossEn(viewerRole)}.`)
                 : tr(
                     lang,
-                    `결재할 팀장 · 직속 상위가 없어 올리면 «기록 완료»로 바로 저장됩니다. ${boss(viewerRole)}도 목록에서 볼 수 있습니다.`,
-                    `No lead to approve — this is saved as «Recorded» right away. ${bossEn(viewerRole)} can still see it.`,
+                    `팀장 결재 단계가 없어(팀장 · 직속 상위가 없거나 ${boss(viewerRole)}) 올리면 «기록 완료»로 바로 저장됩니다. ${boss(viewerRole)}도 목록에서 볼 수 있습니다.`,
+                    `No lead step (no lead, or the only one above is ${bossEn(viewerRole)}) — this is saved as «Recorded» right away. ${bossEn(viewerRole)} can still see it.`,
                   )}
             </p>
           ) : null}

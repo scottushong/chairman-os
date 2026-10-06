@@ -2225,3 +2225,14 @@ B-4가 찾은 결함 하나를 고쳤다. **리뷰 루프가 없는 작업이고
 - **staging 리허설 데이터:** 계정 `rehearsal.member@example.com`(리허설 사원 · Member · 경영지원 · 상사 = 회장 · «결재 올리기» 켬), 결재 dec_017~dec_023, `approval_templates` 다섯을 권장 설정(첨부 필수 끔 · 구매 기준 500만 · 지출/구매 «구입처» · «링크»)으로 바꿈. staging이라 지우지 않는다.
 - **dummy 한계:** `next dev --webpack` 복사본에서는 서버 액션이 쓴 dummy 메모리가 다음 화면에 안 보인다(결재 두 건이 같은 id) — 회장 화면 두 건은 staging 행(회장 세션 SQL) + 코드로 확인했다.
 - **리뷰 반영(같은 날):** 기준 금액이 있으면 금액 칸은 필수로 저장 · 지운 금액 칸을 되살리는 «+ 금액 칸 추가» · 새 항목 key는 다시 쓰이지 않게(시각+순번) · 결재 상세의 양식 항목은 key 대신 양식 이름 · 숫자 아닌 기준 금액 거부. **미결로 넘김:** «결재 올리기»가 켜진 직원이 PostgREST로 양식 없는 결재를 status='Approved'로 넣을 수 있다(0042 트리거가 양식 없는 insert의 status · decided_*를 강제하지 않음, 0002부터 있던 구멍) — 0054에 «회장·CEO 외 insert는 Open · decided_* null» 포함 제안. 이름 바꾼 항목의 label_en은 옛 영문 그대로(Minor).
+
+## 2026-10-06 블록 — 0054 첫 직원 결재(브랜치 `feat/approvals-0054`, staging · production 미적용)
+
+- **대표를 팀장 칸에서 빼는 자리는 `my_approval_lead()` 자체**(후보 거름 alive에 `role <> 'Chairman'`). 부르는 곳이 셋(트리거 · /approvals/new 미리보기 · /me)이라 함수 하나를 고쳐야 미리보기와 저장이 같은 말을 한다. 다른 선택지: 트리거만 고치기(미리보기가 «대표 대기»라 말하고 저장은 «기록 완료» — 버림). 팀장이 대표면 reports_to로 넘어가고, 그것도 대표면 팀장 단계 건너뜀(0042 그대로 — 기준 미만 «기록 완료», 이상 대표 칸 Open).
+- **빈 팀장 칸 문장 '팀장 · 직속 상위가 없음' → '팀장 결재 단계 없음'**(트리거 · lib/approval-line.ts 둘 다). 상사가 대표인 사람에게 «직속 상위가 없음»은 거짓이라. 이미 얼린 결재선은 그대로. 다른 선택지: 대표일 때만 다른 문장(미리보기가 대표인지 모름 — ApprovalLead 모양을 바꿔야 해서 버림).
+- **비승인권자 insert는 늘 Open — 기준은 `can_approve()`(Chairman · BusinessCEO), 세션 없는 insert(시드 · 이관 · SQL 편집기)는 예외.** GroupCFO · AIAgent도 Open으로 들어온다. 다른 선택지: 거부(42501) — 앱은 늘 Open을 보내므로 결과가 같고, 덮어쓰기가 0042 양식 결재와 같은 방식이라 버림.
+- **대표 열람 정책 `decisions_chairman_skipped_read`(lead_status 'skipped' · 회사 격리)를 더함.** 상사 = 대표면 0026 subtree로 이미 보이지만, 상사가 빈 사람의 규칙 종결은 대표에게서도 가려졌다. 다른 선택지: 대표에게 양식 결재 전부(subtree 원칙을 넓혀서 버림).
+- **새 직원 «결재 올리기»는 user_profiles 트리거(insert · 회수에서 되살림)** — 가입 함수(apply_user_invitation)를 또 복사하지 않고, 회장이 직접 넣는 사람도 덮는다. 위임 초대(팀장이 부른 Member)에도 붙는다 — 결재를 «올리는» 권한일 뿐이고 회사 범위는 초대가 정한다(0047 재무 기본값이 위임 초대를 막은 것과 다른 판단). Chairman · AIAgent · Integration 제외, 기존 직원 백필 없음. 다른 선택지: 0002 decisions_create를 양식 결재만 회사 범위로 열기(모듈 줄 없이 — 토글이 뜻을 잃어 버림).
+- **이미 대표가 팀장 칸에 선 채 «팀장 대기»인 결재(staging dec_017~ · production에 있다면)는 고치지 않는다**(얼린 값). 대표가 /me 받은 결재에서 팀장으로 처리한다.
+- **ECOUNT 순서:** 0054는 0050~0052와 겹치는 객체가 없다(PGlite에서 두 순서 모두 적용 · 함수 · 정책 · 트리거 카탈로그 같음). 이 브랜치에는 0050~0052 파일이 없어서 **staging(이미 0052)에 이 브랜치로 push하면 «remote에만 있는 버전»으로 멈춘다** — staging은 ECOUNT와 합친 checkout에서. production은 0054 먼저(`release-production.sh 0054`), ECOUNT는 그 뒤 `--include-all`이 필요한데 release-production.sh의 dry-run · push에는 그 옵션이 없다(그날 스크립트에 추가). 합칠 때 `src/lib/version.ts`는 `0054_approval_staff`로, check-migrations.ts main · PASS 문장은 둘 다 살린다.
+- **검사:** check-migrations에 approvalStaff()(0054 전 항목 + dummy 거울 pickApprovalLead · approvalLine). 0047 · 0048 검사는 모듈 줄 개수를 그대로 재려고 그 안에서만 새 트리거를 끈다. 이 worktree(autocrlf CRLF checkout)에서는 check:dependency · check:attention이 주석 정규식 때문에 0033 · 0035 텍스트 검사에서 실패한다 — LF로 바꾸면 통과(코드와 무관).

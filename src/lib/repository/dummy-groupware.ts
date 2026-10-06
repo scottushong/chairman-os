@@ -1,4 +1,4 @@
-import { approvalLine, missingFields } from '@/lib/approval-line'
+import { approvalLine, missingFields, pickApprovalLead } from '@/lib/approval-line'
 import type {
   ApprovalLead,
   ApprovalStep,
@@ -203,18 +203,9 @@ export async function updateApprovalTemplate(
   t.attachment_required = false
 }
 
-/** 0038 my_approval_lead()와 같은 판정 — 팀장(공석·본인·떠남이면 reports_to). */
+/** 0038/0054 my_approval_lead()와 같은 판정 — 팀장(공석·본인·떠남이면 reports_to), 대표는 후보가 아니다. */
 export async function myApprovalLead(): Promise<ApprovalLead | null> {
-  const me = dummyViewer()
-  const alive = (id: string | null) => {
-    const p = id ? DUMMY_PEOPLE.find((x) => x.user_id === id) : undefined
-    return p && !p.revoked_at && p.status === 'active' ? p : undefined
-  }
-  const team = DUMMY_TEAMS.find((t) => t.team_id === me.team_id)
-  const lead = team && team.lead_user_id !== me.user_id ? alive(team.lead_user_id) : undefined
-  if (lead) return { user_id: lead.user_id, display_name: lead.display_name, via: 'team_lead' }
-  const boss = alive(me.reports_to)
-  return boss ? { user_id: boss.user_id, display_name: boss.display_name, via: 'reports_to' } : null
+  return pickApprovalLead(dummyViewer().user_id, DUMMY_PEOPLE, DUMMY_TEAMS)
 }
 
 /* ------------------------------------------------------------------ 문서 폴더 */
