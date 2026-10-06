@@ -25,9 +25,9 @@
 > 그다음 staging 시험 SQL 두 개(마지막에 예외를 던져 전부 되돌린다 — staging에 아무것도 남기지 않는다):
 >
 > ```bash
-> P=/c/Users/EDISON~1/AppData/Local/Temp/claude/C--Users-Edison-Hong/4f6e4e33-1a5c-464f-8de4-b0bda684a0ba/scratchpad
-> SUPABASE_DB_PASSWORD=$(grep ^SUPABASE_DB_PASSWORD .env.staging.local | cut -d= -f2-) npx supabase db query --linked -f "$(cygpath -w $P/stage1/0054_staging_test.sql)"
-> SUPABASE_DB_PASSWORD=$(grep ^SUPABASE_DB_PASSWORD .env.staging.local | cut -d= -f2-) npx supabase db query --linked -f "$(cygpath -w $P/stage2/0055_staging_test.sql)"
+> T=~/projects/chairman-os/docs/onboarding/staging-tests
+> SUPABASE_DB_PASSWORD=$(grep ^SUPABASE_DB_PASSWORD .env.staging.local | cut -d= -f2-) npx supabase db query --linked -f "$(cygpath -w $T/0054_staging_test.sql)"
+> SUPABASE_DB_PASSWORD=$(grep ^SUPABASE_DB_PASSWORD .env.staging.local | cut -d= -f2-) npx supabase db query --linked -f "$(cygpath -w $T/0055_staging_test.sql)"
 > ```
 >
 > 기대: 오류 문장이 `0054 STAGING PASS …` · `0055 STAGING PASS a … h`로 시작한다(FAIL이면 그 줄을 Claude에게).
