@@ -6,7 +6,16 @@
 #
 # The arguments are the migrations you expect the production dry-run to list. If the dry-run
 # shows anything else (more, fewer, or nothing), the script stops before writing.
-# Whatever happens after the production link, the workdir is re-linked to staging on exit.
+# Whatever happens after the production link — an error, a NO, Ctrl+C — the workdir is re-linked
+# to staging on exit.
+#
+# Every Supabase CLI call goes through scripts/supabase-guarded.mjs: stdin is closed (the push
+# gets one "y" line and --yes), a repeating or endless output or a timeout kills the CLI, and
+# Ctrl+C kills it before the staging re-link. 2026-10-06 the push printed «y» endlessly in
+# Git Bash until Ctrl+C; production stayed at 0048.
+#
+# Test without production: RELEASE_DRY_RUN=1 stops after step 4 (dry-run comparison), then
+# re-links staging. Nothing is written anywhere except the local link.
 set -euo pipefail
 
 PRODUCTION_REF=nndvspgnljivkvihxlzj
@@ -27,7 +36,9 @@ confirm() {
   read -r answer || true
   [ "$answer" = "YES" ]
 }
-supabase_cli() { npx --no-install supabase "$@"; }
+# Timeouts in seconds; the push gets longer — a migration can wait on a lock.
+supabase_cli() { node scripts/supabase-guarded.mjs --timeout "${CLI_TIMEOUT:-300}" -- "$@"; }
+supabase_push() { node scripts/supabase-guarded.mjs --answer-y --timeout "${PUSH_TIMEOUT:-900}" -- "$@"; }
 
 # One assignment of KEY in FILE, quotes and CR stripped. A second definition is refused —
 # the last line would silently decide the target (same rule as scripts/db-safety.mjs).
@@ -62,20 +73,37 @@ STAGING_PASSWORD="$(env_value .env.staging.local SUPABASE_DB_PASSWORD)"
 
 # ---------------------------------------------------------------------------------------------
 LINKED_PRODUCTION=0
+# Ctrl+C / TERM / HUP → exit 130, which runs the EXIT trap (relink_staging). The re-link itself
+# ignores those signals so a second Ctrl+C can't cut it short.
+PUSH_STARTED=0
+on_signal() {
+  echo
+  if [ "$PUSH_STARTED" = 1 ]; then
+    echo "중단: $1 신호 — db push 도중이었다. 마이그레이션은 파일마다 트랜잭션이라 보통 적용 전 상태지만," >&2
+    echo "      SQL Editor에서 supabase_migrations.schema_migrations 최신 버전을 확인할 것." >&2
+  else
+    echo "중단: $1 신호 — DB 쓰기 전이다. production은 그대로다." >&2
+  fi
+  exit 130
+}
+signal_traps() { trap 'on_signal INT' INT; trap 'on_signal TERM' TERM; trap 'on_signal HUP' HUP; }
 relink_staging() {
   [ "$LINKED_PRODUCTION" = 1 ] || return 0
+  trap '' INT TERM HUP
   echo
   echo "== 6. link를 staging($STAGING_REF)으로 되돌림 =="
   if SUPABASE_DB_PASSWORD="$STAGING_PASSWORD" supabase_cli link --project-ref "$STAGING_REF" >/dev/null 2>&1 \
      && [ "$(linked_ref)" = "$STAGING_REF" ]; then
     LINKED_PRODUCTION=0
     echo "staging으로 돌아왔다."
+    signal_traps
   else
     echo "경고: staging 재link 실패. 지금 link: $(linked_ref). 'npm run db:push:staging' 또는" >&2
     echo "      'npx supabase link --project-ref $STAGING_REF' 로 직접 되돌릴 것." >&2
   fi
 }
 trap relink_staging EXIT
+signal_traps
 
 step "2. 복원 지점 — production link 후 현재 버전 확인"
 RESTORE_EPOCH="$(date -u +%s)"
@@ -149,13 +177,20 @@ for n in $EXPECTED; do
 done
 [ -z "$DRY_NAMED" ] || die "dry-run 출력에 다른 번호가 있다: $(echo $DRY_NAMED). 아무것도 쓰지 않았다."
 echo "dry-run도 같은 목록이다."
+if [ "${RELEASE_DRY_RUN:-}" = 1 ]; then
+  echo
+  echo "RELEASE_DRY_RUN=1 — 여기서 멈춘다. production DB · git · 앱은 그대로다."
+  exit 0
+fi
 
 # ---------------------------------------------------------------------------------------------
 step "5. production DB push"
 confirm "production($PRODUCTION_REF)에 $(echo $EXPECTED) 를 적용한다. 계속하려면 YES 입력:" \
   || die "YES가 아니다. DB는 그대로다."
-SUPABASE_DB_PASSWORD="$PROD_PASSWORD" supabase_cli db push --linked --yes || die "db push 실패. OPERATIONS §9 «DB 마이그레이션 실패»를 따른다."
+PUSH_STARTED=1
+SUPABASE_DB_PASSWORD="$PROD_PASSWORD" supabase_push db push --linked --yes || die "db push 실패. OPERATIONS §9 «DB 마이그레이션 실패»를 따른다."
 SUPABASE_DB_PASSWORD="$PROD_PASSWORD" supabase_cli migration list --linked || true
+PUSH_STARTED=0
 
 relink_staging
 [ "$LINKED_PRODUCTION" = 0 ] || die "staging 재link가 안 됐다. 앱 배포 전에 link부터 되돌릴 것."
