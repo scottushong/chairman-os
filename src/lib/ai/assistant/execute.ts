@@ -1,5 +1,6 @@
 import 'server-only'
 
+import { submitApprovalForm } from '@/app/actions/approval-form'
 import { summarizeAttachmentAction } from '@/app/actions/attachments'
 import { saveCheckin } from '@/app/actions/checkin'
 import { draftDecision } from '@/app/actions/draft-decision'
@@ -33,6 +34,20 @@ export async function executeAiAction(action: AiAction): Promise<{ ok: boolean; 
       return r.error ? { ok: false, message: r.error } : { ok: true, message: '일정을 넣었습니다.', href: '/calendar' }
     }
     case 'approval_draft': {
+      // 양식 결재(propose_approval_form) — 화면의 «결재 올리기»와 같은 서버 액션. 0038 · 0042 트리거가 결재선을 세운다.
+      if (s('template_key')) {
+        const r = await submitApprovalForm({
+          templateKey: p.template_key,
+          businessId: p.business_id,
+          title: p.title,
+          deadline: p.deadline,
+          form: p.form,
+        })
+        return r.error || !r.decisionId
+          ? { ok: false, message: r.error ?? '올리지 못했습니다.' }
+          : { ok: true, message: `결재를 올렸습니다(${r.decisionId}) — ${r.state ?? '진행 중'}. 파일은 결재 화면에서 이 건의 «첨부» 칸에 붙이세요.`, href: `/approvals?id=${r.decisionId}` }
+      }
+      // 선택안 결재(회장 전용 propose_approval_draft).
       const r = await draftDecision({
         title: p.title,
         businessId: p.business_id,

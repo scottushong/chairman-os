@@ -16,6 +16,7 @@ import {
   type Initiative,
 } from '@/types'
 
+import { liveActions } from './history'
 import { INITIATIVE_ROLES, resolveBusiness, str, strList, type AssistantTool, type ToolContext } from './kit'
 import { findInitiative } from './tools-core'
 
@@ -32,13 +33,31 @@ import { findInitiative } from './tools-core'
 const DATE = /^\d{4}-\d{2}-\d{2}$/
 const isDate = (v: string) => DATE.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`))
 
-async function propose(
+/** 같은 값의 카드가 이 대화에 이미 떠 있나(확인 대기 · 15분 안). «확인했어, 진행해»에 모델이 카드를 또 만드는 길을 닫는다. */
+function samePayload(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b)
+}
+
+export async function propose(
   ctx: ToolContext,
   kind: AiActionKind,
   payload: Record<string, unknown>,
   preview: AiActionPreview,
   target?: { table: string; id: string; business_id?: string | null },
 ) {
+  if (ctx.chatId) {
+    const open = liveActions(await ctx.repo.listAiActions(ctx.chatId).catch(() => []))
+    const dup = open.find((a) => a.kind === kind && samePayload(a.payload, payload))
+    if (dup) {
+      return {
+        status: 'already_pending',
+        action_id: dup.action_id,
+        kind: AI_ACTION_LABEL_KO[kind],
+        preview: dup.preview,
+        note: '같은 내용의 카드가 이미 위에 떠 있다 — 새 카드를 만들지 않았다. «위 카드의 «확인 — 저장»을 누르면 반영됩니다»라고만 말할 것.',
+      }
+    }
+  }
   const action = await ctx.repo.createAiAction(
     {
       chat_id: ctx.chatId,
@@ -194,7 +213,8 @@ export const proposeApprovalTool: AssistantTool = {
   def: {
     name: 'propose_approval_draft',
     description:
-      '결재 기안 초안을 **제안**한다(확인 버튼을 눌러야 올라간다). 선택안(options)은 둘 이상 권장 — 고를 것이 없으면 결재가 아니다. ' +
+      '회장 전용: 선택안을 고르는 결재(양식 없는 기안) 초안을 **제안**한다(확인 버튼을 눌러야 올라간다). 선택안(options)은 둘 이상 권장 — ' +
+      '고를 것이 없으면 결재가 아니다. 지출 · 구매 · 휴가 · 계약 · 채용처럼 양식이 있는 요청은 propose_approval_form을 쓴다. ' +
       'AI는 어느 선택안을 고를지 정하지 않는다. impact: Critical · High · Medium · Low.',
     input_schema: {
       type: 'object',
@@ -208,7 +228,9 @@ export const proposeApprovalTool: AssistantTool = {
       required: ['business', 'title', 'options', 'impact', 'deadline'],
     },
   },
-  available: webOnly,
+  // 양식 없는 기안은 결재선(팀장 단계)이 서지 않는다(0042는 template_key가 있을 때만). 직원은 양식 결재
+  // (tools-staff.ts propose_approval_form — 화면의 «결재 올리기»와 같은 문)로만 올린다.
+  available: (ctx) => webOnly(ctx) && ctx.user.role === 'Chairman',
   async run(input, ctx) {
     const biz = resolveBusiness(str(input.business), await ctx.businesses())
     if (!biz) return { error: 'not_found', message: `회사를 찾지 못했습니다: «${str(input.business)}»` }
