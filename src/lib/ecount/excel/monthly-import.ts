@@ -42,6 +42,22 @@ export interface MonthlyContext {
   officials: readonly OfficialPeriod[]
   /** 그 회사에 수기 전표가 이미 있는 달들('YYYY-MM') */
   journalMonths: readonly string[]
+  /**
+   * 그 회사에 **활성 업로드 전표**(finance_import_slips)가 있는 달들 — 이 파일이 그 달을 말하는데 금액이 없으면
+   * 등록이 그 전표를 역분개한다(0056). 주지 않으면 빈 달은 «손댈 것 없음»으로 본다.
+   */
+  uploadMonths?: readonly string[]
+}
+
+/**
+ * 파일이 **말하는 달**(0056) — 계정 줄 중 하나라도 금액 칸(0 포함)이 찬 마지막 달까지. 그 안에서 금액이 하나도 없는 달은
+ * «금액 없는 달»이다(ECOUNT는 0을 빈 칸으로 둔다 — 누계는 ytdToMonthly가 이미 0으로 바꿨다). 마지막 달 뒤의 빈 열
+ * (아직 안 온 달)은 «자료 없음» — 등록이 손대지 않는다.
+ */
+export function spokenMonthIndexes(lines: readonly Pick<PreviewLine, 'amounts'>[], monthCount: number): number[] {
+  let last = -1
+  for (let i = 0; i < monthCount; i += 1) if (lines.some((l) => l.amounts[i] !== null && l.amounts[i] !== undefined)) last = i
+  return Array.from({ length: last + 1 }, (_, i) => i)
 }
 
 /**
@@ -143,6 +159,8 @@ export function planMonthly(sheets: readonly SheetLike[], mapping: EcountMapping
   const unmatched = matched.some((l) => !l.account)
   if (unmatched) warnings.push('계정을 다 맞춘 뒤에 이익 줄과 대조합니다')
   const checks: FigureCheck[] = []
+  const spoken = new Set(spokenMonthIndexes(matched, monthKeys.length))
+  const reversals: string[] = []
   monthKeys.forEach((k, i) => {
     const month = mapping.year ? `${mapping.year}-${k.slice(1)}` : null
     const used = matched.some((l) => (l.amounts[i] ?? 0) !== 0)
@@ -150,6 +168,17 @@ export function planMonthly(sheets: readonly SheetLike[], mapping: EcountMapping
       if (ctx.lastClosed && month <= ctx.lastClosed) blocks.push(`${month}은 마감된 달입니다 — 받지 않습니다(고칠 것은 당월 정정 전표로)`)
       else if (isLocked(month, [...ctx.officials])) blocks.push(`${month}은 세무사 확정 결산이 덮은 달입니다 — 받지 않습니다`)
       if (ctx.journalMonths.includes(month)) warnings.push(`${month}에 수기 전표가 이미 있습니다 — 등록하면 두 번 셀 수 있습니다`)
+    }
+    // 0056: 파일이 말하는데 금액이 없는 달 + 지난 업로드 전표 → 등록이 그 전표를 역분개한다(0052까지는 옛 전표가 남았다).
+    if (month && !used && spoken.has(i) && ctx.uploadMonths?.includes(month)) {
+      if (ctx.lastClosed && month <= ctx.lastClosed) {
+        blocks.push(`${month}은 이 파일에 금액이 없지만 마감된 달이라 지난 업로드 전표를 되돌리지 않습니다 — 고칠 것은 당월 정정 전표로`)
+      } else if (isLocked(month, [...ctx.officials])) {
+        blocks.push(`${month}은 이 파일에 금액이 없지만 세무사 확정 결산이 덮은 달이라 지난 업로드 전표를 되돌리지 않습니다`)
+      } else {
+        reversals.push(month)
+        warnings.push(`${month}은 이 파일에 금액이 없습니다 — 등록하면 지난 업로드 전표를 역분개합니다(그 달 손익 0)`)
+      }
     }
     if (unmatched) return
     const sums = emptySums()
@@ -178,12 +207,16 @@ export function planMonthly(sheets: readonly SheetLike[], mapping: EcountMapping
     checks,
     blocks,
     warnings,
+    reversals,
     blockCount: blocks.length + lines.reduce((n, l) => n + l.blocks.length, 0),
     warningCount: warnings.length + lines.reduce((n, l) => n + l.warnings.length, 0),
   }
 }
 
-/** 0052 ecount_monthly_import의 p_months 한 칸 — 그 달 손익 줄(당월 금액 · 원장 규약 차변 − 대변). 대응 줄은 DB가 세운다. */
+/**
+ * 0052 ecount_monthly_import의 p_months 한 칸 — 그 달 손익 줄(당월 금액 · 원장 규약 차변 − 대변). 대응 줄은 DB가 세운다.
+ * lines = [] 는 «파일이 말하는데 금액이 없는 달»(0056) — DB가 그 달 활성 업로드 전표를 역분개한다(없으면 아무것도 안 한다).
+ */
 export interface MonthlyLedgerMonth {
   month: string
   lines: { account_code: string; amount: number }[]
@@ -191,20 +224,26 @@ export interface MonthlyLedgerMonth {
 
 /**
  * 월별 등록 줄 — **막힌 줄이 하나라도 있으면 던진다**(부르는 쪽이 먼저 본다). 금액은 planMonthly가 이미 당월로 바꾼 값이다
- * (누계면 ytdToMonthly). 원장 부호는 연간과 같은 ledgerSign(수익 −, 비용 +, 영업외는 소속 머리). 0원 줄은 빼고,
- * 금액 있는 줄이 하나도 없는 달은 보내지 않는다 — 그 달은 손대지 않는다(앞 업로드가 있으면 그대로 남는다).
+ * (누계면 ytdToMonthly). 원장 부호는 연간과 같은 ledgerSign(수익 −, 비용 +, 영업외는 소속 머리). 0원 줄은 뺀다.
+ * 금액 없는 달은 **미리보기가 역분개할 달로 적은 것(reversals — 파일이 말하는 달 + 지난 업로드 전표 있음)만** 빈 달(lines = [])로
+ * 보낸다 — DB가 그 전표를 역분개한다(0056). 지난 업로드가 없는 빈 달 · 말하지 않는 달(마지막으로 금액 칸이 찬 달 뒤)은 보내지 않는다
+ * (손댈 것이 없다 — 0056 전 DB에 빈 달을 보내면 ecount_plan_invalid라 꼭 필요한 달만 보낸다).
  */
-export function monthlyLedgerMonths(preview: Pick<AmountsPreview, 'kind' | 'year' | 'keys' | 'blockCount' | 'lines'>): MonthlyLedgerMonth[] {
+export function monthlyLedgerMonths(
+  preview: Pick<AmountsPreview, 'kind' | 'year' | 'keys' | 'blockCount' | 'lines' | 'reversals'>,
+): MonthlyLedgerMonth[] {
   if (preview.kind !== 'monthly') throw new Error('monthlyLedgerMonths: 월별 미리보기가 아니다')
   if (preview.blockCount > 0) throw new Error('monthlyLedgerMonths: 막힌 줄이 있다')
   if (!preview.year) throw new Error('monthlyLedgerMonths: 해가 없다')
+  const reversals = new Set(preview.reversals ?? [])
   return preview.keys.flatMap((k, i) => {
+    const month = `${preview.year}-${k.slice(1)}`
     const lines = preview.lines.flatMap((l: PreviewLine) => {
       const v = l.amounts[i]
       if (!l.account || v === null || v === 0) return []
       const amount = ledgerSign(l.account.section, l.nonOp) * v
       return amount === 0 ? [] : [{ account_code: l.account.code, amount }]
     })
-    return lines.length ? [{ month: `${preview.year}-${k.slice(1)}`, lines }] : []
+    return lines.length || reversals.has(month) ? [{ month, lines }] : []
   })
 }

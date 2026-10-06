@@ -54,7 +54,17 @@ import {
   sheetLikeFromGrid,
 } from '../src/lib/ecount/excel/mapping'
 import { annualLedgerLines, ledgerSign, planAnnual } from '../src/lib/ecount/excel/annual-import'
-import { ECOUNT_MONTHLY_COUNTER, monthlyLedgerMonths, planMonthly, ytdToMonthly, type MonthlyLedgerMonth } from '../src/lib/ecount/excel/monthly-import'
+import {
+  ECOUNT_MONTHLY_COUNTER,
+  monthlyLedgerMonths,
+  planMonthly,
+  spokenMonthIndexes,
+  ytdToMonthly,
+  type MonthlyLedgerMonth,
+} from '../src/lib/ecount/excel/monthly-import'
+import { ecountUploadShortcuts } from '../src/lib/ecount/shortcut'
+import { slipOriginLabel, slipsOf } from '../src/lib/ledger/journal'
+import type { SessionUser } from '../src/types'
 import { matchAccount, parsePicks, pickKey } from '../src/lib/ecount/excel/statement-lines'
 import { parseCell } from '../src/lib/statements/paste'
 
@@ -903,6 +913,100 @@ async function ytdGapXlsx(upTo = 12): Promise<Uint8Array> {
 
 const NO_LOCKS = { lastClosed: null, officials: [], journalMonths: [] }
 
+/**
+ * 0056 «금액 없는 달» 견본(원 단위 · 당월) — 1~5월 열. 3월은 매출 0 · 급여 빈 칸(= 금액 없는 달, 파일이 말한다),
+ * 5월은 열 전체가 빈 칸(마지막으로 금액이 찬 4월 뒤 — «자료 없음»).
+ */
+async function emptyMonthXlsx(): Promise<Uint8Array> {
+  const wb = new ExcelJS.Workbook()
+  const ws = wb.addWorksheet('월별손익')
+  ws.getCell('A1').value = '월별 손익계산서'
+  ws.getCell('A2').value = '2025/01/01 ~ 2025/12/31'
+  ws.getRow(4).values = ['과목명', '1월', '2월', '3월', '4월', '5월']
+  ws.getRow(5).values = ['제품매출', 100, 100, 0, 100, null]
+  ws.getRow(6).values = ['급여', 10, 10, null, 10, null]
+  return new Uint8Array(await wb.xlsx.writeBuffer())
+}
+
+/** 누계 견본 — 2월 누계가 1월과 같다(당월 0). */
+async function ytdSameXlsx(): Promise<Uint8Array> {
+  const wb = new ExcelJS.Workbook()
+  const ws = wb.addWorksheet('월별손익')
+  ws.getCell('A1').value = '월별 손익계산서 (누계)'
+  ws.getCell('A2').value = '2025/01/01 ~ 2025/12/31'
+  ws.getRow(4).values = ['과목명', '2025-01', '2025-02', '2025-03']
+  ws.getRow(5).values = ['제품매출', 100, 100, 150]
+  return new Uint8Array(await wb.xlsx.writeBuffer())
+}
+
+/** 0056 금액 없는 달 — 파일이 말하는 달 · 지난 업로드 전표가 있을 때만 역분개 · 마감 · 확정 달은 막는다 · 등록 줄은 빈 달. */
+async function emptyMonthChecks() {
+  assert.deepEqual(spokenMonthIndexes([{ amounts: [1, null, 0, null] }, { amounts: [null, null, null, null] }], 4), [0, 1, 2], '마지막으로 칸이 찬 달까지가 말하는 달')
+  assert.deepEqual(spokenMonthIndexes([{ amounts: [null, null] }], 2), [], '칸이 하나도 없으면 말하는 달이 없다')
+  const sheets = await readEcountWorkbook(await emptyMonthXlsx())
+  const m = { ...guessMapping(sheets, 'monthly').mapping, unit: 'won' as const }
+  assert.equal(m.basis, 'monthly')
+  const plain = planMonthly(sheets, m, { accounts: BOOK, ...NO_LOCKS })
+  assert.deepEqual(plain.blocks, [], plain.blocks.join(' / '))
+  assert.deepEqual(plain.reversals, [], '지난 업로드가 없으면 되돌릴 달도 없다')
+  assert.deepEqual(monthlyLedgerMonths(plain).map((x) => [x.month, x.lines.length]), [['2025-01', 2], ['2025-02', 2], ['2025-04', 2]],
+    '지난 업로드가 없는 빈 달은 보내지 않는다(0056 전 DB에 빈 달을 보내지 않게)')
+  const withPrev = planMonthly(sheets, m, { accounts: BOOK, ...NO_LOCKS, uploadMonths: ['2025-03', '2025-05'] })
+  assert.deepEqual(withPrev.reversals, ['2025-03'], '말하는 빈 달(3월)만 역분개 — 5월(자료 없음)은 손대지 않는다')
+  assert.ok(withPrev.warnings.includes('2025-03은 이 파일에 금액이 없습니다 — 등록하면 지난 업로드 전표를 역분개합니다(그 달 손익 0)'))
+  assert.equal(withPrev.blockCount, 0)
+  assert.deepEqual(monthlyLedgerMonths(withPrev).map((x) => [x.month, x.lines.length]), [['2025-01', 2], ['2025-02', 2], ['2025-03', 0], ['2025-04', 2]],
+    '역분개할 달은 빈 달(lines = [])로 보낸다')
+  const closed = planMonthly(sheets, m, { accounts: BOOK, ...NO_LOCKS, lastClosed: '2025-03', uploadMonths: ['2025-03'] })
+  assert.ok(closed.blocks.includes('2025-03은 이 파일에 금액이 없지만 마감된 달이라 지난 업로드 전표를 되돌리지 않습니다 — 고칠 것은 당월 정정 전표로'),
+    closed.blocks.join(' / '))
+  const official = planMonthly(sheets, m, { accounts: BOOK, ...NO_LOCKS, officials: [{ kind: 'quarter', key: '2025-Q1' }], uploadMonths: ['2025-03'] })
+  assert.ok(official.blocks.some((b) => b.startsWith('2025-03은 이 파일에 금액이 없지만 세무사 확정 결산이 덮은 달')), official.blocks.join(' / '))
+  // 누계 파일: 앞 달과 누계가 같으면 그 달 당월은 0 — 지난 업로드가 있으면 역분개한다.
+  const ytdSame = await readEcountWorkbook(await ytdSameXlsx())
+  const ym = { ...guessMapping(ytdSame, 'monthly').mapping, unit: 'won' as const }
+  assert.equal(ym.basis, 'ytd')
+  const yp = planMonthly(ytdSame, ym, { accounts: BOOK, ...NO_LOCKS, uploadMonths: ['2025-02'] })
+  assert.deepEqual(yp.blocks, [], yp.blocks.join(' / '))
+  assert.deepEqual(yp.reversals, ['2025-02'], '누계가 그대로인 달(당월 0)은 지난 업로드 전표를 역분개한다')
+  assert.deepEqual(monthlyLedgerMonths(yp).map((x) => [x.month, x.lines]), [
+    ['2025-01', [{ account_code: '4010', amount: -100 }]],
+    ['2025-02', []],
+    ['2025-03', [{ account_code: '4010', amount: -50 }]],
+  ])
+}
+
+/** 재무 머리글의 «ECOUNT 업로드» 바로가기 — 회장 · 재무 쓰기 권한자에게만, 볼 수 있는 ECOUNT 회사만, «회장» 없음. */
+function shortcutChecks() {
+  const user = (role: SessionUser['role'], finance: SessionUser['finance'] = {}): SessionUser => ({
+    user_id: 'u', name: 'n', role, title_ko: '', display_name_en: null, language: 'ko', finance, approvals_write: false,
+  })
+  const visible = [
+    { business_id: 'biz_vana', name: 'VANA' },
+    { business_id: 'biz_dy', name: 'DY' },
+  ]
+  const ids = (u: SessionUser | null, list = visible) => ecountUploadShortcuts(u, list, { withName: true }).map((s) => s.business_id)
+  assert.deepEqual(ids(user('Chairman')), ['biz_dy'], '회장 — ECOUNT 회사(DY)만')
+  assert.deepEqual(ids(user('GroupCFO')), ['biz_dy'], '그룹 CFO — 역할로 재무 쓰기')
+  assert.deepEqual(ids(user('TeamLead', { biz_dy: { write: true, close: false } })), ['biz_dy'], 'DY 재무 쓰기 줄이 있는 직원')
+  assert.deepEqual(ids(user('TeamLead', { biz_dy: { write: false, close: true } })), [], '재무 읽기 · 마감만 받은 직원에게는 없다')
+  assert.deepEqual(ids(user('TeamLead', { biz_vana: { write: true, close: false } })), [], '다른 회사 쓰기 줄로는 DY 바로가기가 없다')
+  assert.deepEqual(ids(user('Member')), [], '줄 없는 직원에게는 없다')
+  assert.deepEqual(ids(user('Executive')), [], '임원이어도 줄이 없으면 없다')
+  assert.deepEqual(ids(user('AIAgent', { biz_dy: { write: true, close: true } })), [], '시스템 계정은 줄이 있어도 없다')
+  assert.deepEqual(ids(user('Integration', { biz_dy: { write: true, close: true } })), [])
+  assert.deepEqual(ids(null), [], '로그인 전에는 없다')
+  assert.deepEqual(ids(user('Chairman'), [{ business_id: 'biz_vana', name: 'VANA' }]), [], '볼 수 없는 회사(목록에 없는 DY)의 바로가기는 없다')
+  const [s] = ecountUploadShortcuts(user('TeamLead', { biz_dy: { write: true, close: false } }), visible, { withName: true })
+  assert.deepEqual(s, { business_id: 'biz_dy', label: 'DY ECOUNT 업로드', href: '/finance/biz_dy/import' })
+  assert.equal(ecountUploadShortcuts(user('Chairman'), visible, { withName: false })[0].label, 'ECOUNT 업로드')
+  for (const r of ['Chairman', 'GroupCFO', 'TeamLead'] as const) {
+    for (const x of ecountUploadShortcuts(user(r, { biz_dy: { write: true, close: false } }), visible, { withName: true })) {
+      assert.ok(!/회장|Chairman/i.test(x.label), `바로가기 글자에 «회장»: ${x.label}`)
+    }
+  }
+}
+
 async function monthlyChecks() {
   assert.deepEqual(ytdToMonthly([100, 300, null, 600, 600]), [100, 200, null, 300, 0], '빈 달은 빈 칸 · 다음 달은 마지막 누계를 뺀다')
   assert.deepEqual(ytdToMonthly([-5, -5]), [-5, 0])
@@ -1050,6 +1154,7 @@ async function monthlyChecks() {
   assert.ok(planMonthly(plain, g.mapping, { accounts: counterBook, ...NO_LOCKS }).lines.some((l) => l.blocks.some((b) => /대응 계정에는 금액을 싣지 않습니다/.test(b))),
     '대응 계정 줄은 막는다')
 
+  await emptyMonthChecks()
   await dummyMonthlyEndToEnd()
 }
 
@@ -1133,6 +1238,33 @@ async function dummyMonthlyEndToEnd() {
   await reg(await start('ytd'), [{ month: '2026-09', lines: [{ account_code: '4010', amount: -200 }] }], { basis: 'ytd' })
   assert.equal(await net('2026-09', '4010'), sep - 200, 'dummy: 누계로 확정한 업로드가 안 실린다')
 
+  // 0056 금액 없는 달 — 지난 업로드 전표(9월)를 역분개만 · 활성 줄 없음 · 다시 비우면 아무것도 안 한다 · 다시 금액이 오면 새 전표.
+  const e1 = await reg(await start(), [{ month: '2026-09', lines: [] }])
+  assert.deepEqual([e1.posted, e1.corrected, e1.unchanged, e1.reversed, e1.months[0].action], [0, 0, 0, 1, 'reversed'])
+  assert.equal(await net('2026-09', '4010'), sep, 'dummy: 금액 없는 달이 지난 업로드 전표를 되돌리지 않았다')
+  assert.equal(dummyImportSlips('biz_dy').filter((x) => x.month === '2026-09' && x.superseded_at === null).length, 0, 'dummy: 빈 달에 활성 줄이 남았다')
+  const e2 = await reg(await start(), [{ month: '2026-09', lines: [] }])
+  assert.deepEqual([e2.reversed, e2.months[0].action], [0, 'empty'], 'dummy: 되돌릴 전표가 없는 빈 달이 무엇을 했다')
+  await reg(await start(), [{ month: '2026-09', lines: [{ account_code: '4010', amount: -70 }] }])
+  assert.equal(await net('2026-09', '4010'), sep - 70, 'dummy: 비운 달에 다시 올린 금액이 장부가 아니다')
+  // 되돌릴 것 없는 마감 달(7월)의 빈 칸은 막지 않는다(DB와 같다 — 손댈 달만 잰다).
+  const e3 = await reg(await start(), [{ month: '2026-07', lines: [] }])
+  assert.equal(e3.months[0].action, 'empty', 'dummy: 되돌릴 것 없는 마감 달의 빈 칸이 막히거나 무엇을 했다')
+
+  // 출처 꼬리표 — 업로드 전표(원 · 정정분개)와 그 역분개는 «ECOUNT 엑셀», 나머지 자체 전표는 «자체»(적요가 아니라 업로드 전표 줄로).
+  const ledger = await repo.loadFinanceLedger()
+  const uploadNos = new Set(dummyImportSlips('biz_dy').map((x) => x.slip_no))
+  for (const month of ['2026-08', '2026-09']) {
+    const views = slipsOf(ledger, 'biz_dy', month, uploadNos)
+    assert.ok(views.some((v) => slipOriginLabel(v) === 'ECOUNT 엑셀'), `${month}: 업로드 전표가 «ECOUNT 엑셀»로 안 보인다`)
+    for (const v of views) {
+      const head = ledger.entries.find((e) => e.business_id === 'biz_dy' && e.slip_no === v.slip_no)
+      const fromUpload = uploadNos.has(v.slip_no) || (head?.correction_kind === 'reversal' && uploadNos.has(head.corrects_id ?? ''))
+      assert.equal(slipOriginLabel(v), !v.own ? 'ECOUNT' : fromUpload ? 'ECOUNT 엑셀' : '자체', `${v.slip_no} 출처`)
+    }
+    assert.ok(slipsOf(ledger, 'biz_dy', month).every((v) => slipOriginLabel(v) !== 'ECOUNT 엑셀'), '업로드 전표 줄 없이는 «ECOUNT 엑셀»을 붙이지 않는다(적요로 가르지 않는다)')
+  }
+
   // 이미 역분개된 업로드 전표 — 또 뒤집지 않고 멈춘다
   const active = dummyImportSlips('biz_dy').find((x) => x.month === '2026-08' && x.superseded_at === null)!
   await repo.postCorrection({ business_id: 'biz_dy', corrects_id: active.slip_no, entry_date: '2026-08-31', memo: '손으로 취소', evidence_url: null, lines: [] }, actor)
@@ -1171,6 +1303,7 @@ async function main() {
   await accountsChecks()
   await annualChecks()
   await monthlyChecks()
+  shortcutChecks()
   await writeSamples()
   console.log('PASS: 셀 정규화(수식 result · 쉼표 · 괄호 음수 · ₩ · «△» 음수 · «-» 단독 0 · 그 밖의 못 읽은 칸은 오류) · 병합 칸 한 번만 · 기간 · 단위 · 머리글 · 행 종류(합계 · 소계 · 로마숫자 · 이익) · .xls · csv · HTML 거절 · sha256 · 감사 문구')
   console.log('PASS: 열 지정 — 머리글 짐작(제목 · 단위 줄 건너뜀) · 월 머리글 표기 · 지난 지정 다시 쓰기(머리글 같을 때만) · 판정 · 믿지 않는 값 거르기')
@@ -1178,6 +1311,7 @@ async function main() {
   console.log('PASS: 연간 — 두 시트 짐작 · 천원 → 원 · 로마숫자 머리(혼자 선 머리 = 계정 줄 · 로마숫자 이익 줄) · 묶음 줄 = 소계 · 0원 줄 제외 · 계정 맞추기(코드 · 이름 · 모호 → 줄마다 고르기 · 후보 밖 거부) · 한 계정 한 줄 · 합계 행 대조(차액) · 불균형 · 세무사 확정 해 거부 · 원장 부호 · dummy 등록(거부 낱말 · supersede · 기본 목록은 확정만)')
   console.log('PASS: 등록 — dummy 계정과목 한 번(전부 아니면 전무 · 해시 · 이미 있는 코드 · 바뀐 이름 · 남의 업로드 · AIAgent · 두 번 등록) · 거부 낱말 → 직원 화면 문장(«회장» 없음)')
   console.log('PASS: 월별 — 월 열 열둘 · 합계 열 · 당월/누계 짐작 · 천원 → 원 · 누계 → 당월(앞 달 빼기 · 이익 줄도) · 빈 달 누계 차단 · 행 합 ≠ 합계 열 · 마감 달 · 세무사 확정 달 · 수기 전표 경고 · 달마다 이익 줄 대조 · 등록 줄(당월 · 원장 부호 · 누계판 = 당월판) · 재무상태표/비활성/두 줄/대응 계정 차단 · dummy 등록(거부 낱말 · 대응 계정 · 재업로드 정정 전표 · 같은 내용 건너뜀 · 역분개된 달 멈춤 · 세무사 확정 달)')
+  console.log('PASS: 0056 — 금액 없는 달(말하는 달만 · 지난 업로드 전표만 역분개 · 마감/확정 달 차단 · 누계 당월 0 · 등록 줄 빈 달 · dummy 역분개/empty/다시 싣기) · 출처 «ECOUNT 엑셀»(업로드 전표 줄 + 그 역분개) · «ECOUNT 업로드» 바로가기(회장 · 재무 쓰기 권한자만 · 볼 수 있는 ECOUNT 회사만 · «회장» 없음)')
 }
 
 main().catch((e) => {

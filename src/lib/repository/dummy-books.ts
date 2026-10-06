@@ -548,7 +548,7 @@ export async function dummyImportEcountMonthly(
   for (const m of months) {
     const ok =
       !!m && typeof m.month === 'string' && MONTH.test(m.month) &&
-      (m.month === imp.period_key || m.month.startsWith(`${imp.period_key}-`)) && Array.isArray(m.lines) && m.lines.length > 0
+      (m.month === imp.period_key || m.month.startsWith(`${imp.period_key}-`)) && Array.isArray(m.lines)
     if (!ok) throw new Error(`ecount_plan_invalid: 달 ${m?.month ?? '?'}`)
     if (seenMonths.has(m.month)) throw new Error(`ecount_plan_invalid: 달 ${m.month}가 두 번`)
     seenMonths.add(m.month)
@@ -577,18 +577,22 @@ export async function dummyImportEcountMonthly(
   const last = ledger.closings
     .filter((c) => c.business_id === imp.business_id)
     .reduce<string | null>((m, c) => (m === null || c.period > m ? c.period : m), null)
-  const closed = sorted.find((m) => last !== null && m.month <= last)
+  const activeSlip = (month: string) => importSlips.find((x) => x.business_id === imp.business_id && x.month === month && x.superseded_at === null)
+  // 0056: 마감 · 확정 판정은 손댈 달만 — 금액 있는 달 + 되돌릴 업로드 전표가 있는 빈 달.
+  const touched = sorted.filter((m) => m.lines.length > 0 || activeSlip(m.month))
+  const closed = touched.find((m) => last !== null && m.month <= last)
   if (closed) throw new Error(`closed_period: ${closed.month}`)
   const officials = officialStatements.filter((s) => s.business_id === imp.business_id && s.basis === 'accountant' && s.superseded_at === null)
   const quarterOf = (month: string) => `${month.slice(0, 4)}-Q${Math.floor((Number(month.slice(5)) + 2) / 3)}`
-  const locked = sorted.find((m) =>
+  const locked = touched.find((m) =>
     officials.some(
       (s) => (s.period_kind === 'year' && s.period_key === m.month.slice(0, 4)) || (s.period_kind === 'quarter' && s.period_key === quarterOf(m.month)),
     ),
   )
   if (locked) throw new Error(`official_month_locked: ${locked.month}`)
   const counter = store.get(key(imp.business_id, C))
-  if (counter && (counter.section !== 'equity' || !counter.active)) throw new Error('ecount_counter_account_invalid')
+  const anyLines = sorted.some((m) => m.lines.length > 0)
+  if (anyLines && counter && (counter.section !== 'equity' || !counter.active)) throw new Error('ecount_counter_account_invalid')
 
   // 달마다 할 일을 먼저 다 정한다(쓰기 전). 전표 규칙은 entryProblem 한 곳(대응 계정은 아래에서 만들 것으로 본다).
   const counterRow: Account = counter ?? {
@@ -607,6 +611,12 @@ export async function dummyImportEcountMonthly(
   const shape = (ls: readonly { account_code: string; side: string; amount: number }[]) =>
     ls.map((l) => `${l.account_code}|${l.side}|${cents(l.amount)}`).sort().join(',')
   const plans = sorted.map((m) => {
+    const prevActive = activeSlip(m.month)
+    if (prevActive && entries.some((e) => e.business_id === imp.business_id && e.corrects_id === prevActive.slip_no && e.correction_kind === 'reversal')) {
+      throw new Error(`ecount_month_reversed: ${m.month} ${prevActive.slip_no}`)
+    }
+    // 0056 빈 달 — 전표 규칙을 잴 것이 없다(역분개는 원 전표를 뒤집을 뿐).
+    if (m.lines.length === 0) return { month: m.month, entry: null, prev: prevActive, same: false }
     const sum = m.lines.reduce((t, l) => t + cents(l.amount), 0)
     const slip: DraftLine[] = [...m.lines]
       .sort((a, b) => (a.account_code < b.account_code ? -1 : a.account_code > b.account_code ? 1 : 0))
@@ -621,19 +631,39 @@ export async function dummyImportEcountMonthly(
     }
     const problem = entryProblem(entry, check)
     if (problem) throw new Error(`invalid_entry: ${problem}`)
-    const prev = importSlips.find((x) => x.business_id === imp.business_id && x.month === m.month && x.superseded_at === null)
-    if (prev && entries.some((e) => e.business_id === imp.business_id && e.corrects_id === prev.slip_no && e.correction_kind === 'reversal')) {
-      throw new Error(`ecount_month_reversed: ${m.month} ${prev.slip_no}`)
-    }
+    const prev = prevActive
     const same = !!prev && shape(lines.filter((l) => l.business_id === imp.business_id && l.slip_no === prev.slip_no)) === shape(slip)
     return { month: m.month, entry, prev, same }
   })
 
   // 쓰기 — 대응 계정 → 달마다.
-  if (!counter) store.set(key(imp.business_id, C), counterRow)
+  if (!counter && anyLines) store.set(key(imp.business_id, C), counterRow)
   const now = new Date().toISOString()
-  const result: EcountMonthlyResult = { posted: 0, corrected: 0, unchanged: 0, months: [] }
+  const result: EcountMonthlyResult = { posted: 0, corrected: 0, unchanged: 0, reversed: 0, months: [] }
+  const flip = (slipNo: string) =>
+    lines
+      .filter((l) => l.business_id === imp.business_id && l.slip_no === slipNo)
+      .sort((a, b) => a.line_no - b.line_no)
+      .map((l): DraftLine => ({ account_code: l.account_code, side: l.side === 'debit' ? 'credit' : 'debit', amount: l.amount, memo: l.memo }))
   for (const p of plans) {
+    if (p.entry === null) {
+      // 0056 빈 달: 지난 업로드 전표가 있으면 역분개만 + 옛 줄 내림(새 활성 줄 없음), 없으면 아무것도 안 한다.
+      if (!p.prev) {
+        result.months.push({ month: p.month, action: 'empty' })
+        continue
+      }
+      const prev = p.prev
+      const orig = entries.find((e) => e.business_id === imp.business_id && e.slip_no === prev.slip_no)!
+      const reversal = insertEntry(
+        { business_id: imp.business_id, entry_date: monthEnd(p.month), memo: `[역분개] ${orig.memo}`, evidence_url: orig.evidence_url, lines: flip(prev.slip_no) },
+        actor,
+        { corrects_id: prev.slip_no, kind: 'reversal' },
+      )
+      prev.superseded_at = now
+      result.reversed += 1
+      result.months.push({ month: p.month, action: 'reversed', reversal, previous: prev.slip_no })
+      continue
+    }
     if (p.prev && p.same) {
       result.unchanged += 1
       result.months.push({ month: p.month, action: 'unchanged', slip_no: p.prev.slip_no })
@@ -649,10 +679,7 @@ export async function dummyImportEcountMonthly(
     // 0016 post_correction과 같은 모양 — 역분개(원 줄을 line_no 순서로 차대만 뒤집음) + 정정분개.
     const prev = p.prev
     const orig = entries.find((e) => e.business_id === imp.business_id && e.slip_no === prev.slip_no)!
-    const flipped = lines
-      .filter((l) => l.business_id === imp.business_id && l.slip_no === prev.slip_no)
-      .sort((a, b) => a.line_no - b.line_no)
-      .map((l): DraftLine => ({ account_code: l.account_code, side: l.side === 'debit' ? 'credit' : 'debit', amount: l.amount, memo: l.memo }))
+    const flipped = flip(prev.slip_no)
     const reversal = insertEntry(
       { business_id: imp.business_id, entry_date: p.entry.entry_date, memo: `[역분개] ${orig.memo}`, evidence_url: orig.evidence_url, lines: flipped },
       actor,
@@ -666,7 +693,7 @@ export async function dummyImportEcountMonthly(
   }
   note(
     actor,
-    `${ecountAuditNote({ kind: 'monthly', period: imp.period_key, fileName: imp.file_name, importId: imp.import_id })} — 새 ${result.posted} · 정정 ${result.corrected} · 같음 ${result.unchanged}`,
+    `${ecountAuditNote({ kind: 'monthly', period: imp.period_key, fileName: imp.file_name, importId: imp.import_id })} — 새 ${result.posted} · 정정 ${result.corrected} · 같음 ${result.unchanged} · 빈 달 역분개 ${result.reversed}`,
   )
   return result
 }

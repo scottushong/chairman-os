@@ -33,7 +33,12 @@ export default async function JournalPage(props: PageProps<'/finance/[business_i
   const { business_id } = await props.params
   const params = await props.searchParams
   const repo = await getRepository()
-  const [businesses, ledger, user] = await Promise.all([repo.listBusinesses(), repo.loadFinanceLedger(), currentUser()])
+  const [businesses, ledger, user, importSlips] = await Promise.all([
+    repo.listBusinesses(),
+    repo.loadFinanceLedger(),
+    currentUser(),
+    repo.listFinanceImportSlips(business_id),
+  ])
 
   const business = businesses.find((b) => b.business_id === business_id)
   if (!business) notFound()
@@ -43,7 +48,8 @@ export default async function JournalPage(props: PageProps<'/finance/[business_i
   const requested = firstParam(params.month)
   const period = requested && periods.includes(requested) ? requested : today.slice(0, 7)
   const locked = isPeriodLocked(ledger, business_id, period)
-  const slips = slipsOf(ledger, business_id, period)
+  // 출처 «ECOUNT 엑셀» — 월별 업로드가 세운 전표(0050 finance_import_slips). 적요가 아니라 그 줄로 가른다.
+  const slips = slipsOf(ledger, business_id, period, new Set(importSlips.map((x) => x.slip_no)))
   const bookkeeper = canKeepBooks(user, business_id)
 
   // 정정 모드. 정정할 수 없는 전표(역분개·이미 정정됨·ECOUNT)면 폼을 열지 않는다 — 목록에 버튼도 없다.

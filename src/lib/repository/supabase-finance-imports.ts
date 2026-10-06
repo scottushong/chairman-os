@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 import type { FinanceImport, FinanceImportKind, FinanceImportPreviewPatch } from '@/types'
 
-import type { AuditActor, ChairmanRepository, EcountMonthlyResult } from './types'
+import type { AuditActor, ChairmanRepository, EcountMonthlyResult, FinanceImportSlip } from './types'
 
 /**
  * 0050 finance_imports(ECOUNT 엑셀 업로드 한 건)의 live 어댑터 조각. supabase.ts가 펼쳐 넣는다.
@@ -51,6 +51,7 @@ type Methods = Pick<
   | 'registerEcountAccounts'
   | 'registerEcountAnnual'
   | 'registerEcountMonthly'
+  | 'listFinanceImportSlips'
 >
 
 /** RPC 오류를 거부 낱말(message)이 보이게 던진다 — 액션이 lib/ecount/import-errors.ts로 문장을 고른다. */
@@ -177,7 +178,7 @@ export function financeImportMethods(sb: SupabaseClient): Methods {
       return id
     },
 
-    /** 0052 ecount_monthly_import — 한 트랜잭션(마감 · 확정 달 · 손익만 · 달마다 전표 + 대응 · 재업로드는 정정 전표 · committed). */
+    /** 0052/0056 ecount_monthly_import — 한 트랜잭션(마감 · 확정 달 · 손익만 · 달마다 전표 + 대응 · 재업로드는 정정 전표 · 금액 없는 달은 역분개 · committed). */
     async registerEcountMonthly(importId, input, actor: AuditActor): Promise<EcountMonthlyResult> {
       void actor
       const { data, error } = await sb.rpc('ecount_monthly_import', {
@@ -192,7 +193,23 @@ export function financeImportMethods(sb: SupabaseClient): Methods {
       if (typeof r.posted !== 'number' || typeof r.corrected !== 'number' || typeof r.unchanged !== 'number' || !Array.isArray(r.months)) {
         throw new Error('ecount_monthly_import: 결과가 오지 않았다.')
       }
-      return { posted: r.posted, corrected: r.corrected, unchanged: r.unchanged, months: r.months }
+      // 0056 전 DB(0052)는 reversed를 주지 않는다 — 그 DB는 빈 달을 ecount_plan_invalid로 거부하므로 0이 맞다.
+      return { posted: r.posted, corrected: r.corrected, unchanged: r.unchanged, reversed: typeof r.reversed === 'number' ? r.reversed : 0, months: r.months }
+    },
+
+    /** 0050 finance_import_slips — 회사의 업로드 전표 줄 전부. 0050 전 DB면 빈 목록(꼬리표가 «자체»로 남을 뿐이다). */
+    async listFinanceImportSlips(businessId: string): Promise<FinanceImportSlip[]> {
+      const { data, error } = await sb
+        .from('finance_import_slips')
+        .select('business_id,month,slip_no,import_id,superseded_at')
+        .eq('business_id', businessId)
+        .order('month')
+        .limit(5000)
+      if (error) {
+        if (missing('listFinanceImportSlips', error)) return []
+        fail(error)
+      }
+      return (data ?? []) as unknown as FinanceImportSlip[]
     },
 
     async cancelFinanceImport(importId: string, actor: AuditActor): Promise<FinanceImport> {

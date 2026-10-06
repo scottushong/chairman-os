@@ -3,7 +3,14 @@ import { ECOUNT_CODE_BUSINESSES } from '@/lib/ledger/standard-chart'
 import { FINANCE_IMPORT_KIND, type FinanceImport, type FinanceImportPreviewPatch } from '@/types'
 
 import { dummyFinanceImportOriginals } from './dummy-attachments'
-import { dummyApplyEcountAccounts, dummyCanKeepBooks, dummyCanReadBooks, dummyImportEcountAnnual, dummyImportEcountMonthly } from './dummy-books'
+import {
+  dummyApplyEcountAccounts,
+  dummyCanKeepBooks,
+  dummyCanReadBooks,
+  dummyImportEcountAnnual,
+  dummyImportEcountMonthly,
+  dummyImportSlips,
+} from './dummy-books'
 import { dummyViewer } from './dummy-org'
 import type { AuditActor, ChairmanRepository } from './types'
 
@@ -100,6 +107,7 @@ type Methods = Pick<
   | 'registerEcountAccounts'
   | 'registerEcountAnnual'
   | 'registerEcountMonthly'
+  | 'listFinanceImportSlips'
 >
 
 export const dummyFinanceImports: Methods = {
@@ -219,6 +227,13 @@ export const dummyFinanceImports: Methods = {
     )
     commit(row, { result })
     return result
+  },
+
+  /** 0050 finance_import_slips_read — 그 회사 재무 읽기 권한자만(줄 없음 = 빈 목록). */
+  async listFinanceImportSlips(businessId: string) {
+    const viewer = dummyViewer()
+    if (viewer.revoked_at || viewer.role === 'Integration' || !dummyCanReadBooks(businessId)) return []
+    return dummyImportSlips(businessId)
   },
 
   async cancelFinanceImport(importId, actor: AuditActor) {

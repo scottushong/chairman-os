@@ -119,8 +119,8 @@ export interface EcountCommitState extends EcountImportState {
   /** 연간 — 새 결산 id · 실은 줄 수 */
   statementId?: number
   lines?: number
-  /** 월별 — 새 전표 달 수 · 정정 전표 달 수(재업로드) · 같아서 건너뛴 달 수 */
-  monthly?: { posted: number; corrected: number; unchanged: number }
+  /** 월별 — 새 전표 달 수 · 정정 전표 달 수(재업로드) · 같아서 건너뛴 달 수 · 금액이 빠져 역분개한 달 수(0056) */
+  monthly?: { posted: number; corrected: number; unchanged: number; reversed: number }
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -299,14 +299,23 @@ function usedPicks(amounts: AmountsPreview, picks: Record<string, string>): Reco
 /**
  * 월별 미리보기 · 등록 재료. 마감된 달(0016 closed_period와 같은 판정) · 세무사 확정이 덮은 달 · 수기 전표가 있는 달을
  * 원장에서 읽어 넘긴다. 최종 판정은 등록 RPC(0052 ecount_monthly_import)가 DB에서 다시 한다.
- * 수기 전표 경고는 업로드 전표(memo «[ECOUNT 엑셀]»)를 빼고 센다 — 지난 업로드는 재업로드가 정정하므로 겹침이 아니다.
+ * 수기 전표 경고는 업로드 전표(finance_import_slips + 그 역분개)를 빼고 센다 — 지난 업로드는 재업로드가 정정하므로 겹침이 아니다.
  */
 async function monthlyPreview(repo: ChairmanRepository, imp: FinanceImport, sheets: EcountSheet[], mapping: EcountMapping): Promise<AmountsPreview> {
-  const [ledger, officials] = await Promise.all([repo.loadFinanceLedger(), repo.listOfficialStatements(imp.business_id)])
-  // 업로드 전표와 그 역분개 · 정정분개(적요 머리 «[ECOUNT 엑셀]» · «[역분개] [ECOUNT 엑셀]»)
-  const uploadSlips = new Set(
-    ledger.entries.filter((e) => e.business_id === imp.business_id && /^(\[역분개\] )?\[ECOUNT 엑셀\]/.test(e.memo)).map((e) => e.slip_no),
-  )
+  const [ledger, officials, slips] = await Promise.all([
+    repo.loadFinanceLedger(),
+    repo.listOfficialStatements(imp.business_id),
+    repo.listFinanceImportSlips(imp.business_id),
+  ])
+  // 업로드 전표(finance_import_slips — 원 전표 · 정정분개)와 그것을 뒤집은 역분개. 0056부터 적요 머리가 아니라 그 줄로 가른다
+  // (전표 화면의 출처 «ECOUNT 엑셀»과 같은 판정 — lib/ledger/journal.ts slipsOf).
+  const slipNos = new Set(slips.map((x) => x.slip_no))
+  const uploadSlips = new Set([
+    ...slipNos,
+    ...ledger.entries
+      .filter((e) => e.business_id === imp.business_id && e.correction_kind === 'reversal' && !!e.corrects_id && slipNos.has(e.corrects_id))
+      .map((e) => e.slip_no),
+  ])
   const journalMonths = [
     ...new Set(
       ledger.journal
@@ -319,6 +328,8 @@ async function monthlyPreview(repo: ChairmanRepository, imp: FinanceImport, shee
     lastClosed: lastClosedPeriod(ledger, imp.business_id),
     officials: officials.map((o) => ({ kind: o.period_kind, key: o.period_key })),
     journalMonths,
+    // 0056: 활성 업로드 전표가 있는 달 — 이 파일에 금액이 없으면 등록이 역분개한다.
+    uploadMonths: [...new Set(slips.filter((x) => x.superseded_at === null).map((x) => x.month))],
   })
 }
 
@@ -448,6 +459,7 @@ export async function commitEcountImport(importId: unknown, choices?: EcountComm
       if (amounts.blockCount > 0) return { error: `막힌 줄이 ${amounts.blockCount}개 있습니다. 미리보기에서 고친 뒤 등록하세요.` }
       if (!saved.year || !saved.basis) return { error: '몇 년도 · 당월/누계를 정하지 않았습니다. 열 지정을 고른 뒤 미리보기를 다시 하세요.' }
       const months = monthlyLedgerMonths(amounts)
+      // 금액 있는 달도 · 역분개할 빈 달(0056)도 없으면 실을 것이 없다.
       if (months.length === 0) return { error: `${FINANCE_IMPORT_KIND_LABEL_KO[imp.kind]}: 실을 금액 줄이 없습니다. 열 지정(과목명 · 월 열)을 확인하세요.` }
       const r = await repo.registerEcountMonthly(imp.import_id, { file_sha256: original.sha, period_key: saved.year, basis: saved.basis, months }, actor)
       revalidatePath(importPath(imp.business_id))
@@ -457,7 +469,7 @@ export async function commitEcountImport(importId: unknown, choices?: EcountComm
       revalidatePath(base, 'layout')
       revalidatePath('/finance')
       revalidatePath(`/business/${encodeURIComponent(imp.business_id)}`)
-      return { importId: imp.import_id, monthly: { posted: r.posted, corrected: r.corrected, unchanged: r.unchanged } }
+      return { importId: imp.import_id, monthly: { posted: r.posted, corrected: r.corrected, unchanged: r.unchanged, reversed: r.reversed } }
     }
 
     if (imp.kind === 'annual') {

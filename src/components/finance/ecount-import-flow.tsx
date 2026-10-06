@@ -21,6 +21,7 @@ import { EcountOutline } from './ecount-outline'
 export function EcountImportFlow({
   initial,
   onDone,
+  onError,
 }: {
   initial: EcountPreviewState
   /**
@@ -28,13 +29,22 @@ export function EcountImportFlow({
    * 목록(draft만)에서 빼서 이 컴포넌트가 사라진다 — 문장을 목록 단에 올려 두어야 사람이 결과를 본다.
    */
   onDone?: (text: string) => void
+  /**
+   * 거절 · 오류 문구를 부모가 들고 그린다(«진행 중» 목록 — 0056 마무리). 주면 이 컴포넌트는 문구를 직접 그리지 않는다:
+   * 새로 고침에 이 줄이 다시 그려지거나 목록에서 빠져도 사람이 거절 이유를 본다. null = 지움(다음 동작을 시작함).
+   */
+  onError?: (text: string | null) => void
 }) {
   const router = useRouter()
   const [state, setState] = useState<EcountPreviewState>(initial)
   const [draft, setDraft] = useState<EcountMapping | null>(initial.mapping ?? null)
   const [editing, setEditing] = useState(initial.mappingSource !== 'confirmed' || !!initial.mappingProblems?.length)
   const [busy, setBusy] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setErrorText] = useState<string | null>(null)
+  function setError(text: string | null) {
+    setErrorText(text)
+    onError?.(text)
+  }
   const [done, setDoneText] = useState<string | null>(null)
   function setDone(text: string) {
     setDoneText(text)
@@ -111,9 +121,10 @@ export function EcountImportFlow({
       const r = await commitEcountImport(importId, { mapping: state.mapping })
       if (r.error) setError(r.error)
       else {
-        const m = r.monthly ?? { posted: 0, corrected: 0, unchanged: 0 }
+        const m = r.monthly ?? { posted: 0, corrected: 0, unchanged: 0, reversed: 0 }
+        const emptied = m.reversed ? ` · 금액이 빠져 역분개 ${m.reversed}달` : ''
         setDone(
-          `등록했습니다 — ${state.amounts?.year ?? ''}년 월별 손익: 새 전표 ${m.posted}달 · 정정 전표 ${m.corrected}달 · 같아서 건너뜀 ${m.unchanged}달(ECOUNT 엑셀 · 잠정). 전표 화면에서 «[ECOUNT 엑셀]» 적요로 보입니다.`,
+          `등록했습니다 — ${state.amounts?.year ?? ''}년 월별 손익: 새 전표 ${m.posted}달 · 정정 전표 ${m.corrected}달 · 같아서 건너뜀 ${m.unchanged}달${emptied}(ECOUNT 엑셀 · 잠정). 전표 화면에서 출처 «ECOUNT 엑셀»로 보입니다.`,
         )
       }
     } finally {
@@ -176,7 +187,7 @@ export function EcountImportFlow({
       ) : null}
 
       {busy ? <p className="text-t11 text-accent" aria-live="polite">{busy}</p> : null}
-      {error ? (
+      {error && !onError ? (
         <p role="alert" className="rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-t11h text-critical">
           {error}
         </p>

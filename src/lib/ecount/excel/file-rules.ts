@@ -1,3 +1,5 @@
+import { ATTACHMENT_MAX_BYTES } from '@/lib/attachments/rules'
+import { makeFileCheck, type FileCheck } from '@/lib/file-drop'
 import { FINANCE_IMPORT_KIND_LABEL_KO, type FinanceImportKind } from '@/types'
 
 /**
@@ -21,6 +23,15 @@ export function ecountFileProblem(fileName: string): string | null {
   if (ext === 'csv') return `CSV는 받지 않습니다. ECOUNT에서 엑셀로 내려받거나, ${SAVE_AS_XLSX}`
   return 'ECOUNT에서 내려받은 엑셀(.xlsx) 파일만 받습니다.'
 }
+
+const ecountSizeCheck = makeFileCheck({ typeOk: () => true, formats: '엑셀(.xlsx)', maxBytes: ATTACHMENT_MAX_BYTES })
+
+/**
+ * 공통 첨부 부품(FileDropZone)의 판정 — 놓자마자(올리기 전에) 이름 · 크기를 본다. 이름 문구는 ecountFileProblem 그대로
+ * (.xls · CSV면 «xlsx로 저장» 안내), 크기는 첨부와 같은 20MB 상한 · 빈 파일 거절. 바이트(앞머리)는 올리기 직전에
+ * ecountBytesProblem이 보고, 서버가 원본을 다시 읽어 한 번 더 본다.
+ */
+export const checkEcountFile: FileCheck = (file) => ecountFileProblem(file.name) ?? ecountSizeCheck(file)
 
 /**
  * 바이트 앞머리로 형식을 본다. xlsx는 zip(PK\x03\x04)이다. 통과면 null.

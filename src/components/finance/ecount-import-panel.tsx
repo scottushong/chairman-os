@@ -1,12 +1,14 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 
 import { beginAttachment, cancelAttachment, uploadAttachmentBytes } from '@/app/actions/attachments'
 import { cancelEcountImport, previewEcountImport, startEcountImport, type EcountPreviewState } from '@/app/actions/ecount-import'
+import { FileDropZone } from '@/components/ui/file-drop-zone'
 import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MIME } from '@/lib/attachments/rules'
-import { ECOUNT_XLSX_ACCEPT, ecountBytesProblem, ecountFileProblem } from '@/lib/ecount/excel/file-rules'
+import { ECOUNT_XLSX_ACCEPT, checkEcountFile, ecountBytesProblem, ecountFileProblem } from '@/lib/ecount/excel/file-rules'
+import { limitLabel } from '@/lib/file-drop'
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
 import { FINANCE_IMPORT_KIND_LABEL_KO, type FinanceImportKind } from '@/types'
 
@@ -20,6 +22,9 @@ import { EcountImportFlow } from './ecount-import-flow'
  * 바이트가 실패하면 첨부 줄 → 업로드 순서로 되돌린다(0050 — 끝난 업로드의 원본은 지울 수 없다).
  *
  * 올린 뒤에는 열 지정 → 미리보기 → 등록(ecount-import-flow). 흐름이 열리면 이 단이 한 줄을 다 차지한다 — 표가 넓다.
+ *
+ * 받는 칸은 공통 첨부 부품(FileDropZone — 끌어다 놓기 · 고르기, 한 장만)이다. 놓자마자 이름 · 크기를 보고(checkEcountFile),
+ * 바이트 앞머리는 올리기 직전에, 서버는 원본을 다시 읽어 한 번 더 본다. 사진 찍기는 없다(엑셀만 받는다).
  */
 
 const TARGET: Record<FinanceImportKind, { source: string; target: string }> = {
@@ -30,16 +35,14 @@ const TARGET: Record<FinanceImportKind, { source: string; target: string }> = {
 
 export function EcountImportPanel({ businessId, kind, mode }: { businessId: string; kind: FinanceImportKind; mode: 'dummy' | 'live' }) {
   const router = useRouter()
-  const fileRef = useRef<HTMLInputElement>(null)
-  const [file, setFile] = useState<File | null>(null)
-  const [busy, setBusy] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<EcountPreviewState | null>(null)
 
-  async function upload(f: File) {
+  /** 파일 한 개 — 실패는 throw(부품이 그 파일 줄에 문구를 그린다). 진행 문구는 setBusy(= 부품의 phase). */
+  async function upload(f: File, setBusy: (text: string) => void) {
+    setResult(null)
     const nameProblem = ecountFileProblem(f.name)
     if (nameProblem) throw new Error(nameProblem)
-    if (f.size < 1 || f.size > ATTACHMENT_MAX_BYTES) throw new Error('20MB까지 올릴 수 있습니다.')
+    if (f.size < 1 || f.size > ATTACHMENT_MAX_BYTES) throw new Error(`${limitLabel(ATTACHMENT_MAX_BYTES)}까지 올릴 수 있습니다.`)
     // 이름만 .xlsx인 옛 형식 · 웹 표 · CSV를 올리기 전에 거른다(서버가 한 번 더 본다).
     const bytesProblem = ecountBytesProblem(new Uint8Array(await f.slice(0, 512).arrayBuffer()))
     if (bytesProblem) throw new Error(bytesProblem)
@@ -83,23 +86,10 @@ export function EcountImportPanel({ businessId, kind, mode }: { businessId: stri
     }
 
     setBusy('서버가 파일을 다시 읽는 중…')
-    setResult(await previewEcountImport(importId))
-  }
-
-  async function onUpload() {
-    if (!file) return
-    setError(null)
-    setResult(null)
-    try {
-      await upload(file)
-      setFile(null)
-      if (fileRef.current) fileRef.current.value = ''
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '올리지 못했습니다.')
-    } finally {
-      setBusy(null)
-      router.refresh()
-    }
+    const preview = await previewEcountImport(importId)
+    setResult(preview)
+    // 올라갔지만 서버가 읽지 못한 경우 — 파일 줄에도 «원본은 진행 중에 남아 있음»을 적는다(아래 문단과 같은 말).
+    if (preview.error && !(preview.importId && preview.mapping)) return '올렸지만 서버가 읽지 못했습니다 — 아래 문구를 보세요.'
   }
 
   const t = TARGET[kind]
@@ -112,43 +102,16 @@ export function EcountImportPanel({ businessId, kind, mode }: { businessId: stri
       <p className="mt-1 text-t11h text-ink-dim">{t.source}</p>
       <p className="mt-0.5 text-t10h text-ink-muted">→ {t.target}</p>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          disabled={!!busy}
-          onClick={() => fileRef.current?.click()}
-          className="min-h-11 rounded-md border border-line bg-panel px-3 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-50 lg:min-h-0 lg:py-1.5"
-        >
-          파일 고르기
-        </button>
-        <button
-          type="button"
-          disabled={!file || !!busy}
-          onClick={() => void onUpload()}
-          className="min-h-11 rounded-md bg-accent px-3 text-t11h font-semibold text-ink disabled:opacity-40 lg:min-h-0 lg:py-1.5"
-        >
-          올리기
-        </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept={ECOUNT_XLSX_ACCEPT}
-          className="hidden"
-          onChange={(e) => {
-            setError(null)
-            setResult(null)
-            setFile(e.target.files?.[0] ?? null)
-          }}
-        />
-      </div>
-      <p className="mt-1.5 min-w-0 truncate text-t10h text-ink-muted">{file ? file.name : '.xlsx만 받습니다 · .xls · CSV는 엑셀에서 xlsx로 저장해 올리세요'}</p>
-
-      {busy ? <p className="mt-2 text-t11 text-accent" aria-live="polite">{busy}</p> : null}
-      {error ? (
-        <p role="alert" className="mt-2 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-t11h text-critical">
-          {error}
-        </p>
-      ) : null}
+      <FileDropZone
+        className="mt-3"
+        label={`${FINANCE_IMPORT_KIND_LABEL_KO[kind]} 엑셀 올리기`}
+        accept={ECOUNT_XLSX_ACCEPT}
+        max={1}
+        check={checkEcountFile}
+        hint={`.xlsx 한 개 · ${limitLabel(ATTACHMENT_MAX_BYTES)}까지 · .xls · CSV는 엑셀에서 xlsx로 저장해 올리세요`}
+        upload={(f, phase) => upload(f, phase)}
+        onSettled={() => router.refresh()}
+      />
 
       {result?.importId && result.mapping ? (
         <EcountImportFlow key={result.importId} initial={result} />

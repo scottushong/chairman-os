@@ -215,6 +215,11 @@ export interface ChairmanRepository {
    * 내용이 같으면 건너뛴다. 활성 업로드 전표가 이미 역분개됐으면 ecount_month_reversed로 멈춘다.
    * months의 amount는 당월 금액 · 원장 규약(차변 − 대변 — monthlyLedgerMonths). basis는 미리보기에서 확정한 당월/누계.
    */
+  /**
+   * 0050 finance_import_slips — 월별 업로드가 세운 전표 ↔ (회사, 달). 활성 · 내려간 줄 전부(읽기는 can_read_books).
+   * 전표 화면의 출처 꼬리표 «ECOUNT 엑셀»과 미리보기의 «지난 업로드 전표가 있는 달»이 이것을 본다. 0050 전 DB면 빈 목록.
+   */
+  listFinanceImportSlips(businessId: string): Promise<FinanceImportSlip[]>
   registerEcountMonthly(
     importId: string,
     input: { file_sha256: string; period_key: string; basis: MonthlyBasis; months: MonthlyLedgerMonth[] },
@@ -890,12 +895,33 @@ export interface EcountAccountMerge {
   renames: { account_code: string; from: string; to: string }[]
 }
 
-/** 0052 ecount_monthly_import의 결과 — 달마다 무엇을 했나(새 전표 · 정정 전표 · 같아서 건너뜀). */
+/** 0050 finance_import_slips 한 줄 — 월별 업로드가 세운 전표(원 전표 또는 정정분개). superseded_at이 있으면 내려간 줄. */
+export interface FinanceImportSlip {
+  business_id: string
+  month: string
+  slip_no: string
+  import_id: string
+  superseded_at: string | null
+}
+
+/**
+ * 0052 ecount_monthly_import의 결과 — 달마다 무엇을 했나(새 전표 · 정정 전표 · 같아서 건너뜀).
+ * 0056: 파일이 말하는데 금액이 없는 달 — 지난 업로드 전표를 역분개(reversed, slip_no 없음 · reversal · previous) ·
+ * 되돌릴 전표가 없으면 empty(아무것도 안 함).
+ */
 export interface EcountMonthlyResult {
   posted: number
   corrected: number
   unchanged: number
-  months: { month: string; action: 'posted' | 'corrected' | 'unchanged'; slip_no: string; reversal?: string; previous?: string }[]
+  /** 0056 — 0056 전 DB의 결과에는 없다(0으로 읽는다) */
+  reversed: number
+  months: {
+    month: string
+    action: 'posted' | 'corrected' | 'unchanged' | 'reversed' | 'empty'
+    slip_no?: string
+    reversal?: string
+    previous?: string
+  }[]
 }
 
 /** 같은 회사에 같은 계정코드가 이미 있을 때. 사용자가 코드를 고쳐야 풀린다(DUPLICATE_BUSINESS_ID와 같은 이유). */
