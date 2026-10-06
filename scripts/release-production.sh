@@ -90,8 +90,27 @@ SUPABASE_DB_PASSWORD="$PROD_PASSWORD" supabase_cli link --project-ref "$PRODUCTI
 
 MIGRATION_LIST="$(SUPABASE_DB_PASSWORD="$PROD_PASSWORD" supabase_cli migration list --linked 2>&1)" \
   || { echo "$MIGRATION_LIST"; die "migration list 실패."; }
-PROD_VERSION="$(printf '%s\n' "$MIGRATION_LIST" | awk -F'|' '{ r=$2; gsub(/[ \t]/, "", r); if (r ~ /^[0-9]+$/) v=r } END { print v }')"
+# Outside a terminal the CLI prints {"migrations":[{"local","remote","time"}…]} instead of a table.
+# Prints three lines: highest remote version / local-only (pending) / remote-only.
+read_migrations() {
+  node -e '
+    const text = require("fs").readFileSync(0, "utf8")
+    const line = text.split(/\r?\n/).find((l) => l.trim().startsWith("{\"migrations\""))
+    if (!line) process.exit(1)
+    const rows = JSON.parse(line).migrations
+    const remote = rows.map((r) => r.remote).filter(Boolean).sort()
+    console.log(remote[remote.length - 1] ?? "")
+    console.log(rows.filter((r) => r.local && !r.remote).map((r) => r.local).sort().join(" "))
+    console.log(rows.filter((r) => r.remote && !r.local).map((r) => r.remote).sort().join(" "))
+  '
+}
+PARSED="$(printf '%s\n' "$MIGRATION_LIST" | read_migrations)" \
+  || { echo "$MIGRATION_LIST"; die "migration list 출력을 읽지 못했다."; }
+PROD_VERSION="$(sed -n 1p <<< "$PARSED")"
+PENDING="$(sed -n 2p <<< "$PARSED")"
+REMOTE_ONLY="$(sed -n 3p <<< "$PARSED")"
 [ -n "$PROD_VERSION" ] || { echo "$MIGRATION_LIST"; die "production 현재 버전을 읽지 못했다."; }
+[ -z "$REMOTE_ONLY" ] || die "production에만 있고 이 checkout에 없는 마이그레이션: $REMOTE_ONLY"
 
 JOINED="$(printf '%s\n' "$EXPECTED" | paste -sd~ - | sed 's/~/ · /g')"
 echo "복원 지점   $RESTORE_UTC UTC (= $RESTORE_KST KST)"
@@ -108,10 +127,18 @@ DRY_RUN="$(SUPABASE_DB_PASSWORD="$PROD_PASSWORD" supabase_cli db push --linked -
 echo "$DRY_RUN"
 
 step "4. 대기 목록 대조"
-PENDING="$(printf '%s\n' "$DRY_RUN" | grep -oE '[0-9]{4}_[A-Za-z0-9_]+\.sql' | cut -c1-4 | sort -u || true)"
-echo "기대: $(echo $EXPECTED)"
-echo "실제: $(echo ${PENDING:-없음})"
-[ "$PENDING" = "$EXPECTED" ] || die "dry-run 대기 목록이 기대와 다르다. 아무것도 쓰지 않았다."
+# Pending = local files production has not recorded (migration list). The dry-run text must name
+# exactly those versions too — any other local version showing up there also stops the release.
+LOCAL_VERSIONS="$(ls supabase/migrations | grep -oE '^[0-9]{4}' | sort -u)"
+DRY_NAMED="$(printf '%s\n' "$DRY_RUN" | grep -oE '[0-9]+' | sort -u | grep -Fxf <(printf '%s\n' "$LOCAL_VERSIONS") | grep -Fxvf <(printf '%s\n' $PENDING) || true)"
+echo "기대:              $(echo $EXPECTED)"
+echo "대기(migration list): ${PENDING:-없음}"
+[ "$(printf '%s\n' $PENDING)" = "$EXPECTED" ] || die "대기 목록이 기대와 다르다. 아무것도 쓰지 않았다."
+for n in $EXPECTED; do
+  grep -qE "(^|[^0-9])$n([^0-9]|\$)" <<< "$DRY_RUN" || die "dry-run 출력에 $n 이 없다. 아무것도 쓰지 않았다."
+done
+[ -z "$DRY_NAMED" ] || die "dry-run 출력에 다른 번호가 있다: $(echo $DRY_NAMED). 아무것도 쓰지 않았다."
+echo "dry-run도 같은 목록이다."
 
 # ---------------------------------------------------------------------------------------------
 step "5. production DB push"
