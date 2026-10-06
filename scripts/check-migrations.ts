@@ -5305,9 +5305,16 @@ async function ecountMonthlyRpc() {
   assert.equal(await as(EI.lead, [first, `select status || ':' || (summary->'result'->>'posted') || ':' || (summary->'result'->>'corrected') || ':' || (summary->'mapping'->>'basis')
       from finance_imports where import_id = '${MI.m1}'`]), 'committed:2:0:monthly', '0052: 업로드가 committed(+결과 · 열 지정 그대로)로 안 바뀐다')
   const noteM = ecountAuditNote({ kind: 'monthly', period: '2026-03', fileName: 'pl 2026.xlsx', importId: MI.m1 })
-  assert.equal(await as(EI.lead, [first, `select string_agg(action::text || '|' || entity_table || '|' || entity_id || '|' || actor_user_id, ' ## ' order by id) from audit_log`]),
-    [`create|accounts|biz_dy:${C}|${EI.lead}`, `create|finance_import_slips|biz_dy:2026-03|${EI.lead}`,
-      `create|finance_import_slips|biz_dy:2026-04|${EI.lead}`].join(' ## '), '0052: 감사가 대응 계정 + 달마다 한 줄이 아니다')
+  // 0056: 첫 등록도 전표 감사 한 줄(journal_entries · 전표 번호) — 달 감사 바로 뒤. 전표 번호는 업로드 전표 줄로 바꿔 읽는다.
+  assert.equal(await as(EI.lead, [first, `select string_agg(a.action::text || '|' || a.entity_table || '|'
+        || coalesce('slip:' || s.month, a.entity_id) || '|' || a.actor_user_id, ' ## ' order by a.id)
+      from audit_log a left join finance_import_slips s on a.entity_table = 'journal_entries' and s.slip_no = a.entity_id`]),
+    [`create|accounts|biz_dy:${C}|${EI.lead}`, `create|finance_import_slips|biz_dy:2026-03|${EI.lead}`, `create|journal_entries|slip:2026-03|${EI.lead}`,
+      `create|finance_import_slips|biz_dy:2026-04|${EI.lead}`, `create|journal_entries|slip:2026-04|${EI.lead}`].join(' ## '),
+    '0052/0056: 감사가 대응 계정 + 달마다 (달 한 줄 + 전표 한 줄)이 아니다')
+  assert.equal(await as(EI.lead, [first, `select (note = '${noteM} — 전표 ' || entity_id)::text || ' | ' || (after->>'memo') || ' | ' || jsonb_array_length(after->'lines')
+      from audit_log where entity_table = 'journal_entries' and entity_id = ${slip03}`]),
+    `true | [ECOUNT 엑셀] 2026-03 월별 손익 · import ${MI.m1} | 4`, '0056: 첫 등록 전표 감사가 «업로드 문구 — 전표 번호» · 전표 적요 · 줄 넷(손익 셋 + 대응)이 아니다')
   assert.equal(await as(EI.lead, [first, `select note from audit_log where entity_id = 'biz_dy:2026-03'`]), noteM, '0052: 감사 note가 DB가 만든 업로드 문구가 아니다')
   // 잠정 — 마감 전이라 KPI 꼬리표는 provisional, 매출은 그 달 1000.
   assert.equal(await as(EI.lead, [first, `select value::int || ':' || basis from finance_kpis where business_id = 'biz_dy' and period = '2026-03' and metric = 'Revenue'`]),
@@ -5411,7 +5418,9 @@ async function ecountMonthlyRpc() {
     [{ '2026-03': [...MARCH, ['4010', -1]] }, /ecount_plan_invalid/, '한 달 한 계정에 줄 둘'],
     [{ '2026-03': [...MARCH, ['9310', 0.001]] }, /ecount_plan_invalid/, '0원 줄'],
     [{ '2026-03': [...MARCH, [C, 5]] }, /ecount_plan_invalid/, '대응 계정 줄을 보냄'],
-    [{ '2026-03': [] }, /ecount_plan_invalid/, '줄 없는 달'],
+    // 0056: 줄 없는 달(lines = [])은 «금액 없는 달»로 받는다 — 아래 «0056» 절. lines 칸 자체가 없거나 배열이 아니면 여전히 틀린 모양.
+    [`select ecount_monthly_import('${MI.m1}', '${SHA}', '2026', 'monthly', '[{"month":"2026-03"}]'::jsonb)::text`, /ecount_plan_invalid/, 'lines 칸 없는 달'],
+    [`select ecount_monthly_import('${MI.m1}', '${SHA}', '2026', 'monthly', '[{"month":"2026-03","lines":{}}]'::jsonb)::text`, /ecount_plan_invalid/, 'lines가 배열 아님'],
     [{}, /statement_empty/, '달 없음'],
     [`select ecount_monthly_import('${MI.m1}', '${SHA}', '2026', 'monthly', '[{"month":"2026-03","lines":[{"account_code":"4010","amount":"-1000"}]}]'::jsonb)::text`,
       /ecount_plan_invalid/, '금액이 숫자 아님'],
@@ -5465,6 +5474,66 @@ async function ecountMonthlyRpc() {
   await assert.rejects(as(EI.lead, [`!update user_module_access set can_write = false where user_id = '${EI.lead}'`, plan]), /books_forbidden/,
     '0052: 쓰기 권한을 잃은 만든 사람이 등록한다')
   await assert.rejects(as(EI.lead, [`!update user_profiles set revoked_at = now() where user_id = '${EI.lead}'`, plan]), /books_forbidden/, '0052: 회수된 사람이 등록한다')
+
+  // ── 0056: 금액 없는 달(lines = []) ──
+  const active = (month: string) => `select count(*)::int from finance_import_slips where month = '${month}' and superseded_at is null`
+  // 활성 업로드 전표가 없는 빈 달은 아무것도 안 한다(전표 · 감사 · 줄 없음) — 결과에 empty로만 남는다.
+  const withEmpty = monthRpc(MI.m1, { '2026-03': MARCH, '2026-04': [] })
+  assert.equal(await as(EI.lead, [withEmpty, `select count(*)::int * 10 + (select count(*) from audit_log where entity_id = 'biz_dy:2026-04')::int
+      from journal_lines where to_char(entry_date, 'YYYY-MM') = '2026-04'`]), 0, '0056: 업로드 전표 없는 빈 달에 전표나 감사가 선다')
+  assert.equal(await as(EI.lead, [`select (${withEmpty.replace(/^select /, '').replace(/::text$/, '')})->'months'->1->>'action'`]), 'empty', '0056: 빈 달이 empty로 안 남는다')
+  // 금액 없는 달만 온 파일 — 대응 계정도 만들지 않는다.
+  assert.equal(await as(EI.lead, [monthRpc(MI.m1, { '2026-05': [] }), `select (select count(*) from accounts where account_code = '${C}')::int * 10
+      + (select count(*) from finance_imports where import_id = '${MI.m1}' and status = 'committed')::int`]), 1,
+  '0056: 빈 달만 온 파일이 대응 계정을 만들거나 committed가 안 된다')
+  // 활성 업로드 전표가 있는 빈 달 = 역분개만 · 옛 줄 내림 · 새 활성 줄 없음 · 장부의 그 달 = 0.
+  const emptied = monthRpc(MI.m2, { '2026-04': [] })
+  assert.equal(await as(EI.lead, [first, monthField(emptied, 'reversed')]), 1, '0056: 금액이 빠진 달의 옛 업로드 전표를 역분개하지 않는다')
+  for (const code of ['4010', '8010', C]) {
+    assert.equal(await as(EI.lead, [first, emptied, net('2026-04', code)]), 0, `0056: 금액이 빠진 달의 ${code}가 장부에 남는다(옛 파일을 말한다)`)
+  }
+  assert.equal(await as(EI.lead, [first, emptied, `select ${'('}${active('2026-04')})::int * 10
+      + (select count(*) from finance_import_slips where month = '2026-04' and superseded_at is not null and import_id = '${MI.m1}')::int`]), 1,
+  '0056: 빈 달 역분개 뒤 활성 줄이 남거나 옛 줄이 안 내려간다')
+  assert.equal(await as(EI.lead, [first, emptied, `select count(*)::int from journal_entries r join finance_import_slips s on s.slip_no = r.corrects_id
+      where s.month = '2026-04' and r.correction_kind = 'reversal' and r.created_by = '${EI.lead}'
+        and not exists (select 1 from journal_entries x where x.corrects_id = s.slip_no and x.correction_kind = 'restatement')`]), 1,
+  '0056: 빈 달은 역분개 한 장(정정분개 없음)이어야 한다')
+  assert.equal(await as(EI.lead, [first, emptied, `select count(*)::int from audit_log where entity_table = 'finance_import_slips' and action = 'update'
+      and entity_id = 'biz_dy:2026-04' and jsonb_array_length(after->'lines') = 0 and note like '% — 금액 없는 달, 이전 전표 % 역분개'`]), 1,
+  '0056: 빈 달 역분개 감사(이전 전표 · 빈 줄)가 없다')
+  // 비운 뒤 다시 금액이 오면 새 전표(활성 줄이 없으니 posted) — 두 번 세지 않는다.
+  assert.equal(await as(EI.lead, [first, emptied, monthRpc(MI.m4, { '2026-04': [['4010', -70]] }), net('2026-04', '4010')]), -70,
+    '0056: 비운 달에 다시 올린 금액이 장부의 그 달이 아니다')
+  // 마감 달: 되돌릴 전표가 없는 빈 달은 막지 않는다 · 되돌릴 전표가 있으면 closed_period.
+  assert.equal(await as(EI.lead, [close('2026-02'), monthRpc(MI.m1, { '2026-01': [], '2026-03': MARCH }), net('2026-03', '4010')]), -1000,
+    '0056: 마감된 달의 빈 칸(손댈 것 없음)이 열린 달 등록을 막는다')
+  await assert.rejects(as(EI.lead, [first, close('2026-04'), emptied]), /closed_period/, '0056: 마감된 달의 업로드 전표를 빈 달이라며 역분개한다')
+  await assert.rejects(as(EI.lead, [first, officialSave('year', '2026'), emptied]), /official_month_locked/, '0056: 세무사 확정 해의 업로드 전표를 빈 달이라며 역분개한다')
+  // 이미 역분개된 업로드 전표는 빈 달에서도 멈춘다.
+  const slip04 = `(select slip_no from finance_import_slips where month = '2026-04' and superseded_at is null)`
+  await assert.rejects(as(EI.lead, [first, `select post_correction('biz_dy', ${slip04}, '2026-04-30', '손으로 취소', null, '[]'::jsonb)`, emptied]),
+    /ecount_month_reversed/, '0056: 손으로 역분개된 업로드 전표를 빈 달이 또 뒤집는다')
+
+  // ── 0056: 월 마감과 같은 회사 잠금 ──
+  // 열쇠는 0052 값 그대로 — 배포 순간 0052판 등록과 0056판 마감도 서로 기다린다.
+  assert.equal((await owner(`select (finance_books_lock_key('biz_dy') = hashtext('ecount_monthly_import:biz_dy')::bigint)::text as v`))[0].v, 'true',
+    '0056: 회사 잠금 열쇠가 0052 월별 등록의 열쇠와 다르다')
+  const lockSrc = await owner(`select p.proname as f, p.prosrc as src, array_to_string(p.proconfig, ',') as cfg, p.prosecdef as definer
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.proname in ('close_period', 'ecount_monthly_import') order by 1`)
+  assert.deepEqual(lockSrc.map((r) => [r.f, r.definer, r.cfg, /pg_advisory_xact_lock\(finance_books_lock_key\((p_business_id|v_imp\.business_id)\)\)/.test(String(r.src))]), [
+    ['close_period', false, 'search_path=public, pg_temp', true],
+    ['ecount_monthly_import', true, 'search_path=public, pg_temp', true],
+  ], '0056: close_period(invoker) · ecount_monthly_import(definer)가 같은 회사 잠금(finance_books_lock_key)을 잡지 않는다')
+  // close_period가 실제로 그 잠금을 쥔다 — 소유자가 2월 전표 한 장을 세운 뒤(잠금 없이) 회장이 마감하면 이 세션에 그 열쇠의 advisory 잠금이 있다.
+  const febSlip = `!select journal_entry_insert('biz_dy', '2026-02-28', '수기', null,
+      '[{"account_code":"4010","side":"credit","amount":10},{"account_code":"1010","side":"debit","amount":10}]'::jsonb, null, null)`
+  const heldKey = `select count(*)::int from pg_locks l where l.locktype = 'advisory' and l.pid = pg_backend_pid()
+      and ((l.classid::bigint << 32) | l.objid::bigint) = (finance_books_lock_key('biz_dy') & x'FFFFFFFFFFFFFFFF'::bigint)`
+  assert.equal(await as(EI.chair, [febSlip, heldKey]), 0, '0056 실험 전제: 마감 전에는 잠금이 없어야 한다')
+  assert.equal(await as(EI.chair, [febSlip, `select close_period('biz_dy', '2026-02')`, heldKey]), 1, '0056: close_period가 회사 잠금을 잡지 않는다')
+  assert.equal(await as(EI.lead, [monthRpc(MI.m1, { '2026-03': MARCH }), heldKey]), 1, '0056: 월별 등록이 같은 열쇠의 잠금을 잡지 않는다')
   await db.close()
 }
 
@@ -5539,6 +5608,39 @@ async function ecountMonthlyUnderNonBypassOwner() {
   await db.close()
 }
 
+/**
+ * docs/onboarding/ecount-release-precheck.sql — 회장이 production SQL Editor에서 돌리는 릴리스 전 확인.
+ *   ① 문장이 전부 select다(주석을 걷은 뒤 첫 낱말) ② **0049까지 올린 DB**(지금 production 모양)와 **전부 올린 DB** 둘 다에서
+ *   읽기 전용 트랜잭션(begin read only)으로 오류 없이 돈다 — 0050 전 DB에 없는 표 · 칸을 이름으로 부르지 않는다.
+ *   supabase_migrations.schema_migrations는 PGlite에 없어서 흉내 표를 세운다(Supabase에는 있다).
+ */
+async function ecountPrecheckSql() {
+  const raw = readFileSync(join(__dirname, '..', 'docs', 'onboarding', 'ecount-release-precheck.sql'), 'utf8')
+  // 주석을 먼저 걷고(문자열 안에 «--»는 없다) 세미콜론으로 가른다.
+  const statements = raw
+    .replace(/--[^\n]*/g, '')
+    .split(';')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  assert.ok(statements.length >= 10, `릴리스 전 확인 문장이 너무 적다(${statements.length})`)
+  for (const s of statements) assert.match(s, /^select\s/i, `릴리스 전 확인에 select 아닌 문장: ${s.slice(0, 60)}`)
+  for (const upTo of ['0049_staff_terms.sql', undefined]) {
+    const db = new PGlite({ extensions: { pg_trgm } })
+    await applyAll(db, upTo)
+    await db.exec(`create schema if not exists supabase_migrations;
+      create table if not exists supabase_migrations.schema_migrations (version text primary key, name text);`)
+    await db.exec('begin read only')
+    try {
+      for (const s of statements) await db.query(s)
+    } catch (e) {
+      throw new Error(`릴리스 전 확인 SQL이 ${upTo ?? '전부 올린'} DB에서 실패: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      await db.exec('rollback')
+      await db.close()
+    }
+  }
+}
+
 async function main() {
   const db = new PGlite({ extensions: { pg_trgm } })
   const files = await applyAll(db)
@@ -5567,8 +5669,9 @@ async function main() {
   await ecountRpcUnderNonBypassOwner()
   await ecountMonthlyRpc()
   await ecountMonthlyUnderNonBypassOwner()
+  await ecountPrecheckSql()
   console.log(
-    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단), 0048 문서 모듈 권한(사람 × 회사 · 문서 · 폴더 쓰기 · 줄 없는 팀장 거부 · 회사 접근과 줄 둘 다 · 열람 등급 위 insert/update 차단 · 등록자는 본인 · 고치기 · 지우기는 자기 것만(회장 전부) · 주인 칸은 회장만 · 폴더는 만든 사람만 · 시스템 계정 불변 · 옛 /core/search 회귀 · 회수 감사 · hard delete 닫힘), 0049 직원 화면 용어(결재선 · 취합 제목 «회장»→«대표» 백필 — 사람 · 단계 · updated_at 그대로 · 얼림 재가동 · 새 결재선 · 감사 메모도 «대표»), 0050 ECOUNT 업로드(업로드 표 — 쓰기 권한자 본인 draft만 · 남의 draft/끝난 업로드 못 고침 · 지우기 없음 · 칸 단위 update · 해시 한 번 · 재무 읽기 없으면 0행 · 시스템 계정 restrictive · anon 잠금 · 업로드 전표 활성 (회사, 달) 하나 · 이 트랜잭션에 본인이 세운 그 달 전표만 잇고(수기 · 남의 · 역분개 거부) 본인이 세운 정확한 반대 역분개 뒤에만 내림(가짜 역분개 거부) · 첨부 원본은 재무 권한자만 보고 본인만 올림 · committed/cancelled 원본은 줄 · 객체 삭제와 재업로드 거부 · 사람의 ECOUNT 계정 + source 불변 · 공식 재무제표 basis/증빙/활성 unique basis별 · update는 supersede만 · 세무사 저장이 ECOUNT 잠정을 안 밈), 0051 ECOUNT 등록 RPC(계정과목 · 연간 한 트랜잭션 · 감사 먼저 · 본인 draft · 종류 · 해시 · 장부 권한 · ECOUNT 회사 · 시스템 계정 거부 · 이미 있는 코드 · 바뀐 이름 · 세무사 확정 해 · 균형 · ECOUNT 재업로드 supersede · 헤더/줄 직접 쓰기 닫힘 · 복합 FK · 사람의 committed 닫힘 · 세무사 저장 definer · BYPASSRLS 없는 소유자에서도 등록 + force 대조군), 0052 ECOUNT 월별 RPC(달마다 전표 + 대응 계정 · 누계 → 당월 · 재업로드 = 역분개 + 정정분개 + 옛 줄 내림 — 두 번 세지 않음 · 같은 내용 건너뜀 · 이미 역분개된 달 멈춤 · 마감 달 · 세무사 확정 달 · 재무상태표/비활성/모르는 계정 · 원본 첨부 · 권한 · 전부 아니면 전무 · BYPASSRLS 없는 소유자 + force 대조군)`,
+    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단), 0048 문서 모듈 권한(사람 × 회사 · 문서 · 폴더 쓰기 · 줄 없는 팀장 거부 · 회사 접근과 줄 둘 다 · 열람 등급 위 insert/update 차단 · 등록자는 본인 · 고치기 · 지우기는 자기 것만(회장 전부) · 주인 칸은 회장만 · 폴더는 만든 사람만 · 시스템 계정 불변 · 옛 /core/search 회귀 · 회수 감사 · hard delete 닫힘), 0049 직원 화면 용어(결재선 · 취합 제목 «회장»→«대표» 백필 — 사람 · 단계 · updated_at 그대로 · 얼림 재가동 · 새 결재선 · 감사 메모도 «대표»), 0050 ECOUNT 업로드(업로드 표 — 쓰기 권한자 본인 draft만 · 남의 draft/끝난 업로드 못 고침 · 지우기 없음 · 칸 단위 update · 해시 한 번 · 재무 읽기 없으면 0행 · 시스템 계정 restrictive · anon 잠금 · 업로드 전표 활성 (회사, 달) 하나 · 이 트랜잭션에 본인이 세운 그 달 전표만 잇고(수기 · 남의 · 역분개 거부) 본인이 세운 정확한 반대 역분개 뒤에만 내림(가짜 역분개 거부) · 첨부 원본은 재무 권한자만 보고 본인만 올림 · committed/cancelled 원본은 줄 · 객체 삭제와 재업로드 거부 · 사람의 ECOUNT 계정 + source 불변 · 공식 재무제표 basis/증빙/활성 unique basis별 · update는 supersede만 · 세무사 저장이 ECOUNT 잠정을 안 밈), 0051 ECOUNT 등록 RPC(계정과목 · 연간 한 트랜잭션 · 감사 먼저 · 본인 draft · 종류 · 해시 · 장부 권한 · ECOUNT 회사 · 시스템 계정 거부 · 이미 있는 코드 · 바뀐 이름 · 세무사 확정 해 · 균형 · ECOUNT 재업로드 supersede · 헤더/줄 직접 쓰기 닫힘 · 복합 FK · 사람의 committed 닫힘 · 세무사 저장 definer · BYPASSRLS 없는 소유자에서도 등록 + force 대조군), 0052 ECOUNT 월별 RPC(달마다 전표 + 대응 계정 · 누계 → 당월 · 재업로드 = 역분개 + 정정분개 + 옛 줄 내림 — 두 번 세지 않음 · 같은 내용 건너뜀 · 이미 역분개된 달 멈춤 · 마감 달 · 세무사 확정 달 · 재무상태표/비활성/모르는 계정 · 원본 첨부 · 권한 · 전부 아니면 전무 · BYPASSRLS 없는 소유자 + force 대조군), 0056 ECOUNT 마무리(첫 등록 전표 감사 · 금액 없는 달 = 역분개만 · 빈 달 마감/확정 판정은 손댈 달만 · 월 마감과 월별 등록이 같은 회사 잠금(0052 열쇠 그대로) · 릴리스 전 확인 SQL은 select만 · 0049 DB와 전부 올린 DB에서 읽기 전용으로 돈다)`,
   )
 }
 
