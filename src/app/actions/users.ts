@@ -6,6 +6,7 @@ import { currentUser } from '@/lib/auth/session'
 import { bossText } from '@/lib/boss'
 import { DRAFT_DECISION_MODULE, moduleKey } from '@/lib/module-grants'
 import { DUPLICATE_INVITATION, getRepository } from '@/lib/repository'
+import { STAFF_ADMIN_ERROR, staffAdminMessage } from '@/lib/staff-admin-errors'
 import {
   INVITABLE_ROLE,
   MODULE_GRANT_OPTIONS,
@@ -469,32 +470,6 @@ export async function approveInvitation(input: { invitationId: unknown }): Promi
 }
 
 /**
- * 0055 «<회사> 사용자 관리자» — 오류 키를 사람 말로. 이 문장들은 직원(관리자)이 읽는다 — «대표»로 쓴다(직원 화면 용어 원칙).
- */
-const STAFF_ADMIN_ERROR: Record<string, string> = {
-  staff_admin_denied: '이 회사의 사용자 관리자 권한이 없습니다. 대표에게 문의하세요.',
-  staff_admin_role: '사원 · 팀장만 초대할 수 있습니다. 그 위 역할은 대표가 초대합니다.',
-  staff_admin_email: '이메일 주소를 확인하세요.',
-  staff_admin_name: '이름을 입력하세요.',
-  staff_admin_exists: '이 이메일로 이미 계정이 있습니다. 새로 초대하지 않습니다 — 권한이 더 필요하면 대표에게 요청하세요.',
-  staff_admin_team: '팀을 고르세요(이 회사의 팀만 고를 수 있습니다).',
-  staff_admin_boss_missing: '상사를 고르세요. 상사 없이는 저장할 수 없습니다.',
-  staff_admin_boss_invalid: '상사는 이 회사에서 지금 일하는 사람이어야 합니다.',
-  staff_admin_boss_self: '본인이나 본인 아래 사람은 상사로 고를 수 없습니다. 실제 상사를 고르세요.',
-  staff_admin_class: '본인 등급보다 높은 보안등급은 줄 수 없습니다.',
-  staff_admin_grant: '본인이 가진 권한만 줄 수 있습니다. 월 마감은 줄 수 없습니다.',
-  staff_admin_language: '표기 언어를 확인하세요.',
-  staff_admin_not_found: '취소할 수 있는 초대가 아닙니다. 본인이 보낸, 아직 가입하지 않은 초대만 취소됩니다.',
-}
-
-function staffAdminMessage(e: unknown): string {
-  const message = e instanceof Error ? e.message : ''
-  if (message === DUPLICATE_INVITATION) return '이 이메일로 아직 가입하지 않은 초대가 이미 있습니다.'
-  const key = Object.keys(STAFF_ADMIN_ERROR).find((k) => new RegExp(`\b${k}\b`).test(message))
-  return key ? STAFF_ADMIN_ERROR[key] : '저장하지 못했습니다. 잠시 후 다시 시도하세요.'
-}
-
-/**
  * 0055 위임 초대. 판정 · 감사 · 대표 알림은 DB 함수(staff_admin_invite) 한 자리에서 한다 — 여기서는 입력을 좁힌다.
  * 회사는 하나, 역할은 사원 · 팀장, 팀 · 상사는 필수(빈 값이면 DB에 보내지 않고 바로 돌려보낸다).
  */
@@ -517,15 +492,19 @@ export async function staffAdminInvite(input: {
   const displayName = typeof input.displayName === 'string' ? input.displayName.trim() : ''
   if (!/^[a-z0-9_]+$/.test(businessId)) return { error: '어느 회사인지 알 수 없습니다.' }
   if (!isEmail(email)) return { error: STAFF_ADMIN_ERROR.staff_admin_email }
-  if (!displayName) return { error: STAFF_ADMIN_ERROR.staff_admin_name }
+  if (!displayName || displayName.length > 60) return { error: STAFF_ADMIN_ERROR.staff_admin_name }
+  for (const v of [input.displayNameEn, input.titleKo]) {
+    if (typeof v === 'string' && v.trim().length > 60) return { error: STAFF_ADMIN_ERROR.staff_admin_name }
+  }
   if (!STAFF_ADMIN_ROLES.includes(input.role as Role)) return { error: STAFF_ADMIN_ERROR.staff_admin_role }
   const teamId = textOrNull(input.teamId, 60)
   if (!teamId) return { error: STAFF_ADMIN_ERROR.staff_admin_team }
   const reportsTo = textOrNull(input.reportsTo, 60)
   if (!reportsTo) return { error: STAFF_ADMIN_ERROR.staff_admin_boss_missing }
   if (!isSecurityClass(input.securityClass)) return { error: STAFF_ADMIN_ERROR.staff_admin_class }
+  // 리뷰 I4 — «결재 올리기»는 새 직원 기본(0054)이라 위임 권한으로 보내지 않는다(DB도 버린다).
   const grants = Array.isArray(input.grants)
-    ? [...new Set(input.grants.filter((g): g is string => typeof g === 'string' && g.length > 0 && g.length < 80))]
+    ? [...new Set(input.grants.filter((g): g is string => typeof g === 'string' && g.length > 0 && g.length < 80 && g !== DRAFT_DECISION_MODULE))]
     : []
 
   const user = await currentUser()

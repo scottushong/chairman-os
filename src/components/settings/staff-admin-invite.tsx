@@ -63,7 +63,9 @@ export function StaffAdminInvite({
   const [teamId, setTeamId] = useState('')
   const [reportsTo, setReportsTo] = useState('')
   const [securityClass, setSecurityClass] = useState<SecurityClass>('Normal')
-  const [grants, setGrants] = useState<string[]>(options.grantable.filter((g) => g === DRAFT_DECISION_MODULE))
+  // 리뷰 I4 — «결재 올리기»는 체크 칸이 아니다(새 직원 기본 · 대표가 끈다). 체크 칸은 재무 입력 · 문서 등록뿐.
+  const grantable = options.grantable.filter((g) => g !== DRAFT_DECISION_MODULE)
+  const [grants, setGrants] = useState<string[]>([])
   const [joinedOn, setJoinedOn] = useState(kstToday())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -236,10 +238,14 @@ export function StaffAdminInvite({
 
         <fieldset className="rounded-lg border border-line-soft px-2.5 py-2 md:col-span-2">
           <legend className="px-1 text-t11 text-ink-dim">권한 (본인이 가진 것만 보입니다)</legend>
-          {options.grantable.length === 0 ? (
-            <p className="text-t10h text-ink-muted">줄 수 있는 권한이 없습니다. 회사 범위만 붙습니다.</p>
+          <p className="py-1 text-t12">
+            <span className="font-semibold">결재 올리기</span>
+            <span className="block text-t10 text-ink-muted">새 직원은 기본으로 켜집니다(대표가 끌 수 있음).</span>
+          </p>
+          {grantable.length === 0 ? (
+            <p className="text-t10h text-ink-muted">그 밖에 줄 수 있는 권한이 없습니다.</p>
           ) : (
-            options.grantable.map((g) => (
+            grantable.map((g) => (
               <label key={g} className="flex min-h-11 items-start gap-1.5 py-1 text-t12 sm:min-h-0">
                 <input type="checkbox" checked={grants.includes(g)} disabled={busy} onChange={() => toggle(g)}
                   className="mt-0.5 size-4 accent-[var(--color-accent)] disabled:opacity-50" />

@@ -46,6 +46,16 @@
 --
 -- ■ ECOUNT(0050~0052) · 0054와의 관계 ■ 0050~0052의 객체를 건드리지 않는다. 0054 뒤에 와야 한다(0054 트리거 · 결재 경로를 검사가 함께 잰다).
 --
+-- ■ 리뷰 반영(2026-10-06, staging 적용 전이라 제자리 수정) ■
+--   I1 설정(GUC)이 유일한 문이 아니게 — insert 정책이 RPC의 불변식(능력 · 역할 · 회사 하나 · 등급 · 상사 · 팀 · 권한)을 다시 본다.
+--      취소 · 자동 취소 설정 아래 update는 revoked_at(채우기)만 바꾼다(가드 트리거).
+--   I2 팀장이 관리자 본인 · 그 아래인 팀은 거부(staff_admin_team_self) — 결재선 첫 칸(my_approval_lead)이 관리자가 된다.
+--   I3 0026 user_invitations_delegated_insert를 닫는다(회장 결정: 초대는 회장(0011) 또는 사용자 관리자(이 RPC)만). 읽기는 그대로.
+--   I4 «결재 올리기»는 위임 권한이 아니다 — 새 직원 기본(0054)이고 회장이 끈다. 키 목록에 와도 버린다.
+--   I5 능력이 거둬지거나(줄 삭제 · 쓰기 끔) 관리자가 회수 · 퇴사하면 그 관리자의 대기 위임 초대를 자동 취소(감사 먼저).
+--      가입 때 초대자가 지금 관리자가 아니면 그 초대로는 권한을 만들지 않는다(apply_user_invitation false — 계정만 남고 Default Deny).
+--   M2 이미 계정 · 대기 초대가 있는 이메일은 한 키(staff_admin_email_taken). M5 이름 · 직함 60자 · 관리자당 24시간 20건(staff_admin_rate).
+--
 -- 0035 규칙: force를 새로 걸지 않는다 · 0001~0054를 고치지 않는다(apply_user_invitation · module_grant_audit는 create or replace).
 -- =====================================================================
 
@@ -94,12 +104,22 @@ comment on column user_invitations.staff_admin_business is
 
 create or replace function staff_admin_invitation_guard() returns trigger
 language plpgsql set search_path = public, pg_temp as $fn$
+declare
+  v_mode text := coalesce(current_setting('chairman.staff_admin', true), '');
 begin
+  -- 리뷰 I1 — 취소(관리자) · 자동 취소(능력 회수) 설정 아래 update는 revoked_at을 채우는 것 말고 아무것도 못 바꾼다.
+  if tg_op = 'UPDATE' and v_mode in ('revoke', 'auto_revoke') then
+    if new.revoked_at is null or old.revoked_at is not null
+       or (to_jsonb(new) - 'revoked_at') is distinct from (to_jsonb(old) - 'revoked_at') then
+      raise exception 'staff_admin_columns' using errcode = '42501';
+    end if;
+    return new;
+  end if;
   -- 세션 없는 쓰기(마이그레이션 · 시드 · SQL 편집기)는 지나간다.
   if auth.uid() is null then return new; end if;
   if tg_op = 'INSERT' then
     if (new.module_grants is distinct from '[]'::jsonb or new.staff_admin_business is not null)
-       and coalesce(current_setting('chairman.staff_admin', true), '') <> 'invite' then
+       and v_mode <> 'invite' then
       raise exception 'staff_admin_columns' using errcode = '42501';
     end if;
   elsif new.module_grants is distinct from old.module_grants
@@ -117,12 +137,27 @@ create trigger user_invitations_staff_admin_guard
   before insert or update on user_invitations
   for each row execute function staff_admin_invitation_guard();
 
--- force RLS 아래의 definer를 위한 문 셋(머리 주석). 설정은 아래 함수들만 켠다.
+-- force RLS 아래의 definer를 위한 문(머리 주석). 설정은 아래 함수들만 켠다.
+-- 리뷰 I1 — 설정이 유일한 문이 아니다. 누가 설정을 켜고 직접 넣어도 RPC의 불변식을 여기서 다시 본다.
 create policy user_invitations_staff_admin_insert on user_invitations
   as permissive for insert
   with check (
     coalesce(current_setting('chairman.staff_admin', true), '') = 'invite'
-    and is_active() and invited_by = auth.uid() and staff_admin_business is not null
+    and is_active() and invited_by = auth.uid()
+    and staff_admin_business is not null and can_manage_users(staff_admin_business)
+    and role::text in ('Member', 'TeamLead')
+    and business_ids = array[staff_admin_business]
+    and max_security_class::text <> 'Public'
+    and class_rank(max_security_class) <= class_rank(max_class())
+    and reports_to is not null and reports_to <> auth.uid() and not in_my_subtree(reports_to)
+    and team_id is not null
+    and exists (select 1 from teams t
+                 where t.team_id = user_invitations.team_id and t.business_id = user_invitations.staff_admin_business
+                   and (t.lead_user_id is null or not in_my_subtree(t.lead_user_id)))
+    and not exists (select 1 from jsonb_array_elements_text(module_grants) g
+                     where g not in ('/finance/' || user_invitations.staff_admin_business, '/documents/' || user_invitations.staff_admin_business)
+                        or not exists (select 1 from user_module_access m
+                                        where m.user_id = auth.uid() and m.module = g and m.can_write))
   );
 create policy user_invitations_staff_admin_revoke on user_invitations
   as permissive for update
@@ -132,7 +167,17 @@ create policy user_invitations_staff_admin_revoke on user_invitations
               and is_active() and invited_by = auth.uid() and staff_admin_business is not null);
 create policy user_invitations_staff_admin_count on user_invitations
   as permissive for select
-  using (coalesce(current_setting('chairman.staff_admin', true), '') = 'count' and staff_admin_business is not null);
+  using (coalesce(current_setting('chairman.staff_admin', true), '') in ('count', 'auto_revoke') and staff_admin_business is not null);
+-- 리뷰 I5 — 능력 회수 · 관리자 회수 때의 자동 취소. 가드가 «revoked_at 채우기만»으로 묶는다(안전한 쪽으로만 움직인다).
+create policy user_invitations_staff_admin_auto_revoke on user_invitations
+  as permissive for update
+  using (coalesce(current_setting('chairman.staff_admin', true), '') = 'auto_revoke'
+         and staff_admin_business is not null and accepted_at is null)
+  with check (coalesce(current_setting('chairman.staff_admin', true), '') = 'auto_revoke' and staff_admin_business is not null);
+
+-- 리뷰 I3 — 0026 위임 insert를 닫는다. 회장 결정: 초대는 회장(0011 정책) 또는 사용자 관리자(staff_admin_invite)만.
+-- 읽기(user_invitations_subtree_read)는 그대로 — 자기가 보낸 초대 · 아래 사람의 초대는 계속 본다.
+drop policy if exists user_invitations_delegated_insert on user_invitations;
 
 -- =====================================================================
 -- 3절. 초대
@@ -178,16 +223,26 @@ begin
   if v_email !~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$' or length(v_email) > 254 then
     raise exception 'staff_admin_email' using errcode = '22023';
   end if;
-  if v_name = '' or length(v_name) > 60 then
+  if v_name = '' or length(v_name) > 60 or length(coalesce(p_display_name_en, '')) > 60 or length(coalesce(p_title_ko, '')) > 60 then
     raise exception 'staff_admin_name' using errcode = '22023';
   end if;
-  -- 이미 계정이 있는 이메일은 받지 않는다 — 그 계정은 가입 트리거가 다시 돌지 않아 초대가 영영 대기로 남거나,
-  -- 회장 승인 경로에서 남의 역할을 덮는다.
-  if exists (select 1 from auth.users u where lower(u.email) = v_email) then
-    raise exception 'staff_admin_exists' using errcode = '23505';
+  -- 리뷰 M5 — 관리자당 24시간 20건. 넘으면 대표에게.
+  if (select count(*) from user_invitations
+       where invited_by = auth.uid() and staff_admin_business is not null and invited_at > now() - interval '24 hours') >= 20 then
+    raise exception 'staff_admin_rate' using errcode = '54000';
+  end if;
+  -- 이미 계정이 있거나 대기 초대가 있는 이메일은 한 키로 거부한다(리뷰 M2 — 어느 쪽인지 말하지 않는다).
+  -- 계정이 있으면 가입 트리거가 다시 돌지 않아 초대가 영영 대기로 남거나, 회장 승인 경로에서 남의 역할을 덮는다.
+  if exists (select 1 from auth.users u where lower(u.email) = v_email)
+     or exists (select 1 from user_invitations i where lower(i.email) = v_email and i.accepted_at is null and i.revoked_at is null) then
+    raise exception 'staff_admin_email_taken' using errcode = '23505';
   end if;
   if p_team_id is null or not exists (select 1 from teams t where t.team_id = p_team_id and t.business_id = p_business) then
     raise exception 'staff_admin_team' using errcode = '22023';
+  end if;
+  -- 리뷰 I2 — 팀장이 관리자 본인 · 그 아래면 그 팀의 결재선 첫 칸이 관리자 쪽이 된다(my_approval_lead) — 거부.
+  if exists (select 1 from teams t where t.team_id = p_team_id and t.lead_user_id is not null and in_my_subtree(t.lead_user_id)) then
+    raise exception 'staff_admin_team_self' using errcode = '42501';
   end if;
   if p_reports_to is null then
     raise exception 'staff_admin_boss_missing' using errcode = '22023';
@@ -216,10 +271,11 @@ begin
     raise exception 'staff_admin_language' using errcode = '22023';
   end if;
 
+  -- 리뷰 I4 — «결재 올리기»는 새 직원 기본(0054)이라 위임 권한이 아니다. 와도 버린다.
   select coalesce(array_agg(distinct g order by g), '{}') into v_grants
-    from unnest(coalesce(p_module_grants, '{}')) g where g is not null;
+    from unnest(coalesce(p_module_grants, '{}')) g where g is not null and g <> '/chairman/decisions';
   select g into v_bad from unnest(v_grants) g
-   where g not in ('/finance/' || p_business, '/documents/' || p_business, '/chairman/decisions')
+   where g not in ('/finance/' || p_business, '/documents/' || p_business)
       or not exists (select 1 from user_module_access m where m.user_id = auth.uid() and m.module = g and m.can_write)
    limit 1;
   if v_bad is not null then
@@ -235,6 +291,7 @@ begin
           '위임 초대(0055 사용자 관리자)');
 
   perform set_config('chairman.staff_admin', 'invite', true);
+  begin
   insert into user_invitations (
     email, role, max_security_class, business_ids, display_name, display_name_en, title_ko,
     invited_by, reports_to, team_id, joined_on, language, module_grants, staff_admin_business
@@ -243,6 +300,10 @@ begin
     nullif(btrim(coalesce(p_title_ko, '')), ''), auth.uid(), p_reports_to, p_team_id, p_joined_on,
     coalesce(p_language, 'ko'), to_jsonb(v_grants), p_business
   ) returning invitation_id into v_id;
+  exception when unique_violation then
+    -- 남이 넣은 대기 초대는 force RLS 아래에서 위 확인에 안 보일 수 있다 — 부분 유니크가 잡는다. 같은 한 키로.
+    raise exception 'staff_admin_email_taken' using errcode = '23505';
+  end;
   perform set_config('chairman.staff_admin', v_prev, true);
 
   -- 회장 알림. DB 문구에 «회장»을 쓰지 않는다(0049) — 받는 사람이 회장뿐이어도 같은 규칙.
@@ -252,10 +313,8 @@ begin
   select case when role::text = 'Chairman' then '대표' else display_name end into v_boss_name
     from user_profiles where user_id = p_reports_to;
   v_role_ko := case p_role when 'TeamLead' then '팀장' else '사원' end;
-  select coalesce(string_agg(case
-           when g = '/chairman/decisions' then '결재 올리기'
-           when g like '/finance/%' then '재무 입력'
-           else '문서 등록' end, ' · '), '없음')
+  select coalesce(string_agg(case when g like '/finance/%' then '재무 입력' else '문서 등록' end, ' · ') || ' · ', '')
+           || '결재 올리기(기본)'
     into v_grant_ko from unnest(v_grants) g;
   for c in select user_id from user_profiles where role::text = 'Chairman' and revoked_at is null loop
     insert into notifications (user_id, kind, title, body, link)
@@ -272,7 +331,7 @@ end;
 $fn$;
 
 comment on function staff_admin_invite(text, text, text, text, text, uuid, text, text[], text, text, date, text) is
-  '0055. «사용자 관리자»의 초대. 사원 · 팀장만 · 그 회사 하나 · 팀 · 상사 필수(상사는 초대자 subtree 밖) · 등급 ≤ 초대자 · 권한 ⊆ 초대자의 쓰기 줄(재무 입력 · 문서 등록 · 결재 올리기 — 마감 없음). 감사 먼저 · 회장 알림. 효력 즉시.';
+  '0055. «사용자 관리자»의 초대. 사원 · 팀장만 · 그 회사 하나 · 팀(팀장이 초대자 쪽이 아닌) · 상사 필수(상사는 초대자 subtree 밖) · 등급 ≤ 초대자 · 권한 ⊆ 초대자의 쓰기 줄(재무 입력 · 문서 등록 — 마감 없음, 결재 올리기는 새 직원 기본) · 24시간 20건. 감사 먼저 · 회장 알림. 효력 즉시.';
 
 -- =====================================================================
 -- 4절. 가입 — 위임 초대 권한 붙이기 + apply_user_invitation
@@ -296,7 +355,7 @@ begin
     return 0;
   end if;
   for g in select jsonb_array_elements_text(p_inv.module_grants) loop
-    if g not in ('/finance/' || v_biz, '/documents/' || v_biz, '/chairman/decisions') then continue; end if;
+    if g not in ('/finance/' || v_biz, '/documents/' || v_biz) then continue; end if;
     if not exists (select 1 from user_module_access m where m.user_id = p_inv.invited_by and m.module = g and m.can_write) then
       continue;
     end if;
@@ -337,6 +396,13 @@ begin
   -- 회장 결재 큐. 승인 전에는 권한을 주지 않는다. 초대 행은 그대로 대기에 남는다 —
   -- 여기서 revoked_at을 채우면 승인이 난 뒤에 다시 부를 길이 없어진다.
   if inv.chairman_approval_required and inv.chairman_approved_at is null then
+    return false;
+  end if;
+
+  -- 0055 리뷰 I5. 위임 초대인데 초대자가 지금 그 회사 사용자 관리자가 아니면 이 초대로는 권한을 만들지 않는다(닫힌 쪽).
+  -- 0043 Hook은 그 전(계정 생성 전)에 «열린 초대»만 보므로 영향이 없다 — 계정은 생기고 프로필이 없어 로그인에서 막힌다.
+  -- 능력 회수 때 대기 초대는 자동 취소되므로(6절) 이 길은 그 사이의 경합 · 수동 되살림만 막는다.
+  if inv.staff_admin_business is not null and not staff_admin_holds(inv.invited_by, inv.staff_admin_business) then
     return false;
   end if;
 
@@ -454,17 +520,94 @@ begin
           or exists (select 1 from user_business_access a where a.user_id = p.user_id and a.business_id = p_business))
      and not in_my_subtree(p.user_id);
   select coalesce(jsonb_agg(jsonb_build_object('team_id', t.team_id, 'name', t.name) order by t.name, t.team_id), '[]'::jsonb)
-    into v_teams from teams t where t.business_id = p_business;
+    into v_teams from teams t
+   where t.business_id = p_business and (t.lead_user_id is null or not in_my_subtree(t.lead_user_id));
   select coalesce(jsonb_agg(m.module order by m.module), '[]'::jsonb) into v_grants
     from user_module_access m
    where m.user_id = auth.uid() and m.can_write
-     and m.module in ('/finance/' || p_business, '/documents/' || p_business, '/chairman/decisions');
+     and m.module in ('/finance/' || p_business, '/documents/' || p_business);
   return jsonb_build_object('people', v_people, 'teams', v_teams, 'grantable', v_grants, 'max_class', max_class()::text);
 end;
 $fn$;
 
 comment on function staff_admin_options(text) is
   '0055. «사용자 관리자» 초대 폼의 고르기 칸. 이름 · 팀 · 역할만 — 결재 · 업무 · 문서는 돌려주지 않는다.';
+
+-- =====================================================================
+-- 6-2절. 자동 취소 — 능력 회수 · 관리자 회수(리뷰 I5)
+-- =====================================================================
+/** 그 관리자(p_admin)의 대기 위임 초대(p_business null = 모든 회사)를 취소한다. 감사 먼저 — 세션이 없어 감사가 막히면 경고만. */
+create or replace function staff_admin_revoke_pending(p_admin uuid, p_business text, p_note text) returns int
+language plpgsql volatile security definer set search_path = public, pg_temp as $fn$
+declare
+  v_prev text := coalesce(current_setting('chairman.staff_admin', true), '');
+  v_now timestamptz := now();
+  r record;
+  n int := 0;
+begin
+  perform set_config('chairman.staff_admin', 'auto_revoke', true);
+  for r in select invitation_id, staff_admin_business from user_invitations
+            where invited_by = p_admin and staff_admin_business is not null
+              and (p_business is null or staff_admin_business = p_business)
+              and accepted_at is null and revoked_at is null loop
+    begin
+      insert into audit_log (action, entity_table, entity_id, business_id, actor_user_id, actor_role, before, after, note)
+      values ('permission_change', 'user_invitations', r.invitation_id::text, r.staff_admin_business, auth.uid(), auth_role()::text,
+              jsonb_build_object('revoked_at', null), jsonb_build_object('revoked_at', v_now), p_note);
+    exception when others then
+      raise warning 'staff_admin_revoke_pending 감사 실패 (%): %', r.invitation_id, sqlerrm;
+    end;
+    update user_invitations set revoked_at = v_now
+     where invitation_id = r.invitation_id and accepted_at is null and revoked_at is null;
+    if found then n := n + 1; end if;
+  end loop;
+  perform set_config('chairman.staff_admin', v_prev, true);
+  return n;
+end;
+$fn$;
+
+/** user_module_access — '/users/<biz>' 줄이 지워지거나 쓰기가 꺼지면 그 회사의 대기 위임 초대를 취소. 실패해도 회수는 살린다. */
+create or replace function staff_admin_capability_revoked() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $fn$
+begin
+  if old.module like '/users/%' and old.can_write and (tg_op = 'DELETE' or not new.can_write) then
+    perform staff_admin_revoke_pending(old.user_id, substr(old.module, length('/users/') + 1),
+      '위임 초대 자동 취소(0055) — 사용자 관리자 능력 회수');
+  end if;
+  return null;
+exception when others then
+  raise warning 'staff_admin_capability_revoked 실패 (%): %', old.user_id, sqlerrm;
+  return null;
+end;
+$fn$;
+
+/** user_profiles — 관리자가 회수되거나 퇴사(status <> active)하면 모든 회사의 대기 위임 초대를 취소. */
+create or replace function staff_admin_profile_revoked() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $fn$
+begin
+  if (new.revoked_at is not null and old.revoked_at is null) or (new.status <> 'active' and old.status = 'active') then
+    perform staff_admin_revoke_pending(new.user_id, null, '위임 초대 자동 취소(0055) — 사용자 관리자 회수 · 퇴사');
+  end if;
+  return null;
+exception when others then
+  raise warning 'staff_admin_profile_revoked 실패 (%): %', new.user_id, sqlerrm;
+  return null;
+end;
+$fn$;
+
+revoke all on function staff_admin_revoke_pending(uuid, text, text) from public, anon, authenticated;
+revoke all on function staff_admin_capability_revoked() from public, anon, authenticated;
+revoke all on function staff_admin_profile_revoked() from public, anon, authenticated;
+
+drop trigger if exists user_module_access_staff_admin_revoked on user_module_access;
+create trigger user_module_access_staff_admin_revoked
+  after delete or update of can_write on user_module_access
+  for each row execute function staff_admin_capability_revoked();
+
+drop trigger if exists user_profiles_staff_admin_revoked on user_profiles;
+create trigger user_profiles_staff_admin_revoked
+  after update of revoked_at, status on user_profiles
+  for each row execute function staff_admin_profile_revoked();
 
 -- =====================================================================
 -- 7절. 아침 숫자

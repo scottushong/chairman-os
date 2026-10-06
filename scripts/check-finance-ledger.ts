@@ -29,6 +29,7 @@ import { dummyRepository } from '../src/lib/repository/dummy'
 import { DUMMY_UID, dummyCanWriteDocuments, dummyModuleGrants, dummyPerson, setDummyModuleGrant } from '../src/lib/repository/dummy-org'
 import { canWriteAnyDocuments, canWriteDocuments } from '../src/lib/auth/roles'
 import { documentsByBusiness, hasLegacyDocumentWrite } from '../src/lib/module-grants'
+import { STAFF_ADMIN_ERROR, staffAdminMessage } from '../src/lib/staff-admin-errors'
 import type { SessionUser } from '../src/types'
 
 const BUSINESSES = ['biz_dy', 'biz_vana', 'biz_sticky', 'biz_hof', 'biz_boram']
@@ -390,7 +391,7 @@ async function staffAdminDummy() {
   const prev = process.env.DUMMY_USER
   const base = {
     business_id: 'biz_dy', display_name: '위임 신입', display_name_en: null, title_ko: null, role: 'Member' as const,
-    team_id: 'team_dy_support', reports_to: DUMMY_UID.chair as string, max_security_class: 'Normal' as const, module_grants: [] as string[],
+    team_id: 'team_dy_rnd', reports_to: DUMMY_UID.chair as string, max_security_class: 'Normal' as const, module_grants: [] as string[],
     joined_on: null, language: 'ko' as const,
   }
   try {
@@ -402,12 +403,18 @@ async function staffAdminDummy() {
     assert.ok(ids.includes(DUMMY_UID.chair) && !ids.includes(DUMMY_UID.supportLead), '0055 dummy: 상사 후보에 대표가 없거나 관리자 본인이 있다')
     assert.ok(o.teams.every((t) => t.team_id.startsWith('team_dy_')), '0055 dummy: 팀 후보에 DY 밖 팀이 있다')
 
-    const ok = await repo.staffAdminInvite({ ...base, email: 'dummy55@example.com', module_grants: ['/finance/biz_dy'] })
+    // 경영지원 팀장은 자기 팀(경영지원)이 후보에 없다(리뷰 I2).
+    assert.ok(!o.teams.some((t) => t.team_id === 'team_dy_support'), '0055 dummy: 팀장 관리자의 팀 후보에 자기 팀이 있다')
+    // «결재 올리기»는 와도 버린다(리뷰 I4).
+    const ok = await repo.staffAdminInvite({ ...base, email: 'dummy55@example.com', module_grants: ['/finance/biz_dy', '/chairman/decisions'] })
+    assert.deepEqual(ok.module_grants, ['/finance/biz_dy'], '0055 dummy: 결재 올리기가 위임 권한으로 실렸다')
     assert.equal(ok.staff_admin_business, 'biz_dy', '0055 dummy: 위임 꼬리표가 없다')
     assert.deepEqual([ok.chairman_approval_required, ok.chairman_approved_at], [false, null], '0055 dummy: 사원 위임 초대가 결재 큐로 갔다')
     const refuse: [Partial<typeof base>, RegExp, string][] = [
       [{ role: 'Executive' as never }, /staff_admin_role/, 'Executive'],
-      [{ module_grants: ['/chairman/decisions'] }, /staff_admin_grant/, '갖지 않은 결재 올리기'],
+      [{ team_id: 'team_dy_support' }, /staff_admin_team_self/, '자기가 팀장인 팀'],
+      [{ email: 'dummy55@example.com' } as never, /staff_admin_email_taken/, '대기 초대 이메일'],
+      [{ display_name: 'ㄱ'.repeat(61) }, /staff_admin_name/, '61자 이름'],
       [{ module_grants: ['/finance/biz_vana'] }, /staff_admin_grant/, '다른 회사 재무'],
       [{ reports_to: '' }, /staff_admin_boss_missing/, '상사 없음'],
       [{ reports_to: DUMMY_UID.supportLead }, /staff_admin_boss_self/, '본인 상사'],
@@ -417,6 +424,9 @@ async function staffAdminDummy() {
     ]
     for (const [patch, re, why] of refuse) {
       await assert.rejects(repo.staffAdminInvite({ ...base, email: `dummy55x${why.length}@example.com`, ...patch } as never), re, `0055 dummy: ${why}가 거부되지 않는다`)
+      // 리뷰 I6 — 액션의 문장 바꾸기: 키마다 제 문장(긴 키가 짧은 키에 먹히지 않는다).
+      const key = re.source
+      assert.equal(staffAdminMessage(new Error(`Supabase staff_admin_invite 42501: ${key}`)), STAFF_ADMIN_ERROR[key], `0055: ${key}의 화면 문장이 다르다`)
     }
     assert.deepEqual((await repo.listNotifications(50)).items.filter((n) => n.title.includes('위임 신입')), [], '0055 dummy: 관리자에게 대표 알림이 보인다')
     process.env.DUMMY_USER = 'chairman'
@@ -424,6 +434,11 @@ async function staffAdminDummy() {
     assert.equal(notes.length, 1, '0055 dummy: 대표 알림이 없다')
     assert.ok(!notes[0].title.includes('회장') && notes[0].link === '/settings/users', '0055 dummy: 알림 문구 · 링크가 다르다')
     await assert.rejects(repo.staffAdminInvite({ ...base, email: 'dummy55c@example.com' }), /staff_admin_denied/, '0055 dummy: 회장이 위임 길을 쓴다')
+    // 리뷰 I3 — 회장 아닌 직접 초대(0026 위임 insert)는 닫혔다.
+    process.env.DUMMY_USER = 'sales_lead'
+    await assert.rejects(repo.inviteUser({ email: 'dummy26@example.com', role: 'Member', max_security_class: 'Normal', business_ids: ['biz_dy'],
+      display_name: 'x', display_name_en: null, title_ko: '', reports_to: DUMMY_UID.salesLead, team_id: 'team_dy_sales', joined_on: null, language: 'ko' },
+      { user_id: DUMMY_UID.salesLead, role: 'TeamLead' }), /row-level security/, '0055 dummy: 팀장이 0026 길로 직접 초대한다')
     process.env.DUMMY_USER = 'sales_staff'
     assert.deepEqual(await repo.staffAdminBusinesses(), [], '0055 dummy: 능력 없는 직원이 관리자다')
     await assert.rejects(repo.staffAdminRevoke(ok.invitation_id), /staff_admin_not_found/, '0055 dummy: 남의 위임 초대를 취소한다')
@@ -431,9 +446,16 @@ async function staffAdminDummy() {
     await repo.staffAdminRevoke(ok.invitation_id)
     assert.ok((await repo.listUserInvitations()).find((i) => i.invitation_id === ok.invitation_id)?.revoked_at, '0055 dummy: 관리자 취소가 안 됐다')
     // 능력 회수(회장) → 더는 초대 못 함.
+    const pend = await repo.staffAdminInvite({ ...base, email: 'dummy55p@example.com' })
     await repo.setModuleGrant(DUMMY_UID.supportLead, { module: '/users/biz_dy', can_write: false, can_approve: false }, { user_id: 'chair', role: 'Chairman' })
     await assert.rejects(repo.staffAdminInvite({ ...base, email: 'dummy55r@example.com' }), /staff_admin_denied/, '0055 dummy: 능력 회수 뒤에도 초대된다')
+    assert.ok((await repo.listUserInvitations()).find((i) => i.invitation_id === pend.invitation_id)?.revoked_at,
+      '0055 dummy: 능력 회수가 대기 위임 초대를 자동 취소하지 않는다(리뷰 I5)')
     await repo.setModuleGrant(DUMMY_UID.supportLead, { module: '/users/biz_dy', can_write: true, can_approve: false }, { user_id: 'chair', role: 'Chairman' })
+    // I6 — 낱말 경계: 모르는 키 · 비슷한 이름은 일반 문장으로.
+    assert.equal(staffAdminMessage(new Error('x staff_admin_team_selfish y')), '저장하지 못했습니다. 잠시 후 다시 시도하세요.', '0055: 키 경계가 무너졌다')
+    assert.equal(staffAdminMessage(new Error('ERROR: staff_admin_team')), STAFF_ADMIN_ERROR.staff_admin_team, '0055: 짧은 키의 문장이 다르다')
+    assert.ok(Object.values(STAFF_ADMIN_ERROR).every((m) => !m.includes('회장')), '0055: 관리자 오류 문장에 «회장»이 있다')
   } finally {
     if (prev === undefined) delete process.env.DUMMY_USER
     else process.env.DUMMY_USER = prev

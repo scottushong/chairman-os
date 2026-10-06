@@ -2860,11 +2860,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         p_joined_on: input.joined_on,
         p_language: input.language,
       })
-      if (error) {
-        // 23505 = 대기 중인 같은 이메일(0011 부분 유니크). staff_admin_exists도 23505지만 문장이 다르다.
-        if (error.code === '23505' && !/staff_admin_exists/.test(error.message)) throw new Error(DUPLICATE_INVITATION)
-        throw new Error(`Supabase staff_admin_invite ${error.code ?? '?'}: ${error.message}`)
-      }
+      // 대기 초대 · 계정이 있는 이메일은 DB가 한 키(staff_admin_email_taken)로 던진다(리뷰 M2).
+      if (error) throw new Error(`Supabase staff_admin_invite ${error.code ?? '?'}: ${error.message}`)
       const { data, error: readError } = await sb
         .from('user_invitations')
         .select(INVITATION_COLUMNS)

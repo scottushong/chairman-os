@@ -136,7 +136,7 @@ export default async function UsersPage(props: PageProps<'/settings/users'>) {
               initiallyOpen={params.invite === '1'}
             />
           ))
-        ) : (
+        ) : isChairman ? (
           <InviteUser
             businesses={businesses}
             teams={teams}
@@ -145,6 +145,9 @@ export default async function UsersPage(props: PageProps<'/settings/users'>) {
             viewerAccount={viewerAccount}
             initiallyOpen={params.invite === '1'}
           />
+        ) : (
+          // 0055 리뷰 I3 — 0026 위임 초대가 닫혔다. 초대는 대표(0011) 또는 사용자 관리자만.
+          <p className="text-t11 text-ink-muted">직원 초대는 대표 또는 사용자 관리자가 합니다.</p>
         )}
       </div>
 
