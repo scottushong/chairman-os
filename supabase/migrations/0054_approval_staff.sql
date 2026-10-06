@@ -26,8 +26,9 @@
 --           insert 순간에 닫히는 길은 이 트리거의 규칙 종결 하나뿐이다.
 --           세션이 없는 insert(auth.uid() null — 마이그레이션 · 시드 · SQL 편집기 · 이관)와 lead_bundle(chairman.lead_step)은
 --           예전 그대로 둔다 — 시드(0003)와 검사 시드가 status를 들고 들어온다.
---       (a') 승인권자 세션이 닫힌 결정을 바로 넣으면 decided_by = auth.uid() · decided_by_kind = 역할(chairman/ceo) ·
---           decided_at = now()로 덮는다 — CEO가 대표 이름으로 결정을 꾸미지 못하게(리뷰 I2).
+--       (a') 승인권자 세션이 닫힌 결정을 바로 넣거나(insert) Open 결정을 닫으면(update) decided_by = auth.uid() ·
+--           decided_by_kind = decision_kind_of(역할)(0033) · decided_at = now()로 덮는다 — CEO가 대표 이름으로 결정을
+--           꾸미지 못하게(리뷰 I2 · 재리뷰 N1 · N2). Open으로 들어오는 세션 insert는 decided_*를 비운다(재리뷰 N3).
 --       (c) 금액 모양 검사 — 대표 기준 금액(chairman_over)이 있는 양식은 금액이 숫자 · 세 자리 쉼표 · 소수 · 끝 «원»
 --           모양이어야 한다. 아니면 approval_amount_invalid(23514). 예전 «숫자만 걸러 읽기»는 «600만»을 600으로 읽어
 --           기준 미만 «기록 완료»로 닫았다 — 0054 뒤 상사가 대표인 직원의 주된 길이라 닫힌 쪽으로 실패한다(리뷰 C1).
@@ -44,6 +45,9 @@
 --       회장이 사람을 직접 넣는 길도 같이 덮고, 500줄짜리 가입 함수를 또 복사하지 않는다.
 --       허용 목록(GroupCFO · BusinessCEO · Executive · TeamLead · Member)만 — 회장 · 시스템 계정 · 외부 역할(ExternalExpert ·
 --       Vendor)은 붙이지 않는다(리뷰 I1). 되살림은 회장 세션이거나 회장이 넣거나 승인한 열린 초대일 때만(리뷰 I4 — 0047과 같은 문).
+--       **실제로 다시 붙는 길은 회장 세션이다** — user_invitations는 force RLS이고 이 함수의 소유자는 bypassrls가 아니어서
+--       (production · staging) 세션 없는 이행 중의 초대 조회는 0행이 된다. 그러면 붙지 않는다(닫힌 쪽 실패, 재리뷰 N4).
+--       회장이 승인하는 순간(user_invitations_approved)은 회장 세션이라 붙는다.
 --       이미 줄이 있으면 그대로(on conflict do nothing). **지금 있는 직원에게는 붙이지 않는다(백필 없음)** — 회장이 토글로 정한 상태를 존중한다.
 --       회장이 끄면(토글 → 줄 삭제) 다시 붙지 않는다 — 이 트리거는 insert · 되살림 순간에만 돈다.
 --       실패해도 가입은 살린다(경고만) — accept_user_invitation(0026)이 예외를 삼키므로, 여기서 던지면 프로필
@@ -147,6 +151,15 @@ begin
         raise exception 'chairman_required' using errcode = '42501';
       end if;
     end if;
+    -- 0054 재리뷰 N1 — 결정을 기록하는 update(Open → 다른 상태)의 처리자는 그 세션이다. 0002 decisions_decide로
+    -- CEO가 {status:'Approved', decided_by:<대표>, decided_by_kind:'chairman'}을 보내 대표 결정을 꾸미지 못한다.
+    -- 이 트리거가 0033 decisions_fill_kind_trg보다 먼저 돈다(before 트리거는 이름순) — fill_kind는 채워진 값을 둔다.
+    -- lead_decide · lead_bundle · 묶음 종결(chairman.lead_step)과 세션 없는 update(마이그레이션)는 그대로.
+    if not v_step and auth.uid() is not null and old.status::text = 'Open' and new.status::text <> 'Open' then
+      new.decided_by := auth.uid();
+      new.decided_by_kind := decision_kind_of(auth_role()::text);
+      new.decided_at := now();
+    end if;
     return new;
   end if;
 
@@ -159,11 +172,18 @@ begin
     new.decided_at := null;
     new.decided_by := null;
     new.decided_by_kind := null;
-  elsif not v_step and auth.uid() is not null and new.status::text <> 'Open' then
+  elsif not v_step and auth.uid() is not null and new.status::text = 'Open' then
+    -- 0054 재리뷰 N3 — Open으로 들어오는 결정에는 «누가 정했나»가 없다. 승인권자가 보낸 decided_by도 버린다 —
+    -- 남기면 0026 decisions_read의 in_my_subtree(decided_by)로 읽는 범위가 꾸민 사람 쪽으로 넓어진다.
+    new.decided_at := null;
+    new.decided_by := null;
+    new.decided_by_kind := null;
+  elsif not v_step and auth.uid() is not null then
     -- 0054 리뷰 I2 — 승인권자가 닫힌 결정을 바로 넣으면 «누가 정했나»는 그 세션이다. CEO가 decided_by에 대표 id ·
     -- decided_by_kind 'chairman'을 적어 대표 결정을 꾸미지 못한다(0033 §7 분자 — 대표 의존도가 이 칸을 센다).
+    -- 역할 → kind는 0033 decision_kind_of() 한 자리에서(재리뷰 N2).
     new.decided_by := auth.uid();
-    new.decided_by_kind := case when auth_role()::text = 'Chairman' then 'chairman' else 'ceo' end;
+    new.decided_by_kind := decision_kind_of(auth_role()::text);
     new.decided_at := now();
   end if;
   new.lead_decided_at := null;

@@ -4569,10 +4569,12 @@ async function approvalStaff() {
     '0054 전제: Vendor 초대가 프로필을 만들지 않았다')
   assert.equal(await draftOf(AS.vendor), 0, '0054: Vendor에게 «결재 올리기»가 붙는다(리뷰 I1)')
   // 회수(0047이 줄 전부 삭제) → 회장이 넣은 초대로 되살림(세션 없는 이행)이면 다시 붙는다.
+  // **PGlite 전용**(재리뷰 N4): 이 harness는 superuser라 초대 조회가 된다. production · staging에서는 user_invitations가
+  // force RLS이고 함수 소유자가 bypassrls가 아니라 이 길은 0행 → 안 붙는다(닫힌 쪽). 실제 재부여 길은 위의 회장 세션이다.
   await owner(`update user_profiles set revoked_at = now(), status = 'left' where user_id = '${AS.hire}'`)
   assert.equal(await draftOf(AS.hire), 0, '0054 전제: 회수가 모듈 줄을 지우지 않았다(0047)')
   await owner(`select apply_user_invitation('${await invite('hire@x', 'Member', true)}', '${AS.hire}')`)
-  assert.equal(await draftOf(AS.hire), 1, '0054: 회장이 넣은 재초대로 되살아난 직원에게 «결재 올리기»가 다시 안 붙는다')
+  assert.equal(await draftOf(AS.hire), 1, '0054(PGlite 전용 — production에서는 회장 세션만): 회장이 넣은 재초대로 되살아난 직원에게 «결재 올리기»가 다시 안 붙는다')
   // 붙인 줄로 실제로 결재가 올라간다(회사 범위 = has_business).
   const leave = (biz: string) => `insert into decisions (decision_id, business_id, title, template_key, form, created_by)
      values ('dec_54h', '${biz}', '휴가', 'leave', '{"starts_on":"2026-10-07","ends_on":"2026-10-08"}', '${AS.hire}');`
@@ -4668,6 +4670,25 @@ async function approvalStaff() {
     [['Approved', AS.ceo, 'ceo', true]], '0054: CEO가 넣은 닫힌 결정이 대표 결정으로 꾸며진다(또는 Open으로 바뀌었다)')
   assert.deepEqual((await as<Closed>(AS.chair, closedOf('dec_54m'), forged('dec_54m', AS.chair))).map((r) => [r.status, r.by, r.kind]),
     [['Approved', AS.chair, 'chairman']], '0054: 대표가 넣는 결정이 Open으로 바뀌었거나 처리자가 다르다(회귀)')
+  // N3 — 승인권자가 Open으로 넣으면서 decided_*를 꾸며 보내도 비운다.
+  assert.deepEqual(await as<Closed>(AS.ceo, closedOf('dec_54n'),
+    `insert into decisions (decision_id, business_id, title, created_by, status, decided_at, decided_by, decided_by_kind)
+       values ('dec_54n', 'biz_dy', 'Open인데 처리자', '${AS.ceo}', 'Open', now(), '${AS.chair}', 'chairman');`),
+    [{ status: 'Open', at: null, by: null, kind: null }], '0054: 승인권자의 Open insert에 꾸민 decided_*가 남는다(재리뷰 N3)')
+  // N1 — CEO가 Open 결정을 닫으며(0002 decisions_decide) 대표 이름 · 'chairman'을 보내도 처리자는 CEO다.
+  await owner(`insert into decisions (decision_id, business_id, title, created_by) values ('dec_54u', 'biz_dy', '양식 없는 결정', '${AS.ceo}')`)
+  assert.deepEqual(await as<Closed>(AS.ceo, closedOf('dec_54u'),
+    `update decisions set status = 'Approved', decided_at = timestamptz '2020-01-01', decided_by = '${AS.chair}', decided_by_kind = 'chairman' where decision_id = 'dec_54u';`)
+    .then((r) => r.map((x) => [x.status, x.by, x.kind, x.at !== null && !x.at.startsWith('2020')])),
+    [['Approved', AS.ceo, 'ceo', true]], '0054: CEO가 update로 대표 결정을 꾸민다(재리뷰 N1)')
+  assert.deepEqual(await as<Closed>(AS.chair, closedOf('dec_54u'),
+    `update decisions set status = 'Rejected', decided_by = '${AS.ceo}', decided_by_kind = 'ceo' where decision_id = 'dec_54u';`)
+    .then((r) => r.map((x) => [x.status, x.by, x.kind])),
+    [['Rejected', AS.chair, 'chairman']], '0054: 대표가 닫은 결정의 처리자가 대표가 아니다(재리뷰 N1)')
+  // 세션 없는 update(마이그레이션 · 이관)는 예전 그대로.
+  await owner(`update decisions set status = 'Approved', decided_by = '${AS.chair}', decided_by_kind = 'chairman' where decision_id = 'dec_54u'`)
+  assert.deepEqual((await owner<Closed>(closedOf('dec_54u'))).map((x) => [x.by, x.kind]), [[AS.chair, 'chairman']],
+    '0054: 세션 없는 update의 처리자가 바뀌었다(회귀)')
   await owner(forged('dec_54s', AS.req))
   assert.deepEqual((await owner<Closed>(closedOf('dec_54s'))).map((r) => r.status), ['Approved'], '0054: 세션 없는 insert(시드 · 이관)가 Open으로 바뀌었다(회귀)')
 
@@ -4704,7 +4725,7 @@ async function main() {
   await staffTerms()
   await approvalStaff()
   console.log(
-    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단), 0048 문서 모듈 권한(사람 × 회사 · 문서 · 폴더 쓰기 · 줄 없는 팀장 거부 · 회사 접근과 줄 둘 다 · 열람 등급 위 insert/update 차단 · 등록자는 본인 · 고치기 · 지우기는 자기 것만(회장 전부) · 주인 칸은 회장만 · 폴더는 만든 사람만 · 시스템 계정 불변 · 옛 /core/search 회귀 · 회수 감사 · hard delete 닫힘), 0049 직원 화면 용어(결재선 · 취합 제목 «회장»→«대표» 백필 — 사람 · 단계 · updated_at 그대로 · 얼림 재가동 · 새 결재선 · 감사 메모도 «대표»), 0054 첫 직원 결재(대표는 팀장 칸에 서지 않음 · 400만 «기록 완료» · 600만 대표 칸 Open · 대표 열람 · 비승인권자 insert는 Open · 새 직원/재초대 «결재 올리기» · dummy 거울)`,
+    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단), 0048 문서 모듈 권한(사람 × 회사 · 문서 · 폴더 쓰기 · 줄 없는 팀장 거부 · 회사 접근과 줄 둘 다 · 열람 등급 위 insert/update 차단 · 등록자는 본인 · 고치기 · 지우기는 자기 것만(회장 전부) · 주인 칸은 회장만 · 폴더는 만든 사람만 · 시스템 계정 불변 · 옛 /core/search 회귀 · 회수 감사 · hard delete 닫힘), 0049 직원 화면 용어(결재선 · 취합 제목 «회장»→«대표» 백필 — 사람 · 단계 · updated_at 그대로 · 얼림 재가동 · 새 결재선 · 감사 메모도 «대표»), 0054 첫 직원 결재(대표는 팀장 칸에 서지 않음 · 400만 «기록 완료» · 600만 대표 칸 Open · 대표 열람 · 비승인권자 insert는 Open · 새 직원/회장 되살림 «결재 올리기»(초대 이행 재부여는 PGlite 전용) · 금액 모양 · insert/update 처리자 고정 · dummy 거울)`,
   )
 }
 
