@@ -170,6 +170,7 @@ RLS를 **우회하는** 함수는 이 저장소에 없다. definer 함수는 전
 | `official_statement_save()` (0020→0051) | (쓰는 문) 결산 id 하나 | 세무사 확정 저장. 0051에서 invoker → definer — 위와 같은 이유(직접 insert 정책 없음). 정책이 하던 판정(`can_keep_books` · AIAgent/Integration 거부)을 몸통 맨 앞에서 한다 |
 | `finance_import_claim()` · `ecount_audit_note()` · `ecount_code_business()` (0051) | (도우미) | 위 두 문 안에서만 돈다 — execute를 사람에게서 다 걷었다. `ecount_code_business`는 앱 `ECOUNT_CODE_BUSINESSES`, `ecount_audit_note`는 앱 `ecountAuditNote`와 같아야 한다(check-migrations가 대조) |
 | `ecount_monthly_import()` (0052) | (쓰는 문) 달마다 무엇을 했나 `{posted, corrected, unchanged, months}` | ECOUNT 월별 손익 등록 — 달마다 요약 전표(손익 줄 + 대응 계정 `ECOUNT-PL` 한 줄) · 같은 달 재업로드는 `post_correction`(역분개 + 정정분개) + 옛 `finance_import_slips` 줄 supersede · committed가 **한 트랜잭션**. definer인 이유는 0051과 같다(committed 전이 · 사람이 부를 수 없는 도우미). 판정은 `finance_import_claim()` + 원본 첨부 `for update` · 마감 달 · 세무사 확정 달 · 손익 계정만을 몸통이 다시 본다. 장부 표(journal_entries · journal_lines · accounts · closings · audit_log)는 force 그대로 — 호출자 정책을 다시 탄다. 새 force 해제 없음. 도우미 `ecount_monthly_counter_code()`는 아무도 못 부른다(앱 `ECOUNT_MONTHLY_COUNTER`와 check-migrations가 대조) |
+| `ecount_monthly_import()` (0056 판) · `finance_books_lock_key()` (0056) | 위와 같음 + `reversed` · 열쇠 bigint 하나 | 0056이 같은 문을 다시 세웠다 — 첫 등록 전표 감사 한 줄 · 금액 없는 달(`lines=[]`)은 그 달 업로드 전표 역분개만 · 마감/확정 판정은 손댈 달만. 열쇠 도우미는 immutable sql(0052 값 그대로)이고 **invoker인 `close_period()`도 같은 열쇠로 회사 잠금을 잡는다**(월 마감 ↔ 월별 등록 직렬화). 새 force 해제 · 새 표 없음 |
 
 두 가지가 이 목록을 지탱한다.
 

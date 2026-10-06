@@ -2388,3 +2388,54 @@ ECOUNT 열 구성 캡처가 없어 **열은 사람이 지정한다**(머리글 �
 - **dummy에 감사 · advisory lock이 없다**(콘솔 note뿐 · 한 프로세스).
 - **staging 적용 · 리허설은 하지 않았다** — 0052는 파일 · PGlite까지. 적용 순서는 0051과 같다(DB → 앱). 0052 전 앱은 월별 등록 버튼이 잠겨 있어 DB가 먼저 가도 안전하고, 0052 전 DB에서 새 앱이 등록을 누르면 PGRST202 → «DB 반영 전» 문장.
 
+## 2026-10-06 — ECOUNT 마무리 0056 · 업로드 칸 끌어다 놓기 · 바로가기 · 출처 꼬리표
+
+브랜치 `feat/ecount-import`를 master(86460dd — FileDropZone · AI 어시스턴트 · --include-all) 위로 다시 얹었다(충돌은 DEFERRED · package.json 두 곳 — 둘 다 남김). 0053은 비고 0054 · 0055는 결재 브랜치 몫이라 새 마이그레이션은 **0056_ecount_finish**.
+
+**해소(위 «2026-10-04 블록» ECOUNT 남은 것 · 0052 «남은 일»)**
+- ~~이어 간 업로드의 거절 문구가 새로 고침에 사라짐~~ → 거절 · 오류 문구도 «진행 중» 목록 단(부모)이 업로드 id별로 들고 그린다(`EcountImportFlow onError` · DraftItem `note`). 줄이 다시 그려지거나 목록에서 빠져도 «처리하지 못함 · 파일 — 이유»가 닫을 때까지 남는다. 다른 선택지: 흐름 안 상태 그대로(원인 미상 재마운트에 또 사라진다).
+- ~~월별 첫 등록은 감사가 finance_import_slips 줄만~~ → 0056: 첫 등록도 전표 감사 한 줄(entity `journal_entries` · 전표 번호 · post_journal_entry와 같은 after 모양 · note «업로드 문구 — 전표 M…»). 달 감사는 그대로 먼저. 다른 선택지: 달 감사 entity를 전표 번호로 바꾸기(번호는 insert 뒤에 정해진다 · 0052 감사 모양이 바뀐다).
+- ~~업로드 전표 출처가 «자체»~~ → 전표 화면 꼬리표 «ECOUNT 엑셀»(`slipOriginLabel`) — 판정은 적요가 아니라 `finance_import_slips`(원 전표 · 정정분개, 활성 · 내려간 줄 모두) + 그 전표를 뒤집은 역분개. 새 repo 메서드 `listFinanceImportSlips`(0050 전 DB면 빈 목록). 미리보기의 «수기 전표 경고»도 같은 판정으로 바꿨다(전에는 적요 정규식). journal_lines.source는 그대로 manual(0016 가드 — 바꾸지 않는다).
+- ~~빈 달이 된 재업로드는 옛 전표를 안 내린다(m-3)~~ → 0056: `lines = []`인 달 = «파일이 말하는데 금액이 없는 달» → 그 달 활성 업로드 전표를 `post_correction(줄 없음)`(역분개만) + 옛 줄 supersede(새 활성 줄 없음, 결과 `reversed`). 활성 전표가 없으면 아무것도 안 함(`empty`). 이미 역분개됐으면 `ecount_month_reversed`. 마감 · 확정 달 판정은 **손댈 달만**(금액 있는 달 + 되돌릴 전표가 있는 빈 달). 대응 계정은 금액 있는 달이 있을 때만 만든다.
+  - **«말하는 달»** = 계정 줄 중 하나라도 칸(0 포함)이 찬 **마지막 달까지**(`spokenMonthIndexes`). 그 안의 전부 0 · 빈 칸인 달이 금액 없는 달. 마지막 달 뒤의 빈 열은 «자료 없음»(손대지 않음). 누계는 ytdToMonthly가 이미 0으로 바꾼다(누계가 그대로인 달 = 당월 0). 다른 선택지: 칸이 하나라도 찬 달만(ECOUNT는 0을 빈 칸으로 둬서 «전부 0이 된 달»을 못 본다) · 지정한 월 열 전부(아직 안 온 달의 지난 전표를 지운다).
+  - **앱은 역분개할 빈 달만 보낸다**(미리보기 `reversals` — 말하는 빈 달 + 활성 업로드 전표가 있는 달). 지난 업로드 없는 빈 달은 안 보낸다 — 0056 전 DB(0052)는 빈 달을 `ecount_plan_invalid`로 거부하므로 첫 릴리스(업로드 전표 0)에는 영향이 없다. 미리보기는 그 달에 경고(«역분개합니다»), 마감 · 확정 달이면 차단.
+- ~~close_period가 회사 advisory lock을 안 잡는다(m-2)~~ → 0056: `finance_books_lock_key(회사)` = **0052 열쇠 그대로**(`hashtext('ecount_monthly_import:'||회사)`) — close_period(권한 판정 바로 뒤)와 ecount_monthly_import가 같이 잡는다. 배포 순간 0052판 등록과 0056판 마감도 같은 열쇠라 서로 기다린다. 다른 선택지: 새 열쇠 'books:'(배포 순간 서로 못 본다). check-migrations: 열쇠 = 0052 값 · 두 함수 본문 · close_period가 실제로 그 advisory 잠금을 쥔다(pg_locks).
+
+**고른 것 · 남은 것**
+- **수기 전표(post_journal_entry · 손 post_correction)는 회사 잠금을 안 잡는다** — 0016부터의 같은 경쟁(커밋 전 마감을 트리거가 못 본다). 장부 블록에서 같은 열쇠로.
+- **업로드 칸 = 공통 FileDropZone**(max 1 · `checkEcountFile` — 이름 규칙(.xls · CSV는 «xlsx로 저장» 안내) + 20MB · 빈 파일) · 놓자마자 올림(«올리기» 버튼 없앰). 바이트 앞머리는 올리기 직전, 서버가 한 번 더. 사진 찍기 없음. 다른 선택지: 고르기 + «올리기» 두 걸음 유지(공통 부품과 모양이 갈린다).
+- **«ECOUNT 업로드» 바로가기**(그룹 재무 · 회사 재무 머리글, `ecountUploadShortcuts`) — canImportEcount(ECOUNT 회사 + 재무 쓰기: Chairman · GroupCFO · 그 회사 BusinessCEO · '/finance/<회사>' 쓰기 줄) **AND 볼 수 있는 회사**. 읽기 · 마감만 받은 직원 · 시스템 계정 · 다른 회사 줄에는 없다. 그룹 재무는 «DY ECOUNT 업로드», 회사 재무는 «ECOUNT 업로드». 남은 것: BusinessCEO 역할은 화면이 회사 범위를 모른다(목록이 DY를 보여 주면 바로가기도 선다 — DB가 막는다, BooksNav와 같은 한계).
+- **`*.xlsx` · `*.xls`를 .gitignore에** — 실제 장부 파일이 저장소에 들어오지 않게. 실제 파일은 저장소 밖 `C:\Users\Edison Hong\projects\ecount-real\`(docs/onboarding/ecount-real-files.md — 2026-10-06 현재 폴더 없음). 개요만 찍는 `scripts/ecount-outline.ts`(읽기만).
+- **릴리스 전 확인 SQL** `docs/onboarding/ecount-release-precheck.sql`(select만) — check-migrations가 «select만 · 0049 DB와 전부 올린 DB에서 begin read only로 돈다»를 잰다. 0050 전 표는 to_regclass + query_to_xml로만 읽는다.
+- **배포 순서는 그대로 DB → 앱**. 0056 전 DB에 새 앱: 역분개할 빈 달이 있을 때만 등록이 거부된다(그 외 동작 같음).
+
+### 전표 증빙 — 0057 제안, 병합 시점에 확정 (**쓰지 않음 — DB 변경이 필요해서 멈춤**)
+
+요구: 전표(journal_entries)에 증빙 파일(이미지 · PDF, FileDropZone 끌어다 놓기). 올리기 = 그 회사 재무 쓰기 권한자만 · 보기 = 재무 읽기 권한자만 · 마감된 달 = 더하기만(지우기 없음, 권장) · AI 요약 · 외부 전송 제외. 지금 0045 첨부 대상은 initiatives · businesses · documents · decisions · finance_imports뿐이고, 0045 insert는 «대상이 보이면» 올리게 해서 재무 읽기 권한자도 올릴 수 있다 — 그래서 DB가 필요하다.
+
+```sql
+-- 0057_journal_evidence.sql (제안 — 번호는 병합 시점에 확정)
+-- 1) 대상 하나 더 — entity_id = '<business_id>:<slip_no>' (journal_entries PK가 둘이라 한 칸으로)
+alter table attachments drop constraint attachments_entity_check;
+alter table attachments add constraint attachments_entity_check
+  check (entity_table in ('initiatives','businesses','documents','decisions','finance_imports','journal_entries'));
+-- attachment_entity_visible(): when 'journal_entries' then exists (select 1 from journal_entries
+--     where business_id = split_part(p_id, ':', 1) and slip_no = split_part(p_id, ':', 2))   -- 읽기 = journal_entries_read(can_read_books)
+-- attachments_stamp(): business_id := split_part(new.entity_id, ':', 1) (위 exists가 참일 때만 — 아니면 null → 정책이 막음)
+-- 2) 올리기 = 재무 쓰기만 (restrictive insert — 0050 attachments_finance_import_owner와 같은 모양)
+create policy attachments_journal_writer on attachments as restrictive for insert
+  with check (entity_table <> 'journal_entries' or can_keep_books(split_part(entity_id, ':', 1)));
+-- 3) 마감된 달 = 지우기 없음 (restrictive delete + Storage 객체 삭제 정책에 같은 조건)
+create or replace function journal_evidence_deletable(p_id text) returns boolean   -- definer · search_path public, pg_temp
+  -- 세션 있음 AND 그 전표의 달 이후 closings 없음 AND can_keep_books(회사)
+create policy attachments_journal_delete on attachments as restrictive for delete
+  using (entity_table <> 'journal_entries' or journal_evidence_deletable(entity_id));
+-- attachments_objects_delete(storage): ... and (split_part(name,'/',1) <> 'journal_entries' or journal_evidence_deletable(split_part(name,'/',2)))
+-- 4) AI 제외 — DB에서도 (앱 분기가 틀려도 감사 없이 모델을 부르는 길이 없게)
+-- record_attachment_ai_send(): if a.entity_table in ('finance_imports','journal_entries') then
+--     raise exception 'attachment_finance_no_ai' using errcode = '42501'; end if;   -- 0050 finance_imports도 같이 닫는다(지금은 앱만 막는다)
+-- attachments 요약 칸 update도: restrictive update with check (entity_table not in (...) or ai_summary is null)
+-- 5) 등급 = 앱이 «일반»으로 보낸다(DB 기본 «제한»). Vault 거부는 0047 그대로.
+```
+
+화면(0057 뒤): 전표 화면 줄마다 «증빙» 칸(AttachmentsPanel 재사용 · `summarize=false` · 마감 달은 삭제 버튼 없음) · 첨부 라벨 · 경로 표에 journal_entries · check-migrations(쓰기 권한자만 올림 · 읽기 권한자 보기만 · 다른 회사 0행 · 마감 달 삭제 거부 · AI 전송 거부 · anon 잠금). 기존 evidence_url(링크)은 그대로 둔다.
