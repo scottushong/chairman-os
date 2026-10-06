@@ -2246,3 +2246,13 @@ B-4가 찾은 결함 하나를 고쳤다. **리뷰 루프가 없는 작업이고
 - **오류:** 60초 시간 상한 · 재시도 1번, 종류별 문장(키 · 크레딧 · 429 · 529 · 시간 초과 · 연결 · 400 · 5xx)과 `[assistant] model_error {kind,status,request_id}` 로그. 실패하면 질문도 저장하지 않는다(입력칸에 남는다).
 - **세션에 «결재 올리기» 줄을 읽는다**(`SessionUser.approvals_write`, 0002 module_access_self_read) — 카드 전에 «권한이 없습니다 — … 대표에게»를 먼저 말하려고. 판정은 여전히 DB. 못 읽으면 모름(DB에 맡김).
 - **남은 것:** 0054(상사 = 대표면 팀장 칸에 대표가 서는 문제)는 그대로 미작성 — 이 흐름도 그 규칙을 따른다.
+
+## 2026-10-07 — 10-06 통합 블록 마감(미결 · 회장 확인)
+
+- **staging push 막힘:** 0054 · 0055 · 0056의 staging 반영(`npm run db:push:staging`, 직접 CLI 둘 다)이 이 세션의 권한 분류기에 막혔다. 회장이 `release/ecount-rehearsal` checkout에서 친다(release-order 문서 «0. staging»). 그 뒤 staging 시험 SQL 두 개 · 2단계 화면 · ECOUNT staging E2E가 남는다.
+- **origin/master는 a3411e2** — 지시서의 «a0be722 · 0efaeba · 8a00dd2 운영 push 완료»와 다르다(GitHub API로 확인). A 릴리스가 같이 내보낸다.
+- **회장 확인:** (1) 0055가 0026 위임 insert를 닫는다 — 팀장 · 임원이 자기 아래로 직접 초대하던 길이 없어진다(production엔 쓰는 사람 없음). (2) 상사가 대표인 직원의 휴가는 곧바로 «기록 완료»(0054 I3) — 대표가 눌러야 하면 휴가 양식을 «항상 대표»로. (3) 사용자 관리자는 회사 사람 전원의 이름 · 팀 · 역할을 본다(0055 M4). (4) 입구 설계서 §F 10개.
+- **직원 5계정 재점검:** dy_ceo 17화면 «회장» 0 · 다른 회사 0(타사 주소 404)까지 돌고, 나머지 넷은 시스템이 메모리 부족으로 멈췄다 — 다시 돌리지 않았다.
+- **직원 화면 개발자 문구(Minor):** /settings/users «대기 중인 초대» 설명에 «Supabase Dashboard · 0011 on_auth_user_created · (0026)»이 직원에게도 보인다.
+- **모델:** 지금 AI_MODEL = claude-sonnet-5(로컬 · staging .env), 코드 기본값 claude-sonnet-4-5. production Vercel 값은 이 세션에서 못 봤다. 바꾸지 않았다.
+
