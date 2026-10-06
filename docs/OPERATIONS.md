@@ -625,6 +625,10 @@ CLI 버전이 이 로컬 JWT 정보를 제공하지 않으면 검사는 실패�
 10. 승인된 SHA만 릴리스하고 관찰·중단 기준과 담당자를 지정한다. 이 저장소 작업은 배포 승인이 아니다.
 11. DB가 먼저다. 손으로 `supabase link --project-ref nndvspgnljivkvihxlzj` 후 `supabase db push`
     (2절 — 전용 npm 스크립트를 두지 않았다). 0015·0016처럼 **스키마가 코드보다 먼저** 가야 하는 변경은 순서를 지킨다.
+    회장이 치는 것은 `bash scripts/release-production.sh <번호…>` 하나다(link → 복원 지점 → dry-run 대조 → YES → push → staging 재link → YES → `git push` → health).
+    먼저 `RELEASE_DRY_RUN=1`로 리허설한다. 대기 번호가 이미 적용된 최고 번호보다 낮으면(예: 0054 뒤의 0050~0052) «순서 뒤바뀜»으로 멈춘다.
+    그때만 `--include-all`을 붙여 다시 친다(`bash scripts/release-production.sh --include-all 0050 0051 0052`). dry-run과 push가 둘 다 `--include-all`로 돌고,
+    대기 목록이 인자와 정확히 같을 때만 진행한다. 2026-10 순서는 `docs/onboarding/release-order-2026-10.md`. 스크립트 검사는 `npm run check:release`(가짜 CLI, 네트워크 없음).
 12. 앱을 배포하고 배포 후 확인 4단계를 다시 돌린다. health는 **`APP_URL`(운영 도메인, 10절 · 1절 주소 표)로**
     부른다 — `curl -s "$APP_URL/api/health"`. Vercel이 배포마다 내주는 전용 URL(`chairman-os-<hash>-….vercel.app`)은
     Vercel 배포 보호에 막혀 health JSON 대신 인증 페이지를 돌려주므로 확인이 되지 않는다(2026-09-29 0047 릴리스에서 겪음).
@@ -639,6 +643,7 @@ CLI 버전이 이 로컬 JWT 정보를 제공하지 않으면 검사는 실패�
 2026-09-29 릴리스(0044~0046 · `1d36c07`)의 값은 복원 지점 `2026-09-29 07:40 UTC`(= `16:40 KST`, production 0043)와 직전 SHA `2b05efa`였다.
 2026-09-29 릴리스(0047 · `c284018`)의 값은 복원 지점 `2026-09-29 12:27 UTC`(= `21:27 KST`, production 0046)와 직전 SHA `8c5a49c`였다.
 2026-10-02 릴리스(0048 · `728cea5`)의 값은 복원 지점 `2026-10-02 08:59 UTC`(= `17:59 KST`, production 0047)와 직전 SHA `d8f0f06`였다.
+2026-10-06 릴리스(0049 · `a3411e2`)의 값은 복원 지점 `2026-10-06 04:39 UTC`(= `13:39 KST`, production 0048)와 직전 SHA `d2e73ec`였다.
 
 ### 앱 릴리스 실패
 

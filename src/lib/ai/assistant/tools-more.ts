@@ -1,12 +1,15 @@
 import 'server-only'
 
+import { bundleTitle, formAmount } from '@/lib/approval-line'
+import { approvalState } from '@/lib/approval-submit'
 import { RULE_UNIT } from '@/lib/attention/brief'
 import { canReadExceptions } from '@/lib/attention/screen'
+import { boss, bossText } from '@/lib/boss'
 import { kstToday } from '@/lib/chairman-project'
-import { ATTACHMENT_ENTITY, type AttachmentEntity } from '@/types'
+import { ATTACHMENT_ENTITY, type AttachmentEntity, type Decision } from '@/types'
 
 import { sumOf } from './calc'
-import { addEvidence, auditRestrictedRead, krw, resolveBusiness, str, type AssistantTool } from './kit'
+import { addEvidence, auditRestrictedRead, krw, norm, resolveBusiness, str, type AssistantTool } from './kit'
 
 /**
  * 읽기 도구 2 — 결재 · 캘린더 · 조직 · 첨부 요약 · 의존도 · 주의(Attention) · Direction.
@@ -16,19 +19,31 @@ import { addEvidence, auditRestrictedRead, krw, resolveBusiness, str, type Assis
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/
 
+/** 지금 이 사람이 처리할 차례인가. /me «요청함»(팀장 대기 · 결재선 첫 칸 = 나)과 회장 큐(팀장 단계를 지난 Open)를 합친 것. */
+export function waitingOn(d: Decision, user: { user_id: string; role: string }): boolean {
+  if (d.status !== 'Open') return false
+  if (d.lead_status === 'pending') return d.approval_line?.[0]?.user_id === user.user_id
+  return user.role === 'Chairman' && (d.chairman_required === true || !d.template_key)
+}
+
 export const approvalsTool: AssistantTool = {
   def: {
     name: 'list_approvals',
     description:
-      '결재(decisions) 목록. status(Open 대기 · Approved · Rejected …), business, template(purchase 구매 등)로 거른다. ' +
-      '구매 결재는 금액(form.amount)과 **서버가 계산한 합계**를 같이 준다.',
+      '결재(decisions) 목록. scope: mine(내가 올린 결재) · waiting_on_me(내가 처리할 차례) · all(볼 수 있는 전부, 기본). ' +
+      'status(Open 대기 · Approved · Rejected …), business, template(expense 지출 · purchase 구매 · leave 휴가 · contract 계약 · hiring 채용), ' +
+      'month(YYYY-MM — 결재 기한이 그 달), query(제목에 든 말), id(한 건)로 거른다. 줄마다 지금 상태(state: 팀장 대기 · 결재 대기 · 기록 완료 …), ' +
+      '결재선(approval_line), 양식 항목(form: 항목 이름 → 값)을 준다. 금액은 **서버가 계산한 합계**(amount_total)를 쓴다.',
     input_schema: {
       type: 'object',
       properties: {
+        scope: { type: 'string', enum: ['all', 'mine', 'waiting_on_me'] },
         status: { type: 'string' },
         business: { type: 'string' },
         template: { type: 'string' },
-        month: { type: 'string', description: 'YYYY-MM — 마감일(deadline)이 그 달인 것만' },
+        month: { type: 'string', description: 'YYYY-MM — 결재 기한(deadline)이 그 달인 것만' },
+        query: { type: 'string' },
+        id: { type: 'string', description: '결재 id(예: dec_012)' },
       },
     },
   },
@@ -38,32 +53,60 @@ export const approvalsTool: AssistantTool = {
     const biz = str(input.business) ? resolveBusiness(str(input.business), businesses) : null
     if (str(input.business) && !biz) return { error: `회사를 찾지 못했습니다: «${str(input.business)}»` }
     const name = new Map(businesses.map((b) => [b.business_id, b.name]))
+    const role = ctx.user.role
+    const scope = str(input.scope) || 'all'
     const status = str(input.status)
     const template = str(input.template)
     const month = str(input.month)
-    const rows = (await ctx.repo.listDecisions())
+    const q = norm(str(input.query))
+    const id = str(input.id, 64)
+    const [all, templates] = await Promise.all([ctx.repo.listDecisions(), ctx.repo.listApprovalTemplates().catch(() => [])])
+    const label = new Map(templates.map((t) => [t.template_key, { name: t.name_ko, fields: new Map(t.fields.map((f) => [f.key, f.label_ko])) }]))
+    const matched = all
+      .filter((d) => !id || d.decision_id === id)
+      .filter((d) => scope !== 'mine' || d.created_by === ctx.user.user_id)
+      .filter((d) => scope !== 'waiting_on_me' || waitingOn(d, ctx.user))
       .filter((d) => !status || d.status.toLowerCase() === status.toLowerCase())
       .filter((d) => !biz || d.business_id === biz.business_id)
       .filter((d) => !template || d.template_key === template)
       .filter((d) => !/^\d{4}-\d{2}$/.test(month) || d.deadline?.startsWith(month))
-      .slice(0, 60)
-      .map((d) => {
-        const amount = Number(String(d.form?.amount ?? '').replace(/[^0-9.-]/g, ''))
-        return {
-          id: d.decision_id,
-          title: d.title,
-          business: name.get(d.business_id) ?? d.business_id,
-          status: d.status,
-          deadline: d.deadline,
-          template: d.template_key ?? null,
-          amount: d.form?.amount && Number.isFinite(amount) ? amount : null,
-          options: d.options,
-          link: `/approvals?id=${d.decision_id}`,
-        }
-      })
-    for (const r of rows.slice(0, 6)) addEvidence(ctx, { label: r.title, href: r.link, detail: `${r.business} · ${r.status} · 마감 ${r.deadline ?? '—'}${r.amount !== null ? ` · ${krw(r.amount)}` : ''}` })
+      .filter((d) => !q || norm(d.title).includes(q))
+      .sort((a, b) => b.decision_id.localeCompare(a.decision_id))
+    const rows = matched.slice(0, 40).map((d) => {
+      const amount = formAmount(d.form ?? {})
+      const t = d.template_key ? label.get(d.template_key) : undefined
+      return {
+        id: d.decision_id,
+        title: bundleTitle(d.title, role),
+        business: name.get(d.business_id) ?? d.business_id,
+        status: d.status,
+        state: approvalState(d, role),
+        deadline: d.deadline,
+        template: t?.name ?? d.template_key ?? null,
+        form: d.form
+          ? Object.fromEntries(Object.entries(d.form).slice(0, 10).map(([k, v]) => [t?.fields.get(k) ?? k, bossText(String(v), role).slice(0, 160)]))
+          : null,
+        amount,
+        approval_line: d.approval_line?.map((st) => ({ step: st.step === 'chairman' ? boss(role) : st.step === 'lead' ? '팀장' : '규칙', name: bossText(st.name, role), why: bossText(st.why, role) })) ?? null,
+        lead_status: d.lead_status ?? null,
+        submitted_by_me: d.created_by === ctx.user.user_id,
+        waiting_on_me: waitingOn(d, ctx.user),
+        options: d.template_key ? undefined : d.options.map((o) => bossText(o, role)),
+        has_link_attachment: !!d.attachment_url,
+        link: `/approvals?id=${d.decision_id}`,
+      }
+    })
+    for (const r of rows.slice(0, 6)) addEvidence(ctx, { label: r.title, href: r.link, detail: `${r.business} · ${r.state} · 기한 ${r.deadline ?? '—'}${r.amount !== null ? ` · ${krw(r.amount)}` : ''}` })
+    if (!rows.length) addEvidence(ctx, { label: '결재', href: '/approvals', detail: '조건에 맞는 결재 0건' })
     const amounts = rows.map((r) => r.amount).filter((a): a is number => a !== null)
-    return { count: rows.length, rows, amount_total: amounts.length ? { total: sumOf(amounts), readable: krw(sumOf(amounts)), counted: amounts.length } : null }
+    return {
+      scope,
+      count: matched.length,
+      shown: rows.length,
+      rows,
+      amount_total: amounts.length ? { total: sumOf(amounts), readable: krw(sumOf(amounts)), counted: amounts.length } : null,
+      note: '첨부 파일은 결재 화면에서 그 건을 열면 아래 «첨부» 칸에 있다(attachment_summaries로 요약을 읽는다).',
+    }
   },
 }
 
