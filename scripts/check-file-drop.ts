@@ -11,7 +11,7 @@
  */
 import assert from 'node:assert/strict'
 
-import { checkAttachmentFile, ATTACHMENT_MAX_BYTES } from '../src/lib/attachments/rules'
+import { checkAttachmentFile, ATTACHMENT_FORMATS_KO, ATTACHMENT_MAX_BYTES } from '../src/lib/attachments/rules'
 import { dropSummary, limitLabel, planDrop, type FileLike } from '../src/lib/file-drop'
 import { checkLogoFile, LOGO_MAX_BYTES } from '../src/lib/initiative-logo'
 import { checkPhotoFile, PHOTO_MAX_BYTES } from '../src/lib/profile-photo'
@@ -30,15 +30,21 @@ function attachmentRules() {
   assert.equal(checkAttachmentFile(f('계약서.pdf', 'application/pdf', 3 * MB)), null)
   // Windows는 .xlsx의 type을 비워 준다 — 확장자로 통과해야 한다.
   assert.equal(checkAttachmentFile(f('매출.xlsx', '', 1 * MB)), null)
-  // 사진은 크기를 보지 않는다(4.5MB 넘으면 줄여 올린다).
+  // 사진은 크기를 보지 않는다(base64 5MB · 8000px 넘으면 줄여 올린다).
   assert.equal(checkAttachmentFile(f('명함.jpg', 'image/jpeg', 30 * MB)), null)
 
   const wrong = checkAttachmentFile(f('설치.exe', 'application/x-msdownload', 1 * MB))
   assert.ok(wrong?.includes('받지 않는 형식'), `형식 거절이어야 한다: ${wrong}`)
-  assert.ok(wrong?.includes('PDF · Word · Excel · PowerPoint · PNG · JPG') && wrong.includes('20MB'), `받는 형식 · 상한이 들어가야 한다: ${wrong}`)
+  assert.ok(wrong?.includes(ATTACHMENT_FORMATS_KO) && wrong.includes('20MB'), `받는 형식 · 상한이 들어가야 한다: ${wrong}`)
+  assert.ok(ATTACHMENT_FORMATS_KO.includes('HEIC') && ATTACHMENT_FORMATS_KO.includes('WebP'), '안내 문구에 새로 받는 사진 형식')
 
-  const heic = checkAttachmentFile(f('IMG_0001.HEIC', 'image/heic', 2 * MB))
-  assert.ok(heic?.includes('받지 않는 형식'), 'HEIC는 받지 않는다(요약이 PNG · JPG만 본다)')
+  // HEIC · WebP · GIF는 받는다 — 올리기 전에 브라우저가 JPEG로 바꾼다(limits.ts convertibleImage). 크기는 바꾼 뒤에 본다.
+  assert.equal(checkAttachmentFile(f('IMG_0001.HEIC', 'image/heic', 2 * MB)), null)
+  assert.equal(checkAttachmentFile(f('IMG_0002.heic', '', 30 * MB)), null)
+  assert.equal(checkAttachmentFile(f('a.webp', 'image/webp', 1 * MB)), null)
+  assert.equal(checkAttachmentFile(f('a.gif', 'image/gif', 1 * MB)), null)
+  // 사진이 아닌 것은 여전히 20MB.
+  assert.ok(checkAttachmentFile(f('a.svg', 'image/svg+xml', 1 * MB))?.includes('받지 않는 형식'))
 
   const big = checkAttachmentFile(f('도면.pdf', 'application/pdf', 25 * MB))
   assert.ok(big?.includes('25.0MB') && big.includes('20MB까지'), `크기 거절에 지금 크기와 상한: ${big}`)

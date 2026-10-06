@@ -1,6 +1,8 @@
 import { makeFileCheck } from '@/lib/file-drop'
 import { SECURITY_CLASS, type AttachmentClass, type AttachmentEntity, type SecurityClass } from '@/types'
 
+import { convertibleImage } from './limits'
+
 /**
  * 첨부 규칙 — 화면(드롭 · 버튼)과 서버 액션이 같은 값을 본다. DB(0045 check 제약)가 마지막 문지기다.
  */
@@ -8,8 +10,8 @@ import { SECURITY_CLASS, type AttachmentClass, type AttachmentEntity, type Secur
 /** 20MB. 0045 attachments_size_check와 같다. */
 export const ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024
 
-/** Claude 이미지 한 장의 상한(5MB)보다 조금 아래. 넘으면 브라우저가 줄여 올린다. */
-export const IMAGE_SOFT_MAX_BYTES = 4.5 * 1024 * 1024
+/** 넘으면 브라우저가 줄여 올린다 — base64로 5MB가 되는 3.75MB. 계산 근거는 limits.ts. */
+export { IMAGE_SOFT_MAX_BYTES } from './limits'
 
 export const ATTACHMENT_MIME = {
   pdf: 'application/pdf',
@@ -21,7 +23,8 @@ export const ATTACHMENT_MIME = {
   jpeg: 'image/jpeg',
 } as const
 
-export const ATTACHMENT_ACCEPT = '.pdf,.docx,.xlsx,.pptx,.png,.jpg,.jpeg'
+/** HEIC · HEIF · WebP · GIF는 고를 수 있게만 연다 — 브라우저가 JPEG로 바꿔 올린다(limits.ts convertibleImage). */
+export const ATTACHMENT_ACCEPT = '.pdf,.docx,.xlsx,.pptx,.png,.jpg,.jpeg,.heic,.heif,.webp,.gif'
 
 const MIMES = new Set<string>(Object.values(ATTACHMENT_MIME))
 
@@ -38,20 +41,24 @@ export function attachmentMime(fileName: string, browserType: string): string | 
 export const isImageMime = (mime: string) => mime === 'image/png' || mime === 'image/jpeg'
 
 /** 사람이 읽는 형식 목록 — 안내 줄과 거절 문구가 같이 쓴다. */
-export const ATTACHMENT_FORMATS_KO = 'PDF · Word · Excel · PowerPoint · PNG · JPG'
+export const ATTACHMENT_FORMATS_KO = 'PDF · Word · Excel · PowerPoint · 사진(JPG · PNG · HEIC · WebP)'
+
+/** 사진인가 — 그대로 받는 PNG · JPG, 또는 브라우저가 JPEG로 바꿔 올릴 HEIC · HEIF · WebP · GIF. */
+export function isAttachmentPhoto(f: { name: string; type: string }): boolean {
+  const mime = attachmentMime(f.name, f.type)
+  return mime !== null ? isImageMime(mime) : convertibleImage(f.name, f.type) !== null
+}
 
 /**
- * 첨부 칸의 «놓자마자» 검사(공통 첨부 부품). 형식은 attachmentMime, 상한은 20MB.
- * 사진(PNG · JPG)은 여기서 크기를 보지 않는다 — 4.5MB를 넘으면 올리기 전에 줄이고, 줄인 뒤에 20MB를 다시 본다.
+ * 첨부 칸의 «놓자마자» 검사(공통 첨부 부품). 형식은 attachmentMime(+ JPEG로 바꿀 사진), 상한은 20MB.
+ * 사진은 여기서 크기를 보지 않는다 — base64 5MB(원본 3.75MB) · 8000px를 넘거나 JPEG로 바꿔야 하면 올리기 전에
+ * 바꾸고 · 줄이고(attachments-panel prepareUpload), 그 뒤에 20MB를 다시 본다.
  */
 export const checkAttachmentFile = makeFileCheck({
-  typeOk: (f) => attachmentMime(f.name, f.type) !== null,
+  typeOk: (f) => attachmentMime(f.name, f.type) !== null || convertibleImage(f.name, f.type) !== null,
   formats: ATTACHMENT_FORMATS_KO,
   maxBytes: ATTACHMENT_MAX_BYTES,
-  sizeExempt: (f) => {
-    const mime = attachmentMime(f.name, f.type)
-    return mime !== null && isImageMime(mime)
-  },
+  sizeExempt: isAttachmentPhoto,
 })
 
 export const ATTACHMENT_CLASS_LABEL: Record<AttachmentClass, string> = {

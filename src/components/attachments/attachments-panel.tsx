@@ -22,7 +22,6 @@ import {
   ATTACHMENT_CLASS_LABEL,
   ATTACHMENT_FORMATS_KO,
   ATTACHMENT_MAX_BYTES,
-  IMAGE_SOFT_MAX_BYTES,
   attachmentClassAllowed,
   attachmentMime,
   checkAttachmentFile,
@@ -30,6 +29,14 @@ import {
   formatBytes,
   isImageMime,
 } from '@/lib/attachments/rules'
+import {
+  IMAGE_TARGET_BASE64,
+  PDF_DOC_MAX_PAGES,
+  base64Length,
+  convertibleImage,
+  imageNeedsShrink,
+  unconvertibleMessage,
+} from '@/lib/attachments/limits'
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
 import {
   ATTACHMENT_STATUS_LABEL_KO,
@@ -70,17 +77,53 @@ export interface AttachmentsPanelProps {
   compact?: boolean
 }
 
-/** 긴 변 2400px JPEG로. 폰 사진(대개 5MB+)이 Claude 이미지 한도를 넘지 않게. */
-async function shrinkImage(file: File): Promise<File> {
-  const bitmap = await createImageBitmap(file)
-  const scale = Math.min(1, 2400 / Math.max(bitmap.width, bitmap.height))
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.round(bitmap.width * scale)
-  canvas.height = Math.round(bitmap.height * scale)
-  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
-  const blob = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, 'image/jpeg', 0.85))
-  if (!blob) return file
-  return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' })
+/**
+ * 긴 변 2400px JPEG로. 폰 사진이 AI 이미지 한도(base64 5MB · 8000px — limits.ts)를 넘지 않게.
+ * 줄여도 크면 화질 → 크기 순으로 한 번씩 더 줄인다. 끝까지 크면 마지막 것을 돌려준다(서버가 이유를 밝힌다).
+ */
+async function toJpeg(bitmap: ImageBitmap, name: string): Promise<File | null> {
+  let last: Blob | null = null
+  for (const [edge, quality] of [[2400, 0.85], [2400, 0.7], [1600, 0.7]] as const) {
+    const scale = Math.min(1, edge / Math.max(bitmap.width, bitmap.height))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(bitmap.width * scale)
+    canvas.height = Math.round(bitmap.height * scale)
+    canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    last = await new Promise<Blob | null>((ok) => canvas.toBlob(ok, 'image/jpeg', quality))
+    if (last && base64Length(last.size) <= IMAGE_TARGET_BASE64) break
+  }
+  return last ? new File([last], name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' }) : null
+}
+
+/**
+ * 올릴 파일과 형식. HEIC · HEIF · WebP · GIF는 JPEG로 바꾼다(DB 0045는 png · jpeg만 받는다). PNG · JPEG는 한도를 넘을 때만 줄인다.
+ * 바꿀 수 없으면 이유를 담아 던진다 — 그 파일은 올리지 않는다. 형식 자체는 checkAttachmentFile이 놓을 때 이미 걸렀다.
+ */
+async function prepareUpload(original: File, phase: (text: string) => void): Promise<{ file: File; mime: string }> {
+  const mime = attachmentMime(original.name, original.type)
+  const convert = mime ? null : convertibleImage(original.name, original.type)
+  if (!mime && !convert) throw new Error(`${ATTACHMENT_FORMATS_KO}만 받습니다.`)
+  if (mime && !isImageMime(mime)) return { file: original, mime }
+
+  let bitmap: ImageBitmap
+  try {
+    bitmap = await createImageBitmap(original)
+  } catch {
+    if (convert) throw new Error(unconvertibleMessage(original.name, convert))
+    return { file: original, mime: mime! } // PNG · JPEG를 브라우저가 못 열면 그대로 — 서버가 읽어 본다.
+  }
+  try {
+    if (!convert && !imageNeedsShrink(original.size, bitmap.width, bitmap.height)) return { file: original, mime: mime! }
+    phase(convert ? '사진을 JPG로 바꾸는 중…' : '사진을 줄이는 중…')
+    const jpeg = await toJpeg(bitmap, original.name)
+    if (!jpeg) {
+      if (convert) throw new Error(unconvertibleMessage(original.name, convert))
+      return { file: original, mime: mime! }
+    }
+    return { file: jpeg, mime: 'image/jpeg' }
+  } finally {
+    bitmap.close()
+  }
 }
 
 export function AttachmentsPanel(props: AttachmentsPanelProps) {
@@ -94,11 +137,7 @@ export function AttachmentsPanel(props: AttachmentsPanelProps) {
 
   /** 파일 한 개 — 공통 첨부 부품이 순서대로 부른다. 형식 · 20MB(사진 제외)는 놓을 때 이미 걸렀다. */
   async function uploadOne(original: File, phase: (text: string) => void): Promise<string | void> {
-    const mime = attachmentMime(original.name, original.type)
-    if (!mime) throw new Error(`${ATTACHMENT_FORMATS_KO}만 받습니다.`)
-    if (isImageMime(mime) && original.size > IMAGE_SOFT_MAX_BYTES) phase('사진을 줄이는 중…')
-    const file = isImageMime(mime) && original.size > IMAGE_SOFT_MAX_BYTES ? await shrinkImage(original) : original
-    const finalMime = file === original ? mime : 'image/jpeg'
+    const { file, mime: finalMime } = await prepareUpload(original, phase)
     if (file.size > ATTACHMENT_MAX_BYTES) throw new Error('20MB까지 올릴 수 있습니다.')
 
     phase('올리는 중…')
@@ -132,7 +171,8 @@ export function AttachmentsPanel(props: AttachmentsPanelProps) {
     if (begun.status !== 'skipped_vault') {
       phase('요약 중… (긴 문서는 1~2분)')
       const s = await summarizeAttachmentAction(begun.id)
-      if (s.error) return `${s.error} — 파일은 올라갔습니다. «다시 요약»을 누르세요.`
+      // «이 파일은 아직 읽을 수 없습니다 — … 파일은 올라갔습니다.»(limits.ts)는 그대로, 그 밖의 실패에는 다시 요약 안내를 붙인다.
+      if (s.error) return s.error.includes('파일은 올라갔습니다') ? s.error : `${s.error} — 파일은 올라갔습니다. «다시 요약»을 누르세요.`
     }
   }
 
@@ -155,7 +195,7 @@ export function AttachmentsPanel(props: AttachmentsPanelProps) {
           upload={uploadOne}
           onSettled={() => router.refresh()}
           camera
-          hint={`${ATTACHMENT_FORMATS_KO}, 20MB까지 · 여러 개는 차례로 올립니다`}
+          hint={`${ATTACHMENT_FORMATS_KO}, 20MB까지 · 스캔한 PDF는 ${PDF_DOC_MAX_PAGES}쪽까지 읽습니다 · 여러 개는 차례로 올립니다`}
           blocked={cls === 'Vault' ? 'Vault 파일은 올리지 않습니다. 원본은 사내 스토리지에 두고 문서 화면에서 링크로 등록하세요.' : null}
           blockedNotice={
             // CLAUDE.md — Vault 원본은 사내 스토리지에 두고 링크만. 앱 레벨 암호화(회사 보유 키)가

@@ -2,6 +2,7 @@ import 'server-only'
 
 import { strFromU8, unzipSync } from 'fflate'
 
+import { imageRejectReason, pdfRoute } from './limits'
 import { ATTACHMENT_MIME, isImageMime } from './rules'
 
 /**
@@ -14,6 +15,7 @@ import { ATTACHMENT_MIME, isImageMime } from './rules'
  *   xlsx exceljs — npm `xlsx` 0.18.x는 미패치 CVE가 있어 쓰지 않는다(믿을 수 없는 파일이다).
  *   pptx fflate로 풀어 ppt/slides/slideN.xml의 <a:t>만 모은다.
  *   이미지 추출 없음 — 그대로 Claude vision으로 간다.
+ *   스캔 PDF(글자층이 거의 없음) — PDF 그대로 Claude document 블록으로 간다(limits.ts pdfRoute: 30쪽 · 30MB 천장).
  *
  * OOXML 셋은 zip이다. 풀기 전에 **압축 해제 크기 합**을 잰다 — 20MB zip이 수 GB로 부푸는 zip bomb을
  * 함수 메모리 전에 끊는다.
@@ -22,6 +24,7 @@ import { ATTACHMENT_MIME, isImageMime } from './rules'
 export type Extracted =
   | { kind: 'text'; units: string[]; unitLabel: '쪽' | '장' | '시트' | '문서'; chars: number }
   | { kind: 'image'; mediaType: 'image/png' | 'image/jpeg'; base64: string }
+  | { kind: 'pdf'; base64: string; pages: number }
 
 export class ExtractError extends Error {}
 
@@ -52,7 +55,8 @@ function guardZip(bytes: Uint8Array) {
 
 async function pdf(bytes: Uint8Array): Promise<string[]> {
   const { extractText, getDocumentProxy } = await import('unpdf')
-  const doc = await getDocumentProxy(bytes)
+  // PDF.js는 받은 버퍼를 넘기며 비워 버릴 수 있다 — 스캔본이면 원본 바이트를 다시 써야 해서 복사본을 준다.
+  const doc = await getDocumentProxy(bytes.slice())
   const { text } = await extractText(doc, { mergePages: false })
   return text.map((t) => t.replace(/[ \t]+/g, ' ').trim())
 }
@@ -115,6 +119,8 @@ function decodeXml(s: string): string {
 export async function extractAttachment(buffer: ArrayBuffer, mime: string): Promise<Extracted> {
   const bytes = new Uint8Array(buffer)
   if (isImageMime(mime)) {
+    const tooBig = imageRejectReason(bytes.byteLength)
+    if (tooBig) throw new ExtractError(tooBig)
     return { kind: 'image', mediaType: mime as 'image/png' | 'image/jpeg', base64: Buffer.from(bytes).toString('base64') }
   }
 
@@ -151,12 +157,12 @@ export async function extractAttachment(buffer: ArrayBuffer, mime: string): Prom
   }
 
   const chars = units.reduce((n, u) => n + u.length, 0)
-  if (chars < 20) {
-    throw new ExtractError(
-      mime === ATTACHMENT_MIME.pdf
-        ? '글자를 찾지 못했습니다 — 스캔한 PDF로 보입니다. 사진(이미지)으로 올리면 요약합니다.'
-        : '글자를 찾지 못했습니다.',
-    )
+  if (mime === ATTACHMENT_MIME.pdf) {
+    // 글자층이 거의 없으면(스캔본) PDF 그대로 보낸다 — Claude가 쪽마다 그림으로 읽는다.
+    const r = pdfRoute(units.length, chars, bytes.byteLength)
+    if (r.route === 'reject') throw new ExtractError(r.reason)
+    if (r.route === 'document') return { kind: 'pdf', base64: Buffer.from(bytes).toString('base64'), pages: units.length }
   }
+  if (chars < 20) throw new ExtractError('글자를 찾지 못했습니다')
   return { kind: 'text', units, unitLabel, chars }
 }

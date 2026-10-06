@@ -11,6 +11,7 @@ import type { ChairmanRepository } from '@/lib/repository'
 import type { AttachmentSummary } from '@/types'
 
 import { ExtractError, extractAttachment, type Extracted } from './extract'
+import { unreadableMessage } from './limits'
 
 /**
  * 첨부 AI 요약 (Phase 10). 서버 액션이 부른다 — **올린 사람의 세션**(repo)으로 읽고 적는다.
@@ -134,6 +135,26 @@ async function callModel(client: Anthropic, model: string, content: Anthropic.Me
   }
 }
 
+/**
+ * 그림 · 스캔 PDF를 모델에 보내는 모양 — 파일이 먼저, 지시(JSON)가 뒤(문서 권장 순서).
+ * 글로 읽은 파일은 null(아래 구간 길). 검사 스크립트가 이 모양을 잰다.
+ */
+export function mediaContent(fileName: string, extracted: Extracted): Anthropic.ContentBlockParam[] | null {
+  if (extracted.kind === 'image') {
+    return [
+      { type: 'image', source: { type: 'base64', media_type: extracted.mediaType, data: extracted.base64 } },
+      { type: 'text', text: JSON.stringify({ mode: 'image', file_name: fileName }) },
+    ]
+  }
+  if (extracted.kind === 'pdf') {
+    return [
+      { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: extracted.base64 } },
+      { type: 'text', text: JSON.stringify({ mode: 'scanned_pdf', file_name: fileName, pages: extracted.pages }) },
+    ]
+  }
+  return null
+}
+
 /** 파일 하나(또는 메모 하나)를 요약한다. 긴 글은 구간 → 합치기. 호출마다 onUsage. */
 async function runSummary(
   client: Anthropic,
@@ -149,14 +170,9 @@ async function runSummary(
     return r.json
   }
 
-  if (extracted.kind === 'image') {
-    return parseSummary(
-      await call([
-        { type: 'image', source: { type: 'base64', media_type: extracted.mediaType, data: extracted.base64 } },
-        { type: 'text', text: JSON.stringify({ mode: 'image', file_name: fileName }) },
-      ]),
-    )
-  }
+  const media = mediaContent(fileName, extracted)
+  if (media) return parseSummary(await call(media))
+  if (extracted.kind !== 'text') throw new Error('읽을 수 없는 형식입니다.')
 
   const whole = extracted.units.join('\n\n')
   if (whole.length <= SINGLE_MAX_CHARS && extracted.units.length < LONG_DOC_UNITS) {
@@ -185,6 +201,17 @@ export function dummySummary(fileName: string, extracted: Extracted): Attachment
       key_numbers: [],
       decisions_needed: ['[DUMMY] 결정 필요 항목 예시'],
       next_actions: ['[DUMMY] 원본 사진 확인'],
+      confidence: 'low',
+      language: 'ko',
+      dummy: true,
+    }
+  }
+  if (extracted.kind === 'pdf') {
+    return {
+      summary: [`[DUMMY] ${fileName} — 스캔 PDF ${extracted.pages}쪽(글자층 없음)`, '실제 요약이 아닙니다. ANTHROPIC_API_KEY가 없어 가짜로 채웠습니다.', '키가 있으면 PDF를 그대로 Claude에 보내 쪽마다 읽습니다.'],
+      key_numbers: [],
+      decisions_needed: ['[DUMMY] 결정 필요 항목 예시'],
+      next_actions: ['[DUMMY] 원본 PDF 확인'],
       confidence: 'low',
       language: 'ko',
       dummy: true,
@@ -276,7 +303,7 @@ export async function summarizeAttachment(repo: ChairmanRepository, attachmentId
     return { status: 'summarized' }
   } catch (e) {
     if (!(e instanceof ExtractError)) console.error('[attachments] 요약 실패', e)
-    return fail(e instanceof ExtractError ? e.message : `요약하지 못했습니다: ${short(e)}`)
+    return fail(e instanceof ExtractError ? unreadableMessage(e.message) : `요약하지 못했습니다: ${short(e)}`)
   }
 }
 
