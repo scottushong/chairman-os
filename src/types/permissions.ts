@@ -123,4 +123,10 @@ export interface SessionUser {
   documents?: Record<string, { write: boolean }>
   /** 0048. 옛 전역 키 '/core/search'의 쓰기 칸 — can_write_documents()가 남긴 분기. 회사 범위 안 전부를 연다. */
   documents_legacy_write?: boolean
+  /**
+   * «결재 올리기» — user_module_access '/chairman/decisions'의 can_write(0002 decisions_create가 보는 줄).
+   * 안내용이다(판정은 DB). AI 어시스턴트가 결재 카드를 만들기 전에 «권한이 없습니다»를 먼저 말하는 데 쓴다.
+   * 없으면(옛 세션 객체 · 카카오 질문자) 모르는 것으로 보고 DB 판정에 맡긴다.
+   */
+  approvals_write?: boolean
 }
