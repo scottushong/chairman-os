@@ -1,5 +1,45 @@
 # 2026-10 릴리스 순서: 결재(0054) 먼저, ECOUNT(0050~0052) 나중
 
+> ## 2026-10-07 확정판 — 이 상자가 아래 본문보다 우선한다
+>
+> | 순서 | 브랜치(로컬) | 마이그레이션 | 명령 |
+> |---|---|---|---|
+> | 0 | — | staging에 0054 · 0055 · 0056 | 아래 «0. staging» |
+> | A | `feat/approvals-0054` (8f5de3a, master를 이미 합침 → 충돌 없음) | **0054 0055** | `bash scripts/release-production.sh 0054 0055` |
+> | B | `feat/ecount-import` (85fb83d, 결재 브랜치를 이미 합침 → A 뒤 충돌 없음) | **0050 0051 0052 0056** (0053은 없음) | `bash scripts/release-production.sh --include-all 0050 0051 0052 0056` |
+>
+> - **origin/master는 아직 `a3411e2`다.** 로컬 master의 a0be722 · 0efaeba · 8a00dd2(결재 양식 · 릴리스 스크립트 고침)와 이번 블록 커밋(AI 어시스턴트 · 공통 첨부 부품 · `--include-all` · 문서)은 **push되지 않았다.** A의 스크립트가 마지막에 `git push origin master`로 같이 내보낸다. DB 없는 변경만 먼저 내보내고 싶으면 A 전에 master에서 `git push origin master` 한 줄(= 앱 배포)도 된다 — master에는 production에 없는 마이그레이션이 없다(0049까지).
+> - B의 대기 목록에는 0056이 0050~0052와 함께 들어간다. 0056은 0055보다 크지만 0050~0052가 낮아서 `--include-all`이 필요하고, 스크립트는 네 번호가 **정확히** 같을 때만 진행한다.
+> - B 전에 production SQL Editor에서 `docs/onboarding/ecount-release-precheck.sql`(읽기 전용)을 돌린다.
+>
+> ### 0. staging (회장이 Git Bash에서 — 이 세션은 staging push가 권한 분류기에 막혔다)
+>
+> 리허설 checkout(`~/projects/chairman-os-rehearsal`, 브랜치 `release/ecount-rehearsal` = 결재 + ECOUNT 합친 것)에서:
+>
+> ```bash
+> cd ~/projects/chairman-os-rehearsal
+> cat supabase/.temp/project-ref        # itpenmxyracfhyormcep 이어야 한다
+> npm run db:push:staging               # 검사(check:migrations 등) 뒤 0054 0055 0056 셋만 들어간다(staging은 0052)
+> ```
+>
+> 그다음 staging 시험 SQL 두 개(마지막에 예외를 던져 전부 되돌린다 — staging에 아무것도 남기지 않는다):
+>
+> ```bash
+> P=/c/Users/EDISON~1/AppData/Local/Temp/claude/C--Users-Edison-Hong/4f6e4e33-1a5c-464f-8de4-b0bda684a0ba/scratchpad
+> SUPABASE_DB_PASSWORD=$(grep ^SUPABASE_DB_PASSWORD .env.staging.local | cut -d= -f2-) npx supabase db query --linked -f "$(cygpath -w $P/stage1/0054_staging_test.sql)"
+> SUPABASE_DB_PASSWORD=$(grep ^SUPABASE_DB_PASSWORD .env.staging.local | cut -d= -f2-) npx supabase db query --linked -f "$(cygpath -w $P/stage2/0055_staging_test.sql)"
+> ```
+>
+> 기대: 오류 문장이 `0054 STAGING PASS …` · `0055 STAGING PASS a … h`로 시작한다(FAIL이면 그 줄을 Claude에게).
+>
+> ### A 뒤 클릭 순서 (production 앱에서, 회장)
+>
+> 1. `/settings/users` → 조직도 → **김병훈** 패널 → «**DY (주) 사용자 관리자**» 체크(감사 기록이 남는다). 재무 입력 · 문서 등록 · 결재 올리기가 켜져 있는지 같이 본다.
+> 2. 가입 Hook(0043)을 켠다 — `docs/onboarding/signup-hook-checklist.md` 3 → 4 → 5(A1은 이미 정상). **김병훈이 첫 위임 초대를 보내기 전에.**
+> 3. 김병훈에게 `docs/onboarding/staff-admin-ko.pdf`를 건넨다.
+> 4. 김병훈이 첫 초대를 저장하면 회장 종 알림에 «…님이 DY (주)에 …님(사원)을 초대했습니다»가 온다. 가입 뒤 조직도에서 그 사람의 결재 올리기 ☑(자동) · 고른 권한을 본다.
+> 5. 0054 전에 올라온 «팀장 대기» 결재(회장이 팀장 칸에 선 것)가 있으면 `/me` 받은 결재에서 처리한다.
+
 production DB는 지금 **0049**다. 이번 달 마이그레이션 두 묶음이 나가는데, 번호 순서와 내보내는 순서가 다르다.
 
 | 순서 | 브랜치 | 마이그레이션 | 명령 |
