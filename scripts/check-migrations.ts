@@ -4700,6 +4700,292 @@ async function approvalStaff() {
   await db.close()
 }
 
+const SA = {
+  chair: '00000000-0000-0000-0000-0000000055a1',
+  admin: '00000000-0000-0000-0000-0000000055a2', // 김병훈 자리 — Member · DY 경영지원 · 상사 = 대표 · «DY 사용자 관리자»
+  peer: '00000000-0000-0000-0000-0000000055a3', // DY Member · 상사 = 대표 — 능력 없음 · 남의 결재 주인
+  lead: '00000000-0000-0000-0000-0000000055a4', // DY 영업 팀장 · 상사 = 대표
+  under: '00000000-0000-0000-0000-0000000055a5', // 관리자 아래 사람(상사 = admin) — 상사로 고르면 거부
+  vana: '00000000-0000-0000-0000-0000000055a6', // VANA 직원
+  agent: '00000000-0000-0000-0000-0000000055a7',
+  hire: '00000000-0000-0000-0000-0000000055a8', // 관리자가 초대해 가입하는 새 직원
+  late: '00000000-0000-0000-0000-0000000055a9', // 능력 회수 전에 초대된 사람
+  cut: '00000000-0000-0000-0000-0000000055aa', // 초대 뒤 관리자가 재무 권한을 잃은 경우
+}
+
+/**
+ * 0055 온보딩 위임 — «DY 사용자 관리자»(회장 결정 B). 0050~0052(ECOUNT)에 기대지 않는다(이 브랜치에 없다).
+ * 끝에서 같은 DB의 표 · 함수 소유자를 BYPASSRLS 없는 역할로 넘겨 force RLS(user_invitations · audit_log · teams) 아래에서도
+ * RPC가 도는지 잰다 — staging의 postgres는 bypassrls지만 production이 같다고 기대지 않는다(0047과 같은 가정).
+ */
+async function staffAdmin() {
+  const db = new PGlite({ extensions: { pg_trgm } })
+  await applyAll(db)
+  await db.exec(`
+    grant usage on schema public, auth to authenticated, anon;
+    grant select, insert, update, delete on all tables in schema public to authenticated;
+    grant usage, select on all sequences in schema public to authenticated;
+    insert into auth.users values ('${SA.chair}', 'c@x.co'), ('${SA.admin}', 'admin@x.co'), ('${SA.peer}', 'peer@x.co'), ('${SA.lead}', 'lead@x.co'),
+      ('${SA.under}', 'under@x.co'), ('${SA.vana}', 'vana@x.co'), ('${SA.agent}', 'agent@x.co');
+    insert into teams (team_id, business_id, name, name_en) values ('team_vana_55', 'biz_vana', 'VANA 팀', 'VANA');
+    insert into user_profiles (user_id, role, display_name, max_security_class, team_id) values
+      ('${SA.chair}', 'Chairman', '홍대표', 'Vault', null),
+      ('${SA.admin}', 'Member', '김병훈', 'Normal', 'team_dy_support'),
+      ('${SA.peer}', 'Member', '동료', 'Normal', 'team_dy_support'),
+      ('${SA.lead}', 'TeamLead', '영업팀장', 'Normal', 'team_dy_sales'),
+      ('${SA.under}', 'Member', '관리자 아래', 'Normal', 'team_dy_support'),
+      ('${SA.vana}', 'Member', 'VANA 직원', 'Normal', 'team_vana_55'),
+      ('${SA.agent}', 'AIAgent', 'ai', 'Restricted', null);
+    update user_profiles set reports_to = '${SA.chair}' where user_id in ('${SA.admin}', '${SA.peer}', '${SA.lead}', '${SA.vana}');
+    update user_profiles set reports_to = '${SA.admin}' where user_id = '${SA.under}';
+    update teams set lead_user_id = null where team_id = 'team_dy_support';
+    insert into user_business_access values ('${SA.admin}', 'biz_dy'), ('${SA.peer}', 'biz_dy'), ('${SA.lead}', 'biz_dy'),
+      ('${SA.under}', 'biz_dy'), ('${SA.vana}', 'biz_vana');
+    insert into user_module_access (user_id, module, can_write, can_approve) values
+      ('${SA.admin}', '/users/biz_dy', true, false), ('${SA.admin}', '/finance/biz_dy', true, false),
+      ('${SA.admin}', '/documents/biz_dy', true, false)
+    on conflict (user_id, module) do update set can_write = excluded.can_write, can_approve = excluded.can_approve;
+  `)
+  const owner = async <T,>(sql: string) => (await db.query<T>(sql)).rows
+  const as = async <T,>(uid: string, sql: string, setup = '') => {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
+    try {
+      if (setup) await db.exec(setup)
+      return (await db.query<T>(sql)).rows
+    } finally {
+      await db.exec('rollback')
+    }
+  }
+  const commitAs = async <T,>(uid: string, sql: string) => {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
+    try {
+      const rows = (await db.query<T>(sql)).rows
+      await db.exec('commit')
+      return rows
+    } catch (e) {
+      await db.exec('rollback')
+      throw e
+    }
+  }
+  type Inv = { business?: string; email: string; name?: string; role?: string; team?: string | null; boss?: string | null; cls?: string; grants?: string[] }
+  const q = (v: string | null | undefined) => (v === null || v === undefined ? 'null' : `'${v}'`)
+  const inviteSql = (o: Inv) =>
+    `select staff_admin_invite(p_business => ${q(o.business ?? 'biz_dy')}, p_email => ${q(o.email)}, p_display_name => ${q(o.name ?? o.email)},
+       p_role => ${q(o.role ?? 'Member')}, p_team_id => ${o.team === null ? 'null' : q(o.team ?? 'team_dy_support')},
+       p_reports_to => ${o.boss === null ? 'null' : q(o.boss ?? SA.chair)}::uuid, p_security_class => ${q(o.cls ?? 'Normal')},
+       p_module_grants => array[${(o.grants ?? []).map((g) => `'${g}'`).join(', ')}]::text[])::text as id`
+  const invite = async (uid: string, o: Inv) => (await commitAs<{ id: string }>(uid, inviteSql(o)))[0].id
+  const refuses = (uid: string, o: Inv, re: RegExp, why: string) => assert.rejects(as(uid, inviteSql(o)), re, `0055: ${why}`)
+  const ALL = ['/chairman/decisions', '/documents/biz_dy', '/finance/biz_dy']
+
+  // ── 능력 판정 ──
+  const can = async (uid: string, biz: string) => (await as<{ v: boolean }>(uid, `select can_manage_users('${biz}') as v`))[0].v
+  assert.equal(await can(SA.admin, 'biz_dy'), true, '0055: «DY 사용자 관리자» 줄이 있는데 can_manage_users가 거짓')
+  assert.equal(await can(SA.admin, 'biz_vana'), false, '0055: DY 관리자가 VANA 관리자로 판정된다')
+  assert.equal(await can(SA.peer, 'biz_dy'), false, '0055: 줄 없는 직원이 사용자 관리자로 판정된다')
+  assert.equal(await can(SA.chair, 'biz_dy'), false, '0055: 회장이 위임 길(can_manage_users)에 들어온다 — 회장은 0011 폼이다')
+  // 능력 줄은 회장만 쓴다(0002 module_access_admin_write).
+  await assert.rejects(as(SA.admin, `insert into user_module_access (user_id, module, can_write) values ('${SA.peer}', '/users/biz_dy', true)`),
+    /row-level security/, '0055: 관리자가 남에게 «사용자 관리자»를 준다')
+  assert.deepEqual(await as(SA.admin, `update user_module_access set can_approve = true where user_id = '${SA.admin}' and module = '/finance/biz_dy' returning 1`), [],
+    '0055: 관리자가 자기 권한(마감)을 올린다')
+
+  // ── 되는 것: 팀장 · 사원 초대 ──
+  const tlId = await invite(SA.admin, { email: 'tl@x.co', name: '새 팀장', role: 'TeamLead', team: 'team_dy_sales', boss: SA.lead })
+  const hireId = await invite(SA.admin, { email: 'hire@x.co', name: '새 사원', grants: [...ALL].reverse() })
+  type Row = { role: string; biz: string[]; mg: string[]; sab: string | null; req: boolean; appr: string | null; by: string; boss: string; team: string }
+  const rowOf = async (id: string) => (await owner<Row>(`select role::text as role, business_ids as biz, module_grants as mg, staff_admin_business as sab,
+      chairman_approval_required as req, chairman_approved_at::text as appr, invited_by::text as by, reports_to::text as boss, team_id as team
+      from user_invitations where invitation_id = '${id}'`))[0]
+  assert.deepEqual(await rowOf(tlId), { role: 'TeamLead', biz: ['biz_dy'], mg: [], sab: 'biz_dy', req: false, appr: null, by: SA.admin, boss: SA.lead, team: 'team_dy_sales' },
+    '0055: 팀장 위임 초대 행이 다르다')
+  assert.deepEqual((await rowOf(hireId)).mg, ALL, '0055: 사원 위임 초대의 권한 목록이 다르다')
+  // 관리자는 자기 초대를 읽는다(0026 subtree_read) — 동료는 못 읽는다.
+  assert.equal((await as(SA.admin, `select 1 from user_invitations where invitation_id in ('${tlId}', '${hireId}')`)).length, 2, '0055: 관리자가 자기 초대를 못 읽는다')
+  assert.deepEqual(await as(SA.peer, `select 1 from user_invitations where invitation_id = '${hireId}'`), [], '0055: 동료가 위임 초대를 읽는다')
+
+  // ── 거부 ──
+  await refuses(SA.admin, { email: 'ex@x.co', role: 'Executive' }, /staff_admin_role/, 'Executive 초대가 거부되지 않는다(큐에 넣지 말고 거부)')
+  await refuses(SA.admin, { email: 'ceo@x.co', role: 'BusinessCEO' }, /staff_admin_role/, 'BusinessCEO 초대가 거부되지 않는다')
+  await refuses(SA.admin, { email: 'v@x.co', role: 'Vendor' }, /staff_admin_role/, 'Vendor 초대가 거부되지 않는다')
+  await refuses(SA.admin, { email: 'g1@x.co', grants: ['/finance/biz_vana'] }, /staff_admin_grant/, '다른 회사 재무 권한을 싣는다')
+  await refuses(SA.admin, { email: 'g2@x.co', grants: ['/finance/biz_dy:approve'] }, /staff_admin_grant/, '모르는 키(마감 흉내)를 싣는다')
+  await refuses(SA.admin, { email: 'g3@x.co', grants: ['/users/biz_dy'] }, /staff_admin_grant/, '«사용자 관리자» 능력을 위임으로 나눠 준다')
+  await owner(`delete from user_module_access where user_id = '${SA.admin}' and module = '/documents/biz_dy'`)
+  await refuses(SA.admin, { email: 'g4@x.co', grants: ['/documents/biz_dy'] }, /staff_admin_grant/, '관리자가 갖지 않은 문서 등록 권한을 준다')
+  await owner(`insert into user_module_access (user_id, module, can_write) values ('${SA.admin}', '/documents/biz_dy', true)`)
+  await refuses(SA.admin, { email: 'b1@x.co', boss: null }, /staff_admin_boss_missing/, '상사 없이 저장된다')
+  await refuses(SA.admin, { email: 'b2@x.co', boss: SA.admin }, /staff_admin_boss_self/, '관리자 본인이 상사가 된다(피초대자 결재가 관리자에게 보인다)')
+  await refuses(SA.admin, { email: 'b3@x.co', boss: SA.under }, /staff_admin_boss_self/, '관리자 아래 사람이 상사가 된다(subtree 누수)')
+  await refuses(SA.admin, { email: 'b4@x.co', boss: SA.vana }, /staff_admin_boss_invalid/, '다른 회사 사람이 상사가 된다')
+  await refuses(SA.admin, { email: 'b5@x.co', boss: SA.agent }, /staff_admin_boss_invalid/, '시스템 계정이 상사가 된다')
+  await refuses(SA.admin, { email: 't1@x.co', team: null }, /staff_admin_team/, '팀 없이 저장된다')
+  await refuses(SA.admin, { email: 't2@x.co', team: 'team_vana_55' }, /staff_admin_team/, '다른 회사 팀으로 저장된다')
+  await refuses(SA.admin, { email: 'c1@x.co', cls: 'Restricted' }, /staff_admin_class/, '자기(Normal)보다 높은 등급을 준다')
+  await refuses(SA.admin, { email: 'c2@x.co', cls: 'Public' }, /staff_admin_class/, '«공개»를 사람 등급으로 준다')
+  await refuses(SA.admin, { email: 'o1@x.co', business: 'biz_vana', team: 'team_vana_55', boss: SA.vana }, /staff_admin_denied/, 'DY 관리자가 VANA로 초대한다')
+  await refuses(SA.peer, { email: 'n1@x.co' }, /staff_admin_denied/, '능력 없는 직원이 초대한다')
+  await refuses(SA.chair, { email: 'n2@x.co' }, /staff_admin_denied/, '회장이 위임 RPC를 쓴다')
+  await refuses(SA.admin, { email: 'hire@x.co' }, /duplicate key|unique/, '같은 이메일의 대기 초대가 둘이 된다')
+  await refuses(SA.admin, { email: 'peer@x.co' }, /staff_admin_exists/, '이미 계정이 있는 이메일을 초대한다')
+  await refuses(SA.admin, { email: 'bad-email' }, /staff_admin_email/, '이메일 모양이 아닌데 저장된다')
+
+  // 가드 — 두 칸은 RPC 안에서만. 0026 위임 insert · 회장 insert · update로 권한을 싣지 못한다.
+  await assert.rejects(as(SA.lead, `insert into user_invitations (email, role, display_name, invited_by, reports_to, business_ids, module_grants)
+      values ('sneak@x.co', 'Member', 's', '${SA.lead}', '${SA.lead}', '{biz_dy}', '["/finance/biz_dy"]')`), /staff_admin_columns/,
+    '0055: 0026 위임 insert로 module_grants를 싣는다')
+  await assert.rejects(as(SA.chair, `insert into user_invitations (email, role, display_name, invited_by, business_ids, staff_admin_business)
+      values ('sneak2@x.co', 'Member', 's', '${SA.chair}', '{biz_dy}', 'biz_dy')`), /staff_admin_columns/, '0055: 회장 insert가 위임 꼬리표를 꾸민다')
+  await assert.rejects(as(SA.chair, `update user_invitations set module_grants = '["/finance/biz_dy"]' where invitation_id = '${tlId}'`),
+    /staff_admin_columns/, '0055: 초대의 권한 목록을 나중에 고친다')
+
+  // ── 회장 알림 · 감사 ──
+  const notes = await owner<{ title: string; body: string; link: string; kind: string }>(
+    `select title, body, link, kind from notifications where user_id = '${SA.chair}' order by created_at, title`)
+  assert.equal(notes.length, 2, '0055: 위임 초대 둘에 회장 알림이 둘이 아니다')
+  assert.ok(notes.some((n) => n.title === '김병훈님이 DY (주)에 새 사원님(사원)을 초대했습니다'), `0055: 알림 제목이 다르다 (${notes.map((n) => n.title).join(' / ')})`)
+  assert.ok(notes.every((n) => n.kind === 'system' && n.link === '/settings/users'), '0055: 알림 종류 · 링크가 다르다')
+  assert.ok(notes.some((n) => n.body.includes('권한 결재 올리기 · 문서 등록 · 재무 입력') && n.body.includes('상사 대표')), `0055: 알림 본문이 다르다 (${notes.map((n) => n.body).join(' / ')})`)
+  assert.ok(!JSON.stringify(notes).includes('회장'), '0055: DB 알림 문구에 «회장»이 적혔다(0049)')
+  assert.deepEqual(await owner(`select 1 from notifications where user_id <> '${SA.chair}'`), [], '0055: 회장 아닌 사람에게 알림이 갔다')
+  const audits = await owner<{ n: number }>(`select count(*)::int as n from audit_log where action::text = 'permission_change'
+     and entity_table = 'user_invitations' and actor_user_id = '${SA.admin}' and business_id = 'biz_dy' and note like '위임 초대(0055%'`)
+  assert.equal(audits[0].n, 2, '0055: 위임 초대 감사가 둘이 아니다(거부된 시도는 남지 않아야)')
+
+  // ── 고르기 칸 · 아침 숫자 ──
+  type Opt = { people: { user_id: string; role: string }[]; teams: { team_id: string }[]; grantable: string[]; max_class: string }
+  const [{ o }] = await as<{ o: Opt }>(SA.admin, `select staff_admin_options('biz_dy') as o`)
+  const ids = o.people.map((p) => p.user_id)
+  assert.ok(ids.includes(SA.chair) && ids.includes(SA.peer) && ids.includes(SA.lead), '0055: 상사 후보에 대표 · 동료 · 팀장이 없다')
+  assert.ok(!ids.includes(SA.admin) && !ids.includes(SA.under) && !ids.includes(SA.vana) && !ids.includes(SA.agent),
+    '0055: 상사 후보에 관리자 본인 · 그 아래 · 다른 회사 · 시스템 계정이 섞였다')
+  assert.ok(o.teams.length >= 5 && o.teams.every((t) => t.team_id.startsWith('team_dy_')), '0055: 팀 후보가 DY 팀이 아니다')
+  assert.deepEqual(o.grantable, ALL, '0055: 줄 수 있는 권한이 관리자 권한과 다르다')
+  assert.equal(o.max_class, 'Normal', '0055: 관리자 등급이 다르다')
+  assert.deepEqual(Object.keys(o.people[0]).sort(), ['display_name', 'role', 'team_id', 'user_id'], '0055: 고르기 칸이 이름 · 팀 · 역할 밖의 칸을 낸다')
+  await assert.rejects(as(SA.peer, `select staff_admin_options('biz_dy')`), /staff_admin_denied/, '0055: 능력 없는 직원이 사람 목록을 받는다')
+  assert.deepEqual(await as(SA.agent, `select delegated_invite_count(now() - interval '1 day') as n`), [{ n: 2 }], '0055: 아침 숫자(AIAgent)가 2가 아니다')
+  assert.deepEqual(await as(SA.chair, `select delegated_invite_count(now() - interval '1 day') as n`), [{ n: 2 }], '0055: 아침 숫자(회장)가 2가 아니다')
+  await assert.rejects(as(SA.admin, `select delegated_invite_count(now() - interval '1 day')`), /staff_admin_denied/, '0055: 관리자가 전체 숫자를 센다')
+  // AIAgent는 여전히 초대 줄을 직접 못 읽는다(숫자 함수만).
+  assert.deepEqual(await as(SA.agent, `select 1 from user_invitations`), [], '0055: AIAgent가 초대 줄을 읽는다')
+
+  // ── 가입 → 프로필 · 권한(0054 결재 올리기 포함) → 결재 올리기 ──
+  await owner(`insert into auth.users values ('${SA.hire}', 'hire@x.co')`)
+  assert.deepEqual(await owner(`select role::text as role, team_id, reports_to::text as boss from user_profiles where user_id = '${SA.hire}'`),
+    [{ role: 'Member', team_id: 'team_dy_support', boss: SA.chair }], '0055: 위임 초대 가입의 프로필이 다르다')
+  assert.deepEqual(await owner(`select business_id from user_business_access where user_id = '${SA.hire}'`), [{ business_id: 'biz_dy' }],
+    '0055: 위임 초대 가입의 회사 범위가 DY 하나가 아니다')
+  assert.deepEqual(await owner(`select module, can_write, can_approve from user_module_access where user_id = '${SA.hire}' order by module`),
+    ALL.map((module) => ({ module, can_write: true, can_approve: false })), '0055: 가입한 직원의 권한이 다르다(마감 없음 · 셋)')
+  assert.equal((await owner(`select 1 from user_invitations where invitation_id = '${hireId}' and accepted_at is not null`)).length, 1, '0055: 초대가 수락으로 안 바뀌었다')
+  const leave = (id: string, by: string) => `insert into decisions (decision_id, business_id, title, template_key, form, created_by)
+     values ('${id}', 'biz_dy', '휴가', 'leave', '{"starts_on":"2026-10-07","ends_on":"2026-10-08"}', '${by}')`
+  await commitAs(SA.hire, leave('dec_55h', SA.hire))
+  await commitAs(SA.peer, leave('dec_55p', SA.peer))
+  assert.equal((await as(SA.hire, `select 1 from decisions where decision_id = 'dec_55h'`)).length, 1, '0055: 가입한 직원이 결재를 못 올린다')
+  // 관리자는 남의 결재를 못 본다 — 자기가 초대한 사람 것도.
+  assert.deepEqual(await as(SA.admin, `select decision_id from decisions where decision_id in ('dec_55h', 'dec_55p')`), [],
+    '0055: 관리자가 동료 · 자기 초대자의 결재를 본다')
+  assert.deepEqual(await as(SA.admin, `select 1 from user_profiles where user_id = '${SA.hire}'`), [], '0055: 관리자가 자기 초대자의 프로필 행을 직접 읽는다(subtree 누수)')
+  assert.equal((await as(SA.chair, `select 1 from decisions where decision_id in ('dec_55h', 'dec_55p')`)).length, 2, '0055: 대표가 직원 결재를 못 본다(회귀)')
+
+  // ── 초대 뒤 관리자 권한이 줄면 그 권한은 붙지 않는다(닫힌 쪽) ──
+  await invite(SA.admin, { email: 'cut@x.co', name: '권한 줄어든 사원', grants: ['/finance/biz_dy', '/documents/biz_dy'] })
+  await owner(`delete from user_module_access where user_id = '${SA.admin}' and module = '/finance/biz_dy'`)
+  await owner(`insert into auth.users values ('${SA.cut}', 'cut@x.co')`)
+  assert.deepEqual(await owner(`select module from user_module_access where user_id = '${SA.cut}' order by module`),
+    [{ module: '/chairman/decisions' }, { module: '/documents/biz_dy' }], '0055: 관리자가 잃은 재무 권한이 가입 때 붙는다')
+  // 관리자가 마감(can_approve)까지 가져도 위임으로 붙는 것은 입력뿐이다.
+  await owner(`insert into user_module_access (user_id, module, can_write, can_approve) values ('${SA.admin}', '/finance/biz_dy', true, true)`)
+  const apprId = await invite(SA.admin, { email: 'appr@x.co', grants: ['/finance/biz_dy'] })
+  assert.deepEqual((await rowOf(apprId)).mg, ['/finance/biz_dy'], '0055 전제: 마감 검사용 초대')
+
+  // ── 취소 ──
+  await assert.rejects(as(SA.peer, `select staff_admin_revoke_invitation('${apprId}')`), /staff_admin_not_found/, '0055: 동료가 관리자의 초대를 취소한다')
+  const chairInv = (await commitAs<{ id: string }>(SA.chair, `insert into user_invitations (email, role, display_name, invited_by, reports_to, business_ids)
+      values ('byc@x.co', 'Member', 'c', '${SA.chair}', '${SA.chair}', '{biz_dy}') returning invitation_id::text as id`))[0].id
+  await assert.rejects(as(SA.admin, `select staff_admin_revoke_invitation('${chairInv}')`), /staff_admin_not_found/, '0055: 관리자가 대표의 초대를 취소한다')
+  await assert.rejects(as(SA.admin, `select staff_admin_revoke_invitation('${hireId}')`), /staff_admin_not_found/, '0055: 이미 수락된 초대를 취소한다')
+  // 마감 검사 — 취소 전에 가입시켜 본다(롤백): 붙는 줄은 can_approve=false.
+  await db.exec(`begin; insert into auth.users values ('00000000-0000-0000-0000-0000000055ab', 'appr@x.co');`)
+  const apprRows = await owner(`select can_write, can_approve from user_module_access where user_id = '00000000-0000-0000-0000-0000000055ab' and module = '/finance/biz_dy'`)
+  await db.exec('rollback')
+  assert.deepEqual(apprRows, [{ can_write: true, can_approve: false }], '0055: 관리자가 마감을 가지면 위임 가입에 마감이 붙는다')
+  await owner(`update user_module_access set can_approve = false where user_id = '${SA.admin}' and module = '/finance/biz_dy'`)
+  await commitAs(SA.admin, `select staff_admin_revoke_invitation('${apprId}')`)
+  assert.equal((await owner(`select 1 from user_invitations where invitation_id = '${apprId}' and revoked_at is not null`)).length, 1, '0055: 관리자 취소가 안 됐다')
+  assert.equal((await owner(`select 1 from audit_log where entity_table = 'user_invitations' and entity_id = '${apprId}' and note like '위임 초대 취소%'`)).length, 1,
+    '0055: 취소 감사가 없다')
+  // 관리자도 초대 줄을 직접 update하지는 못한다(설정 없이) — 0행.
+  assert.deepEqual(await as(SA.admin, `update user_invitations set revoked_at = now() where invitation_id = '${tlId}' returning 1`), [],
+    '0055: 관리자가 RPC 없이 초대 줄을 고친다')
+  // 회장은 위임 초대도 그대로 취소한다(0042).
+  assert.equal((await as(SA.chair, `update user_invitations set revoked_at = now() where invitation_id = '${tlId}' returning 1`)).length, 1,
+    '0055: 회장이 위임 초대를 취소하지 못한다')
+
+  // ── 능력 회수 → 더는 초대 못 함 · 회수 전 초대는 가입해도 권한이 안 붙는다 ──
+  await invite(SA.admin, { email: 'late@x.co', name: '늦은 가입', grants: ['/documents/biz_dy'] })
+  await commitAs(SA.chair, `delete from user_module_access where user_id = '${SA.admin}' and module = '/users/biz_dy'`)
+  await refuses(SA.admin, { email: 'after@x.co' }, /staff_admin_denied/, '능력을 회수했는데 초대가 된다')
+  await owner(`insert into auth.users values ('${SA.late}', 'late@x.co')`)
+  assert.deepEqual(await owner(`select module from user_module_access where user_id = '${SA.late}' order by module`), [{ module: '/chairman/decisions' }],
+    '0055: 능력이 회수된 관리자의 초대가 가입 때 권한을 붙인다')
+  assert.equal((await owner(`select 1 from user_profiles where user_id = '${SA.late}' and revoked_at is null`)).length, 1, '0055: 능력 회수가 가입 자체를 막았다')
+
+  // ── 카탈로그 ──
+  assert.deepEqual(await owner(`select relname, relforcerowsecurity as f from pg_class where relname in ('notifications', 'user_module_access', 'user_profiles') order by 1`),
+    [{ relname: 'notifications', f: false }, { relname: 'user_module_access', f: false }, { relname: 'user_profiles', f: false }], '0055: force가 새로 걸렸다(0035 함정)')
+  for (const fn of ['staff_admin_holds(uuid, text)', 'staff_admin_apply_grants(user_invitations, uuid)', 'staff_admin_invitation_guard()', 'apply_user_invitation(uuid, uuid)', 'module_grant_audit(uuid, text, jsonb, jsonb, text)']) {
+    assert.deepEqual(await owner(`select has_function_privilege('authenticated', '${fn}', 'execute') as a, has_function_privilege('anon', '${fn}', 'execute') as b`),
+      [{ a: false, b: false }], `0055: 내부 함수 ${fn}가 RPC로 열렸다`)
+  }
+  for (const fn of ['can_manage_users(text)', 'staff_admin_options(text)', 'staff_admin_revoke_invitation(uuid)', 'delegated_invite_count(timestamptz)']) {
+    assert.deepEqual(await owner(`select has_function_privilege('anon', '${fn}', 'execute') as b`), [{ b: false }], `0055: ${fn}가 anon에게 열렸다`)
+  }
+  const defs = await owner<{ proname: string; cfg: string[] | null; sec: boolean }>(`select proname, proconfig as cfg, prosecdef as sec from pg_proc
+     where proname in ('can_manage_users', 'staff_admin_holds', 'staff_admin_invite', 'staff_admin_apply_grants', 'staff_admin_revoke_invitation', 'staff_admin_options', 'delegated_invite_count')`)
+  assert.equal(defs.length, 7, '0055: 함수 일곱을 다 못 찾는다')
+  for (const d of defs) assert.ok(d.sec && (d.cfg ?? []).includes('search_path=public, pg_temp'), `0055: ${d.proname}가 definer · search_path=public, pg_temp가 아니다`)
+
+  // ── BYPASSRLS 없는 소유자 — force RLS(user_invitations · audit_log · teams · businesses) 아래에서도 RPC가 돈다 ──
+  await db.exec(`
+    create role app_owner55 nosuperuser nobypassrls nologin;
+    grant usage on schema auth to app_owner55;
+    grant select on auth.users to app_owner55;
+    grant execute on all functions in schema public to app_owner55;
+    grant execute on all functions in schema auth to app_owner55;
+    do $o$ declare r record; begin
+      for r in select c.relname from pg_class c join pg_namespace n on n.oid = c.relnamespace
+                where n.nspname = 'public' and c.relkind in ('r', 'v', 'p') loop
+        execute format('alter table public.%I owner to app_owner55', r.relname);
+      end loop;
+      for r in select p.oid::regprocedure as f from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                where n.nspname = 'public' and p.prokind = 'f' loop
+        execute format('alter function %s owner to app_owner55', r.f);
+      end loop;
+    end $o$;
+    insert into user_module_access (user_id, module, can_write) values ('${SA.admin}', '/users/biz_dy', true);
+  `)
+  const forcedNow = await owner<{ relname: string }>(`select relname from pg_class where relname in ('user_invitations', 'audit_log', 'teams', 'businesses') and relforcerowsecurity order by 1`)
+  assert.equal(forcedNow.length, 4, '0055 전제: force RLS 표 넷이 아니다')
+  const nbId = await invite(SA.admin, { email: 'nb@x.co', name: '소유자 검사', grants: ['/documents/biz_dy'] })
+  assert.equal((await owner(`select 1 from user_invitations where invitation_id = '${nbId}' and staff_admin_business = 'biz_dy'`)).length, 1,
+    '0055: BYPASSRLS 없는 소유자에서 위임 초대가 안 생긴다')
+  assert.equal((await owner(`select 1 from audit_log where entity_id = 'nb@x.co' and note like '위임 초대(0055%'`)).length, 1, '0055: BYPASSRLS 없는 소유자에서 초대 감사가 없다')
+  assert.equal((await owner(`select 1 from notifications where user_id = '${SA.chair}' and title like '%소유자 검사%'`)).length, 1, '0055: BYPASSRLS 없는 소유자에서 회장 알림이 없다')
+  const [{ o: o2 }] = await as<{ o: Opt }>(SA.admin, `select staff_admin_options('biz_dy') as o`)
+  assert.ok(o2.teams.length >= 5 && o2.people.length >= 3, '0055: BYPASSRLS 없는 소유자에서 고르기 칸이 빈다(teams force)')
+  const [{ n: nCount }] = await as<{ n: number }>(SA.agent, `select delegated_invite_count(now() - interval '1 day') as n`)
+  assert.equal(nCount, (await owner<{ n: number }>(`select count(*)::int as n from user_invitations where staff_admin_business is not null`))[0].n,
+    '0055: BYPASSRLS 없는 소유자에서 아침 숫자가 실제 위임 초대 수와 다르다')
+  await commitAs(SA.admin, `select staff_admin_revoke_invitation('${nbId}')`)
+  assert.equal((await owner(`select 1 from user_invitations where invitation_id = '${nbId}' and revoked_at is not null`)).length, 1,
+    '0055: BYPASSRLS 없는 소유자에서 관리자 취소가 안 된다')
+  await refuses(SA.peer, { email: 'nb2@x.co' }, /staff_admin_denied/, 'BYPASSRLS 없는 소유자에서 능력 없는 직원이 초대한다')
+  await db.close()
+}
+
 async function main() {
   const db = new PGlite({ extensions: { pg_trgm } })
   const files = await applyAll(db)
@@ -4724,8 +5010,9 @@ async function main() {
   await documentGrants()
   await staffTerms()
   await approvalStaff()
+  await staffAdmin()
   console.log(
-    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단), 0048 문서 모듈 권한(사람 × 회사 · 문서 · 폴더 쓰기 · 줄 없는 팀장 거부 · 회사 접근과 줄 둘 다 · 열람 등급 위 insert/update 차단 · 등록자는 본인 · 고치기 · 지우기는 자기 것만(회장 전부) · 주인 칸은 회장만 · 폴더는 만든 사람만 · 시스템 계정 불변 · 옛 /core/search 회귀 · 회수 감사 · hard delete 닫힘), 0049 직원 화면 용어(결재선 · 취합 제목 «회장»→«대표» 백필 — 사람 · 단계 · updated_at 그대로 · 얼림 재가동 · 새 결재선 · 감사 메모도 «대표»), 0054 첫 직원 결재(대표는 팀장 칸에 서지 않음 · 400만 «기록 완료» · 600만 대표 칸 Open · 대표 열람 · 비승인권자 insert는 Open · 새 직원/회장 되살림 «결재 올리기»(초대 이행 재부여는 PGlite 전용) · 금액 모양 · insert/update 처리자 고정 · dummy 거울)`,
+    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단), 0048 문서 모듈 권한(사람 × 회사 · 문서 · 폴더 쓰기 · 줄 없는 팀장 거부 · 회사 접근과 줄 둘 다 · 열람 등급 위 insert/update 차단 · 등록자는 본인 · 고치기 · 지우기는 자기 것만(회장 전부) · 주인 칸은 회장만 · 폴더는 만든 사람만 · 시스템 계정 불변 · 옛 /core/search 회귀 · 회수 감사 · hard delete 닫힘), 0049 직원 화면 용어(결재선 · 취합 제목 «회장»→«대표» 백필 — 사람 · 단계 · updated_at 그대로 · 얼림 재가동 · 새 결재선 · 감사 메모도 «대표»), 0054 첫 직원 결재(대표는 팀장 칸에 서지 않음 · 400만 «기록 완료» · 600만 대표 칸 Open · 대표 열람 · 비승인권자 insert는 Open · 새 직원/회장 되살림 «결재 올리기»(초대 이행 재부여는 PGlite 전용) · 금액 모양 · insert/update 처리자 고정 · dummy 거울), 0055 온보딩 위임(«DY 사용자 관리자» 줄 · 사원 · 팀장만 · Executive 거부 · 권한 ⊆ 관리자 · 마감 없음 · 상사 필수 · subtree 밖 상사 · 등급 · 다른 회사 · 가드 · 회장 알림 · 감사 · 가입 권한 재확인 · 남의 결재 못 봄 · 취소 · 능력 회수 · 아침 숫자 · BYPASSRLS 없는 소유자)`,
   )
 }
 
