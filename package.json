@@ -27,7 +27,8 @@
     "check:attention": "tsx scripts/check-attention.ts",
     "city:assets": "node scripts/city-assets.mjs",
     "check:ask": "tsx --conditions=react-server scripts/check-ask.ts",
-    "check:mobile": "tsx scripts/check-mobile.ts"
+    "check:mobile": "tsx scripts/check-mobile.ts",
+    "check:file-drop": "tsx scripts/check-file-drop.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",
