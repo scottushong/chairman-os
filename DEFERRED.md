@@ -2225,3 +2225,7 @@ B-4가 찾은 결함 하나를 고쳤다. **리뷰 루프가 없는 작업이고
 - **staging 리허설 데이터:** 계정 `rehearsal.member@example.com`(리허설 사원 · Member · 경영지원 · 상사 = 회장 · «결재 올리기» 켬), 결재 dec_017~dec_023, `approval_templates` 다섯을 권장 설정(첨부 필수 끔 · 구매 기준 500만 · 지출/구매 «구입처» · «링크»)으로 바꿈. staging이라 지우지 않는다.
 - **dummy 한계:** `next dev --webpack` 복사본에서는 서버 액션이 쓴 dummy 메모리가 다음 화면에 안 보인다(결재 두 건이 같은 id) — 회장 화면 두 건은 staging 행(회장 세션 SQL) + 코드로 확인했다.
 - **리뷰 반영(같은 날):** 기준 금액이 있으면 금액 칸은 필수로 저장 · 지운 금액 칸을 되살리는 «+ 금액 칸 추가» · 새 항목 key는 다시 쓰이지 않게(시각+순번) · 결재 상세의 양식 항목은 key 대신 양식 이름 · 숫자 아닌 기준 금액 거부. **미결로 넘김:** «결재 올리기»가 켜진 직원이 PostgREST로 양식 없는 결재를 status='Approved'로 넣을 수 있다(0042 트리거가 양식 없는 insert의 status · decided_*를 강제하지 않음, 0002부터 있던 구멍) — 0054에 «회장·CEO 외 insert는 Open · decided_* null» 포함 제안. 이름 바꾼 항목의 label_en은 옛 영문 그대로(Minor).
+
+## 2026-10-06 블록 — 릴리스 스크립트 --include-all
+
+- **권장안으로 진행:** `release-production.sh`에만 `--include-all`(명시할 때만 · 대기 목록 = 인자 정확히 일치)을 넣고, `db:push:staging`은 그대로 거부한다(`check:db-safety`가 `staging --include-all` 거부를 지킨다). staging에서 0054 뒤 0050~0052가 막히면 `docs/onboarding/release-order-2026-10.md` B-2의 손 명령(감시 래퍼 + link 확인)으로 넣는다. 다른 선택지: `db-push.mjs`에도 `--include-all` 허용 — 안전 검사를 바꿔야 해서 보류.

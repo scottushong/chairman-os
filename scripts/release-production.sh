@@ -3,9 +3,17 @@
 #
 #   bash scripts/release-production.sh 0049
 #   bash scripts/release-production.sh 0050 0051 0052
+#   bash scripts/release-production.sh --include-all 0050 0051 0052
 #
 # The arguments are the migrations you expect the production dry-run to list. If the dry-run
 # shows anything else (more, fewer, or nothing), the script stops before writing.
+#
+# --include-all — only for out-of-order migrations: pending files numbered LOWER than the highest
+# version production already has (e.g. 0050–0052 after 0054 went out first). `supabase db push`
+# refuses those unless it gets --include-all, which then pushes every local file production has
+# not recorded. With the flag the dry-run and the push both get --include-all, and the pending
+# list must still equal the given numbers exactly. Without the flag, out-of-order pending stops
+# the script before the dry-run.
 # Whatever happens after the production link — an error, a NO, Ctrl+C — the workdir is re-linked
 # to staging on exit.
 #
@@ -52,9 +60,19 @@ env_value() {
 }
 linked_ref() { [ -f "$REF_FILE" ] && tr -d '\r\n ' < "$REF_FILE" || true; }
 
-[ $# -ge 1 ] || die "기대 마이그레이션 번호를 인자로 준다. 예: bash scripts/release-production.sh 0049"
-for n in "$@"; do [[ "$n" =~ ^[0-9]{4}$ ]] || die "'$n' — 번호는 네 자리 숫자다."; done
-EXPECTED="$(printf '%s\n' "$@" | sort -u)"
+INCLUDE_ALL=0
+NUMBERS=()
+for n in "$@"; do
+  case "$n" in
+    --include-all) INCLUDE_ALL=1 ;;
+    *) [[ "$n" =~ ^[0-9]{4}$ ]] || die "'$n' — 번호는 네 자리 숫자다 (옵션은 --include-all 하나뿐)."; NUMBERS+=("$n") ;;
+  esac
+done
+[ ${#NUMBERS[@]} -ge 1 ] || die "기대 마이그레이션 번호를 인자로 준다. 예: bash scripts/release-production.sh 0049"
+EXPECTED="$(printf '%s\n' "${NUMBERS[@]}" | sort -u)"
+# Extra flags for both the dry-run and the real push. Only --include-all, only when given.
+PUSH_FLAGS=()
+[ "$INCLUDE_ALL" = 0 ] || PUSH_FLAGS=(--include-all)
 
 # ---------------------------------------------------------------------------------------------
 step "1. 브랜치 · 작업 트리"
@@ -161,9 +179,28 @@ echo
 echo "OPERATIONS §9 «되돌리는 길» 기록용:"
 echo "$RELEASE_DATE 릴리스($JOINED · \`$RELEASE_SHA\`)의 값은 복원 지점 \`$RESTORE_UTC UTC\`(= \`$RESTORE_KST KST\`, production $PROD_VERSION)와 직전 SHA \`$PREVIOUS_SHA\`였다."
 
+# Out of order = pending (local file, no remote row) numbered below the highest remote version.
+# In the CLI table such a row has the local version and an empty remote cell — read_migrations
+# already puts it in PENDING. db push refuses these without --include-all.
+OUT_OF_ORDER=""
+for n in $PENDING; do
+  if [ "$((10#$n))" -lt "$((10#$PROD_VERSION))" ]; then OUT_OF_ORDER="${OUT_OF_ORDER:+$OUT_OF_ORDER }$n"; fi
+done
+OUT_OF_ORDER_WARNING=""
+if [ -n "$OUT_OF_ORDER" ]; then
+  OUT_OF_ORDER_WARNING="순서 뒤바뀜: $(echo "$OUT_OF_ORDER" | sed 's/ /·/g')는 이미 적용된 ${PROD_VERSION}보다 번호가 낮다 — --include-all로만 적용된다."
+  if [ "$INCLUDE_ALL" = 0 ]; then
+    echo
+    echo "$OUT_OF_ORDER_WARNING" >&2
+    die "--include-all 없이 실행했다. 대기 목록($(echo $PENDING))이 맞으면 번호를 정확히 적어 다시 실행한다:
+      bash scripts/release-production.sh --include-all $(echo $PENDING)
+      (먼저 RELEASE_DRY_RUN=1 로 리허설.) 아무것도 쓰지 않았다."
+  fi
+fi
+
 # ---------------------------------------------------------------------------------------------
 step "3. dry-run"
-DRY_RUN="$(SUPABASE_DB_PASSWORD="$PROD_PASSWORD" supabase_cli db push --linked --dry-run 2>&1)" \
+DRY_RUN="$(SUPABASE_DB_PASSWORD="$PROD_PASSWORD" supabase_cli db push --linked --dry-run ${PUSH_FLAGS[@]+"${PUSH_FLAGS[@]}"} 2>&1)" \
   || { echo "$DRY_RUN"; die "dry-run 실패."; }
 echo "$DRY_RUN"
 
@@ -180,6 +217,11 @@ for n in $EXPECTED; do
 done
 [ -z "$DRY_NAMED" ] || die "dry-run 출력에 다른 번호가 있다: $(echo $DRY_NAMED). 아무것도 쓰지 않았다."
 echo "dry-run도 같은 목록이다."
+if [ -n "$OUT_OF_ORDER_WARNING" ]; then
+  echo
+  echo "$OUT_OF_ORDER_WARNING"
+fi
+[ "$INCLUDE_ALL" = 0 ] || echo "--include-all: dry-run과 push 둘 다 --include-all로 돈다. 대기 목록이 위 번호와 정확히 같다."
 if [ "${RELEASE_DRY_RUN:-}" = 1 ]; then
   echo
   echo "RELEASE_DRY_RUN=1 — 여기서 멈춘다. production DB · git · 앱은 그대로다."
@@ -188,10 +230,11 @@ fi
 
 # ---------------------------------------------------------------------------------------------
 step "5. production DB push"
-confirm "production($PRODUCTION_REF)에 $(echo $EXPECTED) 를 적용한다. 계속하려면 YES 입력:" \
+[ -z "$OUT_OF_ORDER_WARNING" ] || echo "$OUT_OF_ORDER_WARNING"
+confirm "production($PRODUCTION_REF)에 $(echo $EXPECTED) 를 적용한다${PUSH_FLAGS[@]+ (--include-all)}. 계속하려면 YES 입력:" \
   || die "YES가 아니다. DB는 그대로다."
 PUSH_STARTED=1
-SUPABASE_DB_PASSWORD="$PROD_PASSWORD" supabase_push db push --linked --yes || die "db push 실패. OPERATIONS §9 «DB 마이그레이션 실패»를 따른다."
+SUPABASE_DB_PASSWORD="$PROD_PASSWORD" supabase_push db push --linked --yes ${PUSH_FLAGS[@]+"${PUSH_FLAGS[@]}"} || die "db push 실패. OPERATIONS §9 «DB 마이그레이션 실패»를 따른다."
 DB_APPLIED=1
 SUPABASE_DB_PASSWORD="$PROD_PASSWORD" supabase_cli migration list --linked || true
 PUSH_STARTED=0
