@@ -58,11 +58,12 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
   const selectedId = firstParam(params.id)
 
   const repo = await getRepository()
-  const [decisions, businesses, audit, user] = await Promise.all([
+  const [decisions, businesses, audit, user, templates] = await Promise.all([
     repo.listDecisions(),
     repo.listBusinesses(),
     repo.listDecisionAudit(),
     currentUser(),
+    repo.listApprovalTemplates(),
   ])
 
   const isOpen = (d: Decision) => d.status === 'Open'
@@ -214,6 +215,9 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
               businessName={businessName(businesses, selected.business_id)}
               history={history}
               viewerRole={user?.role ?? null}
+              fieldLabels={Object.fromEntries(
+                (templates.find((t) => t.template_key === selected.template_key)?.fields ?? []).map((f) => [f.key, f.label_ko]),
+              )}
             />
           ) : null}
           {/* Phase 10 — 결재 근거 파일 + AI 요약(0045: 결재가 보이고 AND 등급). 링크 첨부(attachment_url)는 그대로다. */}

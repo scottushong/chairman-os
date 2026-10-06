@@ -45,8 +45,9 @@ export async function saveApprovalTemplate(input: {
 
   let chairmanOver: number | null = null
   if (input.chairmanOver !== null && input.chairmanOver !== '' && input.chairmanOver !== undefined) {
-    const n = Number(String(input.chairmanOver).replace(/[^0-9.]/g, ''))
-    if (!Number.isFinite(n) || n < 0) return { error: '기준 금액은 0 이상의 숫자로 넣으세요.' }
+    const digits = String(input.chairmanOver).replace(/[^0-9.]/g, '')
+    const n = Number(digits)
+    if (!digits || !Number.isFinite(n) || n < 0) return { error: '기준 금액은 0 이상의 숫자로 넣으세요.' }
     chairmanOver = n
   }
 
@@ -54,25 +55,25 @@ export async function saveApprovalTemplate(input: {
   if (input.fields.length > 20) return { error: '항목은 20개까지입니다.' }
   const fields: TemplateField[] = []
   const used = new Set<string>()
+  const stamp = Date.now().toString(36)
   for (const raw of input.fields as Record<string, unknown>[]) {
     const label = typeof raw?.label_ko === 'string' ? raw.label_ko.trim() : ''
     if (!label) return { error: '이름이 빈 항목이 있습니다.' }
     if (label.length > 30) return { error: `«${label.slice(0, 10)}…» 이름이 너무 깁니다(30자).` }
     const type = raw.type as TemplateFieldType
     if (!TEMPLATE_FIELD_TYPES.includes(type)) return { error: `«${label}»의 종류를 고르세요.` }
-    // 새 항목은 key가 없다 — 겹치지 않는 'f_<n>'을 준다. 이미 있는 항목의 key는 그대로 둔다(옛 결재의 값이 그 key에 있다).
+    // 새 항목은 key가 없다 — 다시 쓰이지 않는 key를 준다(시각 + 순번). 'f_1'처럼 번호를 다시 쓰면 지운 항목의 옛 결재 값이
+    // 새 항목 이름으로 보인다. 이미 있는 항목의 key는 그대로 둔다(옛 결재의 값이 그 key에 있다). 'amount'만 화면이 직접 보낸다.
     let k = typeof raw.key === 'string' ? raw.key.trim() : ''
     if (k && !KEY.test(k)) return { error: `«${label}»의 내부 이름이 잘못됐습니다.` }
-    if (!k) {
-      let i = 1
-      while (used.has(`f_${i}`) || (input.fields as Record<string, unknown>[]).some((f) => f?.key === `f_${i}`)) i++
-      k = `f_${i}`
-    }
+    if (!k) k = `f_${stamp}_${fields.length}`
     if (used.has(k)) return { error: `«${label}» 항목이 두 번 들어 있습니다.` }
     if (k === 'amount' && type !== 'money') return { error: '금액 칸(amount)은 종류가 «금액»이어야 합니다.' }
     used.add(k)
     const labelEn = typeof raw.label_en === 'string' && raw.label_en.trim() ? raw.label_en.trim() : label
-    fields.push({ key: k, label_ko: label, label_en: labelEn, type, required: raw.required === true })
+    // 기준 금액이 있으면 금액 칸은 필수다 — 비워 두면 트리거가 금액 없음(null)으로 읽어 기준을 건너뛴다.
+    const required = raw.required === true || (k === 'amount' && chairmanOver !== null)
+    fields.push({ key: k, label_ko: label, label_en: labelEn, type, required })
   }
   if (chairmanOver !== null && !fields.some((f) => f.key === 'amount')) {
     return { error: '기준 금액을 두려면 금액 칸이 있어야 합니다. 금액 칸을 지웠다면 기준 금액도 비우세요.' }

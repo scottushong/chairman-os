@@ -50,6 +50,7 @@ export function ApprovalDetail({
   businessName,
   history,
   viewerRole,
+  fieldLabels = {},
 }: {
   decision: Decision
   businessName: string
@@ -57,6 +58,8 @@ export function ApprovalDetail({
   history: DecisionAuditRecord[]
   /** 얼린 결재선의 «회장/대표» 문구를 보는 사람에 맞춘다 — 직원 화면 용어 원칙(CLAUDE.md). */
   viewerRole: Role | null
+  /** 양식 항목 key → 지금 양식의 이름. 지운 항목은 없다 — 그때는 key를 그대로 보인다. */
+  fieldLabels?: Record<string, string>
 }) {
   const overdue = dDay(decision.deadline) < 0 && decision.status === 'Open'
 
@@ -145,7 +148,7 @@ export function ApprovalDetail({
             <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-t12">
               {Object.entries(decision.form).map(([k, v]) => (
                 <div key={k} className="contents">
-                  <dt className="text-ink-muted">{k}</dt>
+                  <dt className="text-ink-muted">{fieldLabels[k] ?? k}</dt>
                   <dd className="whitespace-pre-wrap break-all">
                     {/* 양식의 «링크»(type url) 값. https만 링크로 연다 — 다른 스킴은 글자로만. */}
                     {/^https?:\/\//i.test(v) ? (

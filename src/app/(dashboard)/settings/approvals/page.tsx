@@ -13,9 +13,9 @@ import { getRepository } from '@/lib/repository'
  * 회장 전용이다(0038 approval_templates_write). 직원에게는 화면도 링크도 없다 — 직원 화면 용어 원칙(CLAUDE.md).
  */
 export default async function ApprovalSettingsPage() {
-  await recordScreenRead({ path: '/settings/approvals', kind: 'page' })
   const user = await currentUser()
   if (user?.role !== 'Chairman') redirect('/me')
+  await recordScreenRead({ path: '/settings/approvals', kind: 'page' })
   const templates = await (await getRepository()).listApprovalTemplates()
 
   return (

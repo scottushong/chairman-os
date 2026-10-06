@@ -153,6 +153,21 @@ function TemplateCard({ template }: { template: ApprovalTemplate }) {
       >
         + 항목 추가
       </button>
+      {fields.some((f) => f.key === 'amount') ? null : (
+        // 금액 규칙은 key 'amount' 칸만 본다(0038 트리거). 지운 금액 칸을 되살리는 길.
+        <button
+          type="button"
+          onClick={() =>
+            setFields([
+              ...fields,
+              { key: 'amount', label_ko: '금액(원)', label_en: 'Amount (KRW)', type: 'money', required: true, tmp: `amount-${Date.now()}` },
+            ])
+          }
+          className="mt-2 ml-2 rounded-md border border-dashed border-line px-3 py-1.5 text-t12 text-ink-dim hover:border-accent hover:text-ink"
+        >
+          + 금액 칸 추가
+        </button>
+      )}
 
       <div className="mt-4 flex flex-wrap items-center gap-3">
         <button
