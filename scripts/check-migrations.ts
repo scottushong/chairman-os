@@ -5475,19 +5475,28 @@ async function ecountMonthlyRpc() {
     '0052: 쓰기 권한을 잃은 만든 사람이 등록한다')
   await assert.rejects(as(EI.lead, [`!update user_profiles set revoked_at = now() where user_id = '${EI.lead}'`, plan]), /books_forbidden/, '0052: 회수된 사람이 등록한다')
 
-  // ── 0056: 금액 없는 달(lines = []) ──
+  // ── 0056: 금액 없는 달(lines = [] · reverses = 미리보기 때 본 활성 업로드 전표) ──
   const active = (month: string) => `select count(*)::int from finance_import_slips where month = '${month}' and superseded_at is null`
-  // 활성 업로드 전표가 없는 빈 달은 아무것도 안 한다(전표 · 감사 · 줄 없음) — 결과에 empty로만 남는다.
-  const withEmpty = monthRpc(MI.m1, { '2026-03': MARCH, '2026-04': [] })
-  assert.equal(await as(EI.lead, [withEmpty, `select count(*)::int * 10 + (select count(*) from audit_log where entity_id = 'biz_dy:2026-04')::int
-      from journal_lines where to_char(entry_date, 'YYYY-MM') = '2026-04'`]), 0, '0056: 업로드 전표 없는 빈 달에 전표나 감사가 선다')
-  assert.equal(await as(EI.lead, [`select (${withEmpty.replace(/^select /, '').replace(/::text$/, '')})->'months'->1->>'action'`]), 'empty', '0056: 빈 달이 empty로 안 남는다')
-  // 금액 없는 달만 온 파일 — 대응 계정도 만들지 않는다.
-  assert.equal(await as(EI.lead, [monthRpc(MI.m1, { '2026-05': [] }), `select (select count(*) from accounts where account_code = '${C}')::int * 10
-      + (select count(*) from finance_imports where import_id = '${MI.m1}' and status = 'committed')::int`]), 1,
-  '0056: 빈 달만 온 파일이 대응 계정을 만들거나 committed가 안 된다')
-  // 활성 업로드 전표가 있는 빈 달 = 역분개만 · 옛 줄 내림 · 새 활성 줄 없음 · 장부의 그 달 = 0.
-  const emptied = monthRpc(MI.m2, { '2026-04': [] })
+  const activeSlip = (month: string) => `(select slip_no from finance_import_slips where business_id = 'biz_dy' and month = '${month}' and superseded_at is null)`
+  /** 빈 달들(+ 금액 있는 달) — reverses는 SQL 식(그 트랜잭션 안에서 정해지는 전표 번호) */
+  const emptyRpc = (imp: string, empties: Record<string, string>, full: MonthPlan = {}) =>
+    `select ecount_monthly_import('${imp}', '${SHA}', '2026', 'monthly', '${JSON.stringify(
+      Object.entries(full).map(([month, lines]) => ({ month, lines: lines.map(([account_code, amount]) => ({ account_code, amount })) })),
+    )}'::jsonb || jsonb_build_array(${Object.entries(empties)
+      .map(([month, rev]) => `jsonb_build_object('month', '${month}', 'lines', '[]'::jsonb, 'reverses', ${rev})`)
+      .join(', ')}))::text`
+  // 모양: 빈 달은 reverses가 있어야 · 금액 있는 달은 없어야 한다(리뷰 I-2).
+  await assert.rejects(as(EI.lead, [first, monthRpc(MI.m2, { '2026-04': [] })]), /ecount_plan_invalid/, '0056: 되돌릴 전표 번호 없는 빈 달을 받는다')
+  await assert.rejects(as(EI.lead, [first, `select ecount_monthly_import('${MI.m2}', '${SHA}', '2026', 'monthly',
+      '[{"month":"2026-05","lines":[{"account_code":"4010","amount":-1}],"reverses":"M2605-000001"}]'::jsonb)::text`]), /ecount_plan_invalid/,
+  '0056: 금액 있는 달에 reverses를 받는다')
+  // 미리보기 뒤 장부가 바뀌었다 — 활성 전표가 없거나(남이 이미 비움) 다르면(남이 그 사이 정정) import_changed · ecount_ledger_changed.
+  await assert.rejects(as(EI.lead, [emptyRpc(MI.m1, { '2026-04': `'M2604-999999'` })]), (e: unknown) => /import_changed/.test(String((e as Error).message)) && /^ecount_ledger_changed: /.test(String((e as { detail?: string }).detail)),
+    '0056: 활성 전표가 없는 달을 미리보기 전표 번호로 역분개한다')
+  await assert.rejects(as(EI.lead, [first, `select ${activeSlip('2026-03')} as s`, emptyRpc(MI.m2, { '2026-04': `'M2604-999999'` })]), /import_changed/,
+    '0056: 미리보기 때와 다른 활성 전표를 역분개한다(보지 않은 전표)')
+  // 활성 업로드 전표가 그 번호인 빈 달 = 역분개만 · 옛 줄 내림 · 새 활성 줄 없음 · 장부의 그 달 = 0.
+  const emptied = emptyRpc(MI.m2, { '2026-04': activeSlip('2026-04') })
   assert.equal(await as(EI.lead, [first, monthField(emptied, 'reversed')]), 1, '0056: 금액이 빠진 달의 옛 업로드 전표를 역분개하지 않는다')
   for (const code of ['4010', '8010', C]) {
     assert.equal(await as(EI.lead, [first, emptied, net('2026-04', code)]), 0, `0056: 금액이 빠진 달의 ${code}가 장부에 남는다(옛 파일을 말한다)`)
@@ -5502,18 +5511,33 @@ async function ecountMonthlyRpc() {
   assert.equal(await as(EI.lead, [first, emptied, `select count(*)::int from audit_log where entity_table = 'finance_import_slips' and action = 'update'
       and entity_id = 'biz_dy:2026-04' and jsonb_array_length(after->'lines') = 0 and note like '% — 금액 없는 달, 이전 전표 % 역분개'`]), 1,
   '0056: 빈 달 역분개 감사(이전 전표 · 빈 줄)가 없다')
+  // 리뷰 m-6: committed 업로드의 summary.result에 reversed가 남는다.
+  assert.equal(await as(EI.lead, [first, emptied, `select status || ':' || (summary->'result'->>'reversed') || ':' || (summary->'result'->'months'->0->>'action')
+      from finance_imports where import_id = '${MI.m2}'`]), 'committed:1:reversed', '0056: summary.result.reversed · 달 결과가 안 남는다')
+  // 이미 비운 달을 같은 미리보기로 또 — 활성 전표가 없어 import_changed(두 번 뒤집지 않는다).
+  await assert.rejects(as(EI.lead, [first, `select ${activeSlip('2026-04')} is not null`, emptied, emptyRpc(MI.m4, { '2026-04': `(select slip_no from finance_import_slips where month = '2026-04' and import_id = '${MI.m1}')` })]),
+    /import_changed/, '0056: 이미 비운 달을 같은 전표 번호로 또 역분개한다')
   // 비운 뒤 다시 금액이 오면 새 전표(활성 줄이 없으니 posted) — 두 번 세지 않는다.
   assert.equal(await as(EI.lead, [first, emptied, monthRpc(MI.m4, { '2026-04': [['4010', -70]] }), net('2026-04', '4010')]), -70,
     '0056: 비운 달에 다시 올린 금액이 장부의 그 달이 아니다')
-  // 마감 달: 되돌릴 전표가 없는 빈 달은 막지 않는다 · 되돌릴 전표가 있으면 closed_period.
-  assert.equal(await as(EI.lead, [close('2026-02'), monthRpc(MI.m1, { '2026-01': [], '2026-03': MARCH }), net('2026-03', '4010')]), -1000,
-    '0056: 마감된 달의 빈 칸(손댈 것 없음)이 열린 달 등록을 막는다')
+  // 리뷰 m-6: 정정분개(재업로드)가 활성인 달을 비우면 그 정정분개를 역분개한다 — 장부의 그 달 = 0.
+  assert.equal(await as(EI.lead, [first, second, emptyRpc(MI.m4, { '2026-03': activeSlip('2026-03') }), net('2026-03', '4010')]), 0,
+    '0056: 정정분개가 활성인 달을 비웠는데 장부에 남는다')
+  assert.equal(await as(EI.lead, [first, second, emptyRpc(MI.m4, { '2026-03': activeSlip('2026-03') }), `select count(*)::int from journal_entries r
+      join journal_entries x on x.slip_no = r.corrects_id where r.correction_kind = 'reversal' and x.correction_kind = 'restatement'
+       and to_char(r.entry_date, 'YYYY-MM') = '2026-03'`]), 1, '0056: 정정분개를 뒤집은 역분개가 한 장이 아니다')
+  // 마감 달 · 세무사 확정 달이면 되돌리지 않는다.
   await assert.rejects(as(EI.lead, [first, close('2026-04'), emptied]), /closed_period/, '0056: 마감된 달의 업로드 전표를 빈 달이라며 역분개한다')
   await assert.rejects(as(EI.lead, [first, officialSave('year', '2026'), emptied]), /official_month_locked/, '0056: 세무사 확정 해의 업로드 전표를 빈 달이라며 역분개한다')
   // 이미 역분개된 업로드 전표는 빈 달에서도 멈춘다.
-  const slip04 = `(select slip_no from finance_import_slips where month = '2026-04' and superseded_at is null)`
-  await assert.rejects(as(EI.lead, [first, `select post_correction('biz_dy', ${slip04}, '2026-04-30', '손으로 취소', null, '[]'::jsonb)`, emptied]),
-    /ecount_month_reversed/, '0056: 손으로 역분개된 업로드 전표를 빈 달이 또 뒤집는다')
+  const slip04 = activeSlip('2026-04')
+  const handReverse04 = `select post_correction('biz_dy', ${slip04}, '2026-04-30', '손으로 취소', null, '[]'::jsonb)`
+  await assert.rejects(as(EI.lead, [first, handReverse04, emptied]), /ecount_month_reversed/, '0056: 손으로 역분개된 업로드 전표를 빈 달이 또 뒤집는다')
+  // 리뷰 m-6: 빈 달 둘 중 뒤 달이 이미 역분개됐으면 앞 달 역분개도 남지 않는다(전부 아니면 전무).
+  assert.equal(await as(EI.lead, [first, handReverse04,
+    swallow(emptyRpc(MI.m2, { '2026-03': activeSlip('2026-03'), '2026-04': activeSlip('2026-04') })),
+    `select (${active('2026-03')})::int * 10 + (select count(*) from journal_entries where correction_kind = 'reversal' and to_char(entry_date, 'YYYY-MM') = '2026-03')::int`]),
+  10, '0056: 막힌 빈 달 등록이 앞 달 역분개 · 옛 줄 내림을 남긴다')
 
   // ── 0056: 월 마감과 같은 회사 잠금 ──
   // 열쇠는 0052 값 그대로 — 배포 순간 0052판 등록과 0056판 마감도 서로 기다린다.
@@ -5671,7 +5695,7 @@ async function main() {
   await ecountMonthlyUnderNonBypassOwner()
   await ecountPrecheckSql()
   console.log(
-    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단), 0048 문서 모듈 권한(사람 × 회사 · 문서 · 폴더 쓰기 · 줄 없는 팀장 거부 · 회사 접근과 줄 둘 다 · 열람 등급 위 insert/update 차단 · 등록자는 본인 · 고치기 · 지우기는 자기 것만(회장 전부) · 주인 칸은 회장만 · 폴더는 만든 사람만 · 시스템 계정 불변 · 옛 /core/search 회귀 · 회수 감사 · hard delete 닫힘), 0049 직원 화면 용어(결재선 · 취합 제목 «회장»→«대표» 백필 — 사람 · 단계 · updated_at 그대로 · 얼림 재가동 · 새 결재선 · 감사 메모도 «대표»), 0050 ECOUNT 업로드(업로드 표 — 쓰기 권한자 본인 draft만 · 남의 draft/끝난 업로드 못 고침 · 지우기 없음 · 칸 단위 update · 해시 한 번 · 재무 읽기 없으면 0행 · 시스템 계정 restrictive · anon 잠금 · 업로드 전표 활성 (회사, 달) 하나 · 이 트랜잭션에 본인이 세운 그 달 전표만 잇고(수기 · 남의 · 역분개 거부) 본인이 세운 정확한 반대 역분개 뒤에만 내림(가짜 역분개 거부) · 첨부 원본은 재무 권한자만 보고 본인만 올림 · committed/cancelled 원본은 줄 · 객체 삭제와 재업로드 거부 · 사람의 ECOUNT 계정 + source 불변 · 공식 재무제표 basis/증빙/활성 unique basis별 · update는 supersede만 · 세무사 저장이 ECOUNT 잠정을 안 밈), 0051 ECOUNT 등록 RPC(계정과목 · 연간 한 트랜잭션 · 감사 먼저 · 본인 draft · 종류 · 해시 · 장부 권한 · ECOUNT 회사 · 시스템 계정 거부 · 이미 있는 코드 · 바뀐 이름 · 세무사 확정 해 · 균형 · ECOUNT 재업로드 supersede · 헤더/줄 직접 쓰기 닫힘 · 복합 FK · 사람의 committed 닫힘 · 세무사 저장 definer · BYPASSRLS 없는 소유자에서도 등록 + force 대조군), 0052 ECOUNT 월별 RPC(달마다 전표 + 대응 계정 · 누계 → 당월 · 재업로드 = 역분개 + 정정분개 + 옛 줄 내림 — 두 번 세지 않음 · 같은 내용 건너뜀 · 이미 역분개된 달 멈춤 · 마감 달 · 세무사 확정 달 · 재무상태표/비활성/모르는 계정 · 원본 첨부 · 권한 · 전부 아니면 전무 · BYPASSRLS 없는 소유자 + force 대조군), 0056 ECOUNT 마무리(첫 등록 전표 감사 · 금액 없는 달 = 역분개만 · 빈 달 마감/확정 판정은 손댈 달만 · 월 마감과 월별 등록이 같은 회사 잠금(0052 열쇠 그대로) · 릴리스 전 확인 SQL은 select만 · 0049 DB와 전부 올린 DB에서 읽기 전용으로 돈다)`,
+    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단), 0048 문서 모듈 권한(사람 × 회사 · 문서 · 폴더 쓰기 · 줄 없는 팀장 거부 · 회사 접근과 줄 둘 다 · 열람 등급 위 insert/update 차단 · 등록자는 본인 · 고치기 · 지우기는 자기 것만(회장 전부) · 주인 칸은 회장만 · 폴더는 만든 사람만 · 시스템 계정 불변 · 옛 /core/search 회귀 · 회수 감사 · hard delete 닫힘), 0049 직원 화면 용어(결재선 · 취합 제목 «회장»→«대표» 백필 — 사람 · 단계 · updated_at 그대로 · 얼림 재가동 · 새 결재선 · 감사 메모도 «대표»), 0050 ECOUNT 업로드(업로드 표 — 쓰기 권한자 본인 draft만 · 남의 draft/끝난 업로드 못 고침 · 지우기 없음 · 칸 단위 update · 해시 한 번 · 재무 읽기 없으면 0행 · 시스템 계정 restrictive · anon 잠금 · 업로드 전표 활성 (회사, 달) 하나 · 이 트랜잭션에 본인이 세운 그 달 전표만 잇고(수기 · 남의 · 역분개 거부) 본인이 세운 정확한 반대 역분개 뒤에만 내림(가짜 역분개 거부) · 첨부 원본은 재무 권한자만 보고 본인만 올림 · committed/cancelled 원본은 줄 · 객체 삭제와 재업로드 거부 · 사람의 ECOUNT 계정 + source 불변 · 공식 재무제표 basis/증빙/활성 unique basis별 · update는 supersede만 · 세무사 저장이 ECOUNT 잠정을 안 밈), 0051 ECOUNT 등록 RPC(계정과목 · 연간 한 트랜잭션 · 감사 먼저 · 본인 draft · 종류 · 해시 · 장부 권한 · ECOUNT 회사 · 시스템 계정 거부 · 이미 있는 코드 · 바뀐 이름 · 세무사 확정 해 · 균형 · ECOUNT 재업로드 supersede · 헤더/줄 직접 쓰기 닫힘 · 복합 FK · 사람의 committed 닫힘 · 세무사 저장 definer · BYPASSRLS 없는 소유자에서도 등록 + force 대조군), 0052 ECOUNT 월별 RPC(달마다 전표 + 대응 계정 · 누계 → 당월 · 재업로드 = 역분개 + 정정분개 + 옛 줄 내림 — 두 번 세지 않음 · 같은 내용 건너뜀 · 이미 역분개된 달 멈춤 · 마감 달 · 세무사 확정 달 · 재무상태표/비활성/모르는 계정 · 원본 첨부 · 권한 · 전부 아니면 전무 · BYPASSRLS 없는 소유자 + force 대조군), 0056 ECOUNT 마무리(첫 등록 전표 감사 · 금액 없는 달 = 미리보기 때 본 전표만 역분개(다르면 import_changed · 정정분개도 · 전부 아니면 전무 · summary.result.reversed) · 빈 달 마감/확정 판정은 손댈 달만 · 월 마감과 월별 등록이 같은 회사 잠금(0052 열쇠 그대로) · 릴리스 전 확인 SQL은 select만 · 0049 DB와 전부 올린 DB에서 읽기 전용으로 돈다)`,
   )
 }
 

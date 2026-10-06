@@ -186,7 +186,12 @@ export function financeImportMethods(sb: SupabaseClient): Methods {
         p_file_sha256: input.file_sha256,
         p_period_key: input.period_key,
         p_basis: input.basis,
-        p_months: input.months.map((m) => ({ month: m.month, lines: m.lines.map((l) => ({ account_code: l.account_code, amount: l.amount })) })),
+        p_months: input.months.map((m) => ({
+          month: m.month,
+          lines: m.lines.map((l) => ({ account_code: l.account_code, amount: l.amount })),
+          // 0056 빈 달 — 미리보기 때 본 그 달 업로드 전표(다르면 DB가 import_changed)
+          ...(m.reverses !== undefined ? { reverses: m.reverses } : {}),
+        })),
       })
       if (error) rpcFail('ecount_monthly_import', error)
       const r = (data ?? {}) as Partial<EcountMonthlyResult>

@@ -1,6 +1,9 @@
 'use client'
 
+import { useState } from 'react'
+
 import { UNIT_LABEL_KO } from '@/lib/ecount/excel/cells'
+import { reversalKey } from '@/lib/ecount/excel/monthly-import'
 import { pickKey, type AmountsPreview } from '@/lib/ecount/excel/statement-lines'
 
 /**
@@ -27,9 +30,14 @@ export function EcountAmountsPreview({
   picks?: Record<string, string>
   busy?: boolean
   onPick?: (key: string, code: string) => void
-  onCommit?: () => void
+  /** 월별은 사람이 확인한 역분개 목록(reversalKey 글)을 같이 넘긴다 — 서버가 미리보기 · 지금 장부와 대조한다(0056 리뷰 I-1) */
+  onCommit?: (confirmReversals?: string) => void
 }) {
   const p = preview
+  // 0056 리뷰 I-1: 역분개할 달이 있으면 사람이 «확인»에 체크해야 등록이 열린다. 미리보기가 바뀌면(열쇠가 바뀌면) 다시 체크.
+  const reversalText = reversalKey(p.reversals)
+  const [confirmedKey, setConfirmedKey] = useState<string | null>(null)
+  const reversalsOk = !reversalText || confirmedKey === reversalText
   const unpicked = p.lines.filter((l) => l.candidates && l.how !== 'pick').length
   const lineBlocks = p.lines.filter((l) => l.blocks.length).length
   const failedChecks = p.checks.filter((c) => c.diff !== 0)
@@ -184,7 +192,7 @@ export function EcountAmountsPreview({
           <button
             type="button"
             disabled={busy || p.blockCount > 0}
-            onClick={onCommit}
+            onClick={() => onCommit()}
             className="min-h-11 rounded-md bg-accent px-3 text-t11h font-semibold text-ink disabled:opacity-40 lg:min-h-0 lg:py-1.5"
           >
             {p.year ?? ''}년 연간 재무제표 등록(ECOUNT 엑셀 · 잠정)
@@ -197,10 +205,25 @@ export function EcountAmountsPreview({
         </div>
       ) : p.kind === 'monthly' && onCommit ? (
         <div className="flex flex-wrap items-center gap-2">
+          {p.reversals?.length ? (
+            <label className="flex w-full items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-2.5 py-1.5 text-t11h text-ink">
+              <input
+                type="checkbox"
+                className="mt-0.5 size-4 shrink-0"
+                checked={confirmedKey === reversalText}
+                disabled={busy || p.blockCount > 0}
+                onChange={(e) => setConfirmedKey(e.target.checked ? reversalText : null)}
+              />
+              <span>
+                이 달들은 역분개합니다 — 확인:{' '}
+                {p.reversals.map((r) => `${r.month}(지난 업로드 전표 ${r.slip_no})`).join(' · ')}. 이 파일에 금액이 없어 그 달 손익이 0이 됩니다.
+              </span>
+            </label>
+          ) : null}
           <button
             type="button"
-            disabled={busy || p.blockCount > 0 || p.lines.length === 0}
-            onClick={onCommit}
+            disabled={busy || p.blockCount > 0 || p.lines.length === 0 || !reversalsOk}
+            onClick={() => onCommit(reversalText || undefined)}
             className="min-h-11 rounded-md bg-accent px-3 text-t11h font-semibold text-ink disabled:opacity-40 lg:min-h-0 lg:py-1.5"
           >
             {p.year ?? ''}년 월별 손익 등록(ECOUNT 엑셀 · 잠정)
@@ -208,7 +231,7 @@ export function EcountAmountsPreview({
           <span className="text-t10h text-ink-muted">
             {p.blockCount > 0
               ? '막힌 것을 다 푼 뒤에 등록할 수 있습니다.'
-              : '금액이 있는 달마다 요약 전표 한 장(손익 줄 + «ECOUNT 월별손익 대응» 한 줄)으로 장부에 실립니다. 월 마감 전까지 잠정입니다. 같은 달을 다시 올리면 이전 업로드 전표를 정정 전표(역분개 + 새 전표)로 바꿔 두 번 세지 않고, 내용이 같으면 건너뜁니다. 이 파일에 금액이 없는 달(그 뒤에 금액이 있는 달 앞)은 이전 업로드 전표를 역분개합니다.'}
+              : '금액이 있는 달마다 요약 전표 한 장(손익 줄 + «ECOUNT 월별손익 대응» 한 줄)으로 장부에 실립니다. 월 마감 전까지 잠정입니다. 같은 달을 다시 올리면 이전 업로드 전표를 정정 전표(역분개 + 새 전표)로 바꿔 두 번 세지 않고, 내용이 같으면 건너뜁니다. 이 파일이 말하는 기간 안에서 금액이 없는 달은 확인을 받은 뒤 이전 업로드 전표를 역분개합니다.'}
           </span>
         </div>
       ) : null}

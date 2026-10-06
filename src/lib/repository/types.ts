@@ -907,7 +907,7 @@ export interface FinanceImportSlip {
 /**
  * 0052 ecount_monthly_import의 결과 — 달마다 무엇을 했나(새 전표 · 정정 전표 · 같아서 건너뜀).
  * 0056: 파일이 말하는데 금액이 없는 달 — 지난 업로드 전표를 역분개(reversed, slip_no 없음 · reversal · previous) ·
- * 되돌릴 전표가 없으면 empty(아무것도 안 함).
+ * (empty는 0056 리뷰 I-2 뒤 DB가 내지 않는다 — 되돌릴 전표가 미리보기와 다르면 import_changed.)
  */
 export interface EcountMonthlyResult {
   posted: number

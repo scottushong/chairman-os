@@ -16,7 +16,7 @@ import {
 } from '@/lib/ecount/excel/accounts-import'
 import { annualLedgerLines, planAnnual } from '@/lib/ecount/excel/annual-import'
 import type { EcountUnit } from '@/lib/ecount/excel/cells'
-import { monthlyLedgerMonths, planMonthly } from '@/lib/ecount/excel/monthly-import'
+import { monthlyLedgerMonths, planMonthly, reversalKey, type MonthlyReversal } from '@/lib/ecount/excel/monthly-import'
 import {
   guessMapping,
   mappingProblems,
@@ -30,7 +30,7 @@ import {
   type SheetGrid,
 } from '@/lib/ecount/excel/mapping'
 import { parsePicks, pickKey, type AmountsPreview } from '@/lib/ecount/excel/statement-lines'
-import { ecountImportErrorMessage, NO_BOOKS_MESSAGE } from '@/lib/ecount/import-errors'
+import { ecountImportErrorMessage, LEDGER_CHANGED_MESSAGE, NO_BOOKS_MESSAGE } from '@/lib/ecount/import-errors'
 import {
   EcountExcelError,
   outlineWorkbook,
@@ -90,6 +90,11 @@ export interface EcountCommitChoices {
   overrides?: unknown
   renames?: unknown
   picks?: unknown
+  /**
+   * 월별 — 사람이 미리보기에서 «이 달들은 역분개합니다 — 확인»에 체크한 역분개 목록(reversalKey 글). 미리보기의 역분개가
+   * 있는데 이것이 같지 않으면 등록하지 않는다(0056 리뷰 I-1).
+   */
+  confirmReversals?: unknown
 }
 
 export interface EcountPreviewState extends EcountImportState {
@@ -301,6 +306,16 @@ function usedPicks(amounts: AmountsPreview, picks: Record<string, string>): Reco
  * 원장에서 읽어 넘긴다. 최종 판정은 등록 RPC(0052 ecount_monthly_import)가 DB에서 다시 한다.
  * 수기 전표 경고는 업로드 전표(finance_import_slips + 그 역분개)를 빼고 센다 — 지난 업로드는 재업로드가 정정하므로 겹침이 아니다.
  */
+/** summary.reversals(미리보기가 적은 역분개)를 믿지 않고 모양만 거른다 — 대조에만 쓴다. */
+function parseReversals(raw: unknown): MonthlyReversal[] {
+  if (!Array.isArray(raw)) return []
+  return raw.flatMap((r) =>
+    r && typeof r === 'object' && typeof (r as MonthlyReversal).month === 'string' && typeof (r as MonthlyReversal).slip_no === 'string'
+      ? [{ month: (r as MonthlyReversal).month, slip_no: (r as MonthlyReversal).slip_no }]
+      : [],
+  )
+}
+
 async function monthlyPreview(repo: ChairmanRepository, imp: FinanceImport, sheets: EcountSheet[], mapping: EcountMapping): Promise<AmountsPreview> {
   const [ledger, officials, slips] = await Promise.all([
     repo.loadFinanceLedger(),
@@ -328,8 +343,8 @@ async function monthlyPreview(repo: ChairmanRepository, imp: FinanceImport, shee
     lastClosed: lastClosedPeriod(ledger, imp.business_id),
     officials: officials.map((o) => ({ kind: o.period_kind, key: o.period_key })),
     journalMonths,
-    // 0056: 활성 업로드 전표가 있는 달 — 이 파일에 금액이 없으면 등록이 역분개한다.
-    uploadMonths: [...new Set(slips.filter((x) => x.superseded_at === null).map((x) => x.month))],
+    // 0056: 활성 업로드 전표(달 → 전표 번호) — 이 파일에 금액이 없으면 등록이 그 전표를 역분개한다(번호까지 DB가 대조).
+    uploadSlips: Object.fromEntries(slips.filter((x) => x.superseded_at === null).map((x) => [x.month, x.slip_no])),
   })
 }
 
@@ -410,6 +425,8 @@ export async function previewEcountImport(importId: unknown, choices?: EcountPre
         state.picks = usedPicks(amounts, picks)
         summary.picks = state.picks
       }
+      // 0056 리뷰 I-2: 미리보기가 본 역분개(달 · 전표)를 적어 둔다 — 등록 때 다시 만든 것과 다르면 장부가 바뀐 것이다.
+      if (imp.kind === 'monthly') summary.reversals = amounts.reversals ?? []
     }
     await repo.recordFinanceImportPreview(
       imp.import_id,
@@ -458,6 +475,13 @@ export async function commitEcountImport(importId: unknown, choices?: EcountComm
       const amounts = await monthlyPreview(repo, imp, parsed.sheets, saved)
       if (amounts.blockCount > 0) return { error: `막힌 줄이 ${amounts.blockCount}개 있습니다. 미리보기에서 고친 뒤 등록하세요.` }
       if (!saved.year || !saved.basis) return { error: '몇 년도 · 당월/누계를 정하지 않았습니다. 열 지정을 고른 뒤 미리보기를 다시 하세요.' }
+      // 0056 리뷰 I-1 · I-2: 역분개는 «미리보기가 본 것 = 지금 다시 만든 것 = 사람이 확인한 것»일 때만.
+      const now = reversalKey(amounts.reversals)
+      const seen = reversalKey(parseReversals(imp.summary?.reversals))
+      if (now !== seen) return { error: LEDGER_CHANGED_MESSAGE }
+      if (now && (typeof choices?.confirmReversals !== 'string' || choices.confirmReversals !== now)) {
+        return { error: '역분개할 달을 확인하지 않았습니다. 미리보기의 «이 달들은 역분개합니다 — 확인»에 체크한 뒤 등록하세요.' }
+      }
       const months = monthlyLedgerMonths(amounts)
       // 금액 있는 달도 · 역분개할 빈 달(0056)도 없으면 실을 것이 없다.
       if (months.length === 0) return { error: `${FINANCE_IMPORT_KIND_LABEL_KO[imp.kind]}: 실을 금액 줄이 없습니다. 열 지정(과목명 · 월 열)을 확인하세요.` }

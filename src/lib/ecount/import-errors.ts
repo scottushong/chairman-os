@@ -16,6 +16,9 @@ export const SAME_YEAR_RACE_MESSAGE = '다른 사람이 같은 해 결산을 방
 /** 같은 달 월별 손익을 다른 사람이 방금 등록했다(업로드 전표 활성 unique). 0052 RPC는 회사 단위로 줄을 세워 드물다. */
 export const SAME_MONTH_RACE_MESSAGE = '다른 사람이 같은 달 월별 손익을 방금 등록했습니다. 새로 고친 뒤 미리보기를 다시 하세요.'
 
+/** 미리보기 뒤 그 회사 장부(활성 업로드 전표)가 바뀌었다 — 보지 않은 전표를 뒤집지 않는다(0056 리뷰 I-2). */
+export const LEDGER_CHANGED_MESSAGE = '미리보기 뒤에 장부가 바뀌었습니다 — 다시 미리보기 하세요.'
+
 /** 순서가 뜻이다 — 앞의 낱말이 먼저 맞는다(not_owner도 42501이라 일반 권한 거부보다 앞에 둔다). */
 export const ECOUNT_IMPORT_ERRORS: readonly (readonly [code: string, message: string])[] = [
   ['finance_import_not_owner', '올린 사람만 이 업로드를 이어 가거나 취소할 수 있습니다.'],
@@ -25,6 +28,8 @@ export const ECOUNT_IMPORT_ERRORS: readonly (readonly [code: string, message: st
   ['finance_import_hash_mismatch', '미리보기 때와 다른 파일입니다. 취소하고 새로 올리세요.'],
   ['finance_import_kind', '업로드 종류가 맞지 않습니다. 화면을 새로 고친 뒤 다시 하세요.'],
   ['finance_import_period', '몇 년도 자료인지 정하지 않았습니다. 열 지정에서 해를 고른 뒤 미리보기를 다시 하세요.'],
+  // 0056 리뷰 I-2: 역분개할 전표가 미리보기 때와 다르다(DB detail · dummy 글에 이 낱말) — import_changed보다 먼저 맞아야 한다.
+  ['ecount_ledger_changed', LEDGER_CHANGED_MESSAGE],
   ['import_changed', '미리보기 뒤에 업로드의 해나 당월/누계 표시가 바뀌었습니다. 미리보기를 다시 한 뒤 등록하세요.'],
   ['finance_import_slips_one_active', SAME_MONTH_RACE_MESSAGE],
   ['official_statements_one_active', SAME_YEAR_RACE_MESSAGE],

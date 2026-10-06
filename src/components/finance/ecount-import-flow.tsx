@@ -113,12 +113,12 @@ export function EcountImportFlow({
     }
   }
 
-  async function commitMonthly() {
+  async function commitMonthly(confirmReversals?: string) {
     if (!state.mapping) return
     setBusy('서버가 원본을 다시 읽고 달마다 전표를 싣는 중…')
     setError(null)
     try {
-      const r = await commitEcountImport(importId, { mapping: state.mapping })
+      const r = await commitEcountImport(importId, { mapping: state.mapping, confirmReversals })
       if (r.error) setError(r.error)
       else {
         const m = r.monthly ?? { posted: 0, corrected: 0, unchanged: 0, reversed: 0 }
@@ -202,7 +202,7 @@ export function EcountImportFlow({
           picks={picks}
           busy={!!busy}
           onPick={state.kind === 'annual' ? (k, c) => void pick(k, c) : undefined}
-          onCommit={state.kind === 'annual' ? () => void commitAnnual() : state.kind === 'monthly' ? () => void commitMonthly() : undefined}
+          onCommit={state.kind === 'annual' ? () => void commitAnnual() : state.kind === 'monthly' ? (c) => void commitMonthly(c) : undefined}
         />
       ) : null}
     </div>

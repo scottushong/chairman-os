@@ -297,8 +297,8 @@ export interface AmountsPreview {
   /** 줄에 붙지 않는 차단(기간 · 마감 · 불균형 · 합계 불일치) */
   blocks: string[]
   warnings: string[]
-  /** 월별 — 이 파일에 금액이 없어 등록이 지난 업로드 전표를 역분개할 달들(0056). 연간은 없다 */
-  reversals?: string[]
+  /** 월별 — 이 파일에 금액이 없어 등록이 지난 업로드 전표를 역분개할 달 · 전표(0056). 등록 전에 사람이 확인한다. 연간은 없다 */
+  reversals?: { month: string; slip_no: string }[]
   blockCount: number
   warningCount: number
 }

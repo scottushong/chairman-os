@@ -553,6 +553,11 @@ export async function dummyImportEcountMonthly(
     if (seenMonths.has(m.month)) throw new Error(`ecount_plan_invalid: 달 ${m.month}가 두 번`)
     seenMonths.add(m.month)
   }
+  // 0056 리뷰 I-2: 빈 달은 되돌릴 전표 번호(미리보기 때 본 활성 업로드 전표)를 들고 온다 · 금액 있는 달은 들고 오지 않는다.
+  for (const m of months) {
+    const bad = m.lines.length === 0 ? typeof m.reverses !== 'string' || !/^M\d{4}-\d{6}$/.test(m.reverses) : m.reverses !== undefined
+    if (bad) throw new Error(`ecount_plan_invalid: 달 ${m.month} reverses`)
+  }
   for (const m of months) {
     const codes = new Set<string>()
     for (const l of m.lines) {
@@ -612,6 +617,9 @@ export async function dummyImportEcountMonthly(
     ls.map((l) => `${l.account_code}|${l.side}|${cents(l.amount)}`).sort().join(',')
   const plans = sorted.map((m) => {
     const prevActive = activeSlip(m.month)
+    if (m.lines.length === 0 && prevActive?.slip_no !== m.reverses) {
+      throw new Error(`import_changed: ecount_ledger_changed ${m.month} ${m.reverses} → ${prevActive?.slip_no ?? '없음'}`)
+    }
     if (prevActive && entries.some((e) => e.business_id === imp.business_id && e.corrects_id === prevActive.slip_no && e.correction_kind === 'reversal')) {
       throw new Error(`ecount_month_reversed: ${m.month} ${prevActive.slip_no}`)
     }
@@ -647,12 +655,8 @@ export async function dummyImportEcountMonthly(
       .map((l): DraftLine => ({ account_code: l.account_code, side: l.side === 'debit' ? 'credit' : 'debit', amount: l.amount, memo: l.memo }))
   for (const p of plans) {
     if (p.entry === null) {
-      // 0056 빈 달: 지난 업로드 전표가 있으면 역분개만 + 옛 줄 내림(새 활성 줄 없음), 없으면 아무것도 안 한다.
-      if (!p.prev) {
-        result.months.push({ month: p.month, action: 'empty' })
-        continue
-      }
-      const prev = p.prev
+      // 0056 빈 달: 미리보기 때 본 업로드 전표(위에서 대조)를 역분개만 + 옛 줄 내림(새 활성 줄 없음).
+      const prev = p.prev!
       const orig = entries.find((e) => e.business_id === imp.business_id && e.slip_no === prev.slip_no)!
       const reversal = insertEntry(
         { business_id: imp.business_id, entry_date: monthEnd(p.month), memo: `[역분개] ${orig.memo}`, evidence_url: orig.evidence_url, lines: flip(prev.slip_no) },

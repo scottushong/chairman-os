@@ -17,12 +17,14 @@
 --       0052판 등록이 이 마이그레이션을 건너 돌고 있어도 같은 열쇠라 서로 기다린다. 이름만 «장부 회사 잠금»으로 세운다.
 --   1절 ecount_monthly_import — 0052 본문 그대로 + 세 군데:
 --       a. 잠금은 finance_books_lock_key(같은 값).
---       b. **빈 달**(lines = [])을 받는다 = «이 파일은 그 달을 말하지만 금액이 하나도 없다»(앱 monthlyLedgerMonths가
---          파일이 말하는 달만 보낸다 — 열 전체가 빈 칸인 «자료 없음» 달은 여전히 안 보낸다).
---            활성 업로드 전표 없음   → 아무것도 안 한다(action 'empty' — 쓰기 · 감사 없음)
---            있음                    → 감사 먼저 → post_correction(줄 없이 = 역분개만) → 옛 줄 supersede · 새 줄 없음
---                                      (action 'reversed', 결과 reversed 셈)
---            이미 역분개됨           → ecount_month_reversed(0052와 같이 멈춘다)
+--       b. **빈 달**({month, lines: [], reverses: '<전표 번호>'})을 받는다 = «이 파일은 그 달을 말하지만 금액이 하나도 없다 —
+--          미리보기에서 사람이 확인한 그 업로드 전표를 역분개한다»(앱은 미리보기가 역분개할 달로 적고 사람이 확인한 달만 보낸다).
+--            활성 업로드 전표 = reverses → 감사 먼저 → post_correction(줄 없이 = 역분개만) → 옛 줄 supersede · 새 줄 없음
+--                                        (action 'reversed', 결과 reversed 셈)
+--            없음 · 다른 전표             → import_changed(detail «ecount_ledger_changed» — 미리보기 뒤 장부가 바뀌었다:
+--                                        남이 그 사이 등록 · 정정했다. 보지 않은 전표를 뒤집지 않는다 — 리뷰 I-2)
+--            이미 역분개됨                → ecount_month_reversed(0052와 같이 멈춘다)
+--          reverses 없는 빈 달 · 금액 있는 달의 reverses는 ecount_plan_invalid.
 --          마감 달 · 세무사 확정 달 판정은 **금액 있는 달 + 되돌릴 전표가 있는 빈 달**에만 건다 — 마감된 달의 0칸은
 --          손댈 것이 없으니 막지 않는다. 대응 계정은 금액 있는 달이 있을 때만 만든다.
 --       c. 첫 등록도 **전표 감사 한 줄**(entity journal_entries · 전표 번호) — post_journal_entry(0016)가 남기는 모양과 같다.
@@ -158,6 +160,17 @@ begin
   if found then
     raise exception using errcode = 'P0001', message = 'ecount_plan_invalid', detail = format('달 %s가 두 번 있다.', v_bad);
   end if;
+  -- 빈 달은 되돌릴 전표 번호(미리보기 때 본 활성 업로드 전표)를 들고 온다 · 금액 있는 달은 들고 오지 않는다(0056 리뷰 I-2).
+  select m->>'month' into v_bad
+    from jsonb_array_elements(p_months) m
+   where (jsonb_array_length(m->'lines') = 0
+          and (jsonb_typeof(m->'reverses') is distinct from 'string' or m->>'reverses' !~ '^M[0-9]{4}-[0-9]{6}$'))
+      or (jsonb_array_length(m->'lines') > 0 and m ? 'reverses')
+   limit 1;
+  if found then
+    raise exception using errcode = 'P0001', message = 'ecount_plan_invalid',
+      detail = format('달 %s: 빈 달은 되돌릴 전표 번호(reverses)가 있어야 하고, 금액 있는 달은 없어야 한다.', v_bad);
+  end if;
   select (m->>'month') || ' ' || coalesce(l->>'account_code', '?') into v_bad
     from jsonb_array_elements(p_months) m, jsonb_array_elements(m->'lines') l
    where jsonb_typeof(l) <> 'object' or coalesce(l->>'account_code', '') = ''
@@ -260,9 +273,10 @@ begin
 
     -- 빈 달(0056) ---------------------------------------------------------------------------------
     if jsonb_array_length(v_m->'lines') = 0 then
-      if not found then
-        v_out := v_out || jsonb_build_array(jsonb_build_object('month', v_month, 'action', 'empty'));
-        continue;
+      if not found or v_prev.slip_no is distinct from v_m->>'reverses' then
+        raise exception using errcode = 'P0001', message = 'import_changed',
+          detail = format('ecount_ledger_changed: %s의 활성 업로드 전표가 미리보기 때(%s)와 다르다(지금 %s). 미리보기를 다시 한다.',
+                          v_month, v_m->>'reverses', coalesce(v_prev.slip_no, '없음'));
       end if;
       if exists (select 1 from journal_entries r
                   where r.business_id = v_imp.business_id and r.corrects_id = v_prev.slip_no and r.correction_kind = 'reversal') then
@@ -377,7 +391,7 @@ end;
 $fn$;
 
 comment on function ecount_monthly_import(uuid, text, text, text, jsonb) is
-  '0052/0056. ECOUNT 월별 손익 업로드 등록(잠정 — 월 마감이 확정으로). 달마다 요약 전표 한 장 + 대응 계정(ECOUNT-PL) 한 줄 · 첫 등록은 달 감사 + 전표 감사. 같은 달 재업로드는 post_correction(역분개 + 정정분개) + 옛 업로드 줄 supersede. 파일이 말하는데 금액이 없는 달(lines=[])은 그 달 활성 업로드 전표를 역분개만 한다(0056). 마감 달 · 세무사 확정 달(손댈 달만) · 재무상태표 계정 · 이미 역분개된 업로드 전표는 거부. 회사 잠금(finance_books_lock_key — close_period와 같은 열쇠) · 감사 먼저 · committed까지 한 트랜잭션.';
+  '0052/0056. ECOUNT 월별 손익 업로드 등록(잠정 — 월 마감이 확정으로). 달마다 요약 전표 한 장 + 대응 계정(ECOUNT-PL) 한 줄 · 첫 등록은 달 감사 + 전표 감사. 같은 달 재업로드는 post_correction(역분개 + 정정분개) + 옛 업로드 줄 supersede. 파일이 말하는데 금액이 없는 달(lines=[], reverses=미리보기 때 본 전표)은 그 전표를 역분개만 한다(0056) — 다른 전표면 import_changed. 마감 달 · 세무사 확정 달(손댈 달만) · 재무상태표 계정 · 이미 역분개된 업로드 전표는 거부. 회사 잠금(finance_books_lock_key — close_period와 같은 열쇠) · 감사 먼저 · committed까지 한 트랜잭션.';
 
 revoke all on function ecount_monthly_import(uuid, text, text, text, jsonb) from public, anon;
 grant execute on function ecount_monthly_import(uuid, text, text, text, jsonb) to authenticated;
