@@ -25,7 +25,8 @@ import {
   makeContext,
   runAssistant,
 } from '../src/lib/ai/assistant/run'
-import { submitApprovalWith } from '../src/lib/approval-submit'
+import { AMOUNT_INVALID_MESSAGE } from '../src/lib/approval-line'
+import { approvalSubmitError, submitApprovalWith } from '../src/lib/approval-submit'
 import { kstToday } from '../src/lib/chairman-project'
 import { financeByBusiness, hasDraftGrant } from '../src/lib/module-grants'
 import { dummyRepository as repo } from '../src/lib/repository/dummy'
@@ -180,7 +181,7 @@ async function main() {
     'PASS: 화면 변경 → «개발 세션에서 처리합니다»(데이터 요청은 통과) · 직원 재무 → 권한 없음 + 재무/회장 도구 없음 · 계산기(코드 · eval 없음 · 거절) · ' +
       'VANA 9월 합 = 원장 줄 합 · 없는 달 표시 · 기한 없는 이니셔티브 = 실제 줄 · VLING24 없으면 제안 없음 → 있으면 pending(미변경) → 남 확인 불가 → 주인 한 번 → 감사 «AI 제안, 회장 확인» · 검증(빈 칸 · 재무) · 카카오 읽기만 · ' +
       '오류 분류 · 대화 모양(번갈아 · 맥락 메모) · 직원 권한 밖 «권한이 없습니다 — … 대표에게» · 직원 도구(내 결재 · 마감 · 문서 · 전표 도움 · 양식 결재) · ' +
-      '양식 결재 빈 칸 → 카드 → 중복 없음 → «확인했어» = 버튼 안내 → 확인 → 결재선 · 팀장 대기 · «첨부해줘» = «첨부» 칸 · 직원 글에 «회장» 없음',
+      '양식 결재 빈 칸 · 금액 모양(0054 approval_amount_invalid 문장) → 카드 → 중복 없음 → «확인했어» = 버튼 안내 → 확인 → 결재선 · 팀장 대기 · «첨부해줘» = «첨부» 칸 · 직원 글에 «회장» 없음',
   )
 }
 
@@ -283,6 +284,13 @@ async function staffFlow() {
   const miss = (await tool('propose_approval_form').run({ template: '지출', business: 'DY', fields: { amount: '120000' } }, kctx)) as { error: string; message: string }
   assert.equal(miss.error, 'missing_fields', `빈 필수 항목에 카드가 선다: ${JSON.stringify(miss)}`)
   assert.equal(kctx.actionIds.length, 0)
+  // 0054 C1 — 금액이 숫자 모양이 아니면(«600만» · 쉼표 틀림) 카드 없이 화면 · 트리거와 같은 문장.
+  for (const bad of ['600만', '60,00,000', '1.000.000']) {
+    const r = (await tool('propose_approval_form').run({ template: '지출', business: 'DY', fields: { amount: bad, purpose: '택배비', spent_on: today, vendor: '우체국' } }, kctx)) as { error: string; message: string }
+    assert.deepEqual([r.error, r.message], ['invalid', AMOUNT_INVALID_MESSAGE], `금액 «${bad}»에 카드가 선다: ${JSON.stringify(r)}`)
+  }
+  assert.equal(kctx.actionIds.length, 0)
+  assert.equal(approvalSubmitError(new Error('approval_amount_invalid'), (await repo.listApprovalTemplates()).find((t) => t.template_key === 'expense')!, kim.role), AMOUNT_INVALID_MESSAGE, 'DB 거부 approval_amount_invalid가 금액 문장으로 안 바뀐다')
   const fields = { amount: '120,000', purpose: '9월 마감 증빙 택배비', spent_on: today, vendor: '우체국' }
   type Card = { status: string; action_id: string; preview: { lines: { label: string; after: string }[] } }
   const card = (await tool('propose_approval_form').run({ template: '지출', business: 'DY', fields }, kctx)) as Card

@@ -137,6 +137,8 @@ export const DUMMY_PEOPLE: UserAccount[] = [
     modules: [
       { module: '/finance/biz_dy', can_write: true, can_approve: false },
       { module: '/documents/biz_dy', can_write: true, can_approve: false },
+      // 0055. «DY 사용자 관리자» — 회장이 켠 상태로 시작해 위임 초대 흐름(DUMMY_USER=support_lead)을 바로 눌러 볼 수 있게.
+      { module: '/users/biz_dy', can_write: true, can_approve: false },
     ],
   }),
   person(DUMMY_UID.exec, 'Executive', '영업본부장', 'Sales Executive', '본부장', DUMMY_UID.dyCeo, 'team_dy_sales', {
