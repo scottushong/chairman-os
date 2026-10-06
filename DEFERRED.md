@@ -2258,8 +2258,7 @@ B-4가 찾은 결함 하나를 고쳤다. **리뷰 루프가 없는 작업이고
 - **회장 알림은 초대 때만**(kind 'system', 링크 /settings/users, DB 문구에 «회장» 없음). 관리자 취소는 감사만 — 알림 없음. 바꾸려면 5절에 insert 한 줄.
 - **아침 숫자:** night-brief가 `delegated_invite_count(지난 24시간)`를 접속 기록 줄 뒤에 붙인다(0건이면 침묵 · 실패하면 접속 기록 줄만). AIAgent가 초대 줄을 읽게 넓히지 않았다(숫자 함수만).
 - **0055 전 DB 견딤:** 목록(listUserInvitations)은 새 칸이 없으면(42703) 옛 칸으로 다시 읽는다 · 관리자 칸은 줄 읽기 · 고르기 실패 시 예전 화면(0026 폼). master에 먼저 닿아도 /settings/users가 깨지지 않는다 — 그래도 순서는 «0054 → 0055 db push 뒤 배포».
-- **그대로 둔 것 — 회장 확인:** 0026 `user_invitations_delegated_insert`(아무 활성 사용자가 자기 subtree로 초대)는 열려 있다. B의 뜻(«초대는 사용자 관리자만»)이면 닫는 것이 맞지만 지금 팀장들이 쓰는 길이라 0055가 닫지 않았다. 닫으려면 그 정책 drop 한 줄(+ 화면은 능력 없는 사람에게 초대 폼을 숨김).
-- **재초대 되살림:** 회수된 사람을 관리자가 다시 초대하면 관리자가 가진 권한(실은 것)만 다시 붙는다 — 0054 «결재 올리기»는 위임 되살림에 안 붙으므로 module_grants에 있어야 붙는다.
+- **0026 위임 insert — 닫았다(리뷰 I3, 회장 결정 B):** `user_invitations_delegated_insert`는 0055가 drop한다. **production 동작 변경**이다 — 팀장 · 임원이 자기 아래로 직접 초대하던 길이 없어진다(지금 production에 그 길을 쓰는 팀장은 없다). 최종 보고에서 회장 확인 항목으로 올린다.
 - **dummy:** 경영지원 팀장(support_lead) 시드에 `/users/biz_dy`를 켰다 — `DUMMY_USER=support_lead`로 «직원 초대 · DY (주)» 폼, `DUMMY_USER=chairman`으로 알림 · 꼬리표를 본다. dummy 알림은 이제 받는 사람별(0030 own_read 거울).
 - **staging 검사 SQL:** scratchpad `stage2/0055_staging_test.sql`(0054 · 0055 적용 뒤, commit 없음 · 끝은 늘 raise). PGlite에서 «적용 후 PASS / 0055 없이 FAIL 준비»를 먼저 확인했다.
 - **0055 리뷰 반영(같은 날, 0055 제자리 수정 — staging · production 미적용):**
@@ -2275,3 +2274,4 @@ B-4가 찾은 결함 하나를 고쳤다. **리뷰 루프가 없는 작업이고
   - **0055 리뷰 M3:** 상사 · 팀 검사는 초대 때만 한다 — 가입 전 조직 개편으로 상사가 관리자 아래로 가도 다시 보지 않는다. 가입 때 재검사는 보류(초대는 24시간 20건 · 관리자 회수 시 자동 취소).
   - **0055 리뷰 M6:** 관리자의 상사 사슬은 0026 subtree 읽기로 관리자가 보낸 위임 초대(이메일 · 권한)를 본다 — 0055 전부터 있던 동작, 그대로 둔다.
   - **0055 리뷰 M7:** setStaffAdminGrant → setModuleGrant는 감사를 먼저 쓰고 RLS가 회장 외를 막는다 — 회장 외의 시도는 «바꾸려 했다» 감사 줄만 남긴다(setDraftGrant와 같은, 전부터 있던 순서).
+- **0055 재리뷰 반영(같은 날):** 능력이 다른 길로 사라져도 자동 취소 — 회사 범위 삭제(user_business_access delete, 그 회사) · 역할이 사람 역할 밖으로(user_profiles role). 가입 때 초대자가 관리자가 아니어서 멈춘 초대는 그 자리에서 취소(세션 없음 — 감사는 막히면 경고만, 기록은 revoked_at). 그래도 그 사이에 생긴 auth 계정은 프로필 없이 남는다 — 같은 이메일의 다음 초대는 `staff_admin_email_taken` · 회장 초대도 가입 트리거가 다시 안 돈다 → **대표가 Supabase Auth에서 그 계정을 지운 뒤 다시 초대**(안내서 «막힐 때»). insert 정책은 상사가 그 회사의 활성 사람인지도 본다(`staff_admin_boss_ok` — 정책 식이라 authenticated에게 실행을 열었고, 호출자 회사 밖이면 늘 false). 자동 취소 update 정책은 활성 세션을 요구한다(세션 없는 경로는 bypassrls 소유자에서만 — staging · production 관찰). 비율 제한은 취소한 초대도 센다(안내서).

@@ -1160,6 +1160,11 @@ export const dummyRepository: ChairmanRepository = {
     }
     const was = { role: target.role, team_id: target.team_id }
     Object.assign(target, patch)
+    // 0055 재리뷰 — 역할이 사람 역할 밖으로 바뀌면 대기 위임 초대 자동 취소(staff_admin_profile_revoked 거울).
+    const person = (r: Role) => r !== 'Chairman' && STAFF_ADMIN_BOSS_ROLES.includes(r)
+    if (person(was.role) && !person(target.role)) {
+      dummyRevokePendingStaffAdmin(userId, null)
+    }
 
     // 0047 finance_profile_grants()를 옮겨 적은 것 — **회장이 옮길 때만**(리뷰 C1).
     //   DY 경영지원 팀장이 된 순간: DY 기본 입력 권한(줄이 없고 DY 접근이 있을 때만).

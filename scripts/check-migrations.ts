@@ -4863,6 +4863,8 @@ async function staffAdmin() {
   await assert.rejects(as(SA.admin, 'select 1', gucInsert(SA.admin, 'Member', SA.under)), /row-level security/, '0055: 설정을 직접 켠 관리자가 자기 아래를 상사로 넣는다(I1)')
   await assert.rejects(as(SA.admin, 'select 1', gucInsert(SA.admin, 'Member', SA.chair, '["/finance/biz_vana"]')), /row-level security/,
     '0055: 설정을 직접 켠 관리자가 갖지 않은 권한을 싣는다(I1)')
+  await assert.rejects(as(SA.admin, 'select 1', gucInsert(SA.admin, 'Member', SA.vana)), /row-level security/,
+    '0055: 설정을 직접 켠 관리자가 다른 회사 사람을 상사로 넣는다(재리뷰 3)')
   await assert.rejects(as(SA.admin, 'select 1', gucInsert(SA.admin, 'Member', SA.chair, '["/chairman/decisions"]')), /row-level security/,
     '0055: 설정을 직접 켠 관리자가 결재 올리기를 위임 권한으로 싣는다(I1 · I4)')
   // 취소 설정 아래에서도 revoked_at 말고는 못 바꾼다.
@@ -4962,6 +4964,12 @@ async function staffAdmin() {
     '0055: 회장이 위임 초대를 취소하지 못한다')
 
   // ── 능력 회수 → 더는 초대 못 함 · 회수 전 초대는 가입해도 권한이 안 붙는다 ──
+  // 재리뷰 1 — 회장이 관리자의 회사 범위(DY)를 지우면 그 회사의 대기 위임 초대가 자동 취소된다.
+  const scopeInv = await invite(SA.admin, { email: 'scope@x.co' })
+  await commitAs(SA.chair, `delete from user_business_access where user_id = '${SA.admin}' and business_id = 'biz_dy'`)
+  assert.equal((await owner(`select 1 from user_invitations where invitation_id = '${scopeInv}' and revoked_at is not null`)).length, 1,
+    '0055: 관리자의 회사 범위를 지웠는데 그 회사 대기 위임 초대가 열려 있다(재리뷰 1)')
+  await owner(`insert into user_business_access values ('${SA.admin}', 'biz_dy')`)
   const lateId = await invite(SA.admin, { email: 'late@x.co', name: '늦은 가입', grants: ['/documents/biz_dy'] })
   await commitAs(SA.chair, `delete from user_module_access where user_id = '${SA.admin}' and module = '/users/biz_dy'`)
   await refuses(SA.admin, { email: 'after@x.co' }, /staff_admin_denied/, '능력을 회수했는데 초대가 된다')
@@ -4975,6 +4983,8 @@ async function staffAdmin() {
   await owner(`insert into auth.users values ('${SA.late}', 'late@x.co')`)
   assert.deepEqual(await owner(`select 1 from user_profiles where user_id = '${SA.late}'`), [],
     '0055: 능력이 회수된 관리자의 초대로 계정에 권한이 생긴다(I5 — 닫힌 쪽)')
+  assert.equal((await owner(`select 1 from user_invitations where invitation_id = '${lateId}' and revoked_at is not null and accepted_at is null`)).length, 1,
+    '0055: 가입 때 멈춘 위임 초대가 대기로 남는다(재리뷰 1 — 그 이메일의 다음 초대를 막는다)')
 
   // 리뷰 I2 — 팀장인 관리자: 자기가 팀장인 팀으로는 못 부른다 · 고르기 칸에서도 빠진다.
   await owner(`insert into user_module_access (user_id, module, can_write) values ('${SA.lead}', '/users/biz_dy', true)`)
@@ -4986,6 +4996,12 @@ async function staffAdmin() {
   const [{ o: oLead }] = await as<{ o: Opt }>(SA.lead, `select staff_admin_options('biz_dy') as o`)
   assert.ok(!oLead.teams.some((t) => t.team_id === 'team_dy_sales') && oLead.teams.some((t) => t.team_id === 'team_dy_rnd'),
     '0055: 팀장 관리자의 팀 후보에 자기 팀이 있다(또는 다른 팀이 없다)')
+  // 재리뷰 1 — 관리자의 역할이 사람 역할 밖으로 바뀌면 대기 위임 초대 자동 취소.
+  const roleInv = await invite(SA.lead, { email: 'role@x.co', team: 'team_dy_rnd', boss: SA.chair })
+  await commitAs(SA.chair, `update user_profiles set role = 'Vendor' where user_id = '${SA.lead}'`)
+  assert.equal((await owner(`select 1 from user_invitations where invitation_id = '${roleInv}' and revoked_at is not null`)).length, 1,
+    '0055: 관리자 역할이 사람 역할 밖으로 바뀌었는데 대기 위임 초대가 열려 있다(재리뷰 1)')
+  await owner(`update user_profiles set role = 'TeamLead' where user_id = '${SA.lead}'`)
   // 관리자 회수(퇴사) → 대기 위임 초대 자동 취소.
   const leadInv = await invite(SA.lead, { email: 'byl@x.co', team: 'team_dy_rnd', boss: SA.chair })
   await commitAs(SA.chair, `update user_profiles set revoked_at = now() where user_id = '${SA.lead}'`)
@@ -4996,7 +5012,8 @@ async function staffAdmin() {
   assert.deepEqual(await owner(`select relname, relforcerowsecurity as f from pg_class where relname in ('notifications', 'user_module_access', 'user_profiles') order by 1`),
     [{ relname: 'notifications', f: false }, { relname: 'user_module_access', f: false }, { relname: 'user_profiles', f: false }], '0055: force가 새로 걸렸다(0035 함정)')
   for (const fn of ['staff_admin_holds(uuid, text)', 'staff_admin_apply_grants(user_invitations, uuid)', 'staff_admin_invitation_guard()', 'apply_user_invitation(uuid, uuid)',
-    'module_grant_audit(uuid, text, jsonb, jsonb, text)', 'staff_admin_revoke_pending(uuid, text, text)', 'staff_admin_capability_revoked()', 'staff_admin_profile_revoked()']) {
+    'module_grant_audit(uuid, text, jsonb, jsonb, text)', 'staff_admin_revoke_pending(uuid, text, text)', 'staff_admin_capability_revoked()', 'staff_admin_profile_revoked()',
+    'staff_admin_scope_revoked()']) {
     assert.deepEqual(await owner(`select has_function_privilege('authenticated', '${fn}', 'execute') as a, has_function_privilege('anon', '${fn}', 'execute') as b`),
       [{ a: false, b: false }], `0055: 내부 함수 ${fn}가 RPC로 열렸다`)
   }
@@ -5005,8 +5022,11 @@ async function staffAdmin() {
   }
   const defs = await owner<{ proname: string; cfg: string[] | null; sec: boolean }>(`select proname, proconfig as cfg, prosecdef as sec from pg_proc
      where proname in ('can_manage_users', 'staff_admin_holds', 'staff_admin_invite', 'staff_admin_apply_grants', 'staff_admin_revoke_invitation', 'staff_admin_options', 'delegated_invite_count',
-       'staff_admin_revoke_pending', 'staff_admin_capability_revoked', 'staff_admin_profile_revoked')`)
-  assert.equal(defs.length, 10, '0055: 함수 열을 다 못 찾는다')
+       'staff_admin_revoke_pending', 'staff_admin_capability_revoked', 'staff_admin_profile_revoked', 'staff_admin_scope_revoked', 'staff_admin_boss_ok')`)
+  assert.equal(defs.length, 12, '0055: 함수 열둘을 다 못 찾는다')
+  // staff_admin_boss_ok는 정책 식이라 authenticated에게 열려 있다 — 호출자 회사 밖이면 늘 false(남의 회사 사람을 캐지 못한다).
+  assert.deepEqual(await as(SA.vana, `select staff_admin_boss_ok('${SA.peer}', 'biz_dy') as v`), [{ v: false }], '0055: 다른 회사 직원이 DY 사람의 활성 여부를 캔다')
+  assert.deepEqual(await as(SA.peer, `select staff_admin_boss_ok('${SA.chair}', 'biz_dy') as v`), [{ v: true }], '0055 전제: 같은 회사 안에서는 답한다')
   assert.deepEqual(await owner(`select policyname from pg_policies where tablename = 'user_invitations' and policyname = 'user_invitations_delegated_insert'`), [],
     '0055: 0026 위임 insert 정책이 남아 있다(I3)')
   for (const d of defs) assert.ok(d.sec && (d.cfg ?? []).includes('search_path=public, pg_temp'), `0055: ${d.proname}가 definer · search_path=public, pg_temp가 아니다`)
