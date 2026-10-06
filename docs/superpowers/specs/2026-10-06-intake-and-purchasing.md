@@ -154,9 +154,9 @@ AIAgent · Integration은 입구 · 구매 표에 쓰지 않는다(0045와 같�
 
 ## D. DB 변경(의사 DDL — 파일은 만들지 않는다 · 번호는 병합 시점에 확정)
 
-쓰는 중: 0050–0053 ECOUNT · 0054–0055 결재 · 온보딩. ECOUNT 전표 증빙이 번호 하나를 먼저 가져갈 수 있다. **제안: 0056 · 0057 · 0058** (리뷰 루프 대상 — 스키마 · RLS · 돈).
+쓰는 중(2026-10-06 블록 끝): 0050–0052 · 0056 ECOUNT(0053 비움) · 0054–0055 결재 · 온보딩 · **0057은 ECOUNT 전표 증빙 제안**(DEFERRED «전표 증빙 — 0057 제안»). **제안: 0058 입구 · 0059 구매 · 0060 결산 잠정** — 번호는 병합 시점에 확정.
 
-**0056_intake** (입구)
+**0058_intake** (입구)
 ```
 intake_items(
   item_id text pk, business_id text not null → businesses,
@@ -176,7 +176,7 @@ record_attachment_ai_send: entity_table in ('finance_imports', <전표 증빙 �
 intake_move_to_document(item_id, …) RPC: documents insert + 첨부 entity 재지정(이 한 길만) + 감사.
 ```
 
-**0057_purchasing** (구매)
+**0059_purchasing** (구매)
 ```
 purchase_items(item_id text pk, business_id, name, name_norm, spec, default_unit, active, created_by, created_at,
   unique(business_id, name_norm))
@@ -198,7 +198,7 @@ RLS: 읽기 = has_business AND (Chairman · GroupCFO · 그 회사 BusinessCEO �
 module_grant 함수: '/purchasing/%' 허용(회장만).
 ```
 
-**0058_statement_intake** (결산 잠정 — ECOUNT 0050 뒤)
+**0060_statement_intake** (결산 잠정 — ECOUNT 0050 뒤)
 ```
 official_statements.basis check에 'intake_scan' 추가 · import 칸 옆 intake_item_id text.
 statement_drafts(draft_id, business_id, item_id, period_kind, period_key, unit, lines jsonb, totals jsonb,
@@ -214,13 +214,13 @@ check-migrations에 셋 다 검사(RLS 역할별 · 제외 대상 42501 · void�
 | # | 블록 | 시간 | 리뷰 루프 |
 |---|---|---|---|
 | 0 | 첨부 읽기 고침(스캔 PDF · 사진) — **끝남 26e0563** | 3h | 아니오 |
-| 1 | 0056 입구 DB + 제외 대상 DB 문 + check-migrations | 6h | 예(스키마 · RLS) |
+| 1 | 0058 입구 DB + 제외 대상 DB 문 + check-migrations | 6h | 예(스키마 · RLS) |
 | 2 | 입구 화면 · 읽기 · 분류 프롬프트 · 제안 카드 · 종류 바꾸기 · 실패 · 배합비 감지(+검사 스크립트) | 10h | 아니오 |
 | 3 | ③④ 문서 적재 · 되돌리기 | 4h | 아니오 |
-| 4 | 0057 구매 DB + 모듈 권한 + check-migrations | 6h | 예(스키마 · RLS) |
+| 4 | 0059 구매 DB + 모듈 권한 + check-migrations | 6h | 예(스키마 · RLS) |
 | 5 | 구매 화면(품목 · 단가 이력 · 수기 · 결재 후보) | 8h | 아니오 |
 | 6 | ② 입구 → 단가 초안 → 등록 | 5h | 예(돈 — 단가) |
-| 7 | 0058 결산 잠정 basis · 승격 RPC(ECOUNT 병합 뒤) | 4h | 예(돈 · DB) |
+| 7 | 0060 결산 잠정 basis · 승격 RPC(ECOUNT 병합 뒤) | 4h | 예(돈 · DB) |
 | 8 | ① 입구 → 결산 초안 · 매칭 · 합계 검사 · 대조 · 잠정 등록 · 확정 올리기 | 10h | 예(돈) |
 | 9 | 감사 문구 · 이중 적재 · 초안 삭제 · 끝 점검(staging 리허설) | 4h | 아니오 |
 
