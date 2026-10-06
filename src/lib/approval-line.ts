@@ -35,6 +35,43 @@ export function ruleWhy(template: ApprovalTemplate, form: Record<string, string>
     : `금액 ${a}원 < 기준 ${template.chairman_over}원`
 }
 
+/** 빈 팀장 칸의 문장 — 0054 트리거와 같은 글자. 상사가 대표뿐인 사람에게 «직속 상위가 없음»은 거짓이라 바꿨다. */
+export const NO_LEAD_WHY = '팀장 결재 단계 없음'
+
+/** my_approval_lead()가 보는 사람 한 줄의 모양. */
+export interface LeadCandidate {
+  user_id: string
+  display_name: string
+  role: Role
+  team_id: string | null
+  reports_to: string | null
+  revoked_at: string | null
+  status: string
+}
+
+/**
+ * 0038/0054 my_approval_lead()의 거울 — dummy 어댑터가 쓴다. 팀장(공석 · 본인 · 떠남이면 reports_to).
+ * **대표(Chairman)는 후보가 아니다**(0054) — 팀장이 대표면 reports_to로, reports_to도 대표면 null(팀장 단계 건너뜀).
+ * 떠난 사람과 대표는 **고르기 전에** 뺀다 — 고른 뒤에 빼면 reports_to로 넘어가지 못한다(0038 리뷰 지적 3).
+ */
+export function pickApprovalLead(
+  meId: string,
+  people: readonly LeadCandidate[],
+  teams: readonly { team_id: string; lead_user_id: string | null }[],
+): ApprovalLead | null {
+  const me = people.find((p) => p.user_id === meId)
+  if (!me) return null
+  const alive = (id: string | null) => {
+    const p = id ? people.find((x) => x.user_id === id) : undefined
+    return p && !p.revoked_at && p.status === 'active' && p.role !== 'Chairman' ? p : undefined
+  }
+  const team = teams.find((t) => t.team_id === me.team_id)
+  const lead = team && team.lead_user_id !== me.user_id ? alive(team.lead_user_id) : undefined
+  if (lead) return { user_id: lead.user_id, display_name: lead.display_name, via: 'team_lead' }
+  const boss = alive(me.reports_to)
+  return boss ? { user_id: boss.user_id, display_name: boss.display_name, via: 'reports_to' } : null
+}
+
 export function approvalLine(
   template: ApprovalTemplate,
   form: Record<string, string>,
@@ -49,7 +86,7 @@ export function approvalLine(
           name: lead.display_name,
           why: lead.via === 'team_lead' ? '팀장' : '팀장 부재 · 직속 상위',
         }
-      : { step: 'lead', user_id: null, name: '—', why: '팀장 · 직속 상위가 없음' },
+      : { step: 'lead', user_id: null, name: '—', why: NO_LEAD_WHY },
     { step: 'rule', user_id: null, name: '규칙 판정', why: ruleWhy(template, form) },
   ]
   if (toChairman(template, form)) {

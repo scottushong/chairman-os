@@ -25,8 +25,8 @@ import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm'
 import { applyAll, applyOne, MIGRATIONS, type Db } from './pglite'
 
 import { sheetFinanceKpis } from '../src/data'
-import { approvalLine } from '../src/lib/approval-line'
-import type { ApprovalTemplate } from '../src/types'
+import { approvalLine, pickApprovalLead } from '../src/lib/approval-line'
+import type { ApprovalTemplate, Role } from '../src/types'
 import { kstToday } from '../src/lib/chairman-project'
 import { loadMockLedger } from '../src/lib/ecount/mock-ledger'
 import { kpisFromLedger } from '../src/lib/ledger/cells'
@@ -897,7 +897,8 @@ async function staffHome(db: Db, as: As) {
       ('${S.lead}', 'TeamLead', '생산팀장', 'Normal', 'team_6_2'),
       ('${S.req}', 'Member', '생산직원', 'Normal', 'team_6_2');
     insert into user_business_access values ('${S.lead}', 'biz_dy'), ('${S.req}', 'biz_dy');
-    insert into user_module_access (user_id, module, can_write) values ('${S.req}', '/chairman/decisions', true);
+    insert into user_module_access (user_id, module, can_write) values ('${S.req}', '/chairman/decisions', true)
+      on conflict (user_id, module) do update set can_write = true; -- 0054: 새 프로필에는 트리거가 이미 붙였다
   `)
   const commitAs = async (uid: string, sql: string) => {
     await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
@@ -1366,7 +1367,8 @@ async function groupware(db: Db, as: As) {
 
   // ── 결재선은 DB가 만든다(리뷰 지적 4) ──
   // 기안자(member)에게 결재 모듈 쓰기를 연다. 팀장은 ceo, 직속 상위는 cfo.
-  await db.exec(`insert into user_module_access (user_id, module, can_write) values ('${UID.member}', '/chairman/decisions', true)`)
+  await db.exec(`insert into user_module_access (user_id, module, can_write) values ('${UID.member}', '/chairman/decisions', true)
+    on conflict (user_id, module) do update set can_write = true`) // 0054: 새 프로필에는 트리거가 이미 붙였다
   // 화면이 보낸 결재선(«위조» 한 칸)은 트리거가 버리고 새로 적어야 한다.
   const draft = (tpl: string, form: string) =>
     `insert into decisions (decision_id, business_id, title, template_key, form, attachment_url, approval_line)
@@ -2628,6 +2630,10 @@ async function subtreeRls(db: Db) {
   const auditBase = (await db.query<{ n: number }>(
     `select count(*)::int as n from audit_log where action = 'permission_change' and entity_id = '${H.lead}'`,
   )).rows[0].n
+  // 0047: 회수는 모듈 줄을 줄마다 감사하며 지운다. 0054부터 새 직원에게는 «결재 올리기» 줄이 붙어 있다 — 그만큼 더한다.
+  const moduleRows = (await db.query<{ n: number }>(
+    `select count(*)::int as n from user_module_access where user_id = '${H.lead}'`,
+  )).rows[0].n
   const succession = `
     select (select reports_to::text from user_profiles where user_id = '${H.staff}') as staff_boss,
            (select reports_to::text from user_profiles where user_id = '${H.peer}')  as peer_boss,
@@ -2637,7 +2643,7 @@ async function subtreeRls(db: Db) {
   assert.deepEqual(
     await rows(UID.chairman, succession,
       `update user_profiles set revoked_at = now(), status = 'left' where user_id = '${H.lead}'`),
-    [{ staff_boss: H.exec, peer_boss: H.exec, team_lead: H.exec, audits: auditBase + 1 }],
+    [{ staff_boss: H.exec, peer_boss: H.exec, team_lead: H.exec, audits: auditBase + 1 + moduleRows }],
     '0026: 팀장을 회수해도 아래 사람과 팀장 자리가 상위로 올라가지 않는다 (f)',
   )
   // 올릴 상사가 없으면 트리를 끊지 않고 그대로 둔다(0026 5절의 명시적 판단).
@@ -3950,6 +3956,8 @@ const FG = {
 async function financeGrants() {
   const db = new PGlite({ extensions: { pg_trgm } })
   await applyAll(db)
+  // 0054의 새 직원 «결재 올리기» 트리거는 여기서 끈다 — 이 검사는 재무 · 문서 줄의 개수를 그대로 잰다. 0054는 approvalStaff()가 잰다.
+  await db.exec(`alter table user_profiles disable trigger user_profiles_draft_grant`)
   const ledger = await loadMockLedger()
   await db.exec(`delete from accounts where source = 'manual'`)
   await bulk(db, 'accounts', ledger.accounts, ['business_id', 'account_code', 'name', 'category', 'section', 'cash_flow', 'source', 'fetched_at', 'closed'])
@@ -4172,6 +4180,8 @@ const DG = {
 async function documentGrants() {
   const db = new PGlite({ extensions: { pg_trgm } })
   await applyAll(db)
+  // 0054의 새 직원 «결재 올리기» 트리거는 여기서 끈다 — 이 검사는 재무 · 문서 줄의 개수를 그대로 잰다. 0054는 approvalStaff()가 잰다.
+  await db.exec(`alter table user_profiles disable trigger user_profiles_draft_grant`)
   await db.exec(`
     grant usage on schema public, auth to authenticated, anon;
     grant select, insert, update, delete on all tables in schema public to authenticated;
@@ -4441,6 +4451,175 @@ async function staffTerms() {
   await db.close()
 }
 
+/**
+ * 0054 첫 직원 결재 — 대표는 팀장 칸에 서지 않는다 · 비승인권자 insert는 늘 Open · 대표는 «기록 완료»를 읽는다 ·
+ * 새 직원(가입 · 재초대)에게 «결재 올리기» 한 줄. dummy 거울(lib/approval-line.ts pickApprovalLead · approvalLine)이
+ * DB와 같은 답을 내는지도 같이 잰다.
+ */
+const AS = {
+  chair: '00000000-0000-0000-0000-0000000054a1',
+  ceo: '00000000-0000-0000-0000-0000000054a2', // DY BusinessCEO — 승인권자
+  lead: '00000000-0000-0000-0000-0000000054a3', // DY TeamLead — 팀장이 대표인 팀의 직원이 reports_to로 고른다
+  req: '00000000-0000-0000-0000-0000000054a4', // 김병훈 자리 — Member · 경영지원 · 상사 = 대표 · 팀장 공석
+  orphan: '00000000-0000-0000-0000-0000000054a5', // 상사 없음(조직도에 안 매달림)
+  sub: '00000000-0000-0000-0000-0000000054a6', // 팀장 = 대표, 상사 = lead
+  agent: '00000000-0000-0000-0000-0000000054a7',
+  hire: '00000000-0000-0000-0000-0000000054a8', // 초대로 가입하는 새 직원
+}
+
+async function approvalStaff() {
+  const db = new PGlite({ extensions: { pg_trgm } })
+  await applyAll(db)
+  await db.exec(`
+    grant usage on schema public, auth to authenticated, anon;
+    grant select, insert, update, delete on all tables in schema public to authenticated;
+    grant usage, select on all sequences in schema public to authenticated;
+    insert into auth.users values ('${AS.chair}', 'a1@x'), ('${AS.ceo}', 'a2@x'), ('${AS.lead}', 'a3@x'), ('${AS.req}', 'a4@x'),
+      ('${AS.orphan}', 'a5@x'), ('${AS.sub}', 'a6@x'), ('${AS.agent}', 'a7@x');
+    insert into teams (team_id, business_id, name, name_en, lead_user_id) values ('team_54', 'biz_dy', '대표 직할', 'Direct', null);
+    insert into user_profiles (user_id, role, display_name, max_security_class, team_id) values
+      ('${AS.chair}', 'Chairman', 'ch', 'Vault', null),
+      ('${AS.ceo}', 'BusinessCEO', 'DY 대표이사', 'Restricted', null),
+      ('${AS.lead}', 'TeamLead', '팀장', 'Normal', null),
+      ('${AS.req}', 'Member', '김병훈', 'Normal', 'team_dy_support'),
+      ('${AS.orphan}', 'Member', '떠돌이', 'Normal', null),
+      ('${AS.sub}', 'Member', '직할 직원', 'Normal', 'team_54'),
+      ('${AS.agent}', 'AIAgent', 'ai', 'Restricted', null);
+    update teams set lead_user_id = '${AS.chair}' where team_id = 'team_54';
+    update teams set lead_user_id = null where team_id = 'team_dy_support';
+    update user_profiles set reports_to = '${AS.chair}' where user_id in ('${AS.ceo}', '${AS.lead}', '${AS.req}');
+    update user_profiles set reports_to = '${AS.lead}' where user_id = '${AS.sub}';
+    insert into user_business_access values ('${AS.ceo}', 'biz_dy'), ('${AS.lead}', 'biz_dy'), ('${AS.req}', 'biz_dy'),
+      ('${AS.orphan}', 'biz_dy'), ('${AS.sub}', 'biz_dy');
+  `)
+  const owner = async <T,>(sql: string) => (await db.query<T>(sql)).rows
+  const as = async <T,>(uid: string, sql: string, setup = '') => {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
+    try {
+      if (setup) await db.exec(setup)
+      return (await db.query<T>(sql)).rows
+    } finally {
+      await db.exec('rollback')
+    }
+  }
+  const commitAs = async (uid: string, sql: string) => {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
+    try {
+      await db.exec(sql)
+      await db.exec('commit')
+    } catch (e) {
+      await db.exec('rollback')
+      throw e
+    }
+  }
+
+  // ── 4절: 새 프로필에 «결재 올리기» — 사람만, 회장 · 시스템 계정은 없음 ──
+  const drafts = await owner<{ u: string }>(`select user_id::text as u from user_module_access
+     where module = '/chairman/decisions' and can_write and not can_approve order by 1`)
+  assert.deepEqual(drafts.map((r) => r.u), [AS.ceo, AS.lead, AS.req, AS.orphan, AS.sub].sort(),
+    '0054: 새 프로필 «결재 올리기»가 사람(회장 · AIAgent 제외) 전원에게 붙지 않았다')
+  // 회장이 끈 줄(토글 = 삭제)은 다른 수정으로 되살아나지 않는다.
+  await owner(`delete from user_module_access where user_id = '${AS.orphan}' and module = '/chairman/decisions'`)
+  await owner(`update user_profiles set display_name = '떠돌이2', role = 'TeamLead' where user_id = '${AS.orphan}'`)
+  await owner(`update user_profiles set role = 'Member' where user_id = '${AS.orphan}'`)
+  assert.equal((await owner(`select 1 from user_module_access where user_id = '${AS.orphan}'`)).length, 0,
+    '0054: 회장이 끈 «결재 올리기»가 프로필 수정으로 되살아난다')
+  await owner(`insert into user_module_access (user_id, module, can_write) values ('${AS.orphan}', '/chairman/decisions', true)`)
+
+  // 초대 → 가입(auth.users insert → 0011 → apply_user_invitation → user_profiles insert) 경로에서도 붙는다.
+  await commitAs(AS.chair, `insert into user_invitations (email, role, display_name, invited_by, reports_to, max_security_class, business_ids, team_id)
+    values ('hire@x', 'Member', '새 직원', '${AS.chair}', '${AS.chair}', 'Normal', '{biz_dy}', 'team_dy_support')`)
+  await owner(`insert into auth.users values ('${AS.hire}', 'hire@x')`)
+  assert.deepEqual(await owner(`select module, can_write, can_approve from user_module_access where user_id = '${AS.hire}'`),
+    [{ module: '/chairman/decisions', can_write: true, can_approve: false }], '0054: 초대로 가입한 직원에게 «결재 올리기»가 안 붙는다')
+  // 회수(0047이 줄 전부 삭제) → 되살림(재초대)이면 다시 붙는다.
+  await owner(`update user_profiles set revoked_at = now(), status = 'left' where user_id = '${AS.hire}'`)
+  assert.equal((await owner(`select 1 from user_module_access where user_id = '${AS.hire}'`)).length, 0, '0054 전제: 회수가 모듈 줄을 지우지 않았다(0047)')
+  await owner(`update user_profiles set revoked_at = null, status = 'active' where user_id = '${AS.hire}'`)
+  assert.equal((await owner(`select 1 from user_module_access where user_id = '${AS.hire}' and module = '/chairman/decisions'`)).length, 1,
+    '0054: 회수에서 되살아난 직원에게 «결재 올리기»가 다시 안 붙는다')
+  // 붙인 줄로 실제로 결재가 올라간다(회사 범위 = has_business).
+  const leave = (biz: string) => `insert into decisions (decision_id, business_id, title, template_key, form, created_by)
+     values ('dec_54h', '${biz}', '휴가', 'leave', '{"starts_on":"2026-10-07","ends_on":"2026-10-08"}', '${AS.hire}');`
+  assert.equal((await as(AS.hire, `select 1 from decisions where decision_id = 'dec_54h'`, leave('biz_dy'))).length, 1,
+    '0054: 자동으로 붙은 «결재 올리기»로 결재가 안 올라간다')
+  await assert.rejects(as(AS.hire, 'select 1', leave('biz_vana')), /row-level security/,
+    '0054: «결재 올리기»가 회사 범위 밖(VANA) 결재까지 연다')
+
+  // ── 1절: 대표는 팀장 칸에 서지 않는다 · dummy 거울과 같은 답 ──
+  const people = await owner<{ user_id: string; display_name: string; role: Role; team_id: string | null; reports_to: string | null; revoked_at: string | null; status: string }>(
+    `select user_id::text, display_name, role::text as role, team_id, reports_to::text, revoked_at::text, status from user_profiles`)
+  const teams = await owner<{ team_id: string; lead_user_id: string | null }>(`select team_id, lead_user_id::text from teams`)
+  const cases: [string, { user_id: string; via: string } | null][] = [
+    [AS.req, null], [AS.orphan, null], [AS.sub, { user_id: AS.lead, via: 'reports_to' }], [AS.lead, null],
+  ]
+  for (const [who, want] of cases) {
+    const got = await as<{ user_id: string; via: string }>(who, `select user_id::text, via from my_approval_lead()`)
+    assert.deepEqual(got.map((r) => ({ user_id: r.user_id, via: r.via })), want ? [want] : [],
+      `0054: my_approval_lead()가 대표를 팀장 칸에 세우거나 다른 사람을 고른다(${who})`)
+    const mirror = pickApprovalLead(who, people, teams)
+    assert.deepEqual(mirror ? { user_id: mirror.user_id, via: mirror.via } : null, want,
+      `0054: dummy 거울(pickApprovalLead)이 DB와 다른 팀장을 고른다(${who})`)
+  }
+
+  // ── 400만 / 600만 — 팀장 건너뜀, 기준 미만은 «기록 완료», 이상은 대표 칸 Open ──
+  const expense = (id: string, by: string, amount: string, extra = '') =>
+    `insert into decisions (decision_id, business_id, title, template_key, form, attachment_url, created_by${extra ? ', status, decided_at, decided_by, decided_by_kind' : ''})
+       values ('${id}', 'biz_dy', '지출 ${id}', 'expense', '{"amount":"${amount}","purpose":"장비","spent_on":"2026-10-06"}'::jsonb, 'https://x/a', '${by}'${extra});`
+  await commitAs(AS.req, expense('dec_54a', AS.req, '4,000,000'))
+  await commitAs(AS.req, expense('dec_54b', AS.req, '6000000'))
+  await commitAs(AS.orphan, expense('dec_54c', AS.orphan, '4000000'))
+  type Step = { step: string; user_id: string | null; name: string; why: string }
+  type Row = { status: string; kind: string | null; lead: string; req: boolean; line: Step[] }
+  const read = `select status::text as status, decided_by_kind as kind, lead_status as lead, chairman_required as req, approval_line as line from decisions where decision_id = `
+  const [a] = await owner<Row>(`${read}'dec_54a'`)
+  assert.deepEqual([a.status, a.kind, a.lead, a.req], ['Approved', 'rule', 'skipped', false], '0054: 상사가 대표인 직원의 400만 지출이 «기록 완료»가 아니다')
+  assert.deepEqual(a.line[0], { step: 'lead', user_id: null, name: '—', why: '팀장 결재 단계 없음' }, '0054: 대표가 팀장 칸에 섰다(또는 빈 칸 문장이 다르다)')
+  assert.ok(!JSON.stringify(a.line).includes('회장'), '0054: 결재선에 «회장»이 적혔다')
+  const [b] = await owner<Row>(`${read}'dec_54b'`)
+  assert.deepEqual([b.status, b.kind, b.lead, b.req], ['Open', null, 'skipped', true], '0054: 600만 지출이 대표 칸 Open(«대기»)이 아니다')
+  assert.deepEqual(b.line.map((s) => s.step), ['lead', 'rule', 'chairman'], '0054: 600만 지출의 결재선 단계가 다르다')
+  assert.equal(b.line[2].user_id, AS.chair, '0054: 대표 칸의 사람이 대표가 아니다')
+  // 미리보기(lib/approval-line.ts)가 트리거와 같은 결재선 — 빈 팀장 칸 문장까지.
+  const [tpl] = await owner<ApprovalTemplate>(`select * from approval_templates where template_key = 'expense'`)
+  const tplN = { ...tpl, chairman_over: tpl.chairman_over === null ? null : Number(tpl.chairman_over) }
+  const previews: [Row, string][] = [[a, '4,000,000'], [b, '6000000']]
+  for (const [row, amount] of previews) {
+    assert.deepEqual(approvalLine(tplN, { amount, purpose: '장비', spent_on: '2026-10-06' }, null).map((s) => [s.step, s.why]),
+      row.line.map((s) => [s.step, s.why]), `0054: 빈 팀장 칸 미리보기와 트리거가 갈라졌다(${amount})`)
+  }
+  // 대표가 읽는다 — subtree(상사 = 대표)로도, 조직도 밖 사람의 규칙 종결(3절)도.
+  const chairSees = await as<{ id: string }>(AS.chair, `select decision_id as id from decisions where decision_id in ('dec_54a', 'dec_54b', 'dec_54c') order by 1`)
+  assert.deepEqual(chairSees.map((r) => r.id), ['dec_54a', 'dec_54b', 'dec_54c'], '0054: 대표가 팀장 단계를 건너뛴 결재(«기록 완료» 포함)를 못 본다')
+  // 3절이 넓히지 않는다: 같은 회사 동료는 여전히 남의 결재를 못 본다(0026 subtree).
+  assert.deepEqual(await as(AS.sub, `select 1 from decisions where decision_id in ('dec_54a', 'dec_54b', 'dec_54c')`), [], '0054: 동료가 남의 결재를 본다')
+
+  // ── 2절: 비승인권자의 insert는 늘 Open · decided_* null(양식 없음도) ──
+  const forged = (id: string, by: string) =>
+    `insert into decisions (decision_id, business_id, title, created_by, status, decided_at, decided_by, decided_by_kind)
+       values ('${id}', 'biz_dy', '몰래 승인', '${by}', 'Approved', now(), '${AS.chair}', 'chairman');`
+  type Closed = { status: string; at: string | null; by: string | null; kind: string | null }
+  const closedOf = (id: string) => `select status::text as status, decided_at::text as at, decided_by::text as by, decided_by_kind as kind from decisions where decision_id = '${id}'`
+  assert.deepEqual(await as<Closed>(AS.req, closedOf('dec_54f'), forged('dec_54f', AS.req)),
+    [{ status: 'Open', at: null, by: null, kind: null }], '0054: 직원이 양식 없는 결재를 «승인»으로 넣는다')
+  assert.deepEqual((await as<Closed>(AS.req, closedOf('dec_54g'), expense('dec_54g', AS.req, '100', `, 'Rejected', now(), '${AS.chair}', 'chairman'`))).map((x) => [x.status, x.by, x.kind]),
+    [['Approved', null, 'rule']], '0054: 양식 결재의 규칙 종결이 화면이 보낸 status · decided_*에 밀렸다')
+  // 승인권자(CEO · 대표)와 세션 없는 insert(시드 · 이관)는 예전 그대로다.
+  assert.deepEqual((await as<Closed>(AS.ceo, closedOf('dec_54k'), forged('dec_54k', AS.ceo))).map((r) => [r.status, r.kind]),
+    [['Approved', 'chairman']], '0054: CEO(승인권자)가 넣는 양식 없는 결정이 Open으로 바뀌었다(회귀)')
+  assert.deepEqual((await as<Closed>(AS.chair, closedOf('dec_54m'), forged('dec_54m', AS.chair))).map((r) => r.status),
+    ['Approved'], '0054: 대표가 넣는 결정이 Open으로 바뀌었다(회귀)')
+  await owner(forged('dec_54s', AS.req))
+  assert.deepEqual((await owner<Closed>(closedOf('dec_54s'))).map((r) => r.status), ['Approved'], '0054: 세션 없는 insert(시드 · 이관)가 Open으로 바뀌었다(회귀)')
+
+  // ── 카탈로그: force 새로 없음 · 트리거 함수는 아무도 못 부른다 ──
+  assert.deepEqual(await owner(`select relname, relforcerowsecurity as f from pg_class where relname in ('decisions', 'user_module_access', 'user_profiles') order by 1`),
+    [{ relname: 'decisions', f: false }, { relname: 'user_module_access', f: false }, { relname: 'user_profiles', f: false }], '0054: force가 새로 걸렸다(0035 함정)')
+  assert.deepEqual(await owner(`select has_function_privilege('authenticated', 'user_profiles_draft_grant()', 'execute') as a,
+      has_function_privilege('anon', 'user_profiles_draft_grant()', 'execute') as b`), [{ a: false, b: false }], '0054: 트리거 함수가 RPC로 열렸다')
+  await db.close()
+}
+
 async function main() {
   const db = new PGlite({ extensions: { pg_trgm } })
   const files = await applyAll(db)
@@ -4464,8 +4643,9 @@ async function main() {
   await financeGrants()
   await documentGrants()
   await staffTerms()
+  await approvalStaff()
   console.log(
-    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단), 0048 문서 모듈 권한(사람 × 회사 · 문서 · 폴더 쓰기 · 줄 없는 팀장 거부 · 회사 접근과 줄 둘 다 · 열람 등급 위 insert/update 차단 · 등록자는 본인 · 고치기 · 지우기는 자기 것만(회장 전부) · 주인 칸은 회장만 · 폴더는 만든 사람만 · 시스템 계정 불변 · 옛 /core/search 회귀 · 회수 감사 · hard delete 닫힘), 0049 직원 화면 용어(결재선 · 취합 제목 «회장»→«대표» 백필 — 사람 · 단계 · updated_at 그대로 · 얼림 재가동 · 새 결재선 · 감사 메모도 «대표»)`,
+    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단), 0048 문서 모듈 권한(사람 × 회사 · 문서 · 폴더 쓰기 · 줄 없는 팀장 거부 · 회사 접근과 줄 둘 다 · 열람 등급 위 insert/update 차단 · 등록자는 본인 · 고치기 · 지우기는 자기 것만(회장 전부) · 주인 칸은 회장만 · 폴더는 만든 사람만 · 시스템 계정 불변 · 옛 /core/search 회귀 · 회수 감사 · hard delete 닫힘), 0049 직원 화면 용어(결재선 · 취합 제목 «회장»→«대표» 백필 — 사람 · 단계 · updated_at 그대로 · 얼림 재가동 · 새 결재선 · 감사 메모도 «대표»), 0054 첫 직원 결재(대표는 팀장 칸에 서지 않음 · 400만 «기록 완료» · 600만 대표 칸 Open · 대표 열람 · 비승인권자 insert는 Open · 새 직원/재초대 «결재 올리기» · dummy 거울)`,
   )
 }
 
