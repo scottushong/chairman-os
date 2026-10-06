@@ -2,7 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 
-import { missingFields } from '@/lib/approval-line'
+import { AMOUNT_INVALID_MESSAGE, amountInvalid, missingFields } from '@/lib/approval-line'
 import { currentUser } from '@/lib/auth/session'
 import { boss } from '@/lib/boss'
 import { getRepository } from '@/lib/repository'
@@ -69,6 +69,8 @@ export async function submitApprovalForm(input: {
     const labels = template.fields.filter((f) => missing.includes(f.key)).map((f) => f.label_ko)
     return { error: `필수 항목이 비었습니다: ${labels.join(', ')}` }
   }
+  // 0054 리뷰 C1 — 대표 기준 금액이 있는 양식은 금액이 숫자 모양이어야 한다. 판정은 트리거가 한 번 더 한다.
+  if (amountInvalid(template, form)) return { error: AMOUNT_INVALID_MESSAGE }
   const badUrl = template.fields.find((f) => f.type === 'url' && form[f.key] && !isUrl(form[f.key]))
   if (badUrl) return { error: `${badUrl.label_ko}은(는) https:// 로 시작하는 주소로 넣으세요.` }
   // 옛 설정(0038 시드 — 첨부 필수)이 남아 있으면 DB가 거부한다. 첨부 칸이 화면에 없으니 직원이 고칠 수 없다 —
@@ -101,6 +103,7 @@ export async function submitApprovalForm(input: {
     console.error('[submitApprovalForm]', e)
     const message = e instanceof Error ? e.message : ''
     if (/approval_form_missing/.test(message)) return { error: '필수 항목이 비었습니다.' }
+    if (/approval_amount_invalid/.test(message)) return { error: AMOUNT_INVALID_MESSAGE }
     if (/approval_attachment_missing/.test(message)) {
       return { error: `${template.name_ko} 양식 설정이 아직 바뀌지 않았습니다. ${boss(user.role)}에게 알려 주세요.` }
     }

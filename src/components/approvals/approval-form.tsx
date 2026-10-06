@@ -5,7 +5,7 @@ import { useMemo, useState, useTransition } from 'react'
 
 import { submitApprovalForm } from '@/app/actions/approval-form'
 import { StepHeader, StepNav, useMobileSteps } from '@/components/ui/mobile-steps'
-import { approvalLine, missingFields } from '@/lib/approval-line'
+import { AMOUNT_INVALID_MESSAGE, amountInvalid, approvalLine, missingFields } from '@/lib/approval-line'
 import { boss, bossEn, bossText } from '@/lib/boss'
 import { tr, type Lang } from '@/lib/i18n'
 import type { ApprovalLead, ApprovalTemplate, Role } from '@/types'
@@ -50,6 +50,8 @@ export function ApprovalForm({
   const line = useMemo(() => (template ? approvalLine(template, form, lead) : []), [template, form, lead])
   if (!template) return null
   const missing = missingFields(template, form)
+  // 0054 리뷰 C1 — 금액이 숫자 모양이 아니면 미리보기도 «기록 완료»라 말하지 않고, 올리지 못한다.
+  const badAmount = missing.length === 0 && amountInvalid(template, form)
 
   function submit() {
     setError(null)
@@ -189,7 +191,11 @@ export function ApprovalForm({
               </li>
             ))}
           </ol>
-          {line.every((s) => s.step !== 'chairman') ? (
+          {badAmount ? (
+            <p role="alert" className="rounded-md border border-critical/40 bg-raised px-2 py-1.5 text-t11h text-critical">
+              {tr(lang, AMOUNT_INVALID_MESSAGE, 'Write the amount as a number — e.g. 6000000 or 6,000,000')}
+            </p>
+          ) : line.every((s) => s.step !== 'chairman') ? (
             <p className="rounded-md bg-raised px-2 py-1.5 text-t11 text-ink-dim">
               {/* 0042/0054 — 팀장 칸이 비면(대표는 팀장 칸에 서지 않는다) 팀장 단계를 건너뛰고 규칙이 바로 종결한다(decided_by_kind 'rule'). */}
               {line[0]?.user_id
@@ -220,7 +226,7 @@ export function ApprovalForm({
           <button
             type="button"
             onClick={submit}
-            disabled={pending || missing.length > 0}
+            disabled={pending || missing.length > 0 || badAmount}
             className="w-full rounded-lg bg-accent px-3 py-2 text-t13 font-semibold text-white disabled:opacity-40"
           >
             {pending ? tr(lang, '올리는 중…', 'Submitting…') : tr(lang, '결재 올리기', 'Submit')}

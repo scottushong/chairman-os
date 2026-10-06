@@ -20,12 +20,17 @@
 --       팀장 칸이 대표면 reports_to로, reports_to도 대표면 0행 → 팀장 칸이 비어 0042의 «팀장 단계 건너뜀
 --       (lead_status 'skipped')»이 그대로 선다: 기준 미만은 규칙 종결(decided_by_kind 'rule', 화면 «기록 완료»),
 --       기준 이상 · 늘 대표 양식은 대표 칸으로 Open(«대기»).
---   2절 decisions_approval_line() — 0049 본문을 그대로 복사하고 두 군데만 바꾼다:
+--   2절 decisions_approval_line() — 0049 본문을 그대로 복사하고 네 군데를 바꾼다:
 --       (a) INSERT의 Open 강제를 양식 결재만이 아니라 **승인권자(can_approve — Chairman · BusinessCEO)가 아닌 세션의
 --           모든 insert**로 넓힌다. status = 'Open' · decided_at/decided_by/decided_by_kind = null. 비승인권자의 결재가
 --           insert 순간에 닫히는 길은 이 트리거의 규칙 종결 하나뿐이다.
 --           세션이 없는 insert(auth.uid() null — 마이그레이션 · 시드 · SQL 편집기 · 이관)와 lead_bundle(chairman.lead_step)은
 --           예전 그대로 둔다 — 시드(0003)와 검사 시드가 status를 들고 들어온다.
+--       (a') 승인권자 세션이 닫힌 결정을 바로 넣으면 decided_by = auth.uid() · decided_by_kind = 역할(chairman/ceo) ·
+--           decided_at = now()로 덮는다 — CEO가 대표 이름으로 결정을 꾸미지 못하게(리뷰 I2).
+--       (c) 금액 모양 검사 — 대표 기준 금액(chairman_over)이 있는 양식은 금액이 숫자 · 세 자리 쉼표 · 소수 · 끝 «원»
+--           모양이어야 한다. 아니면 approval_amount_invalid(23514). 예전 «숫자만 걸러 읽기»는 «600만»을 600으로 읽어
+--           기준 미만 «기록 완료»로 닫았다 — 0054 뒤 상사가 대표인 직원의 주된 길이라 닫힌 쪽으로 실패한다(리뷰 C1).
 --       (b) 빈 팀장 칸의 문장 '팀장 · 직속 상위가 없음' → '팀장 결재 단계 없음'. 상사가 대표인 사람에게
 --           «직속 상위가 없음»은 거짓이다. 미리보기(lib/approval-line.ts)도 같은 문장으로 바꾼다. 이미 얼린 결재선은
 --           고치지 않는다(0038 — 얼린 값).
@@ -37,13 +42,15 @@
 --       같은 모양(전역 키 한 줄 — 0002가 그렇게 정했다). 올릴 수 있는 회사는 회사 범위(has_business)가 정한다.
 --       가입 경로(0026/0047 apply_user_invitation → user_profiles insert)를 고치지 않고 user_profiles 트리거로 둔다 —
 --       회장이 사람을 직접 넣는 길도 같이 덮고, 500줄짜리 가입 함수를 또 복사하지 않는다.
---       Chairman(can_module이 늘 참) · AIAgent · Integration(사람이 아니다)에는 붙이지 않는다. 이미 줄이 있으면 그대로
---       (on conflict do nothing). **지금 있는 직원에게는 붙이지 않는다(백필 없음)** — 회장이 토글로 정한 상태를 존중한다.
+--       허용 목록(GroupCFO · BusinessCEO · Executive · TeamLead · Member)만 — 회장 · 시스템 계정 · 외부 역할(ExternalExpert ·
+--       Vendor)은 붙이지 않는다(리뷰 I1). 되살림은 회장 세션이거나 회장이 넣거나 승인한 열린 초대일 때만(리뷰 I4 — 0047과 같은 문).
+--       이미 줄이 있으면 그대로(on conflict do nothing). **지금 있는 직원에게는 붙이지 않는다(백필 없음)** — 회장이 토글로 정한 상태를 존중한다.
 --       회장이 끄면(토글 → 줄 삭제) 다시 붙지 않는다 — 이 트리거는 insert · 되살림 순간에만 돈다.
 --       실패해도 가입은 살린다(경고만) — accept_user_invitation(0026)이 예외를 삼키므로, 여기서 던지면 프로필
 --       자체가 안 생기는 장애가 된다(0047 finance_default_apply와 같은 판단).
 --
--- ■ 직원 화면 용어 ■ 이 파일이 DB에 새로 적는 사용자 문구는 '팀장 결재 단계 없음'과 감사 메모뿐이고 «회장»이 없다(0049).
+-- ■ 직원 화면 용어 ■ 이 파일이 DB에 새로 적는 사용자 문구는 '팀장 결재 단계 없음' · 오류 키 approval_amount_invalid(앱이 문장으로
+--   바꾼다)와 감사 메모뿐이고 «회장»이 없다(0049).
 --
 -- ■ ECOUNT(0050~0052)와의 관계 ■ 이 파일은 0050~0052의 어느 객체도 건드리지 않고, 그 셋도 이 파일의 객체를
 --   건드리지 않는다(decisions · user_profiles · user_module_access · my_approval_lead · decisions_approval_line ·
@@ -152,6 +159,12 @@ begin
     new.decided_at := null;
     new.decided_by := null;
     new.decided_by_kind := null;
+  elsif not v_step and auth.uid() is not null and new.status::text <> 'Open' then
+    -- 0054 리뷰 I2 — 승인권자가 닫힌 결정을 바로 넣으면 «누가 정했나»는 그 세션이다. CEO가 decided_by에 대표 id ·
+    -- decided_by_kind 'chairman'을 적어 대표 결정을 꾸미지 못한다(0033 §7 분자 — 대표 의존도가 이 칸을 센다).
+    new.decided_by := auth.uid();
+    new.decided_by_kind := case when auth_role()::text = 'Chairman' then 'chairman' else 'ceo' end;
+    new.decided_at := now();
   end if;
   new.lead_decided_at := null;
   new.lead_decided_by := null;
@@ -196,11 +209,18 @@ begin
       'step', 'lead', 'user_id', null, 'name', '—', 'why', '팀장 결재 단계 없음'));
   end if;
 
-  begin
-    v_amount := nullif(regexp_replace(coalesce(new.form->>'amount', ''), '[^0-9.]', '', 'g'), '')::numeric;
-  exception when others then
+  -- 0054 리뷰 C1 — 금액은 **모양을 먼저 본다**(닫힌 쪽 실패). 숫자 · 세 자리 쉼표 · 소수 · 끝의 «원» · 앞뒤 공백만 받는다.
+  -- 0042/0049는 숫자 아닌 글자를 걸러 읽어 «600만» → 600, «10억» → null, «1.000.000» → 캐스트 실패(null)가 되고
+  -- 기준 미만으로 규칙 종결(«기록 완료»)됐다. 대표 기준 금액이 있는 양식에서 모양이 틀리면 거부한다.
+  -- 미리보기(lib/approval-line.ts AMOUNT_PATTERN)도 같은 정규식이다.
+  if coalesce(new.form->>'amount', '') ~ '^\s*([0-9]+|[0-9]{1,3}(,[0-9]{3})+)(\.[0-9]+)?\s*원?\s*$' then
+    v_amount := regexp_replace(new.form->>'amount', '[^0-9.]', '', 'g')::numeric;
+  else
     v_amount := null;
-  end;
+  end if;
+  if v_tpl.chairman_over is not null and v_amount is null then
+    raise exception 'approval_amount_invalid' using errcode = '23514';
+  end if;
   v_to_chairman := v_tpl.chairman_always
     or (v_tpl.chairman_over is not null and v_amount is not null and v_amount >= v_tpl.chairman_over);
   v_why := case
@@ -248,11 +268,23 @@ create policy decisions_chairman_skipped_read on decisions for select
 create or replace function user_profiles_draft_grant() returns trigger
 language plpgsql security definer set search_path = public as $fn$
 begin
-  if new.revoked_at is not null or new.role::text in ('Chairman', 'AIAgent', 'Integration') then
+  -- 0054 리뷰 I1 — 허용 목록. 회장(can_module이 늘 참) · 시스템 계정 · 외부 역할(ExternalExpert · Vendor — 위임 초대로
+  -- 회장 결재 없이 들어올 수 있다)에는 붙이지 않는다.
+  if new.revoked_at is not null or new.role::text not in ('GroupCFO', 'BusinessCEO', 'Executive', 'TeamLead', 'Member') then
     return null;
   end if;
   -- update는 «회수에서 되살아남»(재초대)만. 다른 update(이름 · 상사 · 역할 변경)로는 붙이지 않는다.
   if tg_op = 'UPDATE' and old.revoked_at is null then
+    return null;
+  end if;
+  -- 0054 리뷰 I4 — 되살림은 회장이 할 때(세션) 또는 회장이 넣거나 승인한 열린 초대로 될 때만 다시 붙인다(0047 재무 기본값과
+  -- 같은 문). 위임 재초대가 회장이 끈 «결재 올리기»를 되살리지 못하게. 처음 생기는 프로필(insert)은 위임 초대도 붙인다.
+  if tg_op = 'UPDATE'
+     and coalesce(auth_role()::text, '') <> 'Chairman'
+     and not exists (
+       select 1 from user_invitations i join auth.users u on lower(u.email) = lower(i.email)
+        where u.id = new.user_id and i.accepted_at is null and i.revoked_at is null and i.chairman_approved_at is not null
+     ) then
     return null;
   end if;
 

@@ -11,12 +11,25 @@ import type { ApprovalLead, ApprovalStep, ApprovalTemplate, Role } from '@/types
  * 이 파일은 dummy 어댑터와 화면이 쓴다.
  */
 
-/** 폼의 금액 칸(key='amount')을 숫자로. '6,000,000' · '6000000원'을 같게 읽는다(트리거와 같은 정규식). */
+/**
+ * 금액 칸이 받는 모양 — 0054 트리거의 정규식과 같은 글자. 숫자 · 세 자리 쉼표 · 소수 · 끝의 «원» · 앞뒤 공백만.
+ * «600만» · «10억» · «1.000.000»은 받지 않는다 — 숫자만 걸러 읽으면 600 · null · 오류가 되어 기준 미만으로 닫혔다(0054 리뷰 C1).
+ */
+export const AMOUNT_PATTERN = /^\s*([0-9]+|[0-9]{1,3}(,[0-9]{3})+)(\.[0-9]+)?\s*원?\s*$/
+
+export const AMOUNT_INVALID_MESSAGE = '금액은 숫자로 적어 주세요 — 예: 6000000 또는 6,000,000'
+
+/** 폼의 금액 칸(key='amount')을 숫자로. '6,000,000' · '6000000원'을 같게 읽는다. 모양이 틀리면 null. */
 export function formAmount(form: Record<string, string>): number | null {
-  const raw = (form.amount ?? '').replace(/[^0-9.]/g, '')
-  if (!raw) return null
-  const n = Number(raw)
+  const raw = form.amount ?? ''
+  if (!AMOUNT_PATTERN.test(raw)) return null
+  const n = Number(raw.replace(/[^0-9.]/g, ''))
   return Number.isFinite(n) ? n : null
+}
+
+/** 대표 기준 금액이 있는 양식인데 금액이 숫자 모양이 아니다 — 트리거의 approval_amount_invalid와 같은 판정(닫힌 쪽 실패). */
+export function amountInvalid(template: ApprovalTemplate, form: Record<string, string>): boolean {
+  return template.chairman_over !== null && formAmount(form) === null
 }
 
 export function toChairman(template: ApprovalTemplate, form: Record<string, string>): boolean {

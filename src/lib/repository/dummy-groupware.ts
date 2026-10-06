@@ -1,4 +1,4 @@
-import { approvalLine, missingFields, pickApprovalLead } from '@/lib/approval-line'
+import { amountInvalid, approvalLine, missingFields, pickApprovalLead } from '@/lib/approval-line'
 import type {
   ApprovalLead,
   ApprovalStep,
@@ -255,6 +255,8 @@ export async function draftApprovalLine(input: {
   const form = input.form ?? {}
   const missing = missingFields(template, form)
   if (missing.length > 0) throw new Error(`approval_form_missing:${missing[0]}`)
+  // 0054 리뷰 C1 — 대표 기준 금액이 있으면 금액은 숫자 모양이어야 한다(트리거와 같은 정규식).
+  if (amountInvalid(template, form)) throw new Error('approval_amount_invalid')
   if (template.attachment_required && !(input.attachment_url ?? '').trim()) {
     throw new Error('approval_attachment_missing')
   }
