@@ -5,12 +5,12 @@ import { bossText } from '@/lib/boss'
 import { DECISION_ACTION_LABEL_KO, type DecisionAuditRecord } from '@/lib/decision-log'
 import { dDay, formatDateTime, formatDDay } from '@/lib/format'
 import {
-  DECISION_STATUS_LABEL_KO,
   WORK_PRIORITY_LABEL_KO,
   type Decision,
   type Role,
   type WorkPriority,
 } from '@/types'
+import { decisionStatusLabel } from '@/lib/decision-status'
 
 /**
  * CH-041 상세 패널 — 내용 · 첨부 · 이력.
@@ -81,7 +81,7 @@ export function ApprovalDetail({
         </div>
         <h2 className="mt-1.5 text-t16 leading-snug font-bold">{bundleTitle(decision.title, viewerRole)}</h2>
         <p className="mt-1 text-t11h text-ink-muted">
-          현재 상태 <span className="text-ink-dim">{DECISION_STATUS_LABEL_KO[decision.status]}</span>
+          현재 상태 <span className="text-ink-dim">{decisionStatusLabel(decision)}</span>
         </p>
       </div>
 
@@ -146,7 +146,16 @@ export function ApprovalDetail({
               {Object.entries(decision.form).map(([k, v]) => (
                 <div key={k} className="contents">
                   <dt className="text-ink-muted">{k}</dt>
-                  <dd className="whitespace-pre-wrap">{v}</dd>
+                  <dd className="whitespace-pre-wrap break-all">
+                    {/* 양식의 «링크»(type url) 값. https만 링크로 연다 — 다른 스킴은 글자로만. */}
+                    {/^https?:\/\//i.test(v) ? (
+                      <a href={v} target="_blank" rel="noreferrer noopener" className="text-accent underline-offset-2 hover:underline">
+                        {v}
+                      </a>
+                    ) : (
+                      v
+                    )}
+                  </dd>
                 </div>
               ))}
             </dl>
@@ -155,7 +164,7 @@ export function ApprovalDetail({
 
         <Field label="첨부">
           {decision.attachment_url ? (
-            // 링크만 있다. 파일 실체는 사내 스토리지에 있고 Chairman OS는 그 주소만 안다(0006).
+            // 링크만 있다(0006). 2026-10-06부터 양식에는 첨부 칸이 없다 — 옛 결재만 이 값을 갖는다.
             <a
               href={decision.attachment_url}
               target="_blank"
@@ -163,7 +172,7 @@ export function ApprovalDetail({
               className="inline-flex items-center gap-1.5 rounded-md border border-line bg-raised px-2.5 py-1.5 text-t12 text-ink-dim transition-colors hover:border-accent hover:text-ink"
             >
               <Icon name="file-text" className="size-3.5" />
-              사내 스토리지에서 열기
+              첨부 링크 열기
             </a>
           ) : (
             <p className="text-t12 text-ink-muted">첨부된 문서가 없습니다.</p>

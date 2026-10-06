@@ -15,11 +15,11 @@ import { businessName } from '@/lib/lookup'
 import { firstParam, oneOf, withParams } from '@/lib/query'
 import { getRepository } from '@/lib/repository'
 import {
-  DECISION_STATUS_LABEL_KO,
   WORK_PRIORITY_LABEL_KO,
   type Decision,
   type WorkPriority,
 } from '@/types'
+import { decisionStatusLabel } from '@/lib/decision-status'
 
 /**
  * CH-041 전자결재.
@@ -188,7 +188,7 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
                       >
                         {d.status === 'Open'
                           ? formatDDay(d.deadline)
-                          : DECISION_STATUS_LABEL_KO[d.status]}
+                          : decisionStatusLabel(d)}
                       </span>
                     </span>
                     <span className="mt-1 block text-t13 leading-snug font-semibold">

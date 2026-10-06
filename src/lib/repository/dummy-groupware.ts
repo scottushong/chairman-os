@@ -127,26 +127,30 @@ export async function listNoticeReads(id: number): Promise<NoticeRead[]> {
 
 /* ------------------------------------------------------------------ 결재 양식 · 결재선 */
 
-// 0038 시드와 같은 값. 바꾸면 둘을 같이 바꾼다.
+// 0038 시드에서 2026-10-06 권장 설정(/settings/approvals)으로 바꾼 값 — 첨부(사내 스토리지) 칸 없음 ·
+// 지출 · 구매에 «구입처»(필수) · «링크»(선택) · 구매 대표 기준 500만원. live는 회장이 설정 화면에서 같은 값으로 저장한다.
 const templates: ApprovalTemplate[] = [
   {
-    template_key: 'expense', name_ko: '지출', name_en: 'Expense', attachment_required: true,
+    template_key: 'expense', name_ko: '지출', name_en: 'Expense', attachment_required: false,
     chairman_always: false, chairman_over: 5_000_000, sort_order: 10,
     fields: [
       { key: 'amount', label_ko: '금액(원)', label_en: 'Amount (KRW)', type: 'money', required: true },
       { key: 'purpose', label_ko: '지출 목적', label_en: 'Purpose', type: 'textarea', required: true },
       { key: 'spent_on', label_ko: '지출일', label_en: 'Date', type: 'date', required: true },
+      { key: 'vendor', label_ko: '구입처', label_en: 'Where bought', type: 'text', required: true },
+      { key: 'link', label_ko: '링크', label_en: 'Link', type: 'url', required: false },
     ],
   },
   {
-    template_key: 'purchase', name_ko: '구매', name_en: 'Purchase', attachment_required: true,
-    chairman_always: false, chairman_over: 10_000_000, sort_order: 20,
+    template_key: 'purchase', name_ko: '구매', name_en: 'Purchase', attachment_required: false,
+    chairman_always: false, chairman_over: 5_000_000, sort_order: 20,
     fields: [
       { key: 'item', label_ko: '품목', label_en: 'Item', type: 'text', required: true },
-      { key: 'vendor', label_ko: '거래처', label_en: 'Vendor', type: 'text', required: true },
+      { key: 'vendor', label_ko: '구입처', label_en: 'Where bought', type: 'text', required: true },
       { key: 'quantity', label_ko: '수량', label_en: 'Quantity', type: 'number', required: true },
       { key: 'amount', label_ko: '금액(원)', label_en: 'Amount (KRW)', type: 'money', required: true },
       { key: 'needed_on', label_ko: '필요일', label_en: 'Needed by', type: 'date', required: false },
+      { key: 'link', label_ko: '링크', label_en: 'Link', type: 'url', required: false },
     ],
   },
   {
@@ -159,7 +163,7 @@ const templates: ApprovalTemplate[] = [
     ],
   },
   {
-    template_key: 'contract', name_ko: '계약', name_en: 'Contract', attachment_required: true,
+    template_key: 'contract', name_ko: '계약', name_en: 'Contract', attachment_required: false,
     chairman_always: true, chairman_over: null, sort_order: 40,
     fields: [
       { key: 'counterparty', label_ko: '계약 상대', label_en: 'Counterparty', type: 'text', required: true },
@@ -169,7 +173,7 @@ const templates: ApprovalTemplate[] = [
     ],
   },
   {
-    template_key: 'hiring', name_ko: '채용', name_en: 'Hiring', attachment_required: true,
+    template_key: 'hiring', name_ko: '채용', name_en: 'Hiring', attachment_required: false,
     chairman_always: true, chairman_over: null, sort_order: 50,
     fields: [
       { key: 'position', label_ko: '직무', label_en: 'Position', type: 'text', required: true },
@@ -182,6 +186,21 @@ const templates: ApprovalTemplate[] = [
 
 export async function listApprovalTemplates(): Promise<ApprovalTemplate[]> {
   return templates.map((t) => ({ ...t, fields: t.fields.map((f) => ({ ...f })) }))
+}
+
+/** 0038 approval_templates_write의 거울 — Chairman만. 첨부 필수는 늘 끈다(live와 같다). */
+export async function updateApprovalTemplate(
+  key: ApprovalTemplate['template_key'],
+  patch: Pick<ApprovalTemplate, 'fields' | 'chairman_always' | 'chairman_over'>,
+  actor: AuditActor,
+): Promise<void> {
+  if (actor.role !== 'Chairman') throw new Error('row-level security: approval_templates')
+  const t = templates.find((x) => x.template_key === key)
+  if (!t) throw new Error('approval_template_unknown')
+  t.fields = patch.fields.map((f) => ({ ...f }))
+  t.chairman_always = patch.chairman_always
+  t.chairman_over = patch.chairman_over
+  t.attachment_required = false
 }
 
 /** 0038 my_approval_lead()와 같은 판정 — 팀장(공석·본인·떠남이면 reports_to). */

@@ -193,7 +193,7 @@ export function DraftDecision({ businesses }: { businesses: Business[] }) {
 
         <div className={`contents ${steps.only(2)}`}>
           <label className="block md:col-span-2">
-            <span className="text-t11 text-ink-dim">첨부 — 사내 스토리지 링크 (선택)</span>
+            <span className="text-t11 text-ink-dim">첨부 링크 (선택)</span>
             <input
               value={attachmentUrl}
               onChange={(e) => setAttachmentUrl(e.target.value)}

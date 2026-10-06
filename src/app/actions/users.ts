@@ -4,7 +4,7 @@ import { revalidatePath } from 'next/cache'
 
 import { currentUser } from '@/lib/auth/session'
 import { bossText } from '@/lib/boss'
-import { moduleKey } from '@/lib/module-grants'
+import { DRAFT_DECISION_MODULE, moduleKey } from '@/lib/module-grants'
 import { DUPLICATE_INVITATION, getRepository } from '@/lib/repository'
 import {
   INVITABLE_ROLE,
@@ -360,6 +360,32 @@ export async function setModuleGrant(input: {
   revalidatePath('/finance', 'layout')
   // 0048. 문서 화면의 «링크 등록» · «+ 폴더»도 세션 값으로 선다.
   revalidatePath('/documents', 'layout')
+  return {}
+}
+
+/**
+ * «결재 올리기» — 0002 decisions_create의 can_module('/chairman/decisions', true). 회사 범위(has_business)와 함께 걸린다.
+ * 2026-10-06 첫 직원이 결재 양식을 하나도 못 올렸다: 이 줄을 켤 화면이 없었다. 회사마다가 아니라 한 줄(전역 키)이다 —
+ * 0002가 그렇게 정했다. 올릴 수 있는 회사는 회사 범위가 정한다.
+ */
+export async function setDraftGrant(input: { userId: unknown; on: unknown }): Promise<RevokeUserState> {
+  const userId = typeof input.userId === 'string' ? input.userId.trim() : ''
+  if (!userId) return { error: '대상을 알 수 없습니다.' }
+  if (typeof input.on !== 'boolean') return { error: '권한 값을 읽을 수 없습니다.' }
+  const user = await currentUser()
+  if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  try {
+    const repo = await getRepository()
+    await repo.setModuleGrant(
+      userId,
+      { module: DRAFT_DECISION_MODULE, can_write: input.on, can_approve: false },
+      { user_id: user.user_id, role: user.role },
+    )
+  } catch (e) {
+    console.error('[setDraftGrant]', e)
+    return { error: denialMessage(e, '모듈 권한을 바꿀 권한이 없습니다. (대표만 가능합니다)', user.role) }
+  }
+  revalidatePath('/settings/users')
   return {}
 }
 

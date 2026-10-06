@@ -546,6 +546,7 @@ export const dummyRepository: ChairmanRepository = {
   markNoticeRead: groupware.markNoticeRead,
   listNoticeReads: groupware.listNoticeReads,
   listApprovalTemplates: groupware.listApprovalTemplates,
+  updateApprovalTemplate: groupware.updateApprovalTemplate,
   myApprovalLead: groupware.myApprovalLead,
   listDocFolders: groupware.listDocFolders,
   saveDocFolder: groupware.saveDocFolder,

@@ -2216,3 +2216,11 @@ B-4가 찾은 결함 하나를 고쳤다. **리뷰 루프가 없는 작업이고
   `select l.statement_id, l.business_id, s.business_id from official_statement_lines l join official_statements s on s.id = l.statement_id where l.business_id <> s.business_id;`
 - **staging 테스트 데이터**(biz_dy): ECOUNT 계정 12개(ECOUNT-PL 포함) · 1010 이름 «현금» · 공식 재무제표 #1(대체됨) · #2(2024, ecount_excel) · 월별 전표 M2401-000007 ~ M2303-000014 · finance_imports 10건 · audit_log 22~51. staging이라 지우지 않는다.
 - **Hook A1** — 쿼리를 `docs/onboarding/hook-a1.sql`로. 결과 대기.
+
+## 2026-10-06 블록 — 첫 직원(김병훈) 결재 피드백
+
+- **결재가 안 올라간 원인 = «결재 올리기» 모듈 줄 없음.** 0002 `decisions_create`가 `can_module('/chairman/decisions', true)`를 보는데, 이 줄을 켜는 화면이 없었다 — 회장 외 모든 직원이 양식 다섯 전부 `42501`. staging에서 같은 조건 계정으로 재현(트랜잭션 rollback 시뮬 + 화면). 결재선(팀장 공석)은 원인이 아니다 — 0042 트리거가 팀장 칸이 비면 건너뛴다. 4/5 양식은 `attachment_required`(사내 스토리지 링크)도 걸려 있었다.
+- **고침(DB 변경 없음):** 사용자 · 권한 패널에 «결재 올리기» 토글(전역 키 한 줄) · `/settings/approvals`(양식 항목 · 회장 기준 금액 · 항상 회장 — 0038 표를 회장이 고친다, 저장 시 첨부 필수는 끈다) · 양식의 첨부(사내 스토리지) 칸 삭제 · 항목 종류 `url`(링크, https 검사는 앱) · 규칙 종결 상태 이름 «기록 완료». 다른 선택지: 마이그레이션으로 시드를 바꾸기(번호 순서 문제 · 회장 지시 «가능하면 DB 변경 없이»로 버림).
+- **DB 변경이 필요한 것 — 쓰지 않고 멈춤(회장 보고).** 상사가 대표 본인이면 `my_approval_lead()`가 대표를 팀장 칸에 세운다 → 500만원 미만도 대표가 «팀장 대기»로 눌러야 한다(회장 규칙 «대표는 열람만»과 다름). 상사를 «없음»으로 바꾸면 «기록 완료»는 되지만 0026 subtree 밖이라 **대표 목록에서 안 보인다**(staging 확인) — 그 우회는 쓰면 안 된다. 제안 0054: lead 후보에서 Chairman 제외(+ 선택: 양식 결재는 모듈 줄 없이 회사 범위만으로 올리기).
+- **staging 리허설 데이터:** 계정 `rehearsal.member@example.com`(리허설 사원 · Member · 경영지원 · 상사 = 회장 · «결재 올리기» 켬), 결재 dec_017~dec_023, `approval_templates` 다섯을 권장 설정(첨부 필수 끔 · 구매 기준 500만 · 지출/구매 «구입처» · «링크»)으로 바꿈. staging이라 지우지 않는다.
+- **dummy 한계:** `next dev --webpack` 복사본에서는 서버 액션이 쓴 dummy 메모리가 다음 화면에 안 보인다(결재 두 건이 같은 id) — 회장 화면 두 건은 staging 행(회장 세션 SQL) + 코드로 확인했다.

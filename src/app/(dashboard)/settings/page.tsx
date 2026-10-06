@@ -258,6 +258,14 @@ export default async function SettingsHubPage() {
                 cta="열기"
               />
             ) : null}
+            {isChairman ? (
+              <Row
+                title="결재 양식 · 규칙"
+                note="양식 다섯의 항목과 회장까지 올라가는 기준 금액."
+                href="/settings/approvals"
+                cta="열기"
+              />
+            ) : null}
             <Row
               title="내 결정 사항"
               note="결재·승인을 기다리는 건. 대시보드 '내 결정 사항' 패널의 전체 화면입니다."

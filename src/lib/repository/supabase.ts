@@ -1310,6 +1310,44 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       }))
     },
 
+    /**
+     * /settings/approvals. 0038 approval_templates_write가 Chairman만 받는다 — 판정은 DB다.
+     * 감사 기록이 먼저다(행 id를 이미 안다). 기록이 안 남으면 고치지 않는다.
+     */
+    async updateApprovalTemplate(key, patch, actor): Promise<void> {
+      const { data: before, error: beforeError } = await sb
+        .from('approval_templates')
+        .select('fields,attachment_required,chairman_always,chairman_over')
+        .eq('template_key', key)
+        .maybeSingle()
+      if (beforeError) throw new Error(`Supabase approval_templates ${beforeError.code ?? '?'}: ${beforeError.message}`)
+      if (!before) throw new Error('approval_template_unknown')
+      const after = {
+        fields: patch.fields,
+        attachment_required: false,
+        chairman_always: patch.chairman_always,
+        chairman_over: patch.chairman_over,
+      }
+      const { error: auditError } = await sb.from('audit_log').insert({
+        action: 'update',
+        entity_table: 'approval_templates',
+        entity_id: key,
+        business_id: null,
+        actor_user_id: actor.user_id,
+        actor_role: actor.role,
+        before,
+        after,
+      })
+      if (auditError) throw new Error(`Supabase audit_log ${auditError.code ?? '?'}: ${auditError.message}`)
+      const { data, error } = await sb
+        .from('approval_templates')
+        .update(after)
+        .eq('template_key', key)
+        .select('template_key')
+        .returns<{ template_key: string }[]>()
+      oneAffectedRow('approval_templates', data, error)
+    },
+
     async myApprovalLead(): Promise<ApprovalLead | null> {
       const { data, error } = await sb.rpc('my_approval_lead')
       if (error) throw new Error(`Supabase my_approval_lead ${error.code ?? '?'}: ${error.message}`)

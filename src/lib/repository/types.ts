@@ -200,6 +200,15 @@ export interface ChairmanRepository {
   /** 블록 2 — 결재 양식 다섯과 결재선 첫 칸(0038 my_approval_lead). */
   listApprovalTemplates(): Promise<ApprovalTemplate[]>
   myApprovalLead(): Promise<ApprovalLead | null>
+  /**
+   * /settings/approvals — 양식 하나의 항목 · 대표 규칙을 고친다. 0038 approval_templates_write가 Chairman만 받는다.
+   * attachment_required는 늘 false로 쓴다 — 사내 스토리지 첨부 칸을 양식에서 뺐다(2026-10-06).
+   */
+  updateApprovalTemplate(
+    key: ApprovalTemplateKey,
+    patch: Pick<ApprovalTemplate, 'fields' | 'chairman_always' | 'chairman_over'>,
+    actor: AuditActor,
+  ): Promise<void>
 
   /**
    * Phase 6-2(0042) 팀장 단계. 팀장 = 얼린 결재선의 첫 칸. 승인하면 규칙 판정 —

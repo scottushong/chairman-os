@@ -47,7 +47,9 @@ export interface NoticeRead {
 export const APPROVAL_TEMPLATE_KEY = ['expense', 'purchase', 'leave', 'contract', 'hiring'] as const
 export type ApprovalTemplateKey = (typeof APPROVAL_TEMPLATE_KEY)[number]
 
-export type TemplateFieldType = 'text' | 'number' | 'money' | 'date' | 'textarea'
+export const TEMPLATE_FIELD_TYPES = ['text', 'number', 'money', 'date', 'textarea', 'url'] as const
+/** 'url'은 2026-10-06 추가(구매·지출의 «링크»). DB는 fields를 jsonb로만 본다 — 형식 검사는 앱(actions/approval-form.ts)이 한다. */
+export type TemplateFieldType = (typeof TEMPLATE_FIELD_TYPES)[number]
 
 export interface TemplateField {
   key: string

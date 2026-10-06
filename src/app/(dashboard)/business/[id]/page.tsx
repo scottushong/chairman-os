@@ -15,7 +15,6 @@ import { isChairman } from '@/lib/boss'
 import { dDay, formatDDay, formatPct, isOverdue } from '@/lib/format'
 import { getRepository } from '@/lib/repository'
 import {
-  DECISION_STATUS_LABEL_KO,
   SEVERITY_LABEL_KO,
   STATUS_LABEL_KO,
   TASK_STATUS_LABEL_KO,
@@ -26,6 +25,7 @@ import {
   type Severity,
   type Task,
 } from '@/types'
+import { decisionStatusLabel } from '@/lib/decision-status'
 
 /**
  * CH-023 회사 상세 + CH-024 전략 좌표.
@@ -332,7 +332,7 @@ function DecisionItem({ decision }: { decision: Decision }) {
             open && dDay(decision.deadline) < 0 ? 'text-critical' : 'text-ink-dim'
           }`}
         >
-          {open ? formatDDay(decision.deadline) : DECISION_STATUS_LABEL_KO[decision.status]}
+          {open ? formatDDay(decision.deadline) : decisionStatusLabel(decision)}
         </span>
       </div>
       <p className="mt-0.5 text-t10h text-ink-muted">

@@ -2,14 +2,14 @@
 
 import { createContext, useContext, useMemo, useState } from 'react'
 
-import { saveTeam, setModuleGrant, updateUserProfile } from '@/app/actions/users'
+import { saveTeam, setDraftGrant, setModuleGrant, updateUserProfile } from '@/app/actions/users'
 import { ProfilePhoto } from '@/components/settings/profile-photo'
 import { ForceLogoutButton } from '@/components/settings/force-logout-button'
 import { RevokeButton } from '@/components/settings/revoke-button'
 import { Icon } from '@/components/ui/icon'
 import { roleLabelFor } from '@/lib/boss'
 import { businessName } from '@/lib/lookup'
-import { businessOfModule, moduleKey } from '@/lib/module-grants'
+import { businessOfModule, hasDraftGrant, moduleKey } from '@/lib/module-grants'
 import {
   INVITABLE_ROLE,
   MODULE_GRANT_OPTIONS,
@@ -825,13 +825,47 @@ function ModuleGrants({
     if (result.error) setError(result.error)
   }
 
+  async function toggleDraft(on: boolean) {
+    setBusy(true)
+    setError(null)
+    const result = await setDraftGrant({ userId: person.user_id, on })
+    setBusy(false)
+    if (result.error) setError(result.error)
+  }
+
+  // 2026-10-06. 회장 외 모든 사람에게 필요한 칸이라 맨 위에 둔다 — 꺼져 있으면 결재 양식을 하나도 못 올린다(0002 decisions_create).
+  const draftOn = hasDraftGrant(person.modules)
+  const draft =
+    person.role === 'Chairman' ? null : (
+      <div className="py-1">
+        <label className="flex min-h-11 items-center gap-1.5 text-t12 font-semibold sm:min-h-0">
+          <input
+            type="checkbox"
+            checked={draftOn}
+            disabled={busy}
+            onChange={(e) => toggleDraft(e.target.checked)}
+            className="size-4 accent-[var(--color-accent)] disabled:opacity-50"
+          />
+          결재 올리기
+          {draftOn ? null : <span className="text-t10 font-normal text-warning">꺼짐 — 결재 양식을 올리지 못합니다</span>}
+        </label>
+        <span className="mt-0.5 block text-t10 leading-relaxed text-ink-muted">
+          전자결재 양식(지출 · 구매 · 휴가 · 계약 · 채용)을 올립니다. 올릴 수 있는 회사는 회사 범위가 정합니다.
+        </span>
+      </div>
+    )
+
   // 0048. 모듈마다 «역할로 이미 되는 사람»이 다르다 — 재무는 회장 · CFO, 문서는 회장만(CFO도 회사마다 켠다).
   const options = MODULE_GRANT_OPTIONS.filter((o) => !o.roleCovers.includes(person.role))
   if (options.length === 0) {
     return (
-      <p className="rounded-lg border border-line-soft px-2.5 py-2 text-t10 leading-relaxed text-ink-muted">
-        모듈 권한 — 전사 역할이라 역할로 이미 전부 할 수 있습니다. 켤 것이 없습니다.
-      </p>
+      <fieldset className="rounded-lg border border-line-soft px-2.5 py-2">
+        <legend className="px-1 text-t11 text-ink-dim">모듈 권한</legend>
+        {draft}
+        <p className="text-t10 leading-relaxed text-ink-muted">
+          {draft ? '그 밖의 모듈은 ' : ''}전사 역할이라 역할로 이미 전부 할 수 있습니다.{draft ? '' : ' 켤 것이 없습니다.'}
+        </p>
+      </fieldset>
     )
   }
   // 전사 역할(GroupCFO)은 user_business_access 줄 없이 전 회사를 본다(0002 has_group_scope) — 회사 목록 전체가 범위다.
@@ -841,6 +875,7 @@ function ModuleGrants({
   return (
     <fieldset className="rounded-lg border border-line-soft px-2.5 py-2">
       <legend className="px-1 text-t11 text-ink-dim">모듈 권한</legend>
+      {draft}
       {options.map((o) => {
         const granted = person.modules
           .map((m) => businessOfModule(o.prefix, m.module))

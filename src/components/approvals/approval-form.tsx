@@ -41,7 +41,6 @@ export function ApprovalForm({
   const [business, setBusiness] = useState(businesses[0]?.id ?? '')
   const [title, setTitle] = useState('')
   const [deadline, setDeadline] = useState(defaultDeadline)
-  const [attachment, setAttachment] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [pending, start] = useTransition()
   // 폰은 ① 양식·기본 ② 항목 ③ 결재선·올리기 세 화면으로 넘긴다(mobile-steps.tsx). 640px 이상은 지금 그대로 한 화면.
@@ -60,7 +59,6 @@ export function ApprovalForm({
         businessId: business,
         title,
         deadline,
-        attachmentUrl: attachment,
         form,
       })
       if (result.error) setError(result.error)
@@ -151,8 +149,9 @@ export function ApprovalForm({
                     />
                   ) : (
                     <input
-                      type={f.type === 'date' ? 'date' : 'text'}
-                      inputMode={f.type === 'money' || f.type === 'number' ? 'numeric' : undefined}
+                      type={f.type === 'date' ? 'date' : f.type === 'url' ? 'url' : 'text'}
+                      inputMode={f.type === 'money' || f.type === 'number' ? 'numeric' : f.type === 'url' ? 'url' : undefined}
+                      placeholder={f.type === 'url' ? 'https://' : undefined}
                       enterKeyHint="next"
                       value={form[f.key] ?? ''}
                       onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
@@ -162,17 +161,6 @@ export function ApprovalForm({
                 </label>
               ))}
 
-              <label className="sm:col-span-2">
-                {label('첨부 (사내 스토리지 링크)', 'Attachment (storage link)', template.attachment_required)}
-                <input
-                  value={attachment}
-                  onChange={(e) => setAttachment(e.target.value)}
-                  placeholder="https://"
-                  inputMode="url"
-                  enterKeyHint="done"
-                  className={input}
-                />
-              </label>
             </div>
           </div>
         </section>
@@ -194,7 +182,8 @@ export function ApprovalForm({
                   {i + 1}
                 </span>
                 <span className="min-w-0">
-                  <span className="block text-t12h font-semibold">{s.step === 'chairman' ? bossText(s.name, viewerRole) : s.name}</span>
+                  {/* 팀장 칸이 직속 상위(대표 본인)일 수 있다 — 이름도 bossText로(직원 화면 용어 원칙). */}
+                  <span className="block text-t12h font-semibold">{bossText(s.name, viewerRole)}</span>
                   <span className="block text-t11 text-ink-dim">{bossText(s.why, viewerRole)}</span>
                 </span>
               </li>
@@ -202,7 +191,14 @@ export function ApprovalForm({
           </ol>
           {line.every((s) => s.step !== 'chairman') ? (
             <p className="rounded-md bg-raised px-2 py-1.5 text-t11 text-ink-dim">
-              {tr(lang, `${boss(viewerRole)}까지 올라가지 않는 결재입니다.`, `This does not go up to ${bossEn(viewerRole)}.`)}
+              {/* 0042 — 팀장 칸이 비면 팀장 단계를 건너뛰고 규칙이 바로 종결한다(decided_by_kind 'rule'). */}
+              {line[0]?.user_id
+                ? tr(lang, `${boss(viewerRole)}까지 올라가지 않는 결재입니다.`, `This does not go up to ${bossEn(viewerRole)}.`)
+                : tr(
+                    lang,
+                    `결재할 팀장 · 직속 상위가 없어 올리면 «기록 완료»로 바로 저장됩니다. ${boss(viewerRole)}도 목록에서 볼 수 있습니다.`,
+                    `No lead to approve — this is saved as «Recorded» right away. ${bossEn(viewerRole)} can still see it.`,
+                  )}
             </p>
           ) : null}
           <p className="text-t10h leading-relaxed text-ink-muted">
@@ -224,7 +220,7 @@ export function ApprovalForm({
           <button
             type="button"
             onClick={submit}
-            disabled={pending || missing.length > 0 || (template.attachment_required && !attachment.trim())}
+            disabled={pending || missing.length > 0}
             className="w-full rounded-lg bg-accent px-3 py-2 text-t13 font-semibold text-white disabled:opacity-40"
           >
             {pending ? tr(lang, '올리는 중…', 'Submitting…') : tr(lang, '결재 올리기', 'Submit')}

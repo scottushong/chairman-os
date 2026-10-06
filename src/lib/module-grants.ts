@@ -45,3 +45,13 @@ export const LEGACY_DOCUMENTS_MODULE = '/core/search'
 export function hasLegacyDocumentWrite(grants: ModuleGrant[]): boolean {
   return grants.some((g) => g.module === LEGACY_DOCUMENTS_MODULE && g.can_write)
 }
+
+/**
+ * «결재 올리기» 키 — 0002 decisions_create가 보는 can_module('/chairman/decisions', true). 회사가 키에 없는 전역 한 줄이다.
+ * 2026-10-06 첫 직원이 이 줄 없이 들어와 결재 양식 다섯을 모두 못 올렸다(RLS 42501).
+ */
+export const DRAFT_DECISION_MODULE = '/chairman/decisions'
+
+export function hasDraftGrant(grants: ModuleGrant[]): boolean {
+  return grants.some((g) => g.module === DRAFT_DECISION_MODULE && g.can_write)
+}

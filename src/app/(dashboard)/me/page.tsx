@@ -28,7 +28,7 @@ const STATUS_KO: Record<string, string> = { Open: '진행 중', Approved: '승�
 function requestState(d: Decision, lang: Lang, role: Role | null): string {
   if (d.lead_status === 'pending') return tr(lang, '팀장 대기', 'Waiting for lead')
   if (d.status === 'Open' && d.chairman_required) return tr(lang, `${boss(role)} 결재 대기`, `Waiting for ${bossEn(role)}`)
-  if (d.status === 'Approved' && d.decided_by_kind === 'rule') return tr(lang, '승인 · 규칙 종결', 'Approved by rule')
+  if (d.status === 'Approved' && d.decided_by_kind === 'rule') return tr(lang, '기록 완료', 'Recorded')
   return STATUS_KO[d.status] ?? d.status
 }
 
