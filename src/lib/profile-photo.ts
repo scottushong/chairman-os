@@ -6,6 +6,8 @@
  * lib/initiative-logo.ts와 나란히 있고, 같은 모양이다 — 다른 것은 '누가'뿐이다.
  */
 
+import { makeFileCheck } from '@/lib/file-drop'
+
 export const PHOTO_BUCKET = 'profile-photos'
 
 /**
@@ -24,6 +26,13 @@ export const PHOTO_MAX_BYTES = 2_097_152
  */
 export const PHOTO_MIME = ['image/png', 'image/jpeg', 'image/webp'] as const
 export type PhotoMime = (typeof PHOTO_MIME)[number]
+
+/** 화면에서 «놓자마자» 보는 검사 — 서버 액션과 같은 규칙(file.type 그대로 · PHOTO_MAX_BYTES). */
+export const checkPhotoFile = makeFileCheck({
+  typeOk: (f) => (PHOTO_MIME as readonly string[]).includes(f.type),
+  formats: 'PNG · JPG · WebP',
+  maxBytes: PHOTO_MAX_BYTES,
+})
 
 /**
  * 한 사람에 객체 하나. `<user_id>/photo`다.

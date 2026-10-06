@@ -5,6 +5,8 @@
  * 세 곳에 따로 적으면 브라우저는 통과시키고 서버가 거절하는 조합이 생긴다.
  */
 
+import { makeFileCheck } from '@/lib/file-drop'
+
 export const LOGO_BUCKET = 'initiative-logos'
 
 /** 2MB. 상표 이미지는 수십 KB면 충분하다. 이 상한은 실수로 사진을 올리는 것을 잡는 자리다. */
@@ -16,6 +18,13 @@ export const LOGO_MAX_BYTES = 2_097_152
  */
 export const LOGO_MIME = ['image/png', 'image/jpeg', 'image/webp'] as const
 export type LogoMime = (typeof LOGO_MIME)[number]
+
+/** 화면에서 «놓자마자» 보는 검사 — 서버 액션과 같은 규칙(file.type 그대로 · LOGO_MAX_BYTES). */
+export const checkLogoFile = makeFileCheck({
+  typeOk: (f) => (LOGO_MIME as readonly string[]).includes(f.type),
+  formats: 'PNG · JPG · WebP',
+  maxBytes: LOGO_MAX_BYTES,
+})
 
 /**
  * 한 건에 객체 하나. 확장자를 붙이지 않는다 — 다시 올릴 때 PNG→JPG로 바뀌면

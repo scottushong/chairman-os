@@ -1,3 +1,4 @@
+import { makeFileCheck } from '@/lib/file-drop'
 import { SECURITY_CLASS, type AttachmentClass, type AttachmentEntity, type SecurityClass } from '@/types'
 
 /**
@@ -35,6 +36,23 @@ export function attachmentMime(fileName: string, browserType: string): string | 
 }
 
 export const isImageMime = (mime: string) => mime === 'image/png' || mime === 'image/jpeg'
+
+/** 사람이 읽는 형식 목록 — 안내 줄과 거절 문구가 같이 쓴다. */
+export const ATTACHMENT_FORMATS_KO = 'PDF · Word · Excel · PowerPoint · PNG · JPG'
+
+/**
+ * 첨부 칸의 «놓자마자» 검사(공통 첨부 부품). 형식은 attachmentMime, 상한은 20MB.
+ * 사진(PNG · JPG)은 여기서 크기를 보지 않는다 — 4.5MB를 넘으면 올리기 전에 줄이고, 줄인 뒤에 20MB를 다시 본다.
+ */
+export const checkAttachmentFile = makeFileCheck({
+  typeOk: (f) => attachmentMime(f.name, f.type) !== null,
+  formats: ATTACHMENT_FORMATS_KO,
+  maxBytes: ATTACHMENT_MAX_BYTES,
+  sizeExempt: (f) => {
+    const mime = attachmentMime(f.name, f.type)
+    return mime !== null && isImageMime(mime)
+  },
+})
 
 export const ATTACHMENT_CLASS_LABEL: Record<AttachmentClass, string> = {
   Normal: '일반',

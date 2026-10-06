@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useRef, useState, useTransition } from 'react'
+import { useState, useTransition } from 'react'
 
 import {
   beginAttachment,
@@ -14,15 +14,18 @@ import {
   uploadAttachmentBytes,
 } from '@/app/actions/attachments'
 import { saveInitiativeField } from '@/app/actions/initiatives'
+import { FileDropZone } from '@/components/ui/file-drop-zone'
 import { Icon } from '@/components/ui/icon'
 import {
   ATTACHMENT_ACCEPT,
   ATTACHMENT_CLASS_HINT,
   ATTACHMENT_CLASS_LABEL,
+  ATTACHMENT_FORMATS_KO,
   ATTACHMENT_MAX_BYTES,
   IMAGE_SOFT_MAX_BYTES,
   attachmentClassAllowed,
   attachmentMime,
+  checkAttachmentFile,
   defaultAttachmentClass,
   formatBytes,
   isImageMime,
@@ -40,7 +43,7 @@ import {
 /**
  * Phase 10 «첨부» 칸 — 이니셔티브 · 회사 · 문서 · 결재 상세가 같이 쓴다.
  *
- * 드래그 앤 드롭 + 버튼 + (폰) 카메라. 등급 기본은 «본인 보안등급 이하에서 가장 높은 것»
+ * 드래그 앤 드롭 + 버튼 + (폰) 카메라 — 공통 첨부 부품(components/ui/file-drop-zone.tsx)이 받고, 여기는 이 칸의 규칙(형식 · 20MB · 사진 줄이기 · 등급 · Vault)만 넘긴다. 등급 기본은 «본인 보안등급 이하에서 가장 높은 것»
  * (회장 → 제한, 일반 직원 → 일반 — Vault는 파일을 받지 않으므로 기본이 아니다). 본인 등급보다 높은 등급은 못 고른다. 올리면 곧바로 요약을 부른다 —
  * 요약이 실패해도 파일은 남고 «다시 요약»이 선다. 요약은 늘 «결정 아님» 표시와 같이 그린다.
  *
@@ -88,20 +91,17 @@ export function AttachmentsPanel(props: AttachmentsPanelProps) {
   // 올릴 수 있는 등급이 하나도 없으면(Public) 올리기 칸을 그리지 않는다 — 0045가 어차피 막는다.
   const canUpload = viewer.role !== 'AIAgent' && viewer.role !== 'Integration' && defaultCls !== null
   const [cls, setCls] = useState<AttachmentClass>(defaultCls ?? 'Normal')
-  const [drag, setDrag] = useState(false)
-  const [busy, setBusy] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const fileRef = useRef<HTMLInputElement>(null)
-  const cameraRef = useRef<HTMLInputElement>(null)
 
-  async function uploadOne(original: File) {
+  /** 파일 한 개 — 공통 첨부 부품이 순서대로 부른다. 형식 · 20MB(사진 제외)는 놓을 때 이미 걸렀다. */
+  async function uploadOne(original: File, phase: (text: string) => void): Promise<string | void> {
     const mime = attachmentMime(original.name, original.type)
-    if (!mime) throw new Error(`${original.name}: PDF · Word · Excel · PowerPoint · PNG · JPG만 받습니다.`)
+    if (!mime) throw new Error(`${ATTACHMENT_FORMATS_KO}만 받습니다.`)
+    if (isImageMime(mime) && original.size > IMAGE_SOFT_MAX_BYTES) phase('사진을 줄이는 중…')
     const file = isImageMime(mime) && original.size > IMAGE_SOFT_MAX_BYTES ? await shrinkImage(original) : original
     const finalMime = file === original ? mime : 'image/jpeg'
-    if (file.size > ATTACHMENT_MAX_BYTES) throw new Error(`${original.name}: 20MB까지 올릴 수 있습니다.`)
+    if (file.size > ATTACHMENT_MAX_BYTES) throw new Error('20MB까지 올릴 수 있습니다.')
 
-    setBusy(`${file.name} 올리는 중…`)
+    phase('올리는 중…')
     const begun = await beginAttachment({
       entity_table: entityTable,
       entity_id: entityId,
@@ -125,29 +125,14 @@ export function AttachmentsPanel(props: AttachmentsPanelProps) {
     }
     if (upErr) {
       await cancelAttachment(begun.id)
-      throw new Error(`${file.name}: 파일을 올리지 못했습니다(${upErr}).`)
+      throw new Error(`파일을 올리지 못했습니다(${upErr}).`)
     }
     router.refresh()
 
     if (begun.status !== 'skipped_vault') {
-      setBusy(`${file.name} 요약 중… (긴 문서는 1~2분)`)
+      phase('요약 중… (긴 문서는 1~2분)')
       const s = await summarizeAttachmentAction(begun.id)
-      if (s.error) setError(`${file.name}: ${s.error} — 파일은 올라갔습니다. «다시 요약»을 누르세요.`)
-    }
-  }
-
-  async function uploadAll(files: FileList | File[] | null) {
-    if (!files || files.length === 0) return
-    setError(null)
-    try {
-      for (const f of Array.from(files)) await uploadOne(f)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '올리지 못했습니다.')
-    } finally {
-      setBusy(null)
-      router.refresh()
-      if (fileRef.current) fileRef.current.value = ''
-      if (cameraRef.current) cameraRef.current.value = ''
+      if (s.error) return `${s.error} — 파일은 올라갔습니다. «다시 요약»을 누르세요.`
     }
   }
 
@@ -162,57 +147,17 @@ export function AttachmentsPanel(props: AttachmentsPanelProps) {
       </div>
 
       {canUpload ? (
-        <div
-          onDragOver={(e) => {
-            e.preventDefault()
-            setDrag(true)
-          }}
-          onDragLeave={() => setDrag(false)}
-          onDrop={(e) => {
-            e.preventDefault()
-            setDrag(false)
-            if (cls !== 'Vault') void uploadAll(e.dataTransfer.files)
-          }}
-          className={`mt-3 rounded-lg border border-dashed p-3 transition-colors ${drag ? 'border-accent bg-accent/10' : 'border-line'}`}
-        >
-          <div className="flex flex-wrap items-center gap-2">
-            {cls === 'Vault' ? null : (
-              <>
-            <button
-              type="button"
-              disabled={!!busy}
-              onClick={() => fileRef.current?.click()}
-              className="min-h-11 rounded-md border border-line bg-panel px-3 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-50 lg:min-h-0 lg:py-1.5"
-            >
-              파일 고르기
-            </button>
-            <button
-              type="button"
-              disabled={!!busy}
-              onClick={() => cameraRef.current?.click()}
-              className="min-h-11 rounded-md border border-line bg-panel px-3 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink disabled:opacity-50 lg:hidden"
-            >
-              카메라로 찍기
-            </button>
-              </>
-            )}
-            <label className="flex items-center gap-1.5 text-t11 text-ink-muted">
-              등급
-              <select
-                value={cls}
-                onChange={(e) => setCls(e.target.value as AttachmentClass)}
-                className="min-h-11 rounded-md border border-line bg-panel px-2 text-t11h text-ink lg:min-h-0 lg:py-1"
-              >
-                <option value="Normal">{ATTACHMENT_CLASS_LABEL.Normal}</option>
-                <option value="Restricted" disabled={!attachmentClassAllowed('Restricted', viewer.maxClass)}>
-                  {`${ATTACHMENT_CLASS_LABEL.Restricted}${attachmentClassAllowed('Restricted', viewer.maxClass) ? '' : ' (보안등급 밖)'}`}
-                </option>
-                {isChairman ? <option value="Vault">{ATTACHMENT_CLASS_LABEL.Vault}</option> : null}
-              </select>
-            </label>
-            <span className="text-t10h text-ink-muted">{ATTACHMENT_CLASS_HINT[cls]}</span>
-          </div>
-          {cls === 'Vault' ? (
+        <FileDropZone
+          label="첨부 파일 올리기"
+          className="mt-3"
+          accept={ATTACHMENT_ACCEPT}
+          check={checkAttachmentFile}
+          upload={uploadOne}
+          onSettled={() => router.refresh()}
+          camera
+          hint={`${ATTACHMENT_FORMATS_KO}, 20MB까지 · 여러 개는 차례로 올립니다`}
+          blocked={cls === 'Vault' ? 'Vault 파일은 올리지 않습니다. 원본은 사내 스토리지에 두고 문서 화면에서 링크로 등록하세요.' : null}
+          blockedNotice={
             // CLAUDE.md — Vault 원본은 사내 스토리지에 두고 링크만. 앱 레벨 암호화(회사 보유 키)가
             // 생기기 전까지 파일은 받지 않는다. 0045의 Vault 줄 규칙은 그날을 위해 남겨 둔다.
             <p className="mt-2 rounded-md border border-gold/40 bg-gold/10 px-2.5 py-2 text-t11h text-ink">
@@ -222,22 +167,27 @@ export function AttachmentsPanel(props: AttachmentsPanelProps) {
               </Link>
               하세요.
             </p>
-          ) : (
-            <p className="mt-1.5 text-t10h text-ink-muted">
-              여기로 끌어다 놓아도 됩니다 · PDF · Word · Excel · PowerPoint · PNG · JPG, 20MB까지
-            </p>
-          )}
-          <input ref={fileRef} type="file" multiple accept={ATTACHMENT_ACCEPT} className="hidden" onChange={(e) => void uploadAll(e.target.files)} />
-          {/* 폰: 명함 · 계약서를 바로 찍는다 → vision 요약. */}
-          <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => void uploadAll(e.target.files)} />
-        </div>
-      ) : null}
-
-      {busy ? <p className="mt-2 text-t11 text-accent" aria-live="polite">{busy}</p> : null}
-      {error ? (
-        <p role="alert" className="mt-2 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-t11h text-critical">
-          {error}
-        </p>
+          }
+          extra={
+            <>
+              <label className="flex items-center gap-1.5 text-t11 text-ink-muted">
+                등급
+                <select
+                  value={cls}
+                  onChange={(e) => setCls(e.target.value as AttachmentClass)}
+                  className="min-h-11 rounded-md border border-line bg-panel px-2 text-t11h text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent lg:min-h-0 lg:py-1"
+                >
+                  <option value="Normal">{ATTACHMENT_CLASS_LABEL.Normal}</option>
+                  <option value="Restricted" disabled={!attachmentClassAllowed('Restricted', viewer.maxClass)}>
+                    {`${ATTACHMENT_CLASS_LABEL.Restricted}${attachmentClassAllowed('Restricted', viewer.maxClass) ? '' : ' (보안등급 밖)'}`}
+                  </option>
+                  {isChairman ? <option value="Vault">{ATTACHMENT_CLASS_LABEL.Vault}</option> : null}
+                </select>
+              </label>
+              <span className="text-t10h text-ink-muted">{ATTACHMENT_CLASS_HINT[cls]}</span>
+            </>
+          }
+        />
       ) : null}
 
       <ul className="mt-3 space-y-2.5">
