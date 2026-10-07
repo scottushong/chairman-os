@@ -62,6 +62,8 @@ export const NAV: readonly NavGroup[] = [
       // CH-041 전자결재. 라벨은 시안 그대로 두고 대상만 실제 화면으로 잇는다 —
       // 그 화면이 곧 대시보드 '내 결정 사항' 패널의 전체 화면 버전이다.
       { key: 'nav_decisions', label: '내 결정 사항', href: '/approvals', icon: 'check-circle', ready: true },
+      // 0059 결재 대장 — 양식 결재를 한 장의 표로 · 엑셀. 회장과 «결재 대장 열람» 줄이 있는 사람에게만 건다(navFor의 ledger).
+      { key: 'nav_ledger', label: '결재 대장', href: '/approvals/ledger', icon: 'file-text', ready: true },
       // Phase 3-A. 야간 브리핑 전문. CH-044 자연어 질의는 아직 없다 — 붙으면 같은 화면에 들어온다.
       { key: 'nav_morning', label: '아침 루틴', href: '/ai', icon: 'sparkles', badge: 'NEW', ready: true },
       { key: 'nav_calendar', label: '캘린더', href: '/calendar', icon: 'calendar', ready: true },
@@ -256,13 +258,15 @@ const STAFF_NAV_OVERRIDE: Readonly<Record<string, Partial<NavItem>>> = {
  * 이 역할이 보는 메뉴 한 벌. 회장은 NAV 그대로, 나머지(세션이 없을 때 포함)는 회장 전용을 빼고,
  * 이니셔티브를 못 읽는 역할에게서는 «이니셔티브»도 뺀다.
  */
-export function navFor(role: Role | null | undefined): readonly NavGroup[] {
+export function navFor(role: Role | null | undefined, ledger?: readonly string[]): readonly NavGroup[] {
   if (role === 'Chairman') return NAV
   const initiatives = canReadInitiatives(role)
+  // 0059 «결재 대장 열람» 줄(SessionUser.ledger)이 없으면 대장 메뉴를 뺀다. 화면은 누구나 열 수 있다(본인 · 결재선 줄만 보인다).
+  const ledgerMenu = (ledger?.length ?? 0) > 0
   return NAV.map((group) => ({
     ...group,
     items: group.items
-      .filter((item) => !CHAIRMAN_ONLY_NAV.has(item.key) && (initiatives || item.key !== 'nav_initiatives'))
+      .filter((item) => !CHAIRMAN_ONLY_NAV.has(item.key) && (initiatives || item.key !== 'nav_initiatives') && (ledgerMenu || item.key !== 'nav_ledger'))
       .map((item) => (STAFF_NAV_OVERRIDE[item.key] ? { ...item, ...STAFF_NAV_OVERRIDE[item.key] } : item)),
   })).filter((group) => group.items.length > 0)
 }

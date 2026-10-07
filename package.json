@@ -30,7 +30,8 @@
     "check:mobile": "tsx scripts/check-mobile.ts",
     "check:release": "bash scripts/check-release.sh",
     "check:file-drop": "tsx scripts/check-file-drop.ts",
-    "check:number-input": "tsx scripts/check-number-input.ts"
+    "check:number-input": "tsx scripts/check-number-input.ts",
+    "check:approval-ledger": "tsx scripts/check-approval-ledger.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",
