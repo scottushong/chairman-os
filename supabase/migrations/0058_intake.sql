@@ -37,7 +37,8 @@
 --       입구 줄이 AI 차단(ai_blocked_reason — 아래)이거나 «AI 안 보냄»(no_ai)이거나, 사진(image/*)인데 올린 사람의 «배합비 아님»
 --       확인이 없으면(F4) 같은 42501이다. 스캔 PDF는 DB가 글자층을 모르니 앱이 같은 확인을 요구한다(설계서 A5).
 --       **AI 차단은 끈적하다(리뷰 I1)**: no_ai에 들어가는 순간 이유가 ai_blocked_reason에 복사되고, no_ai에서 나가거나 이유를
---       바꾸는 것은 대표(또는 세션 없는 SQL)만이다 — 이유가 무엇이든. 대표가 직접 풀면(제안 · 보관 등) 차단이 지워지고,
+--       바꾸는 것은 대표(또는 세션 없는 SQL)만이다. **예외 하나 — not_attested(«배합비 아님» 확인 없음)는 올린 사람 본인의
+--       확인이 푼다**(설계서 F3 · F4 — 사진 · 스캔본의 1차 문은 올린 사람). mix_ratio · excluded_entity는 대표만. 대표가 직접 풀면(제안 · 보관 등) 차단이 지워지고,
 --       대표가 차단된 줄을 문서로 적재하면 차단은 남는다(적재 · 되돌리기를 지나도 그 원본은 AI로 못 간다).
 --       되돌리면 차단된 줄은 no_ai(같은 이유)로, 아닌 줄은 proposed로 돌아온다.
 --   5절 intake_move_to_document(…)  확인 → 문서 한 트랜잭션: 권한(0048 can_write_documents) · documents insert · 첨부 재지정 ·
@@ -224,10 +225,21 @@ begin
   -- AI 차단은 끈적하다(리뷰 I1). no_ai에서 나가거나 이유를 바꾸는 것은 대표만 — 이유가 무엇이든(배합비는 F3 권장).
   -- 세션 없는 수정(SQL 편집기 · 마이그레이션)은 막지 않는다. 차단 칸은 grant가 없고 여기서만 바뀐다.
   new.ai_blocked_reason := old.ai_blocked_reason;
-  if old.status = 'no_ai' and (new.status is distinct from 'no_ai' or new.no_ai_reason is distinct from old.no_ai_reason) then
+  -- 예외 하나(설계서 F3 · F4): not_attested 차단은 **올린 사람 본인의 «배합비 아님» 확인**이 푼다. mix_ratio · excluded_entity는
+  -- 대표만이다. 확인과 같은 update에서 상태를 그대로(no_ai) 두면 DB가 'reading'으로 옮긴다 — 확인이 곧 «읽어도 된다»이고,
+  -- 'uploaded'로는 못 돌아간다(M1). 확인 도장 · 본인 검사는 아래 확인 절이 한 번 더 한다.
+  if old.status = 'no_ai' and old.ai_blocked_reason = 'not_attested'
+     and new.mix_attested_at is not null and new.mix_attested_at is distinct from old.mix_attested_at
+     and auth.uid() is not null and auth.uid() = old.created_by
+     and (new.status is distinct from 'no_ai' or new.no_ai_reason is not distinct from 'not_attested') then
+    if new.status = 'no_ai' then
+      new.status := 'reading';
+    end if;
+    new.ai_blocked_reason := null;
+  elsif old.status = 'no_ai' and (new.status is distinct from 'no_ai' or new.no_ai_reason is distinct from old.no_ai_reason) then
     if auth.uid() is not null and coalesce(auth_role()::text, '') <> 'Chairman' then
       raise exception 'intake_ai_unblock_forbidden' using errcode = '42501',
-        detail = '«AI 안 보냄»으로 막힌 입구 줄은 대표만 풀 수 있다(0058 리뷰 I1 · 설계서 F3).';
+        detail = '«AI 안 보냄»으로 막힌 입구 줄은 대표만 풀 수 있다 — «배합비 아님» 확인 없음(not_attested)만 올린 사람의 확인이 푼다(0058 · 설계서 F3).';
     end if;
     if new.status = 'no_ai' then
       new.ai_blocked_reason := new.no_ai_reason;      -- 대표가 이유를 바꿨다
@@ -298,11 +310,13 @@ begin
       when 'excluded_entity' then 'AI 제외 자료'
       else '«배합비 아님» 확인 없음' end);
   end if;
-  if old.ai_blocked_reason is not null and new.ai_blocked_reason is null then
+  if old.ai_blocked_reason is not null and new.ai_blocked_reason is null
+     and not (old.ai_blocked_reason = 'not_attested' and new.mix_attested_at is distinct from old.mix_attested_at
+              and new.mix_attested_at is not null) then
     v_notes := v_notes || case old.ai_blocked_reason when 'mix_ratio' then '배합비 차단 풀림 — 대표 확인' else 'AI 제외 풀림 — 대표 확인' end;
   end if;
   if new.mix_attested_at is not null and old.mix_attested_at is null then
-    v_notes := v_notes || '«배합비 · 레시피 아님» 확인 — 올린 사람'::text;
+    v_notes := v_notes || '배합비 아님 확인 — 올린 사람'::text;   -- not_attested 차단을 풀었으면 이 한 줄이 그 기록이다
   end if;
   foreach n in array v_notes loop
     insert into audit_log (action, entity_table, entity_id, business_id, actor_user_id, actor_role, before, after, note)
