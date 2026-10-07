@@ -13,7 +13,7 @@
 --       **등급 칸을 입구 줄에도 둔다**(설계서 D에 없음) — 읽기 규칙 «has_business AND attachment_class_ok»가 첨부 줄을
 --       읽지 않고 판정하게. 첨부를 읽으면 첨부 쪽 정책(대상 = 입구 줄이 보이는가)과 서로를 부르는 원이 된다.
 --       같은 값인지는 첨부 insert(restrictive)와 커밋 때 검사(deferred 제약 트리거)가 잰다.
---   2절 RLS                   읽기 = 회사 AND 등급 · 넣기 = 본인 · 그 회사 · 그 등급 · 고치기 = 칸 다섯(grant) + 정책(올린 사람 ·
+--   2절 RLS                   읽기 = 회사 AND 등급(적재된 줄은 + 그 문서가 보이는 사람 · 올린 사람 · 회장 — 리뷰 I4) · 넣기 = 본인 · 그 회사 · 그 등급 · 고치기 = 칸 다섯(grant) + 정책(올린 사람 ·
 --       확인 권한자 · 회장) · 지우기 없음 · AIAgent/Integration restrictive 세 짝(0045와 같은 이름).
 --       적재 칸(loaded_*) · 종류 확인 도장(kind_confirmed_*) · 제안 이력은 grant가 없다 — 올린 사람이 «적재됨»을 꾸밀 수 없다.
 --       status = 'loaded'는 적재 칸이 차 있을 때만(칸 제약) → 적재는 RPC로만 선다.
@@ -30,13 +30,20 @@
 --       없어서 직원은 어느 쪽도 직접 못 하고, 소유자 권한으로 도는 이 파일의 함수 둘만 그 길을 탄다.
 --   4절 AI 제외 대상을 DB에서 막는다 — record_attachment_ai_send(0045판이 마지막 — 0046~0057은 다시 정의하지 않았다).
 --       첨부의 대상이 제외 목록('finance_imports' — 0057 전표 증빙 대상 자리 표시)이면 무엇을 적기 전에 42501 'ai_excluded'.
---       읽기 통행증(0045 attachment_recent_pass)이 이 감사 줄을 보므로, 줄을 못 남기면 Storage가 파일을 내주지 않는다 —
---       앱이 분기를 틀려도 AI로 못 간다. 입구 줄이 «AI 안 보냄»(no_ai)이거나, 사진(image/*)인데 올린 사람의 «배합비 아님»
+--       읽기 통행증(0045 attachment_recent_pass)이 이 감사 줄을 보므로, 줄을 못 남기면 **제3자**(올린 사람 · 회장 밖)에게는
+--       Storage가 파일을 내주지 않는다. **올린 사람과 회장은 통행증 없이 객체를 연다**(0045 attachment_object_visible —
+--       그 의미는 바꾸지 않는다). 그 둘의 세션에서는 «감사 → 거부되면 멈춤 → 그다음에 파일 읽기» 순서를 앱이 지켜야
+--       한다(lib/attachments/summarize.ts의 호출 순서) — DB가 막는 것은 제3자 경로뿐이다.
+--       입구 줄이 AI 차단(ai_blocked_reason — 아래)이거나 «AI 안 보냄»(no_ai)이거나, 사진(image/*)인데 올린 사람의 «배합비 아님»
 --       확인이 없으면(F4) 같은 42501이다. 스캔 PDF는 DB가 글자층을 모르니 앱이 같은 확인을 요구한다(설계서 A5).
+--       **AI 차단은 끈적하다(리뷰 I1)**: no_ai에 들어가는 순간 이유가 ai_blocked_reason에 복사되고, no_ai에서 나가거나 이유를
+--       바꾸는 것은 대표(또는 세션 없는 SQL)만이다 — 이유가 무엇이든. 대표가 직접 풀면(제안 · 보관 등) 차단이 지워지고,
+--       대표가 차단된 줄을 문서로 적재하면 차단은 남는다(적재 · 되돌리기를 지나도 그 원본은 AI로 못 간다).
+--       되돌리면 차단된 줄은 no_ai(같은 이유)로, 아닌 줄은 proposed로 돌아온다.
 --   5절 intake_move_to_document(…)  확인 → 문서 한 트랜잭션: 권한(0048 can_write_documents) · documents insert · 첨부 재지정 ·
 --       입구 줄 loaded · 감사 두 줄(«입구 ‹item›에서 — AI 제안, ‹역할› 확인»). 이중 적재는 줄 잠금 + 상태 + unique로 막는다.
 --       되돌리기 = 문서 soft delete(0042 soft_delete — 문서의 0048 고치기 규칙 = 적재한 사람 · 회장)가 트리거로 첨부를 입구 줄로
---       돌리고 상태를 'proposed'로 되돌린다. 같은 파일(sha256) 알림은 intake_same_file(item).
+--       돌리고 상태를 'proposed'(AI 차단 줄은 no_ai)로 되돌린다. 같은 파일(sha256) 알림은 intake_same_file(item).
 --       입구 줄 만들기는 intake_begin(…) 하나로 — 입구 줄과 첨부 줄은 서로를 가리켜서(첨부 FK · 첨부의 대상) 한 트랜잭션이어야 하고,
 --       PostgREST 요청 둘은 트랜잭션 둘이다. security invoker — 호출자의 insert 권한(위 정책)으로 돈다.
 --
@@ -45,8 +52,12 @@
 --   attachments.entity_table · entity_id(0045가 요약 다섯 칸만 열었다), intake_items.loaded_*(위 2절 — 올린 사람이 꾸미지 못하게).
 --   invoker로 두려면 이 칸들을 authenticated에 열어야 하고, 그러면 PostgREST로 직접 고치는 길이 같이 열린다(정책은 행만 고른다 —
 --   0030 4절). 그래서 definer로 두고, 호출자 판정을 함수 안에 전부 적는다: 활성 · 사람 역할 · 그 줄이 보이는가(회사 AND 등급) ·
---   문서 쓰기(can_write_documents — 0048) · 문서 등급 ≤ 내 열람 등급 · 등록자 = 본인. documents · audit_log는 0002부터 force라
---   BYPASSRLS 없는 소유자에게서는 호출자 정책도 한 번 더 걸린다. 되돌리기 트리거도 같은 이유로 definer다.
+--   문서 쓰기(can_write_documents — 0048) · 문서 등급 ≤ 내 열람 등급 · 등록자 = 본인 · AI 차단 줄은 대표만.
+--   **Supabase에서 소유자(postgres)는 BYPASSRLS라 documents · audit_log의 force가 이 함수에는 걸리지 않는다** — 판정은 함수 안의
+--   것이 전부다. (check-migrations는 BYPASSRLS 없는 소유자로도 돌려 보지만, 그것은 보조 확인일 뿐 운영의 방어선이 아니다.)
+--   같은 이유로 0038 documents_version 트리거가 «직전 판»을 RLS 없이 찾는다 — 호출자가 못 보는 문서의 판 사슬에 새 문서가
+--   붙을 수 있다(리뷰 I3). 그래서 함수가 그 후보를 호출자 기준(documents_read와 같은 식 — intake_doc_readable)으로 다시 재고,
+--   못 보는 후보면 supersedes = null · version = 1로 세운다. 되돌리기 트리거도 같은 이유(grant 없는 칸)로 definer다.
 --
 -- ■ 하지 않는 것 ■
 --   * 구매 표 · 결산 초안 없음(0059 취소 · 0060 뒤). loaded_table은 'documents' 하나 — 0060이 'statement_drafts'를 더한다.
@@ -76,6 +87,8 @@ create table intake_items (
   security_class     security_class not null default 'Restricted',                                    -- [일반] 첨부와 같은 값
   status             text not null default 'uploaded',                                                -- [일반]
   no_ai_reason       text,                                                                            -- [일반]
+  -- AI 차단 — no_ai에 들어갈 때 이유가 복사되고, 대표가 직접 풀 때만 지워진다. 적재 · 되돌리기를 지나도 남는다(리뷰 I1).
+  ai_blocked_reason  text,                                                                            -- [일반]
   mix_attested_by    uuid,                                                                            -- [제한] 사진 · 스캔본 «배합비 아님»
   mix_attested_at    timestamptz,                                                                     -- [일반]
   proposal           jsonb,                                                                           -- [등급 그대로] AI 제안 — 결정 아님
@@ -100,6 +113,8 @@ create table intake_items (
   constraint intake_items_no_ai_check check (
     (no_ai_reason is null or no_ai_reason in ('mix_ratio', 'excluded_entity', 'not_attested'))
     and (status <> 'no_ai' or no_ai_reason is not null)
+    and (ai_blocked_reason is null or ai_blocked_reason in ('mix_ratio', 'excluded_entity', 'not_attested'))
+    and (status <> 'no_ai' or ai_blocked_reason is not null)
   ),
   constraint intake_items_mix_check check ((mix_attested_at is null) = (mix_attested_by is null)),
   constraint intake_items_proposal_check check (proposal is null or jsonb_typeof(proposal) = 'object'),
@@ -161,6 +176,7 @@ begin
     -- 처음부터 «제안» · «적재됨» · «확인됨»으로 넣는 길을 닫는다.
     new.status := 'uploaded';
     new.no_ai_reason := null;
+    new.ai_blocked_reason := null;
     new.proposal := null;
     new.proposal_history := '[]'::jsonb;
     new.kind := null;
@@ -200,12 +216,27 @@ begin
       detail = '적재된 입구 줄은 문서를 지워(되돌려) 입구로 돌린 뒤에 고친다.';
   end if;
 
-  -- 배합비로 걸린 글자 파일을 푸는 것은 대표만(F3 권장). 세션 없는 수정(SQL 편집기)은 막지 않는다.
-  if old.status = 'no_ai' and old.no_ai_reason = 'mix_ratio'
-     and (new.status is distinct from 'no_ai' or new.no_ai_reason is distinct from 'mix_ratio')
-     and auth.uid() is not null and coalesce(auth_role()::text, '') <> 'Chairman' then
-    raise exception 'intake_mix_unblock_forbidden' using errcode = '42501',
-      detail = '배합비로 보인다고 막힌 파일은 대표만 풀 수 있다(설계서 F3).';
+  -- «업로드됨»으로 되돌아가는 길은 없다 — 되돌리면 0045의 한 시간 재업로드 창이 다시 열린다(리뷰 M1).
+  if new.status = 'uploaded' and old.status is distinct from 'uploaded' then
+    raise exception 'intake_status_back_to_uploaded' using errcode = '42501';
+  end if;
+
+  -- AI 차단은 끈적하다(리뷰 I1). no_ai에서 나가거나 이유를 바꾸는 것은 대표만 — 이유가 무엇이든(배합비는 F3 권장).
+  -- 세션 없는 수정(SQL 편집기 · 마이그레이션)은 막지 않는다. 차단 칸은 grant가 없고 여기서만 바뀐다.
+  new.ai_blocked_reason := old.ai_blocked_reason;
+  if old.status = 'no_ai' and (new.status is distinct from 'no_ai' or new.no_ai_reason is distinct from old.no_ai_reason) then
+    if auth.uid() is not null and coalesce(auth_role()::text, '') <> 'Chairman' then
+      raise exception 'intake_ai_unblock_forbidden' using errcode = '42501',
+        detail = '«AI 안 보냄»으로 막힌 입구 줄은 대표만 풀 수 있다(0058 리뷰 I1 · 설계서 F3).';
+    end if;
+    if new.status = 'no_ai' then
+      new.ai_blocked_reason := new.no_ai_reason;      -- 대표가 이유를 바꿨다
+    elsif new.status <> 'loaded' then
+      new.ai_blocked_reason := null;                  -- 대표가 직접 풀었다. 적재(loaded)는 풀기가 아니다 — 차단이 남는다.
+    end if;
+  end if;
+  if new.status = 'no_ai' and old.status is distinct from 'no_ai' then
+    new.ai_blocked_reason := new.no_ai_reason;
   end if;
   if new.status <> 'no_ai' then
     new.no_ai_reason := null;
@@ -267,8 +298,8 @@ begin
       when 'excluded_entity' then 'AI 제외 자료'
       else '«배합비 아님» 확인 없음' end);
   end if;
-  if old.status = 'no_ai' and old.no_ai_reason = 'mix_ratio' and new.status is distinct from 'no_ai' then
-    v_notes := v_notes || '배합비 차단 풀림 — 대표 확인'::text;
+  if old.ai_blocked_reason is not null and new.ai_blocked_reason is null then
+    v_notes := v_notes || case old.ai_blocked_reason when 'mix_ratio' then '배합비 차단 풀림 — 대표 확인' else 'AI 제외 풀림 — 대표 확인' end;
   end if;
   if new.mix_attested_at is not null and old.mix_attested_at is null then
     v_notes := v_notes || '«배합비 · 레시피 아님» 확인 — 올린 사람'::text;
@@ -338,8 +369,19 @@ revoke all on function intake_items_link_check() from public, anon, authenticate
 revoke all on function intake_items_audit() from public, anon, authenticated;
 
 -- 읽기 = 회사 AND 등급(첨부와 같은 잣대 — 0045 attachment_class_ok. Integration은 거기서 떨어진다).
+-- 적재된 줄(제안 = AI가 뽑은 값 · loaded_id)은 그 문서가 보이는 사람 · 올린 사람 · 회장만(리뷰 I4) — 문서는 0026 subtree로
+-- 좁은데 입구 줄이 회사 전체에 열려 있으면 문서 내용이 제안 칸으로 샌다. attachment_entity_visible은 invoker라 문서 표의
+-- RLS(documents_read)가 판정한다.
 create policy intake_items_read on intake_items for select
-  using (has_business(business_id) and attachment_class_ok(attachment_id, security_class));
+  using (
+    has_business(business_id) and attachment_class_ok(attachment_id, security_class)
+    and (
+      status <> 'loaded'
+      or created_by = auth.uid()
+      or auth_role()::text = 'Chairman'
+      or attachment_entity_visible(loaded_table, loaded_id)
+    )
+  );
 
 -- 넣기 = 본인 이름 · 보이는 회사 · 볼 수 있는 등급. with check는 before 트리거 뒤의 줄을 본다(created_by = auth.uid()).
 create policy intake_items_insert on intake_items for insert
@@ -545,11 +587,25 @@ $fn$;
 -- 4절. AI 제외 대상 — DB 문
 --   0045:454-472 본문 그대로 + 맨 앞에 제외 검사 둘. 0046~0057은 이 함수를 다시 정의하지 않았다.
 -- =====================================================================
+/** 이 첨부가 입구 원본이고 AI로 못 가는가 — 차단 · no_ai · 확인 없는 사진. definer: 입구 줄의 RLS와 무관하게(돌려주는 것은 한 비트). */
+create or replace function intake_ai_blocked(p_attachment uuid, p_mime text) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $fn$
+  select exists (
+    select 1 from intake_items i
+     where i.attachment_id = p_attachment
+       and (i.ai_blocked_reason is not null or i.status = 'no_ai'
+            or (coalesce(p_mime, '') like 'image/%' and i.mix_attested_at is null))
+  );
+$fn$;
+
+comment on function intake_ai_blocked(uuid, text) is '0058. 입구 원본의 AI 차단(끈적) · no_ai · 확인 없는 사진. record_attachment_ai_send가 부른다.';
+revoke all on function intake_ai_blocked(uuid, text) from public, anon;
+grant execute on function intake_ai_blocked(uuid, text) to authenticated;
+
 create or replace function record_attachment_ai_send(p_id uuid, p_model text) returns boolean
 language plpgsql volatile security invoker set search_path = public as $fn$
 declare
   a attachments;
-  v_item intake_items;
 begin
   select * into a from attachments where attachment_id = p_id;
   if not found then
@@ -564,9 +620,9 @@ begin
     raise exception 'ai_excluded' using errcode = '42501',
       detail = 'AI 제외 자료(ECOUNT 업로드 원본 · 전표 증빙)는 외부 AI로 보내지 않는다(0058).';
   end if;
-  -- 0058: 입구 원본 — «AI 안 보냄»으로 정해졌거나, 사진인데 올린 사람의 «배합비 아님» 확인이 없으면 보내지 않는다(F4).
-  select * into v_item from intake_items where attachment_id = a.attachment_id;
-  if found and (v_item.status = 'no_ai' or (a.mime like 'image/%' and v_item.mix_attested_at is null)) then
+  -- 0058: 입구 원본 — AI 차단(끈적 — 적재 · 되돌리기를 지나도)이거나 «AI 안 보냄»이거나, 사진인데 올린 사람의 «배합비 아님»
+  --   확인이 없으면 보내지 않는다(F4). 입구 줄은 RLS와 무관하게 잰다(intake_ai_blocked — 적재된 줄은 보이는 사람이 좁다).
+  if public.intake_ai_blocked(a.attachment_id, a.mime) then
     raise exception 'ai_excluded' using errcode = '42501',
       detail = '입구 원본이 AI 제외 상태이거나 사진에 «배합비 아님» 확인이 없다(0058 · 설계서 A5).';
   end if;
@@ -582,7 +638,7 @@ end;
 $fn$;
 
 comment on function record_attachment_ai_send(uuid, text) is
-  '0045/0058. «외부 AI 전송» 감사 한 줄 — 모델을 부르기 전에. Vault · AI 제외 대상(finance_imports, 0057 전표 증빙 자리) · 입구의 AI 안 보냄 / 확인 없는 사진은 42501.';
+  '0045/0058. «외부 AI 전송» 감사 한 줄 — 모델을 부르기 전에. Vault · AI 제외 대상(finance_imports, 0057 전표 증빙 자리) · 입구의 AI 차단 / AI 안 보냄 / 확인 없는 사진은 42501. 제3자는 이 줄 없이 파일을 못 열지만 올린 사람 · 회장은 통행증 없이 연다(0045) — 그 둘에게는 앱의 호출 순서가 문이다.';
 
 -- =====================================================================
 -- 5절. 입구 만들기 · 문서로 적재 · 되돌리기 · 같은 파일
@@ -632,6 +688,33 @@ $fn$;
 revoke all on function intake_role_label() from public, anon, authenticated;
 
 /**
+ * 이 문서가 **호출자에게** 보이는가 — 0026 documents_read(2-5)와 같은 식 + 0042 soft delete 숨김. definer 함수 안에서 호출자 기준
+ * 가시성을 재려고 둔다(definer 안에서는 역할을 바꿔 RLS를 탈 수 없다). documents_read를 바꾸는 마이그레이션은 이 함수도 같이 고친다.
+ */
+create or replace function intake_doc_readable(p_doc text) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $fn$
+  select exists (
+    select 1 from documents d
+     where d.document_id = p_doc
+       and d.deleted_at is null
+       and has_business(d.business_id)
+       and class_rank(d.security_class) <= class_rank(max_class())
+       and (
+         d.owner_user_id = auth.uid()
+         or d.uploaded_by = auth.uid()
+         or in_my_subtree(d.owner_user_id)
+         or in_my_subtree(d.uploaded_by)
+         or shared_with_me('documents', d.document_id)
+         or d.security_class::text = 'Public'
+         or (owner_unknown(d.owner_user_id) and owner_unknown(d.uploaded_by))
+       )
+  );
+$fn$;
+
+comment on function intake_doc_readable(text) is '0058. 호출자가 이 문서를 보는가(0026 documents_read와 같은 식 + soft delete). 적재 함수가 판 사슬 후보를 거르는 데 쓴다.';
+revoke all on function intake_doc_readable(text) from public, anon, authenticated;
+
+/**
  * 확인 → 문서. 한 트랜잭션: documents 한 줄 · 원본 첨부를 그 문서로 · 입구 줄 loaded · 감사 둘.
  * **security definer**(머리 주석 «왜 적재 함수가 security definer인가») — 호출자 판정은 전부 여기 적는다.
  * 돌려주는 것은 새 document_id. 되돌리기는 그 문서의 soft delete(아래 트리거).
@@ -651,6 +734,7 @@ declare
   v_title text := btrim(coalesce(p_title, ''));
   v_type  text := coalesce(nullif(btrim(coalesce(p_doc_type, '')), ''), '기타');
   v_label text;
+  v_prev  text;
 begin
   if auth.uid() is null or not is_active() or coalesce(auth_role()::text, '') in ('AIAgent', 'Integration') then
     raise exception 'intake_forbidden' using errcode = '42501';
@@ -668,6 +752,11 @@ begin
   end if;
   if v.status in ('reading', 'discarded') then
     raise exception 'intake_not_ready' using errcode = '55000';
+  end if;
+  -- AI 차단 줄(no_ai)은 대표만 적재한다(리뷰 I1). 적재해도 차단은 남는다(ai_blocked_reason).
+  if v.status = 'no_ai' and coalesce(auth_role()::text, '') <> 'Chairman' then
+    raise exception 'intake_ai_blocked' using errcode = '42501',
+      detail = '«AI 안 보냄»으로 막힌 입구 줄은 대표만 문서로 넣는다.';
   end if;
   if v.kind is null then
     raise exception 'intake_kind_missing' using errcode = '23514',
@@ -694,6 +783,13 @@ begin
           -- 파일 실체는 이 문서의 첨부다. 링크 칸은 앱 안의 문서 화면(첨부 칸이 있는 곳)을 가리킨다.
           '/documents/' || v_doc,
           auth.uid(), p_folder_id, coalesce(p_tags, '{}'));
+
+  -- 판 사슬(리뷰 I3): 0038 documents_version이 방금 이 문서에 붙인 «직전 판»이 호출자에게 안 보이면 끊는다 —
+  -- 소유자 권한(Supabase는 BYPASSRLS)으로 찾은 후보라 남의 · 지운 문서일 수 있다. 보이면 그대로 둔다.
+  select supersedes into v_prev from documents where document_id = v_doc;
+  if v_prev is not null and not intake_doc_readable(v_prev) then
+    update documents set supersedes = null, version = 1 where document_id = v_doc;
+  end if;
 
   update attachments set entity_table = 'documents', entity_id = v_doc where attachment_id = a.attachment_id;
   update intake_items
@@ -746,13 +842,17 @@ begin
   end if;
   update attachments set entity_table = 'intake_items', entity_id = v.item_id
    where attachment_id = v.attachment_id and entity_table = 'documents' and entity_id = new.document_id;
+  -- AI 차단 줄은 no_ai(같은 이유)로, 아닌 줄은 proposed로(리뷰 I1).
   update intake_items
-     set status = 'proposed', loaded_table = null, loaded_id = null, loaded_by = null, loaded_at = null
+     set status = case when v.ai_blocked_reason is not null then 'no_ai' else 'proposed' end,
+         no_ai_reason = v.ai_blocked_reason,
+         loaded_table = null, loaded_id = null, loaded_by = null, loaded_at = null
    where item_id = v.item_id;
   insert into audit_log (action, entity_table, entity_id, business_id, actor_user_id, actor_role, before, after, note)
   values ('update', 'intake_items', v.item_id, v.business_id, auth.uid(), auth_role()::text,
           jsonb_build_object('status', 'loaded', 'loaded_table', 'documents', 'loaded_id', new.document_id),
-          jsonb_build_object('status', 'proposed', 'entity', 'intake_items:' || v.item_id),
+          jsonb_build_object('status', case when v.ai_blocked_reason is not null then 'no_ai' else 'proposed' end,
+                             'ai_blocked_reason', v.ai_blocked_reason, 'entity', 'intake_items:' || v.item_id),
           format('입구 %s로 되돌림 — 문서 %s 지움', v.item_id, new.document_id));
   return null;
 end;

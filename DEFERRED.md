@@ -2530,12 +2530,13 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 회장 결정(10-07): 구매(0059) 취소 — 원가 엔진 설계로 대체. 0058의 적재 대상은 문서 하나(`loaded_table in ('documents')`), 0060이 결산 초안을 더한다. §F는 전부 권장안.
 
 - **입구 줄에도 등급 칸(`security_class`)** — 설계서 D에 없음. 읽기 «has_business AND attachment_class_ok»를 첨부 줄을 읽지 않고 판정하려고(첨부 정책 ↔ 입구 정책이 서로를 부르는 원). 같은 값은 첨부 restrictive insert + 커밋 때 제약 트리거가 잰다. 다른 안: definer 함수로 첨부 등급을 읽기.
-- **`intake_move_to_document`는 security definer**(설계서 A1-6은 invoker) — 쓰는 칸(attachments.entity_* · intake_items.loaded_*)이 전부 호출자에게 grant가 없는 칸이라. 판정(활성 · 사람 역할 · 회사 AND 등급 · 0048 can_write_documents · 등급 ≤ 열람 등급 · 등록자 = 본인)은 함수 안에 다 적었고, BYPASSRLS 없는 소유자 + 대조군도 check-migrations가 잰다. 다른 안: 그 칸들을 authenticated에 열고 트리거 + GUC 깃발로 거르기(PostgREST 직접 쓰기 길이 같이 열림).
+- **`intake_move_to_document`는 security definer**(설계서 A1-6은 invoker) — 쓰는 칸(attachments.entity_* · intake_items.loaded_*)이 전부 호출자에게 grant가 없는 칸이라. 판정(활성 · 사람 역할 · 회사 AND 등급 · 0048 can_write_documents · 등급 ≤ 열람 등급 · 등록자 = 본인 · AI 차단 줄은 대표만)은 함수 안에 다 적었다. **Supabase 소유자는 BYPASSRLS라 documents · audit_log의 force는 이 함수에 걸리지 않는다** — 함수 안 판정이 전부이고, check-migrations의 BYPASSRLS 없는 소유자 실험은 보조 확인일 뿐이다(리뷰 I3로 고쳐 적음). 다른 안: 그 칸들을 authenticated에 열고 트리거 + GUC 깃발로 거르기(PostgREST 직접 쓰기 길이 같이 열림).
 - **attachments.storage_path: 생성 칸 → 보통 칸**(`drop expression`, 값 그대로 · stamp가 insert 때 같은 식으로 적고 update 때 고정). 입구 → 문서로 대상을 바꾸면 생성 칸이 경로를 다시 계산하는데 Storage 객체는 SQL로 못 옮긴다. 경로 = «처음 올린 자리». 다른 안: 앱이 Storage move 후 경로 갱신(두 단계 · 실패 창), 또는 재지정 대신 문서가 입구 첨부를 링크.
 - **입구 만들기는 `intake_begin` RPC 하나**(invoker) — 입구 줄 ↔ 첨부가 서로를 가리켜 한 트랜잭션이어야 해서. FK는 deferrable initially deferred, 커밋 때 `intake_items_link_check`가 «그 첨부가 이 줄의 파일인가»를 잰다. 다른 안: attachment_id nullable + 나중에 채우기(그 칸 update grant가 열림).
 - **첨부 삭제 → 입구 줄 cascade**(첨부 삭제는 delete_request 감사에 남는다) · **적재 중인 원본은 삭제 거부**(restrictive). A5 «올린 파일은 지우세요»를 막지 않으려고. 다른 안: on delete restrict(입구 줄이 있는 한 파일을 못 지움).
-- **되돌리기 = 문서 soft delete가 트리거로**(별도 RPC 없음) — 권한은 0048 documents_update(적재한 사람 = 그 문서의 등록자 · 회장). 문서에는 승인 권한(can_approve)이 없어 A3 «그 대상의 승인 권한자»는 해당 없음. 일반 문서 지우기 화면으로 지워도 입구로 돌아온다. 상태는 늘 'proposed'(AI 제안이 없던 줄도 — 지시대로). 다른 안: 전용 RPC · 제안 없던 줄은 'kept'.
+- **되돌리기 = 문서 soft delete가 트리거로**(별도 RPC 없음) — 권한은 0048 documents_update(적재한 사람 = 그 문서의 등록자 · 회장). 문서에는 승인 권한(can_approve)이 없어 A3 «그 대상의 승인 권한자»는 해당 없음. 일반 문서 지우기 화면으로 지워도 입구로 돌아온다. 상태는 'proposed'(AI 제안이 없던 줄도 — 지시대로), AI 차단 줄은 no_ai(같은 이유)로(리뷰 I1). 다른 안: 전용 RPC · 제안 없던 줄은 'kept'.
 - **입구에서 온 문서의 storage_url = `/documents/<id>`**(앱 안 링크 — 파일 실체는 그 문서의 첨부). documents.storage_url이 not null이고 DB 검사는 없다(앱 createDocument만 http(s)를 요구). 블록 3이 이 링크를 앱 안 링크로 그린다. 다른 안: storage_url을 nullable로.
+- **AI 제외 DB 문이 막는 것은 제3자뿐(리뷰 I2로 고쳐 적음)**: 감사 줄이 없으면 읽기 통행증이 없어 Storage가 제3자에게 파일을 안 주지만, **올린 사람 · 회장은 통행증 없이 객체를 연다**(0045 attachment_object_visible — 의미는 바꾸지 않음). 그 둘에게는 «record_attachment_ai_send 먼저 → 거부면 멈춤 → 그다음 파일 읽기»라는 앱의 호출 순서(summarize.ts)가 문이다. 다른 안: 0045 객체 정책에서 올린 사람 · 회장 예외를 걷기(지우기 · 내려받기 흐름이 바뀐다 — 하지 않음).
 - **AI 제외 DB 문을 둘 더**: 입구 줄이 no_ai이거나, 사진(image/*)인데 «배합비 아님» 확인이 없으면 `record_attachment_ai_send` 42501 ai_excluded(F4). 스캔 PDF는 DB가 글자층을 몰라 앱이 같은 확인을 요구한다. 제외 목록에 0057 전표 증빙 자리(주석 한 줄).
 - **0057이 서면 주의**: 0058이 entity check · attachment_entity_visible · attachments_stamp · attachment_object_uploadable · record_attachment_ai_send를 0050/0045판에서 다시 만든다. 0057(전표 증빙)이 0058보다 **앞 번호로** 들어가면 0058이 그 case를 조용히 지운다 → 0057은 0058 뒤 번호로 쓰거나, 0058 본문에 그 case를 더한 뒤 들인다.
 - **확인 권한자 = 종류와 무관하게 0048 문서 쓰기**(`intake_can_confirm` — 적재가 문서뿐이라). 0060이 statement → can_keep_books 갈래를 더한다. 종류 바꾸기 · 다시 읽기 = 올린 사람 · 확인 권한자 · 회장.
@@ -2546,3 +2547,14 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - **오류 코드**: intake_already_loaded 23505 · intake_not_ready 55000 · intake_loaded_locked 55000 · intake_kind_missing / intake_title_invalid / intake_attachment_missing 23514 · 권한 · 제외 42501.
 - **배포 순서**: 0058은 0050(finance_imports)을 전제한다 → ECOUNT 릴리스 B(0050~0052 · 0056) 뒤. LATEST_MIGRATION = 0058_intake(0057 파일은 아직 없다).
 - **검증 메모**: typecheck가 처음에 `.next/types/routes.d.ts`(10-06 빌드, ECOUNT 병합 전)가 낡아 `/finance/[business_id]/import` 경로로 실패 — `npx next typegen`으로 다시 만든 뒤 통과(코드 변경 아님, .next는 git 밖).
+
+### 0058 리뷰 1차(2026-10-07) 반영
+
+- **I1 AI 차단은 끈적하다** — 새 칸 `ai_blocked_reason`(grant 없음, stamp만 바꾼다). no_ai에 들어가면 이유가 복사되고, no_ai에서 나가거나 이유를 바꾸는 것은 **이유와 무관하게 대표(또는 세션 없는 SQL)만**(`intake_ai_unblock_forbidden`). 대표가 직접 풀면 차단이 지워지고(감사 «배합비 차단 풀림 / AI 제외 풀림 — 대표 확인»), 대표가 차단 줄을 적재하면 차단이 남아 문서 첨부가 된 원본도 AI로 못 간다. 적재 RPC는 no_ai 줄을 대표가 아니면 거부(`intake_ai_blocked`). 되돌리기는 차단 줄을 no_ai(같은 이유)로. record_attachment_ai_send는 definer 한 비트 `intake_ai_blocked(attachment, mime)`로 재다 — 적재 뒤 입구 줄 RLS가 좁아져도(I4) 빠지지 않게.
+  - 판단: **올린 사람의 «배합비 아님» 확인도 이미 걸린 not_attested 차단을 풀지 않는다**(코디네이터 지시 «이유 무관 대표만»). 앱(블록 2)은 사진 · 스캔본을 no_ai로 만들기 전에 확인을 받고, 확인이 없으면 uploaded/failed로 두고 «AI 안 보냄»은 정말 막을 때만 쓴다. 다른 안: 올린 사람의 확인이 not_attested만 풀게 열기(F3 원문에 더 가깝다).
+- **I3 판 사슬** — 0038 documents_version이 소유자 권한(BYPASSRLS)으로 «직전 판»을 찾아 못 보는 · 지운 문서에 이어 붙였다. 적재 함수가 그 후보를 `intake_doc_readable`(0026 documents_read와 같은 식 + soft delete 숨김, definer)로 다시 재고 못 보면 supersedes = null · version = 1. **documents_read를 바꾸는 마이그레이션은 이 함수도 같이 고친다**(두 벌 — 다른 안: 판 사슬을 적재에서 아예 끄기).
+- **I4 적재된 입구 줄 읽기** — status = 'loaded'면 + (그 문서가 보이는 사람(attachment_entity_visible — documents RLS) · 올린 사람 · 회장). 올린 사람은 자기 파일의 제안이라 남겼다. 다른 안: 올린 사람도 문서 가시성으로.
+- **M1** — 어느 상태에서든 'uploaded'로 되돌아가기 거부(`intake_status_back_to_uploaded`) — 0045 재업로드 창이 다시 열리지 않게.
+- **M5** — 직접 insert의 storage_path 위조는 stamp가 덮는다 · 직원 update는 grant 없음 · 소유자 update도 stamp가 고정(검사 더함).
+- **M2(그대로 둠)** — 감사 메모의 «AI 제안»은 `proposal is not null`만 보고 적는다. 제안 칸은 올린 사람 · 확인 권한자가 쓸 수 있는 칸이라 «정말 AI가 냈는가»를 DB가 증명하지 못한다(ai_usage_log와 잇지 않음). 다른 안: 제안 칸을 서버 전용 RPC로만 쓰기.
+- **M3(그대로 둠)** — `intake_attachment_loaded(uuid)` · `intake_ai_blocked(uuid, text)`는 첨부 id를 아는 사람에게 한 비트를 알려 주는 definer 함수(오라클)다. 첨부 id는 uuid라 추측이 어렵고 내용은 «적재 중 · 차단» 한 비트뿐이라 위험이 낮다.

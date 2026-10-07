@@ -6542,7 +6542,8 @@ async function intake(nonBypassOwner = false) {
   assert.equal(await as(IK.vana, [setKind('itk_n')]), 0, '0058: 다른 회사 사람이 입구 줄을 고친다')
   assert.equal(await as(IK.agent, [setKind('itk_n')]), 0, '0058: AIAgent가 입구 줄을 고친다')
   for (const col of [`loaded_table = 'documents'`, `loaded_id = 'doc_x'`, `kind_confirmed_by = '${IK.up}'`, `proposal_history = '[]'::jsonb`,
-    `business_id = 'biz_vana'`, `security_class = 'Restricted'`, `attachment_id = '${IA.biz}'`, `created_by = '${IK.peer}'`, `mix_attested_by = '${IK.up}'`]) {
+    `business_id = 'biz_vana'`, `security_class = 'Restricted'`, `attachment_id = '${IA.biz}'`, `created_by = '${IK.peer}'`, `mix_attested_by = '${IK.up}'`,
+    `ai_blocked_reason = null`]) {
     await assert.rejects(as(IK.up, [`update intake_items set ${col} where item_id = 'itk_n'`]), /permission denied/,
       `0058: 올린 사람이 ${col.split(' ')[0]}을 직접 쓴다(칸 grant가 열렸다)`)
   }
@@ -6572,10 +6573,10 @@ async function intake(nonBypassOwner = false) {
     '0058: 회장도 남이 올린 사진의 «배합비 아님»을 대신 누른다')
   // 배합비 차단 풀기는 대표만(F3).
   const mixBlock = `update intake_items set status = 'no_ai', no_ai_reason = 'mix_ratio' where item_id = 'itk_n'`
-  await assert.rejects(as(IK.up, [mixBlock, `update intake_items set status = 'proposed' where item_id = 'itk_n'`]), /intake_mix_unblock_forbidden/,
+  await assert.rejects(as(IK.up, [mixBlock, `update intake_items set status = 'proposed' where item_id = 'itk_n'`]), /intake_ai_unblock_forbidden/,
     '0058: 올린 사람이 배합비 차단을 푼다')
   await assert.rejects(as(IK.lead, [mixBlock, `update intake_items set status = 'no_ai', no_ai_reason = 'not_attested' where item_id = 'itk_n'`]),
-    /intake_mix_unblock_forbidden/, '0058: 이유를 바꿔 배합비 차단을 우회한다')
+    /intake_ai_unblock_forbidden/, '0058: 이유를 바꿔 배합비 차단을 우회한다')
   assert.equal(await as(IK.up, [mixBlock, `@${IK.chair}`, `update intake_items set status = 'proposed' where item_id = 'itk_n'`,
     `select count(*)::int from intake_items where item_id = 'itk_n' and status = 'proposed' and no_ai_reason is null`]), 1,
   '0058: 대표가 배합비 차단을 못 푼다(또는 이유가 남는다)')
@@ -6689,6 +6690,79 @@ async function intake(nonBypassOwner = false) {
   assert.equal(await as(IK.up, [...ready, `@${IK.lead}`, move(), `select soft_delete('documents', ${doc})`, `@${IK.up}`, `delete from attachments where attachment_id = '${IA.n}'`]), 1,
     '0058: 되돌린 뒤에도 올린 사람이 원본을 못 지운다')
 
+  // ── 리뷰 I1: AI 차단은 끈적하다 — no_ai에서 나가는 것은 이유와 무관하게 대표만 · 적재 · 되돌리기를 지나도 남는다 ──
+  const blockAs = (reason: string) => `!update intake_items set status = 'no_ai', no_ai_reason = '${reason}', kind = 'contract' where item_id = 'itk_n'`
+  for (const reason of ['not_attested', 'excluded_entity', 'mix_ratio']) {
+    for (const [who, uid] of [['올린 사람', IK.up], ['문서 쓰기 권한자', IK.lead]] as const) {
+      await assert.rejects(as(uid, [blockAs(reason), `update intake_items set status = 'proposed' where item_id = 'itk_n'`]), /intake_ai_unblock_forbidden/,
+        `0058 I1: ${who}가 «AI 안 보냄»(${reason})을 풀어 AI로 보낸다`)
+      await assert.rejects(as(uid, [blockAs(reason), `update intake_items set status = 'kept' where item_id = 'itk_n'`]), /intake_ai_unblock_forbidden/,
+        `0058 I1: ${who}가 «AI 안 보냄»(${reason})을 «보관»으로 바꿔 차단을 지운다`)
+    }
+    await assert.rejects(as(IK.lead, [blockAs(reason), move()]), /intake_ai_blocked/, `0058 I1: 문서 쓰기 권한자가 «AI 안 보냄»(${reason}) 줄을 적재한다`)
+    await assert.rejects(as(IK.up, [blockAs(reason), `select record_attachment_ai_send('${IA.n}', 'm')`]), /ai_excluded/, `0058 I1: «AI 안 보냄»(${reason}) 원본이 AI로 간다`)
+  }
+  // 올린 사람의 «배합비 아님» 확인은 이미 걸린 차단을 풀지 않는다(풀기는 대표만 — 앱은 확인을 받은 뒤에 읽는다).
+  await assert.rejects(as(IK.up, [blockAs('not_attested'), `update intake_items set mix_attested_at = now() where item_id = 'itk_n'`,
+    `select record_attachment_ai_send('${IA.n}', 'm')`]), /ai_excluded/, '0058 I1: 확인 도장이 «AI 안 보냄» 차단을 우회한다')
+  // 대표가 배합비 줄을 문서로 넣는다 → 차단은 남고, 되돌리면 no_ai(같은 이유)로.
+  assert.equal(await as(IK.chair, [blockAs('mix_ratio'), move(),
+    `select (status = 'loaded' and no_ai_reason is null and ai_blocked_reason = 'mix_ratio')::int from intake_items where item_id = 'itk_n'`]), 1,
+  '0058 I1: 대표가 배합비 줄을 적재하지 못하거나 적재가 차단을 지운다')
+  await assert.rejects(as(IK.chair, [blockAs('mix_ratio'), move(), `select record_attachment_ai_send('${IA.n}', 'm')`]), /ai_excluded/,
+    '0058 I1: 대표가 적재한 배합비 원본(문서 첨부)이 AI로 간다')
+  assert.equal(await as(IK.chair, [blockAs('mix_ratio'), move(), `select soft_delete('documents', ${doc})`,
+    `select (status = 'no_ai' and no_ai_reason = 'mix_ratio' and ai_blocked_reason = 'mix_ratio' and loaded_id is null)::int from intake_items where item_id = 'itk_n'`]), 1,
+  '0058 I1: 배합비 줄의 적재를 되돌렸는데 proposed로(차단 없이) 돌아온다')
+  await assert.rejects(as(IK.chair, [blockAs('mix_ratio'), move(), `select soft_delete('documents', ${doc})`, `@${IK.up}`,
+    `update intake_items set status = 'proposed' where item_id = 'itk_n'`]), /intake_ai_unblock_forbidden/, '0058 I1: 되돌린 뒤 올린 사람이 차단을 푼다')
+  await assert.rejects(as(IK.chair, [blockAs('mix_ratio'), move(), `select soft_delete('documents', ${doc})`, `select record_attachment_ai_send('${IA.n}', 'm')`]),
+    /ai_excluded/, '0058 I1: 되돌린 배합비 원본이 AI로 간다')
+  // 대표가 직접 풀면 차단이 지워지고 AI로 간다(감사 한 줄).
+  assert.equal(await as(IK.up, [blockAs('not_attested'), `@${IK.chair}`, `update intake_items set status = 'proposed' where item_id = 'itk_n'`,
+    `select record_attachment_ai_send('${IA.n}', 'm')::int + (select count(*)::int * 10 from intake_items where item_id = 'itk_n' and ai_blocked_reason is null)
+        + (select count(*)::int * 100 from audit_log where entity_id = 'itk_n' and note = 'AI 제외 풀림 — 대표 확인')`]), 111,
+  '0058 I1: 대표가 «AI 안 보냄»을 풀었는데 차단이 남거나 · AI로 못 가거나 · 감사가 없다')
+
+  // ── 리뷰 I3: 못 보는 문서의 판 사슬에 붙지 않는다 ──
+  const docAs = (id: string, by: string, extra = '') =>
+    `!insert into documents (document_id, business_id, title, doc_type, security_class, storage_url, uploaded_by, owner_user_id${extra ? ', deleted_at' : ''})
+       values ('${id}', 'biz_dy', '공급 계약서', 'Contract', 'Normal', 'https://x/${id}', '${by}', '${by}'${extra})`
+  const chain = `select (coalesce(supersedes, '-') || ':' || version) from documents where document_id = ${doc}`
+  assert.equal(await as(IK.lead, [docAs('doc_hid58', IK.sales), `select count(*)::int from documents where document_id = 'doc_hid58'`]), 0,
+    '0058 I3 검사 전제: 팀장은 영업팀장의 문서를 못 본다')
+  assert.equal(await as(IK.lead, [docAs('doc_hid58', IK.sales), ...ready, move(), chain]), '-:1',
+    '0058 I3: 적재한 문서가 호출자가 못 보는 문서의 판 사슬에 붙는다')
+  assert.equal(await as(IK.lead, [docAs('doc_own58', IK.lead), ...ready, move(), chain]), 'doc_own58:2',
+    '0058 I3: 호출자가 보는 같은 제목 문서의 다음 판으로 안 이어진다(0038 판 사슬 회귀)')
+  assert.equal(await as(IK.lead, [docAs('doc_del58', IK.lead, ', now()'), ...ready, move(), chain]), '-:1',
+    '0058 I3: 지운 문서의 판 사슬에 붙는다')
+
+  // ── 리뷰 I4: 적재된 입구 줄은 그 문서가 보이는 사람 · 올린 사람 · 회장만 ──
+  const loadedRow = `select count(*)::int from intake_items where item_id = 'itk_n'`
+  for (const [who, uid, n] of [['문서를 못 보는 동료', IK.peer, 0], ['문서를 못 보는 다른 문서 쓰기 권한자', IK.sales, 0],
+    ['올린 사람', IK.up, 1], ['적재한 사람', IK.lead, 1], ['회장', IK.chair, 1]] as const) {
+    assert.equal(await as(IK.up, [...ready, `@${IK.lead}`, move(), `@${uid}`, loadedRow]), n,
+      `0058 I4: 적재된 입구 줄(제안 · loaded_id)이 ${who}에게 ${n ? '안 ' : ''}보인다`)
+  }
+
+  // ── 리뷰 M1: «업로드됨»으로 돌아가 재업로드 창을 다시 여는 길이 없다 ──
+  for (const uid of [IK.up, IK.chair]) {
+    await assert.rejects(as(uid, [`update intake_items set status = 'proposed' where item_id = 'itk_n'`, `update intake_items set status = 'uploaded' where item_id = 'itk_n'`]),
+      /intake_status_back_to_uploaded/, '0058 M1: 입구 줄이 uploaded로 되돌아간다(재업로드 창이 다시 열린다)')
+  }
+
+  // ── 리뷰 M5: storage_path는 화면 값을 받지 않는다 ──
+  assert.equal(await as(IK.up, [
+    `insert into attachments (attachment_id, entity_table, entity_id, file_name, mime, size_bytes, security_class, storage_path)
+       values ('00000000-0000-0000-0000-00000058f00d', 'businesses', 'biz_dy', 'b.pdf', 'application/pdf', 10, 'Normal', 'intake_items/itk_n/${IA.n}')`,
+    `select storage_path from attachments where attachment_id = '00000000-0000-0000-0000-00000058f00d'`]),
+  'businesses/biz_dy/00000000-0000-0000-0000-00000058f00d', '0058 M5: 직접 insert가 보낸 storage_path(남의 객체 경로)가 그대로 남는다')
+  await assert.rejects(as(IK.up, [`update attachments set storage_path = 'x' where attachment_id = '${IA.n}'`]), /permission denied/,
+    '0058 M5: 직원이 storage_path를 고친다')
+  assert.equal(await as(IK.chair, [`!update attachments set storage_path = 'x' where attachment_id = '${IA.n}'`,
+    `select storage_path from attachments where attachment_id = '${IA.n}'`]), `intake_items/itk_n/${IA.n}`, '0058 M5: 소유자 update가 storage_path를 바꾼다(stamp가 고정해야 한다)')
+
   // 읽은 뒤에는 원본을 바꿔 올리지 못한다(재업로드 창).
   const reup = [`!delete from storage.objects where name = 'intake_items/itk_n/${IA.n}'`,
     `insert into storage.objects (bucket_id, name) values ('attachments', 'intake_items/itk_n/${IA.n}')`]
@@ -6738,7 +6812,7 @@ async function main() {
   await intake()
   await intake(true)
   console.log(
-    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단), 0048 문서 모듈 권한(사람 × 회사 · 문서 · 폴더 쓰기 · 줄 없는 팀장 거부 · 회사 접근과 줄 둘 다 · 열람 등급 위 insert/update 차단 · 등록자는 본인 · 고치기 · 지우기는 자기 것만(회장 전부) · 주인 칸은 회장만 · 폴더는 만든 사람만 · 시스템 계정 불변 · 옛 /core/search 회귀 · 회수 감사 · hard delete 닫힘), 0049 직원 화면 용어(결재선 · 취합 제목 «회장»→«대표» 백필 — 사람 · 단계 · updated_at 그대로 · 얼림 재가동 · 새 결재선 · 감사 메모도 «대표»), 0050 ECOUNT 업로드(업로드 표 — 쓰기 권한자 본인 draft만 · 남의 draft/끝난 업로드 못 고침 · 지우기 없음 · 칸 단위 update · 해시 한 번 · 재무 읽기 없으면 0행 · 시스템 계정 restrictive · anon 잠금 · 업로드 전표 활성 (회사, 달) 하나 · 이 트랜잭션에 본인이 세운 그 달 전표만 잇고(수기 · 남의 · 역분개 거부) 본인이 세운 정확한 반대 역분개 뒤에만 내림(가짜 역분개 거부) · 첨부 원본은 재무 권한자만 보고 본인만 올림 · committed/cancelled 원본은 줄 · 객체 삭제와 재업로드 거부 · 사람의 ECOUNT 계정 + source 불변 · 공식 재무제표 basis/증빙/활성 unique basis별 · update는 supersede만 · 세무사 저장이 ECOUNT 잠정을 안 밈), 0051 ECOUNT 등록 RPC(계정과목 · 연간 한 트랜잭션 · 감사 먼저 · 본인 draft · 종류 · 해시 · 장부 권한 · ECOUNT 회사 · 시스템 계정 거부 · 이미 있는 코드 · 바뀐 이름 · 세무사 확정 해 · 균형 · ECOUNT 재업로드 supersede · 헤더/줄 직접 쓰기 닫힘 · 복합 FK · 사람의 committed 닫힘 · 세무사 저장 definer · BYPASSRLS 없는 소유자에서도 등록 + force 대조군), 0052 ECOUNT 월별 RPC(달마다 전표 + 대응 계정 · 누계 → 당월 · 재업로드 = 역분개 + 정정분개 + 옛 줄 내림 — 두 번 세지 않음 · 같은 내용 건너뜀 · 이미 역분개된 달 멈춤 · 마감 달 · 세무사 확정 달 · 재무상태표/비활성/모르는 계정 · 원본 첨부 · 권한 · 전부 아니면 전무 · BYPASSRLS 없는 소유자 + force 대조군), 0054 첫 직원 결재(대표는 팀장 칸에 서지 않음 · 400만 «기록 완료» · 600만 대표 칸 Open · 대표 열람 · 비승인권자 insert는 Open · 새 직원/회장 되살림 «결재 올리기»(초대 이행 재부여는 PGlite 전용) · 금액 모양 · insert/update 처리자 고정 · dummy 거울), 0055 온보딩 위임(«DY 사용자 관리자» 줄 · 사원 · 팀장만 · Executive 거부 · 권한 ⊆ 관리자 · 마감 없음 · 상사 필수 · subtree 밖 상사 · 등급 · 다른 회사 · 가드 · 회장 알림 · 감사 · 가입 권한 재확인 · 남의 결재 못 봄 · 취소 · 능력 회수 · 아침 숫자 · BYPASSRLS 없는 소유자), 0056 ECOUNT 마무리(첫 등록 전표 감사 · 금액 없는 달 = 미리보기 때 본 전표만 역분개(다르면 import_changed · 정정분개도 · 전부 아니면 전무 · summary.result.reversed) · 빈 달 마감/확정 판정은 손댈 달만 · 월 마감과 월별 등록이 같은 회사 잠금(0052 열쇠 그대로) · 릴리스 전 확인 SQL은 select만 · 0049 DB와 전부 올린 DB에서 읽기 전용으로 돈다), 0058 자료 받는 입구(칸 다섯만 update · 적재 칸 · 도장 · 이력 grant 없음 · 회사 AND 등급 읽기 · intake_begin 한 트랜잭션 · 남의 첨부 · 첨부 없는 줄 커밋 거부 · 올린 사람 · 문서 쓰기 권한자 · 회장만 고침 · «배합비 아님»은 올린 사람만 · 차단 풀기는 대표만 · ECOUNT 원본 · AI 안 보냄 · 확인 없는 사진은 ai_excluded(감사 없음) · finance_imports 첨부 회귀 · 문서 적재(경로 그대로 · 감사 «AI 제안, 팀장 확인» · «대표») · 권한 · 다른 회사 · 시스템 계정 · 종류 없음 · 이중 적재 거부 · 입구 밖 재지정 거부 · 적재 원본 삭제 거부 · 문서 soft delete 되돌리기 · 다시 적재 · 읽은 뒤 재업로드 거부 · 같은 파일 알림 · BYPASSRLS 없는 소유자 + 대조군)`,
+    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단), 0048 문서 모듈 권한(사람 × 회사 · 문서 · 폴더 쓰기 · 줄 없는 팀장 거부 · 회사 접근과 줄 둘 다 · 열람 등급 위 insert/update 차단 · 등록자는 본인 · 고치기 · 지우기는 자기 것만(회장 전부) · 주인 칸은 회장만 · 폴더는 만든 사람만 · 시스템 계정 불변 · 옛 /core/search 회귀 · 회수 감사 · hard delete 닫힘), 0049 직원 화면 용어(결재선 · 취합 제목 «회장»→«대표» 백필 — 사람 · 단계 · updated_at 그대로 · 얼림 재가동 · 새 결재선 · 감사 메모도 «대표»), 0050 ECOUNT 업로드(업로드 표 — 쓰기 권한자 본인 draft만 · 남의 draft/끝난 업로드 못 고침 · 지우기 없음 · 칸 단위 update · 해시 한 번 · 재무 읽기 없으면 0행 · 시스템 계정 restrictive · anon 잠금 · 업로드 전표 활성 (회사, 달) 하나 · 이 트랜잭션에 본인이 세운 그 달 전표만 잇고(수기 · 남의 · 역분개 거부) 본인이 세운 정확한 반대 역분개 뒤에만 내림(가짜 역분개 거부) · 첨부 원본은 재무 권한자만 보고 본인만 올림 · committed/cancelled 원본은 줄 · 객체 삭제와 재업로드 거부 · 사람의 ECOUNT 계정 + source 불변 · 공식 재무제표 basis/증빙/활성 unique basis별 · update는 supersede만 · 세무사 저장이 ECOUNT 잠정을 안 밈), 0051 ECOUNT 등록 RPC(계정과목 · 연간 한 트랜잭션 · 감사 먼저 · 본인 draft · 종류 · 해시 · 장부 권한 · ECOUNT 회사 · 시스템 계정 거부 · 이미 있는 코드 · 바뀐 이름 · 세무사 확정 해 · 균형 · ECOUNT 재업로드 supersede · 헤더/줄 직접 쓰기 닫힘 · 복합 FK · 사람의 committed 닫힘 · 세무사 저장 definer · BYPASSRLS 없는 소유자에서도 등록 + force 대조군), 0052 ECOUNT 월별 RPC(달마다 전표 + 대응 계정 · 누계 → 당월 · 재업로드 = 역분개 + 정정분개 + 옛 줄 내림 — 두 번 세지 않음 · 같은 내용 건너뜀 · 이미 역분개된 달 멈춤 · 마감 달 · 세무사 확정 달 · 재무상태표/비활성/모르는 계정 · 원본 첨부 · 권한 · 전부 아니면 전무 · BYPASSRLS 없는 소유자 + force 대조군), 0054 첫 직원 결재(대표는 팀장 칸에 서지 않음 · 400만 «기록 완료» · 600만 대표 칸 Open · 대표 열람 · 비승인권자 insert는 Open · 새 직원/회장 되살림 «결재 올리기»(초대 이행 재부여는 PGlite 전용) · 금액 모양 · insert/update 처리자 고정 · dummy 거울), 0055 온보딩 위임(«DY 사용자 관리자» 줄 · 사원 · 팀장만 · Executive 거부 · 권한 ⊆ 관리자 · 마감 없음 · 상사 필수 · subtree 밖 상사 · 등급 · 다른 회사 · 가드 · 회장 알림 · 감사 · 가입 권한 재확인 · 남의 결재 못 봄 · 취소 · 능력 회수 · 아침 숫자 · BYPASSRLS 없는 소유자), 0056 ECOUNT 마무리(첫 등록 전표 감사 · 금액 없는 달 = 미리보기 때 본 전표만 역분개(다르면 import_changed · 정정분개도 · 전부 아니면 전무 · summary.result.reversed) · 빈 달 마감/확정 판정은 손댈 달만 · 월 마감과 월별 등록이 같은 회사 잠금(0052 열쇠 그대로) · 릴리스 전 확인 SQL은 select만 · 0049 DB와 전부 올린 DB에서 읽기 전용으로 돈다), 0058 자료 받는 입구(칸 다섯만 update · 적재 칸 · 도장 · 이력 grant 없음 · 회사 AND 등급 읽기 · intake_begin 한 트랜잭션 · 남의 첨부 · 첨부 없는 줄 커밋 거부 · 올린 사람 · 문서 쓰기 권한자 · 회장만 고침 · «배합비 아님»은 올린 사람만 · 차단 풀기는 대표만 · ECOUNT 원본 · AI 안 보냄 · 확인 없는 사진은 ai_excluded(감사 없음) · finance_imports 첨부 회귀 · 문서 적재(경로 그대로 · 감사 «AI 제안, 팀장 확인» · «대표») · 권한 · 다른 회사 · 시스템 계정 · 종류 없음 · 이중 적재 거부 · 입구 밖 재지정 거부 · 적재 원본 삭제 거부 · 문서 soft delete 되돌리기 · 다시 적재 · 읽은 뒤 재업로드 거부 · 같은 파일 알림 · BYPASSRLS 없는 소유자 + 대조군 · 리뷰 1차: AI 차단 끈적(이유 무관 대표만 풀기 · 적재/되돌리기 뒤에도) · 못 보는/지운 문서 판 사슬 거부 · 적재 줄은 문서 보는 사람만 · uploaded 되돌림 거부 · storage_path 위조 덮음)`,
   )
 }
 
