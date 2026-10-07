@@ -16,6 +16,7 @@ const ENTITY_LABEL: Record<Attachment['entity_table'], string> = {
   documents: '문서',
   decisions: '결재',
   finance_imports: 'ECOUNT 업로드',
+  intake_items: '자료 받는 입구',
 }
 
 export function RecentAttachments({ attachments, scopeName }: { attachments: Attachment[]; scopeName: (id: string | null) => string }) {

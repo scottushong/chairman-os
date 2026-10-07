@@ -36,7 +36,8 @@ import {
   dummyDecisionRows,
   dummyInterventions,
 } from './dummy-succession'
-import { attachmentSearchText, dummyAttachments } from './dummy-attachments'
+import { attachmentSearchText, dummyAttachmentRaw, dummyAttachments, dummySeedAttachment } from './dummy-attachments'
+import { dummyCanDeleteDocument, dummyIntake, dummyIntakeEntity, seedDummyIntake } from './dummy-intake'
 import { dummyFinanceImportEntity, dummyFinanceImports } from './dummy-finance-imports'
 import * as books from './dummy-books'
 import { dummyAssistant } from './dummy-assistant'
@@ -52,6 +53,7 @@ import {
   DUMMY_SHARE_SEED,
   DUMMY_TASKS,
   DUMMY_TEAMS,
+  DUMMY_UID,
   dummyCanWriteDocuments,
   dummyHasBusiness,
   clearDummyModuleGrants,
@@ -223,6 +225,8 @@ const memoryTaskPatches = new Map<string, TaskPatch & { blocked_since?: string }
  * 여기도 서버가 살아 있는 동안만이다.
  */
 const memoryDocuments: DocumentRecord[] = []
+/** 0042 soft delete — 지운 문서(dummy). 0058 되돌리기가 이 길을 탄다. */
+const memoryDeletedDocuments = new Set<string>()
 
 /**
  * CH-024로 고친 좌표. businessCoordinates(시드)는 읽기 전용이라 바뀐 칸만 따로 들고 있다가
@@ -522,8 +526,33 @@ const memoryActivityWeek = (() => {
  * src/data는 읽기 전용이라 여기서도 원본을 그대로 내보내지 않고 복사본을 준다 —
  * 화면에서 sort()를 한 번만 잘못 불러도 시드 배열 순서가 영구히 바뀐다.
  */
+/** 0058 자료 받는 입구(dummy-intake.ts) — 첨부 · 문서는 이 어댑터의 메서드를 그대로 탄다(권한 거울이 한 벌이게). */
+const intake = dummyIntake({
+  createAttachment: (input, actor) => dummyRepository.createAttachment(input, actor),
+  getAttachmentRaw: dummyAttachmentRaw,
+  createDocument: (input, actor) => dummyRepository.createDocument(input, actor),
+  listDocuments: () => dummyRepository.listDocuments(),
+  softDeleteDocument: (id) => memoryDeletedDocuments.add(id),
+})
+seedDummyIntake(dummySeedAttachment, { salesStaff: DUMMY_UID.salesStaff, supportLead: DUMMY_UID.supportLead, buyStaff: DUMMY_UID.buyStaff })
+
 export const dummyRepository: ChairmanRepository = {
   mode: 'dummy',
+
+  listIntakeItems: intake.listIntakeItems,
+  getIntakeItem: intake.getIntakeItem,
+  getIntakeByAttachment: intake.getIntakeByAttachment,
+  beginIntake: intake.beginIntake,
+  updateIntakeItem: intake.updateIntakeItem,
+  moveIntakeToDocument: intake.moveIntakeToDocument,
+  intakeSameFile: intake.intakeSameFile,
+  /** 0042 soft_delete('documents') + 0058 되돌리기 트리거의 거울. 회장 · 입구에서 그 문서를 적재한 사람만(0048 고치기). */
+  async deleteDocument(documentId, actor) {
+    const d = (await dummyRepository.listDocuments()).find((x) => x.document_id === documentId)
+    if (!d || !dummyCanDeleteDocument(documentId)) throw new Error('row-level security: 문서를 지울 권한이 없다(등록한 사람 · 대표만) 또는 이미 지운 문서')
+    memoryDeletedDocuments.add(documentId)
+    intake.onDocumentDeleted(documentId, actor)
+  },
 
   /**
    * Phase 10 첨부(0045). 대상 판정은 이 어댑터의 목록(각각 RLS를 옮겨 적은 것)으로 한다 —
@@ -546,6 +575,8 @@ export const dummyRepository: ChairmanRepository = {
     }
     // 0050 — ECOUNT 업로드 원본. 업로드가 보이는가(finance_imports_read = can_read_books).
     if (table === 'finance_imports') return dummyFinanceImportEntity(id)
+    // 0058 — 자료 받는 입구 원본. 입구 줄이 보이는가(회사 AND 등급).
+    if (table === 'intake_items') return dummyIntakeEntity(id)
     const d = (await dummyRepository.listDecisions()).find((x) => x.decision_id === id)
     return { visible: !!d && dummyHasBusiness(viewer, d.business_id), business_id: d?.business_id ?? null }
   }),
@@ -722,7 +753,7 @@ export const dummyRepository: ChairmanRepository = {
           dummySharedWithMe(memoryShares, viewer.user_id, 'documents', d.document.document_id) ||
           dummyOwnerUnknown(d.owner_user_id)),
     ).map((d) => ({ ...d.document, uploaded_by: ownerLabel(d.owner_user_id) }))
-    return [...seeded, ...memoryDocuments]
+    return [...seeded, ...memoryDocuments].filter((d) => !memoryDeletedDocuments.has(d.document_id))
   },
 
   /**

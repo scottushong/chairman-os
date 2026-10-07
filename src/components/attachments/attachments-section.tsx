@@ -13,11 +13,14 @@ export async function AttachmentsSection({
   entityId,
   fill,
   compact,
+  legacy,
 }: {
   entityTable: AttachmentEntity
   entityId: string
   fill?: AttachmentsPanelProps['fill']
   compact?: boolean
+  /** 0058 — 회사 화면의 «이전 첨부»(입구 전에 붙인 파일). 올리기 칸 없이 목록만. */
+  legacy?: boolean
 }) {
   const [repo, user] = await Promise.all([getRepository(), currentUser()])
   if (!user) return null
@@ -54,6 +57,7 @@ export async function AttachmentsSection({
       people={isChairman ? people.filter((p) => !p.revoked_at && p.user_id !== user.user_id).map((p) => ({ user_id: p.user_id, display_name: p.display_name })) : undefined}
       fill={fill}
       compact={compact}
+      legacy={legacy}
     />
   )
 }

@@ -145,6 +145,7 @@ import {
 import { assistantMethods } from './supabase-assistant'
 import { attachmentMethods } from './supabase-attachments'
 import { financeImportMethods } from './supabase-finance-imports'
+import { intakeMethods } from './supabase-intake'
 
 /**
  * Supabase 어댑터.
@@ -788,6 +789,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     ...assistantMethods(sb),
     // ECOUNT 엑셀 업로드(0050 finance_imports) — 읽기는 0050 전 DB를 견딘다(supabase-finance-imports.ts 머리 주석).
     ...financeImportMethods(sb),
+    // 0058 자료 받는 입구.
+    ...intakeMethods(sb),
 
     async listBusinesses(): Promise<Business[]> {
       const { data, error } = await fetchAll('businesses', ['business_id'], (from, to) =>

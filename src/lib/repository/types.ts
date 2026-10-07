@@ -7,6 +7,10 @@ import type { CorrectionResult, NewCorrection, NewJournalEntry } from '@/lib/led
 import type { DecisionAuditRecord, DecisionAction } from '@/lib/decision-log'
 import type { SearchHit } from '@/lib/search'
 import type {
+  IntakePatch,
+  IntakeRow,
+  IntakeSameFile,
+  NewIntake,
   ModuleGrant,
   AbsenceDays,
   AbsenceResult,
@@ -357,6 +361,25 @@ export interface ChairmanRepository {
   setAttachmentViewer(attachmentId: string, userId: string, on: boolean, actor: AuditActor): Promise<void>
   /** AI 호출 한 번의 사용량(0045 ai_usage_log). 실패해도 요약은 살린다 — 호출자가 삼킨다. */
   logAiUsage(input: AiUsageInput): Promise<void>
+
+  /**
+   * 자료 받는 입구(0058 intake_items). 보이는 범위는 DB가 정한다 — 회사 AND 등급, 적재된 줄은 그 문서가 보이는 사람 ·
+   * 올린 사람 · 회장. 0058이 없는 DB에서는 읽기가 빈 목록이다(첨부와 같은 이유 — 앱이 DB보다 먼저 나갈 수 있다).
+   */
+  listIntakeItems(businessId: string): Promise<IntakeRow[]>
+  getIntakeItem(itemId: string): Promise<IntakeRow | null>
+  /** 이 첨부가 입구 원본인가(적재 뒤 문서 첨부가 된 것 포함) — 요약 길이 배합비 감지를 건너뛰지 않게. */
+  getIntakeByAttachment(attachmentId: string): Promise<IntakeRow | null>
+  /** 입구 줄 + 원본 첨부 줄을 한 트랜잭션으로(0058 intake_begin). 바이트는 따로 올린다(첨부와 같은 길). */
+  beginIntake(input: NewIntake, actor: AuditActor): Promise<{ item_id: string; attachment_id: string; storage_path: string }>
+  /** 앱이 고치는 칸 다섯(0058 grant). 도장 · 이력 · 적재 칸은 DB가 적는다. 못 고치면 던진다(RLS · stamp). */
+  updateIntakeItem(itemId: string, patch: IntakePatch, actor: AuditActor): Promise<void>
+  /** 확인 → 문서(0058 intake_move_to_document). 새 document_id. */
+  moveIntakeToDocument(itemId: string, input: { title: string; doc_type: string; folder_id?: number | null; tags?: string[] }, actor: AuditActor): Promise<string>
+  /** 같은 회사 입구의 같은 sha256 파일(0058 intake_same_file — 보이는 줄만). */
+  intakeSameFile(itemId: string): Promise<IntakeSameFile[]>
+  /** 문서 지우기 = soft delete(0042 soft_delete — 0048 고치기 규칙). 입구에서 온 문서면 0058 트리거가 입구로 되돌린다. */
+  deleteDocument(documentId: string, actor: AuditActor): Promise<void>
 
   listProjects(): Promise<Project[]>
   listTasks(): Promise<Task[]>

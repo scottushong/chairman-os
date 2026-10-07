@@ -90,6 +90,9 @@ export function entityPath(table: AttachmentEntity, id: string, businessId?: str
       return `/documents/${id}`
     case 'decisions':
       return '/approvals'
+    case 'intake_items':
+      // 0058 — 입구 원본은 그 회사 화면의 «자료 받는 입구»에 있다(줄의 business_id는 DB 트리거가 입구 줄에서 낸다).
+      return businessId ? `/business/${encodeURIComponent(businessId)}` : '/documents'
   }
 }
 

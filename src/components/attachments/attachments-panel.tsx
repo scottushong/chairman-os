@@ -75,6 +75,8 @@ export interface AttachmentsPanelProps {
   /** 이니셔티브 상세에서만 — 비어 있는 칸(채우기 제안 대상). */
   fill?: { initiativeId: string; empty: FillField[] }
   compact?: boolean
+  /** 0058 — 회사 화면의 «이전 첨부»(자료 받는 입구 전에 붙인 파일). 올리기 칸을 그리지 않는다 — 새 파일은 입구로. */
+  legacy?: boolean
 }
 
 /**
@@ -99,7 +101,7 @@ async function toJpeg(bitmap: ImageBitmap, name: string): Promise<File | null> {
  * 올릴 파일과 형식. HEIC · HEIF · WebP · GIF는 JPEG로 바꾼다(DB 0045는 png · jpeg만 받는다). PNG · JPEG는 한도를 넘을 때만 줄인다.
  * 바꿀 수 없으면 이유를 담아 던진다 — 그 파일은 올리지 않는다. 형식 자체는 checkAttachmentFile이 놓을 때 이미 걸렀다.
  */
-async function prepareUpload(original: File, phase: (text: string) => void): Promise<{ file: File; mime: string }> {
+export async function prepareUpload(original: File, phase: (text: string) => void): Promise<{ file: File; mime: string }> {
   const mime = attachmentMime(original.name, original.type)
   const convert = mime ? null : convertibleImage(original.name, original.type)
   if (!mime && !convert) throw new Error(`${ATTACHMENT_FORMATS_KO}만 받습니다.`)
@@ -132,7 +134,7 @@ export function AttachmentsPanel(props: AttachmentsPanelProps) {
   const isChairman = viewer.role === 'Chairman'
   const defaultCls = defaultAttachmentClass(viewer.maxClass)
   // 올릴 수 있는 등급이 하나도 없으면(Public) 올리기 칸을 그리지 않는다 — 0045가 어차피 막는다.
-  const canUpload = viewer.role !== 'AIAgent' && viewer.role !== 'Integration' && defaultCls !== null
+  const canUpload = !props.legacy && viewer.role !== 'AIAgent' && viewer.role !== 'Integration' && defaultCls !== null
   const [cls, setCls] = useState<AttachmentClass>(defaultCls ?? 'Normal')
 
   /** 파일 한 개 — 공통 첨부 부품이 순서대로 부른다. 형식 · 20MB(사진 제외)는 놓을 때 이미 걸렀다. */
@@ -181,9 +183,9 @@ export function AttachmentsPanel(props: AttachmentsPanelProps) {
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="flex items-center gap-1.5 text-t13 font-semibold">
           <Icon name="file-text" className="size-4 text-accent" />
-          첨부 <span className="text-t11 font-normal text-ink-muted">{attachments.length}건</span>
+          {props.legacy ? '이전 첨부' : '첨부'} <span className="text-t11 font-normal text-ink-muted">{attachments.length}건</span>
         </h2>
-        <p className="text-t10h text-ink-muted">AI 요약은 참고용 — 결정 아님</p>
+        <p className="text-t10h text-ink-muted">{props.legacy ? '입구 전에 붙인 파일 · 새 파일은 «자료 받는 입구»로' : 'AI 요약은 참고용 — 결정 아님'}</p>
       </div>
 
       {canUpload ? (

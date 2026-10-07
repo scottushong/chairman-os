@@ -4,8 +4,8 @@
  * 값은 0045의 check 제약과 같은 목록이다. 한쪽만 늘면 화면이 받는 파일을 DB가 거부한다.
  */
 
-/** 첨부가 붙는 대상 다섯. 표 이름 그대로 — 0045 attachments_entity_check(0050이 finance_imports를 더했다 — ECOUNT 업로드 원본). */
-export const ATTACHMENT_ENTITY = ['initiatives', 'businesses', 'documents', 'decisions', 'finance_imports'] as const
+/** 첨부가 붙는 대상 여섯. 표 이름 그대로 — 0045 attachments_entity_check(0050이 finance_imports — ECOUNT 업로드 원본, 0058이 intake_items — 자료 받는 입구). */
+export const ATTACHMENT_ENTITY = ['initiatives', 'businesses', 'documents', 'decisions', 'finance_imports', 'intake_items'] as const
 export type AttachmentEntity = (typeof ATTACHMENT_ENTITY)[number]
 
 export const ATTACHMENT_STATUS = ['uploaded', 'extracting', 'summarized', 'skipped_vault', 'failed'] as const
@@ -64,6 +64,8 @@ export interface Attachment {
 
 /** 올리기 한 건의 메타. 경로 · 상태 · 올린 사람은 DB가 정한다. */
 export interface NewAttachment {
+  /** 0058 — 입구 원본은 입구 줄이 먼저 첨부 id를 적어 둔다(dummy만 쓴다 — live는 intake_begin RPC가 한 트랜잭션으로). */
+  attachment_id?: string
   entity_table: AttachmentEntity
   entity_id: string
   file_name: string

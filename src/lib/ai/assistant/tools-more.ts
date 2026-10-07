@@ -148,8 +148,8 @@ export const orgTool: AssistantTool = {
   },
 }
 
-/** 요약 도구가 받는 대상 — ECOUNT 업로드 원본(finance_imports)은 뺀다. */
-const SUMMARY_ENTITIES: AttachmentEntity[] = ATTACHMENT_ENTITY.filter((t) => t !== 'finance_imports')
+/** 요약 도구가 받는 대상 — ECOUNT 업로드 원본(finance_imports)과 입구 원본(intake_items — 배합비 감지 · 확인을 거쳐 입구에서만 읽는다)은 뺀다. */
+const SUMMARY_ENTITIES: AttachmentEntity[] = ATTACHMENT_ENTITY.filter((t) => t !== 'finance_imports' && t !== 'intake_items')
 
 export const attachmentsTool: AssistantTool = {
   def: {
@@ -170,7 +170,7 @@ export const attachmentsTool: AssistantTool = {
     const list = (SUMMARY_ENTITIES.includes(table) && id
       ? await ctx.repo.listAttachments(table, id)
       : await ctx.repo.listRecentAttachments(null, 20)
-    ).filter((a) => a.entity_table !== 'finance_imports')
+    ).filter((a) => SUMMARY_ENTITIES.includes(a.entity_table))
     const rows = list
       .filter((a) => a.security_class !== 'Vault')
       .map((a) => ({

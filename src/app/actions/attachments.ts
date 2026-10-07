@@ -2,7 +2,9 @@
 
 import { revalidatePath } from 'next/cache'
 
+import { ExtractError, extractAttachment } from '@/lib/attachments/extract'
 import { structureMemo, summarizeAttachment } from '@/lib/attachments/summarize'
+import { MIX_RATIO_MESSAGE, detectMixRatio } from '@/lib/intake/mix-ratio'
 import { ATTACHMENT_MAX_BYTES, ATTACHMENT_MIME, attachmentMime, entityPath } from '@/lib/attachments/rules'
 import { currentUser } from '@/lib/auth/session'
 import { getRepository } from '@/lib/repository'
@@ -58,6 +60,8 @@ export async function beginAttachment(input: unknown): Promise<BeginResult> {
   const mime = attachmentMime(file_name, typeof f.mime === 'string' ? f.mime : '')
 
   if (!ATTACHMENT_ENTITY.includes(entity_table) || !/^[A-Za-z0-9_-]{1,64}$/.test(entity_id)) return { error: '어디에 붙일지 알 수 없습니다.' }
+  // 0058 — 입구 원본은 입구 줄과 한 트랜잭션으로만 선다(intake_begin — app/actions/intake.ts).
+  if (entity_table === 'intake_items') return { error: '자료 받는 입구에는 입구 칸에서 올리세요.' }
   if (forImport && mime !== ATTACHMENT_MIME.xlsx) return { error: 'ECOUNT 업로드는 .xlsx 파일만 받습니다. ECOUNT에서 «엑셀(xlsx)»로 저장해 올리세요.' }
   if (!ATTACHMENT_CLASS.includes(security_class)) return { error: '등급을 고르세요.' }
   // CLAUDE.md — Vault는 링크만. 앱 레벨 암호화(회사 보유 키)가 생기면 이 줄을 걷는다.
@@ -128,6 +132,18 @@ export async function summarizeAttachmentAction(attachmentId: string): Promise<S
   // ECOUNT 업로드 원본(0050)은 장부 숫자 원문이다 — 외부 AI로 보내지 않는다(설계서 A «AI 요약은 부르지 않는다»).
   // AI 어시스턴트의 «요약 제안» 실행(execute.ts)도 이 문을 지난다.
   if (a.entity_table === 'finance_imports') return { error: 'ECOUNT 업로드 원본은 AI 요약을 하지 않습니다.' }
+  // 0058 — 입구 원본은 입구 칸에서만 읽는다(배합비 감지 · «배합비 아님» 확인이 먼저).
+  if (a.entity_table === 'intake_items') return { error: '자료 받는 입구의 파일은 입구 칸에서 읽습니다.' }
+  // 입구에서 문서로 넣은 원본 — 사람이 직접 종류를 골라 AI를 거치지 않고 넣었을 수 있다. 요약(외부 AI) 전에 배합비 감지를
+  // 한 번 더 돈다(글자층 파일만). 사진 · 스캔본의 확인 · 끈적한 차단은 DB(record_attachment_ai_send)가 막는다.
+  if (a.security_class !== 'Vault' && (await repo.getIntakeByAttachment(attachmentId).catch(() => null))) {
+    try {
+      const x = await extractAttachment(await repo.readAttachmentObject(a.storage_path), a.mime)
+      if (x.kind === 'text' && detectMixRatio(x.units).hit) return { error: MIX_RATIO_MESSAGE }
+    } catch (e) {
+      if (!(e instanceof ExtractError)) console.error('[attachments] 입구 원본 배합비 감지 실패', e)
+    }
+  }
   const result = await summarizeAttachment(repo, attachmentId)
   revalidatePath(entityPath(a.entity_table, a.entity_id, a.business_id))
   revalidatePath('/documents')
