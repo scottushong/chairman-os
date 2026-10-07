@@ -175,9 +175,8 @@ export default async function UsersPage(props: PageProps<'/settings/users'>) {
           <span className="text-t11 font-normal text-ink-muted tnum">{pending.length}건</span>
         </h2>
         <p className="mt-1 text-t10h leading-relaxed text-ink-muted">
-          계정이 아직 없는 사람들입니다. Supabase Dashboard에서 이 주소로 계정이 만들어지는 순간
-          아래 권한이 자동으로 붙습니다(0011 on_auth_user_created). {boss(user.role)} 결재가 붙은 초대는
-          승인 전에는 계정이 생겨도 권한이 붙지 않습니다(0026).
+          계정이 아직 없는 사람들입니다. 본인이 초대받은 이메일로 가입하는 순간 아래 권한이 자동으로 붙습니다.
+          {boss(user.role)} 결재가 붙은 초대는 승인 전에는 가입해도 권한이 붙지 않습니다.
         </p>
 
         {pending.length === 0 ? (
@@ -370,7 +369,7 @@ function InvitationRow({
          * 버튼을 그려 두고 아무 일도 안 일어나게 하는 것보다, 어디서 보내야 하는지를 적는다.
          */}
         {' · '}
-        재발송 — Supabase Dashboard → Authentication에서 보냅니다
+        다시 알릴 때 — 가입 주소(/signup)와 이 이메일을 본인에게 보냅니다
       </p>
     </li>
   )

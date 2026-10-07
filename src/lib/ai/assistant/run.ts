@@ -339,6 +339,8 @@ export async function runAssistant(req: AssistantRequest): Promise<AssistantAnsw
 
   let input = 0
   let output = 0
+  let cacheRead = 0
+  let cacheWrite = 0
   let text = ''
   let failure: AssistantAnswer['error']
   try {
@@ -348,9 +350,13 @@ export async function runAssistant(req: AssistantRequest): Promise<AssistantAnsw
         res = await client.messages.create({
           model,
           max_tokens: 2000,
-          system,
+          // 프롬프트 캐시(2026-10-07). 순서는 tools → system → messages라 system 끝의 표시가 도구 정의 + 지시문을 함께 담는다
+          // (역할마다 늘 같은 글 — 5분 안의 다음 질문도 읽는다). 맨 위 cache_control은 마지막 블록에 자동 표시 — 도구 왕복의
+          // 다음 차례가 앞 차례까지를 0.1배로 읽는다. 쓰기는 1.25배라 도구를 한 번도 안 부른 답은 질문 몇 줄만큼 조금 더 낸다.
+          system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
           tools: tools.map((t) => t.def),
           messages,
+          cache_control: { type: 'ephemeral' },
         })
       } catch (e) {
         const info = classifyAiError(e)
@@ -358,7 +364,12 @@ export async function runAssistant(req: AssistantRequest): Promise<AssistantAnsw
         failure = { kind: info.kind, message: aiErrorMessage(info.kind, en ? 'en' : 'ko') }
         break
       }
-      input += res.usage.input_tokens
+      // input_tokens는 캐시 밖 나머지뿐이다 — 대화 토큰 상한 · 기록은 지금처럼 프롬프트 전체로 센다.
+      const read = res.usage.cache_read_input_tokens ?? 0
+      const written = res.usage.cache_creation_input_tokens ?? 0
+      input += res.usage.input_tokens + read + written
+      cacheRead += read
+      cacheWrite += written
       output += res.usage.output_tokens
       text = res.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('').trim()
       if (res.stop_reason !== 'tool_use') {
@@ -396,7 +407,7 @@ export async function runAssistant(req: AssistantRequest): Promise<AssistantAnsw
           model,
           input_tokens: input,
           output_tokens: output,
-          estimated_cost_usd: estimateCostUsd(model, input, output),
+          estimated_cost_usd: estimateCostUsd(model, input, output, { read: cacheRead, write: cacheWrite }),
           entity_table: req.chatId ? 'ai_chats' : null,
           entity_id: req.chatId,
         })
