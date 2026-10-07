@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { approvalLine, toChairman } from '@/lib/approval-line'
+import { AMOUNT_INVALID_MESSAGE, AMOUNT_PATTERN, approvalLine, toChairman } from '@/lib/approval-line'
 import { approvalTitle, cleanForm, formProblem } from '@/lib/approval-submit'
 import { canCloseBooks, canKeepBooks } from '@/lib/auth/roles'
 import { boss, bossText, isChairman } from '@/lib/boss'
@@ -132,7 +132,11 @@ export const proposeApprovalFormTool: AssistantTool = {
     for (const f of template.fields) {
       const v = form[f.key]
       if (!v) continue
-      if ((f.type === 'money' || f.type === 'number') && !/^[0-9][0-9,]*(\.[0-9]+)?\s*(원|개|명)?$/.test(v)) {
+      // 금액 칸은 0054 트리거 · 화면과 같은 모양(AMOUNT_PATTERN)만 — «600만» · «60,00,000»이면 카드 전에 같은 문장으로 되묻는다.
+      if ((f.type === 'money' || f.key === 'amount') && !AMOUNT_PATTERN.test(v)) {
+        return { error: 'invalid', field: f.key, message: AMOUNT_INVALID_MESSAGE }
+      }
+      if (f.type === 'number' && !/^[0-9][0-9,]*(\.[0-9]+)?\s*(원|개|명)?$/.test(v)) {
         return { error: 'invalid', field: f.key, message: `${f.label_ko}은(는) 숫자로 넣으세요(예: 1,200,000).` }
       }
       if (f.type === 'date' && !isDate(v)) return { error: 'invalid', field: f.key, message: `${f.label_ko}은(는) YYYY-MM-DD입니다.` }
@@ -169,7 +173,7 @@ export const proposeApprovalFormTool: AssistantTool = {
             { label: '결재선', before: null, after: lineText },
           ],
           warning:
-            (recordsOnly ? '팀장 · 직속 상위가 없고 기준 미만이라, 올리면 승인 단계 없이 «기록 완료»로 저장됩니다. ' : '') +
+            (recordsOnly ? '팀장 결재 단계가 없고 기준 미만이라, 올리면 승인 단계 없이 «기록 완료»로 저장됩니다. ' : '') +
             '확인하면 결재 화면의 «결재 올리기»와 똑같이 올라가고, 결재선은 올리는 순간 다시 정해집니다. 파일은 올린 뒤 결재 화면에서 그 건을 열고 «첨부» 칸에 붙입니다.',
           href: '/approvals',
         },

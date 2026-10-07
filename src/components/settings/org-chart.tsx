@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useMemo, useState } from 'react'
 
-import { saveTeam, setDraftGrant, setModuleGrant, updateUserProfile } from '@/app/actions/users'
+import { saveTeam, setDraftGrant, setModuleGrant, setStaffAdminGrant, updateUserProfile } from '@/app/actions/users'
 import { ProfilePhoto } from '@/components/settings/profile-photo'
 import { ForceLogoutButton } from '@/components/settings/force-logout-button'
 import { RevokeButton } from '@/components/settings/revoke-button'
@@ -13,6 +13,7 @@ import { businessOfModule, hasDraftGrant, moduleKey } from '@/lib/module-grants'
 import {
   INVITABLE_ROLE,
   MODULE_GRANT_OPTIONS,
+  STAFF_ADMIN_PREFIX,
   PERSON_LANGUAGE_LABEL_KO,
   ROLE_LABEL_KO,
   SECURITY_CLASS_LABEL_KO,
@@ -855,6 +856,48 @@ function ModuleGrants({
       </div>
     )
 
+  async function toggleStaffAdmin(businessId: string, on: boolean) {
+    setBusy(true)
+    setError(null)
+    const result = await setStaffAdminGrant({ userId: person.user_id, businessId, on })
+    setBusy(false)
+    if (result.error) setError(result.error)
+  }
+
+  // 0055 «<회사> 사용자 관리자» — 그 회사의 사원 · 팀장을 초대한다(본인이 가진 권한까지만). 회사마다 회장만 켠다.
+  // 사람 역할에게만(회장 · 시스템 · 외부 역할 제외). 회사 범위 밖인데 줄만 남은 회사도 그려 끌 수 있게 한다.
+  const adminScope = person.role === 'GroupCFO' ? businesses.map((b) => b.business_id) : person.business_ids
+  const adminGranted = person.modules
+    .filter((m) => m.can_write)
+    .map((m) => businessOfModule(STAFF_ADMIN_PREFIX, m.module))
+    .filter((b): b is string => b !== null)
+  const adminCompanies = [...new Set([...adminScope, ...adminGranted])]
+  const staffAdmin =
+    !['GroupCFO', 'BusinessCEO', 'Executive', 'TeamLead', 'Member'].includes(person.role) || adminCompanies.length === 0 ? null : (
+      <div className="py-1">
+        {adminCompanies.map((biz) => {
+          const on = adminGranted.includes(biz)
+          return (
+            <label key={biz} className="flex min-h-11 items-center gap-1.5 text-t12 font-semibold sm:min-h-0">
+              <input
+                type="checkbox"
+                checked={on}
+                disabled={busy}
+                onChange={(e) => toggleStaffAdmin(biz, e.target.checked)}
+                className="size-4 accent-[var(--color-accent)] disabled:opacity-50"
+              />
+              {businessName(businesses, biz)} 사용자 관리자
+              {adminScope.includes(biz) ? null : <span className="text-t10 font-normal text-warning">회사 범위 밖 — 효과 없음</span>}
+            </label>
+          )
+        })}
+        <span className="mt-0.5 block text-t10 leading-relaxed text-ink-muted">
+          그 회사의 사원 · 팀장을 초대합니다(팀 · 상사 필수, 본인이 가진 권한까지만 · 월 마감 불가). 초대는 바로 효력이 나고 회장에게
+          알림이 옵니다. 다른 사람의 결재 · 업무를 보는 권한은 아닙니다.
+        </span>
+      </div>
+    )
+
   // 0048. 모듈마다 «역할로 이미 되는 사람»이 다르다 — 재무는 회장 · CFO, 문서는 회장만(CFO도 회사마다 켠다).
   const options = MODULE_GRANT_OPTIONS.filter((o) => !o.roleCovers.includes(person.role))
   if (options.length === 0) {
@@ -862,6 +905,7 @@ function ModuleGrants({
       <fieldset className="rounded-lg border border-line-soft px-2.5 py-2">
         <legend className="px-1 text-t11 text-ink-dim">모듈 권한</legend>
         {draft}
+        {staffAdmin}
         <p className="text-t10 leading-relaxed text-ink-muted">
           {draft ? '그 밖의 모듈은 ' : ''}전사 역할이라 역할로 이미 전부 할 수 있습니다.{draft ? '' : ' 켤 것이 없습니다.'}
         </p>
@@ -876,6 +920,7 @@ function ModuleGrants({
     <fieldset className="rounded-lg border border-line-soft px-2.5 py-2">
       <legend className="px-1 text-t11 text-ink-dim">모듈 권한</legend>
       {draft}
+      {staffAdmin}
       {options.map((o) => {
         const granted = person.modules
           .map((m) => businessOfModule(o.prefix, m.module))

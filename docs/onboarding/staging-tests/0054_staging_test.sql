@@ -5,8 +5,10 @@
 -- 끝은 언제나 raise exception이다: 통과해도 «0054 STAGING PASS …»로 던져서 트랜잭션 전체가 버려진다.
 -- 맨 앞 begin과 맨 끝 rollback은 psql로 돌릴 때를 위한 두 번째 안전줄이다.
 -- 돌리는 법(읽기 전용 아님 — 그러나 commit이 없다):
---   SUPABASE_DB_PASSWORD=$(grep ^SUPABASE_DB_PASSWORD .env.staging.local | cut -d= -f2-) \
---     npx supabase db query --linked "$(cat 0054_staging_test.sql)"
+--   staging에 link된 checkout 루트에서, 이 파일을 supabase/.temp/(gitignore)로 복사한 뒤 상대 경로로:
+--     SUPABASE_DB_PASSWORD="$(grep ^SUPABASE_DB_PASSWORD .env.staging.local | cut -d= -f2-)" \
+--       npx supabase db query --linked -f "supabase/.temp/0054_staging_test.sql"
+--   (절대 경로는 집 경로 띄어쓰기 «Edison Hong»에서 깨진다 — 전체 명령은 docs/onboarding/release-order-2026-10.md «0. staging»)
 -- 기대 결과: ERROR  0054 STAGING PASS a(…) b(…) b2(…) c(…) a/b(…) d(…) e(…)  — «FAIL»로 시작하면 그 줄이 깨진 것.
 --
 -- 계정은 이메일 · 역할로 찾는다(id를 박지 않는다). authenticated는 auth.users를 못 읽으므로 기본 역할에서 먼저 찾는다.

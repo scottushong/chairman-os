@@ -25,9 +25,15 @@
 > 그다음 staging 시험 SQL 두 개(마지막에 예외를 던져 전부 되돌린다 — staging에 아무것도 남기지 않는다):
 >
 > ```bash
-> T=~/projects/chairman-os/docs/onboarding/staging-tests
-> SUPABASE_DB_PASSWORD=$(grep ^SUPABASE_DB_PASSWORD .env.staging.local | cut -d= -f2-) npx supabase db query --linked -f "$(cygpath -w $T/0054_staging_test.sql)"
-> SUPABASE_DB_PASSWORD=$(grep ^SUPABASE_DB_PASSWORD .env.staging.local | cut -d= -f2-) npx supabase db query --linked -f "$(cygpath -w $T/0055_staging_test.sql)"
+> # 집 경로에 띄어쓰기(Edison Hong)가 있어 절대 경로를 -f에 넘기면 깨진다(2026-10-07 실제로 깨짐).
+> # 그래서 이 checkout 안의 supabase/.temp/(gitignore)로 복사해 띄어쓰기 없는 상대 경로로 돌리고 지운다.
+> cd ~/projects/chairman-os-rehearsal
+> P="$(grep ^SUPABASE_DB_PASSWORD .env.staging.local | cut -d= -f2-)"
+> for n in 0054 0055; do
+>   cp "$HOME/projects/chairman-os/docs/onboarding/staging-tests/${n}_staging_test.sql" "supabase/.temp/${n}_staging_test.sql"
+>   SUPABASE_DB_PASSWORD="$P" npx supabase db query --linked -f "supabase/.temp/${n}_staging_test.sql"
+>   rm -f "supabase/.temp/${n}_staging_test.sql"
+> done
 > ```
 >
 > 기대: 오류 문장이 `0054 STAGING PASS …` · `0055 STAGING PASS a … h`로 시작한다(FAIL이면 그 줄을 Claude에게).

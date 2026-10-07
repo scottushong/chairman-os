@@ -1,4 +1,4 @@
-import { missingFields } from '@/lib/approval-line'
+import { AMOUNT_INVALID_MESSAGE, amountInvalid, missingFields } from '@/lib/approval-line'
 import { boss } from '@/lib/boss'
 import type { ChairmanRepository } from '@/lib/repository'
 import { APPROVAL_TEMPLATE_KEY, DECISION_STATUS_LABEL_KO, type ApprovalTemplate, type ApprovalTemplateKey, type Decision, type SessionUser } from '@/types'
@@ -55,6 +55,9 @@ export function formProblem(template: ApprovalTemplate, form: Record<string, str
     const labels = template.fields.filter((f) => missing.includes(f.key)).map((f) => f.label_ko)
     return `필수 항목이 비었습니다: ${labels.join(', ')}`
   }
+  // 0054 리뷰 C1 — 대표 기준 금액이 있는 양식은 금액이 숫자 모양(AMOUNT_PATTERN)이어야 한다. 화면 · AI 제안 ·
+  // 실행이 같은 말을 한다. 판정은 트리거가 한 번 더 한다(approval_amount_invalid).
+  if (amountInvalid(template, form)) return AMOUNT_INVALID_MESSAGE
   const badUrl = template.fields.find((f) => f.type === 'url' && form[f.key] && !isHttpUrl(form[f.key]))
   if (badUrl) return `${badUrl.label_ko}은(는) https:// 로 시작하는 주소로 넣으세요.`
   // 옛 설정(0038 시드 — 첨부 필수)이 남아 있으면 DB가 거부한다. 첨부 칸이 화면에 없으니 직원이 고칠 수 없다 —
@@ -72,6 +75,7 @@ export function approvalTitle(template: ApprovalTemplate, form: Record<string, s
 export function approvalSubmitError(e: unknown, template: ApprovalTemplate, role: SessionUser['role']): string {
   const message = e instanceof Error ? e.message : ''
   if (/approval_form_missing/.test(message)) return '필수 항목이 비었습니다.'
+  if (/approval_amount_invalid/.test(message)) return AMOUNT_INVALID_MESSAGE
   if (/approval_attachment_missing/.test(message)) {
     return `${template.name_ko} 양식 설정이 아직 바뀌지 않았습니다. ${boss(role)}에게 알려 주세요.`
   }

@@ -24,7 +24,7 @@ export default async function ApprovalSettingsPage() {
         icon="stamp"
         title="결재 양식 · 규칙"
         code="0038"
-        description="양식마다 항목과 회장까지 올라가는 기준을 정합니다. 기준 미만은 팀장 결재로 끝나고, 팀장 · 직속 상위가 없으면 «기록 완료»로 바로 저장됩니다."
+        description="양식마다 항목과 회장까지 올라가는 기준을 정합니다. 기준 미만은 팀장 결재로 끝나고, 팀장 · 직속 상위가 없거나 직속 상위가 회장이면 «기록 완료»로 바로 저장됩니다."
       />
       <div className="mt-4">
         <ApprovalTemplatesEditor templates={templates} />

@@ -559,6 +559,24 @@ async function readChairmanContext(
   }
 
   /**
+   * 0055. 지난 24시간 «사용자 관리자»(위임) 초대 수 — 숫자만(0055 delegated_invite_count, 회장 · AIAgent만).
+   * 이름 · 이메일은 이 Job에 오지 않는다. 0건이면 아무 말도 하지 않는다. 못 읽으면 접속 기록 줄만 남는다.
+   */
+  try {
+    const { data, error } = await sb.rpc('delegated_invite_count', {
+      p_since: new Date(Date.now() - 24 * 3_600_000).toISOString(),
+    })
+    if (error) throw new Error(`Supabase delegated_invite_count ${error.code ?? '?'}: ${error.message}`)
+    const n = typeof data === 'number' ? data : 0
+    if (n > 0) {
+      const line = `지난 24시간 위임 초대(사용자 관리자) ${n}건 — 사용자 · 권한 화면(/settings/users)에서 확인 · 취소할 수 있다.`
+      activity = activity ? `${activity} ${line}` : line
+    }
+  } catch (e) {
+    console.error('[night-brief] delegated invites', errorText(e))
+  }
+
+  /**
    * Phase 9 블록 4. 오늘 받은 회장 메일 수와 키맨 발신 수(0039). 다른 칸과 같이 따로 감싼다.
    * 연결이 없으면(disconnected · unconfigured) null — 브리핑이 메일을 아예 언급하지 않는다.
    */

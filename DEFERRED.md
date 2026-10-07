@@ -2247,6 +2247,56 @@ B-4가 찾은 결함 하나를 고쳤다. **리뷰 루프가 없는 작업이고
 - **세션에 «결재 올리기» 줄을 읽는다**(`SessionUser.approvals_write`, 0002 module_access_self_read) — 카드 전에 «권한이 없습니다 — … 대표에게»를 먼저 말하려고. 판정은 여전히 DB. 못 읽으면 모름(DB에 맡김).
 - **남은 것:** 0054(상사 = 대표면 팀장 칸에 대표가 서는 문제)는 그대로 미작성 — 이 흐름도 그 규칙을 따른다.
 
+## 2026-10-06 블록 — 0054 첫 직원 결재(브랜치 `feat/approvals-0054`, staging · production 미적용)
+
+- **대표를 팀장 칸에서 빼는 자리는 `my_approval_lead()` 자체**(후보 거름 alive에 `role <> 'Chairman'`). 부르는 곳이 셋(트리거 · /approvals/new 미리보기 · /me)이라 함수 하나를 고쳐야 미리보기와 저장이 같은 말을 한다. 다른 선택지: 트리거만 고치기(미리보기가 «대표 대기»라 말하고 저장은 «기록 완료» — 버림). 팀장이 대표면 reports_to로 넘어가고, 그것도 대표면 팀장 단계 건너뜀(0042 그대로 — 기준 미만 «기록 완료», 이상 대표 칸 Open).
+- **빈 팀장 칸 문장 '팀장 · 직속 상위가 없음' → '팀장 결재 단계 없음'**(트리거 · lib/approval-line.ts 둘 다). 상사가 대표인 사람에게 «직속 상위가 없음»은 거짓이라. 이미 얼린 결재선은 그대로. 다른 선택지: 대표일 때만 다른 문장(미리보기가 대표인지 모름 — ApprovalLead 모양을 바꿔야 해서 버림).
+- **비승인권자 insert는 늘 Open — 기준은 `can_approve()`(Chairman · BusinessCEO), 세션 없는 insert(시드 · 이관 · SQL 편집기)는 예외.** GroupCFO · AIAgent도 Open으로 들어온다. 다른 선택지: 거부(42501) — 앱은 늘 Open을 보내므로 결과가 같고, 덮어쓰기가 0042 양식 결재와 같은 방식이라 버림.
+- **대표 열람 정책 `decisions_chairman_skipped_read`(lead_status 'skipped' · 회사 격리)를 더함.** 상사 = 대표면 0026 subtree로 이미 보이지만, 상사가 빈 사람의 규칙 종결은 대표에게서도 가려졌다. 다른 선택지: 대표에게 양식 결재 전부(subtree 원칙을 넓혀서 버림).
+- **새 직원 «결재 올리기»는 user_profiles 트리거(insert · 회수에서 되살림)** — 가입 함수(apply_user_invitation)를 또 복사하지 않고, 회장이 직접 넣는 사람도 덮는다. 위임 초대(팀장이 부른 Member)에도 붙는다 — 결재를 «올리는» 권한일 뿐이고 회사 범위는 초대가 정한다(0047 재무 기본값이 위임 초대를 막은 것과 다른 판단). Chairman · AIAgent · Integration 제외, 기존 직원 백필 없음. 다른 선택지: 0002 decisions_create를 양식 결재만 회사 범위로 열기(모듈 줄 없이 — 토글이 뜻을 잃어 버림).
+- **이미 대표가 팀장 칸에 선 채 «팀장 대기»인 결재(staging dec_017~ · production에 있다면)는 고치지 않는다**(얼린 값). 대표가 /me 받은 결재에서 팀장으로 처리한다.
+- **ECOUNT 순서:** 0054는 0050~0052와 겹치는 객체가 없다(PGlite에서 두 순서 모두 적용 · 함수 · 정책 · 트리거 카탈로그 같음). 이 브랜치에는 0050~0052 파일이 없어서 **staging(이미 0052)에 이 브랜치로 push하면 «remote에만 있는 버전»으로 멈춘다** — staging은 ECOUNT와 합친 checkout에서. production은 0054 먼저(`release-production.sh 0054`), ECOUNT는 그 뒤 `--include-all`이 필요한데 release-production.sh의 dry-run · push에는 그 옵션이 없다(그날 스크립트에 추가). 합칠 때 `src/lib/version.ts`는 `0054_approval_staff`로, check-migrations.ts main · PASS 문장은 둘 다 살린다.
+- **검사:** check-migrations에 approvalStaff()(0054 전 항목 + dummy 거울 pickApprovalLead · approvalLine). 0047 · 0048 검사는 모듈 줄 개수를 그대로 재려고 그 안에서만 새 트리거를 끈다. 이 worktree(autocrlf CRLF checkout)에서는 check:dependency · check:attention이 주석 정규식 때문에 0033 · 0035 텍스트 검사에서 실패한다 — LF로 바꾸면 통과(코드와 무관).
+- **리뷰 반영(같은 날, 0054 제자리 수정 — staging · production 미적용이라):** C1 금액은 모양을 먼저 본다 — 대표 기준(chairman_over)이 있는 양식은 숫자 · 세 자리 쉼표 · 소수 · 끝 «원»만, 아니면 `approval_amount_invalid`(앱 문장 «금액은 숫자로 적어 주세요 — 예: 6000000 또는 6,000,000», 미리보기 · dummy 같은 정규식). 다른 선택지: «600만» · «10억»을 읽어 주기(한글 단위 파서 — 틀리면 다시 기준 미만으로 닫혀서 버림). I1 «결재 올리기» 자동 부여는 허용 목록(GroupCFO · BusinessCEO · Executive · TeamLead · Member) — Vendor · ExternalExpert 제외. I2 승인권자 세션의 닫힌 insert는 decided_by = 본인 · kind = chairman/ceo · decided_at = now(). I4 되살림 재부여는 회장 세션 또는 회장이 넣거나 승인한 열린 초대일 때만(0047과 같은 문), 처음 생기는 프로필은 위임 초대도 그대로 부여.
+- **회장 확인 필요(I3):** 대표 기준이 없는 양식(휴가)은 상사가 대표인 직원이 올리면 팀장 단계 없이 곧바로 «기록 완료»다 — 대표가 휴가를 «승인»하는 단계가 없어진다. 회장 결정(«대표는 열람만»)대로 두었다. 휴가도 대표가 눌러야 하면 휴가 양식을 «항상 대표»로 바꾸면 된다(/settings/approvals, DB 변경 없음).
+- **M6:** 0054 이전에 대표가 팀장 칸에 선 채 «팀장 대기»인 결재는 그대로 «팀장 대기»다(얼린 결재선) — 대표가 /me 받은 결재에서 팀장으로 처리해야 닫힌다. 일괄 정리는 하지 않는다.
+- **M4:** check-migrations의 financeGrants() · documentGrants()는 모듈 줄 개수를 그대로 세려고 그 함수 안에서만 `user_profiles_draft_grant` 트리거를 끈다 — 0054 부여는 approvalStaff()가 잰다. 두 검사에 새 사람을 더할 때 이 점을 기억할 것.
+- **AI 결재 기안(propose_approval_draft)은 양식 없는 결재라 금액 검사 대상이 아니다** — 이 브랜치에 양식 결재를 제안하는 AI 경로(propose_approval_form)는 없다. 합칠 때 그 경로가 approval_amount_invalid를 같은 문장으로 바꾸는지 볼 것.
+
+## 2026-10-06 블록 — 0055 온보딩 위임 «DY 사용자 관리자»(브랜치 `feat/approvals-0054`, staging · production 미적용)
+
+현황 표: `docs/onboarding/staff-admin-status.md`. 직원 안내서: `docs/onboarding/staff-admin-ko.md`(+ PDF, `node scripts/onboarding-pdf.mjs`).
+
+- **staging 관찰(0054 N4 옆):** 2026-10-06 staging 조회 — `postgres`는 `rolbypassrls = true`이고 public의 definer 함수 소유자다. 그래서 0054 I4의 «회장이 넣거나 승인한 열린 초대» 조회(세션 없는 이행)는 staging에서 **실제로 된다**(0054 머리 주석 N4의 «0행»은 staging에서는 틀림 — 어느 쪽이든 닫힌 문이라 결과는 안전). production이 같다고 기대지 않는다: 0055는 force RLS 표(user_invitations)를 만지는 세 자리를 트랜잭션 설정 `chairman.staff_admin`('invite' · 'revoke' · 'count')으로 열리는 정책으로 따로 열었고, check-migrations staffAdmin()이 표 · 함수 소유자를 BYPASSRLS 없는 역할로 넘긴 상태에서도 초대 · 감사 · 알림 · 고르기 · 숫자 · 취소를 잰다.
+- **능력 = 모듈 줄 `'/users/<biz>'` can_write** (권장). 다른 선택지: user_profiles 칸 · 새 표 — 0002 회장 전용 쓰기 · 감사(setModuleGrant) · 회수 트리거(0047 줄 전부 삭제)를 그대로 못 쓴다.
+- **회장은 `can_manage_users()`가 false** — 위임 RPC는 위임 전용, 회장은 0011 폼. 다른 선택지: 회장도 통과(알림이 자기에게 감).
+- **상사가 관리자 본인 · 그 아래면 거부(`staff_admin_boss_self`)** — 회장 결정 «사용자 관리 ≠ 업무 열람»을 DB가 지키는 자리(0026 subtree로 결재 · 업무 · 문서 · 감사가 보이게 됨). 대가: 팀장인 관리자가 자기 팀원을 자기 아래로 넣지 못한다 — 그건 회장이 조직도에서 옮긴다. 고르기 칸(staff_admin_options)도 그 사람들을 뺀다.
+- **Executive 이상은 거부**(큐에 넣지 않음, 회장 결정). Vendor · ExternalExpert도 거부(사원 · 팀장 둘만).
+- **권한은 키 목록만** — `module_grants`(jsonb 배열), 가입 때 늘 can_write=true · can_approve=false. 마감을 실을 칸이 없다. 허용 키는 그 회사 재무 · 문서 + `/chairman/decisions` 셋, 관리자가 그 줄의 can_write를 가진 것만. `/users/<biz>`(능력 자체)는 위임으로 못 나눈다.
+- **가입 때 재확인(닫힌 쪽):** 초대자가 능력을 잃었거나 떠났으면 권한을 하나도 안 붙이고, 그 줄을 잃었으면 그 권한만 건너뛴다. 계정 · 회사 범위 · 0054 «결재 올리기»는 산다. 다른 선택지: 능력 회수 때 그 사람의 대기 위임 초대를 자동 취소 — 회장이 목록(«위임 초대 · <관리자>» 꼬리표)에서 직접 취소하는 편이 덜 놀랍다고 봤다.
+- **이미 계정이 있는 이메일은 거부(`staff_admin_exists`)** — 그 계정은 가입 트리거가 다시 안 돌아 초대가 영영 대기로 남거나, 회장 승인 경로에서 남의 역할을 덮는다.
+- **가드 트리거:** `module_grants` · `staff_admin_business`는 staff_admin_invite() 안에서만 채운다(0026 위임 insert · 회장 insert · update 전부 `staff_admin_columns`). 세션 없는 쓰기(시드 · 마이그레이션)는 지나간다.
+- **회장 알림은 초대 때만**(kind 'system', 링크 /settings/users, DB 문구에 «회장» 없음). 관리자 취소는 감사만 — 알림 없음. 바꾸려면 5절에 insert 한 줄.
+- **아침 숫자:** night-brief가 `delegated_invite_count(지난 24시간)`를 접속 기록 줄 뒤에 붙인다(0건이면 침묵 · 실패하면 접속 기록 줄만). AIAgent가 초대 줄을 읽게 넓히지 않았다(숫자 함수만).
+- **0055 전 DB 견딤:** 목록(listUserInvitations)은 새 칸이 없으면(42703) 옛 칸으로 다시 읽는다 · 관리자 칸은 줄 읽기 · 고르기 실패 시 예전 화면(0026 폼). master에 먼저 닿아도 /settings/users가 깨지지 않는다 — 그래도 순서는 «0054 → 0055 db push 뒤 배포».
+- **0026 위임 insert — 닫았다(리뷰 I3, 회장 결정 B):** `user_invitations_delegated_insert`는 0055가 drop한다. **production 동작 변경**이다 — 팀장 · 임원이 자기 아래로 직접 초대하던 길이 없어진다(지금 production에 그 길을 쓰는 팀장은 없다). 최종 보고에서 회장 확인 항목으로 올린다.
+- **dummy:** 경영지원 팀장(support_lead) 시드에 `/users/biz_dy`를 켰다 — `DUMMY_USER=support_lead`로 «직원 초대 · DY (주)» 폼, `DUMMY_USER=chairman`으로 알림 · 꼬리표를 본다. dummy 알림은 이제 받는 사람별(0030 own_read 거울).
+- **staging 검사 SQL:** scratchpad `stage2/0055_staging_test.sql`(0054 · 0055 적용 뒤, commit 없음 · 끝은 늘 raise). PGlite에서 «적용 후 PASS / 0055 없이 FAIL 준비»를 먼저 확인했다.
+- **0055 리뷰 반영(같은 날, 0055 제자리 수정 — staging · production 미적용):**
+  I1 insert 정책이 설정(`chairman.staff_admin`)만 믿지 않고 불변식(능력 · 사원/팀장 · 회사 하나 · 등급 · 상사 not null · 본인/아래 아님 · 팀 소속 · 팀장 본인/아래 아님 · 권한 ⊆ 관리자 쓰기 줄)을 다시 본다; 'revoke' · 'auto_revoke' 설정 아래 update는 revoked_at 채우기만(가드). 검사: 일반 직원 · 관리자가 설정을 직접 켜고 넣어도 거부.
+  I2 팀장이 관리자 본인 · 그 아래인 팀은 거부(`staff_admin_team_self`) · 고르기 칸에서도 뺀다 — 그 팀의 결재선 첫 칸이 관리자가 된다.
+  I3 **0026 위임 insert를 닫았다**(회장 결정: 초대는 회장 또는 사용자 관리자만). 검사의 0026 (d) · 0047 위임 초대 행은 «거부» · 세션 없는 시드로 바꿨다. dummy inviteUser도 회장만. 회장 결재 큐(Executive 위임 초대)는 이제 새로 생기지 않는다 — 큐 화면 · 승인 버튼은 옛 대기 행을 위해 남겼다.
+  I4 «결재 올리기»는 위임 권한이 아니다(회장 결정 A — 새 직원 기본, 대표가 끈다). RPC · 액션 · dummy가 키 목록에서 버린다; 폼은 고정 한 줄. 대가: 관리자의 **재초대 되살림**에는 0054가 «결재 올리기»를 다시 붙이지 않는다(회장 세션 · 회장 초대만) — 회장이 토글로 켠다.
+  I5 능력 줄 삭제 · 쓰기 끔 · 관리자 회수 · 퇴사 → 그 관리자의 대기 위임 초대 자동 취소(트리거 · 감사 먼저 · 설정 문 정책이라 bypassrls 없이도). 가입 때 초대자가 관리자가 아니면 `apply_user_invitation`이 false(계정은 생기고 프로필 없음 = Default Deny) — 0043 Hook은 계정 생성 전 «열린 초대»만 보므로 영향 없음(자동 취소된 초대는 Hook이 403).
+  I6 액션의 키 → 문장 바꾸기를 `src/lib/staff-admin-errors.ts`로 옮기고 낱말 경계로 찾는다(템플릿 문자열의 `\b` = 백스페이스 버그). check-finance-ledger가 키마다 문장을 잰다.
+  M2 이미 계정 · 대기 초대 → 한 키 `staff_admin_email_taken`(«이 이메일로는 초대할 수 없습니다») — 이메일이 가입됐는지 캐는 창을 줄인다. M5 이름 · 영문 이름 · 직함 60자, 관리자당 24시간 20건(`staff_admin_rate`).
+  **M4 — 회장 확인:** 사용자 관리자는 고르기 칸(staff_admin_options)으로 그 회사 활성 사람의 **이름 · 팀 · 역할**을 새로 본다(전에는 자기 subtree만). 결재 · 업무 · 문서는 여전히 안 보인다. 상사를 고르려면 필요한 최소 칸이라 그대로 두었다.
+  - **0055 리뷰 M1:** 가입 때 붙는 위임 권한은 붙인 뒤에 감사를 쓰고, 세션이 없어 bypassrls가 아닌 소유자(production 가정)에서는 그 감사 줄이 경고만 남기고 빠진다 — 초대 때 감사(의도한 권한)는 남는다. 다음 감사 블록에서 definer 감사 함수로.
+  - **0055 리뷰 M3:** 상사 · 팀 검사는 초대 때만 한다 — 가입 전 조직 개편으로 상사가 관리자 아래로 가도 다시 보지 않는다. 가입 때 재검사는 보류(초대는 24시간 20건 · 관리자 회수 시 자동 취소).
+  - **0055 리뷰 M6:** 관리자의 상사 사슬은 0026 subtree 읽기로 관리자가 보낸 위임 초대(이메일 · 권한)를 본다 — 0055 전부터 있던 동작, 그대로 둔다.
+  - **0055 리뷰 M7:** setStaffAdminGrant → setModuleGrant는 감사를 먼저 쓰고 RLS가 회장 외를 막는다 — 회장 외의 시도는 «바꾸려 했다» 감사 줄만 남긴다(setDraftGrant와 같은, 전부터 있던 순서).
+- **0055 재리뷰 반영(같은 날):** 능력이 다른 길로 사라져도 자동 취소 — 회사 범위 삭제(user_business_access delete, 그 회사) · 역할이 사람 역할 밖으로(user_profiles role). 가입 때 초대자가 관리자가 아니어서 멈춘 초대는 그 자리에서 취소(세션 없음 — 감사는 막히면 경고만, 기록은 revoked_at). 그래도 그 사이에 생긴 auth 계정은 프로필 없이 남는다 — 같은 이메일의 다음 초대는 `staff_admin_email_taken` · 회장 초대도 가입 트리거가 다시 안 돈다 → **대표가 Supabase Auth에서 그 계정을 지운 뒤 다시 초대**(안내서 «막힐 때»). insert 정책은 상사가 그 회사의 활성 사람인지도 본다(`staff_admin_boss_ok` — 정책 식이라 authenticated에게 실행을 열었고, 호출자 회사 밖이면 늘 false). 자동 취소 update 정책은 활성 세션을 요구한다(세션 없는 경로는 bypassrls 소유자에서만 — staging · production 관찰). 비율 제한은 취소한 초대도 센다(안내서).
+
 ## 2026-10-07 — 10-06 통합 블록 마감(미결 · 회장 확인)
 
 - **staging push 막힘:** 0054 · 0055 · 0056의 staging 반영(`npm run db:push:staging`, 직접 CLI 둘 다)이 이 세션의 권한 분류기에 막혔다. 회장이 `release/ecount-rehearsal` checkout에서 친다(release-order 문서 «0. staging»). 그 뒤 staging 시험 SQL 두 개 · 2단계 화면 · ECOUNT staging E2E가 남는다.
@@ -2255,4 +2305,3 @@ B-4가 찾은 결함 하나를 고쳤다. **리뷰 루프가 없는 작업이고
 - **직원 5계정 재점검:** dy_ceo 17화면 «회장» 0 · 다른 회사 0(타사 주소 404)까지 돌고, 나머지 넷은 시스템이 메모리 부족으로 멈췄다 — 다시 돌리지 않았다.
 - **직원 화면 개발자 문구(Minor):** /settings/users «대기 중인 초대» 설명에 «Supabase Dashboard · 0011 on_auth_user_created · (0026)»이 직원에게도 보인다.
 - **모델:** 지금 AI_MODEL = claude-sonnet-5(로컬 · staging .env), 코드 기본값 claude-sonnet-4-5. production Vercel 값은 이 세션에서 못 봤다. 바꾸지 않았다.
-

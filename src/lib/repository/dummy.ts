@@ -64,7 +64,8 @@ import {
 } from './dummy-org'
 import { emptyStrategy } from '@/lib/strategy-fields'
 import { attachmentHitId, type SearchHit } from '@/lib/search'
-import { MONITOR_DAYS, needsChairmanApproval } from '@/types'
+import { MONITOR_DAYS, STAFF_ADMIN_PREFIX, STAFF_ADMIN_ROLES, needsChairmanApproval } from '@/types'
+import { businessOfModule, DRAFT_DECISION_MODULE } from '@/lib/module-grants'
 import type {
   AppNotification,
   ExceptionRecord,
@@ -105,6 +106,8 @@ import type {
   UserAccount,
   ModuleGrant,
   Role,
+  StaffAdminInviteInput,
+  StaffAdminOptions,
   UserInvitation,
 } from '@/types'
 
@@ -393,6 +396,44 @@ function inMemorySubtree(viewerId: string, targetId: string | null): boolean {
   return false
 }
 
+/** 0055 거울 — 상사로 고를 수 있는 사람 역할(시스템 · 외부 역할 제외). */
+const STAFF_ADMIN_BOSS_ROLES: readonly Role[] = ['Chairman', 'GroupCFO', 'BusinessCEO', 'Executive', 'TeamLead', 'Member']
+
+/** 0055 staff_admin_holds의 거울. 회장은 위임 길이 아니다(false). */
+function dummyStaffAdmin(viewer: UserAccount, businessId: string): boolean {
+  if (viewer.revoked_at || viewer.status !== 'active' || viewer.role === 'Chairman') return false
+  if (!STAFF_ADMIN_BOSS_ROLES.includes(viewer.role)) return false
+  if (viewer.role !== 'GroupCFO' && !viewer.business_ids.includes(businessId)) return false
+  return dummyModuleGrants(viewer.user_id).some((m) => m.module === `${STAFF_ADMIN_PREFIX}/${businessId}` && m.can_write)
+}
+
+/** 0055 — 관리자가 줄 수 있는 키: 그 회사 재무 입력 · 문서 등록 · 결재 올리기 중 본인이 쓰기로 가진 것. */
+function staffAdminGrantable(viewer: UserAccount, businessId: string): string[] {
+  const keys = [`/finance/${businessId}`, `/documents/${businessId}`]
+  return dummyModuleGrants(viewer.user_id)
+    .filter((m) => m.can_write && keys.includes(m.module))
+    .map((m) => m.module)
+    .sort()
+}
+
+/** 0055 staff_admin_options의 사람 — 그 회사의 활성 사람, 관리자 본인 · 그 아래 제외. */
+function staffAdminBossCandidates(viewer: UserAccount, businessId: string): UserAccount[] {
+  return memoryPeople
+    .filter((p) => !p.revoked_at && p.status === 'active' && STAFF_ADMIN_BOSS_ROLES.includes(p.role))
+    .filter((p) => dummyHasBusiness(p, businessId))
+    .filter((p) => !inMemorySubtree(viewer.user_id, p.user_id))
+    .sort((a, b) => a.display_name.localeCompare(b.display_name))
+}
+
+/** 0055 staff_admin_revoke_pending의 거울. */
+function dummyRevokePendingStaffAdmin(adminId: string, businessId: string | null): void {
+  const now = new Date().toISOString()
+  for (const i of memoryInvitations) {
+    if (i.invited_by === adminId && i.staff_admin_business && (businessId === null || i.staff_admin_business === businessId)
+        && !i.accepted_at && !i.revoked_at) i.revoked_at = now
+  }
+}
+
 function memoryPerson(userId: string): UserAccount {
   return memoryPeople.find((p) => p.user_id === userId) ?? dummyViewer()
 }
@@ -431,6 +472,8 @@ const memorySettings: UserSettings = {
  * 알림을 **만드는** 코드가 생기는 날 이 배열도 같이 채운다.
  */
 const memoryNotifications: AppNotification[] = []
+/** 0055 — 알림 받는 사람(live notifications.user_id). 0055 위임 초대가 회장에게 남기는 알림이 첫 생산자다. */
+const memoryNotificationOwner = new Map<string, string>()
 
 /**
  * dummy의 본인 프로필. 시드 사람(dummy-org.ts)에서 시작하고, 설정 화면에서 고친 값이
@@ -1117,6 +1160,11 @@ export const dummyRepository: ChairmanRepository = {
     }
     const was = { role: target.role, team_id: target.team_id }
     Object.assign(target, patch)
+    // 0055 재리뷰 — 역할이 사람 역할 밖으로 바뀌면 대기 위임 초대 자동 취소(staff_admin_profile_revoked 거울).
+    const person = (r: Role) => r !== 'Chairman' && STAFF_ADMIN_BOSS_ROLES.includes(r)
+    if (person(was.role) && !person(target.role)) {
+      dummyRevokePendingStaffAdmin(userId, null)
+    }
 
     // 0047 finance_profile_grants()를 옮겨 적은 것 — **회장이 옮길 때만**(리뷰 C1).
     //   DY 경영지원 팀장이 된 순간: DY 기본 입력 권한(줄이 없고 DY 접근이 있을 때만).
@@ -1280,6 +1328,10 @@ export const dummyRepository: ChairmanRepository = {
 
   /** CH-049. live에서는 0011의 user_invitations_admin이 Chairman만 통과시킨다. */
   async inviteUser(input: NewInvitation, actor: AuditActor): Promise<UserInvitation> {
+    // 0055 리뷰 I3 — 0026 위임 insert가 닫혔다. 초대는 회장(이 길) 또는 사용자 관리자(staffAdminInvite)만.
+    if (actor.role !== 'Chairman') {
+      throw new Error('new row violates row-level security policy for table "user_invitations"')
+    }
     const email = input.email.trim().toLowerCase()
     const pending = memoryInvitations.some(
       (i) => i.email === email && !i.accepted_at && !i.revoked_at,
@@ -1342,9 +1394,127 @@ export const dummyRepository: ChairmanRepository = {
     }
     if (!memoryPeople.some((p) => p.user_id === userId)) throw new Error('Dummy user_module_access: 사람이 없다.')
     setDummyModuleGrant(userId, grant)
+    // 0055 리뷰 I5 — '/users/<biz>'를 끄면 그 관리자의 그 회사 대기 위임 초대를 취소(staff_admin_capability_revoked 거울).
+    const adminBiz = businessOfModule(STAFF_ADMIN_PREFIX, grant.module)
+    if (adminBiz && !grant.can_write) dummyRevokePendingStaffAdmin(userId, adminBiz)
     if (process.env.NODE_ENV !== 'production') {
       console.warn(`[dummy] module ${userId} ${JSON.stringify(grant)} by ${actor.role} — 메모리에만 남는다.`)
     }
+  },
+
+  /** 0055 can_manage_users의 거울 — 사람 역할(회장 제외) · 활성 · 그 회사 범위 · '/users/<biz>' 쓰기 줄. */
+  async staffAdminBusinesses(): Promise<string[]> {
+    const viewer = memoryPerson(dummyViewer().user_id)
+    return dummyModuleGrants(viewer.user_id)
+      .map((m) => businessOfModule(STAFF_ADMIN_PREFIX, m.module))
+      .filter((b): b is string => b !== null && dummyStaffAdmin(viewer, b))
+  },
+
+  async staffAdminOptions(businessId: string): Promise<StaffAdminOptions> {
+    const viewer = memoryPerson(dummyViewer().user_id)
+    if (!dummyStaffAdmin(viewer, businessId)) throw new Error('staff_admin_denied')
+    return {
+      business_id: businessId,
+      people: staffAdminBossCandidates(viewer, businessId).map((p) => ({
+        user_id: p.user_id,
+        display_name: p.display_name,
+        team_id: p.team_id,
+        role: p.role,
+      })),
+      teams: memoryTeams
+        .filter((t) => t.business_id === businessId && !(t.lead_user_id && inMemorySubtree(viewer.user_id, t.lead_user_id)))
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((t) => ({ team_id: t.team_id, name: t.name })),
+      grantable: staffAdminGrantable(viewer, businessId),
+      max_class: viewer.max_security_class,
+    }
+  },
+
+  /** 0055 staff_admin_invite의 거울 — 같은 순서 · 같은 오류 키. 감사는 dummy에 남지 않는다(메모리). */
+  async staffAdminInvite(input: StaffAdminInviteInput): Promise<UserInvitation> {
+    const viewer = memoryPerson(dummyViewer().user_id)
+    const biz = input.business_id
+    const email = input.email.trim().toLowerCase()
+    if (!dummyStaffAdmin(viewer, biz)) throw new Error('staff_admin_denied')
+    if (!STAFF_ADMIN_ROLES.includes(input.role)) throw new Error('staff_admin_role')
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('staff_admin_email')
+    if (!input.display_name.trim() || [input.display_name, input.display_name_en ?? '', input.title_ko ?? ''].some((v) => v.trim().length > 60)) {
+      throw new Error('staff_admin_name')
+    }
+    const day = Date.now() - 24 * 3_600_000
+    if (memoryInvitations.filter((i) => i.invited_by === viewer.user_id && i.staff_admin_business && Date.parse(i.invited_at) > day).length >= 20) {
+      throw new Error('staff_admin_rate')
+    }
+    if (memoryInvitations.some((i) => i.email === email && !i.accepted_at && !i.revoked_at)) throw new Error('staff_admin_email_taken')
+    const team = memoryTeams.find((t) => t.team_id === input.team_id && t.business_id === biz)
+    if (!team) throw new Error('staff_admin_team')
+    if (team.lead_user_id && inMemorySubtree(viewer.user_id, team.lead_user_id)) throw new Error('staff_admin_team_self')
+    if (!input.reports_to) throw new Error('staff_admin_boss_missing')
+    const boss = memoryPeople.find((p) => p.user_id === input.reports_to)
+    if (!boss || boss.revoked_at || boss.status !== 'active' || !STAFF_ADMIN_BOSS_ROLES.includes(boss.role) || !dummyHasBusiness(boss, biz)) {
+      throw new Error('staff_admin_boss_invalid')
+    }
+    if (inMemorySubtree(viewer.user_id, boss.user_id)) throw new Error('staff_admin_boss_self')
+    if (input.max_security_class === 'Public' || CLASS_RANK[input.max_security_class] > CLASS_RANK[viewer.max_security_class]) {
+      throw new Error('staff_admin_class')
+    }
+    // 리뷰 I4 — «결재 올리기»는 위임 권한이 아니다(새 직원 기본). 와도 버린다.
+    const grants = [...new Set(input.module_grants)].filter((g) => g !== DRAFT_DECISION_MODULE).sort()
+    const allowed = staffAdminGrantable(viewer, biz)
+    if (grants.some((g) => !allowed.includes(g))) throw new Error('staff_admin_grant')
+
+    const now = new Date().toISOString()
+    const created: UserInvitation = {
+      invitation_id: `inv_${String(memoryInvitations.length + 1).padStart(3, '0')}`,
+      email,
+      role: input.role,
+      max_security_class: input.max_security_class,
+      business_ids: [biz],
+      display_name: input.display_name.trim(),
+      display_name_en: input.display_name_en,
+      title_ko: input.title_ko ?? '',
+      invited_by: viewer.user_id,
+      invited_at: now,
+      reports_to: boss.user_id,
+      team_id: input.team_id,
+      joined_on: input.joined_on,
+      language: input.language,
+      // 사원 · 팀장은 결재 큐가 없다(0026 role_rank < 2) · 위임자는 도장을 못 찍는다.
+      chairman_approval_required: false,
+      chairman_approved_at: null,
+      accepted_at: null,
+      revoked_at: null,
+      staff_admin_business: biz,
+      module_grants: grants,
+    }
+    memoryInvitations.push(created)
+    // 회장 알림 — 0055와 같은 문장(«회장» 없음).
+    const teamName = team.name
+    const bizName = [...businesses, ...memoryBusinesses].find((b) => b.business_id === biz)?.name ?? biz
+    const grantKo = [...grants.map((g) => (g.startsWith('/finance/') ? '재무 입력' : '문서 등록')), '결재 올리기(기본)'].join(' · ')
+    for (const chair of memoryPeople.filter((p) => p.role === 'Chairman' && !p.revoked_at)) {
+      const id = `ntf_${memoryNotifications.length + 1}`
+      memoryNotifications.push({
+        notification_id: id,
+        kind: 'system',
+        title: `${viewer.display_name}님이 ${bizName}에 ${created.display_name}님(${input.role === 'TeamLead' ? '팀장' : '사원'})을 초대했습니다`,
+        body: `팀 ${teamName} · 상사 ${boss.role === 'Chairman' ? '대표' : boss.display_name} · 권한 ${grantKo}. 가입하면 바로 효력이 납니다 — 취소는 사용자 · 권한 화면에서.`,
+        link: '/settings/users',
+        read_at: null,
+        created_at: now,
+      })
+      memoryNotificationOwner.set(id, chair.user_id)
+    }
+    return { ...created }
+  },
+
+  async staffAdminRevoke(invitationId: string): Promise<void> {
+    const viewer = dummyViewer().user_id
+    const found = memoryInvitations.find(
+      (i) => i.invitation_id === invitationId && i.invited_by === viewer && i.staff_admin_business && !i.accepted_at && !i.revoked_at,
+    )
+    if (!found) throw new Error('staff_admin_not_found')
+    found.revoked_at = new Date().toISOString()
   },
 
   async revokeUser(target: RevokeTarget, actor: AuditActor): Promise<void> {
@@ -1362,6 +1532,8 @@ export const dummyRepository: ChairmanRepository = {
       found.revoked_at = new Date().toISOString()
       found.status = 'left'
       found.left_on = kstToday()
+      // 0055 리뷰 I5 — 관리자 회수 → 모든 회사의 대기 위임 초대 취소(staff_admin_profile_revoked 거울).
+      dummyRevokePendingStaffAdmin(found.user_id, null)
       // 0047 — 회수하면 모듈 줄을 전부 지운다. 남기면 재초대 한 번에 옛 재무 권한이 살아난다(리뷰 I2).
       clearDummyModuleGrants(found.user_id)
 
@@ -1753,10 +1925,13 @@ export const dummyRepository: ChairmanRepository = {
    * 다르게 동작하고, live에서 목록이 길어지는 날 처음 드러난다.
    */
   async listNotifications(limit: number): Promise<NotificationInbox> {
-    const items = [...memoryNotifications]
+    // 0030 notifications_own_read — 본인 것만.
+    const viewer = dummyViewer().user_id
+    const mine = memoryNotifications.filter((n) => (memoryNotificationOwner.get(n.notification_id) ?? viewer) === viewer)
+    const items = [...mine]
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .slice(0, Math.max(0, limit))
-    return { unread: memoryNotifications.filter((n) => n.read_at === null).length, items }
+    return { unread: mine.filter((n) => n.read_at === null).length, items }
   },
 
   async markNotificationsRead(ids: string[]) {
