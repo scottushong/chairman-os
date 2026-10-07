@@ -78,7 +78,9 @@ import type {
   ProcessChartInput,
   CityLayout,
   CityLayoutInput,
+  ApprovalChainBoss,
   ApprovalLead,
+  ApprovalStepState,
   ApprovalStep,
   ChatChannel,
   ChatMessage,
@@ -297,7 +299,22 @@ interface DecisionRow {
   escalated?: boolean
   bundle_id?: string | null
   decided_by_kind?: Decision['decided_by_kind']
+  step_chain?: boolean
+  resubmit_of?: string | null
+  requester_name?: string | null
+  requester_team_id?: string | null
+  requester_team_name?: string | null
+  created_at?: string
+  decided_at?: string | null
 }
+
+/** decisions 한 행에서 화면이 읽는 칸 — 목록과 방금 올린 기안이 같은 글자를 쓴다. 0059 칸까지. */
+const DECISION_COLUMNS =
+  'decision_id,business_id,title,options,ai_recommendation,impact,deadline,status,ai_confidence,attachment_url,template_key,form,approval_line,' +
+  'created_by,lead_status,chairman_required,escalated,bundle_id,decided_by_kind,' +
+  'step_chain,resubmit_of,requester_name,requester_team_id,requester_team_name,created_at,decided_at'
+
+const APPROVAL_STEP_COLUMNS = 'decision_id,seq,approver_user_id,approver_name,why,is_chairman,status,decided_at,decided_by,note'
 
 /**
  * decisions 한 행을 화면의 Decision으로. 목록(listDecisions)과 방금 올린 기안(createDecision)이
@@ -326,6 +343,13 @@ function toDecision(r: DecisionRow): Decision {
     escalated: r.escalated ?? false,
     bundle_id: r.bundle_id ?? null,
     decided_by_kind: r.decided_by_kind ?? null,
+    step_chain: r.step_chain ?? false,
+    resubmit_of: r.resubmit_of ?? null,
+    requester_name: r.requester_name ?? null,
+    requester_team_id: r.requester_team_id ?? null,
+    requester_team_name: r.requester_team_name ?? null,
+    created_at: r.created_at,
+    decided_at: r.decided_at ?? null,
   }
 }
 
@@ -1378,6 +1402,49 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       return String(data)
     },
 
+    async listApprovalSteps(decisionIds?: string[]): Promise<ApprovalStepState[]> {
+      // 0059 approval_steps_read — 결재가 보이는 만큼만. 목록이 길면 id를 나눠 묻는다(URL 길이).
+      const ids = decisionIds ? [...new Set(decisionIds)] : null
+      if (ids && ids.length === 0) return []
+      const chunks = ids ? Array.from({ length: Math.ceil(ids.length / 150) }, (_, i) => ids.slice(i * 150, i * 150 + 150)) : [null]
+      const out: ApprovalStepState[] = []
+      for (const chunk of chunks) {
+        const { data, error } = await fetchAll('approval_steps', ['decision_id', 'seq'], (from, to) => {
+          let q = sb.from('approval_steps').select(APPROVAL_STEP_COLUMNS, { count: 'exact' })
+          if (chunk) q = q.in('decision_id', chunk)
+          return q.order('decision_id').order('seq').range(from, to).returns<ApprovalStepState[]>()
+        })
+        out.push(...unwrap('approval_steps', data, error))
+      }
+      return out
+    },
+
+    async myApprovalChain(businessId: string): Promise<ApprovalChainBoss[]> {
+      const { data, error } = await sb.rpc('my_approval_chain', { p_business: businessId })
+      if (error) throw new Error(`Supabase my_approval_chain ${error.code ?? '?'}: ${error.message}`)
+      return ((data as ApprovalChainBoss[] | null) ?? []).map((r) => ({ seq: Number(r.seq), user_id: r.user_id, display_name: r.display_name }))
+    },
+
+    async approvalDecide(decisionId: string, approve: boolean, note: string | null, actor: AuditActor) {
+      void actor // 차례 판정 · 감사 · 알림은 DB(approval_decide)가 auth.uid()로 한다.
+      const { data, error } = await sb.rpc('approval_decide', { p_decision: decisionId, p_approve: approve, p_note: note })
+      if (error) throw new Error(`Supabase approval_decide ${error.code ?? '?'}: ${error.message}`)
+      return data as 'next' | 'approved' | 'rejected'
+    },
+
+    async approvalDecideMany(decisionIds: string[], note: string | null, actor: AuditActor) {
+      void actor
+      const { data, error } = await sb.rpc('approval_decide_many', { p_ids: decisionIds, p_note: note })
+      if (error) throw new Error(`Supabase approval_decide_many ${error.code ?? '?'}: ${error.message}`)
+      return Number(data)
+    },
+
+    async logLedgerExport(businessId: string | null, count: number, filters: Record<string, string>, actor: AuditActor) {
+      void actor
+      const { error } = await sb.rpc('approval_ledger_log', { p_business: businessId, p_count: count, p_filters: filters })
+      if (error) throw new Error(`Supabase approval_ledger_log ${error.code ?? '?'}: ${error.message}`)
+    },
+
     async listDocFolders(): Promise<DocFolder[]> {
       const { data, error } = await sb
         .from('doc_folders')
@@ -1683,10 +1750,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       const { data, error } = await fetchAll('decisions', ['decision_id'], (from, to) =>
         sb
           .from('decisions')
-          .select(
-            'decision_id,business_id,title,options,ai_recommendation,impact,deadline,status,ai_confidence,attachment_url,template_key,form,approval_line,created_by,lead_status,chairman_required,escalated,bundle_id,decided_by_kind',
-            { count: 'exact' },
-          )
+          .select(DECISION_COLUMNS, { count: 'exact' })
           .order('deadline')
           .order('decision_id')
           .range(from, to)
@@ -2514,14 +2578,14 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
           // 0038. 결재선은 보내지 않는다 — 트리거가 만든다.
           template_key: input.template_key ?? null,
           form: input.form ?? null,
+          // 0059. 재상신 원본 — 트리거가 «내가 올려 반려된 같은 양식 · 같은 회사»인지 본다.
+          resubmit_of: input.resubmit_of ?? null,
           // 0026이 더한 칸. 기안자가 없으면 이 결재에는 '본인'이 없고, 0026의 다섯 번째 겹이
           // 그것을 '주인 없음 = 회사 공통'으로 읽어 올린 사람만 보는 결재가 전사에 열린다.
           // 화면이 보내는 값이 아니라 세션의 actor다 — 남의 이름으로 기안할 수 없다.
           created_by: actor.user_id,
         })
-        .select(
-          'decision_id,business_id,title,options,ai_recommendation,ai_confidence,impact,deadline,status,attachment_url,template_key,form,approval_line',
-        )
+        .select(DECISION_COLUMNS)
         .single<DecisionRow>()
 
       if (error || !data) {

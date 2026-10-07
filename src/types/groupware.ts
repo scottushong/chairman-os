@@ -83,6 +83,31 @@ export interface ApprovalStep {
   why: string
 }
 
+/** 0059 approval_steps 한 줄 — 단계 결재의 칸(얼린 결재자 · 상태 · 처리 시각 · 의견). */
+export const APPROVAL_STEP_STATUS = ['waiting', 'pending', 'approved', 'rejected', 'cancelled'] as const
+export type ApprovalStepStatus = (typeof APPROVAL_STEP_STATUS)[number]
+
+export interface ApprovalStepState {
+  decision_id: string
+  seq: number
+  approver_user_id: UserId
+  approver_name: string
+  why: string
+  is_chairman: boolean
+  status: ApprovalStepStatus
+  decided_at: IsoDateTime | null
+  /** 실제로 누른 사람(대표가 떠난 결재자의 칸을 대신 처리했으면 대표). */
+  decided_by: UserId | null
+  note: string | null
+}
+
+/** 0059 my_approval_chain()의 한 줄 — 상사 사슬(대표 앞까지). */
+export interface ApprovalChainBoss {
+  seq: number
+  user_id: UserId
+  display_name: string
+}
+
 /** my_approval_lead()의 한 줄. */
 export interface ApprovalLead {
   user_id: UserId
