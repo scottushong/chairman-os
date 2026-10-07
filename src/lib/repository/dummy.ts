@@ -224,9 +224,11 @@ const memoryTaskPatches = new Map<string, TaskPatch & { blocked_since?: string }
  * CH-042로 등록한 문서. 시드 JSON이 없는 표라(0003의 '넣지 않는 테이블') 처음에는 비어 있다.
  * 여기도 서버가 살아 있는 동안만이다.
  */
-const memoryDocuments: DocumentRecord[] = []
+// globalThis에 둔다 — webpack dev는 Server Action 층과 화면 층이 이 모듈을 따로 읽는다. 입구에서 넣은 문서가 화면에 안 보였다(2026-10-07).
+const documentStore = globalThis as unknown as { __chairmanDummyDocuments?: DocumentRecord[]; __chairmanDummyDeletedDocuments?: Set<string> }
+const memoryDocuments: DocumentRecord[] = (documentStore.__chairmanDummyDocuments ??= [])
 /** 0042 soft delete — 지운 문서(dummy). 0058 되돌리기가 이 길을 탄다. */
-const memoryDeletedDocuments = new Set<string>()
+const memoryDeletedDocuments: Set<string> = (documentStore.__chairmanDummyDeletedDocuments ??= new Set<string>())
 
 /**
  * CH-024로 고친 좌표. businessCoordinates(시드)는 읽기 전용이라 바뀐 칸만 따로 들고 있다가

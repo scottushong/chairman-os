@@ -454,7 +454,7 @@ function NoAiBlock({
         <>
           <p className="font-semibold text-critical">{MIX_RATIO_MESSAGE}</p>
           <p className="mt-1 text-t11 text-ink-dim">{MIX_RATIO_LIMITS}</p>
-          <p className="mt-1 text-t11 text-ink-dim">잘못 걸었으면(지분표 · 영양성분표 등) {who}이(가) «배합비 아님»으로 풉니다. 종류는 직접 고를 수 있습니다.</p>
+          <p className="mt-1 text-t11 text-ink-dim">잘못 걸었으면(지분표 · 영양성분표 등) {who}가 «배합비 아님»으로 풉니다. 종류는 직접 고를 수 있습니다.</p>
         </>
       ) : reason === 'not_attested' ? (
         <>
