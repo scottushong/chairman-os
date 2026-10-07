@@ -6297,6 +6297,413 @@ async function ecountPrecheckSql() {
   }
 }
 
+/**
+ * 0058 자료 받는 입구 — 새 PGlite 한 벌(일괄 grant 없이 — 칸 단위 grant를 그대로 잰다).
+ *
+ *   자물쇠    force 없음 · anon 표/함수 없음 · authenticated는 delete 없음 · update는 칸 다섯(적재 칸 · 도장 · 이력 없음) · restrictive 세 짝
+ *   넣기      intake_begin 한 번 = 입구 줄 + 원본 첨부(같은 회사 · 등급 · 경로 intake_items/…) · 남의 회사 · 높은 등급 · Vault · 시스템 계정 거부 ·
+ *             첨부 없는 줄 · 남의 첨부를 가리키는 줄은 커밋 때 거부 · 화면이 보낸 상태 · 이름은 DB가 덮는다
+ *   읽기      회사 AND 등급 · 다른 회사 0행 · Integration 0행
+ *   고치기    올린 사람 · 문서 쓰기 권한자 · 회장만 · 적재 칸 · 도장 · 이력 직접 쓰기 거부 · 'loaded' 꾸미기 거부 · 종류 도장 + 감사 ·
+ *             제안 이력 · «배합비 아님»은 올린 사람만 · 배합비 차단 풀기는 대표만
+ *   AI 제외   finance_imports 첨부 → 42501 ai_excluded(감사 줄 없음) · 입구 no_ai · 확인 없는 사진 → 42501 · 그 밖은 그대로
+ *   0050 회귀 finance_imports가 첨부 대상으로 그대로(회사 도장 · 재무 권한자만 보고 · 본인 draft에만 올림) — 0050 본문을 옮겼다는 증명
+ *   적재      문서 쓰기 권한자 → 문서 · 첨부 재지정(경로 그대로) · loaded · 감사 «AI 제안, 팀장 확인»(대표 — «회장» 없음) ·
+ *             권한 없음 · 다른 회사 · 시스템 계정 · 종류 없음 · 이중 적재 거부 · 다른 재지정 거부 · 적재된 원본 삭제 거부 ·
+ *             되돌리기(문서 soft delete) → 입구 줄 proposed · 첨부 복귀 · 다시 적재 · 남의 문서 지우기로는 안 됨 ·
+ *             읽은 뒤 재업로드 창 닫힘 · 같은 파일 알림
+ */
+const IK = {
+  chair: '00000000-0000-0000-0000-0000000058a1',
+  lead: '00000000-0000-0000-0000-0000000058a2', // DY 경영지원 팀장 — '/documents/biz_dy' 쓰기 + '/finance/biz_dy' 쓰기
+  up: '00000000-0000-0000-0000-0000000058a3', // DY 직원(Normal) — 올린 사람, 문서 줄 없음
+  peer: '00000000-0000-0000-0000-0000000058a4', // DY 직원(Normal) — 줄 없음
+  exec: '00000000-0000-0000-0000-0000000058a5', // DY 임원(Restricted) — 줄 없음
+  sales: '00000000-0000-0000-0000-0000000058a6', // DY 팀장 — '/documents/biz_dy' 쓰기(두 번째 문서 쓰기 권한자)
+  vana: '00000000-0000-0000-0000-0000000058a7', // VANA BusinessCEO
+  agent: '00000000-0000-0000-0000-0000000058a8',
+  integration: '00000000-0000-0000-0000-0000000058a9',
+}
+const IA = {
+  n: '00000000-0000-0000-0000-00000058b001', // itk_n · DY · Normal · up · pdf · SHA
+  r: '00000000-0000-0000-0000-00000058b002', // itk_r · DY · Restricted · exec
+  img: '00000000-0000-0000-0000-00000058b003', // itk_img · DY · Normal · up · jpeg
+  v: '00000000-0000-0000-0000-00000058b004', // itk_v · VANA · Normal · vana
+  dup: '00000000-0000-0000-0000-00000058b005', // itk_dup · DY · Normal · up · 같은 SHA(같은 파일)
+  fin: '00000000-0000-0000-0000-00000058b006', // finance_imports 원본
+  biz: '00000000-0000-0000-0000-00000058b007', // businesses/biz_dy 일반 첨부
+}
+const FIN58 = '00000000-0000-0000-0000-00000058c001'
+const SHA58 = 'b'.repeat(64)
+
+async function intake(nonBypassOwner = false) {
+  const db = new PGlite({ extensions: { pg_trgm } })
+  await applyAll(db)
+  await db.exec(`
+    grant usage on schema public, auth to authenticated, anon;
+    insert into auth.users values
+      ('${IK.chair}', 'k1@x'), ('${IK.lead}', 'k2@x'), ('${IK.up}', 'k3@x'), ('${IK.peer}', 'k4@x'), ('${IK.exec}', 'k5@x'),
+      ('${IK.sales}', 'k6@x'), ('${IK.vana}', 'k7@x'), ('${IK.agent}', 'k8@x'), ('${IK.integration}', 'k9@x');
+    insert into user_profiles (user_id, role, display_name, max_security_class, team_id) values
+      ('${IK.chair}', 'Chairman', 'ch', 'Vault', null),
+      ('${IK.lead}', 'TeamLead', '경영지원팀장', 'Normal', 'team_dy_support'),
+      ('${IK.up}', 'Member', '올린 사람', 'Normal', 'team_dy_support'),
+      ('${IK.peer}', 'Member', '동료', 'Normal', 'team_dy_sales'),
+      ('${IK.exec}', 'Executive', '임원', 'Restricted', null),
+      ('${IK.sales}', 'TeamLead', '영업팀장', 'Normal', 'team_dy_sales'),
+      ('${IK.vana}', 'BusinessCEO', 'vana', 'Restricted', null),
+      ('${IK.agent}', 'AIAgent', 'ai', 'Restricted', null),
+      ('${IK.integration}', 'Integration', 'sync', 'Restricted', null);
+    -- 직원은 회장 아래다 — 회장이 그 문서를 보는 길(0026 subtree)이 실제와 같게(되돌리기 · soft delete가 그 줄을 탄다).
+    update user_profiles set reports_to = '${IK.chair}' where user_id in ('${IK.lead}', '${IK.up}', '${IK.peer}', '${IK.exec}', '${IK.sales}');
+    insert into user_business_access values
+      ('${IK.lead}', 'biz_dy'), ('${IK.up}', 'biz_dy'), ('${IK.peer}', 'biz_dy'), ('${IK.exec}', 'biz_dy'),
+      ('${IK.sales}', 'biz_dy'), ('${IK.vana}', 'biz_vana');
+    insert into user_business_access select '${IK.agent}', business_id from businesses;
+    insert into user_business_access select '${IK.integration}', business_id from businesses;
+    insert into user_module_access (user_id, module, can_write, can_approve) values
+      ('${IK.lead}', '/documents/biz_dy', true, false), ('${IK.lead}', '/finance/biz_dy', true, false),
+      ('${IK.sales}', '/documents/biz_dy', true, false),
+      ('${IK.agent}', '/documents/biz_dy', true, false), ('${IK.integration}', '/documents/biz_dy', true, false);
+    insert into finance_imports (import_id, business_id, kind, period_key, status, file_name, created_by)
+      values ('${FIN58}', 'biz_dy', 'annual', '2025', 'draft', 'bs-2025.xlsx', '${IK.lead}');
+    begin;
+    insert into intake_items (item_id, business_id, attachment_id, security_class, file_sha256, created_by) values
+      ('itk_n', 'biz_dy', '${IA.n}', 'Normal', '${SHA58}', '${IK.up}'),
+      ('itk_r', 'biz_dy', '${IA.r}', 'Restricted', null, '${IK.exec}'),
+      ('itk_img', 'biz_dy', '${IA.img}', 'Normal', null, '${IK.up}'),
+      ('itk_v', 'biz_vana', '${IA.v}', 'Normal', null, '${IK.vana}'),
+      ('itk_dup', 'biz_dy', '${IA.dup}', 'Normal', '${SHA58}', '${IK.up}');
+    insert into attachments (attachment_id, entity_table, entity_id, file_name, mime, size_bytes, security_class, uploaded_by) values
+      ('${IA.n}', 'intake_items', 'itk_n', 'contract.pdf', 'application/pdf', 100, 'Normal', '${IK.up}'),
+      ('${IA.r}', 'intake_items', 'itk_r', 'cost.pdf', 'application/pdf', 100, 'Restricted', '${IK.exec}'),
+      ('${IA.img}', 'intake_items', 'itk_img', 'scan.jpg', 'image/jpeg', 100, 'Normal', '${IK.up}'),
+      ('${IA.v}', 'intake_items', 'itk_v', 'vana.pdf', 'application/pdf', 100, 'Normal', '${IK.vana}'),
+      ('${IA.dup}', 'intake_items', 'itk_dup', 'contract-again.pdf', 'application/pdf', 100, 'Normal', '${IK.up}'),
+      ('${IA.fin}', 'finance_imports', '${FIN58}', 'bs-2025.xlsx',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 100, 'Normal', '${IK.lead}'),
+      ('${IA.biz}', 'businesses', 'biz_dy', 'brochure.pdf', 'application/pdf', 100, 'Normal', '${IK.up}');
+    commit;
+    insert into storage.objects (bucket_id, name) select 'attachments', storage_path from attachments;
+  `)
+
+  // 한 트랜잭션 안에서 여러 문장. '@<uid>' 사람 바꾸기 · '!<sql>' 소유자로 잠깐 나가기(documentGrants와 같은 모양).
+  async function as(uid: string | null, steps: string[]): Promise<'denied' | number | string> {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid ?? ''}', true); set local role ${uid ? 'authenticated' : 'anon'};`)
+    try {
+      let last: Record<string, unknown>[] = []
+      let affected = 0
+      for (const s of steps) {
+        if (s.startsWith('@')) { await db.exec(`select set_config('request.jwt.claim.sub', '${s.slice(1)}', true)`); continue }
+        if (s.startsWith('!')) { await db.exec(`reset role; ${s.slice(1)}; set local role authenticated;`); continue }
+        const res = await db.query<Record<string, unknown>>(s)
+        last = res.rows
+        affected = res.affectedRows ?? 0
+      }
+      await db.exec('set constraints all immediate')
+      if (!last.length) return affected
+      const v = Object.values(last[0])[0]
+      return typeof v === 'number' ? v : String(v)
+    } catch (e) {
+      if (/row-level security/.test(e instanceof Error ? e.message : '')) return 'denied'
+      throw e
+    } finally {
+      await db.exec('rollback')
+    }
+  }
+  const owner = async (sql: string) => (await db.query<Record<string, unknown>>(sql)).rows
+  const items = `select count(*)::int from intake_items`
+  const move = (item = 'itk_n', title = '공급 계약서') => `select intake_move_to_document('${item}', '${title}', 'Contract')`
+  const ready = [`update intake_items set status = 'proposed', proposal = '{"kind":"contract"}'::jsonb, kind = 'contract' where item_id = 'itk_n'`]
+  const doc = `(select loaded_id from intake_items where item_id = 'itk_n')`
+  const undone = `select count(*)::int from intake_items i join attachments a on a.attachment_id = i.attachment_id
+      where i.item_id = 'itk_n' and i.status = 'proposed' and i.loaded_table is null and i.loaded_id is null and i.loaded_by is null
+        and a.entity_table = 'intake_items' and a.entity_id = 'itk_n' and a.storage_path = 'intake_items/itk_n/${IA.n}'`
+
+  if (nonBypassOwner) {
+    // ── BYPASSRLS 없는 소유자(0051 · 0052와 같은 실험) — documents · audit_log는 0002부터 force라 definer 적재 · 되돌리기가
+    //    소유자 권한에서도 호출자 정책(0048 documents_insert · audit_log_insert)을 넘는가. 이 harness는 superuser라 새 PGlite에서 따로 잰다
+    //    (같은 세션에서 소유자를 바꾸면 superuser로 짜 둔 plpgsql 계획이 그대로 쓰여 대조군이 서지 않는다).
+    await db.exec(`
+      create role app_owner nosuperuser nobypassrls nologin;
+      grant usage on schema auth to app_owner;
+      grant execute on all functions in schema public to app_owner;
+      alter table public.documents     owner to app_owner;
+      alter table public.audit_log     owner to app_owner;
+      alter table public.attachments   owner to app_owner;
+      alter table public.intake_items  owner to app_owner;
+      alter function public.intake_move_to_document(text, text, text, bigint, text[]) owner to app_owner;
+      alter function public.intake_document_unload()  owner to app_owner;
+      alter function public.attachments_entity_guard() owner to app_owner;
+      alter function public.intake_items_audit()      owner to app_owner;
+      alter function public.intake_items_link_check() owner to app_owner;
+      alter function public.intake_role_label()       owner to app_owner;
+    `)
+    assert.deepEqual(await owner(`select relname, relforcerowsecurity as f from pg_class where relname in ('documents', 'audit_log', 'intake_items', 'attachments') order by 1`),
+      [{ relname: 'attachments', f: false }, { relname: 'audit_log', f: true }, { relname: 'documents', f: true }, { relname: 'intake_items', f: false }],
+      '0058 실험 전제: 문서 · 감사는 force · 입구 · 첨부는 force 없음')
+    assert.equal(await as(IK.lead, [...ready, move(), `select soft_delete('documents', ${doc})`, undone]), 1,
+      '0058: BYPASSRLS 없는 소유자에서 적재 → 되돌리기가 안 된다(documents · audit_log force 아래에서 호출자 정책을 못 넘는다)')
+    await assert.rejects(as(IK.up, [...ready, move()]), /intake_document_write_forbidden/, '0058: BYPASSRLS 없는 소유자에서 문서 줄 없는 사람이 적재한다')
+    // 대조군 — 호출자 정책이 정말 걸리는가: 함수 안 판정을 지나도 documents_insert(등록자 = 본인)가 막는 상황을 만든다.
+    assert.equal(await as(IK.lead, [...ready, `!alter policy documents_insert on documents with check (false)`, move()]), 'denied',
+      '대조군이 성립하지 않는다 — documents_insert를 닫아도 적재가 된다면 위 실험은 force를 재고 있지 않다')
+    await db.close()
+    return
+  }
+
+  // ── 자물쇠 ──
+  const lock = await owner(`
+    select c.relforcerowsecurity as forced, c.relrowsecurity as rls,
+           has_table_privilege('anon', c.oid, 'select') or has_table_privilege('anon', c.oid, 'insert')
+             or has_table_privilege('anon', c.oid, 'update') or has_table_privilege('anon', c.oid, 'delete') as anon,
+           has_table_privilege('authenticated', c.oid, 'delete') or has_table_privilege('authenticated', c.oid, 'truncate')
+             or has_table_privilege('authenticated', c.oid, 'update') as auth_wide
+      from pg_class c where c.relname = 'intake_items'`)
+  assert.deepEqual(lock, [{ forced: false, rls: true, anon: false, auth_wide: false }],
+    '0058: intake_items — force가 걸렸거나 · RLS가 꺼졌거나 · anon에게 열렸거나 · authenticated에게 표 전체 update/delete가 있다')
+  const cols = await owner(`select a.attname as c from pg_attribute a
+      where a.attrelid = 'intake_items'::regclass and a.attnum > 0 and not a.attisdropped
+        and has_column_privilege('authenticated', 'intake_items'::regclass, a.attnum, 'update') order by 1`)
+  assert.deepEqual(cols.map((r) => r.c), ['kind', 'mix_attested_at', 'no_ai_reason', 'proposal', 'status'],
+    '0058: intake_items에서 authenticated가 고칠 수 있는 칸은 다섯뿐이어야 한다(적재 칸 · 도장 · 이력 · 회사 · 등급 · 파일 없음)')
+  for (const fn of ['intake_begin(text, security_class, text, text, bigint, text, boolean)', 'intake_move_to_document(text, text, text, bigint, text[])',
+    'intake_same_file(text)', 'intake_can_edit(text, uuid, text)', 'intake_attachment_loaded(uuid)']) {
+    assert.deepEqual(await owner(`select has_function_privilege('anon', '${fn}', 'execute') as ok`), [{ ok: false }], `0058: anon이 ${fn}을 부른다`)
+  }
+  for (const fn of ['intake_role_label()', 'intake_document_unload()', 'attachments_entity_guard()']) {
+    assert.deepEqual(await owner(`select has_function_privilege('authenticated', '${fn}', 'execute') as ok`), [{ ok: false }], `0058: authenticated가 ${fn}을 부른다`)
+  }
+  await assert.rejects(as(null, [items]), /permission denied/, '0058: anon이 intake_items를 읽는다')
+  const kinds = new Map((await owner(`select policyname as k, permissive as p, cmd from pg_policies where tablename = 'intake_items'`))
+    .map((r) => [String(r.k), `${String(r.p)}:${String(r.cmd)}`]))
+  for (const who of ['ai_agent', 'integration']) {
+    for (const op of ['insert', 'update', 'delete']) {
+      assert.equal(kinds.get(`${who}_no_${op}`)?.split(':')[0], 'RESTRICTIVE', `0058: intake_items에 ${who}_no_${op}가 restrictive로 있어야 한다`)
+    }
+  }
+  assert.ok(![...kinds.values()].some((v) => v === 'PERMISSIVE:DELETE' || v === 'PERMISSIVE:ALL'), '0058: intake_items에 permissive delete 정책이 있다')
+
+  // ── 읽기: 회사 AND 등급 ──
+  assert.equal(await as(IK.up, [items]), 3, '0058: DY 일반 직원은 DY 일반 셋만(제한 · VANA 없이)')
+  assert.equal(await as(IK.peer, [items]), 3, '0058: 같은 회사 동료가 입구 줄을 못 본다(설계서 A3 «그 줄이 보이는 사람»)')
+  assert.equal(await as(IK.exec, [items]), 4, '0058: DY 임원(제한)은 DY 넷')
+  assert.equal(await as(IK.vana, [items]), 1, '0058: VANA 대표이사에게 다른 회사 입구 줄이 보인다')
+  assert.equal(await as(IK.chair, [items]), 5, '0058: 회장이 입구 줄을 다 못 본다')
+  assert.equal(await as(IK.integration, [items]), 0, '0058: Integration에게 입구 줄이 보인다')
+  assert.equal(await as(IK.vana, [`select count(*)::int from attachments where entity_table = 'intake_items'`]), 1,
+    '0058: 입구 원본 첨부가 다른 회사에 보인다(attachment_entity_visible의 intake_items case)')
+  assert.equal(await as(IK.up, [`select count(*)::int from attachments where entity_table = 'intake_items'`]), 3,
+    '0058: 올린 사람이 자기 회사 입구 원본을 못 본다')
+
+  // ── 넣기: intake_begin ──
+  const begin = (biz: string, cls = 'Normal', mime = 'application/pdf', sha = `'${'c'.repeat(64)}'`, attest = false) =>
+    `create temp table t_new as select * from intake_begin('${biz}', '${cls}', 'new.pdf', '${mime}', 10, ${sha}, ${attest})`
+  const made = (cond: string) => `select count(*)::int from intake_items i join attachments a on a.attachment_id = i.attachment_id
+      join t_new t on t.item_id = i.item_id and t.attachment_id = a.attachment_id where ${cond}`
+  assert.equal(await as(IK.up, [begin('biz_dy'), made(`i.status = 'uploaded' and i.created_by = '${IK.up}' and i.business_id = 'biz_dy'
+      and a.entity_table = 'intake_items' and a.entity_id = i.item_id and a.business_id = 'biz_dy' and a.uploaded_by = '${IK.up}'
+      and a.security_class = 'Normal' and a.storage_path = 'intake_items/' || i.item_id || '/' || a.attachment_id and t.storage_path = a.storage_path`)]), 1,
+  '0058: intake_begin이 입구 줄 + 원본 첨부(같은 회사 · 등급 · 경로)를 못 세운다')
+  assert.equal(await as(IK.up, [begin('biz_dy'), `select count(*)::int from audit_log a join t_new t on a.entity_id = t.attachment_id::text
+      where a.entity_table = 'attachments' and a.action::text = 'upload'`]), 1, '0058: 입구 원본 올림이 감사에 upload로 안 남는다')
+  assert.equal(await as(IK.up, [begin('biz_dy', 'Normal', 'image/jpeg', 'null', true),
+    made(`i.mix_attested_by = '${IK.up}' and i.mix_attested_at is not null`)]), 1, '0058: 올릴 때 «배합비 아님» 확인 도장이 안 찍힌다')
+  assert.equal(await as(IK.up, [begin('biz_dy', 'Restricted')]), 'denied', '0058: 일반 직원이 제한 등급을 입구에 올린다')
+  assert.equal(await as(IK.up, [begin('biz_vana')]), 'denied', '0058: 남의 회사 입구에 올린다')
+  await assert.rejects(as(IK.chair, [begin('biz_dy', 'Vault')]), /intake_items_class_check|row-level security/, '0058: Vault 파일이 입구로 들어간다')
+  assert.equal(await as(IK.agent, [begin('biz_dy')]), 'denied', '0058: AIAgent가 입구에 올린다')
+  assert.equal(await as(IK.integration, [begin('biz_dy')]), 'denied', '0058: Integration이 입구에 올린다')
+  await assert.rejects(as(IK.up, [`insert into intake_items (business_id, attachment_id, security_class) values ('biz_dy', gen_random_uuid(), 'Normal')`]),
+    /intake_attachment_missing|intake_items_attachment_id_fkey/, '0058: 첨부 없는 입구 줄이 커밋된다')
+  await assert.rejects(as(IK.up, [`insert into intake_items (business_id, attachment_id, security_class) values ('biz_dy', '${IA.biz}', 'Normal')`]),
+    /intake_attachment_missing/, '0058: 다른 대상의 첨부(회사 첨부)를 가리키는 입구 줄이 커밋된다')
+  // 화면이 보낸 상태 · 종류 · 이름은 DB가 덮는다(stamp). 첨부는 그 줄의 id · 등급으로만.
+  assert.equal(await as(IK.up, [
+    `insert into intake_items (item_id, business_id, attachment_id, security_class, status, kind, created_by)
+       values ('itk_forge', 'biz_dy', '00000000-0000-0000-0000-00000058f001', 'Normal', 'proposed', 'contract', '${IK.chair}')`,
+    `insert into attachments (attachment_id, entity_table, entity_id, file_name, mime, size_bytes, security_class)
+       values ('00000000-0000-0000-0000-00000058f001', 'intake_items', 'itk_forge', 'f.pdf', 'application/pdf', 10, 'Normal')`,
+    `select count(*)::int from intake_items where item_id = 'itk_forge' and status = 'uploaded' and kind is null and created_by = '${IK.up}'`]), 1,
+  '0058: 넣을 때 상태 · 종류 · 올린 사람을 화면 값 그대로 받는다')
+  assert.equal(await as(IK.peer, [
+    `insert into attachments (entity_table, entity_id, file_name, mime, size_bytes, security_class) values ('intake_items', 'itk_n', 'x.pdf', 'application/pdf', 10, 'Normal')`]),
+  'denied', '0058: 남의 입구 줄에 원본을 끼워 넣는다')
+  assert.equal(await as(IK.up, [
+    `insert into attachments (entity_table, entity_id, file_name, mime, size_bytes, security_class) values ('intake_items', 'itk_n', 'x.pdf', 'application/pdf', 10, 'Normal')`]),
+  'denied', '0058: 입구 줄 하나에 원본이 둘 붙는다')
+
+  // ── 고치기: 올린 사람 · 문서 쓰기 권한자 · 회장 ──
+  const setKind = (item: string, kind = 'contract') => `update intake_items set kind = '${kind}' where item_id = '${item}'`
+  assert.equal(await as(IK.up, [setKind('itk_n')]), 1, '0058: 올린 사람이 종류를 못 고친다')
+  assert.equal(await as(IK.lead, [setKind('itk_n')]), 1, '0058: 문서 쓰기 권한자(확인 권한자)가 종류를 못 고친다')
+  assert.equal(await as(IK.chair, [setKind('itk_n')]), 1, '0058: 회장이 종류를 못 고친다')
+  assert.equal(await as(IK.peer, [setKind('itk_n')]), 0, '0058: 올린 사람도 확인 권한자도 아닌 동료가 종류를 고친다')
+  assert.equal(await as(IK.vana, [setKind('itk_n')]), 0, '0058: 다른 회사 사람이 입구 줄을 고친다')
+  assert.equal(await as(IK.agent, [setKind('itk_n')]), 0, '0058: AIAgent가 입구 줄을 고친다')
+  for (const col of [`loaded_table = 'documents'`, `loaded_id = 'doc_x'`, `kind_confirmed_by = '${IK.up}'`, `proposal_history = '[]'::jsonb`,
+    `business_id = 'biz_vana'`, `security_class = 'Restricted'`, `attachment_id = '${IA.biz}'`, `created_by = '${IK.peer}'`, `mix_attested_by = '${IK.up}'`]) {
+    await assert.rejects(as(IK.up, [`update intake_items set ${col} where item_id = 'itk_n'`]), /permission denied/,
+      `0058: 올린 사람이 ${col.split(' ')[0]}을 직접 쓴다(칸 grant가 열렸다)`)
+  }
+  await assert.rejects(as(IK.chair, [`update intake_items set status = 'loaded' where item_id = 'itk_n'`]), /intake_items_loaded_check/,
+    '0058: 적재 칸 없이 «적재됨»으로 꾸민다')
+  assert.equal(await as(IK.up, [setKind('itk_n'), `@${IK.lead}`, setKind('itk_n', 'other'),
+    `select count(*)::int from intake_items where item_id = 'itk_n' and kind = 'other' and kind_confirmed_by = '${IK.lead}' and kind_confirmed_at is not null`]), 1,
+  '0058: 종류 확인 도장(누가 · 언제)이 DB로 안 찍힌다')
+  assert.equal(await as(IK.up, [setKind('itk_n'), setKind('itk_n', 'other'),
+    `select count(*)::int from audit_log where entity_table = 'intake_items' and entity_id = 'itk_n' and action::text = 'update'
+        and note in ('입구 종류 확인', '입구 종류 바꿈') and before->>'kind' is distinct from after->>'kind'`]), 2,
+  '0058: 종류 확인 · 바꾸기가 감사(before/after kind)에 안 남는다')
+  assert.equal(await as(IK.up, [
+    `update intake_items set status = 'proposed', proposal = '{"kind":"contract","confidence":"high"}'::jsonb where item_id = 'itk_n'`,
+    `update intake_items set proposal = '{"kind":"official_letter","confidence":"low"}'::jsonb where item_id = 'itk_n'`,
+    `select jsonb_array_length(proposal_history) * 10 + (proposal_history->0->'proposal'->>'kind' = 'contract')::int from intake_items where item_id = 'itk_n'`]), 11,
+  '0058: 바뀐 제안이 proposal_history에 안 남는다')
+  await assert.rejects(as(IK.up, [`update intake_items set proposal = '[1]'::jsonb where item_id = 'itk_n'`]), /intake_items_proposal_check/, '0058: 객체 아닌 제안')
+  await assert.rejects(as(IK.up, [`update intake_items set status = 'no_ai' where item_id = 'itk_n'`]), /intake_items_no_ai_check/, '0058: 이유 없는 «AI 안 보냄»')
+  // «배합비 아님»은 올린 사람만(F3) · 도장은 DB가.
+  assert.equal(await as(IK.up, [`update intake_items set mix_attested_at = '2000-01-01' where item_id = 'itk_img'`,
+    `select count(*)::int from intake_items where item_id = 'itk_img' and mix_attested_by = '${IK.up}' and mix_attested_at > now() - interval '1 minute'`]), 1,
+  '0058: 올린 사람의 «배합비 아님» 확인 도장이 DB 시각 · 본인으로 안 찍힌다')
+  await assert.rejects(as(IK.lead, [`update intake_items set mix_attested_at = now() where item_id = 'itk_img'`]), /intake_mix_attest_uploader_only/,
+    '0058: 올린 사람이 아닌 사람이 «배합비 아님»을 누른다')
+  await assert.rejects(as(IK.chair, [`update intake_items set mix_attested_at = now() where item_id = 'itk_img'`]), /intake_mix_attest_uploader_only/,
+    '0058: 회장도 남이 올린 사진의 «배합비 아님»을 대신 누른다')
+  // 배합비 차단 풀기는 대표만(F3).
+  const mixBlock = `update intake_items set status = 'no_ai', no_ai_reason = 'mix_ratio' where item_id = 'itk_n'`
+  await assert.rejects(as(IK.up, [mixBlock, `update intake_items set status = 'proposed' where item_id = 'itk_n'`]), /intake_mix_unblock_forbidden/,
+    '0058: 올린 사람이 배합비 차단을 푼다')
+  await assert.rejects(as(IK.lead, [mixBlock, `update intake_items set status = 'no_ai', no_ai_reason = 'not_attested' where item_id = 'itk_n'`]),
+    /intake_mix_unblock_forbidden/, '0058: 이유를 바꿔 배합비 차단을 우회한다')
+  assert.equal(await as(IK.up, [mixBlock, `@${IK.chair}`, `update intake_items set status = 'proposed' where item_id = 'itk_n'`,
+    `select count(*)::int from intake_items where item_id = 'itk_n' and status = 'proposed' and no_ai_reason is null`]), 1,
+  '0058: 대표가 배합비 차단을 못 푼다(또는 이유가 남는다)')
+  assert.equal(await as(IK.up, [mixBlock, `@${IK.chair}`, `update intake_items set status = 'proposed' where item_id = 'itk_n'`,
+    `select count(*)::int from audit_log where entity_id = 'itk_n' and note in ('AI 제외 — 배합비로 보임', '배합비 차단 풀림 — 대표 확인')`]), 2,
+  '0058: AI 제외 · 차단 풀기가 감사에 안 남는다')
+
+  // ── 4절 AI 제외 — DB 문 ──
+  const aiRows = (id: string) => `select count(*)::int as n from audit_log where entity_id = '${id}' and action::text = 'ai_external_send'`
+  await assert.rejects(as(IK.lead, [`select record_attachment_ai_send('${IA.fin}', 'm')`]), /ai_excluded/, '0058: ECOUNT 업로드 원본이 외부 AI 전송 문을 지난다')
+  await assert.rejects(as(IK.chair, [`select record_attachment_ai_send('${IA.fin}', 'm')`]), /ai_excluded/, '0058: 회장이면 ECOUNT 원본이 AI로 간다')
+  assert.deepEqual(await owner(aiRows(IA.fin)), [{ n: 0 }], '0058: 거부된 ECOUNT 원본에 외부 AI 전송 감사가 남았다')
+  // 감사가 없으니 통행증도 없다 — 올린 본인 · 회장 밖의 재무 권한자는 파일을 못 연다(0045 attachment_recent_pass).
+  assert.equal(await as(IK.lead, [`select count(*)::int from storage.objects where name like '%${IA.fin}'`]), 1,
+    '0058 검사 전제: 올린 본인은 통행증 없이 원본을 연다(0045)')
+  await assert.rejects(as(IK.up, [`select record_attachment_ai_send('${IA.img}', 'm')`]), /ai_excluded/, '0058: «배합비 아님» 확인 없는 사진이 AI로 간다')
+  assert.equal(await as(IK.up, [`update intake_items set mix_attested_at = now() where item_id = 'itk_img'`, `select record_attachment_ai_send('${IA.img}', 'm')::int`]), 1,
+    '0058: 확인한 사진이 AI로 못 간다')
+  await assert.rejects(as(IK.up, [mixBlock, `select record_attachment_ai_send('${IA.n}', 'm')`]), /ai_excluded/, '0058: «AI 안 보냄» 입구 원본이 AI로 간다')
+  assert.equal(await as(IK.up, [`select record_attachment_ai_send('${IA.n}', 'm')::int`, aiRows(IA.n)]), 1, '0058: 일반 입구 PDF의 외부 AI 전송이 막히거나 감사가 안 남는다')
+  assert.equal(await as(IK.up, [`select record_attachment_ai_send('${IA.biz}', 'm')::int`]), 1, '0058: 회사 첨부(제외 대상 아님)의 외부 AI 전송이 막혔다')
+  await assert.rejects(as(IK.chair, [`!insert into attachments (attachment_id, entity_table, entity_id, file_name, mime, size_bytes, security_class, uploaded_by)
+      values ('00000000-0000-0000-0000-00000058f00e', 'businesses', 'biz_dy', 'v.pdf', 'application/pdf', 10, 'Vault', '${IK.chair}')`,
+  `select record_attachment_ai_send('00000000-0000-0000-0000-00000058f00e', 'm')`]), /attachment_vault_no_ai/, '0058: Vault 거부(0045)가 빠졌다')
+
+  // ── 0050 회귀: finance_imports는 첨부 대상 그대로(0050 본문을 옮겼다는 증명) ──
+  assert.deepEqual(await owner(`select business_id from attachments where attachment_id = '${IA.fin}'`), [{ business_id: 'biz_dy' }],
+    '0058: finance_imports 첨부에 회사가 안 찍힌다(attachments_stamp의 0050 case가 빠졌다)')
+  const finAttach = `insert into attachments (entity_table, entity_id, file_name, mime, size_bytes, security_class)
+      values ('finance_imports', '${FIN58}', 'again.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 10, 'Normal')`
+  assert.equal(await as(IK.lead, [finAttach, `select count(*)::int from attachments where entity_table = 'finance_imports' and business_id = 'biz_dy'`]), 2,
+    '0058: 재무 쓰기 권한자가 자기 draft에 원본을 못 올린다(entity check · stamp의 finance_imports가 빠졌다)')
+  assert.equal(await as(IK.sales, [finAttach]), 'denied', '0058: 재무 줄 없는 사람이 업로드 원본을 올린다(0050 정책 회귀)')
+  assert.equal(await as(IK.lead, [`select attachment_entity_visible('finance_imports', '${FIN58}')::int`]), 1, '0058: attachment_entity_visible에서 finance_imports가 빠졌다')
+  assert.equal(await as(IK.up, [`select count(*)::int from attachments where entity_table = 'finance_imports'`]), 0, '0058: 재무 줄 없는 직원에게 ECOUNT 원본이 보인다')
+  assert.equal(await as(IK.lead, [`select count(*)::int from attachments where entity_table = 'finance_imports'`]), 1, '0058: 재무 권한자가 ECOUNT 원본을 못 본다')
+  assert.equal(await as(IK.lead, [`!update finance_imports set status = 'committed', file_sha256 = '${SHA58}' where import_id = '${FIN58}'`,
+    `insert into storage.objects (bucket_id, name) values ('attachments', 'finance_imports/${FIN58}/x')`]), 'denied',
+  '0058: 끝난 ECOUNT 업로드에 원본을 다시 올린다(attachment_object_uploadable의 0050 조건이 빠졌다)')
+
+  // ── 5절 적재 → 문서 ──
+  assert.equal(await as(IK.up, [...ready, `@${IK.lead}`, move(),
+    `select count(*)::int from intake_items i join documents d on d.document_id = i.loaded_id
+        join attachments a on a.attachment_id = i.attachment_id
+      where i.item_id = 'itk_n' and i.status = 'loaded' and i.loaded_table = 'documents' and i.loaded_by = '${IK.lead}'
+        and d.business_id = 'biz_dy' and d.security_class = 'Normal' and d.uploaded_by = '${IK.lead}' and d.title = '공급 계약서'
+        and d.storage_url = '/documents/' || d.document_id
+        and a.entity_table = 'documents' and a.entity_id = d.document_id and a.storage_path = 'intake_items/itk_n/${IA.n}'`]), 1,
+  '0058: 적재가 문서 · 첨부 재지정(경로는 그대로) · loaded를 한 번에 못 세운다')
+  assert.equal(await as(IK.up, [...ready, `@${IK.lead}`, move(),
+    `select count(*)::int from audit_log where business_id = 'biz_dy' and (
+        (entity_table = 'documents' and action::text = 'create' and note = '입구 itk_n에서 — AI 제안, 팀장 확인')
+        or (entity_table = 'intake_items' and entity_id = 'itk_n' and action::text = 'update' and note like '입구 적재 — 문서 doc_%'))`]), 2,
+  '0058: 적재 감사 두 줄(«입구 ‹item›에서 — AI 제안, ‹역할› 확인» · 입구 적재)이 안 남는다')
+  assert.equal(await as(IK.up, [...ready, `@${IK.chair}`, move(),
+    `select count(*)::int from audit_log where entity_table = 'documents' and note = '입구 itk_n에서 — AI 제안, 대표 확인'`]), 1,
+  '0058: 회장 적재의 감사 메모가 «대표»가 아니다(0049)')
+  assert.equal(await as(IK.lead, [`!update intake_items set kind = 'other' where item_id = 'itk_dup'`, move('itk_dup', '그냥 보관'),
+    `select count(*)::int from audit_log where entity_table = 'documents' and note = '입구 itk_dup에서 — 사람이 분류, 팀장 확인'`]), 1,
+  '0058: AI 제안 없이 사람이 고른 종류의 적재 메모가 틀리다')
+  // DB가 적는 사용자 문구에 «회장»이 없다(함수 본문의 따옴표 안 — 주석은 빼고).
+  const bodies = await owner(`select proname, prosrc from pg_proc where proname in ('intake_items_audit', 'intake_move_to_document', 'intake_document_unload',
+      'intake_role_label', 'intake_items_stamp', 'record_attachment_ai_send', 'attachments_entity_guard')`)
+  assert.equal(bodies.length, 7, '0058 검사 전제: 함수 일곱')
+  for (const b of bodies) {
+    const quoted = String(b.prosrc).replace(/--[^\n]*/g, '').match(/'[^']*'/g) ?? []
+    assert.ok(!quoted.some((q) => q.includes('회장')), `0058: ${String(b.proname)}이 «회장»을 사용자 문구로 적는다(0049 — «대표»)`)
+  }
+  assert.equal(await as(IK.up, [...ready, `@${IK.lead}`, move(), `@${IK.up}`, `select count(*)::int from attachments where attachment_id = '${IA.n}'`]), 0,
+    '0058 검사 전제: 적재된 문서(등록자 = 팀장)는 올린 직원에게 안 보인다(0026 documents_read) — 첨부도 문서를 따른다')
+  // 거부
+  await assert.rejects(as(IK.up, [...ready, move()]), /intake_document_write_forbidden/, '0058: 문서 줄 없는 올린 사람이 적재한다')
+  await assert.rejects(as(IK.exec, [...ready.map((s) => `!${s}`), move()]), /intake_document_write_forbidden/, '0058: 문서 줄 없는 임원이 적재한다')
+  await assert.rejects(as(IK.vana, [...ready.map((s) => `!${s}`), move()]), /intake_not_found/, '0058: 다른 회사 사람이 적재한다(또는 존재가 샌다)')
+  await assert.rejects(as(IK.agent, [...ready.map((s) => `!${s}`), move()]), /intake_forbidden/, '0058: 문서 줄 있는 AIAgent가 적재한다')
+  await assert.rejects(as(IK.integration, [...ready.map((s) => `!${s}`), move()]), /intake_forbidden/, '0058: Integration이 적재한다')
+  await assert.rejects(as(IK.lead, [`!update intake_items set kind = 'contract' where item_id = 'itk_r'`, move('itk_r')]), /intake_not_found/,
+    '0058: 등급을 못 보는 입구 줄을 적재한다')
+  await assert.rejects(as(IK.lead, [move('itk_dup')]), /intake_kind_missing/, '0058: 종류 확인 없이 적재된다')
+  await assert.rejects(as(IK.lead, [...ready, move(), move()]), /intake_already_loaded/, '0058: 같은 입구 줄이 두 번 적재된다')
+  await assert.rejects(as(IK.lead, [...ready, move(), setKind('itk_n', 'other')]), /intake_loaded_locked/, '0058: 적재된 줄의 종류를 바꾼다')
+  await assert.rejects(as(IK.lead, [...ready, `update intake_items set status = 'reading' where item_id = 'itk_n'`, move()]), /intake_not_ready/, '0058: 읽는 중인 줄을 적재한다')
+  await assert.rejects(as(IK.lead, [...ready, move('itk_n', '  ')]), /intake_title_invalid/, '0058: 제목 없는 문서가 선다')
+  // 다른 재지정은 계속 막힌다 — 소유자 권한으로 해도.
+  await assert.rejects(owner(`update attachments set entity_table = 'businesses', entity_id = 'biz_dy' where attachment_id = '${IA.n}'`),
+    /attachment_entity_change_forbidden/, '0058: 입구 원본을 회사 첨부로 옮긴다')
+  await assert.rejects(owner(`update attachments set entity_table = 'documents', entity_id = 'doc_x' where attachment_id = '${IA.biz}'`),
+    /attachment_entity_change_forbidden/, '0058: 회사 첨부를 문서로 옮긴다(입구 밖 재지정)')
+  await assert.rejects(owner(`update attachments set entity_id = 'itk_dup' where attachment_id = '${IA.n}'`),
+    /attachment_entity_change_forbidden/, '0058: 입구 원본을 다른 입구 줄로 옮긴다')
+  await assert.rejects(as(IK.lead, [`update attachments set entity_id = 'itk_dup' where attachment_id = '${IA.n}'`]), /permission denied/,
+    '0058: 직원이 첨부 대상을 직접 바꾼다')
+  // 적재된 원본은 못 지운다 · 적재 전 원본은 지우면 입구 줄도 같이 간다.
+  assert.equal(await as(IK.up, [...ready, `@${IK.chair}`, move(), `delete from attachments where attachment_id = '${IA.n}'`]), 0,
+    '0058: 문서로 적재된 입구 원본을 지운다')
+  assert.equal(await as(IK.up, [`delete from attachments where attachment_id = '${IA.dup}'`, `select count(*)::int from intake_items where item_id = 'itk_dup'`]), 0,
+    '0058: 원본을 지웠는데 입구 줄이 남는다(또는 올린 사람이 못 지운다)')
+
+  // 되돌리기 — 문서 soft delete(적재한 사람 · 회장).
+  assert.equal(await as(IK.lead, [...ready, move(), `select soft_delete('documents', ${doc})`, undone]), 1,
+    '0058: 문서를 지웠는데 첨부가 입구 줄로 안 돌아오거나 상태가 proposed가 아니다')
+  assert.equal(await as(IK.lead, [...ready, move(), `create temp table t_doc as select ${doc} as id`, `select soft_delete('documents', (select id from t_doc))`,
+    `select count(*)::int from audit_log where entity_table = 'intake_items' and entity_id = 'itk_n' and note = '입구 itk_n로 되돌림 — 문서 ' || (select id from t_doc) || ' 지움'`]), 1,
+  '0058: 되돌리기가 감사에 안 남는다')
+  assert.equal(await as(IK.lead, [...ready, move(), `select soft_delete('documents', ${doc})`, setKind('itk_n', 'official_letter'), move('itk_n', '공문'),
+    `select count(*)::int from intake_items i join documents d on d.document_id = i.loaded_id where i.item_id = 'itk_n' and i.status = 'loaded' and d.title = '공문'`]), 1,
+  '0058: 되돌린 뒤 종류를 바꿔 다시 적재하지 못한다')
+  assert.equal(await as(IK.lead, [...ready, move(), `@${IK.chair}`, `select soft_delete('documents', ${doc})::int`, undone]), 1, '0058: 회장이 되돌리지 못한다')
+  assert.equal(await as(IK.lead, [...ready, move(), `@${IK.sales}`, `select soft_delete('documents', ${doc})::int`]), 0,
+    '0058: 적재하지 않은 다른 문서 쓰기 권한자가 남의 적재를 되돌린다(0048 고치기 = 자기 문서)')
+  assert.equal(await as(IK.up, [...ready, `@${IK.lead}`, move(), `select soft_delete('documents', ${doc})`, `@${IK.up}`, `delete from attachments where attachment_id = '${IA.n}'`]), 1,
+    '0058: 되돌린 뒤에도 올린 사람이 원본을 못 지운다')
+
+  // 읽은 뒤에는 원본을 바꿔 올리지 못한다(재업로드 창).
+  const reup = [`!delete from storage.objects where name = 'intake_items/itk_n/${IA.n}'`,
+    `insert into storage.objects (bucket_id, name) values ('attachments', 'intake_items/itk_n/${IA.n}')`]
+  assert.equal(await as(IK.up, reup), 1, '0058 검사 전제: 읽기 전(uploaded) 한 시간 안에는 올린 사람이 원본을 다시 올린다(0045 창)')
+  assert.equal(await as(IK.up, [`update intake_items set status = 'reading' where item_id = 'itk_n'`, ...reup]), 'denied',
+    '0058: 읽기 시작한 입구 원본을 같은 경로로 바꿔 올린다')
+
+  // 같은 파일 알림 — 보이는 줄만.
+  assert.equal(await as(IK.up, [`select count(*)::int from intake_same_file('itk_dup') where item_id = 'itk_n'`]), 1, '0058: 같은 sha256 입구 줄을 못 찾는다')
+  assert.equal(await as(IK.up, [`select count(*)::int from intake_same_file('itk_img')`]), 0, '0058: 해시 없는 줄에 같은 파일이 나온다')
+  assert.equal(await as(IK.vana, [`select count(*)::int from intake_same_file('itk_dup')`]), 0, '0058: 다른 회사 사람에게 같은 파일 알림이 샌다')
+
+  await db.close()
+}
+
 async function main() {
   const db = new PGlite({ extensions: { pg_trgm } })
   const files = await applyAll(db)
@@ -6328,8 +6735,10 @@ async function main() {
   await ecountMonthlyRpc()
   await ecountMonthlyUnderNonBypassOwner()
   await ecountPrecheckSql()
+  await intake()
+  await intake(true)
   console.log(
-    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단), 0048 문서 모듈 권한(사람 × 회사 · 문서 · 폴더 쓰기 · 줄 없는 팀장 거부 · 회사 접근과 줄 둘 다 · 열람 등급 위 insert/update 차단 · 등록자는 본인 · 고치기 · 지우기는 자기 것만(회장 전부) · 주인 칸은 회장만 · 폴더는 만든 사람만 · 시스템 계정 불변 · 옛 /core/search 회귀 · 회수 감사 · hard delete 닫힘), 0049 직원 화면 용어(결재선 · 취합 제목 «회장»→«대표» 백필 — 사람 · 단계 · updated_at 그대로 · 얼림 재가동 · 새 결재선 · 감사 메모도 «대표»), 0050 ECOUNT 업로드(업로드 표 — 쓰기 권한자 본인 draft만 · 남의 draft/끝난 업로드 못 고침 · 지우기 없음 · 칸 단위 update · 해시 한 번 · 재무 읽기 없으면 0행 · 시스템 계정 restrictive · anon 잠금 · 업로드 전표 활성 (회사, 달) 하나 · 이 트랜잭션에 본인이 세운 그 달 전표만 잇고(수기 · 남의 · 역분개 거부) 본인이 세운 정확한 반대 역분개 뒤에만 내림(가짜 역분개 거부) · 첨부 원본은 재무 권한자만 보고 본인만 올림 · committed/cancelled 원본은 줄 · 객체 삭제와 재업로드 거부 · 사람의 ECOUNT 계정 + source 불변 · 공식 재무제표 basis/증빙/활성 unique basis별 · update는 supersede만 · 세무사 저장이 ECOUNT 잠정을 안 밈), 0051 ECOUNT 등록 RPC(계정과목 · 연간 한 트랜잭션 · 감사 먼저 · 본인 draft · 종류 · 해시 · 장부 권한 · ECOUNT 회사 · 시스템 계정 거부 · 이미 있는 코드 · 바뀐 이름 · 세무사 확정 해 · 균형 · ECOUNT 재업로드 supersede · 헤더/줄 직접 쓰기 닫힘 · 복합 FK · 사람의 committed 닫힘 · 세무사 저장 definer · BYPASSRLS 없는 소유자에서도 등록 + force 대조군), 0052 ECOUNT 월별 RPC(달마다 전표 + 대응 계정 · 누계 → 당월 · 재업로드 = 역분개 + 정정분개 + 옛 줄 내림 — 두 번 세지 않음 · 같은 내용 건너뜀 · 이미 역분개된 달 멈춤 · 마감 달 · 세무사 확정 달 · 재무상태표/비활성/모르는 계정 · 원본 첨부 · 권한 · 전부 아니면 전무 · BYPASSRLS 없는 소유자 + force 대조군), 0054 첫 직원 결재(대표는 팀장 칸에 서지 않음 · 400만 «기록 완료» · 600만 대표 칸 Open · 대표 열람 · 비승인권자 insert는 Open · 새 직원/회장 되살림 «결재 올리기»(초대 이행 재부여는 PGlite 전용) · 금액 모양 · insert/update 처리자 고정 · dummy 거울), 0055 온보딩 위임(«DY 사용자 관리자» 줄 · 사원 · 팀장만 · Executive 거부 · 권한 ⊆ 관리자 · 마감 없음 · 상사 필수 · subtree 밖 상사 · 등급 · 다른 회사 · 가드 · 회장 알림 · 감사 · 가입 권한 재확인 · 남의 결재 못 봄 · 취소 · 능력 회수 · 아침 숫자 · BYPASSRLS 없는 소유자), 0056 ECOUNT 마무리(첫 등록 전표 감사 · 금액 없는 달 = 미리보기 때 본 전표만 역분개(다르면 import_changed · 정정분개도 · 전부 아니면 전무 · summary.result.reversed) · 빈 달 마감/확정 판정은 손댈 달만 · 월 마감과 월별 등록이 같은 회사 잠금(0052 열쇠 그대로) · 릴리스 전 확인 SQL은 select만 · 0049 DB와 전부 올린 DB에서 읽기 전용으로 돈다)`,
+    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단), 0048 문서 모듈 권한(사람 × 회사 · 문서 · 폴더 쓰기 · 줄 없는 팀장 거부 · 회사 접근과 줄 둘 다 · 열람 등급 위 insert/update 차단 · 등록자는 본인 · 고치기 · 지우기는 자기 것만(회장 전부) · 주인 칸은 회장만 · 폴더는 만든 사람만 · 시스템 계정 불변 · 옛 /core/search 회귀 · 회수 감사 · hard delete 닫힘), 0049 직원 화면 용어(결재선 · 취합 제목 «회장»→«대표» 백필 — 사람 · 단계 · updated_at 그대로 · 얼림 재가동 · 새 결재선 · 감사 메모도 «대표»), 0050 ECOUNT 업로드(업로드 표 — 쓰기 권한자 본인 draft만 · 남의 draft/끝난 업로드 못 고침 · 지우기 없음 · 칸 단위 update · 해시 한 번 · 재무 읽기 없으면 0행 · 시스템 계정 restrictive · anon 잠금 · 업로드 전표 활성 (회사, 달) 하나 · 이 트랜잭션에 본인이 세운 그 달 전표만 잇고(수기 · 남의 · 역분개 거부) 본인이 세운 정확한 반대 역분개 뒤에만 내림(가짜 역분개 거부) · 첨부 원본은 재무 권한자만 보고 본인만 올림 · committed/cancelled 원본은 줄 · 객체 삭제와 재업로드 거부 · 사람의 ECOUNT 계정 + source 불변 · 공식 재무제표 basis/증빙/활성 unique basis별 · update는 supersede만 · 세무사 저장이 ECOUNT 잠정을 안 밈), 0051 ECOUNT 등록 RPC(계정과목 · 연간 한 트랜잭션 · 감사 먼저 · 본인 draft · 종류 · 해시 · 장부 권한 · ECOUNT 회사 · 시스템 계정 거부 · 이미 있는 코드 · 바뀐 이름 · 세무사 확정 해 · 균형 · ECOUNT 재업로드 supersede · 헤더/줄 직접 쓰기 닫힘 · 복합 FK · 사람의 committed 닫힘 · 세무사 저장 definer · BYPASSRLS 없는 소유자에서도 등록 + force 대조군), 0052 ECOUNT 월별 RPC(달마다 전표 + 대응 계정 · 누계 → 당월 · 재업로드 = 역분개 + 정정분개 + 옛 줄 내림 — 두 번 세지 않음 · 같은 내용 건너뜀 · 이미 역분개된 달 멈춤 · 마감 달 · 세무사 확정 달 · 재무상태표/비활성/모르는 계정 · 원본 첨부 · 권한 · 전부 아니면 전무 · BYPASSRLS 없는 소유자 + force 대조군), 0054 첫 직원 결재(대표는 팀장 칸에 서지 않음 · 400만 «기록 완료» · 600만 대표 칸 Open · 대표 열람 · 비승인권자 insert는 Open · 새 직원/회장 되살림 «결재 올리기»(초대 이행 재부여는 PGlite 전용) · 금액 모양 · insert/update 처리자 고정 · dummy 거울), 0055 온보딩 위임(«DY 사용자 관리자» 줄 · 사원 · 팀장만 · Executive 거부 · 권한 ⊆ 관리자 · 마감 없음 · 상사 필수 · subtree 밖 상사 · 등급 · 다른 회사 · 가드 · 회장 알림 · 감사 · 가입 권한 재확인 · 남의 결재 못 봄 · 취소 · 능력 회수 · 아침 숫자 · BYPASSRLS 없는 소유자), 0056 ECOUNT 마무리(첫 등록 전표 감사 · 금액 없는 달 = 미리보기 때 본 전표만 역분개(다르면 import_changed · 정정분개도 · 전부 아니면 전무 · summary.result.reversed) · 빈 달 마감/확정 판정은 손댈 달만 · 월 마감과 월별 등록이 같은 회사 잠금(0052 열쇠 그대로) · 릴리스 전 확인 SQL은 select만 · 0049 DB와 전부 올린 DB에서 읽기 전용으로 돈다), 0058 자료 받는 입구(칸 다섯만 update · 적재 칸 · 도장 · 이력 grant 없음 · 회사 AND 등급 읽기 · intake_begin 한 트랜잭션 · 남의 첨부 · 첨부 없는 줄 커밋 거부 · 올린 사람 · 문서 쓰기 권한자 · 회장만 고침 · «배합비 아님»은 올린 사람만 · 차단 풀기는 대표만 · ECOUNT 원본 · AI 안 보냄 · 확인 없는 사진은 ai_excluded(감사 없음) · finance_imports 첨부 회귀 · 문서 적재(경로 그대로 · 감사 «AI 제안, 팀장 확인» · «대표») · 권한 · 다른 회사 · 시스템 계정 · 종류 없음 · 이중 적재 거부 · 입구 밖 재지정 거부 · 적재 원본 삭제 거부 · 문서 soft delete 되돌리기 · 다시 적재 · 읽은 뒤 재업로드 거부 · 같은 파일 알림 · BYPASSRLS 없는 소유자 + 대조군)`,
   )
 }
 

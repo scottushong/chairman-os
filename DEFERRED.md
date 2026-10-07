@@ -2524,3 +2524,25 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 ```
 
 화면(0057 뒤): 전표 화면 줄마다 «증빙» 칸(AttachmentsPanel 재사용 · `summarize=false` · 마감 달은 삭제 버튼 없음) · 첨부 라벨 · 경로 표에 journal_entries · check-migrations(쓰기 권한자만 올림 · 읽기 권한자 보기만 · 다른 회사 0행 · 마감 달 삭제 거부 · AI 전송 거부 · anon 잠금). 기존 evidence_url(링크)은 그대로 둔다.
+
+## 2026-10-07 — 0058 자료 받는 입구(블록 1, 브랜치 `feat/intake`, staging · production 미적용)
+
+회장 결정(10-07): 구매(0059) 취소 — 원가 엔진 설계로 대체. 0058의 적재 대상은 문서 하나(`loaded_table in ('documents')`), 0060이 결산 초안을 더한다. §F는 전부 권장안.
+
+- **입구 줄에도 등급 칸(`security_class`)** — 설계서 D에 없음. 읽기 «has_business AND attachment_class_ok»를 첨부 줄을 읽지 않고 판정하려고(첨부 정책 ↔ 입구 정책이 서로를 부르는 원). 같은 값은 첨부 restrictive insert + 커밋 때 제약 트리거가 잰다. 다른 안: definer 함수로 첨부 등급을 읽기.
+- **`intake_move_to_document`는 security definer**(설계서 A1-6은 invoker) — 쓰는 칸(attachments.entity_* · intake_items.loaded_*)이 전부 호출자에게 grant가 없는 칸이라. 판정(활성 · 사람 역할 · 회사 AND 등급 · 0048 can_write_documents · 등급 ≤ 열람 등급 · 등록자 = 본인)은 함수 안에 다 적었고, BYPASSRLS 없는 소유자 + 대조군도 check-migrations가 잰다. 다른 안: 그 칸들을 authenticated에 열고 트리거 + GUC 깃발로 거르기(PostgREST 직접 쓰기 길이 같이 열림).
+- **attachments.storage_path: 생성 칸 → 보통 칸**(`drop expression`, 값 그대로 · stamp가 insert 때 같은 식으로 적고 update 때 고정). 입구 → 문서로 대상을 바꾸면 생성 칸이 경로를 다시 계산하는데 Storage 객체는 SQL로 못 옮긴다. 경로 = «처음 올린 자리». 다른 안: 앱이 Storage move 후 경로 갱신(두 단계 · 실패 창), 또는 재지정 대신 문서가 입구 첨부를 링크.
+- **입구 만들기는 `intake_begin` RPC 하나**(invoker) — 입구 줄 ↔ 첨부가 서로를 가리켜 한 트랜잭션이어야 해서. FK는 deferrable initially deferred, 커밋 때 `intake_items_link_check`가 «그 첨부가 이 줄의 파일인가»를 잰다. 다른 안: attachment_id nullable + 나중에 채우기(그 칸 update grant가 열림).
+- **첨부 삭제 → 입구 줄 cascade**(첨부 삭제는 delete_request 감사에 남는다) · **적재 중인 원본은 삭제 거부**(restrictive). A5 «올린 파일은 지우세요»를 막지 않으려고. 다른 안: on delete restrict(입구 줄이 있는 한 파일을 못 지움).
+- **되돌리기 = 문서 soft delete가 트리거로**(별도 RPC 없음) — 권한은 0048 documents_update(적재한 사람 = 그 문서의 등록자 · 회장). 문서에는 승인 권한(can_approve)이 없어 A3 «그 대상의 승인 권한자»는 해당 없음. 일반 문서 지우기 화면으로 지워도 입구로 돌아온다. 상태는 늘 'proposed'(AI 제안이 없던 줄도 — 지시대로). 다른 안: 전용 RPC · 제안 없던 줄은 'kept'.
+- **입구에서 온 문서의 storage_url = `/documents/<id>`**(앱 안 링크 — 파일 실체는 그 문서의 첨부). documents.storage_url이 not null이고 DB 검사는 없다(앱 createDocument만 http(s)를 요구). 블록 3이 이 링크를 앱 안 링크로 그린다. 다른 안: storage_url을 nullable로.
+- **AI 제외 DB 문을 둘 더**: 입구 줄이 no_ai이거나, 사진(image/*)인데 «배합비 아님» 확인이 없으면 `record_attachment_ai_send` 42501 ai_excluded(F4). 스캔 PDF는 DB가 글자층을 몰라 앱이 같은 확인을 요구한다. 제외 목록에 0057 전표 증빙 자리(주석 한 줄).
+- **0057이 서면 주의**: 0058이 entity check · attachment_entity_visible · attachments_stamp · attachment_object_uploadable · record_attachment_ai_send를 0050/0045판에서 다시 만든다. 0057(전표 증빙)이 0058보다 **앞 번호로** 들어가면 0058이 그 case를 조용히 지운다 → 0057은 0058 뒤 번호로 쓰거나, 0058 본문에 그 case를 더한 뒤 들인다.
+- **확인 권한자 = 종류와 무관하게 0048 문서 쓰기**(`intake_can_confirm` — 적재가 문서뿐이라). 0060이 statement → can_keep_books 갈래를 더한다. 종류 바꾸기 · 다시 읽기 = 올린 사람 · 확인 권한자 · 회장.
+- **제안 이력(`proposal_history`)은 jsonb 배열, DB만 덧붙인다**(grant 없음 — 오분류 기록을 앱이 지우지 못하게). 설계서의 jsonb[] 대신 jsonb(배열 검사).
+- **감사**: 종류 확인/바꿈 · AI 제외(이유별) · 배합비 차단 풀림(«대표 확인») · «배합비 아님» 확인은 트리거가, 적재(«입구 ‹item›에서 — AI 제안, ‹역할› 확인» · 제안 없으면 «사람이 분류») · 되돌림은 함수가 남긴다. 배합비 규칙 이름은 DB가 모른다 — 블록 2 앱이 note를 한 줄 더 남긴다. 역할 라벨의 회장은 «대표»(0049; 0046 ai_action_decide는 아직 «회장» — 별건).
+- **입구 줄 읽기에 AIAgent 포함**(첨부와 같은 잣대 — 브리핑 집계). 쓰기는 restrictive 세 짝으로 닫힘. 다른 안: AIAgent 읽기도 닫기.
+- **남긴 틈**: Storage 객체 삭제 정책(0050 attachments_objects_delete)은 그대로 — 문서로 적재된 원본의 객체를 올린 사람 · 회장이 지우는 길은 0045부터 모든 첨부와 같다. TS `ATTACHMENT_ENTITY`에는 'intake_items'를 아직 안 넣었다(블록 2 — 일반 첨부 액션이 입구 대상을 받지 않게).
+- **오류 코드**: intake_already_loaded 23505 · intake_not_ready 55000 · intake_loaded_locked 55000 · intake_kind_missing / intake_title_invalid / intake_attachment_missing 23514 · 권한 · 제외 42501.
+- **배포 순서**: 0058은 0050(finance_imports)을 전제한다 → ECOUNT 릴리스 B(0050~0052 · 0056) 뒤. LATEST_MIGRATION = 0058_intake(0057 파일은 아직 없다).
+- **검증 메모**: typecheck가 처음에 `.next/types/routes.d.ts`(10-06 빌드, ECOUNT 병합 전)가 낡아 `/finance/[business_id]/import` 경로로 실패 — `npx next typegen`으로 다시 만든 뒤 통과(코드 변경 아님, .next는 git 밖).
