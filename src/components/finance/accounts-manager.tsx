@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useState } from 'react'
 
 import { applyStandardChart, createAccount, setAccountActive, updateAccount } from '@/app/actions/books'
@@ -177,7 +178,21 @@ export function AccountsManager({
         <section className="rounded-xl border border-line-soft bg-panel px-4 py-10 text-center">
           <p className="text-t13 text-ink-dim">이 회사에는 계정과목이 없습니다.</p>
           {usesEcountCodes ? (
-            <p className="mt-1 text-t11h text-ink-muted">ECOUNT 엑셀 업로드 때 계정이 코드 그대로 들어옵니다.</p>
+            <p className="mt-1 text-t11h text-ink-muted">
+              ECOUNT 엑셀 업로드 때 계정이 코드 그대로 들어옵니다.
+              {/* 업로드 화면으로 가는 길은 여기 한 곳(설계서 A — 다른 진입 링크는 대상별 단계에서). 권한 있는 사람에게만. */}
+              {canEdit ? (
+                <>
+                  {' '}
+                  <Link
+                    href={`/finance/${encodeURIComponent(businessId)}/import`}
+                    className="font-semibold text-accent underline underline-offset-2"
+                  >
+                    ECOUNT 업로드로 가기
+                  </Link>
+                </>
+              ) : null}
+            </p>
           ) : canEdit ? (
             <button
               type="button"

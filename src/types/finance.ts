@@ -293,15 +293,23 @@ export interface OfficialStatement {
   period_kind: 'year' | 'quarter'
   /** 'YYYY' 또는 'YYYY-Q1'..'YYYY-Q4' */
   period_key: string
-  /** 증빙 링크. 파일 실체는 사내 스토리지(CLAUDE.md). 필수다 — 확정 꼬리표의 근거다 */
-  evidence_url: string
+  /** 증빙 링크. 파일 실체는 사내 스토리지(CLAUDE.md). 세무사 확정(accountant)은 필수 — 확정 꼬리표의 근거다.
+   *  ECOUNT 엑셀(ecount_excel)은 업로드 원본(import_id의 첨부)이 증빙이라 없을 수 있다(0050). */
+  evidence_url: string | null
   memo: string
+  /** 출처(0050). accountant = 세무사 확정 · ecount_excel = ECOUNT 엑셀 업로드(잠정). 0050 전 DB에는 칸이 없다 → accountant로 읽는다 */
+  basis?: OfficialStatementBasis
+  /** ECOUNT 엑셀이면 그 업로드(0050 finance_imports) */
+  import_id?: string | null
   created_by: string
   created_at: IsoDateTime
   /** 정정되어 밀려난 행이면 그 시각. 활성 행은 null */
   superseded_at: IsoDateTime | null
   supersedes_id: number | null
 }
+
+/** 공식 재무제표 출처(0050 official_statements.basis). 월별 잠금 · «기준» 문구는 accountant만 센다. */
+export type OfficialStatementBasis = 'accountant' | 'ecount_excel'
 
 /** 공식 재무제표의 계정별 금액. amount = 차변 − 대변(0015 규약 그대로) */
 export interface OfficialStatementLine {

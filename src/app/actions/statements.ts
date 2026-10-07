@@ -136,6 +136,10 @@ export async function saveOfficialStatement(input: {
     console.error('[saveOfficialStatement]', e)
     const message = e instanceof Error ? e.message : ''
     if (/닫히지 않습니다/.test(message)) return { error: message }
+    // 0051 리뷰 m-3: 같은 기간을 두 사람이 동시에 저장하면 활성 unique(23505)나 supersede 가드가 둘째를 막는다.
+    if (/23505|official_statements_one_active|official_statement_immutable/.test(message)) {
+      return { error: '다른 사람이 같은 해 결산을 방금 등록했습니다. 새로 고친 뒤 다시 확인해 주세요.' }
+    }
     if (/42501|PGRST301|row-level security/.test(message)) {
       return { error: '이 회사의 결산을 넣을 권한이 없습니다. (대표 · 그룹 CFO · 해당 회사 대표이사 · 대표가 재무 입력 권한을 준 사람)' }
     }

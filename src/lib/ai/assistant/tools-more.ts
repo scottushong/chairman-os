@@ -148,6 +148,9 @@ export const orgTool: AssistantTool = {
   },
 }
 
+/** 요약 도구가 받는 대상 — ECOUNT 업로드 원본(finance_imports)은 뺀다. */
+const SUMMARY_ENTITIES: AttachmentEntity[] = ATTACHMENT_ENTITY.filter((t) => t !== 'finance_imports')
+
 export const attachmentsTool: AssistantTool = {
   def: {
     name: 'attachment_summaries',
@@ -156,16 +159,18 @@ export const attachmentsTool: AssistantTool = {
       'entity_id를 주면 그 대상의 첨부, 없으면 최근 첨부. Vault 등급은 싣지 않는다.',
     input_schema: {
       type: 'object',
-      properties: { entity_table: { type: 'string', enum: [...ATTACHMENT_ENTITY] }, entity_id: { type: 'string' } },
+      properties: { entity_table: { type: 'string', enum: SUMMARY_ENTITIES }, entity_id: { type: 'string' } },
     },
   },
   available: (ctx) => ctx.channel === 'web',
   async run(input, ctx) {
     const table = str(input.entity_table) as AttachmentEntity
     const id = str(input.entity_id, 64)
-    const list = ATTACHMENT_ENTITY.includes(table) && id
+    // ECOUNT 업로드 원본(0050)은 요약이 없고 파일 이름이 거래처를 말한다 — 외부 AI로 싣지 않는다(목록에서도 뺀다).
+    const list = (SUMMARY_ENTITIES.includes(table) && id
       ? await ctx.repo.listAttachments(table, id)
       : await ctx.repo.listRecentAttachments(null, 20)
+    ).filter((a) => a.entity_table !== 'finance_imports')
     const rows = list
       .filter((a) => a.security_class !== 'Vault')
       .map((a) => ({

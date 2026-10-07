@@ -28,3 +28,8 @@ supabase/bootstrap/0006_ready.sql
 
 # 로컬 비밀번호 메모 (저장소 밖으로 옮길 것)
 passwords.txt
+
+# ECOUNT 엑셀(실제 장부 숫자) — 저장소에 두지 않는다. 실제 파일은 저장소 밖 폴더(docs/onboarding/ecount-real-files.md),
+# 견본은 ECOUNT_SAMPLE_DIR로 만든다(check:ecount-import).
+*.xlsx
+*.xls

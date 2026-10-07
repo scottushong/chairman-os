@@ -6,7 +6,7 @@ import { JournalForm } from '@/components/finance/journal-form'
 import { MonthSelect } from '@/components/finance/month-select'
 import { SlipList } from '@/components/finance/slip-list'
 import { PageHeader } from '@/components/layout/page-header'
-import { canKeepBooks } from '@/lib/auth/roles'
+import { canImportEcount, canKeepBooks } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
 import { periodOfDate } from '@/lib/ledger/basis'
 import {
@@ -33,7 +33,12 @@ export default async function JournalPage(props: PageProps<'/finance/[business_i
   const { business_id } = await props.params
   const params = await props.searchParams
   const repo = await getRepository()
-  const [businesses, ledger, user] = await Promise.all([repo.listBusinesses(), repo.loadFinanceLedger(), currentUser()])
+  const [businesses, ledger, user, importSlips] = await Promise.all([
+    repo.listBusinesses(),
+    repo.loadFinanceLedger(),
+    currentUser(),
+    repo.listFinanceImportSlips(business_id),
+  ])
 
   const business = businesses.find((b) => b.business_id === business_id)
   if (!business) notFound()
@@ -43,7 +48,8 @@ export default async function JournalPage(props: PageProps<'/finance/[business_i
   const requested = firstParam(params.month)
   const period = requested && periods.includes(requested) ? requested : today.slice(0, 7)
   const locked = isPeriodLocked(ledger, business_id, period)
-  const slips = slipsOf(ledger, business_id, period)
+  // 출처 «ECOUNT 엑셀» — 월별 업로드가 세운 전표(0050 finance_import_slips). 적요가 아니라 그 줄로 가른다.
+  const slips = slipsOf(ledger, business_id, period, new Set(importSlips.map((x) => x.slip_no)))
   const bookkeeper = canKeepBooks(user, business_id)
 
   // 정정 모드. 정정할 수 없는 전표(역분개·이미 정정됨·ECOUNT)면 폼을 열지 않는다 — 목록에 버튼도 없다.
@@ -70,7 +76,7 @@ export default async function JournalPage(props: PageProps<'/finance/[business_i
         {/* PageHeader의 오른쪽 칸은 줄을 접지 않는다. 폰에서는 버튼들이 한 줄에 못 들어가 탭이 한 글자씩 눌렸다 —
             여기서 한 번 감싸 좁을 때만 다음 줄로 넘긴다(넓은 화면은 한 줄 그대로). */}
         <div className="flex min-w-0 flex-wrap items-center gap-2">
-          <BooksNav businessId={business_id} current="journal" />
+          <BooksNav businessId={business_id} current="journal" canImport={canImportEcount(user, business_id)} />
           <Link
             href="/finance"
             className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"

@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import { BooksNav } from '@/components/finance/books-nav'
 import { StatementEditor } from '@/components/finance/statement-editor'
 import { PageHeader } from '@/components/layout/page-header'
-import { canKeepBooks } from '@/lib/auth/roles'
+import { canImportEcount, canKeepBooks } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
 import { getRepository } from '@/lib/repository'
 
@@ -41,7 +41,7 @@ export default async function NewStatementPage(
         code="CH-025"
         description="회계법인 결산을 연 또는 분기 단위로 넣습니다. 저장하면 확정으로 기록되고 그 기간의 월별 입력이 잠깁니다."
       >
-        <BooksNav businessId={business_id} current="official" />
+        <BooksNav businessId={business_id} current="official" canImport={canImportEcount(user, business_id)} />
       </PageHeader>
 
       {canKeepBooks(user, business_id) ? (

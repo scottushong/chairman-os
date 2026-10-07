@@ -30,7 +30,8 @@
     "check:mobile": "tsx scripts/check-mobile.ts",
     "check:release": "bash scripts/check-release.sh",
     "check:file-drop": "tsx scripts/check-file-drop.ts",
-    "check:attachments": "tsx --conditions=react-server scripts/check-attachments.ts"
+    "check:attachments": "tsx --conditions=react-server scripts/check-attachments.ts",
+    "check:ecount-import": "tsx scripts/check-ecount-import.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",

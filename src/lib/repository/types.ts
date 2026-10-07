@@ -1,5 +1,7 @@
 import type { ActivityEvent, ActivityKind } from '@/lib/activity'
 import type { EntityAuditRecord } from '@/lib/audit-log'
+import type { MonthlyBasis } from '@/lib/ecount/excel/mapping'
+import type { MonthlyLedgerMonth } from '@/lib/ecount/excel/monthly-import'
 import type { AccountFields } from '@/lib/ledger/accounts'
 import type { CorrectionResult, NewCorrection, NewJournalEntry } from '@/lib/ledger/journal'
 import type { DecisionAuditRecord, DecisionAction } from '@/lib/decision-log'
@@ -43,6 +45,9 @@ import type {
   ExceptionRecord,
   ExceptionRule,
   ExceptionTriage,
+  FinanceImport,
+  FinanceImportKind,
+  FinanceImportPreviewPatch,
   FinanceKpi,
   FinanceLedger,
   Initiative,
@@ -57,6 +62,7 @@ import type {
   NotificationInbox,
   NewOfficialStatement,
   OfficialStatement,
+  OfficialStatementBasis,
   ProcessChart,
   ProcessChartInput,
   CityLayout,
@@ -159,8 +165,68 @@ export interface ChairmanRepository {
    */
   saveOfficialStatement(input: NewOfficialStatement, actor: AuditActor): Promise<number>
 
-  /** 그 회사의 **활성** 공식 재무제표 목록(정정으로 밀려난 것은 뺀다). 월별 화면의 잠금 판정이 쓴다. */
-  listOfficialStatements(businessId: string): Promise<OfficialStatement[]>
+  /**
+   * 그 회사의 **활성** 공식 재무제표 목록(정정으로 밀려난 것은 뺀다). 월별 화면의 잠금 판정이 쓴다.
+   * 기본은 **세무사 확정(accountant)만** — 월별 잠금 · «기준» 문구는 확정만 센다(0050 리뷰 M-5). ECOUNT 엑셀(잠정)이
+   * 필요하면 basis를 준다. 0050 전 DB(basis 칸 없음)의 행은 accountant로 읽는다.
+   */
+  listOfficialStatements(businessId: string, basis?: OfficialStatementBasis | 'all'): Promise<OfficialStatement[]>
+
+  /**
+   * ECOUNT 엑셀 업로드 한 건(0050 finance_imports). 읽기는 can_read_books, 넣기는 can_keep_books 본인 draft,
+   * 고치기는 만든 사람의 draft에서만 — 권한은 여기서 보지 않는다(DB가 본다 · dummy는 옮겨 적는다).
+   * 읽기는 0050이 없는 DB를 견딘다(master push = production 배포가 DB보다 먼저 나간다). 쓰기는 견디지 않는다.
+   * 지우기는 없다 — 취소는 cancelled다. committed 전이는 대상별 등록 RPC(0051)만 한다 — 사람은 못 한다.
+   */
+  createFinanceImport(input: { business_id: string; kind: FinanceImportKind; file_name: string }, actor: AuditActor): Promise<FinanceImport>
+  getFinanceImport(importId: string): Promise<FinanceImport | null>
+  /** 그 회사의 업로드(최근 것부터). status를 주면 그 상태만. */
+  listFinanceImports(businessId: string, status?: FinanceImport['status']): Promise<FinanceImport[]>
+  /** 미리보기 결과(sha256 · 개요)를 적는다. **draft에서만** — 끝난 업로드면 던진다. 바뀐 줄을 돌려준다. */
+  recordFinanceImportPreview(importId: string, patch: FinanceImportPreviewPatch, actor: AuditActor): Promise<FinanceImport>
+  /** draft → cancelled. **draft에서만** — 끝난 업로드면 던진다. 원본 첨부는 호출자가 먼저 지운다(0050 머리 주석 :25). */
+  cancelFinanceImport(importId: string, actor: AuditActor): Promise<FinanceImport>
+  /**
+   * 열 지정 다시 쓰기 — 이 회사 · 이 종류의 업로드 중 summary.mapping(사람이 확정한 열 지정)이 있는 **가장 최근** 것.
+   * 취소된 업로드와 exceptImportId(지금 업로드)는 뺀다. 없으면 null. 읽기는 RLS(can_read_books) 안이다 —
+   * 같은 회사의 다른 담당자가 확정한 지정도 다시 쓴다(새 표 없이 summary에 둔다).
+   */
+  findLatestFinanceImportMapping(businessId: string, kind: FinanceImportKind, exceptImportId: string): Promise<FinanceImport | null>
+  /**
+   * ① ECOUNT 계정과목 등록 — live는 0051 ecount_accounts_import() **한 트랜잭션**: 감사(새 코드 묶음 한 줄 + 이름 바꿈마다)
+   * → 새 코드(source='ecount') → 이름(사람이 체크한 코드만) → 업로드 committed. 하나라도 어긋나면 아무것도 남지 않는다.
+   * **있는 계정의 분류는 건드리지 않는다** · 지우지 않는다. 판정(본인 · draft · 종류 · sha256 · 장부 권한 · ECOUNT 회사)과
+   * 감사 문구는 DB가 한다. 거부 낱말은 lib/ecount/import-errors.ts(dummy도 같은 낱말). 넣은 수 · 이름 바꾼 수를 돌려준다.
+   */
+  registerEcountAccounts(importId: string, input: { file_sha256: string } & EcountAccountMerge, actor: AuditActor): Promise<{ added: number; renamed: number }>
+  /**
+   * ② ECOUNT 연간 재무제표 등록 — live는 0051 official_statement_import_ecount() 한 트랜잭션: 세무사 확정 해 거부 · 균형 ·
+   * 같은 해 ECOUNT 활성 결산 supersede · 감사 먼저 · 헤더(basis='ecount_excel') · 줄 · 업로드 committed. 새 결산 id를 돌려준다.
+   * lines의 amount는 원장 규약(차변 − 대변 — annualLedgerLines).
+   */
+  registerEcountAnnual(
+    importId: string,
+    /** period_key: 미리보기 때 사람이 본 해 — 업로드 줄의 해와 다르면 import_changed(0051 리뷰 m-2) */
+    input: { file_sha256: string; period_key: string; lines: { account_code: string; amount: number }[] },
+    actor: AuditActor,
+  ): Promise<number>
+  /**
+   * ③ ECOUNT 월별 손익 등록 — live는 0052 ecount_monthly_import() 한 트랜잭션: 판정 · 원본 첨부 확인 · 마감 달 · 세무사 확정 달 ·
+   * 손익 계정만 → 달마다 요약 전표(손익 줄 + «ECOUNT 월별손익 대응» 한 줄, 대응 계정이 없으면 만든다) · 감사 먼저 → committed.
+   * **같은 달을 다시 올리면** 그 달 활성 업로드 전표를 역분개 + 정정분개(post_correction)하고 옛 줄을 내린다 — 두 번 세지 않는다.
+   * 내용이 같으면 건너뛴다. 활성 업로드 전표가 이미 역분개됐으면 ecount_month_reversed로 멈춘다.
+   * months의 amount는 당월 금액 · 원장 규약(차변 − 대변 — monthlyLedgerMonths). basis는 미리보기에서 확정한 당월/누계.
+   */
+  /**
+   * 0050 finance_import_slips — 월별 업로드가 세운 전표 ↔ (회사, 달). 활성 · 내려간 줄 전부(읽기는 can_read_books).
+   * 전표 화면의 출처 꼬리표 «ECOUNT 엑셀»과 미리보기의 «지난 업로드 전표가 있는 달»이 이것을 본다. 0050 전 DB면 빈 목록.
+   */
+  listFinanceImportSlips(businessId: string): Promise<FinanceImportSlip[]>
+  registerEcountMonthly(
+    importId: string,
+    input: { file_sha256: string; period_key: string; basis: MonthlyBasis; months: MonthlyLedgerMonth[] },
+    actor: AuditActor,
+  ): Promise<EcountMonthlyResult>
 
   /**
    * Phase 5-D — 프로세스차트(0021). 읽기는 Executive 이상 + 자기 회사(DB가 판정).
@@ -836,6 +902,41 @@ export interface BriefTimezoneSettings {
 /** CH-024 키맨 폼이 보내는 한 행. keyman_id가 없으면 새 사람이다. */
 export type NewAccount = { business_id: string; account_code: string } & AccountFields
 export type AccountPatch = Partial<AccountFields & { active: boolean }>
+
+/** ECOUNT 계정과목 업로드의 병합 한 벌(lib/ecount/excel/accounts-import.ts planAccounts가 만든다). 회사는 업로드 줄에서 온다. */
+export interface EcountAccountMerge {
+  creates: ({ account_code: string; active: boolean } & AccountFields)[]
+  renames: { account_code: string; from: string; to: string }[]
+}
+
+/** 0050 finance_import_slips 한 줄 — 월별 업로드가 세운 전표(원 전표 또는 정정분개). superseded_at이 있으면 내려간 줄. */
+export interface FinanceImportSlip {
+  business_id: string
+  month: string
+  slip_no: string
+  import_id: string
+  superseded_at: string | null
+}
+
+/**
+ * 0052 ecount_monthly_import의 결과 — 달마다 무엇을 했나(새 전표 · 정정 전표 · 같아서 건너뜀).
+ * 0056: 파일이 말하는데 금액이 없는 달 — 지난 업로드 전표를 역분개(reversed, slip_no 없음 · reversal · previous) ·
+ * (empty는 0056 리뷰 I-2 뒤 DB가 내지 않는다 — 되돌릴 전표가 미리보기와 다르면 import_changed.)
+ */
+export interface EcountMonthlyResult {
+  posted: number
+  corrected: number
+  unchanged: number
+  /** 0056 — 0056 전 DB의 결과에는 없다(0으로 읽는다) */
+  reversed: number
+  months: {
+    month: string
+    action: 'posted' | 'corrected' | 'unchanged' | 'reversed' | 'empty'
+    slip_no?: string
+    reversal?: string
+    previous?: string
+  }[]
+}
 
 /** 같은 회사에 같은 계정코드가 이미 있을 때. 사용자가 코드를 고쳐야 풀린다(DUPLICATE_BUSINESS_ID와 같은 이유). */
 export const DUPLICATE_ACCOUNT_CODE = 'DUPLICATE_ACCOUNT_CODE'

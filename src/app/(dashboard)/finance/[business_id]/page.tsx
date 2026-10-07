@@ -6,8 +6,9 @@ import { CloseMonth } from '@/components/finance/close-month'
 import { FinanceView } from '@/components/finance/finance-view'
 import { PageHeader } from '@/components/layout/page-header'
 import { recordScreenRead } from '@/lib/activity-record'
-import { canCloseBooks } from '@/lib/auth/roles'
+import { canCloseBooks, canImportEcount } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
+import { ecountUploadShortcuts } from '@/lib/ecount/shortcut'
 import { closablePeriod } from '@/lib/ledger/closing'
 import { todayKst } from '@/lib/ledger/journal'
 import { firstParam, oneOf } from '@/lib/query'
@@ -45,6 +46,8 @@ export default async function BusinessFinancePage(props: PageProps<'/finance/[bu
 
   // 마감 차례인 달. 마감 담당(Chairman · GroupCFO · 0047 월 마감 권한을 받은 사람)에게만 버튼이 선다 — 안내다, 문은 0016 close_period().
   const closable = canCloseBooks(user, business_id) ? closablePeriod(ledger, business_id, todayKst()) : null
+  // «ECOUNT 업로드» 바로가기 — ECOUNT 회사(DY) + 그 회사 재무 쓰기 권한자에게만(lib/ecount/shortcut.ts). 탭(BooksNav)보다 앞에 둔다.
+  const [shortcut] = ecountUploadShortcuts(user, [business], { withName: false })
 
   return (
     <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6">
@@ -58,7 +61,12 @@ export default async function BusinessFinancePage(props: PageProps<'/finance/[bu
             여기서 한 번 감싸 좁을 때만 다음 줄로 넘긴다(넓은 화면은 한 줄 그대로). */}
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           {closable ? <CloseMonth businessId={business_id} period={closable} /> : null}
-          <BooksNav businessId={business_id} current="statements" />
+          {shortcut ? (
+            <Link href={shortcut.href} className={'rounded-md border border-accent/60 bg-accent/10 px-2.5 py-1.5 text-t11h font-semibold text-ink transition-colors hover:border-accent hover:bg-accent/20'}>
+              {shortcut.label}
+            </Link>
+          ) : null}
+          <BooksNav businessId={business_id} current="statements" canImport={canImportEcount(user, business_id)} />
           <Link
             href="/finance"
             className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"

@@ -74,6 +74,7 @@ import type {
   MonthlyPriority,
   NewOfficialStatement,
   OfficialStatement,
+  OfficialStatementBasis,
   ProcessChart,
   ProcessChartInput,
   CityLayout,
@@ -143,6 +144,7 @@ import {
 } from './types'
 import { assistantMethods } from './supabase-assistant'
 import { attachmentMethods } from './supabase-attachments'
+import { financeImportMethods } from './supabase-finance-imports'
 
 /**
  * Supabase 어댑터.
@@ -784,6 +786,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     ...attachmentMethods(sb),
     // Phase 11 AI 어시스턴트(0046) — 대화 · 제안 · 사용량. 0046 전 DB를 견딘다(supabase-assistant.ts 머리 주석).
     ...assistantMethods(sb),
+    // ECOUNT 엑셀 업로드(0050 finance_imports) — 읽기는 0050 전 DB를 견딘다(supabase-finance-imports.ts 머리 주석).
+    ...financeImportMethods(sb),
 
     async listBusinesses(): Promise<Business[]> {
       const { data, error } = await fetchAll('businesses', ['business_id'], (from, to) =>
@@ -1101,8 +1105,12 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       return id
     },
 
-    /** 활성 행만 읽는다. 정정으로 밀려난 결산이 잠금 판정에 끼면 이미 고친 기간이 계속 잠긴다. */
-    async listOfficialStatements(businessId: string): Promise<OfficialStatement[]> {
+    /**
+     * 활성 행만 읽는다. 정정으로 밀려난 결산이 잠금 판정에 끼면 이미 고친 기간이 계속 잠긴다.
+     * basis는 앱에서 거른다 — 0050 전 DB에는 basis 칸이 없어서 .eq('basis')가 오류다(master push = production 앱이
+     * DB보다 먼저 나간다). 칸이 없는 행은 세무사 확정(accountant)이다.
+     */
+    async listOfficialStatements(businessId: string, basis: OfficialStatementBasis | 'all' = 'accountant'): Promise<OfficialStatement[]> {
       const { data, error } = await sb
         .from('official_statements')
         .select('*')
@@ -1110,7 +1118,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         .is('superseded_at', null)
         .order('period_key', { ascending: true })
       if (error) throw new Error(`Supabase official_statements ${error.code ?? '?'}: ${error.message}`)
-      return (data ?? []) as OfficialStatement[]
+      const rows = (data ?? []) as OfficialStatement[]
+      return basis === 'all' ? rows : rows.filter((r) => (r.basis ?? 'accountant') === basis)
     },
 
     /**

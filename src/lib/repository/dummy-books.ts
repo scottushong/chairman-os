@@ -1,5 +1,8 @@
+import { ecountAuditNote } from '@/lib/ecount/excel/file-rules'
+import { ECOUNT_MONTHLY_COUNTER, type MonthlyLedgerMonth } from '@/lib/ecount/excel/monthly-import'
 import { MOCK_FETCHED_AT } from '@/lib/ecount/mock'
 import { loadMockLedger } from '@/lib/ecount/mock-ledger'
+import { SECTION_CATEGORIES } from '@/lib/ledger/accounts'
 import { STANDARD_CHART, STANDARD_CHART_BUSINESSES, type StandardAccount } from '@/lib/ledger/standard-chart'
 import { periodOfDate } from '@/lib/ledger/basis'
 import { closeProblem, closingRows } from '@/lib/ledger/closing'
@@ -12,6 +15,7 @@ import {
   slipNumber,
   todayKst,
   type CorrectionResult,
+  type DraftLine,
   type NewCorrection,
   type NewJournalEntry,
 } from '@/lib/ledger/journal'
@@ -25,13 +29,21 @@ import type {
   JournalLine,
   NewOfficialStatement,
   OfficialStatement,
+  OfficialStatementBasis,
   OfficialStatementLine,
   ProcessChart,
   ProcessChartInput,
 } from '@/types'
 
 import { dummyFinanceGrant, dummyHasBusiness, dummyViewer } from './dummy-org'
-import { DUPLICATE_ACCOUNT_CODE, type AccountPatch, type AuditActor, type NewAccount } from './types'
+import {
+  DUPLICATE_ACCOUNT_CODE,
+  type AccountPatch,
+  type AuditActor,
+  type EcountAccountMerge,
+  type EcountMonthlyResult,
+  type NewAccount,
+} from './types'
 
 /**
  * dummy 모드의 자체 장부 (Phase 2-B). 0016이 DB에서 하는 일을 메모리에서 흉내 낸다.
@@ -80,7 +92,24 @@ function assertCloseBooks(businessId: string) {
   if (!ok) throw new Error('close_forbidden')
 }
 
+/** 0050 finance_imports 정책이 부르는 두 판정 — dummy-finance-imports.ts · 첨부 대상 판정이 같은 잣대를 쓴다. */
+export const dummyCanReadBooks = canReadBooks
+export function dummyCanKeepBooks(businessId: string): boolean {
+  try {
+    assertKeepBooks(businessId)
+    return true
+  } catch {
+    return false
+  }
+}
+
 const key = (businessId: string, code: string) => `${businessId}|${code}`
+
+/** 금액을 센트 정수로 — Postgres round(x, 2)와 같게 0.5는 0에서 먼 쪽으로(0051 리뷰 m-5). */
+function cents(amount: number): number {
+  const c = Math.sign(amount) * Math.round(Math.abs(amount) * 100)
+  return c === 0 ? 0 : c
+}
 
 /** mock 계정 위에 얹은 계정들. 키는 business|code. mock 계정을 고치면 여기 복사본이 선다. */
 let accounts: Map<string, Account> | null = null
@@ -186,6 +215,70 @@ export async function updateAccount(
   store.set(key(businessId, accountCode), next)
   note(actor, `update account ${businessId}:${accountCode}`)
   return { ...next }
+}
+
+/**
+ * ① ECOUNT 계정과목 등록의 장부 쪽 — 0051 ecount_accounts_import()의 «계획 확인 → 새 코드 → 이름»과 같은 순서 · 같은 거부 낱말.
+ * 판정(본인 · draft · 종류 · sha256 · 권한 · ECOUNT 회사)은 부르는 쪽(dummy-finance-imports registerEcountAccounts)이 끝냈다.
+ * **전부 확인한 뒤에 쓴다** — 확인과 쓰기 사이에 await가 없어서 중간에 멈춰 반쪽이 남지 않는다(DB의 한 트랜잭션 자리).
+ * 감사는 dummy에 없다(콘솔 note뿐) — live는 같은 트랜잭션에서 먼저 남긴다.
+ */
+export async function dummyApplyEcountAccounts(
+  businessId: string,
+  merge: EcountAccountMerge,
+  actor: AuditActor,
+  auditNote: string,
+): Promise<{ added: number; renamed: number }> {
+  const store = await accountStore()
+  const seen = new Set<string>()
+  for (const c of merge.creates) {
+    const ok =
+      typeof c.account_code === 'string' && c.account_code !== '' && c.account_code === c.account_code.trim() &&
+      typeof c.name === 'string' && c.name.trim() !== '' && typeof c.active === 'boolean' && !!c.category && !!c.section
+    if (!ok || seen.has(c.account_code)) throw new Error(`ecount_plan_invalid: 새 계정 ${c.account_code}`)
+    seen.add(c.account_code)
+  }
+  for (const r of merge.renames) {
+    const ok =
+      typeof r.account_code === 'string' && r.account_code !== '' && typeof r.from === 'string' &&
+      typeof r.to === 'string' && r.to.trim() !== ''
+    if (!ok || seen.has(r.account_code)) throw new Error(`ecount_plan_invalid: 이름 바꿈 ${r.account_code}`)
+    seen.add(r.account_code)
+  }
+  // 0051 리뷰 m-1: 이름은 늘 앞뒤 공백을 걷고 비교한다. 공백만 다른 바꿈은 빠진다(쓰기도 감사도 없음).
+  const renames = merge.renames.filter((r) => r.to.trim() !== r.from.trim())
+  for (const c of merge.creates) {
+    if (store.has(key(businessId, c.account_code))) throw new Error(`account_exists: ${c.account_code}`)
+  }
+  for (const r of renames) {
+    if (store.get(key(businessId, r.account_code))?.name.trim() !== r.from.trim()) throw new Error(`account_changed: ${r.account_code}`)
+  }
+  // 0015 accounts_category_section 제약
+  for (const c of merge.creates) {
+    if (!SECTION_CATEGORIES[c.section]?.includes(c.category)) throw new Error('new row violates check constraint "accounts_category_section"')
+  }
+
+  const fetched_at = new Date().toISOString()
+  for (const c of merge.creates) {
+    store.set(key(businessId, c.account_code), {
+      business_id: businessId,
+      account_code: c.account_code,
+      name: c.name.trim(),
+      category: c.category,
+      section: c.section,
+      cash_flow: c.cash_flow,
+      source: 'ecount',
+      fetched_at,
+      closed: false,
+      active: c.active,
+    })
+  }
+  for (const r of renames) {
+    const before = store.get(key(businessId, r.account_code))!
+    store.set(key(businessId, r.account_code), { ...before, name: r.to.trim() })
+  }
+  note(actor, `${auditNote} — 더함 ${merge.creates.length} · 이름 ${renames.length}`)
+  return { added: merge.creates.length, renamed: renames.length }
 }
 
 export async function applyStandardChart(businessId: string, actor: AuditActor): Promise<number> {
@@ -323,18 +416,21 @@ export async function saveOfficialStatement(
       .filter((a) => a.business_id === input.business_id)
       .map((a) => [a.account_code, a.section]),
   )
-  const balance = input.lines.reduce((total, l) => {
+  // 0051 리뷰 m-5: 줄마다 2자리로 반올림한 뒤 잰다(DB round(x, 2)와 같게 — 센트 정수로 더해 부동소수 오차를 없앤다).
+  const balanceCents = input.lines.reduce((total, l) => {
     const section = sectionOf.get(l.account_code)
-    return section && BALANCE_SHEET_SECTIONS.includes(section) ? total + l.amount : total
+    return section && BALANCE_SHEET_SECTIONS.includes(section) ? total + cents(l.amount) : total
   }, 0)
-  if (balance !== 0) throw new Error(`재무상태표가 닫히지 않습니다. 차이 ${balance}원`)
+  if (balanceCents !== 0) throw new Error(`재무상태표가 닫히지 않습니다. 차이 ${balanceCents / 100}원`)
 
   const now = new Date().toISOString()
+  // 0050: 세무사 저장은 세무사 행만 supersede한다 — ECOUNT 잠정 행은 그대로.
   const prev = officialStatements.find(
     (s) =>
       s.business_id === input.business_id &&
       s.period_kind === input.period_kind &&
       s.period_key === input.period_key &&
+      s.basis === 'accountant' &&
       s.superseded_at === null,
   )
   if (prev) prev.superseded_at = now
@@ -351,24 +447,271 @@ export async function saveOfficialStatement(
     created_at: now,
     superseded_at: null,
     supersedes_id: prev?.id ?? null,
+    basis: 'accountant',
+    import_id: null,
   })
   officialLines.push(
     ...input.lines.map((l) => ({
       statement_id: id,
       business_id: input.business_id,
       account_code: l.account_code,
-      amount: l.amount,
+      amount: cents(l.amount) / 100,
     })),
   )
   note(actor, `official ${input.business_id}:${input.period_key}${prev ? ` (정정 #${prev.id})` : ''}`)
   return id
 }
 
-/** 활성 행만. 정정으로 밀려난 것은 목록에 없다 — 잠금 판정이 옛 결산을 보면 안 된다. */
-export async function listOfficialStatements(businessId: string): Promise<OfficialStatement[]> {
+/**
+ * ② ECOUNT 연간 등록의 결산 쪽 — 0051 official_statement_import_ecount()와 같은 순서 · 같은 거부 낱말:
+ * 줄 모양 · 한 계정 한 줄 · 장부에 있는 계정 → 세무사 확정 해 → 균형 → 같은 해 ECOUNT 활성 행 supersede → 헤더 · 줄.
+ * 판정(본인 · draft · 종류 · 해시 · 권한)은 부르는 쪽이 끝냈다. 확인을 다 한 뒤에 쓴다(반쪽 없음).
+ */
+export async function dummyImportEcountAnnual(
+  imp: { business_id: string; period_key: string; import_id: string; file_name: string },
+  lines: { account_code: string; amount: number }[],
+  actor: AuditActor,
+): Promise<number> {
+  if (!Array.isArray(lines) || lines.length === 0) throw new Error('statement_empty')
+  const codes = new Set<string>()
+  for (const l of lines) {
+    if (!l || typeof l.account_code !== 'string' || l.account_code === '' || typeof l.amount !== 'number' || !Number.isFinite(l.amount)) {
+      throw new Error(`ecount_plan_invalid: 줄 ${l?.account_code ?? '?'}`)
+    }
+    if (codes.has(l.account_code)) throw new Error(`ecount_plan_invalid: 계정 ${l.account_code}에 줄 둘`)
+    codes.add(l.account_code)
+  }
+  const store = await accountStore()
+  for (const l of lines) if (!store.has(key(imp.business_id, l.account_code))) throw new Error(`statement_unknown_account: ${l.account_code}`)
+  const active = (basis: OfficialStatementBasis) =>
+    officialStatements.find(
+      (s) =>
+        s.business_id === imp.business_id && s.period_kind === 'year' && s.period_key === imp.period_key && s.basis === basis && s.superseded_at === null,
+    )
+  if (active('accountant')) throw new Error('official_confirmed')
+  const balanceCents = lines.reduce((t, l) => {
+    const section = store.get(key(imp.business_id, l.account_code))!.section
+    return BALANCE_SHEET_SECTIONS.includes(section) ? t + cents(l.amount) : t
+  }, 0)
+  if (balanceCents !== 0) throw new Error(`statement_unbalanced: 차이 ${balanceCents / 100}원`)
+
+  const now = new Date().toISOString()
+  const prev = active('ecount_excel')
+  if (prev) prev.superseded_at = now
+  const id = ++officialSeq
+  officialStatements.push({
+    id,
+    business_id: imp.business_id,
+    period_kind: 'year',
+    period_key: imp.period_key,
+    evidence_url: null,
+    memo: ecountAuditNote({ kind: 'annual', period: imp.period_key, fileName: imp.file_name, importId: imp.import_id }),
+    created_by: actor.user_id,
+    created_at: now,
+    superseded_at: null,
+    supersedes_id: prev?.id ?? null,
+    basis: 'ecount_excel',
+    import_id: imp.import_id,
+  })
+  officialLines.push(...lines.map((l) => ({ statement_id: id, business_id: imp.business_id, account_code: l.account_code, amount: cents(l.amount) / 100 })))
+  note(actor, `official ECOUNT ${imp.business_id}:${imp.period_key}${prev ? ` (이전 #${prev.id})` : ''}`)
+  return id
+}
+
+/** 0050 finance_import_slips의 dummy 자리 — 월별 업로드가 세운 전표 ↔ (회사, 달). 활성은 달마다 하나. */
+const importSlips: { business_id: string; month: string; slip_no: string; import_id: string; superseded_at: string | null }[] = []
+
+const PL_SECTIONS: readonly string[] = ['revenue', 'cogs', 'sga', 'd_and_a', 'non_operating', 'tax']
+const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/
+
+/** 'YYYY-MM'의 말일. */
+function monthEnd(month: string): string {
+  const [y, m] = month.split('-').map(Number)
+  return `${month}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`
+}
+
+/**
+ * ③ ECOUNT 월별 손익 등록의 장부 쪽 — 0052 ecount_monthly_import()와 같은 순서 · 같은 거부 낱말:
+ * 모양(달 · 줄 · 한 달 한 계정 · 0원 · 대응 계정) → 장부에 있는 계정 → 손익 계정만 → 활성 → 마감 달 → 세무사 확정 달 →
+ * 대응 계정(없으면 만듦 · equity · 활성) → 달마다(활성 업로드 전표 없음: 새 전표 / 이미 역분개: 멈춤 / 같은 내용: 건너뜀 /
+ * 다른 내용: 역분개 + 정정분개 + 옛 줄 내림). 판정(본인 · draft · 종류 · 해시 · 해 · 당월/누계 · 원본)은 부르는 쪽이 끝냈다.
+ * **확인을 다 한 뒤에 쓴다** — 달마다 전표도 쓰기 전에 entryProblem으로 먼저 다 잰다(DB의 한 트랜잭션 자리). 감사는 콘솔 note뿐.
+ */
+export async function dummyImportEcountMonthly(
+  imp: { business_id: string; period_key: string; import_id: string; file_name: string },
+  months: MonthlyLedgerMonth[],
+  actor: AuditActor,
+): Promise<EcountMonthlyResult> {
+  const C = ECOUNT_MONTHLY_COUNTER.code
+  if (!Array.isArray(months) || months.length === 0) throw new Error('statement_empty')
+  const seenMonths = new Set<string>()
+  for (const m of months) {
+    const ok =
+      !!m && typeof m.month === 'string' && MONTH.test(m.month) &&
+      (m.month === imp.period_key || m.month.startsWith(`${imp.period_key}-`)) && Array.isArray(m.lines)
+    if (!ok) throw new Error(`ecount_plan_invalid: 달 ${m?.month ?? '?'}`)
+    if (seenMonths.has(m.month)) throw new Error(`ecount_plan_invalid: 달 ${m.month}가 두 번`)
+    seenMonths.add(m.month)
+  }
+  // 0056 리뷰 I-2: 빈 달은 되돌릴 전표 번호(미리보기 때 본 활성 업로드 전표)를 들고 온다 · 금액 있는 달은 들고 오지 않는다.
+  for (const m of months) {
+    const bad = m.lines.length === 0 ? typeof m.reverses !== 'string' || !/^M\d{4}-\d{6}$/.test(m.reverses) : m.reverses !== undefined
+    if (bad) throw new Error(`ecount_plan_invalid: 달 ${m.month} reverses`)
+  }
+  for (const m of months) {
+    const codes = new Set<string>()
+    for (const l of m.lines) {
+      const ok =
+        !!l && typeof l.account_code === 'string' && l.account_code !== '' && typeof l.amount === 'number' &&
+        Number.isFinite(l.amount) && cents(l.amount) !== 0 && l.account_code !== C
+      if (!ok) throw new Error(`ecount_plan_invalid: 줄 ${m.month} ${l?.account_code ?? '?'}`)
+      if (codes.has(l.account_code)) throw new Error(`ecount_plan_invalid: ${m.month} ${l.account_code}에 줄 둘`)
+      codes.add(l.account_code)
+    }
+  }
+  const store = await accountStore()
+  const all = months.flatMap((m) => m.lines)
+  for (const l of all) if (!store.has(key(imp.business_id, l.account_code))) throw new Error(`statement_unknown_account: ${l.account_code}`)
+  for (const l of all) {
+    if (!PL_SECTIONS.includes(store.get(key(imp.business_id, l.account_code))!.section)) throw new Error(`ecount_monthly_bs_account: ${l.account_code}`)
+  }
+  for (const l of all) if (!store.get(key(imp.business_id, l.account_code))!.active) throw new Error(`inactive_account: ${l.account_code}`)
+
+  const ledger = await dummyLedger()
+  const sorted = [...months].sort((a, b) => a.month.localeCompare(b.month))
+  const last = ledger.closings
+    .filter((c) => c.business_id === imp.business_id)
+    .reduce<string | null>((m, c) => (m === null || c.period > m ? c.period : m), null)
+  const activeSlip = (month: string) => importSlips.find((x) => x.business_id === imp.business_id && x.month === month && x.superseded_at === null)
+  // 0056: 마감 · 확정 판정은 손댈 달만 — 금액 있는 달 + 되돌릴 업로드 전표가 있는 빈 달.
+  const touched = sorted.filter((m) => m.lines.length > 0 || activeSlip(m.month))
+  const closed = touched.find((m) => last !== null && m.month <= last)
+  if (closed) throw new Error(`closed_period: ${closed.month}`)
+  const officials = officialStatements.filter((s) => s.business_id === imp.business_id && s.basis === 'accountant' && s.superseded_at === null)
+  const quarterOf = (month: string) => `${month.slice(0, 4)}-Q${Math.floor((Number(month.slice(5)) + 2) / 3)}`
+  const locked = touched.find((m) =>
+    officials.some(
+      (s) => (s.period_kind === 'year' && s.period_key === m.month.slice(0, 4)) || (s.period_kind === 'quarter' && s.period_key === quarterOf(m.month)),
+    ),
+  )
+  if (locked) throw new Error(`official_month_locked: ${locked.month}`)
+  const counter = store.get(key(imp.business_id, C))
+  const anyLines = sorted.some((m) => m.lines.length > 0)
+  if (anyLines && counter && (counter.section !== 'equity' || !counter.active)) throw new Error('ecount_counter_account_invalid')
+
+  // 달마다 할 일을 먼저 다 정한다(쓰기 전). 전표 규칙은 entryProblem 한 곳(대응 계정은 아래에서 만들 것으로 본다).
+  const counterRow: Account = counter ?? {
+    business_id: imp.business_id,
+    account_code: C,
+    name: ECOUNT_MONTHLY_COUNTER.name,
+    category: 'equity',
+    section: 'equity',
+    cash_flow: 'operating',
+    source: 'ecount',
+    fetched_at: new Date().toISOString(),
+    closed: false,
+    active: true,
+  }
+  const check = { accounts: [...ledger.accounts.filter((a) => !(a.business_id === imp.business_id && a.account_code === C)), counterRow], closings: ledger.closings }
+  const shape = (ls: readonly { account_code: string; side: string; amount: number }[]) =>
+    ls.map((l) => `${l.account_code}|${l.side}|${cents(l.amount)}`).sort().join(',')
+  const plans = sorted.map((m) => {
+    const prevActive = activeSlip(m.month)
+    if (m.lines.length === 0 && prevActive?.slip_no !== m.reverses) {
+      throw new Error(`import_changed: ecount_ledger_changed ${m.month} ${m.reverses} → ${prevActive?.slip_no ?? '없음'}`)
+    }
+    if (prevActive && entries.some((e) => e.business_id === imp.business_id && e.corrects_id === prevActive.slip_no && e.correction_kind === 'reversal')) {
+      throw new Error(`ecount_month_reversed: ${m.month} ${prevActive.slip_no}`)
+    }
+    // 0056 빈 달 — 전표 규칙을 잴 것이 없다(역분개는 원 전표를 뒤집을 뿐).
+    if (m.lines.length === 0) return { month: m.month, entry: null, prev: prevActive, same: false }
+    const sum = m.lines.reduce((t, l) => t + cents(l.amount), 0)
+    const slip: DraftLine[] = [...m.lines]
+      .sort((a, b) => (a.account_code < b.account_code ? -1 : a.account_code > b.account_code ? 1 : 0))
+      .map((l): DraftLine => ({ account_code: l.account_code, side: cents(l.amount) > 0 ? 'debit' : 'credit', amount: Math.abs(cents(l.amount)) / 100 }))
+    if (sum !== 0) slip.push({ account_code: C, side: sum > 0 ? 'credit' : 'debit', amount: Math.abs(sum) / 100, memo: ECOUNT_MONTHLY_COUNTER.name })
+    const entry: NewJournalEntry = {
+      business_id: imp.business_id,
+      entry_date: monthEnd(m.month),
+      memo: `[ECOUNT 엑셀] ${m.month} 월별 손익 · import ${imp.import_id}`,
+      evidence_url: null,
+      lines: slip,
+    }
+    const problem = entryProblem(entry, check)
+    if (problem) throw new Error(`invalid_entry: ${problem}`)
+    const prev = prevActive
+    const same = !!prev && shape(lines.filter((l) => l.business_id === imp.business_id && l.slip_no === prev.slip_no)) === shape(slip)
+    return { month: m.month, entry, prev, same }
+  })
+
+  // 쓰기 — 대응 계정 → 달마다.
+  if (!counter && anyLines) store.set(key(imp.business_id, C), counterRow)
+  const now = new Date().toISOString()
+  const result: EcountMonthlyResult = { posted: 0, corrected: 0, unchanged: 0, reversed: 0, months: [] }
+  const flip = (slipNo: string) =>
+    lines
+      .filter((l) => l.business_id === imp.business_id && l.slip_no === slipNo)
+      .sort((a, b) => a.line_no - b.line_no)
+      .map((l): DraftLine => ({ account_code: l.account_code, side: l.side === 'debit' ? 'credit' : 'debit', amount: l.amount, memo: l.memo }))
+  for (const p of plans) {
+    if (p.entry === null) {
+      // 0056 빈 달: 미리보기 때 본 업로드 전표(위에서 대조)를 역분개만 + 옛 줄 내림(새 활성 줄 없음).
+      const prev = p.prev!
+      const orig = entries.find((e) => e.business_id === imp.business_id && e.slip_no === prev.slip_no)!
+      const reversal = insertEntry(
+        { business_id: imp.business_id, entry_date: monthEnd(p.month), memo: `[역분개] ${orig.memo}`, evidence_url: orig.evidence_url, lines: flip(prev.slip_no) },
+        actor,
+        { corrects_id: prev.slip_no, kind: 'reversal' },
+      )
+      prev.superseded_at = now
+      result.reversed += 1
+      result.months.push({ month: p.month, action: 'reversed', reversal, previous: prev.slip_no })
+      continue
+    }
+    if (p.prev && p.same) {
+      result.unchanged += 1
+      result.months.push({ month: p.month, action: 'unchanged', slip_no: p.prev.slip_no })
+      continue
+    }
+    if (!p.prev) {
+      const slip_no = insertEntry(p.entry, actor, null)
+      importSlips.push({ business_id: imp.business_id, month: p.month, slip_no, import_id: imp.import_id, superseded_at: null })
+      result.posted += 1
+      result.months.push({ month: p.month, action: 'posted', slip_no })
+      continue
+    }
+    // 0016 post_correction과 같은 모양 — 역분개(원 줄을 line_no 순서로 차대만 뒤집음) + 정정분개.
+    const prev = p.prev
+    const orig = entries.find((e) => e.business_id === imp.business_id && e.slip_no === prev.slip_no)!
+    const flipped = flip(prev.slip_no)
+    const reversal = insertEntry(
+      { business_id: imp.business_id, entry_date: p.entry.entry_date, memo: `[역분개] ${orig.memo}`, evidence_url: orig.evidence_url, lines: flipped },
+      actor,
+      { corrects_id: prev.slip_no, kind: 'reversal' },
+    )
+    const restated = insertEntry(p.entry, actor, { corrects_id: prev.slip_no, kind: 'restatement' })
+    prev.superseded_at = now
+    importSlips.push({ business_id: imp.business_id, month: p.month, slip_no: restated, import_id: imp.import_id, superseded_at: null })
+    result.corrected += 1
+    result.months.push({ month: p.month, action: 'corrected', slip_no: restated, reversal, previous: prev.slip_no })
+  }
+  note(
+    actor,
+    `${ecountAuditNote({ kind: 'monthly', period: imp.period_key, fileName: imp.file_name, importId: imp.import_id })} — 새 ${result.posted} · 정정 ${result.corrected} · 같음 ${result.unchanged} · 빈 달 역분개 ${result.reversed}`,
+  )
+  return result
+}
+
+/** dummy 월별 업로드 전표 줄(검사용) — 회사의 활성 · 내려간 줄 전부. */
+export function dummyImportSlips(businessId: string) {
+  return importSlips.filter((x) => x.business_id === businessId).map((x) => ({ ...x }))
+}
+
+/** 활성 행만. 정정으로 밀려난 것은 목록에 없다 — 잠금 판정이 옛 결산을 보면 안 된다. 기본은 세무사 확정만(live와 같다). */
+export async function listOfficialStatements(businessId: string, basis: OfficialStatementBasis | 'all' = 'accountant'): Promise<OfficialStatement[]> {
   if (!canReadBooks(businessId)) return []
   return officialStatements
-    .filter((s) => s.business_id === businessId && s.superseded_at === null)
+    .filter((s) => s.business_id === businessId && s.superseded_at === null && (basis === 'all' || (s.basis ?? 'accountant') === basis))
     .map((s) => ({ ...s }))
 }
 
