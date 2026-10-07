@@ -25,6 +25,8 @@ import {
 export interface ApprovalTemplateState {
   error?: string
   saved?: boolean
+  /** 저장된 그대로의 항목(새 항목의 key · 기준 금액 때문에 켜진 «필수» 포함) — 화면이 이 값으로 다시 맞춘다(2026-10-07). */
+  fields?: TemplateField[]
 }
 
 const KEY = /^[a-z][a-z0-9_]{0,30}$/
@@ -96,5 +98,5 @@ export async function saveApprovalTemplate(input: {
   revalidatePath('/settings/approvals')
   revalidatePath('/approvals/new')
   revalidatePath('/me')
-  return { saved: true }
+  return { saved: true, fields }
 }

@@ -5,6 +5,7 @@ import { useMemo, useState, useTransition } from 'react'
 
 import { submitApprovalForm } from '@/app/actions/approval-form'
 import { StepHeader, StepNav, useMobileSteps } from '@/components/ui/mobile-steps'
+import { NumberInput } from '@/components/ui/number-input'
 import { AMOUNT_INVALID_MESSAGE, amountInvalid, approvalLine, missingFields } from '@/lib/approval-line'
 import { boss, bossEn, bossText } from '@/lib/boss'
 import { tr, type Lang } from '@/lib/i18n'
@@ -146,17 +147,26 @@ export function ApprovalForm({
                     <textarea
                       rows={3}
                       value={form[f.key] ?? ''}
-                      onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+                      onChange={(e) => setForm((cur) => ({ ...cur, [f.key]: e.target.value }))}
+                      className={input}
+                    />
+                  ) : f.type === 'money' || f.type === 'number' ? (
+                    // 2026-10-07 — 숫자만 · 세 자리 쉼표 · 숫자 키패드 · 금액은 «원»과 한글 읽기(components/ui/number-input.tsx).
+                    <NumberInput
+                      kind={f.type}
+                      enterKeyHint="next"
+                      value={form[f.key] ?? ''}
+                      onChange={(v) => setForm((cur) => ({ ...cur, [f.key]: v }))}
                       className={input}
                     />
                   ) : (
                     <input
                       type={f.type === 'date' ? 'date' : f.type === 'url' ? 'url' : 'text'}
-                      inputMode={f.type === 'money' || f.type === 'number' ? 'numeric' : f.type === 'url' ? 'url' : undefined}
+                      inputMode={f.type === 'url' ? 'url' : undefined}
                       placeholder={f.type === 'url' ? 'https://' : undefined}
                       enterKeyHint="next"
                       value={form[f.key] ?? ''}
-                      onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+                      onChange={(e) => setForm((cur) => ({ ...cur, [f.key]: e.target.value }))}
                       className={input}
                     />
                   )}

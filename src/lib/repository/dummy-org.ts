@@ -215,7 +215,10 @@ export function dummyViewer(): UserAccount {
  * 세션(lib/auth/session.ts)과 조직도(dummy.ts listUserAccounts)가 **같은 저장소**를 본다 — 두 벌이면
  * 회장이 켠 권한이 조직도에는 보이는데 그 사람의 화면에는 안 붙는다.
  */
-const moduleGrants = new Map<string, ModuleGrant[]>(DUMMY_PEOPLE.map((p) => [p.user_id, p.modules.map((m) => ({ ...m }))]))
+// globalThis에 둔다 — webpack dev는 Server Action 층과 화면 층이 이 모듈을 따로 읽어 저장소가 둘이 된다(2026-10-07:
+// 사용자 화면에서 켠 칸이 새로고침 뒤에도 꺼져 보였다).
+const moduleGrants: Map<string, ModuleGrant[]> = ((globalThis as { __dummyModuleGrants?: Map<string, ModuleGrant[]> })
+  .__dummyModuleGrants ??= new Map(DUMMY_PEOPLE.map((p) => [p.user_id, p.modules.map((m) => ({ ...m }))])))
 
 export function dummyModuleGrants(userId: string): ModuleGrant[] {
   return (moduleGrants.get(userId) ?? []).map((m) => ({ ...m }))

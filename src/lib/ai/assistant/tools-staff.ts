@@ -1,6 +1,7 @@
 import 'server-only'
 
 import { AMOUNT_INVALID_MESSAGE, AMOUNT_PATTERN, approvalLine, toChairman } from '@/lib/approval-line'
+import { groupDigits, koreanAmount, parseGrouped } from '@/lib/number-input'
 import { approvalTitle, cleanForm, formProblem } from '@/lib/approval-submit'
 import { canCloseBooks, canKeepBooks } from '@/lib/auth/roles'
 import { boss, bossText, isChairman } from '@/lib/boss'
@@ -22,6 +23,16 @@ import { propose } from './tools-propose'
  *   돌려주고 모델은 그 문장을 그대로 옮긴다. 요청 대상은 «대표»(직원 화면 용어 원칙, CLAUDE.md). 이 파일의 글에는
  *   «회장»이 없다 — 보는 사람에 따라 boss(role)로 그린다.
  */
+
+
+/** AI 결재 카드의 한 줄 — 금액은 «5,000,000원 (오백만 원)». 1만 원 미만은 한글 읽기를 붙이지 않는다(결재 화면과 같다). */
+function fieldPreview(type: string, v: string): string {
+  if (type !== 'money') return v
+  const n = parseGrouped(v.replace(/원\s*$/, ''))
+  if (n === null) return v
+  const shown = `${v.replace(/\s*원\s*$/, '')}원`
+  return n >= 10000 ? `${shown} (${koreanAmount(n)})` : shown
+}
 
 export const NO_APPROVAL_GRANT = '권한이 없습니다 — 결재를 올리려면 «결재 올리기» 권한이 필요합니다. 대표에게 켜 달라고 요청하세요.'
 export const NO_FINANCE = '권한이 없습니다 — 월 마감 · 장부는 그 회사의 재무 권한이 있어야 볼 수 있습니다. 필요하면 대표에게 재무 권한을 요청하세요.'
@@ -136,6 +147,8 @@ export const proposeApprovalFormTool: AssistantTool = {
       if ((f.type === 'money' || f.key === 'amount') && !AMOUNT_PATTERN.test(v)) {
         return { error: 'invalid', field: f.key, message: AMOUNT_INVALID_MESSAGE }
       }
+      // 2026-10-07 — 결재 화면의 금액 칸과 같은 모양(세 자리 쉼표, «원» 없이)으로 맞춘다. 소수가 있으면 그대로 둔다.
+      if (f.type === 'money' && !v.includes('.')) form[f.key] = groupDigits(v, 'money')
       if (f.type === 'number' && !/^[0-9][0-9,]*(\.[0-9]+)?\s*(원|개|명)?$/.test(v)) {
         return { error: 'invalid', field: f.key, message: `${f.label_ko}은(는) 숫자로 넣으세요(예: 1,200,000).` }
       }
@@ -168,7 +181,7 @@ export const proposeApprovalFormTool: AssistantTool = {
           title: `${template.name_ko} 결재 — ${title}`,
           lines: [
             { label: '회사', before: null, after: biz.name },
-            ...template.fields.filter((f) => form[f.key]).map((f) => ({ label: f.label_ko, before: null, after: form[f.key] })),
+            ...template.fields.filter((f) => form[f.key]).map((f) => ({ label: f.label_ko, before: null, after: fieldPreview(f.type, form[f.key]) })),
             { label: '결재 기한', before: null, after: deadline },
             { label: '결재선', before: null, after: lineText },
           ],

@@ -358,11 +358,10 @@ export async function setModuleGrant(input: {
     return { error: denialMessage(e, '모듈 권한을 바꿀 권한이 없습니다. (대표만 가능합니다)', user.role) }
   }
 
-  revalidatePath('/settings/users')
-  // 그 사람의 재무 화면 안내(입력 폼 · 마감 버튼)가 세션 값으로 선다 — 다음 요청에서 새로 읽는다.
-  revalidatePath('/finance', 'layout')
-  // 0048. 문서 화면의 «링크 등록» · «+ 폴더»도 세션 값으로 선다.
-  revalidatePath('/documents', 'layout')
+  // 사용자 화면 · 재무 화면 안내(입력 폼 · 마감 버튼) · 문서 화면의 «링크 등록» · «+ 폴더»가 다 세션 값으로 선다 — 한 번에.
+  // 2026-10-07: '/settings/users' 뒤에 revalidatePath('/finance', 'layout') · ('/documents', 'layout')을 따로 부르면
+  // Server Action 응답이 지금 화면을 새로 그리지 않았다 — 저장은 됐는데 칸이 꺼진 채로 남아 «눌리지 않는다»로 보였다.
+  revalidatePath('/', 'layout')
   return {}
 }
 

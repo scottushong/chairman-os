@@ -129,7 +129,7 @@ export async function listNoticeReads(id: number): Promise<NoticeRead[]> {
 
 // 0038 시드에서 2026-10-06 권장 설정(/settings/approvals)으로 바꾼 값 — 첨부(사내 스토리지) 칸 없음 ·
 // 지출 · 구매에 «구입처»(필수) · «링크»(선택) · 구매 대표 기준 500만원. live는 회장이 설정 화면에서 같은 값으로 저장한다.
-const templates: ApprovalTemplate[] = [
+const SEED_TEMPLATES: ApprovalTemplate[] = [
   {
     template_key: 'expense', name_ko: '지출', name_en: 'Expense', attachment_required: false,
     chairman_always: false, chairman_over: 5_000_000, sort_order: 10,
@@ -183,6 +183,10 @@ const templates: ApprovalTemplate[] = [
     ],
   },
 ]
+
+// globalThis에 둔다 — webpack dev는 Server Action 층과 화면 층이 이 모듈을 따로 읽어 저장한 양식이 화면에 안 보였다(2026-10-07).
+const templates: ApprovalTemplate[] = ((globalThis as { __dummyApprovalTemplates?: ApprovalTemplate[] }).__dummyApprovalTemplates ??=
+  SEED_TEMPLATES)
 
 export async function listApprovalTemplates(): Promise<ApprovalTemplate[]> {
   return templates.map((t) => ({ ...t, fields: t.fields.map((f) => ({ ...f })) }))
