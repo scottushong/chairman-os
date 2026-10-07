@@ -181,7 +181,7 @@ async function main() {
     'PASS: 화면 변경 → «개발 세션에서 처리합니다»(데이터 요청은 통과) · 직원 재무 → 권한 없음 + 재무/회장 도구 없음 · 계산기(코드 · eval 없음 · 거절) · ' +
       'VANA 9월 합 = 원장 줄 합 · 없는 달 표시 · 기한 없는 이니셔티브 = 실제 줄 · VLING24 없으면 제안 없음 → 있으면 pending(미변경) → 남 확인 불가 → 주인 한 번 → 감사 «AI 제안, 회장 확인» · 검증(빈 칸 · 재무) · 카카오 읽기만 · ' +
       '오류 분류 · 대화 모양(번갈아 · 맥락 메모) · 직원 권한 밖 «권한이 없습니다 — … 대표에게» · 직원 도구(내 결재 · 마감 · 문서 · 전표 도움 · 양식 결재) · ' +
-      '양식 결재 빈 칸 · 금액 모양(0054 approval_amount_invalid 문장) → 카드 → 중복 없음 → «확인했어» = 버튼 안내 → 확인 → 결재선 · 팀장 대기 · «첨부해줘» = «첨부» 칸 · 직원 글에 «회장» 없음',
+      '양식 결재 빈 칸 · 금액 모양(0054 approval_amount_invalid 문장) → 카드 → 중복 없음 → «확인했어» = 버튼 안내 → 확인 → 결재선(상사 사슬) · 상사 결재 대기 · «첨부해줘» = «첨부» 칸 · 직원 글에 «회장» 없음',
   )
 }
 
@@ -296,7 +296,7 @@ async function staffFlow() {
   const card = (await tool('propose_approval_form').run({ template: '지출', business: 'DY', fields }, kctx)) as Card
   assert.equal(card.status, 'awaiting_confirmation', JSON.stringify(card))
   const lineRow = card.preview.lines.find((l) => l.label === '결재선')
-  assert.ok(lineRow && lineRow.after.startsWith('팀장 ') && !NO_BOSS.test(JSON.stringify(card.preview)), `결재선 미리보기가 이상하다: ${lineRow?.after}`)
+  assert.ok(lineRow && lineRow.after.startsWith('직속 상사 ') && !NO_BOSS.test(JSON.stringify(card.preview)), `결재선 미리보기가 이상하다: ${lineRow?.after}`)
   const again = (await tool('propose_approval_form').run({ template: 'expense', business: 'biz_dy', fields }, kctx)) as Card
   assert.deepEqual([again.status, again.action_id], ['already_pending', card.action_id], '같은 내용의 카드를 또 만든다')
   assert.equal(kctx.actionIds.length, 1)
@@ -314,15 +314,15 @@ async function staffFlow() {
   const att = await runAssistant({ question: '첨부해줘', repo, user: kim, path: '/approvals', chatId: kchat, history: histNow })
   assert.ok(att.ruled && att.answer.includes('«첨부» 칸') && !/권한/.test(att.answer), `첨부 안내가 아니다: ${att.answer}`)
 
-  // 확인 → 화면과 같은 문(submitApprovalWith = app/actions/approval-form.ts의 몸통)으로 결재가 선다 — 결재선 · 팀장 대기.
+  // 확인 → 화면과 같은 문(submitApprovalWith = app/actions/approval-form.ts의 몸통)으로 결재가 선다 — 0059 단계 결재(상사 사슬 첫 칸).
   const decided = await repo.decideAiAction(card.action_id, true)
   assert.equal(decided?.status, 'confirmed')
   const p = decided!.payload
   const sub = await submitApprovalWith(repo, kim, { templateKey: p.template_key, businessId: p.business_id, title: p.title, deadline: p.deadline, form: p.form })
   assert.ok(!sub.error && sub.decision, `양식 결재가 안 선다: ${sub.error}`)
   const dec = sub.decision!
-  assert.deepEqual([dec.template_key, dec.status, dec.lead_status, dec.created_by], ['expense', 'Open', 'pending', kim.user_id])
-  assert.ok((dec.approval_line?.length ?? 0) >= 2 && dec.approval_line![0].step === 'lead' && dec.approval_line![0].user_id, '결재선(팀장 칸)이 안 섰다')
+  assert.deepEqual([dec.template_key, dec.status, dec.step_chain, dec.created_by], ['expense', 'Open', true, kim.user_id])
+  assert.ok((dec.approval_line?.length ?? 0) >= 2 && dec.approval_line![0].step === 'boss' && dec.approval_line![0].user_id, '결재선(직속 상사 칸)이 안 섰다')
   assert.ok(!dec.approval_line!.some((st) => st.step === 'chairman'), '기준 미만인데 대표 칸이 섰다')
   await repo.finishAiAction(card.action_id, true, '결재를 올렸습니다')
 
@@ -330,7 +330,7 @@ async function staffFlow() {
   type Rows = { rows: { id: string; state: string; form: Record<string, string> | null; approval_line: unknown[] | null }[] }
   const mine = (await tool('list_approvals').run({ scope: 'mine' }, kctx)) as Rows
   const row = mine.rows.find((r) => r.id === dec.decision_id)
-  assert.ok(row && row.state === '팀장 대기' && row.form?.['지출 목적'] === fields.purpose && row.approval_line?.length, `내 결재에 방금 건이 없다: ${JSON.stringify(row)}`)
+  assert.ok(row && row.state === '상사 결재 대기' && row.form?.['지출 목적'] === fields.purpose && row.approval_line?.length, `내 결재에 방금 건이 없다: ${JSON.stringify(row)}`)
   assert.ok(!NO_BOSS.test(JSON.stringify(mine)), '직원의 결재 목록에 «회장»이 보인다')
   // 결재선 첫 칸(경영지원팀장 본인이 팀장이라 직속 상위 = DY 대표)에게는 «내가 처리할 결재».
   const approver = as('dy_ceo')

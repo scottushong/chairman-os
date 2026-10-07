@@ -1,6 +1,7 @@
 import 'server-only'
 
-import { AMOUNT_INVALID_MESSAGE, AMOUNT_PATTERN, approvalLine, toChairman } from '@/lib/approval-line'
+import { chainLine } from '@/lib/approval-chain'
+import { AMOUNT_INVALID_MESSAGE, AMOUNT_PATTERN } from '@/lib/approval-line'
 import { groupDigits, koreanAmount, parseGrouped } from '@/lib/number-input'
 import { approvalTitle, cleanForm, formProblem } from '@/lib/approval-submit'
 import { canCloseBooks, canKeepBooks } from '@/lib/auth/roles'
@@ -62,9 +63,10 @@ function findTemplate(list: ApprovalTemplate[], query: string): ApprovalTemplate
 
 /** 이 양식이 대표까지 가는 규칙(보는 사람에 맞춘 호칭). */
 function ruleText(t: ApprovalTemplate, viewer: ToolContext['user']['role']): string {
-  if (t.chairman_always) return `금액과 상관없이 ${boss(viewer)} 결재`
-  if (t.chairman_over === null) return `${boss(viewer)} 규칙 없음(팀장 선에서 끝남)`
-  return `금액 ${krw(t.chairman_over)} 이상이면 ${boss(viewer)}까지`
+  // 0059 결재선 = 조직도 상사 사슬. 상사가 대표인 직원은 소액도 대표가 승인한다.
+  if (t.chairman_always) return `금액과 상관없이 상사 결재 → ${boss(viewer)} 최종 승인`
+  if (t.chairman_over === null) return '직속 상사 승인으로 종결'
+  return `금액 ${krw(t.chairman_over)} 미만 → 직속 상사 승인으로 종결 · 이상 → 상사 결재 → ${boss(viewer)} 최종 승인`
 }
 
 const cannotSubmit = (ctx: ToolContext) => !isChairman(ctx.user.role) && ctx.user.approvals_write === false
@@ -73,18 +75,18 @@ export const approvalTemplatesTool: AssistantTool = {
   def: {
     name: 'list_approval_templates',
     description:
-      '결재 양식(지출 · 구매 · 휴가 · 계약 · 채용)과 양식마다 채울 항목(key · 이름 · 형식 · 필수), 결재선 규칙, 이 사람의 결재선 첫 칸(팀장)을 준다. ' +
+      '결재 양식(지출 · 구매 · 휴가 · 계약 · 채용)과 양식마다 채울 항목(key · 이름 · 형식 · 필수), 결재선 규칙(조직도 상사 사슬)을 준다. ' +
       '결재를 올리자는 요청이면 먼저 이것으로 항목을 확인하고, 빈 필수 항목은 사용자에게 묻는다.',
     input_schema: { type: 'object', properties: {} },
   },
   available: webOnly,
   async run(_input, ctx) {
-    const [templates, lead] = await Promise.all([ctx.repo.listApprovalTemplates(), ctx.repo.myApprovalLead().catch(() => null)])
+    const templates = await ctx.repo.listApprovalTemplates()
     addEvidence(ctx, { label: '결재 올리기', href: '/approvals/new', detail: `양식 ${templates.length}개` })
     return {
       can_submit: cannotSubmit(ctx) ? false : ctx.user.approvals_write === true ? true : 'unknown',
       ...(cannotSubmit(ctx) ? { permission: NO_APPROVAL_GRANT } : {}),
-      first_approver: lead ? { name: lead.display_name, as: lead.via === 'team_lead' ? '팀장' : '팀장 부재 · 직속 상위' } : null,
+      approval_line_rule: `결재선은 조직도의 상사 사슬이다. 기준 미만은 직속 상사 승인으로 종결, 기준 이상 · 계약 · 채용은 상사 결재 → ${boss(ctx.user.role)} 최종 승인. 상사가 ${boss(ctx.user.role)}인 사람은 소액도 ${boss(ctx.user.role)}의 승인을 받는다. 회사별 결재선(상사 이름)은 양식 결재 카드가 보여 준다.`,
       templates: templates
         .sort((a, b) => a.sort_order - b.sort_order)
         .map((t) => ({
@@ -163,13 +165,12 @@ export const proposeApprovalFormTool: AssistantTool = {
       }
     }
 
-    const lead = await ctx.repo.myApprovalLead().catch(() => null)
-    const line = approvalLine(template, form, lead, { user_id: null, name: boss(ctx.user.role) })
-    const lineText = line
-      .map((st) => (st.step === 'lead' ? (st.user_id ? `팀장 ${st.name}` : '팀장 없음') : st.step === 'rule' ? `규칙(${st.why})` : boss(ctx.user.role)))
+    // 0059 — 결재선 = 이 회사에서의 내 상사 사슬(대표 앞까지). 판정은 올리는 순간 DB 트리거가 다시 한다.
+    const bosses = await ctx.repo.myApprovalChain(biz.business_id).catch(() => [])
+    const lineText = chainLine(template, form, bosses)
+      .map((st) => (st.step === 'boss' ? `${st.why} ${st.name}` : st.step === 'rule' ? `규칙(${st.why})` : boss(ctx.user.role)))
       .map((t) => bossText(t, ctx.user.role))
       .join(' → ')
-    const recordsOnly = !lead && !toChairman(template, form)
     const title = approvalTitle(template, form, input.title)
 
     return {
@@ -186,7 +187,6 @@ export const proposeApprovalFormTool: AssistantTool = {
             { label: '결재선', before: null, after: lineText },
           ],
           warning:
-            (recordsOnly ? '팀장 결재 단계가 없고 기준 미만이라, 올리면 승인 단계 없이 «기록 완료»로 저장됩니다. ' : '') +
             '확인하면 결재 화면의 «결재 올리기»와 똑같이 올라가고, 결재선은 올리는 순간 다시 정해집니다. 파일은 올린 뒤 결재 화면에서 그 건을 열고 «첨부» 칸에 붙입니다.',
           href: '/approvals',
         },

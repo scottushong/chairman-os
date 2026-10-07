@@ -1,6 +1,7 @@
 import Link from 'next/link'
 
 import { ApprovalDetail } from '@/components/approvals/approval-detail'
+import { BulkApprove } from '@/components/approvals/bulk-approve'
 import { AttachmentsSection } from '@/components/attachments/attachments-section'
 import { DraftDecision } from '@/components/approvals/draft-decision'
 import { PageHeader } from '@/components/layout/page-header'
@@ -8,6 +9,7 @@ import { FilterChips, type FilterOption } from '@/components/ui/filter-chips'
 import { Icon } from '@/components/ui/icon'
 import { bundleTitle } from '@/lib/approval-line'
 import { canDraftDecision } from '@/lib/auth/roles'
+import { boss, isChairman } from '@/lib/boss'
 import { currentUser } from '@/lib/auth/session'
 import { countOn, type DecisionAuditRecord } from '@/lib/decision-log'
 import { dayKey, dDay, formatDDay } from '@/lib/format'
@@ -16,6 +18,7 @@ import { firstParam, oneOf, withParams } from '@/lib/query'
 import { getRepository } from '@/lib/repository'
 import {
   WORK_PRIORITY_LABEL_KO,
+  type ApprovalStepState,
   type Decision,
   type WorkPriority,
 } from '@/types'
@@ -37,10 +40,11 @@ import { decisionStatusLabel } from '@/lib/decision-status'
  */
 
 const BASE = '/approvals'
-const TABS = ['open', 'done'] as const
+// 'turn'(0059) = 단계 결재 중 지금 차례 칸의 결재자가 나인 것. 예전 결재(팀장 대기 · 대표 대기)는 '대기'에 그대로 있다.
+const TABS = ['open', 'turn', 'done'] as const
 type Tab = (typeof TABS)[number]
 
-const TAB_LABEL: Record<Tab, string> = { open: '대기', done: '완료' }
+const TAB_LABEL: Record<Tab, string> = { open: '대기', turn: '내 차례', done: '완료' }
 
 const IMPACT_TONE: Record<WorkPriority, string> = {
   Critical: 'bg-critical/15 text-critical',
@@ -53,7 +57,7 @@ const IMPACT_RANK: Record<WorkPriority, number> = { Critical: 4, High: 3, Medium
 
 export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
   const params = await props.searchParams
-  const tab: Tab = oneOf(firstParam(params.tab), TABS) ?? 'open'
+  const tabParam = oneOf(firstParam(params.tab), TABS)
   const businessFilter = firstParam(params.business)
   const selectedId = firstParam(params.id)
 
@@ -67,7 +71,20 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
   ])
 
   const isOpen = (d: Decision) => d.status === 'Open'
-  const byTab = decisions.filter((d) => (tab === 'open' ? isOpen(d) : !isOpen(d)))
+
+  // 0059 단계 결재의 칸. 열린 단계 결재(«내 차례» · 승인함)와 링크로 지목한 한 건(끝난 결재의 진행 · 반려 사유)만 읽는다.
+  const chainIds = decisions
+    .filter((d) => d.step_chain && (isOpen(d) || d.decision_id === selectedId))
+    .map((d) => d.decision_id)
+  const steps: ApprovalStepState[] = chainIds.length > 0 ? await repo.listApprovalSteps(chainIds) : []
+  const turnOf = new Map(steps.filter((s) => s.status === 'pending').map((s) => [s.decision_id, s]))
+  const myTurn = (d: Decision) => isOpen(d) && !!user && turnOf.get(d.decision_id)?.approver_user_id === user.user_id
+  const inTab = (d: Decision, t: Tab) => (t === 'open' ? isOpen(d) : t === 'turn' ? myTurn(d) : !isOpen(d))
+
+  // ?id=만 온 링크(알림 · 재상신 원본)는 그 결재가 든 탭을 연다. 탭을 직접 고른 URL은 그대로 둔다.
+  const linked = selectedId ? decisions.find((d) => d.decision_id === selectedId) : undefined
+  const tab: Tab = tabParam ?? (linked && !isOpen(linked) ? 'done' : 'open')
+  const byTab = decisions.filter((d) => inTab(d, tab))
   const shown = businessFilter ? byTab.filter((d) => d.business_id === businessFilter) : byTab
 
   /** 완료 탭의 정렬 기준. 결정별 마지막 처리 시각을 audit_log에서 낸다. */
@@ -81,7 +98,7 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
 
   // 대기는 중요도 → 마감 순, 완료는 최근 처리한 것이 위. 두 탭이 답하는 질문이 다르다.
   const ordered = [...shown].sort((a, b) =>
-    tab === 'open'
+    tab !== 'done'
       ? IMPACT_RANK[b.impact] - IMPACT_RANK[a.impact] || a.deadline.localeCompare(b.deadline)
       : Date.parse(handledAt.get(b.decision_id) ?? '0') -
           Date.parse(handledAt.get(a.decision_id) ?? '0') ||
@@ -101,8 +118,32 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
     label: TAB_LABEL[t],
     href: withParams(BASE, { tab: t, business: businessFilter }),
     active: tab === t,
-    count: decisions.filter((d) => (t === 'open' ? isOpen(d) : !isOpen(d))).length,
+    count: decisions.filter((d) => inTab(d, t)).length,
   }))
+
+  // 선택한 결재의 칸 — 위에서 읽지 않은 끝난 단계 결재(목록 맨 위로 열린 것)는 여기서 읽는다.
+  const selectedSteps: ApprovalStepState[] = !selected?.step_chain
+    ? []
+    : chainIds.includes(selected.decision_id)
+      ? steps.filter((s) => s.decision_id === selected.decision_id)
+      : await repo.listApprovalSteps([selected.decision_id])
+  const resubmittedAs = selected
+    ? (decisions.find((d) => d.resubmit_of === selected.decision_id)?.decision_id ?? null)
+    : null
+
+  // 승인함 «선택 항목 한 번에 승인» — 회장 화면만, 회장 차례인 단계 결재만(0059 approval_decide_many).
+  const bulkItems =
+    user && isChairman(user.role)
+      ? decisions
+          .filter((d) => myTurn(d))
+          .filter((d) => !businessFilter || d.business_id === businessFilter)
+          .map((d) => ({
+            id: d.decision_id,
+            title: bundleTitle(d.title, user.role),
+            business: businessName(businesses, d.business_id),
+            href: withParams(BASE, { tab: 'turn', business: businessFilter, id: d.decision_id }),
+          }))
+      : []
 
   const businessOptions: FilterOption[] = [
     {
@@ -152,11 +193,21 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
         <FilterChips label="회사" options={businessOptions} />
       </div>
 
+      {bulkItems.length > 0 ? (
+        <div className="mt-3">
+          <BulkApprove items={bulkItems} bossLabel={boss(user?.role)} />
+        </div>
+      ) : null}
+
       <div className="mt-3 grid grid-cols-12 gap-3.5 pb-6">
         <div className="col-span-12 xl:col-span-5">
           {ordered.length === 0 ? (
             <p className="rounded-xl border border-line-soft bg-panel px-4 py-10 text-center text-t12h text-ink-muted">
-              {tab === 'open' ? '대기 중인 결재가 없습니다.' : '처리한 결재가 없습니다.'}
+              {tab === 'open'
+                ? '대기 중인 결재가 없습니다.'
+                : tab === 'turn'
+                  ? '지금 내 차례인 결재가 없습니다.'
+                  : '처리한 결재가 없습니다.'}
             </p>
           ) : (
             <ul className="space-y-1.5">
@@ -180,6 +231,11 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
                       <span className="truncate text-t11 text-ink-muted">
                         {businessName(businesses, d.business_id)}
                       </span>
+                      {myTurn(d) ? (
+                        <span className="shrink-0 rounded bg-warning/15 px-1.5 py-0.5 text-t9 font-semibold text-warning">
+                          내 차례
+                        </span>
+                      ) : null}
                       <span
                         className={`ml-auto shrink-0 text-t11 font-semibold tnum ${
                           dDay(d.deadline) < 0 && d.status === 'Open'
@@ -215,6 +271,9 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
               businessName={businessName(businesses, selected.business_id)}
               history={history}
               viewerRole={user?.role ?? null}
+              viewerId={user?.user_id ?? null}
+              steps={selectedSteps}
+              resubmittedAs={resubmittedAs}
               fieldLabels={Object.fromEntries(
                 (templates.find((t) => t.template_key === selected.template_key)?.fields ?? []).map((f) => [f.key, f.label_ko]),
               )}

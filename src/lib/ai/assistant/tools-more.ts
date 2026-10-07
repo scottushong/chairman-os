@@ -19,9 +19,13 @@ import { addEvidence, auditRestrictedRead, krw, norm, resolveBusiness, str, type
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/
 
-/** 지금 이 사람이 처리할 차례인가. /me «요청함»(팀장 대기 · 결재선 첫 칸 = 나)과 회장 큐(팀장 단계를 지난 Open)를 합친 것. */
-export function waitingOn(d: Decision, user: { user_id: string; role: string }): boolean {
+/**
+ * 지금 이 사람이 처리할 차례인가. 0059 단계 결재 = 지금 칸(pending)의 결재자가 나(pendingApprover: 결재 id → 결재자).
+ * 옛 결재 = /me «팀장 요청함»(팀장 대기 · 결재선 첫 칸 = 나)과 회장 큐(팀장 단계를 지난 Open).
+ */
+export function waitingOn(d: Decision, user: { user_id: string; role: string }, pendingApprover?: ReadonlyMap<string, string>): boolean {
   if (d.status !== 'Open') return false
+  if (d.step_chain) return pendingApprover?.get(d.decision_id) === user.user_id
   if (d.lead_status === 'pending') return d.approval_line?.[0]?.user_id === user.user_id
   return user.role === 'Chairman' && (d.chairman_required === true || !d.template_key)
 }
@@ -32,7 +36,8 @@ export const approvalsTool: AssistantTool = {
     description:
       '결재(decisions) 목록. scope: mine(내가 올린 결재) · waiting_on_me(내가 처리할 차례) · all(볼 수 있는 전부, 기본). ' +
       'status(Open 대기 · Approved · Rejected …), business, template(expense 지출 · purchase 구매 · leave 휴가 · contract 계약 · hiring 채용), ' +
-      'month(YYYY-MM — 결재 기한이 그 달), query(제목에 든 말), id(한 건)로 거른다. 줄마다 지금 상태(state: 팀장 대기 · 결재 대기 · 기록 완료 …), ' +
+      'month(YYYY-MM — 결재 기한이 그 달), query(제목에 든 말), id(한 건)로 거른다. 줄마다 지금 상태(state: 상사 결재 대기 · 대표 결재 대기 · 최종 승인 · 반려 …, 예전 결재는 팀장 대기 · 기록 완료), ' +
+      '단계 결재면 지금 누구 차례인지(now_turn)와 반려 사유(reject_reason), ' +
       '결재선(approval_line), 양식 항목(form: 항목 이름 → 값)을 준다. 금액은 **서버가 계산한 합계**(amount_total)를 쓴다.',
     input_schema: {
       type: 'object',
@@ -62,10 +67,22 @@ export const approvalsTool: AssistantTool = {
     const id = str(input.id, 64)
     const [all, templates] = await Promise.all([ctx.repo.listDecisions(), ctx.repo.listApprovalTemplates().catch(() => [])])
     const label = new Map(templates.map((t) => [t.template_key, { name: t.name_ko, fields: new Map(t.fields.map((f) => [f.key, f.label_ko])) }]))
+    // 0059 단계 — 열린 단계 결재의 지금 칸 · 반려된 단계 결재의 사유. 못 읽으면 차례 판정만 빠진다.
+    const chainIds = all.filter((d) => d.step_chain && (d.status === 'Open' || d.status === 'Rejected')).map((d) => d.decision_id)
+    const steps = chainIds.length ? await ctx.repo.listApprovalSteps(chainIds).catch(() => []) : []
+    const pendingStep = new Map(steps.filter((st) => st.status === 'pending').map((st) => [st.decision_id, st]))
+    const rejectedStep = new Map(steps.filter((st) => st.status === 'rejected').map((st) => [st.decision_id, st]))
+    const pendingApprover = new Map([...pendingStep].map(([id, st]) => [id, st.approver_user_id]))
+    // 열린 단계 결재는 지금 칸으로(누가 승인했는지에 따라 approval_line만으로는 모른다), 나머지는 approvalState 그대로.
+    const chainState = (d: Decision) => {
+      const st = d.status === 'Open' ? pendingStep.get(d.decision_id) : undefined
+      if (st) return st.is_chairman ? `${boss(role)} 결재 대기` : '상사 결재 대기'
+      return d.status === 'Approved' ? '최종 승인' : approvalState(d, role)
+    }
     const matched = all
       .filter((d) => !id || d.decision_id === id)
       .filter((d) => scope !== 'mine' || d.created_by === ctx.user.user_id)
-      .filter((d) => scope !== 'waiting_on_me' || waitingOn(d, ctx.user))
+      .filter((d) => scope !== 'waiting_on_me' || waitingOn(d, ctx.user, pendingApprover))
       .filter((d) => !status || d.status.toLowerCase() === status.toLowerCase())
       .filter((d) => !biz || d.business_id === biz.business_id)
       .filter((d) => !template || d.template_key === template)
@@ -75,22 +92,31 @@ export const approvalsTool: AssistantTool = {
     const rows = matched.slice(0, 40).map((d) => {
       const amount = formAmount(d.form ?? {})
       const t = d.template_key ? label.get(d.template_key) : undefined
+      const turn = pendingStep.get(d.decision_id)
+      const rejected = rejectedStep.get(d.decision_id)
       return {
         id: d.decision_id,
         title: bundleTitle(d.title, role),
         business: name.get(d.business_id) ?? d.business_id,
         status: d.status,
-        state: approvalState(d, role),
+        state: d.step_chain ? chainState(d) : approvalState(d, role),
         deadline: d.deadline,
         template: t?.name ?? d.template_key ?? null,
         form: d.form
           ? Object.fromEntries(Object.entries(d.form).slice(0, 10).map(([k, v]) => [t?.fields.get(k) ?? k, bossText(String(v), role).slice(0, 160)]))
           : null,
         amount,
-        approval_line: d.approval_line?.map((st) => ({ step: st.step === 'chairman' ? boss(role) : st.step === 'lead' ? '팀장' : '규칙', name: bossText(st.name, role), why: bossText(st.why, role) })) ?? null,
+        approval_line:
+          d.approval_line?.map((st) => ({
+            step: st.step === 'chairman' ? boss(role) : st.step === 'lead' ? '팀장' : st.step === 'boss' ? '상사' : '규칙',
+            name: st.step === 'chairman' ? boss(role) : bossText(st.name, role),
+            why: bossText(st.why, role),
+          })) ?? null,
+        ...(d.step_chain && d.status === 'Open' && turn ? { now_turn: turn.is_chairman ? boss(role) : bossText(`${turn.why} ${turn.approver_name}`, role) } : {}),
+        ...(d.step_chain && d.status === 'Rejected' && rejected?.note ? { reject_reason: bossText(rejected.note, role).slice(0, 300) } : {}),
         lead_status: d.lead_status ?? null,
         submitted_by_me: d.created_by === ctx.user.user_id,
-        waiting_on_me: waitingOn(d, ctx.user),
+        waiting_on_me: waitingOn(d, ctx.user, pendingApprover),
         options: d.template_key ? undefined : d.options.map((o) => bossText(o, role)),
         has_link_attachment: !!d.attachment_url,
         link: `/approvals?id=${d.decision_id}`,

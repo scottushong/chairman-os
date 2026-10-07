@@ -136,7 +136,7 @@ function TemplateCard({ template }: { template: ApprovalTemplate }) {
             {always
               ? '«항상 회장 결재»가 켜져 있어 기준 금액은 쓰지 않습니다.'
               : overNumber !== null
-                ? `${over}원(${koreanAmount(overNumber)}) 이상 → 회장 승인 · 미만 → 팀장 결재로 종결`
+                ? `${over}원(${koreanAmount(overNumber)}) 이상 → 상사 결재 → 회장 최종 승인 · 미만 → 직속 상사 승인으로 종결`
                 : '비워 두면 금액으로는 회장까지 올라가지 않습니다.'}
           </span>
         </div>
