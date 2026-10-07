@@ -26,7 +26,8 @@ import { applyAll, applyOne, MIGRATIONS, type Db } from './pglite'
 
 import { sheetFinanceKpis } from '../src/data'
 import { amountInvalid, approvalLine, pickApprovalLead, toChairman } from '../src/lib/approval-line'
-import type { ApprovalTemplate, Role } from '../src/types'
+import { bossChain, chainLine } from '../src/lib/approval-chain'
+import type { ApprovalStep, ApprovalTemplate, Role } from '../src/types'
 import { kstToday } from '../src/lib/chairman-project'
 import { loadMockLedger } from '../src/lib/ecount/mock-ledger'
 import { kpisFromLedger } from '../src/lib/ledger/cells'
@@ -916,9 +917,20 @@ async function staffHome(db: Db, as: As) {
        values ('${id}', 'biz_dy', '요청 ${id}', '${tpl}', '${form}'::jsonb, 'https://x/a', '${S.req}') returning decision_id as v`
   const small = '{"amount":"100000","purpose":"공구","spent_on":"2026-09-28"}'
   const big = '{"amount":"6000000","purpose":"설비","spent_on":"2026-09-28"}'
-  await commitAs(S.req, request('dec_62a', 'expense', small))
-  await commitAs(S.req, request('dec_62b', 'expense', big))
-  await commitAs(S.req, request('dec_62c', 'leave', '{"starts_on":"2026-10-01","ends_on":"2026-10-02"}'))
+  // 0059부터 새 양식 결재는 단계 결재(상사 사슬)다. 이 검사는 **0059 전에 올라온 결재**(운영에 남은 «팀장 대기» ·
+  // «대표 대기»)가 예전 길(lead_decide · 대표 처리)로 끝나는지를 잰다 — 0054가 만들던 모양 그대로 심는다(트리거를 잠시 끈다).
+  const legacy = async (id: string, tpl: string, form: string, cr: boolean) => {
+    const line = [{ step: 'lead', user_id: S.lead, name: '생산팀장', why: '팀장' }, { step: 'rule', user_id: null, name: '규칙 판정', why: 'x' },
+      ...(cr ? [{ step: 'chairman', user_id: UID.chairman, name: '대표', why: '규칙이 대표까지 올린다' }] : [])]
+    await db.exec(`alter table decisions disable trigger decisions_approval_line_trigger;
+      insert into decisions (decision_id, business_id, title, template_key, form, attachment_url, created_by, status, lead_status, chairman_required, approval_line)
+        values ('${id}', 'biz_dy', '요청 ${id}', '${tpl}', '${form}'::jsonb, 'https://x/a', '${S.req}', 'Open', 'pending', ${cr}, '${JSON.stringify(line)}'::jsonb);
+      alter table decisions enable trigger decisions_approval_line_trigger;`)
+  }
+  void request
+  await legacy('dec_62a', 'expense', small, false)
+  await legacy('dec_62b', 'expense', big, true)
+  await legacy('dec_62c', 'leave', '{"starts_on":"2026-10-01","ends_on":"2026-10-02"}', false)
   const row = async (id: string) =>
     (await db.query<{ status: string; lead_status: string; kind: string | null; cr: boolean }>(
       `select status::text, lead_status, decided_by_kind as kind, chairman_required as cr from decisions where decision_id = '${id}'`,
@@ -938,22 +950,28 @@ async function staffHome(db: Db, as: As) {
   // 리뷰 C2 — 처음부터 «승인됨»으로 넣어도 Open으로 들어온다.
   await commitAs(S.req, `insert into decisions (decision_id, business_id, title, template_key, form, attachment_url, created_by, status, decided_by_kind)
     values ('dec_62e', 'biz_dy', '위조', 'expense', '${small}'::jsonb, 'https://x/a', '${S.req}', 'Approved', 'chairman') returning decision_id as v`)
-  assert.deepEqual(await row('dec_62e'), { status: 'Open', lead_status: 'pending', kind: null, cr: false }, '0042: 기안자가 승인된 결재를 넣는다')
+  // 0059 — 새로 들어오는 결재는 단계 결재다(팀장 단계 없음). 생산직원은 상사가 없어 대표 한 칸.
+  assert.deepEqual(await row('dec_62e'), { status: 'Open', lead_status: null, kind: null, cr: true }, '0042/0059: 기안자가 승인된 결재를 넣는다')
+  await legacy('dec_62f', 'expense', small, false)
   // 리뷰 C1 — CEO(can_approve)는 팀장 대기 · 회장 큐를 건너뛰어 닫지 못한다. dy CEO를 잠시 만든다.
   await db.exec(`insert into auth.users values ('00000000-0000-0000-0000-0000000d6a03', 'dc@x');
     insert into user_profiles (user_id, role, display_name, max_security_class) values ('00000000-0000-0000-0000-0000000d6a03', 'BusinessCEO', 'dyceo', 'Restricted');
     insert into user_business_access values ('00000000-0000-0000-0000-0000000d6a03', 'biz_dy');
-    update decisions set created_by = '00000000-0000-0000-0000-0000000d6a03' where decision_id in ('dec_62e');`)
+    update decisions set created_by = '00000000-0000-0000-0000-0000000d6a03' where decision_id in ('dec_62f');`)
   await assert.rejects(
-    as('00000000-0000-0000-0000-0000000d6a03', `update decisions set status = 'Approved' where decision_id = 'dec_62e'`),
+    as('00000000-0000-0000-0000-0000000d6a03', `update decisions set status = 'Approved' where decision_id = 'dec_62f'`),
     /lead_step_pending/, '0042: CEO가 팀장 대기 중인 요청을 건너뛰어 닫는다',
+  )
+  await assert.rejects(
+    as(UID.chairman, `update decisions set status = 'Approved' where decision_id = 'dec_62e'`),
+    /approval_use_steps/, '0059: 대표도 단계 결재를 approval_decide() 밖에서 닫는다',
   )
   await db.exec(`update decisions set created_by = '00000000-0000-0000-0000-0000000d6a03' where decision_id = 'dec_62b'`)
   await assert.rejects(
     as('00000000-0000-0000-0000-0000000d6a03', `update decisions set status = 'Approved' where decision_id = 'dec_62b'`),
     /chairman_required/, '0042: CEO가 회장 큐의 요청을 닫는다',
   )
-  await db.exec(`update decisions set created_by = '${S.req}' where decision_id in ('dec_62b', 'dec_62e');
+  await db.exec(`update decisions set created_by = '${S.req}' where decision_id in ('dec_62b', 'dec_62f');
     update user_profiles set revoked_at = now() where user_id = '00000000-0000-0000-0000-0000000d6a03';`)
 
   await assert.rejects(
@@ -963,7 +981,7 @@ async function staffHome(db: Db, as: As) {
   )
 
   // 회장 확인 요청(규칙과 상관없이 회장에게) + 취합.
-  await commitAs(S.req, request('dec_62d', 'expense', small))
+  await legacy('dec_62d', 'expense', small, false)
   assert.equal(await commitAs(S.lead, `select lead_decide('dec_62d', true, true) as v`), 'to_chairman', '0042: 회장 확인 요청이 회장 큐로 가지 않는다')
   const bundle = await commitAs(S.lead, `select lead_bundle(array['dec_62b', 'dec_62d'], '생산팀 설비 · 공구 묶음') as v`)
   assert.ok(bundle, '0042: 회장 기안(취합)이 서지 않는다')
@@ -1370,6 +1388,7 @@ async function groupware(db: Db, as: As) {
   await db.exec(`insert into user_module_access (user_id, module, can_write) values ('${UID.member}', '/chairman/decisions', true)
     on conflict (user_id, module) do update set can_write = true`) // 0054: 새 프로필에는 트리거가 이미 붙였다
   // 화면이 보낸 결재선(«위조» 한 칸)은 트리거가 버리고 새로 적어야 한다.
+  // 0059부터 결재선은 조직도 상사 사슬이다 — member의 직속 상사는 cfo(teams.lead_user_id = ceo는 보지 않는다).
   const draft = (tpl: string, form: string) =>
     `insert into decisions (decision_id, business_id, title, template_key, form, attachment_url, approval_line)
        values ('dec_gw', 'biz_dy', '결재', '${tpl}', '${form}'::jsonb, 'https://x/att',
@@ -1377,31 +1396,32 @@ async function groupware(db: Db, as: As) {
   assert.equal(
     await as(UID.member,
       `select count(*)::int from decisions where decision_id = 'dec_gw'
-         and approval_line->0->>'user_id' = '${UID.ceo}' and approval_line->2->>'step' = 'chairman'
-         and jsonb_array_length(approval_line) = 3`,
+         and approval_line->0->>'user_id' = '${UID.cfo}' and approval_line @> '[{"step":"chairman"}]'
+         and not approval_line @> '[{"name":"위조"}]'`,
       draft('expense', '{"amount":"6,000,000","purpose":"장비","spent_on":"2026-09-28"}')),
-    1, '0038: 600만 원 지출이 팀장 → 규칙 → 회장으로 서지 않는다(또는 위조한 결재선이 남았다)',
+    1, '0038/0059: 600만 원 지출이 상사 → 대표로 서지 않는다(또는 위조한 결재선이 남았다)',
   )
   assert.equal(
     await as(UID.member,
-      `select count(*)::int from decisions where decision_id = 'dec_gw' and jsonb_array_length(approval_line) = 2`,
+      `select count(*)::int from decisions where decision_id = 'dec_gw' and jsonb_array_length(approval_line) = 2
+         and not approval_line @> '[{"step":"chairman"}]'`,
       draft('expense', '{"amount":"100000","purpose":"다과","spent_on":"2026-09-28"}')),
-    1, '0038: 10만 원 지출이 회장까지 간다(기준 500만 원)',
+    1, '0038/0059: 10만 원 지출이 대표까지 간다(기준 500만 원 · 직속 상사 종결)',
   )
   assert.equal(
     await as(UID.member,
-      `select count(*)::int from decisions where decision_id = 'dec_gw' and approval_line->2->>'step' = 'chairman'`,
+      `select count(*)::int from decisions where decision_id = 'dec_gw' and approval_line @> '[{"step":"chairman"}]'`,
       draft('contract', '{"counterparty":"A사","amount":"1","term":"1년","summary":"x"}')),
-    1, '0038: 계약이 금액과 상관없이 회장까지 가지 않는다',
+    1, '0038/0059: 계약이 금액과 상관없이 대표까지 가지 않는다',
   )
   await assert.rejects(
     as(UID.member, `select 1`, draft('expense', '{"amount":"1000"}')),
     /approval_form_missing:purpose/, '0038: 필수 항목이 빈 지출이 들어간다',
   )
-  // 화면 미리보기(lib/approval-line.ts)가 트리거와 **같은 결재선**을 그리는가 — 문장(why)까지.
-  // 갈라지면 미리보기가 «회장까지 안 간다»고 말하는데 실제로는 가는 결재가 생긴다.
+  // 화면 미리보기(lib/approval-chain.ts)가 트리거와 **같은 결재선**을 그리는가 — 문장(why)까지.
   const tplRows = await db.query<ApprovalTemplate>(`select * from approval_templates`)
   const templatesByKey = new Map(tplRows.rows.map((t) => [t.template_key, { ...t, chairman_over: t.chairman_over === null ? null : Number(t.chairman_over) }]))
+  const cfoReportsToChair = (await db.query<{ r: string | null }>(`select reports_to::text as r from user_profiles where user_id = '${UID.cfo}'`)).rows[0].r
   for (const [tpl, form] of [
     ['expense', { amount: '6,000,000', purpose: '장비', spent_on: '2026-09-28' }],
     ['expense', { amount: '100000', purpose: '다과', spent_on: '2026-09-28' }],
@@ -1417,27 +1437,32 @@ async function groupware(db: Db, as: As) {
     } finally {
       await db.exec('rollback')
     }
-    const preview = approvalLine(templatesByKey.get(tpl)!, { ...form }, { user_id: UID.ceo, display_name: 'ceo', via: 'team_lead' })
+    // cfo(GroupCFO)의 상사가 대표이거나 없으면 사슬은 cfo 한 사람이다.
+    assert.ok(cfoReportsToChair === null || cfoReportsToChair === UID.chairman, '0059 전제: cfo의 상사가 대표 · 없음이 아니다')
+    const preview = chainLine(templatesByKey.get(tpl)!, { ...form }, [{ seq: 1, user_id: UID.cfo, display_name: 'cfo' }])
     assert.deepEqual(
       preview.map((s) => [s.step, s.why]),
       dbLine.map((s) => [s.step, s.why]),
-      `0038: 결재선 미리보기와 트리거가 갈라졌다(${tpl} ${JSON.stringify(form)})`,
+      `0038/0059: 결재선 미리보기와 트리거가 갈라졌다(${tpl} ${JSON.stringify(form)})`,
     )
   }
 
+  // 0059 — 기안자 member의 결재(단계 결재)는 approval_decide()만 상태를 바꾼다. 결재선은 그대로 얼어 있다.
   await db.exec(`
     insert into decisions (decision_id, business_id, title, template_key, form, attachment_url, created_by)
-      values ('dec_gw2', 'biz_dy', '결재', 'leave', '{"starts_on":"2026-10-01","ends_on":"2026-10-02"}', null, '${UID.chairman}');
+      values ('dec_gw2', 'biz_dy', '결재', 'leave', '{"starts_on":"2026-10-01","ends_on":"2026-10-02"}', null, '${UID.member}');
   `)
   await assert.rejects(
     as(UID.chairman, `update decisions set approval_line = '[]' where decision_id = 'dec_gw2'`),
     /approval_line_frozen/, '0038: 결재선이 나중에 고쳐진다',
   )
-  assert.equal(
-    await as(UID.chairman, `update decisions set status = 'Approved' where decision_id = 'dec_gw2'`),
-    1, '0038: 결재선이 얼어 있어도 결정 기록은 되어야 한다',
+  await assert.rejects(
+    as(UID.chairman, `update decisions set status = 'Approved' where decision_id = 'dec_gw2'`),
+    /approval_use_steps/, '0059: 단계 결재가 approval_decide() 밖에서 닫힌다',
   )
   await db.exec(`
+    delete from approval_steps where decision_id = 'dec_gw2';
+    delete from notifications where link = '/approvals?id=dec_gw2';
     delete from decisions where decision_id = 'dec_gw2';
     delete from user_module_access where user_id = '${UID.member}' and module = '/chairman/decisions';
     update user_profiles set team_id = null, reports_to = null where user_id = '${UID.member}';
@@ -4473,7 +4498,9 @@ const AS = {
 
 async function approvalStaff() {
   const db = new PGlite({ extensions: { pg_trgm } })
-  await applyAll(db)
+  // 0054의 규칙(팀장 한 칸 · «기록 완료»)은 0059가 단계 결재로 바꿨다 — 이 검사는 0055까지의 DB에서 그때의 약속을 잰다.
+  // 0059 뒤의 같은 약속(비승인권자 insert Open · 처리자 위조 금지 · 금액 모양)은 approvalChain()이 다시 잰다.
+  await applyAll(db, '0055_staff_admin.sql')
   await db.exec(`
     grant usage on schema public, auth to authenticated, anon;
     grant select, insert, update, delete on all tables in schema public to authenticated;
@@ -5073,6 +5100,312 @@ async function staffAdmin() {
   await db.close()
 }
 
+/**
+ * 0059 단계 결재 — 조직도 상사 사슬 · 차례대로 · 반려 사유 · 재상신 · 끝난 결재 얼림 · 대표 한 번에 승인 · 결재 대장 열람.
+ * 회장 지시의 다섯 거부(차례 건너뛰기 · 남의 차례 · 끝난 결재 수정 · 결재선 위조 · 다른 회사 결재)를 잰다.
+ * dummy 거울(lib/approval-chain.ts bossChain · chainLine)이 DB와 같은 결재선을 내는지도 같이 잰다.
+ */
+const AC = {
+  chair: '00000000-0000-0000-0000-0000000059a1',
+  ceo: '00000000-0000-0000-0000-0000000059a2', // DY BusinessCEO, 상사 = 대표
+  lead: '00000000-0000-0000-0000-0000000059a3', // DY TeamLead, 상사 = 대표
+  emp1: '00000000-0000-0000-0000-0000000059a4', // 김병훈 자리 — 상사 = 대표
+  emp2: '00000000-0000-0000-0000-0000000059a5', // 상사 = lead
+  mid: '00000000-0000-0000-0000-0000000059a6', // Executive, 상사 = lead
+  emp3: '00000000-0000-0000-0000-0000000059a7', // 상사 = mid → lead → 대표
+  gone: '00000000-0000-0000-0000-0000000059a8', // 떠난 사람, 상사 = lead
+  emp4: '00000000-0000-0000-0000-0000000059a9', // 상사 = gone(떠남) → lead
+  vboss: '00000000-0000-0000-0000-0000000059aa', // VANA만 보는 TeamLead, 상사 = lead
+  emp5: '00000000-0000-0000-0000-0000000059ab', // 상사 = vboss(DY 접근 없음) → lead
+  vana: '00000000-0000-0000-0000-0000000059ac', // VANA 직원
+  clerk: '00000000-0000-0000-0000-0000000059ad', // DY 경영지원 — «DY 결재 대장 열람»
+  nobody: '00000000-0000-0000-0000-0000000059ae', // DY 직원, 권한 없음
+  cyc1: '00000000-0000-0000-0000-0000000059af', // cyc1 → cyc2 → 대표 (순환 reports_to는 0025 트리거가 막는다)
+  cyc2: '00000000-0000-0000-0000-0000000059b0',
+  agent: '00000000-0000-0000-0000-0000000059b1',
+}
+
+async function approvalChain() {
+  const db = new PGlite({ extensions: { pg_trgm } })
+  await applyAll(db)
+  await db.exec(`
+    grant usage on schema public, auth to authenticated, anon;
+    grant select, insert, update, delete on all tables in schema public to authenticated;
+    grant usage, select on all sequences in schema public to authenticated;
+    revoke all on table approval_steps from authenticated;
+    grant select on table approval_steps to authenticated;
+    insert into auth.users select id::uuid, id || '@x' from unnest(array[${Object.values(AC).map((u) => `'${u}'`).join(', ')}]) id;
+    insert into user_profiles (user_id, role, display_name, max_security_class, team_id) values
+      ('${AC.chair}', 'Chairman', '회장님', 'Vault', null),
+      ('${AC.ceo}', 'BusinessCEO', 'DY 대표이사', 'Restricted', null),
+      ('${AC.lead}', 'TeamLead', '팀장', 'Normal', 'team_dy_support'),
+      ('${AC.emp1}', 'Member', '김병훈', 'Normal', 'team_dy_support'),
+      ('${AC.emp2}', 'Member', '사원2', 'Normal', 'team_dy_support'),
+      ('${AC.mid}', 'Executive', '임원', 'Normal', null),
+      ('${AC.emp3}', 'Member', '사원3', 'Normal', null),
+      ('${AC.gone}', 'Member', '떠난 상사', 'Normal', null),
+      ('${AC.emp4}', 'Member', '사원4', 'Normal', null),
+      ('${AC.vboss}', 'TeamLead', 'VANA 팀장', 'Normal', null),
+      ('${AC.emp5}', 'Member', '사원5', 'Normal', null),
+      ('${AC.vana}', 'Member', 'VANA 직원', 'Normal', null),
+      ('${AC.clerk}', 'Member', '경영지원', 'Normal', 'team_dy_support'),
+      ('${AC.nobody}', 'Member', '권한 없음', 'Normal', null),
+      ('${AC.cyc1}', 'Member', '순환1', 'Normal', null),
+      ('${AC.cyc2}', 'Member', '순환2', 'Normal', null),
+      ('${AC.agent}', 'AIAgent', 'ai', 'Restricted', null);
+    update user_profiles set reports_to = '${AC.chair}' where user_id in ('${AC.ceo}', '${AC.lead}', '${AC.emp1}');
+    update user_profiles set reports_to = '${AC.lead}' where user_id in ('${AC.emp2}', '${AC.mid}', '${AC.gone}', '${AC.vboss}');
+    update user_profiles set reports_to = '${AC.mid}' where user_id = '${AC.emp3}';
+    update user_profiles set reports_to = '${AC.gone}' where user_id = '${AC.emp4}';
+    update user_profiles set reports_to = '${AC.vboss}' where user_id = '${AC.emp5}';
+    update user_profiles set reports_to = '${AC.cyc2}' where user_id = '${AC.cyc1}';
+    update user_profiles set reports_to = '${AC.chair}' where user_id = '${AC.cyc2}'; -- 순환은 0025 트리거가 막는다
+    update user_profiles set revoked_at = now(), status = 'left' where user_id = '${AC.gone}';
+    insert into user_business_access
+      select u::uuid, 'biz_dy' from unnest(array['${AC.ceo}', '${AC.lead}', '${AC.emp1}', '${AC.emp2}', '${AC.mid}', '${AC.emp3}', '${AC.gone}',
+        '${AC.emp4}', '${AC.emp5}', '${AC.clerk}', '${AC.nobody}', '${AC.cyc1}', '${AC.cyc2}']) u;
+    insert into user_business_access values ('${AC.vboss}', 'biz_vana'), ('${AC.vana}', 'biz_vana');
+    insert into user_module_access (user_id, module, can_write, can_approve) values ('${AC.clerk}', '/approvals/ledger/biz_dy', false, false);
+    -- 운영 양식은 첨부 칸이 없다(10-06 회장이 저장 — attachment_required false).
+    update approval_templates set attachment_required = false;
+  `)
+  const owner = async <T,>(sql: string) => (await db.query<T>(sql)).rows
+  const as = async <T,>(uid: string, sql: string, setup = '') => {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
+    try {
+      if (setup) await db.exec(setup)
+      return (await db.query<T>(sql)).rows
+    } finally {
+      await db.exec('rollback')
+    }
+  }
+  const commitAs = async <T,>(uid: string, sql: string) => {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
+    try {
+      const r = (await db.query<T>(sql)).rows
+      await db.exec('commit')
+      return r
+    } catch (e) {
+      await db.exec('rollback')
+      throw e
+    }
+  }
+  const submit = (id: string, by: string, tpl: 'expense' | 'leave' | 'contract', amount = '300000', resubmitOf = '') => {
+    const form = tpl === 'expense' ? `{"amount":"${amount}","purpose":"비품","spent_on":"2026-10-07"}`
+      : tpl === 'leave' ? '{"starts_on":"2026-10-08","ends_on":"2026-10-09"}'
+      : `{"counterparty":"A사","amount":"${amount}","term":"1년","summary":"x"}`
+    const biz = by === AC.vana ? 'biz_vana' : 'biz_dy'
+    return commitAs(by, `insert into decisions (decision_id, business_id, title, template_key, form, created_by${resubmitOf ? ', resubmit_of' : ''})
+      values ('${id}', '${biz}', '${tpl} ${id}', '${tpl}', '${form}'::jsonb, '${by}'${resubmitOf ? `, '${resubmitOf}'` : ''})`)
+  }
+  const decide = (uid: string, id: string, approve: boolean, note: string | null = null) =>
+    commitAs<{ v: string }>(uid, `select approval_decide('${id}', ${approve}, ${note === null ? 'null' : `'${note}'`}) as v`).then((r) => r[0].v)
+  type St = { seq: number; who: string; status: string; chair: boolean }
+  const steps = (id: string) => owner<St>(`select seq, approver_user_id::text as who, status, is_chairman as chair from approval_steps where decision_id = '${id}' order by seq`)
+  type Dec = { status: string; by: string | null; kind: string | null; cr: boolean; chain: boolean; lead: string | null }
+  const dec = async (id: string) => (await owner<Dec>(`select status::text as status, decided_by::text as by, decided_by_kind as kind,
+     chairman_required as cr, step_chain as chain, lead_status as lead from decisions where decision_id = '${id}'`))[0]
+
+  // ── 시나리오 1: 사원(상사 = 대표) 30만 → 대표 승인 대기(«기록 완료» 폐지) ──
+  await submit('dec_59a', AC.emp1, 'expense', '300000')
+  assert.deepEqual(await dec('dec_59a'), { status: 'Open', by: null, kind: null, cr: true, chain: true, lead: null }, '0059: 상사가 대표인 직원의 30만 지출이 대표 대기가 아니다(«기록 완료»가 남았다)')
+  assert.deepEqual(await steps('dec_59a'), [{ seq: 1, who: AC.chair, status: 'pending', chair: true }], '0059: 30만 지출의 단계가 대표 한 칸이 아니다')
+  const [la] = await owner<{ line: ApprovalStep[] }>(`select approval_line as line from decisions where decision_id = 'dec_59a'`)
+  assert.deepEqual(la.line.map((s) => [s.step, s.why]), [['chairman', '직속 상사(대표)'], ['rule', '금액 300000원 < 기준 5000000원 → 직속 상사 승인으로 종결']], '0059: 결재선 문장이 다르다')
+  assert.ok(!JSON.stringify(la.line).includes('회장'), '0059: 결재선에 «회장»이 적혔다')
+  // 대표에게는 건마다 알림을 보내지 않는다(아침 요약 · 승인함).
+  assert.deepEqual(await owner(`select 1 from notifications where user_id = '${AC.chair}' and link like '%dec_59a'`), [], '0059: 대표에게 건마다 알림이 간다')
+  const [snap] = await owner<{ n: string; t: string; tn: string }>(`select requester_name as n, requester_team_id as t, requester_team_name as tn from decisions where decision_id = 'dec_59a'`)
+  assert.deepEqual(snap, { n: '김병훈', t: 'team_dy_support', tn: '경영지원' }, '0059: 올린 사람 스냅숏이 비었다')
+
+  // ── 시나리오 2: 사원(상사 = 팀장) 30만 → 팀장 승인으로 종결 ──
+  await submit('dec_59b', AC.emp2, 'expense', '300000')
+  assert.deepEqual(await steps('dec_59b'), [{ seq: 1, who: AC.lead, status: 'pending', chair: false }], '0059: 30만 지출이 직속 상사 한 칸이 아니다')
+  assert.equal((await owner(`select 1 from notifications where user_id = '${AC.lead}' and link = '/approvals?id=dec_59b' and title like '결재 차례%'`)).length, 1, '0059: 첫 결재자에게 차례 알림이 없다')
+  await assert.rejects(decide(AC.chair, 'dec_59b', true), /approval_not_your_turn/, '0059: 대표가 살아 있는 팀장의 차례를 처리한다(남의 차례)')
+  await assert.rejects(decide(AC.emp1, 'dec_59b', true), /approval_not_found|approval_not_your_turn/, '0059: 결재선 밖 사람이 처리한다')
+  assert.equal(await decide(AC.lead, 'dec_59b', true, '확인'), 'approved', '0059: 팀장 승인으로 종결되지 않는다')
+  assert.deepEqual(await dec('dec_59b'), { status: 'Approved', by: AC.lead, kind: 'ceo', cr: false, chain: true, lead: null }, '0059: 팀장 종결의 처리자 · 종류가 다르다')
+  assert.equal((await owner(`select 1 from notifications where user_id = '${AC.emp2}' and title like '결재 최종 승인%'`)).length, 1, '0059: 올린 사람에게 최종 승인 알림이 없다')
+  await assert.rejects(decide(AC.lead, 'dec_59b', true), /approval_not_pending/, '0059: 끝난 결재를 또 처리한다')
+
+  // ── 시나리오 3: 600만 → 팀장 → 대표 (차례 건너뛰기 거부) ──
+  await submit('dec_59c', AC.emp2, 'expense', '6,000,000')
+  assert.deepEqual((await steps('dec_59c')).map((s) => [s.who, s.status]), [[AC.lead, 'pending'], [AC.chair, 'waiting']], '0059: 600만 지출의 단계가 팀장 → 대표가 아니다')
+  await assert.rejects(decide(AC.chair, 'dec_59c', true), /approval_not_your_turn/, '0059: 대표가 앞 단계(팀장) 전에 승인한다(차례 건너뛰기)')
+  assert.equal(await decide(AC.lead, 'dec_59c', true), 'next', '0059: 팀장 승인 뒤 대표 차례로 넘어가지 않는다')
+  assert.deepEqual((await steps('dec_59c')).map((s) => s.status), ['approved', 'pending'])
+  assert.equal(await decide(AC.chair, 'dec_59c', true), 'approved', '0059: 대표 최종 승인이 안 된다')
+  assert.deepEqual(await dec('dec_59c'), { status: 'Approved', by: AC.chair, kind: 'chairman', cr: true, chain: true, lead: null })
+
+  // ── 사슬: 여러 단계 · 떠난 상사 건너뜀 · 회사 접근 없는 상사 건너뜀 · 순환 · 계약은 금액 무관 ──
+  await submit('dec_59d', AC.emp3, 'expense', '7000000')
+  assert.deepEqual((await steps('dec_59d')).map((s) => s.who), [AC.mid, AC.lead, AC.chair], '0059: 사슬이 임원 → 팀장 → 대표가 아니다')
+  await assert.rejects(decide(AC.lead, 'dec_59d', true), /approval_not_your_turn/, '0059: 2단계 결재자가 1단계보다 먼저 처리한다')
+  await submit('dec_59e', AC.emp4, 'expense', '300000')
+  assert.deepEqual((await steps('dec_59e')).map((s) => s.who), [AC.lead], '0059: 떠난 상사를 건너뛰지 않는다')
+  await submit('dec_59f', AC.emp5, 'contract', '1')
+  assert.deepEqual((await steps('dec_59f')).map((s) => s.who), [AC.lead, AC.chair], '0059: DY 접근이 없는 상사를 건너뛰지 않는다(또는 계약이 대표까지 안 간다)')
+  await submit('dec_59g', AC.cyc1, 'contract', '1')
+  assert.deepEqual((await steps('dec_59g')).map((s) => s.who), [AC.cyc2, AC.chair], '0059: 상사 → 대표 사슬이 아니다')
+  await submit('dec_59h', AC.ceo, 'leave')
+  assert.deepEqual((await steps('dec_59h')).map((s) => s.who), [AC.chair], '0059: CEO의 휴가가 대표 한 칸이 아니다')
+  // 대표 본인이 올린 양식 결재는 대표 결정으로 바로 닫힌다.
+  await submit('dec_59i', AC.chair, 'leave')
+  assert.deepEqual(await dec('dec_59i'), { status: 'Approved', by: AC.chair, kind: 'chairman', cr: false, chain: true, lead: null }, '0059: 대표 본인 결재가 바로 닫히지 않는다')
+  assert.deepEqual(await steps('dec_59i'), [])
+
+  // dummy 거울 — bossChain · chainLine이 트리거와 같은 결재선(문장까지).
+  const people = await owner<{ user_id: string; display_name: string; role: Role; reports_to: string | null; revoked_at: string | null; status: string }>(
+    `select user_id::text, display_name, role::text as role, reports_to::text, revoked_at::text, status from user_profiles`)
+  const access = await owner<{ u: string; b: string }>(`select user_id::text as u, business_id as b from user_business_access`)
+  const hasBiz = (biz: string) => (uid: string) => {
+    const p = people.find((x) => x.user_id === uid)
+    return !!p && (p.role === 'Chairman' || p.role === 'GroupCFO' || access.some((a) => a.u === uid && a.b === biz))
+  }
+  const tpls = new Map((await owner<ApprovalTemplate>(`select * from approval_templates`)).map((t) => [t.template_key, { ...t, chairman_over: t.chairman_over === null ? null : Number(t.chairman_over) }]))
+  const mirrorCases: [string, string, ApprovalTemplate['template_key'], Record<string, string>][] = [
+    ['dec_59a', AC.emp1, 'expense', { amount: '300000', purpose: '비품', spent_on: '2026-10-07' }],
+    ['dec_59c', AC.emp2, 'expense', { amount: '6,000,000', purpose: '비품', spent_on: '2026-10-07' }],
+    ['dec_59d', AC.emp3, 'expense', { amount: '7000000', purpose: '비품', spent_on: '2026-10-07' }],
+    ['dec_59e', AC.emp4, 'expense', { amount: '300000', purpose: '비품', spent_on: '2026-10-07' }],
+    ['dec_59f', AC.emp5, 'contract', { counterparty: 'A사', amount: '1', term: '1년', summary: 'x' }],
+    ['dec_59g', AC.cyc1, 'contract', { counterparty: 'A사', amount: '1', term: '1년', summary: 'x' }],
+    ['dec_59h', AC.ceo, 'leave', { starts_on: '2026-10-08', ends_on: '2026-10-09' }],
+  ]
+  for (const [id, who, tpl, form] of mirrorCases) {
+    const [row] = await owner<{ line: ApprovalStep[] }>(`select approval_line as line from decisions where decision_id = '${id}'`)
+    const me = people.find((p) => p.user_id === who)!
+    const mirror = chainLine(tpls.get(tpl)!, form, bossChain(who, people, hasBiz('biz_dy')), { user_id: AC.chair, name: '대표' }, me.reports_to === AC.chair)
+    assert.deepEqual(mirror.map((s) => [s.step, s.user_id, s.why]), row.line.map((s) => [s.step, s.user_id, s.why]), `0059: dummy 거울이 트리거와 다른 결재선을 낸다(${id})`)
+  }
+  // 미리보기 RPC는 세션 본인의 사슬만.
+  assert.deepEqual((await as<{ u: string }>(AC.emp3, `select user_id::text as u from my_approval_chain('biz_dy') order by seq`)).map((r) => r.u), [AC.mid, AC.lead], '0059: 미리보기 사슬이 다르다')
+  assert.deepEqual(await as(AC.vana, `select 1 from my_approval_chain('biz_dy')`), [], '0059: 다른 회사 미리보기가 사슬을 낸다')
+
+  // ── 반려: 사유 필수 · 즉시 종결 · 남은 칸 취소 · 알림 · 재상신 ──
+  await assert.rejects(decide(AC.mid, 'dec_59d', false), /approval_reason_required/, '0059: 사유 없는 반려가 된다')
+  await assert.rejects(decide(AC.mid, 'dec_59d', false, '   '), /approval_reason_required/, '0059: 빈칸 사유 반려가 된다')
+  assert.equal(await decide(AC.mid, 'dec_59d', false, '견적 두 곳 더'), 'rejected')
+  assert.deepEqual((await steps('dec_59d')).map((s) => s.status), ['rejected', 'cancelled', 'cancelled'], '0059: 반려 뒤 남은 칸이 취소되지 않는다')
+  assert.deepEqual((await dec('dec_59d')).status, 'Rejected')
+  assert.equal((await owner(`select 1 from notifications where user_id = '${AC.emp3}' and title like '결재 반려%' and body like '%견적 두 곳 더%'`)).length, 1, '0059: 반려 알림(사유 포함)이 없다')
+  await assert.rejects(submit('dec_59x', AC.emp2, 'expense', '100', 'dec_59d'), /approval_resubmit_invalid/, '0059: 남의 반려 결재를 재상신한다')
+  await assert.rejects(submit('dec_59x', AC.emp2, 'expense', '100', 'dec_59b'), /approval_resubmit_invalid/, '0059: 승인된 결재를 재상신한다')
+  await assert.rejects(submit('dec_59x', AC.emp3, 'leave', '', 'dec_59d'), /approval_resubmit_invalid/, '0059: 다른 양식으로 재상신한다')
+  await submit('dec_59d2', AC.emp3, 'expense', '7000000', 'dec_59d')
+  assert.deepEqual((await steps('dec_59d2')).map((s) => [s.who, s.status]), [[AC.mid, 'pending'], [AC.lead, 'waiting'], [AC.chair, 'waiting']], '0059: 재상신이 새 결재로 서지 않는다')
+  await assert.rejects(submit('dec_59d3', AC.emp3, 'expense', '7000000', 'dec_59d'), /decisions_resubmit_once|duplicate key/, '0059: 같은 원본을 두 번 재상신한다')
+
+  // ── 끝난 결재 수정 · 결재선 위조 ──
+  await assert.rejects(as(AC.chair, `update decisions set title = '고침' where decision_id = 'dec_59b'`), /approval_use_steps/, '0059: 끝난 단계 결재의 제목을 고친다')
+  await assert.rejects(as(AC.chair, `update decisions set status = 'Rejected' where decision_id = 'dec_59c'`), /approval_use_steps/, '0059: 끝난 단계 결재의 상태를 바꾼다')
+  await assert.rejects(as(AC.chair, `update decisions set form = '{"amount":"1"}' where decision_id = 'dec_59c'`), /approval_line_frozen/, '0059: 끝난 결재의 양식 값을 고친다')
+  await assert.rejects(as(AC.chair, `update decisions set title = '고침' where decision_id = 'dec_59a'`), /approval_use_steps/, '0059: 열린 단계 결재의 제목을 고친다')
+  // 0059 전에 끝난 양식 결재(«기록 완료»)도 세션은 못 고친다.
+  await db.exec(`alter table decisions disable trigger decisions_approval_line_trigger;
+    insert into decisions (decision_id, business_id, title, template_key, form, created_by, status, decided_by_kind, lead_status, chairman_required, approval_line)
+      values ('dec_59old', 'biz_dy', '옛 기록 완료', 'expense', '{"amount":"400000","purpose":"x","spent_on":"2026-10-06"}', '${AC.emp1}', 'Approved', 'rule', 'skipped', false, '[]');
+    alter table decisions enable trigger decisions_approval_line_trigger;`)
+  // (CEO는 이 결재를 읽지 못해 update가 0행이다 — 읽는 대표로 잰다.)
+  await assert.rejects(as(AC.chair, `update decisions set title = '고침' where decision_id = 'dec_59old'`), /approval_closed_frozen/, '0059: 0059 전에 끝난 결재의 제목을 고친다')
+  await assert.rejects(as(AC.chair, `update decisions set status = 'Rejected' where decision_id = 'dec_59old'`), /approval_closed_frozen/, '0059: 0059 전에 끝난 결재를 대표가 뒤집는다')
+  // 결재선 위조 — 화면이 보낸 approval_line · created_by · step_chain은 버린다. approval_steps는 아무도 못 쓴다.
+  await commitAs(AC.emp2, `insert into decisions (decision_id, business_id, title, template_key, form, created_by, approval_line, step_chain)
+    values ('dec_59j', 'biz_dy', '위조', 'expense', '{"amount":"6000000","purpose":"x","spent_on":"2026-10-07"}', '${AC.emp1}',
+            '[{"step":"boss","user_id":"${AC.emp2}","name":"나","why":"x"}]', false)`)
+  const [j] = await owner<{ by: string; chain: boolean; line: ApprovalStep[] }>(`select created_by::text as by, step_chain as chain, approval_line as line from decisions where decision_id = 'dec_59j'`)
+  assert.deepEqual([j.by, j.chain, j.line.filter((s) => s.step !== 'rule').map((s) => s.user_id)], [AC.emp2, true, [AC.lead, AC.chair]], '0059: 위조한 결재선 · 올린 사람이 남았다')
+  for (const sql of [
+    `insert into approval_steps (decision_id, seq, approver_user_id, approver_name, why, status) values ('dec_59j', 9, '${AC.emp2}', '나', 'x', 'pending')`,
+    `update approval_steps set status = 'approved', decided_at = now() where decision_id = 'dec_59j' and seq = 1`,
+    `update approval_steps set approver_user_id = '${AC.emp2}' where decision_id = 'dec_59j'`,
+    `delete from approval_steps where decision_id = 'dec_59j'`,
+  ]) {
+    for (const who of [AC.emp2, AC.lead, AC.chair]) {
+      await assert.rejects(as(who, sql), /permission denied/, `0059: 결재 단계를 직접 쓴다(${who}: ${sql.slice(0, 40)})`)
+    }
+  }
+  // 기안자는 decisions update 권한이 없다(0002 decisions_decide = 승인권자) — 0행이거나 거부.
+  const selfClose = await as<{ n: number }>(AC.emp2, `with u as (update decisions set status = 'Approved' where decision_id = 'dec_59j' returning 1) select count(*)::int as n from u`).catch(() => [{ n: 0 }])
+  assert.deepEqual(selfClose, [{ n: 0 }], '0059: 기안자가 자기 결재를 닫는다')
+  // 0054 약속 재확인 — 비승인권자의 양식 없는 insert는 Open.
+  assert.deepEqual(await as<{ s: string }>(AC.emp2, `select status::text as s from decisions where decision_id = 'dec_59k'`,
+    `insert into decisions (decision_id, business_id, title, created_by, status, decided_by_kind) values ('dec_59k', 'biz_dy', '몰래', '${AC.emp2}', 'Approved', 'chairman')`),
+    [{ s: 'Open' }], '0059: 직원이 양식 없는 결재를 «승인»으로 넣는다(0054 회귀)')
+
+  // ── 다른 회사 ──
+  await submit('dec_59v', AC.vana, 'leave')
+  await assert.rejects(decide(AC.lead, 'dec_59v', true), /approval_not_found/, '0059: DY 팀장이 VANA 결재를 처리한다')
+  await assert.rejects(decide(AC.vana, 'dec_59a', true), /approval_not_found/, '0059: VANA 직원이 DY 결재를 처리한다')
+  await assert.rejects(decide(AC.ceo, 'dec_59v', true), /approval_not_found/, '0059: DY CEO가 VANA 결재를 처리한다')
+
+  // ── 대표 «한 번에 승인» — 한 트랜잭션 · 건마다 감사 ──
+  await submit('dec_59m', AC.emp1, 'expense', '200000')
+  await submit('dec_59n', AC.emp1, 'leave')
+  await assert.rejects(commitAs(AC.chair, `select approval_decide_many(array['dec_59m', 'dec_59n', 'dec_59j'], null)`), /approval_not_your_turn:dec_59j/,
+    '0059: 한 번에 승인이 내 차례 아닌 건을 섞어도 된다(또는 어느 건인지 말하지 않는다)')
+  assert.deepEqual([(await dec('dec_59m')).status, (await dec('dec_59n')).status], ['Open', 'Open'], '0059: 한 번에 승인이 일부만 반영됐다(한 트랜잭션이 아니다)')
+  assert.deepEqual(await commitAs(AC.chair, `select approval_decide_many(array['dec_59m', 'dec_59n', 'dec_59a'], null) as n`), [{ n: 3 }])
+  assert.deepEqual([(await dec('dec_59m')).status, (await dec('dec_59n')).status, (await dec('dec_59a')).status], ['Approved', 'Approved', 'Approved'])
+  assert.equal((await owner(`select 1 from audit_log where entity_table = 'decisions' and entity_id in ('dec_59m', 'dec_59n', 'dec_59a') and action::text = 'approve' and actor_user_id = '${AC.chair}'`)).length, 3,
+    '0059: 한 번에 승인의 감사가 건마다 남지 않는다')
+  await assert.rejects(commitAs(AC.emp1, `select approval_decide_many(array['dec_59m'], null)`), /approval_not_pending/, '0059: 끝난 결재를 한 번에 승인에 섞는다')
+
+  // ── 대표 대리 — 결재자가 떠나면 대표만 그 칸을 처리한다 ──
+  await submit('dec_59p', AC.emp3, 'expense', '100000')
+  await assert.rejects(decide(AC.chair, 'dec_59p', true), /approval_not_your_turn/, '0059 전제: 살아 있는 결재자의 칸을 대표가 처리한다')
+  await owner(`update user_profiles set revoked_at = now(), status = 'left' where user_id = '${AC.mid}'`)
+  await assert.rejects(decide(AC.lead, 'dec_59p', true), /approval_not_your_turn/, '0059: 떠난 결재자의 칸을 다른 상사가 처리한다')
+  assert.equal(await decide(AC.chair, 'dec_59p', true), 'approved', '0059: 떠난 결재자의 칸을 대표가 대신 처리하지 못한다')
+  assert.equal((await owner(`select 1 from audit_log where entity_id = 'dec_59p' and note like '%대표 대리%'`)).length, 1, '0059: 대표 대리가 감사에 남지 않는다')
+  await owner(`update user_profiles set revoked_at = null, status = 'active' where user_id = '${AC.mid}'`)
+
+  // ── 결재 대장 열람 ──
+  const seen = async (uid: string) => (await as<{ id: string }>(uid, `select decision_id as id from decisions where template_key is not null and decision_id like 'dec_59%' order by 1`)).map((r) => r.id)
+  const dyAll = (await owner<{ id: string }>(`select decision_id as id from decisions where template_key is not null and business_id = 'biz_dy' and decision_id like 'dec_59%' order by 1`)).map((r) => r.id)
+  const all = (await owner<{ id: string }>(`select decision_id as id from decisions where template_key is not null and decision_id like 'dec_59%' order by 1`)).map((r) => r.id)
+  assert.deepEqual(await seen(AC.chair), all, '0059: 대표가 양식 결재 전부를 못 본다')
+  assert.deepEqual(await seen(AC.clerk), dyAll, '0059: «DY 결재 대장 열람»이 DY 양식 결재 전부를 못 본다')
+  assert.ok(!(await seen(AC.clerk)).includes('dec_59v'), '0059: DY 대장 권한이 VANA 결재를 연다')
+  assert.deepEqual(await seen(AC.nobody), [], '0059: 권한 없는 사람의 대장이 0건이 아니다')
+  assert.deepEqual(await seen(AC.vana), ['dec_59v'], '0059: VANA 직원이 남의 결재를 본다')
+  const leadSees = await seen(AC.lead)
+  assert.ok(leadSees.includes('dec_59b') && leadSees.includes('dec_59d') && !leadSees.includes('dec_59a'), `0059: 결재선에 든 팀장의 열람 범위가 다르다(${leadSees})`)
+  // emp3은 자기 것만 — 같은 회사 동료(emp2)의 결재는 못 본다.
+  const emp3Sees = await seen(AC.emp3)
+  assert.ok(emp3Sees.every((id) => ['dec_59d', 'dec_59d2', 'dec_59p'].includes(id)), `0059: 직원이 동료의 결재를 본다(${emp3Sees})`)
+  // 단계도 결재가 보이는 만큼만.
+  assert.deepEqual(await as(AC.nobody, `select 1 from approval_steps where decision_id like 'dec_59%'`), [], '0059: 권한 없는 사람이 결재 단계를 본다')
+  assert.equal((await as(AC.clerk, `select 1 from approval_steps where decision_id = 'dec_59c'`)).length, 2, '0059: 대장 권한자가 결재 단계를 못 본다')
+  // 시스템 계정은 줄이 있어도 못 쓴다. 대장 권한은 회장만 준다(0002 module_access_admin_write).
+  await owner(`insert into user_module_access (user_id, module, can_write) values ('${AC.agent}', '/approvals/ledger/biz_dy', false)`)
+  assert.deepEqual(await as(AC.agent, `select approval_ledger_grant('biz_dy') as g`), [{ g: false }], '0059: 시스템 계정이 대장 권한을 쓴다')
+  await assert.rejects(as(AC.clerk, `select 1`, `insert into user_module_access (user_id, module, can_write) values ('${AC.nobody}', '/approvals/ledger/biz_dy', false)`),
+    /row-level security/, '0059: 회장이 아닌 사람이 대장 권한을 준다')
+  await commitAs(AC.chair, `insert into user_module_access (user_id, module, can_write) values ('${AC.nobody}', '/approvals/ledger/biz_dy', false)`)
+  await owner(`select module_grant_audit('${AC.nobody}', '/approvals/ledger/biz_dy', null, '{"can_write":false}', 'x')`)
+  assert.deepEqual(await owner(`select business_id from audit_log where entity_table = 'user_module_access' and entity_id = '${AC.nobody}' order by occurred_at desc limit 1`), [{ business_id: 'biz_dy' }],
+    '0059: 대장 권한 감사 줄에 회사가 없다')
+  assert.deepEqual(await seen(AC.nobody), dyAll, '0059: 대표가 준 대장 권한이 바로 열리지 않는다')
+  // 대장 내려받기 감사.
+  await commitAs(AC.clerk, `select approval_ledger_log('biz_dy', 12, '{"period":"month"}')`)
+  assert.equal((await owner(`select 1 from audit_log where action::text = 'download' and entity_id = 'ledger' and actor_user_id = '${AC.clerk}' and business_id = 'biz_dy'`)).length, 1, '0059: 대장 내려받기 감사가 없다')
+  await assert.rejects(commitAs(AC.clerk, `select approval_ledger_log('biz_vana', 1, null)`), /approval_not_found/, '0059: 다른 회사 대장 내려받기를 기록한다')
+
+  // ── 카탈로그: force 없음 · 내부 함수 잠금 ──
+  assert.deepEqual(await owner(`select relname, relforcerowsecurity as f from pg_class where relname in ('decisions', 'approval_steps') order by 1`),
+    [{ relname: 'approval_steps', f: false }, { relname: 'decisions', f: false }], '0059: force가 새로 걸렸다(0035 함정)')
+  for (const fn of ['user_has_business(uuid, text)', 'approval_boss_chain(uuid, text)', 'approval_chairman()', 'decisions_steps_create()']) {
+    assert.deepEqual(await owner(`select has_function_privilege('authenticated', '${fn}', 'execute') as a, has_function_privilege('anon', '${fn}', 'execute') as b`),
+      [{ a: false, b: false }], `0059: 내부 함수 ${fn}가 RPC로 열렸다`)
+  }
+  for (const fn of ['approval_decide(text, boolean, text)', 'approval_decide_many(text[], text)', 'my_approval_chain(text)', 'approval_ledger_log(text, integer, jsonb)']) {
+    assert.deepEqual(await owner(`select has_function_privilege('anon', '${fn}', 'execute') as b`), [{ b: false }], `0059: ${fn}가 anon에게 열렸다`)
+  }
+  await db.close()
+}
+
 async function main() {
   const db = new PGlite({ extensions: { pg_trgm } })
   const files = await applyAll(db)
@@ -5098,6 +5431,7 @@ async function main() {
   await staffTerms()
   await approvalStaff()
   await staffAdmin()
+  await approvalChain()
   console.log(
     `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단), 0048 문서 모듈 권한(사람 × 회사 · 문서 · 폴더 쓰기 · 줄 없는 팀장 거부 · 회사 접근과 줄 둘 다 · 열람 등급 위 insert/update 차단 · 등록자는 본인 · 고치기 · 지우기는 자기 것만(회장 전부) · 주인 칸은 회장만 · 폴더는 만든 사람만 · 시스템 계정 불변 · 옛 /core/search 회귀 · 회수 감사 · hard delete 닫힘), 0049 직원 화면 용어(결재선 · 취합 제목 «회장»→«대표» 백필 — 사람 · 단계 · updated_at 그대로 · 얼림 재가동 · 새 결재선 · 감사 메모도 «대표»), 0054 첫 직원 결재(대표는 팀장 칸에 서지 않음 · 400만 «기록 완료» · 600만 대표 칸 Open · 대표 열람 · 비승인권자 insert는 Open · 새 직원/회장 되살림 «결재 올리기»(초대 이행 재부여는 PGlite 전용) · 금액 모양 · insert/update 처리자 고정 · dummy 거울), 0055 온보딩 위임(«DY 사용자 관리자» 줄 · 사원 · 팀장만 · Executive 거부 · 권한 ⊆ 관리자 · 마감 없음 · 상사 필수 · subtree 밖 상사 · 등급 · 다른 회사 · 가드 · 회장 알림 · 감사 · 가입 권한 재확인 · 남의 결재 못 봄 · 취소 · 능력 회수 · 아침 숫자 · BYPASSRLS 없는 소유자)`,
   )

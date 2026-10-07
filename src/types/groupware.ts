@@ -71,9 +71,12 @@ export interface ApprovalTemplate {
   sort_order: number
 }
 
-/** 결재선 한 칸. decisions.approval_line에 제출 순간의 값이 얼려 들어간다. */
+/**
+ * 결재선 한 칸. decisions.approval_line에 제출 순간의 값이 얼려 들어간다.
+ * 'lead'는 0059 전 결재(팀장 한 칸), 'boss'는 0059 단계 결재(상사 사슬의 한 칸).
+ */
 export interface ApprovalStep {
-  step: 'lead' | 'rule' | 'chairman'
+  step: 'lead' | 'boss' | 'rule' | 'chairman'
   user_id: UserId | null
   name: string
   /** 왜 이 칸이 섰는가(또는 비었는가) — 사람이 읽는 한 줄. */
