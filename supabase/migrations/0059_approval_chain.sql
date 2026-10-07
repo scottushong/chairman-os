@@ -120,7 +120,7 @@ grant select on table approval_steps to authenticated;
 -- =====================================================================
 -- 다른 사람이 그 회사를 볼 수 있는가 — 0002 has_business()를 «세션» 대신 «그 사람»으로.
 create or replace function user_has_business(p_user uuid, p_business text) returns boolean
-language sql stable security definer set search_path = public as $fn$
+language sql stable security definer set search_path = public, pg_temp as $fn$
   select exists (
     select 1 from user_profiles p
      where p.user_id = p_user and p.revoked_at is null and p.status = 'active'
@@ -135,7 +135,7 @@ revoke all on function user_has_business(uuid, text) from public, anon, authenti
 -- 대표를 만나면 멈춘다. 순환(잘못 걸린 reports_to)은 본 사람 목록으로 끊는다.
 create or replace function approval_boss_chain(p_user uuid, p_business text)
 returns table (seq int, user_id uuid, display_name text)
-language plpgsql stable security definer set search_path = public as $fn$
+language plpgsql stable security definer set search_path = public, pg_temp as $fn$
 declare
   v_cur uuid;
   v_seen uuid[] := array[p_user];
@@ -171,7 +171,7 @@ comment on function approval_boss_chain(uuid, text) is
 -- 결재 올리기 화면의 미리보기. 세션 본인의 사슬만, 이름과 id만.
 create or replace function my_approval_chain(p_business text)
 returns table (seq int, user_id uuid, display_name text)
-language sql stable security definer set search_path = public as $fn$
+language sql stable security definer set search_path = public, pg_temp as $fn$
   select c.seq, c.user_id, c.display_name from approval_boss_chain(auth.uid(), p_business) c
    where is_active() and has_business(p_business);
 $fn$;
@@ -181,16 +181,16 @@ grant execute on function my_approval_chain(text) to authenticated;
 
 -- 대표(결재선 마지막 칸) — 가장 먼저 만든 살아 있는 Chairman.
 create or replace function approval_chairman() returns table (user_id uuid, display_name text)
-language sql stable security definer set search_path = public as $fn$
+language sql stable security definer set search_path = public, pg_temp as $fn$
   select p.user_id, p.display_name from user_profiles p
-   where p.role::text = 'Chairman' and p.revoked_at is null order by p.created_at limit 1;
+   where p.role::text = 'Chairman' and p.revoked_at is null and p.status = 'active' order by p.created_at limit 1;
 $fn$;
 
 revoke all on function approval_chairman() from public, anon, authenticated;
 
 -- 세션이 그 결재의 결재선에 들었는가(어느 칸이든). 정책이 부른다 — approval_steps를 RLS 없이 본다(재귀 없음).
 create or replace function in_approval_chain(p_decision text) returns boolean
-language sql stable security definer set search_path = public as $fn$
+language sql stable security definer set search_path = public, pg_temp as $fn$
   select exists (select 1 from approval_steps s where s.decision_id = p_decision and s.approver_user_id = auth.uid());
 $fn$;
 
@@ -199,7 +199,7 @@ grant execute on function in_approval_chain(text) to authenticated;
 
 -- 회사별 «결재 대장 열람» 줄('/approvals/ledger/<회사>'). 사람 역할만(0047 finance_grant와 같은 규칙).
 create or replace function approval_ledger_grant(target text) returns boolean
-language sql stable security definer set search_path = public as $fn$
+language sql stable security definer set search_path = public, pg_temp as $fn$
   select target is not null and is_active()
      and auth_role()::text in ('GroupCFO', 'BusinessCEO', 'Executive', 'TeamLead', 'Member')
      and exists (select 1 from user_module_access m
@@ -216,7 +216,7 @@ comment on function approval_ledger_grant(text) is
 -- 4절. 결재선 트리거 — 0054 본문 + 단계 결재
 -- =====================================================================
 create or replace function decisions_approval_line() returns trigger
-language plpgsql security definer set search_path = public as $fn$
+language plpgsql security definer set search_path = public, pg_temp as $fn$
 declare
   v_tpl approval_templates%rowtype;
   v_amount numeric;
@@ -430,7 +430,7 @@ $fn$;
 -- 올린 순간 단계 칸을 만든다(얼린 approval_line에서). 첫 칸 = 지금 차례, 나머지 = 기다림. 첫 결재자에게 알림 —
 -- 대표에게는 건마다 보내지 않는다(아침 요약의 숫자 한 줄 · 승인함).
 create or replace function decisions_steps_create() returns trigger
-language plpgsql security definer set search_path = public as $fn$
+language plpgsql security definer set search_path = public, pg_temp as $fn$
 declare
   v_first uuid;
   v_first_chair boolean;
@@ -468,7 +468,7 @@ create trigger decisions_steps_create_trigger
 -- =====================================================================
 create or replace function approval_decide(p_decision text, p_approve boolean, p_note text default null)
 returns text
-language plpgsql volatile security definer set search_path = public as $fn$
+language plpgsql volatile security definer set search_path = public, pg_temp as $fn$
 declare
   d decisions%rowtype;
   s approval_steps%rowtype;
@@ -486,6 +486,10 @@ begin
   if not found or not has_business(d.business_id) then
     raise exception 'approval_not_found' using errcode = 'P0002';
   end if;
+  -- 리뷰 M2 — 결재선 밖 사람에게는 있는지 · 열렸는지도 말하지 않는다(대표는 대리 처리가 있어 예외).
+  if not in_approval_chain(p_decision) and auth_role()::text is distinct from 'Chairman' then
+    raise exception 'approval_not_found' using errcode = 'P0002';
+  end if;
   if not d.step_chain or d.status::text <> 'Open' then
     raise exception 'approval_not_pending' using errcode = '23514';
   end if;
@@ -494,12 +498,20 @@ begin
     raise exception 'approval_not_pending' using errcode = '23514';
   end if;
   if s.approver_user_id is distinct from auth.uid() then
-    -- 대표는 결재자가 떠났거나 그 회사 접근을 잃은 칸만 대신 처리한다(멈춘 결재를 푸는 길). 살아 있는 사람의 차례는 아무도 못 뺏는다.
-    if auth_role()::text = 'Chairman' and not user_has_business(s.approver_user_id, d.business_id) then
+    -- 대표는 결재자가 떠났거나(revoked · left) 그 회사 접근을 잃었거나 사람 역할이 아니게 된 칸만 대신 처리한다
+    -- (멈춘 결재를 푸는 길, 리뷰 M7). 살아 있는 사람의 차례는 아무도 못 뺏는다.
+    if auth_role()::text = 'Chairman'
+       and (not user_has_business(s.approver_user_id, d.business_id)
+            or (not s.is_chairman and not exists (
+                  select 1 from user_profiles p where p.user_id = s.approver_user_id
+                     and p.role::text in ('GroupCFO', 'BusinessCEO', 'Executive', 'TeamLead', 'Member')))) then
       v_proxy := true;
     else
       raise exception 'approval_not_your_turn' using errcode = '42501';
     end if;
+  elsif not user_has_business(auth.uid(), d.business_id) then
+    -- 리뷰 M1 — 떠남(status 'left')으로만 표시되고 회수 전인 결재자는 처리하지 못한다(is_active()는 revoked_at만 본다).
+    raise exception 'approval_not_your_turn' using errcode = '42501';
   end if;
   if not p_approve and v_note is null then
     raise exception 'approval_reason_required' using errcode = '23514';
@@ -566,7 +578,7 @@ comment on function approval_decide(text, boolean, text) is
 -- 승인함 «선택 항목 한 번에 승인» — 한 트랜잭션. 한 건이라도 내 차례가 아니면 전부 되돌린다(어느 건인지 오류에 적는다).
 create or replace function approval_decide_many(p_ids text[], p_note text default null)
 returns int
-language plpgsql volatile security definer set search_path = public as $fn$
+language plpgsql volatile security definer set search_path = public, pg_temp as $fn$
 declare
   v_id text;
   v_n int := 0;
@@ -607,18 +619,51 @@ create policy decisions_ledger_read on decisions for select
 create policy approval_steps_read on approval_steps for select
   using (is_active() and exists (select 1 from decisions d where d.decision_id = approval_steps.decision_id));
 
+-- 리뷰 I2 — 0042 decisions_lead_read(결재선 첫 칸이면 읽는다)에는 회사 격리가 없었다. 0059부터 첫 칸 = 직속 상사라
+-- 이 정책이 모든 단계 결재에 닿는다 — 회사 접근을 잃은 상사가 계속 읽는다. 이름 그대로 회사 격리를 더해 다시 만든다.
+drop policy if exists decisions_lead_read on decisions;
+create policy decisions_lead_read on decisions for select
+  using (is_active() and has_business(business_id) and approval_line->0->>'user_id' = auth.uid()::text);
+
+-- 리뷰 I1 — 양식 결재의 첨부(0045 attachments)는 «결재가 보이면» 올리고 지울 수 있었다. 대장 열람 · 결재선의 누구나
+-- 남의 결재에 파일을 붙이고, 끝난 결재의 증빙을 바꿔치기할 수 있었다. 양식 결재에는 restrictive 한 겹:
+-- 열린 결재에, 올린 사람 · 지금 차례 결재자(0059 전 결재는 팀장 칸 · 대표)만. 끝난 결재는 아무도(대표도) 못 바꾼다.
+create or replace function approval_attachment_ok(p_entity_table text, p_entity_id text) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $fn$
+  select p_entity_table is distinct from 'decisions'
+      or not exists (select 1 from decisions d where d.decision_id = p_entity_id and d.template_key is not null)
+      or exists (
+        select 1 from decisions d
+         where d.decision_id = p_entity_id and d.status::text = 'Open' and is_active()
+           and (d.created_by = auth.uid()
+                or (d.step_chain and exists (select 1 from approval_steps s
+                                              where s.decision_id = d.decision_id and s.status = 'pending' and s.approver_user_id = auth.uid()))
+                or (not d.step_chain and (auth_role()::text = 'Chairman' or d.approval_line->0->>'user_id' = auth.uid()::text))));
+$fn$;
+
+revoke all on function approval_attachment_ok(text, text) from public, anon;
+grant execute on function approval_attachment_ok(text, text) to authenticated;
+
+create policy attachments_approval_insert on attachments as restrictive for insert
+  with check (approval_attachment_ok(entity_table, entity_id));
+create policy attachments_approval_delete on attachments as restrictive for delete
+  using (approval_attachment_ok(entity_table, entity_id));
+
 -- =====================================================================
 -- 7절. 대장 내려받기 감사
 -- =====================================================================
 create or replace function approval_ledger_log(p_business text, p_count int, p_filters jsonb)
 returns void
-language plpgsql volatile security definer set search_path = public as $fn$
+language plpgsql volatile security definer set search_path = public, pg_temp as $fn$
 begin
-  if not is_active() then
+  -- 리뷰 M3 — 대표(회사 전체 · 한 회사) 또는 그 회사 «결재 대장 열람» 줄을 가진 사람만. 거르기 값은 2,000자까지.
+  if not is_active()
+     or (p_business is not null and not has_business(p_business))
+     or not (auth_role()::text = 'Chairman' or (p_business is not null and approval_ledger_grant(p_business))) then
     raise exception 'approval_not_found' using errcode = 'P0002';
   end if;
-  if p_business is not null and not has_business(p_business) then
-    raise exception 'approval_not_found' using errcode = 'P0002';
+  if length(coalesce(p_filters, '{}'::jsonb)::text) > 2000 or coalesce(p_count, 0) < 0 then
+    raise exception 'approval_ledger_log_invalid' using errcode = '23514';
   end if;
   insert into audit_log (action, entity_table, entity_id, business_id, actor_user_id, actor_role, after, note)
   values ('download', 'decisions', 'ledger', p_business, auth.uid(), auth_role()::text,
@@ -635,7 +680,7 @@ grant execute on function approval_ledger_log(text, int, jsonb) to authenticated
 -- =====================================================================
 create or replace function module_grant_audit(p_user uuid, p_module text, p_before jsonb, p_after jsonb, p_note text)
 returns void
-language plpgsql security definer set search_path = public as $fn$
+language plpgsql security definer set search_path = public, pg_temp as $fn$
 begin
   insert into audit_log (action, entity_table, entity_id, business_id, actor_user_id, actor_role, before, after, note)
   values ('permission_change', 'user_module_access', p_user::text,

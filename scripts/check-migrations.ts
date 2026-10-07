@@ -5327,7 +5327,8 @@ async function approvalChain() {
     }
   }
   // 기안자는 decisions update 권한이 없다(0002 decisions_decide = 승인권자) — 0행이거나 거부.
-  const selfClose = await as<{ n: number }>(AC.emp2, `with u as (update decisions set status = 'Approved' where decision_id = 'dec_59j' returning 1) select count(*)::int as n from u`).catch(() => [{ n: 0 }])
+  // 0002 decisions_decide는 승인권자만 update를 연다 — 기안자의 update는 0행이어야 한다(다른 이유의 오류면 실패).
+  const selfClose = await as<{ n: number }>(AC.emp2, `with u as (update decisions set status = 'Approved' where decision_id = 'dec_59j' returning 1) select count(*)::int as n from u`)
   assert.deepEqual(selfClose, [{ n: 0 }], '0059: 기안자가 자기 결재를 닫는다')
   // 0054 약속 재확인 — 비승인권자의 양식 없는 insert는 Open.
   assert.deepEqual(await as<{ s: string }>(AC.emp2, `select status::text as s from decisions where decision_id = 'dec_59k'`,
@@ -5350,16 +5351,7 @@ async function approvalChain() {
   assert.deepEqual([(await dec('dec_59m')).status, (await dec('dec_59n')).status, (await dec('dec_59a')).status], ['Approved', 'Approved', 'Approved'])
   assert.equal((await owner(`select 1 from audit_log where entity_table = 'decisions' and entity_id in ('dec_59m', 'dec_59n', 'dec_59a') and action::text = 'approve' and actor_user_id = '${AC.chair}'`)).length, 3,
     '0059: 한 번에 승인의 감사가 건마다 남지 않는다')
-  await assert.rejects(commitAs(AC.emp1, `select approval_decide_many(array['dec_59m'], null)`), /approval_not_pending/, '0059: 끝난 결재를 한 번에 승인에 섞는다')
-
-  // ── 대표 대리 — 결재자가 떠나면 대표만 그 칸을 처리한다 ──
-  await submit('dec_59p', AC.emp3, 'expense', '100000')
-  await assert.rejects(decide(AC.chair, 'dec_59p', true), /approval_not_your_turn/, '0059 전제: 살아 있는 결재자의 칸을 대표가 처리한다')
-  await owner(`update user_profiles set revoked_at = now(), status = 'left' where user_id = '${AC.mid}'`)
-  await assert.rejects(decide(AC.lead, 'dec_59p', true), /approval_not_your_turn/, '0059: 떠난 결재자의 칸을 다른 상사가 처리한다')
-  assert.equal(await decide(AC.chair, 'dec_59p', true), 'approved', '0059: 떠난 결재자의 칸을 대표가 대신 처리하지 못한다')
-  assert.equal((await owner(`select 1 from audit_log where entity_id = 'dec_59p' and note like '%대표 대리%'`)).length, 1, '0059: 대표 대리가 감사에 남지 않는다')
-  await owner(`update user_profiles set revoked_at = null, status = 'active' where user_id = '${AC.mid}'`)
+  await assert.rejects(commitAs(AC.emp1, `select approval_decide_many(array['dec_59m'], null)`), /approval_not_found/, '0059: 결재선 밖 사람이 남의 결재를 한 번에 승인에 섞는다')
 
   // ── 결재 대장 열람 ──
   const seen = async (uid: string) => (await as<{ id: string }>(uid, `select decision_id as id from decisions where template_key is not null and decision_id like 'dec_59%' order by 1`)).map((r) => r.id)
@@ -5392,6 +5384,55 @@ async function approvalChain() {
   await commitAs(AC.clerk, `select approval_ledger_log('biz_dy', 12, '{"period":"month"}')`)
   assert.equal((await owner(`select 1 from audit_log where action::text = 'download' and entity_id = 'ledger' and actor_user_id = '${AC.clerk}' and business_id = 'biz_dy'`)).length, 1, '0059: 대장 내려받기 감사가 없다')
   await assert.rejects(commitAs(AC.clerk, `select approval_ledger_log('biz_vana', 1, null)`), /approval_not_found/, '0059: 다른 회사 대장 내려받기를 기록한다')
+
+  // ── 리뷰 M2 — 결재선 밖 사람에게는 있는지 · 열렸는지 말하지 않는다 ──
+  await assert.rejects(decide(AC.nobody, 'dec_59d2', true), /approval_not_found/, '0059: 결재선 밖 같은 회사 사람에게 결재의 상태를 말한다(M2)')
+  await assert.rejects(decide(AC.nobody, 'dec_59b', true), /approval_not_found/, '0059: 결재선 밖 사람에게 끝난 결재를 말한다(M2)')
+  // ── 리뷰 M3 — 내려받기 감사는 대표 · 대장 권한자만 ──
+  await assert.rejects(commitAs(AC.emp2, `select approval_ledger_log('biz_dy', 1, null)`), /approval_not_found/, '0059: 대장 권한 없는 사람이 내려받기 감사를 적는다(M3)')
+  await assert.rejects(commitAs(AC.clerk, `select approval_ledger_log(null, 1, null)`), /approval_not_found/, '0059: 대장 권한자가 회사 없이 내려받기 감사를 적는다(M3)')
+  await commitAs(AC.chair, `select approval_ledger_log(null, 3, '{}')`)
+
+  // ── 리뷰 I1 — 양식 결재의 첨부: 열린 결재에 올린 사람 · 지금 차례만, 끝난 결재는 아무도 ──
+  const attach = (id: string) => `insert into attachments (entity_table, entity_id, file_name, mime, size_bytes, security_class)
+     values ('decisions', '${id}', 'r.pdf', 'application/pdf', 10, 'Normal')`
+  await assert.rejects(as(AC.emp2, 'select 1', attach('dec_59b')), /row-level security/, '0059: 끝난 결재에 기안자가 증빙을 붙인다(I1)')
+  await assert.rejects(as(AC.chair, 'select 1', attach('dec_59b')), /row-level security/, '0059: 끝난 결재에 대표가 증빙을 붙인다(I1)')
+  await assert.rejects(as(AC.clerk, 'select 1', attach('dec_59d2')), /row-level security/, '0059: 대장 열람자가 남의 결재에 파일을 붙인다(I1)')
+  await assert.rejects(as(AC.lead, 'select 1', attach('dec_59d2')), /row-level security/, '0059: 아직 차례가 아닌 결재자가 파일을 붙인다(I1)')
+  assert.deepEqual(await as(AC.emp3, `select count(*)::int as n from attachments where entity_id = 'dec_59d2'`, attach('dec_59d2')), [{ n: 1 }], '0059: 기안자가 열린 결재에 파일을 못 붙인다(I1)')
+  assert.deepEqual(await as(AC.mid, `select count(*)::int as n from attachments where entity_id = 'dec_59d2'`, attach('dec_59d2')), [{ n: 1 }], '0059: 지금 차례 결재자가 파일을 못 붙인다(I1)')
+  await owner(`insert into attachments (entity_table, entity_id, file_name, mime, size_bytes, security_class, uploaded_by)
+     values ('decisions', 'dec_59b', 'old.pdf', 'application/pdf', 10, 'Normal', '${AC.emp2}')`)
+  assert.deepEqual(await as(AC.emp2, `with x as (delete from attachments where entity_id = 'dec_59b' returning 1) select count(*)::int as n from x`), [{ n: 0 }],
+    '0059: 끝난 결재의 증빙을 기안자가 지운다(I1)')
+
+  // ── 리뷰 I2 — 회사 접근을 잃은 첫 칸 상사는 더 못 읽는다(0042 decisions_lead_read에 회사 격리) ──
+  assert.equal((await as(AC.mid, `select 1 from decisions where decision_id = 'dec_59d2'`)).length, 1, '0059 전제: 첫 칸 상사가 결재를 못 읽는다')
+  await owner(`delete from user_business_access where user_id = '${AC.mid}' and business_id = 'biz_dy'`)
+  assert.deepEqual(await as(AC.mid, `select 1 from decisions where decision_id = 'dec_59d2'`), [], '0059: 회사 접근을 잃은 상사가 결재를 읽는다(I2)')
+  assert.deepEqual(await as(AC.mid, `select 1 from approval_steps where decision_id = 'dec_59d2'`), [], '0059: 회사 접근을 잃은 상사가 결재 단계를 읽는다(I2)')
+  await owner(`insert into user_business_access values ('${AC.mid}', 'biz_dy')`)
+
+  // ── 리뷰 M1 — «떠남»으로만 표시된(회수 전) 결재자는 처리하지 못하고, 그 칸은 대표가 대리한다 ──
+  await submit('dec_59q', AC.emp2, 'expense', '100000')
+  await owner(`alter table user_profiles disable trigger user`)
+  await owner(`update user_profiles set status = 'left' where user_id = '${AC.lead}'`)
+  await owner(`alter table user_profiles enable trigger user`)
+  await assert.rejects(decide(AC.lead, 'dec_59q', true), /approval_not_your_turn/, '0059: 떠남으로 표시된 결재자가 처리한다(M1)')
+  assert.equal(await decide(AC.chair, 'dec_59q', true), 'approved', '0059: 떠남으로 표시된 결재자의 칸을 대표가 대리하지 못한다')
+  await owner(`alter table user_profiles disable trigger user`)
+  await owner(`update user_profiles set status = 'active' where user_id = '${AC.lead}'`)
+  await owner(`alter table user_profiles enable trigger user`)
+
+  // ── 대표 대리 — 결재자가 떠나면 대표만 그 칸을 처리한다 ──
+  await submit('dec_59p', AC.emp3, 'expense', '100000')
+  await assert.rejects(decide(AC.chair, 'dec_59p', true), /approval_not_your_turn/, '0059 전제: 살아 있는 결재자의 칸을 대표가 처리한다')
+  await owner(`update user_profiles set revoked_at = now(), status = 'left' where user_id = '${AC.mid}'`)
+  await assert.rejects(decide(AC.lead, 'dec_59p', true), /approval_not_found|approval_not_your_turn/, '0059: 떠난 결재자의 칸을 다른 상사가 처리한다')
+  assert.equal(await decide(AC.chair, 'dec_59p', true), 'approved', '0059: 떠난 결재자의 칸을 대표가 대신 처리하지 못한다')
+  assert.equal((await owner(`select 1 from audit_log where entity_id = 'dec_59p' and note like '%대표 대리%'`)).length, 1, '0059: 대표 대리가 감사에 남지 않는다')
+  await owner(`update user_profiles set revoked_at = null, status = 'active' where user_id = '${AC.mid}'`)
 
   // ── 카탈로그: force 없음 · 내부 함수 잠금 ──
   assert.deepEqual(await owner(`select relname, relforcerowsecurity as f from pg_class where relname in ('decisions', 'approval_steps') order by 1`),
