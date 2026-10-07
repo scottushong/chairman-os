@@ -2557,4 +2557,5 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - **M1** — 어느 상태에서든 'uploaded'로 되돌아가기 거부(`intake_status_back_to_uploaded`) — 0045 재업로드 창이 다시 열리지 않게.
 - **M5** — 직접 insert의 storage_path 위조는 stamp가 덮는다 · 직원 update는 grant 없음 · 소유자 update도 stamp가 고정(검사 더함).
 - **M2(그대로 둠)** — 감사 메모의 «AI 제안»은 `proposal is not null`만 보고 적는다. 제안 칸은 올린 사람 · 확인 권한자가 쓸 수 있는 칸이라 «정말 AI가 냈는가»를 DB가 증명하지 못한다(ai_usage_log와 잇지 않음). 다른 안: 제안 칸을 서버 전용 RPC로만 쓰기.
+- **N1(재리뷰, 같은 날)** — no_ai 안에서 **조이기는 이 줄을 고칠 수 있는 사람 누구나**: not_attested → mix_ratio · excluded_entity(차단 칸도 따라 조여진다). 확인 뒤 다시 돌린 결정적 감지가 «배합비로 보임»을 적을 수 있어야 해서다 — 전에는 그 변경이 intake_ai_unblock_forbidden으로 막혀, 올린 사람이 확인하면 reading으로 넘어가 AI로 갔다. 늦추기 · 풀기 · mix_ratio ↔ excluded_entity 변경은 계속 대표만. 확인이 아무것도 풀지 못한 줄(배합비 · 제외 자료)에는 «배합비 아님 확인 — 올린 사람» 감사 줄을 남기지 않는다.
 - **M3(그대로 둠)** — `intake_attachment_loaded(uuid)` · `intake_ai_blocked(uuid, text)`는 첨부 id를 아는 사람에게 한 비트를 알려 주는 definer 함수(오라클)다. 첨부 id는 uuid라 추측이 어렵고 내용은 «적재 중 · 차단» 한 비트뿐이라 위험이 낮다.
