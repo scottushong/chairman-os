@@ -61,18 +61,24 @@ export async function askAssistant(input: { chatId?: unknown; question: unknown;
   if (question.length > 2000) return { ...empty, error: '질문은 2,000자까지입니다.' }
   const path = safePath(input.path)
   const actor = { user_id: user.user_id, role: user.role }
+  let chatId: string | null = null
   try {
     const repo = await getRepository()
-    const chatId = text(input.chatId) || (await repo.createAiChat(question.slice(0, 60), actor, path))
+    chatId = text(input.chatId) || (await repo.createAiChat(question.slice(0, 60), actor, path))
     const history = await repo.listAiChatMessages(chatId)
-    await repo.appendAiMessage(chatId, 'user', question, [], actor)
     const result = await runAssistant({ question, repo, user, path, chatId, history })
+    // 모델 호출이 실패하면 질문도 저장하지 않는다 — «답 없는 질문»이 대화 줄기에 남아 다음 턴의 모양(user · assistant
+    // 번갈아)을 깨지 않게. 질문은 입력칸에 그대로 남는다(도크는 실패 때 입력을 비우지 않는다).
+    if (result.error) return { ...(await thread(chatId)), error: result.error.message }
+    // 질문과 답을 함께 적는다(답이 생긴 뒤에). 둘 사이에서 실패해도 history.ts sanitizeHistory가 모양을 고른다.
+    await repo.appendAiMessage(chatId, 'user', question, [], actor)
     await repo.appendAiMessage(chatId, 'assistant', result.answer, result.sources, actor, { tokens: result.tokens, action_ids: result.actionIds })
     revalidatePath('/chat')
     return await thread(chatId)
   } catch (e) {
     console.error('[askAssistant]', e)
-    return { ...empty, error: 'AI가 답하지 못했습니다. 잠시 후 다시 시도하세요.' }
+    const base = chatId ? await thread(chatId).catch(() => empty) : empty
+    return { ...base, error: 'AI가 답하지 못했습니다. 잠시 후 다시 시도하세요.' }
   }
 }
 

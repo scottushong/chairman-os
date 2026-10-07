@@ -4,7 +4,7 @@ import { cache } from 'react'
 import { DATA_MODE } from '@/lib/env'
 import { supabaseConfig } from '@/lib/supabase/config'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import { documentsByBusiness, financeByBusiness, hasLegacyDocumentWrite, LEGACY_DOCUMENTS_MODULE } from '@/lib/module-grants'
+import { DRAFT_DECISION_MODULE, documentsByBusiness, financeByBusiness, hasDraftGrant, hasLegacyDocumentWrite, LEGACY_DOCUMENTS_MODULE } from '@/lib/module-grants'
 import { dummyModuleGrants, dummyViewer } from '@/lib/repository/dummy-org'
 import { type Role, type SessionUser } from '@/types'
 
@@ -69,11 +69,11 @@ export const currentUser = cache(async function currentUser(): Promise<SessionUs
    * 0048. 같은 질의로 문서 줄('/documents/<business_id>')과 옛 전역 줄('/core/search')도 읽는다 — 판정은
    * 0048 can_write_documents(target)가 한다.
    */
-  const { data: grants } = await sb
+  const { data: grants, error: grantsError } = await sb
     .from('user_module_access')
     .select('module,can_write,can_approve')
     .eq('user_id', user.id)
-    .or(`module.like./finance/%,module.like./documents/%,module.eq.${LEGACY_DOCUMENTS_MODULE}`)
+    .or(`module.like./finance/%,module.like./documents/%,module.eq.${LEGACY_DOCUMENTS_MODULE},module.eq.${DRAFT_DECISION_MODULE}`)
     .returns<{ module: string; can_write: boolean; can_approve: boolean }[]>()
 
   return {
@@ -86,6 +86,9 @@ export const currentUser = cache(async function currentUser(): Promise<SessionUs
     finance: financeByBusiness(grants ?? []),
     documents: documentsByBusiness(grants ?? []),
     documents_legacy_write: hasLegacyDocumentWrite(grants ?? []),
+    // «결재 올리기»(0002 decisions_create). 회장은 can_module이 늘 참이라 줄이 없어도 된다.
+    // 줄을 못 읽었으면(오류) 모르는 것으로 둔다 — «권한 없음»으로 단정하지 않고 DB 판정에 맡긴다.
+    approvals_write: data.role === 'Chairman' || (grantsError ? undefined : hasDraftGrant(grants ?? [])),
   }
 })
 
@@ -124,5 +127,6 @@ function dummyUser(): SessionUser | null {
     finance: financeByBusiness(grants),
     documents: documentsByBusiness(grants),
     documents_legacy_write: hasLegacyDocumentWrite(grants),
+    approvals_write: person.role === 'Chairman' || hasDraftGrant(grants),
   }
 }

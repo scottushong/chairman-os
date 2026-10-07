@@ -79,7 +79,7 @@ function signupGuideText({ name, email, origin }: { name: string; email: string;
 }
 
 /** 저장한 초대 하나에 붙는 복사 버튼. 클립보드가 막힌 브라우저에서는 글을 펼쳐 손으로 고르게 한다. */
-function CopySignupGuide({ name, email }: { name: string; email: string }) {
+export function CopySignupGuide({ name, email }: { name: string; email: string }) {
   const [state, setState] = useState<'idle' | 'copied' | 'manual'>('idle')
   const [text, setText] = useState('')
 

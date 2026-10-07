@@ -119,6 +119,11 @@ export function AssistantDock({ lang }: { lang: Lang }) {
       const r = await askAssistant({ chatId: data.chatId, question: text, path })
       if (r.error) {
         setError(r.error)
+        // 새 대화가 막 열린 뒤 실패했으면 그 대화에 머문다(다시 물을 때 빈 대화가 또 생기지 않게). 질문은 입력칸에 남는다.
+        if (r.chatId && r.chatId !== data.chatId) {
+          setData(r)
+          writeLast(r.chatId)
+        }
         return
       }
       setQ('')

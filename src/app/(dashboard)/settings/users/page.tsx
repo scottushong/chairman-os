@@ -6,6 +6,7 @@ import { ApproveInvitation } from '@/components/settings/approve-invitation'
 import { InviteUser } from '@/components/settings/invite-user'
 import { OrgChart } from '@/components/settings/org-chart'
 import { RevokeButton } from '@/components/settings/revoke-button'
+import { StaffAdminInvite, StaffAdminRevokeButton } from '@/components/settings/staff-admin-invite'
 import { Icon } from '@/components/ui/icon'
 import { currentUser } from '@/lib/auth/session'
 import { boss, roleLabelFor } from '@/lib/boss'
@@ -18,6 +19,7 @@ import {
   SECURITY_CLASS_LABEL_KO,
   type Business,
   type Role,
+  type StaffAdminOptions,
   type UserInvitation,
 } from '@/types'
 
@@ -69,6 +71,25 @@ export default async function UsersPage(props: PageProps<'/settings/users'>) {
   const isChairman = user.role === 'Chairman'
   const viewerAccount = accounts.find((a) => a.user_id === user.user_id) ?? null
 
+  /**
+   * 0055 «<회사> 사용자 관리자». 이 사람이 그 능력을 가진 회사마다 고르기 칸(이름 · 팀 · 역할 · 줄 수 있는 권한)을 받는다.
+   * 판정은 DB(can_manage_users)다 — 줄을 읽지 못하거나(0055 전 DB) 고르기 칸이 거부되면 이 사람은 예전 화면 그대로다.
+   */
+  let staffAdmin: StaffAdminOptions[] = []
+  if (!isChairman) {
+    try {
+      const scopes = await repo.staffAdminBusinesses()
+      staffAdmin = (
+        await Promise.all(scopes.map((b) => repo.staffAdminOptions(b).catch(() => null)))
+      ).filter((o): o is StaffAdminOptions => o !== null)
+    } catch (e) {
+      console.error('[settings/users] staff admin', e)
+      staffAdmin = []
+    }
+  }
+  // 관리자 화면의 상사 이름 — 관리자의 사람 목록(자기 아래)에는 상사 후보가 없어서 고르기 칸의 이름으로 채운다.
+  const pickedNames = new Map(staffAdmin.flatMap((o) => o.people.map((p) => [p.user_id, p.display_name] as const)))
+
   const pending = invitations.filter((i) => !i.accepted_at && !i.revoked_at)
   const settled = invitations.filter((i) => i.accepted_at || i.revoked_at)
 
@@ -85,7 +106,7 @@ export default async function UsersPage(props: PageProps<'/settings/users'>) {
   ].sort((x, y) => y.on.localeCompare(x.on))
 
   const nameOf = (userId: string | null) =>
-    userId ? (accounts.find((a) => a.user_id === userId)?.display_name ?? null) : null
+    userId ? (accounts.find((a) => a.user_id === userId)?.display_name ?? pickedNames.get(userId) ?? null) : null
 
   return (
     <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6">
@@ -103,15 +124,31 @@ export default async function UsersPage(props: PageProps<'/settings/users'>) {
         </Link>
       </PageHeader>
 
-      <div className="mt-4">
-        <InviteUser
-          businesses={businesses}
-          teams={teams}
-          people={accounts}
-          viewer={user}
-          viewerAccount={viewerAccount}
-          initiallyOpen={params.invite === '1'}
-        />
+      <div className="mt-4 space-y-2">
+        {staffAdmin.length > 0 ? (
+          // 0055 — 사용자 관리자는 맡은 회사의 «직원 초대» 폼을 쓴다(사원 · 팀장 · 팀 · 상사 필수 · 본인 권한까지만).
+          staffAdmin.map((o) => (
+            <StaffAdminInvite
+              key={o.business_id}
+              options={o}
+              companyName={businessName(businesses, o.business_id)}
+              viewerRole={user.role}
+              initiallyOpen={params.invite === '1'}
+            />
+          ))
+        ) : isChairman ? (
+          <InviteUser
+            businesses={businesses}
+            teams={teams}
+            people={accounts}
+            viewer={user}
+            viewerAccount={viewerAccount}
+            initiallyOpen={params.invite === '1'}
+          />
+        ) : (
+          // 0055 리뷰 I3 — 0026 위임 초대가 닫혔다. 초대는 대표(0011) 또는 사용자 관리자만.
+          <p className="text-t11 text-ink-muted">직원 초대는 대표 또는 사용자 관리자가 합니다.</p>
+        )}
       </div>
 
       <div className="mt-3 sm:mt-3.5">
@@ -155,6 +192,7 @@ export default async function UsersPage(props: PageProps<'/settings/users'>) {
                 inviterName={nameOf(i.invited_by)}
                 bossName={nameOf(i.reports_to)}
                 canManage={isChairman}
+                canRevokeOwn={!isChairman && Boolean(i.staff_admin_business) && i.invited_by === user.user_id}
                 viewerRole={user.role}
               />
             ))}
@@ -216,6 +254,7 @@ export default async function UsersPage(props: PageProps<'/settings/users'>) {
                 inviterName={nameOf(i.invited_by)}
                 bossName={nameOf(i.reports_to)}
                 canManage={isChairman}
+                canRevokeOwn={!isChairman && Boolean(i.staff_admin_business) && i.invited_by === user.user_id}
                 viewerRole={user.role}
               />
             ))}
@@ -239,6 +278,7 @@ function InvitationRow({
   inviterName,
   bossName,
   canManage,
+  canRevokeOwn = false,
   viewerRole,
 }: {
   invitation: UserInvitation
@@ -248,6 +288,8 @@ function InvitationRow({
   bossName: string | null
   /** 재발송·취소·승인은 아직 회장만 된다(0026이 update/delete 정책을 넓히지 않았다). */
   canManage: boolean
+  /** 0055 — 사용자 관리자가 자기가 보낸 위임 초대를 취소한다(미수락만). */
+  canRevokeOwn?: boolean
   /** 보는 사람의 역할 — 호칭과 역할 라벨을 그에 맞춘다(직원 화면 용어 원칙, CLAUDE.md). */
   viewerRole: Role
 }) {
@@ -269,6 +311,12 @@ function InvitationRow({
         <span className="rounded bg-raised px-1.5 py-0.5 text-t10 text-ink-muted">
           {SECURITY_CLASS_LABEL_KO[invitation.max_security_class]}
         </span>
+        {invitation.staff_admin_business ? (
+          // 0055 — «사용자 관리자»가 보낸 초대. 회장은 누가 보냈는지 꼬리표로 본다.
+          <span className="rounded bg-accent/15 px-1.5 py-0.5 text-t10 font-semibold text-accent">
+            위임 초대 · {inviterName ?? '—'}
+          </span>
+        ) : null}
         {waiting ? (
           <span className="rounded bg-warning/15 px-1.5 py-0.5 text-t10 font-semibold text-warning">
             {boss(viewerRole)} 결재 대기
@@ -301,6 +349,8 @@ function InvitationRow({
                 label={invitation.email}
               />
             </>
+          ) : canRevokeOwn ? (
+            <StaffAdminRevokeButton invitationId={invitation.invitation_id} label={invitation.email} />
           ) : (
             <span className="text-t10h text-ink-muted">
               취소·승인은 대표만 할 수 있습니다

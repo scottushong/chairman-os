@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 
 import { currentUser } from '@/lib/auth/session'
+import { boss } from '@/lib/boss'
 import { getRepository } from '@/lib/repository'
 import { WORK_PRIORITY, type Decision, type WorkPriority } from '@/types'
 
@@ -107,7 +108,8 @@ export async function draftDecision(input: {
     return {
       error:
         e instanceof Error && /decisions_create|42501|PGRST301/.test(e.message)
-          ? '이 회사에 결재를 올릴 권한이 없습니다. (/chairman/decisions 쓰기 권한이 필요합니다)'
+          ? // 모듈 키(경로)는 보이지 않는다 — 직원 화면 용어 원칙(CLAUDE.md). approval-form과 같은 말.
+            `결재를 올릴 권한이 아직 없습니다. ${boss(user.role)}에게 «결재 올리기» 권한을 켜 달라고 요청하세요.`
           : '결재를 올리지 못했습니다. 잠시 후 다시 시도하세요.',
     }
   }

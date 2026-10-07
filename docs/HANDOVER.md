@@ -361,6 +361,19 @@ fallback을 넣으면 화면에 시드 숫자가 뜨는데 DUMMY DATA 뱃지는 
 - **못 잰 것** — 두 번째 계정이 없어서 못 돌린 테스트 5건.
   회사 간 격리, Vault 등급 차단 같은 것들이다. **계정 하나만 만들면 그날 실행할 수 있다.**
 
+### 2026-10-07 기준 (10-06 통합 블록 — 아래 10-04 표 위에 얹어 읽는다)
+
+| 항목 | 상태 |
+|---|---|
+| DB — production | **0049**(2026-10-06 릴리스 a3411e2 · 복원 지점 04:39 UTC · 직전 SHA d2e73ec, OPERATIONS §9) |
+| master ↔ origin | origin = `a3411e2`. 로컬 master가 앞섬(a0be722 · 0efaeba · 8a00dd2 + 이 블록: AI 어시스턴트 직원 흐름 · 공통 첨부 부품 FileDropZone · `--include-all` · 문서). **master에는 production에 없는 마이그레이션이 없다** |
+| 결재 · 온보딩 | 브랜치 `feat/approvals-0054`(master 합침). **0054**(상사=대표면 팀장 칸 건너뜀 → 500만 미만 «기록 완료» · 비승인권자 insert는 늘 Open · 처리자 위조 차단 · 금액 모양 검사 · 새 직원 «결재 올리기» 자동) · **0055**(«<회사> 사용자 관리자» 위임 초대 RPC · 0026 위임 insert 닫음 · 회장 알림 · 자동 회수). 리뷰 루프 각 3회. **staging 미반영**(이 세션의 staging push가 권한 분류기에 막힘) — `docs/onboarding/release-order-2026-10.md` «0. staging» |
+| ECOUNT | 브랜치 `feat/ecount-import`(결재 브랜치 합침). 0050~0052 staging 반영 · **0056**(빈 달 역분개 — 확인 칸 + 전표 번호 대조 · 첫 등록 감사 · close_period 회사 lock) staging 미반영. 드래그 업로드 · «ECOUNT 업로드» 바로가기 · 출처 «ECOUNT 엑셀». 전표 증빙은 DB가 필요해 **0057 제안**만(DEFERRED). 실제 파일 폴더 `~/projects/ecount-real/`은 아직 없다 |
+| 병합 리허설 | `release/ecount-rehearsal`(master + 결재 + ECOUNT): typecheck · lint · check 전부 · build(webpack) 통과. 이 checkout에서 staging push |
+| 첨부 · 입구 | 브랜치 `feat/intake`: 스캔 PDF는 Claude document 블록(30쪽까지) · HEIC/WebP → JPG · 실패 문장. staging에서 스캔 PDF · WebP 요약 성공. 설계서 `docs/superpowers/specs/2026-10-06-intake-and-purchasing.md`(번호 제안 0058~0060) |
+| AI 어시스턴트 | master: 직원 도구(내 결재 · 마감 상태 · 문서 찾기 · 전표 도움 · 양식 결재 초안) · 오류 분류 · 맥락 메모 · «확인했어»는 버튼 안내. staging 직원 계정으로 4턴 흐름 → 결재 생성까지 확인 |
+| 가입 Hook | A1 = true · true · false(정상). 아직 끔 — 김병훈 위임 초대 전에 켠다 |
+
 ### 2026-10-04 기준 (이 블록에서 바뀐 것 — 아래 10-03 표 위에 얹어 읽는다)
 
 | 항목 | 상태 |
