@@ -74,17 +74,15 @@ export interface DecideOutcome {
 }
 
 /**
- * 0059 approval_decide()의 거울. decision · dummySteps를 고친다. 오류 키는 DB와 같다.
- * decisionStatus = 지금 상태(dummy는 상태 덮어쓰기 표가 따로 있다).
+ * 0059 approval_decide()의 차례 판정만 — 아무것도 고치지 않는다. 한 번에 승인의 미리 검사(한 트랜잭션의 거울)와
+ * decideStep이 같은 판정을 쓴다. 지금 차례 칸과 대표 대리 여부를 돌려준다.
  */
-export function decideStep(
+export function turnCheck(
   d: Decision,
   decisionStatus: Decision['status'],
   viewer: UserAccount,
   people: readonly UserAccount[],
-  approve: boolean,
-  note: string | null,
-): DecideOutcome {
+): { step: ApprovalStepState; proxy: boolean } {
   if (viewer.revoked_at || !personHasBusiness(viewer, d.business_id)) throw new Error('approval_not_found')
   // 0059 리뷰 M2 — 결재선 밖 사람에게는 «없는 결재»(대표는 대리 처리가 있어 예외).
   if (viewer.role !== 'Chairman' && !dummySteps.some((s) => s.decision_id === d.decision_id && s.approver_user_id === viewer.user_id)) {
@@ -101,6 +99,22 @@ export function decideStep(
     if (viewer.role === 'Chairman' && (!personHasBusiness(approver, d.business_id) || (!step.is_chairman && !human))) proxy = true
     else throw new Error('approval_not_your_turn')
   }
+  return { step, proxy }
+}
+
+/**
+ * 0059 approval_decide()의 거울. decision · dummySteps를 고친다. 오류 키는 DB와 같다.
+ * decisionStatus = 지금 상태(dummy는 상태 덮어쓰기 표가 따로 있다).
+ */
+export function decideStep(
+  d: Decision,
+  decisionStatus: Decision['status'],
+  viewer: UserAccount,
+  people: readonly UserAccount[],
+  approve: boolean,
+  note: string | null,
+): DecideOutcome {
+  const { step, proxy } = turnCheck(d, decisionStatus, viewer, people)
   const reason = (note ?? '').trim() || null
   if (!approve && !reason) throw new Error('approval_reason_required')
   if ((reason ?? '').length > 2000) throw new Error('approval_note_too_long')

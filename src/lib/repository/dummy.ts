@@ -43,7 +43,7 @@ import * as chat from './dummy-chat'
 import * as city from './dummy-city'
 import * as groupware from './dummy-groupware'
 import { bossChain } from '@/lib/approval-chain'
-import { buildChain, decideStep, dummySteps, ledgerGrant, personHasBusiness, resubmitOk, stepsFromLine } from './dummy-approvals'
+import { buildChain, decideStep, dummySteps, turnCheck, ledgerGrant, personHasBusiness, resubmitOk, stepsFromLine } from './dummy-approvals'
 import { dummyLedger } from './dummy-books'
 import {
   DUMMY_DOCUMENTS,
@@ -1137,14 +1137,12 @@ export const dummyRepository: ChairmanRepository = {
     const viewer = memoryPeople.find((p) => p.user_id === dummyViewer().user_id)
     for (const id of ids) {
       const d = memoryDecisions.find((x) => x.decision_id === id)
-      if (!viewer || !d || !personHasBusiness(viewer, d.business_id)) throw new Error(`approval_not_found:${id}`)
-      if (!d.step_chain || (memoryDecisionStatuses.get(id) ?? d.status) !== 'Open') throw new Error(`approval_not_pending:${id}`)
-      const s = dummySteps.find((x) => x.decision_id === id && x.status === 'pending')
-      if (!s) throw new Error(`approval_not_pending:${id}`)
-      if (viewer.role !== 'Chairman' && !dummySteps.some((x) => x.decision_id === id && x.approver_user_id === viewer.user_id)) {
-        throw new Error(`approval_not_found:${id}`)
+      if (!viewer || !d) throw new Error(`approval_not_found:${id}`)
+      try {
+        turnCheck(d, memoryDecisionStatuses.get(id) ?? d.status, viewer, memoryPeople)
+      } catch (e) {
+        throw new Error(`${e instanceof Error ? e.message : String(e)}:${id}`)
       }
-      if (s.approver_user_id !== viewer.user_id && viewer.role !== 'Chairman') throw new Error(`approval_not_your_turn:${id}`)
     }
     for (const id of ids) await dummyRepository.approvalDecide(id, true, note, actor)
     return ids.length
