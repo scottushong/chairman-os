@@ -5419,6 +5419,15 @@ async function approvalChain() {
   // 재리뷰 I-B — 대표 본인 결재(올리는 순간 닫힘)에는 대표가 증빙을 붙인다. 남은 못 붙인다.
   assert.deepEqual(await as(AC.chair, `select count(*)::int as n from attachments where entity_id = 'dec_59i'`, attach('dec_59i')), [{ n: 1 }],
     '0059: 대표 본인 결재에 대표가 증빙을 못 붙인다(재리뷰 I-B)')
+  // 3회차 리뷰 — 그 예외는 붙이기만. 이미 붙은 증빙(줄 · 파일)은 대표도 지우지 못한다.
+  await owner(`insert into attachments (entity_table, entity_id, file_name, mime, size_bytes, security_class, uploaded_by)
+     values ('decisions', 'dec_59i', 'own.pdf', 'application/pdf', 10, 'Normal', '${AC.chair}')`)
+  const [{ path: ownPath }] = await owner<{ path: string }>(`select storage_path as path from attachments where entity_id = 'dec_59i' limit 1`)
+  await owner(`insert into storage.objects (bucket_id, name, owner) values ('attachments', '${ownPath}', '${AC.chair}')`)
+  assert.deepEqual(await as(AC.chair, `with x as (delete from attachments where entity_id = 'dec_59i' returning 1) select count(*)::int as n from x`), [{ n: 0 }],
+    '0059: 대표가 자기 결재의 증빙 줄을 지운다(3회차 리뷰)')
+  assert.deepEqual(await as(AC.chair, `with x as (delete from storage.objects where name = '${ownPath}' returning 1) select count(*)::int as n from x`), [{ n: 0 }],
+    '0059: 대표가 자기 결재의 증빙 파일을 지운다(3회차 리뷰)')
   // 재리뷰 Minor 1 — 못 보는 회사의 결재는 «양식 결재인가»를 말하지 않는다.
   assert.deepEqual(await as(AC.emp2, `select approval_attachment_ok('decisions', 'dec_59v') as ok`), [{ ok: true }], '0059: approval_attachment_ok가 다른 회사 양식 결재를 알려 준다')
 

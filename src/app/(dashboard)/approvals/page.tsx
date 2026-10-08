@@ -55,6 +55,11 @@ const IMPACT_TONE: Record<WorkPriority, string> = {
 
 const IMPACT_RANK: Record<WorkPriority, number> = { Critical: 4, High: 3, Medium: 2, Low: 1 }
 
+/** 0059 approval_attachment_ok의 대표 본인 결재 예외(붙이기만) — DB와 같은 조건. */
+function chairmanOwn(d: Decision, viewerId: string | undefined): boolean {
+  return !!d.step_chain && d.status === 'Approved' && d.decided_by_kind === 'chairman' && !!viewerId && d.created_by === viewerId
+}
+
 export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
   const params = await props.searchParams
   const tabParam = oneOf(firstParam(params.tab), TABS)
@@ -288,11 +293,11 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
                 entityId={selected.decision_id}
                 // 0059 — 끝난 양식 결재는 증빙을 바꾸지 못한다(대표 본인 결재는 올린 대표가 뒤에 붙인다).
                 locked={
-                  selected.template_key && selected.status !== 'Open' &&
-                  !(selected.step_chain && selected.decided_by_kind === 'chairman' && selected.created_by === user?.user_id)
+                  selected.template_key && selected.status !== 'Open' && !chairmanOwn(selected, user?.user_id)
                     ? '끝난 결재라 첨부를 더하거나 지울 수 없습니다.'
                     : undefined
                 }
+                deleteLocked={!!selected.template_key && selected.status !== 'Open'}
               />
             </div>
           ) : (

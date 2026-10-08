@@ -136,7 +136,7 @@ export function attachmentMethods(sb: SupabaseClient): AttachmentMethods {
       if (!a) throw new Error('attachments: 지울 첨부가 없다(없거나 볼 권한이 없다)')
       // 0059 — 끝난 양식 결재의 첨부는 줄도 파일도 못 지운다. 파일을 먼저 지우는 순서라(저장소 정책이 줄을 본다)
       // 파일만 사라지고 줄이 남는 일이 없게 먼저 묻는다.
-      const { data: ok, error: okErr } = await sb.rpc('approval_attachment_ok', { p_entity_table: a.entity_table, p_entity_id: a.entity_id })
+      const { data: ok, error: okErr } = await sb.rpc('approval_attachment_ok', { p_entity_table: a.entity_table, p_entity_id: a.entity_id, p_for_delete: true })
       if (okErr) fail('approval_attachment_ok', okErr)
       if (ok === false) throw new Error('row-level security: attachments — 끝난 결재의 첨부는 지울 수 없다(0059)')
       const { error: rmErr } = await sb.storage.from(ATTACHMENT_BUCKET).remove([a.storage_path])

@@ -14,12 +14,14 @@ export async function AttachmentsSection({
   fill,
   compact,
   locked,
+  deleteLocked,
 }: {
   entityTable: AttachmentEntity
   entityId: string
   fill?: AttachmentsPanelProps['fill']
   compact?: boolean
   locked?: string
+  deleteLocked?: boolean
 }) {
   const [repo, user] = await Promise.all([getRepository(), currentUser()])
   if (!user) return null
@@ -57,6 +59,7 @@ export async function AttachmentsSection({
       fill={fill}
       compact={compact}
       locked={locked}
+      deleteLocked={deleteLocked}
     />
   )
 }

@@ -53,6 +53,7 @@ import {
   DUMMY_SHARE_SEED,
   DUMMY_TASKS,
   DUMMY_TEAMS,
+  DUMMY_UID,
   dummyCanWriteDocuments,
   dummyHasBusiness,
   clearDummyModuleGrants,
@@ -500,6 +501,38 @@ const memoryNotifications: AppNotification[] = dummyDecisionStore.notifications
 /** 0055 — 알림 받는 사람(live notifications.user_id). 0055 위임 초대가 회장에게 남기는 알림이 첫 생산자다. */
 const memoryNotificationOwner = dummyDecisionStore.notificationOwner
 
+/**
+ * 0059 화면 점검용 씨앗 — DUMMY_APPROVAL_DEMO=1일 때만, 서버마다 한 번. DUMMY_USER가 프로세스당 하나라 사람을 바꾸려면
+ * 서버를 다시 띄워야 하고 그러면 메모리 결재가 사라진다 — 그래서 시나리오 결재를 미리 심는다. 기본은 꺼짐(검사 · 평소 dummy와 무관).
+ *   경영지원 사원(상사 = 대표) 30만 · 휴가 → 대표 차례 / 생산 직원 600만 → 생산팀장 승인 뒤 대표 차례 /
+ *   생산 직원 30만 → 생산팀장 종결 / 생산 직원 120만 → 반려(사유)
+ */
+async function seedApprovalDemo() {
+  const flag = globalThis as unknown as { __dummyApprovalDemo?: boolean }
+  if (process.env.DUMMY_APPROVAL_DEMO !== '1' || flag.__dummyApprovalDemo) return
+  flag.__dummyApprovalDemo = true
+  const day = new Date().toISOString().slice(0, 10)
+  const person = (id: string) => memoryPeople.find((p) => p.user_id === id)!
+  const make = (by: string, title: string, template: 'expense' | 'leave', form: Record<string, string>) =>
+    dummyRepository.createDecision(
+      { business_id: 'biz_dy', title, options: ['승인', '반려'], impact: 'Low', deadline: day, template_key: template, form },
+      { user_id: by, role: person(by).role },
+    )
+  const decide = (d: Decision, by: string, approve: boolean, note: string | null) => {
+    decideStep(d, memoryDecisionStatuses.get(d.decision_id) ?? d.status, person(by), memoryPeople, approve, note)
+    memoryDecisionStatuses.set(d.decision_id, d.status)
+  }
+  const ex = (amount: string, purpose: string, vendor: string) => ({ amount, purpose, spent_on: day, vendor })
+  await make(DUMMY_UID.supportStaff, '사무용품 구입', 'expense', ex('300000', '복사지 · 토너', '오피스디포'))
+  await make(DUMMY_UID.supportStaff, '휴가 10/13~10/14', 'leave', { starts_on: day, ends_on: day, reason: '가족 행사' })
+  const big = await make(DUMMY_UID.prodStaff, '생산 설비 부품', 'expense', ex('6,000,000', '라인 2 감속기 교체', '한빛기계'))
+  decide(memoryDecisions.find((x) => x.decision_id === big.decision_id)!, DUMMY_UID.prodLead, true, '현장 확인')
+  const small = await make(DUMMY_UID.prodStaff, '안전화', 'expense', ex('300000', '안전화 6켤레', '세이프몰'))
+  decide(memoryDecisions.find((x) => x.decision_id === small.decision_id)!, DUMMY_UID.prodLead, true, null)
+  const rej = await make(DUMMY_UID.prodStaff, '공구 세트', 'expense', ex('1,200,000', '전동 공구', '한빛기계'))
+  decide(memoryDecisions.find((x) => x.decision_id === rej.decision_id)!, DUMMY_UID.prodLead, false, '견적서 두 곳 더 받아 주세요')
+}
+
 /** 0059 — 결재 알림 한 줄(live는 approval_decide · decisions_steps_create가 남긴다). */
 function pushDecisionNotification(userId: string, title: string, body: string, decisionId: string) {
   const id = `ntf_${memoryNotifications.length + 1}`
@@ -720,6 +753,7 @@ export const dummyRepository: ChairmanRepository = {
     return [...seeded, ...owned]
   },
   async listDecisions() {
+    await seedApprovalDemo()
     return [...decisions, ...memoryDecisions].filter(seesDecision).map((decision) => ({
       ...decision,
       status: memoryDecisionStatuses.get(decision.decision_id) ?? decision.status,

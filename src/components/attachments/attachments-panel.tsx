@@ -70,6 +70,8 @@ export interface AttachmentsPanelProps {
   compact?: boolean
   /** 0059 — 끝난 양식 결재: 올리기 · 지우기를 그리지 않고 이 문장을 보인다(DB가 restrictive로 한 번 더 막는다). */
   locked?: string
+  /** 0059 — 대표 본인 결재(끝남): 증빙은 붙이기만, 지우기는 그리지 않는다. */
+  deleteLocked?: boolean
 }
 
 /** 긴 변 2400px JPEG로. 폰 사진(대개 5MB+)이 Claude 이미지 한도를 넘지 않게. */
@@ -203,7 +205,7 @@ export function AttachmentsPanel(props: AttachmentsPanelProps) {
   )
 }
 
-function AttachmentCard({ a, viewer, names, vaultViewers, people, fill, locked }: AttachmentsPanelProps & { a: Attachment }) {
+function AttachmentCard({ a, viewer, names, vaultViewers, people, fill, locked, deleteLocked }: AttachmentsPanelProps & { a: Attachment }) {
   const router = useRouter()
   const [pending, start] = useTransition()
   const [msg, setMsg] = useState<string | null>(null)
@@ -278,7 +280,7 @@ function AttachmentCard({ a, viewer, names, vaultViewers, people, fill, locked }
               {a.status === 'uploaded' ? '요약하기' : '다시 요약'}
             </button>
           ) : null}
-          {mine && !locked ? (
+          {mine && !locked && !deleteLocked ? (
             <button
               type="button"
               disabled={pending}
