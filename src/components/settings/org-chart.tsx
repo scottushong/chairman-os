@@ -186,7 +186,7 @@ export function OrgChart({
             ) : activeTab === GROUP_TAB ? (
               <PeopleGroup
                 title="전사 (회사 범위 없음)"
-                note="전사 역할은 user_business_access에 행이 없고 그래도 전부 봅니다(0002 has_business)."
+                note="전사 역할은 회사 범위를 따로 주지 않아도 모든 회사를 봅니다."
                 people={groupScopePeople}
                 selection={selection}
                 photoUrls={photoUrls}
@@ -477,7 +477,7 @@ function SystemAccounts({
   return (
     <PeopleGroup
       title="시스템 계정"
-      note="사람이 아니라 로그인해서 RLS 안에서 도는 계정입니다(service_role은 없습니다). 초대로 만들지 않고 supabase/bootstrap의 SQL로 붙입니다."
+      note="사람이 아니라 자동 작업(야간 AI · 연동)이 쓰는 계정입니다. 초대로 만들지 않습니다."
       people={people}
       selection={selection}
       photoUrls={photoUrls}
@@ -552,7 +552,7 @@ function PersonRow({
         {/* 폰에서는 이 칸이 꼬리표 사이에 끼어 줄이 들쭉날쭉했다 — 이름 아래 한 줄로 따로 내린다(사진 24px + 간격만큼 들여서) */}
         <span
           className="ml-auto text-t10h text-ink-muted tnum max-sm:ml-0 max-sm:w-full max-sm:pl-[30px]"
-          title="열람 기록은 블록 7에서 만들어집니다"
+          title="마지막 접속은 아직 집계하지 않습니다"
         >
           마지막 접속 —
         </span>
@@ -667,8 +667,8 @@ function PersonPanel({
       </dl>
 
       <p className="mt-2 text-t10 leading-relaxed text-ink-muted">
-        마지막 접속은 아직 만들 수 없습니다 — 이 저장소에 열람 기록이 없습니다. 블록 7이
-        audit_log의 열람 기록을 만들면 그때 채워집니다. 그전까지 지어낸 숫자를 두지 않습니다.
+        마지막 접속은 아직 집계하지 않습니다 — 접속 기록을 모으는 기능이 생기면 채워집니다. 그전까지 지어낸 숫자를 두지
+        않습니다.
       </p>
 
       {canManage ? (
@@ -732,7 +732,7 @@ function PersonPanel({
               ))}
             </select>
             <span className="mt-1 block text-t10 text-ink-muted">
-              자기 아래 사람은 목록에 없습니다 — 고리가 되면 서로의 subtree에 들어가 서로를 다 보게 됩니다.
+              자기 아래 사람은 목록에 없습니다 — 고리가 되면 서로가 서로의 아래가 되어 서로를 다 보게 됩니다.
             </span>
           </label>
 
@@ -776,8 +776,7 @@ function PersonPanel({
             </p>
           ) : null}
           <p className="text-t11 leading-relaxed text-ink-muted">
-            역할·팀·상사·모듈 권한을 바꾸고 권한을 회수하는 것은 대표만 할 수 있습니다(0002
-            user_profiles_admin_write · module_access_admin_write). 그래서 여기 버튼이 없습니다 — 눌러도 DB가 거부합니다.
+            역할·팀·상사·모듈 권한을 바꾸고 권한을 회수하는 것은 대표만 할 수 있습니다. 그래서 여기 버튼이 없습니다.
           </p>
         </div>
       )}
@@ -1030,9 +1029,9 @@ function TeamPanel({
           </button>
         </div>
         <p className="mt-2 text-t11 leading-relaxed text-ink-muted">
-          팀 추가·이름 변경·팀장 지정·회사 간 이동은 대표만 할 수 있습니다(0025 teams_write).
+          팀 추가·이름 변경·팀장 지정·회사 간 이동은 대표만 할 수 있습니다.
           {team && !team.lead_user_id
-            ? ' 이 팀은 팀장이 공석입니다 — 상위 임원이 대신 봅니다(0026 승계).'
+            ? ' 이 팀은 팀장이 공석입니다 — 상위 임원이 대신 봅니다.'
             : ''}
         </p>
       </div>
@@ -1125,7 +1124,7 @@ function TeamPanel({
               ))}
           </select>
           <span className="mt-1 block text-t10 text-ink-muted">
-            공석은 고장이 아니라 상태입니다. 팀장이 나가면 상위 임원이 자동으로 승계합니다(0026).
+            공석은 고장이 아니라 상태입니다. 팀장이 나가면 상위 임원이 자동으로 승계합니다.
           </span>
         </label>
       </div>

@@ -98,6 +98,16 @@ export const MODULE_GRANT_OPTIONS: readonly {
     note: '문서 링크 · 폴더를 그 회사에 등록하고 고칩니다 — 회사마다 따로 켭니다. 회사 범위에 있어도 여기서 켜지 않은 회사에는 등록하지 못합니다. 문서를 보는 범위는 이 칸과 무관합니다(등급 · 보고 체계).',
     roleCovers: ['Chairman'],
   },
+  {
+    // 0059. 키 '/approvals/ledger/<business_id>' — 줄이 있으면 그 회사 양식 결재 전부를 결재 대장에서 본다(경영지원 회계 처리용).
+    // 회장만 준다(0002 module_access_admin_write). 사용자 관리자(0055)가 위임 초대로 줄 수 있는 목록에는 없다.
+    prefix: '/approvals/ledger',
+    label: '결재 대장',
+    write: '결재 대장 열람',
+    approve: null,
+    note: '그 회사의 결재(지출 · 구매 · 휴가 · 계약 · 채용) 전부를 결재 대장에서 보고 엑셀로 내려받습니다 — 회사마다 따로 켭니다. 결재를 처리하는 권한은 아닙니다. 사용자 관리자 권한과는 별개입니다.',
+    roleCovers: ['Chairman'],
+  },
 ]
 
 export interface UserInvitation {

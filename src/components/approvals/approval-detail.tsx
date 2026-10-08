@@ -1,4 +1,10 @@
+import Link from 'next/link'
+
 import { ApprovalActions } from '@/components/approvals/approval-actions'
+import { ChainDecide } from '@/components/approvals/chain-decide'
+import { isChairman } from '@/lib/boss'
+import { ChainProgress } from '@/components/approvals/chain-progress'
+import { chainText } from '@/components/approvals/chain-text'
 import { Icon } from '@/components/ui/icon'
 import { bundleTitle } from '@/lib/approval-line'
 import { bossText } from '@/lib/boss'
@@ -6,6 +12,7 @@ import { DECISION_ACTION_LABEL_KO, type DecisionAuditRecord } from '@/lib/decisi
 import { dDay, formatDateTime, formatDDay } from '@/lib/format'
 import {
   WORK_PRIORITY_LABEL_KO,
+  type ApprovalStepState,
   type Decision,
   type Role,
   type WorkPriority,
@@ -50,6 +57,9 @@ export function ApprovalDetail({
   businessName,
   history,
   viewerRole,
+  viewerId = null,
+  steps = [],
+  resubmittedAs = null,
   fieldLabels = {},
 }: {
   decision: Decision
@@ -58,10 +68,28 @@ export function ApprovalDetail({
   history: DecisionAuditRecord[]
   /** 얼린 결재선의 «회장/대표» 문구를 보는 사람에 맞춘다 — 직원 화면 용어 원칙(CLAUDE.md). */
   viewerRole: Role | null
+  /** 보는 사람. 단계 결재의 «내 차례» · 재상신 버튼을 가른다(판정은 DB가 다시 한다). */
+  viewerId?: string | null
+  /** 0059 단계 결재의 칸들(approval_steps). 예전 결재는 빈 배열. */
+  steps?: ApprovalStepState[]
+  /** 이 반려 결재를 고쳐 다시 올린 결재의 id(있으면). */
+  resubmittedAs?: string | null
   /** 양식 항목 key → 지금 양식의 이름. 지운 항목은 없다 — 그때는 key를 그대로 보인다. */
   fieldLabels?: Record<string, string>
 }) {
   const overdue = dDay(decision.deadline) < 0 && decision.status === 'Open'
+  // 0059 단계 결재. 예전 결재(step_chain false)는 아래 화면 그대로 — 결재선 · 넉 장 버튼.
+  const chain = decision.step_chain === true
+  const turn = chain ? steps.find((s) => s.status === 'pending') : undefined
+  const myTurn = !!turn && viewerId !== null && turn.approver_user_id === viewerId
+  const rejectedStep = steps.find((s) => s.status === 'rejected')
+  const canResubmit =
+    chain &&
+    decision.status === 'Rejected' &&
+    !!decision.template_key &&
+    viewerId !== null &&
+    decision.created_by === viewerId &&
+    !resubmittedAs
 
   return (
     <section className="rounded-xl border border-line-soft bg-panel">
@@ -85,7 +113,29 @@ export function ApprovalDetail({
         <h2 className="mt-1.5 text-t16 leading-snug font-bold">{bundleTitle(decision.title, viewerRole)}</h2>
         <p className="mt-1 text-t11h text-ink-muted">
           현재 상태 <span className="text-ink-dim">{decisionStatusLabel(decision)}</span>
+          {chain && turn ? (
+            <span className="ml-1.5">
+              · 지금 차례{' '}
+              <span className="font-semibold text-ink-dim">
+                {turn.is_chairman ? chainText(turn.approver_name, viewerRole) : turn.approver_name}
+              </span>
+            </span>
+          ) : null}
+          {decision.requester_name ? (
+            <span className="ml-1.5">
+              · 올린 사람 <span className="text-ink-dim">{decision.requester_name}</span>
+              {decision.requester_team_name ? ` (${decision.requester_team_name})` : ''}
+            </span>
+          ) : null}
         </p>
+        {decision.resubmit_of ? (
+          <p className="mt-1.5 text-t11h text-ink-muted">
+            재상신 — 원본{' '}
+            <Link href={`/approvals?tab=done&id=${decision.resubmit_of}`} className="text-accent tnum underline-offset-2 hover:underline">
+              {decision.resubmit_of}
+            </Link>
+          </p>
+        ) : null}
       </div>
 
       <div className="space-y-4 px-4 py-4">
@@ -128,7 +178,17 @@ export function ApprovalDetail({
         </Field>
 
         {/* 0038. 양식으로 올린 결재만. 결재선은 제출 순간 DB가 얼린 값이다 — 조직이 바뀌어도 그대로다. */}
-        {decision.approval_line && decision.approval_line.length > 0 ? (
+        {/* 0059 단계 결재 — 얼린 결재선 대신 칸마다 진행(결재자 · 상태 · 처리 시각 · 의견). */}
+        {chain ? (
+          <Field label="결재 진행">
+            <ChainProgress
+              steps={steps}
+              viewerId={viewerId}
+              viewerRole={viewerRole}
+              ruleWhy={decision.approval_line?.find((s) => s.step === 'rule')?.why ?? null}
+            />
+          </Field>
+        ) : decision.approval_line && decision.approval_line.length > 0 ? (
           <Field label="결재선">
             <ol className="flex flex-wrap items-center gap-1.5 text-t12">
               {decision.approval_line.map((s, i) => (
@@ -211,7 +271,54 @@ export function ApprovalDetail({
           )}
         </Field>
 
-        {decision.status === 'Open' ? (
+        {chain && decision.status === 'Open' ? (
+          <div className="border-t border-line-soft pt-4">
+            {myTurn ? (
+              <ChainDecide key={decision.decision_id} decisionId={decision.decision_id} />
+            ) : (
+              <p className="text-t12 text-ink-muted">
+                {turn
+                  ? `지금은 ${turn.is_chairman ? chainText(turn.approver_name, viewerRole) : turn.approver_name}의 결재 차례입니다. 차례인 결재자만 승인 · 반려할 수 있습니다.`
+                  : '결재 단계를 읽지 못했습니다. 화면을 새로 고쳐 보세요.'}
+              </p>
+            )}
+            {/* 0059 대표 대리 — 결재자가 떠났거나 회사 접근을 잃어 멈춘 칸만 DB가 받는다(살아 있는 결재자의 차례면 거부). */}
+            {!myTurn && turn && !turn.is_chairman && isChairman(viewerRole) ? (
+              <details className="mt-2.5 rounded-lg border border-line-soft px-3 py-2">
+                <summary className="cursor-pointer text-t11h text-ink-dim">결재자가 떠났거나 회사 접근을 잃었으면 — 회장이 대신 처리</summary>
+                <div className="mt-2">
+                  <ChainDecide key={`proxy-${decision.decision_id}`} decisionId={decision.decision_id} />
+                </div>
+              </details>
+            ) : null}
+          </div>
+        ) : chain ? (
+          <div className="space-y-2 border-t border-line-soft pt-4">
+            {decision.status === 'Rejected' && rejectedStep?.note ? (
+              <p className="whitespace-pre-wrap break-words rounded-md bg-critical/10 px-2.5 py-1.5 text-t12 text-critical">
+                반려 사유: {rejectedStep.note}
+              </p>
+            ) : null}
+            {canResubmit ? (
+              <Link
+                href={`/approvals/new?resubmit=${encodeURIComponent(decision.decision_id)}`}
+                className="inline-flex rounded-lg border border-accent bg-accent px-3 py-2 text-t12 font-semibold text-white"
+              >
+                고쳐서 다시 올리기
+              </Link>
+            ) : null}
+            {resubmittedAs ? (
+              <p className="text-t12 text-ink-muted">
+                고쳐서 다시 올렸습니다 —{' '}
+                <Link href={`/approvals?id=${resubmittedAs}`} className="text-accent tnum underline-offset-2 hover:underline">
+                  {resubmittedAs}
+                </Link>
+              </p>
+            ) : (
+              <p className="text-t12 text-ink-muted">끝난 결재는 고칠 수 없습니다. 기록은 지우지 않습니다.</p>
+            )}
+          </div>
+        ) : decision.status === 'Open' ? (
           <div className="border-t border-line-soft pt-4">
             <ApprovalActions
               decisionId={decision.decision_id}

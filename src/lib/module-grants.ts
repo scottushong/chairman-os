@@ -55,3 +55,14 @@ export const DRAFT_DECISION_MODULE = '/chairman/decisions'
 export function hasDraftGrant(grants: ModuleGrant[]): boolean {
   return grants.some((g) => g.module === DRAFT_DECISION_MODULE && g.can_write)
 }
+
+/**
+ * 0059 «결재 대장 열람» 접두사 — 키는 '/approvals/ledger/<business_id>'. 줄이 있으면 그 회사 양식 결재 전부를 읽는다
+ * (0059 approval_ledger_grant — can_write · can_approve 칸은 보지 않는다). 회장만 준다.
+ */
+export const LEDGER_MODULE_PREFIX = '/approvals/ledger'
+
+/** 모듈 줄 → «결재 대장 열람» 회사 목록(SessionUser.ledger). */
+export function ledgerBusinesses(grants: ModuleGrant[]): string[] {
+  return grants.map((g) => businessOfModule(LEDGER_MODULE_PREFIX, g.module)).filter((b): b is string => b !== null)
+}

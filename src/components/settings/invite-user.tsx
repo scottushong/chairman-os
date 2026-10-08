@@ -246,7 +246,7 @@ export function InviteUser({
             <span className="font-semibold text-ink">{done}</span> 초대를 저장했습니다.
             {queued
               ? ` ${bossName} 결재 대기로 들어갔습니다 — 승인 전에는 계정이 생겨도 권한이 붙지 않습니다.`
-              : ' 아직 계정은 없습니다 — 아래 안내 문구를 본인에게 보내면 본인이 /signup에서 가입합니다. 계정이 생기는 순간 권한이 자동으로 붙습니다(0011 on_auth_user_created).'}
+              : ' 아직 계정은 없습니다 — 아래 안내 문구를 본인에게 보내면 본인이 /signup에서 가입합니다. 계정이 생기는 순간 권한이 자동으로 붙습니다.'}
             {/* 결재 대기 초대는 승인 전에 가입해도 권한이 없다 — 그때 보낼 글이 아니라서 버튼을 그리지 않는다. */}
             {queued ? null : <CopySignupGuide name={doneName} email={done} />}
           </div>
@@ -273,7 +273,7 @@ export function InviteUser({
       </div>
       <p className="mt-1 text-t11 leading-relaxed text-ink-muted">
         여기서 계정이 만들어지지는 않습니다. 이 주소로 계정이 생기면 아래 권한을 준다는 약속을
-        저장합니다 — 메일은 Supabase Dashboard에서 보냅니다(DEFERRED D-15).
+        저장합니다 — 이 화면은 메일을 보내지 않습니다. 저장 뒤 나오는 가입 안내 문구를 본인에게 보내세요.
       </p>
 
       <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -395,7 +395,7 @@ export function InviteUser({
               ))}
           </select>
           <span className="mt-1 block text-t10h text-ink-muted">
-            초대는 자기 아래로만 할 수 있습니다. 이 목록에 없는 사람 밑으로는 부를 수 없습니다(0026).
+            초대는 자기 아래로만 할 수 있습니다. 이 목록에 없는 사람 밑으로는 부를 수 없습니다.
           </span>
         </label>
 
@@ -447,8 +447,8 @@ export function InviteUser({
             <p className="mt-1.5 rounded-lg bg-raised px-3 py-2 text-t11h text-ink-muted">
               {isChairman ? (
                 <>
-                  {ROLE_LABEL_KO[role]}은(는) 04_권한 시트에서 Business 범위가 &lsquo;전체&rsquo;입니다.
-                  회사를 지정해도 0002의 has_business()가 그 목록을 보지 않습니다.
+                  {ROLE_LABEL_KO[role]}은(는) 권한표에서 회사 범위가 &lsquo;전체&rsquo;입니다.
+                  회사를 지정해도 그 목록은 쓰이지 않습니다.
                 </>
               ) : (
                 <>{ROLE_LABEL_KO[role]}은(는) 전사 역할이라 모든 회사를 봅니다. 회사를 지정해도 쓰이지 않습니다.</>
@@ -476,8 +476,8 @@ export function InviteUser({
           )}
           {!groupScope ? (
             <p className="mt-1.5 text-t10h text-ink-muted">
-              여기 없는 회사는 이 사람에게 존재하지 않는 것처럼 보입니다(Business Isolation).
-              자기가 못 보는 회사는 줄 수 없습니다 — DB가 거부합니다.
+              여기 없는 회사는 이 사람에게 존재하지 않는 것처럼 보입니다.
+              자기가 못 보는 회사는 줄 수 없습니다 — 저장되지 않습니다.
             </p>
           ) : null}
         </fieldset>

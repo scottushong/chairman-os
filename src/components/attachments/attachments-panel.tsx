@@ -77,6 +77,10 @@ export interface AttachmentsPanelProps {
   compact?: boolean
   /** 0058 — 회사 화면의 «이전 첨부»(자료 받는 입구 전에 붙인 파일). 올리기 칸을 그리지 않는다 — 새 파일은 입구로. */
   legacy?: boolean
+  /** 0059 — 끝난 양식 결재: 올리기 · 지우기를 그리지 않고 이 문장을 보인다(DB가 restrictive로 한 번 더 막는다). */
+  locked?: string
+  /** 0059 — 대표 본인 결재(끝남): 증빙은 붙이기만, 지우기는 그리지 않는다. */
+  deleteLocked?: boolean
 }
 
 /**
@@ -134,7 +138,7 @@ export function AttachmentsPanel(props: AttachmentsPanelProps) {
   const isChairman = viewer.role === 'Chairman'
   const defaultCls = defaultAttachmentClass(viewer.maxClass)
   // 올릴 수 있는 등급이 하나도 없으면(Public) 올리기 칸을 그리지 않는다 — 0045가 어차피 막는다.
-  const canUpload = !props.legacy && viewer.role !== 'AIAgent' && viewer.role !== 'Integration' && defaultCls !== null
+  const canUpload = !props.legacy && viewer.role !== 'AIAgent' && viewer.role !== 'Integration' && defaultCls !== null && !props.locked
   const [cls, setCls] = useState<AttachmentClass>(defaultCls ?? 'Normal')
 
   /** 파일 한 개 — 공통 첨부 부품이 순서대로 부른다. 형식 · 20MB(사진 제외)는 놓을 때 이미 걸렀다. */
@@ -231,6 +235,7 @@ export function AttachmentsPanel(props: AttachmentsPanelProps) {
           }
         />
       ) : null}
+      {props.locked ? <p className="mt-2 text-t11 text-ink-muted">{props.locked}</p> : null}
 
       <ul className="mt-3 space-y-2.5">
         {attachments.map((a) => (
@@ -242,7 +247,7 @@ export function AttachmentsPanel(props: AttachmentsPanelProps) {
   )
 }
 
-function AttachmentCard({ a, viewer, names, vaultViewers, people, fill }: AttachmentsPanelProps & { a: Attachment }) {
+function AttachmentCard({ a, viewer, names, vaultViewers, people, fill, locked, deleteLocked }: AttachmentsPanelProps & { a: Attachment }) {
   const router = useRouter()
   const [pending, start] = useTransition()
   const [msg, setMsg] = useState<string | null>(null)
@@ -317,7 +322,7 @@ function AttachmentCard({ a, viewer, names, vaultViewers, people, fill }: Attach
               {a.status === 'uploaded' ? '요약하기' : '다시 요약'}
             </button>
           ) : null}
-          {mine ? (
+          {mine && !locked && !deleteLocked ? (
             <button
               type="button"
               disabled={pending}

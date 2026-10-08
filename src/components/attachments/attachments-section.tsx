@@ -14,6 +14,8 @@ export async function AttachmentsSection({
   fill,
   compact,
   legacy,
+  locked,
+  deleteLocked,
 }: {
   entityTable: AttachmentEntity
   entityId: string
@@ -21,6 +23,8 @@ export async function AttachmentsSection({
   compact?: boolean
   /** 0058 — 회사 화면의 «이전 첨부»(입구 전에 붙인 파일). 올리기 칸 없이 목록만. */
   legacy?: boolean
+  locked?: string
+  deleteLocked?: boolean
 }) {
   const [repo, user] = await Promise.all([getRepository(), currentUser()])
   if (!user) return null
@@ -58,6 +62,8 @@ export async function AttachmentsSection({
       fill={fill}
       compact={compact}
       legacy={legacy}
+      locked={locked}
+      deleteLocked={deleteLocked}
     />
   )
 }

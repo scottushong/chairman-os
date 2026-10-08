@@ -60,7 +60,8 @@ export function DecisionPanel({ decisions, businesses, audit }: DecisionPanelPro
   const open = decisions
     .filter(
       (d) =>
-        d.status === 'Open' && !acted.includes(d.decision_id),
+        // 0059 단계 결재는 4버튼(decide)으로 닫지 못한다(approval_use_steps) — /approvals 승인함에서 차례대로 처리한다.
+        d.status === 'Open' && !d.step_chain && !acted.includes(d.decision_id),
     )
     .sort(
       (a, b) =>

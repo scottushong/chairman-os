@@ -32,7 +32,11 @@
     "check:file-drop": "tsx scripts/check-file-drop.ts",
     "check:attachments": "tsx --conditions=react-server scripts/check-attachments.ts",
     "check:ecount-import": "tsx scripts/check-ecount-import.ts",
-    "check:intake": "tsx --conditions=react-server scripts/check-intake.ts"
+    "check:intake": "tsx --conditions=react-server scripts/check-intake.ts",
+    "check:number-input": "tsx scripts/check-number-input.ts",
+    "check:approval-ledger": "tsx scripts/check-approval-ledger.ts",
+    "check:approval-scenarios": "tsx --conditions=react-server scripts/check-approval-scenarios.ts",
+    "check:staging-sql-0059": "tsx scripts/check-staging-sql-0059.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",

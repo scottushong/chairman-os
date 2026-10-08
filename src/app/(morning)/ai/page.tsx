@@ -33,6 +33,26 @@ import { worldCitiesOf } from '@/lib/world-cities'
 import type { AiBriefItem, AiNightOutput, Business, ProjectNote } from '@/types'
 
 /**
+ * 0059 — 회장 차례로 기다리는 단계 결재 수(대기 중인 approval_steps 가운데 is_chairman이고 결재자가 회장 본인).
+ * 회장에게는 건마다 알림을 보내지 않는다 — 아침 화면 숫자 한 줄 + 승인함이다.
+ *
+ * 야간 브리핑(night-brief.ts)에 넣지 않고 **회장 세션으로 화면을 그릴 때** 센다: 그 Job은 AIAgent로 돌고,
+ * 단계 결재는 0059 RLS가 회사 범위 · 결재선으로만 내준다. 회장 세션은 다 본다 — 새 DB 함수가 필요 없다.
+ * 열린 단계 결재만 골라 그 단계만 묻는다(닫힌 결재의 단계까지 끌어오지 않는다). 못 세면 null — 줄이 빠질 뿐 화면은 선다.
+ */
+async function chairmanWaitingCount(repo: Awaited<ReturnType<typeof getRepository>>, chairmanId: string): Promise<number | null> {
+  try {
+    const open = (await repo.listDecisions()).filter((d) => d.step_chain && d.status === 'Open').map((d) => d.decision_id)
+    if (open.length === 0) return 0
+    const steps = await repo.listApprovalSteps(open)
+    return new Set(steps.filter((s) => s.status === 'pending' && s.is_chairman && s.approver_user_id === chairmanId).map((s) => s.decision_id)).size
+  } catch (e) {
+    console.error('[ai] chairman approvals waiting', e)
+    return null
+  }
+}
+
+/**
  * /ai — 회장의 아침 루틴. P5-5c에서 (morning) 다크 셸로 옮겼다(URL은 /ai 그대로다).
  *
  * 화면은 두 층이다.
@@ -87,6 +107,7 @@ export default async function AiPage(props: PageProps<'/ai'>) {
     cityWeather,
     fx,
     checkin,
+    approvalsWaiting,
   ] = await Promise.all([
     repo.listAiNightOutputs(),
     repo.listBusinesses(),
@@ -105,6 +126,7 @@ export default async function AiPage(props: PageProps<'/ai'>) {
     // 셋의 합이 아니라 가장 느린 하나가 된다.
     getFxStrip(),
     isChairman ? repo.getCheckin(today) : Promise.resolve(null),
+    isChairman && user ? chairmanWaitingCount(repo, user.user_id) : Promise.resolve(null),
   ])
 
   // 카운터는 진행 중인 것만. 끝났거나 접은 프로젝트는 아침에 셀 날이 아니다.
@@ -229,6 +251,21 @@ export default async function AiPage(props: PageProps<'/ai'>) {
             여기 글자에는 ink-muted와 상태색(지난 D-day)이 섞여 있어 맨 배경 위에 두면 안 된다
             (globals.css '유리 없이 글자를 놓지 마라'). 다크 라디얼 위에서도 같은 원칙이다. */}
         <div className="min-w-0 space-y-5 pb-6">
+          {/* 0059 회장 결재 대기 — 0건이면 아무것도 그리지 않는다. */}
+          {isChairman && approvalsWaiting ? (
+            <GlassCard as="section">
+              <Link
+                href="/approvals?tab=turn"
+                className="flex items-center gap-2 text-t13 font-semibold text-ink transition-colors hover:text-accent"
+              >
+                <Icon name="check-circle" className="size-4 text-ink-dim" />
+                <span>
+                  결재 대기 <span className="tnum">{approvalsWaiting}</span>건 — 승인함에서 한 번에 승인
+                </span>
+                <span aria-hidden className="ml-auto text-ink-muted">→</span>
+              </Link>
+            </GlassCard>
+          ) : null}
           {todayItems.length > 0 || upcomingInitiatives.length > 0 || staleInitiatives.length > 0 ? (
             <GlassCard as="section">
               <TodayAndWeek

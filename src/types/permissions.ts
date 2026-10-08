@@ -129,4 +129,9 @@ export interface SessionUser {
    * 없으면(옛 세션 객체 · 카카오 질문자) 모르는 것으로 보고 DB 판정에 맡긴다.
    */
   approvals_write?: boolean
+  /**
+   * 0059 «결재 대장 열람» — user_module_access '/approvals/ledger/<business_id>' 줄이 있는 회사들. 회장은 역할로 전부 본다.
+   * 메뉴 표시용이다(판정은 0059 decisions_ledger_read). 없으면 빈 값으로 본다.
+   */
+  ledger?: string[]
 }

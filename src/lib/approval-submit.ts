@@ -1,14 +1,14 @@
 import { AMOUNT_INVALID_MESSAGE, amountInvalid, missingFields } from '@/lib/approval-line'
 import { boss } from '@/lib/boss'
 import type { ChairmanRepository } from '@/lib/repository'
-import { APPROVAL_TEMPLATE_KEY, DECISION_STATUS_LABEL_KO, type ApprovalTemplate, type ApprovalTemplateKey, type Decision, type SessionUser } from '@/types'
+import { APPROVAL_TEMPLATE_KEY, DECISION_STATUS_LABEL_KO, type ApprovalChainBoss, type ApprovalTemplate, type ApprovalTemplateKey, type Decision, type SessionUser } from '@/types'
 
 /**
  * 양식으로 결재 올리기의 몸통 — 화면(/approvals/new → app/actions/approval-form.ts)과 AI 어시스턴트의 확인 버튼
  * (lib/ai/assistant/execute.ts → 같은 서버 액션)이 **같은 문**을 지난다. 서버 액션은 세션 · repo를 고르고
  * 화면을 새로 그리는 일만 더한다. 검증(scripts/check-ask.ts)은 이 함수를 dummy repo로 바로 부른다.
  *
- * 결재선은 보내지 않는다. 0038 트리거(dummy는 그 거울)가 팀장 → 규칙 판정 → 대표를 새로 만들고 얼린다.
+ * 결재선은 보내지 않는다. 0059 트리거(dummy는 그 거울)가 조직도 상사 사슬 → (기준 이상이면) 대표를 새로 만들고 얼린다.
  * 여기서 필수 항목을 먼저 보는 이유는 거부가 'approval_form_missing:purpose'로만 오면 직원이 무엇을 채워야
  * 하는지 모르기 때문이다 — 판정은 트리거가 한 번 더 한다.
  *
@@ -21,6 +21,8 @@ export interface ApprovalSubmitInput {
   title: unknown
   deadline: unknown
   form: unknown
+  /** 0059 재상신 — 반려된 내 결재(같은 양식 · 같은 회사)를 고쳐 다시 올리면 그 원본 id. 판정은 트리거가 한다. */
+  resubmitOf?: unknown
 }
 
 export type ApprovalSubmitResult = { error: string; decision?: undefined } | { error?: undefined; decision: Decision }
@@ -79,6 +81,12 @@ export function approvalSubmitError(e: unknown, template: ApprovalTemplate, role
   if (/approval_attachment_missing/.test(message)) {
     return `${template.name_ko} 양식 설정이 아직 바뀌지 않았습니다. ${boss(role)}에게 알려 주세요.`
   }
+  // 0059 재상신 — 내가 올려 반려된 같은 양식 · 같은 회사 결재만, 원본 한 건에 한 번(decisions_resubmit_once).
+  if (/decisions_resubmit_once/.test(message)) return '이 반려 결재는 이미 다시 올렸습니다. 결재 목록에서 재상신한 건을 확인하세요.'
+  if (/approval_resubmit_invalid/.test(message)) {
+    return '다시 올릴 수 없는 결재입니다. 내가 올려 반려된 결재만, 같은 양식 · 같은 회사로 다시 올릴 수 있습니다.'
+  }
+  if (/approval_no_chairman/.test(message)) return `결재선을 만들 수 없습니다. ${boss(role)} 계정이 없습니다 — 관리자에게 알려 주세요.`
   if (/42501|PGRST301|row-level security|decisions_create/.test(message)) {
     return `결재를 올릴 권한이 아직 없습니다. ${boss(role)}에게 «결재 올리기» 권한을 켜 달라고 요청하세요.`
   }
@@ -87,6 +95,12 @@ export function approvalSubmitError(e: unknown, template: ApprovalTemplate, role
 
 /** 결재 한 건의 지금 상태 한 마디 — /me «내 요청»의 requestState와 같은 말(보는 사람에 맞춘 호칭). */
 export function approvalState(d: Decision, role: SessionUser['role']): string {
+  // 0059 단계 결재 — 지금 차례는 approval_steps에 있다(여기서는 결재 한 줄만 본다). 올린 직후는 첫 칸이 차례다.
+  if (d.step_chain && d.status === 'Open') {
+    const first = d.approval_line?.find((s) => s.step === 'boss' || s.step === 'chairman')
+    if (!first || first.step === 'chairman') return `${boss(role)} 결재 대기`
+    return '상사 결재 대기'
+  }
   if (d.lead_status === 'pending') return '팀장 대기'
   if (d.status === 'Open' && d.chairman_required) return `${boss(role)} 결재 대기`
   if (d.status === 'Approved' && d.decided_by_kind === 'rule') return '기록 완료'
@@ -110,6 +124,8 @@ export async function submitApprovalWith(
   if (!template) return { error: '양식을 찾지 못했습니다.' }
   const problem = formProblem(template, form, user.role)
   if (problem) return { error: problem }
+  const resubmitOf = text(input.resubmitOf)
+  if (resubmitOf.length > 64) return { error: '다시 올릴 원본 결재를 알 수 없습니다.' }
 
   try {
     const decision = await repo.createDecision(
@@ -121,6 +137,7 @@ export async function submitApprovalWith(
         deadline,
         template_key: templateKey,
         form,
+        ...(resubmitOf ? { resubmit_of: resubmitOf } : {}),
       },
       { user_id: user.user_id, role: user.role },
     )
@@ -129,4 +146,22 @@ export async function submitApprovalWith(
     console.error('[submitApprovalForm]', e)
     return { error: approvalSubmitError(e, template, user.role) }
   }
+}
+
+/** 결재 올리기 미리보기의 상사 사슬 — 회사 하나(0059 my_approval_chain). */
+export interface ApprovalChainPreview {
+  bosses: ApprovalChainBoss[]
+  /**
+   * 직속 상사가 대표인가(대표 칸의 문장 «직속 상사(대표)» · «결재할 상사가 없어 대표»가 갈린다).
+   * 0059 my_boss_is_chairman()이 답한다. 미리보기 문장 하나의 차이이고, 얼리는 값은 트리거가 정한다.
+   */
+  directBossIsChairman: boolean
+}
+
+export async function approvalChainPreview(repo: ChairmanRepository, businessId: string): Promise<ApprovalChainPreview> {
+  const [bosses, bossIsChairman] = await Promise.all([
+    repo.myApprovalChain(businessId).catch(() => [] as ApprovalChainBoss[]),
+    repo.myBossIsChairman().catch(() => false),
+  ])
+  return { bosses, directBossIsChairman: bossIsChairman }
 }
