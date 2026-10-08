@@ -5829,80 +5829,6 @@ async function ecountRpcUnderNonBypassOwner() {
     try {
       const res = await db.query<Record<string, unknown>>(sql)
       return String(Object.values(res.rows[0] ?? {})[0])
- * 0059 단계 결재 — 조직도 상사 사슬 · 차례대로 · 반려 사유 · 재상신 · 끝난 결재 얼림 · 대표 한 번에 승인 · 결재 대장 열람.
- * 회장 지시의 다섯 거부(차례 건너뛰기 · 남의 차례 · 끝난 결재 수정 · 결재선 위조 · 다른 회사 결재)를 잰다.
- * dummy 거울(lib/approval-chain.ts bossChain · chainLine)이 DB와 같은 결재선을 내는지도 같이 잰다.
- */
-const AC = {
-  chair: '00000000-0000-0000-0000-0000000059a1',
-  ceo: '00000000-0000-0000-0000-0000000059a2', // DY BusinessCEO, 상사 = 대표
-  lead: '00000000-0000-0000-0000-0000000059a3', // DY TeamLead, 상사 = 대표
-  emp1: '00000000-0000-0000-0000-0000000059a4', // 김병훈 자리 — 상사 = 대표
-  emp2: '00000000-0000-0000-0000-0000000059a5', // 상사 = lead
-  mid: '00000000-0000-0000-0000-0000000059a6', // Executive, 상사 = lead
-  emp3: '00000000-0000-0000-0000-0000000059a7', // 상사 = mid → lead → 대표
-  gone: '00000000-0000-0000-0000-0000000059a8', // 떠난 사람, 상사 = lead
-  emp4: '00000000-0000-0000-0000-0000000059a9', // 상사 = gone(떠남) → lead
-  vboss: '00000000-0000-0000-0000-0000000059aa', // VANA만 보는 TeamLead, 상사 = lead
-  emp5: '00000000-0000-0000-0000-0000000059ab', // 상사 = vboss(DY 접근 없음) → lead
-  vana: '00000000-0000-0000-0000-0000000059ac', // VANA 직원
-  clerk: '00000000-0000-0000-0000-0000000059ad', // DY 경영지원 — «DY 결재 대장 열람»
-  nobody: '00000000-0000-0000-0000-0000000059ae', // DY 직원, 권한 없음
-  cyc1: '00000000-0000-0000-0000-0000000059af', // cyc1 → cyc2 → 대표 (순환 reports_to는 0025 트리거가 막는다)
-  cyc2: '00000000-0000-0000-0000-0000000059b0',
-  agent: '00000000-0000-0000-0000-0000000059b1',
-}
-
-async function approvalChain() {
-  const db = new PGlite({ extensions: { pg_trgm } })
-  await applyAll(db)
-  await db.exec(`
-    grant usage on schema public, auth to authenticated, anon;
-    grant select, insert, update, delete on all tables in schema public to authenticated;
-    grant usage, select on all sequences in schema public to authenticated;
-    revoke all on table approval_steps from authenticated;
-    grant select on table approval_steps to authenticated;
-    insert into auth.users select id::uuid, id || '@x' from unnest(array[${Object.values(AC).map((u) => `'${u}'`).join(', ')}]) id;
-    insert into user_profiles (user_id, role, display_name, max_security_class, team_id) values
-      ('${AC.chair}', 'Chairman', '회장님', 'Vault', null),
-      ('${AC.ceo}', 'BusinessCEO', 'DY 대표이사', 'Restricted', null),
-      ('${AC.lead}', 'TeamLead', '팀장', 'Normal', 'team_dy_support'),
-      ('${AC.emp1}', 'Member', '김병훈', 'Normal', 'team_dy_support'),
-      ('${AC.emp2}', 'Member', '사원2', 'Normal', 'team_dy_support'),
-      ('${AC.mid}', 'Executive', '임원', 'Normal', null),
-      ('${AC.emp3}', 'Member', '사원3', 'Normal', null),
-      ('${AC.gone}', 'Member', '떠난 상사', 'Normal', null),
-      ('${AC.emp4}', 'Member', '사원4', 'Normal', null),
-      ('${AC.vboss}', 'TeamLead', 'VANA 팀장', 'Normal', null),
-      ('${AC.emp5}', 'Member', '사원5', 'Normal', null),
-      ('${AC.vana}', 'Member', 'VANA 직원', 'Normal', null),
-      ('${AC.clerk}', 'Member', '경영지원', 'Normal', 'team_dy_support'),
-      ('${AC.nobody}', 'Member', '권한 없음', 'Normal', null),
-      ('${AC.cyc1}', 'Member', '순환1', 'Normal', null),
-      ('${AC.cyc2}', 'Member', '순환2', 'Normal', null),
-      ('${AC.agent}', 'AIAgent', 'ai', 'Restricted', null);
-    update user_profiles set reports_to = '${AC.chair}' where user_id in ('${AC.ceo}', '${AC.lead}', '${AC.emp1}');
-    update user_profiles set reports_to = '${AC.lead}' where user_id in ('${AC.emp2}', '${AC.mid}', '${AC.gone}', '${AC.vboss}');
-    update user_profiles set reports_to = '${AC.mid}' where user_id = '${AC.emp3}';
-    update user_profiles set reports_to = '${AC.gone}' where user_id = '${AC.emp4}';
-    update user_profiles set reports_to = '${AC.vboss}' where user_id = '${AC.emp5}';
-    update user_profiles set reports_to = '${AC.cyc2}' where user_id = '${AC.cyc1}';
-    update user_profiles set reports_to = '${AC.chair}' where user_id = '${AC.cyc2}'; -- 순환은 0025 트리거가 막는다
-    update user_profiles set revoked_at = now(), status = 'left' where user_id = '${AC.gone}';
-    insert into user_business_access
-      select u::uuid, 'biz_dy' from unnest(array['${AC.ceo}', '${AC.lead}', '${AC.emp1}', '${AC.emp2}', '${AC.mid}', '${AC.emp3}', '${AC.gone}',
-        '${AC.emp4}', '${AC.emp5}', '${AC.clerk}', '${AC.nobody}', '${AC.cyc1}', '${AC.cyc2}']) u;
-    insert into user_business_access values ('${AC.vboss}', 'biz_vana'), ('${AC.vana}', 'biz_vana');
-    insert into user_module_access (user_id, module, can_write, can_approve) values ('${AC.clerk}', '/approvals/ledger/biz_dy', false, false);
-    -- 운영 양식은 첨부 칸이 없다(10-06 회장이 저장 — attachment_required false).
-    update approval_templates set attachment_required = false;
-  `)
-  const owner = async <T,>(sql: string) => (await db.query<T>(sql)).rows
-  const as = async <T,>(uid: string, sql: string, setup = '') => {
-    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
-    try {
-      if (setup) await db.exec(setup)
-      return (await db.query<T>(sql)).rows
     } finally {
       await db.exec('rollback')
     }
@@ -6920,6 +6846,88 @@ async function intake(nonBypassOwner = false) {
   assert.equal(await as(IK.up, [`select count(*)::int from intake_same_file('itk_img')`]), 0, '0058: 해시 없는 줄에 같은 파일이 나온다')
   assert.equal(await as(IK.vana, [`select count(*)::int from intake_same_file('itk_dup')`]), 0, '0058: 다른 회사 사람에게 같은 파일 알림이 샌다')
 
+  await db.close()
+}
+
+/**
+ * 0059 단계 결재 — 조직도 상사 사슬 · 차례대로 · 반려 사유 · 재상신 · 끝난 결재 얼림 · 대표 한 번에 승인 · 결재 대장 열람.
+ * 회장 지시의 다섯 거부(차례 건너뛰기 · 남의 차례 · 끝난 결재 수정 · 결재선 위조 · 다른 회사 결재)를 잰다.
+ * dummy 거울(lib/approval-chain.ts bossChain · chainLine)이 DB와 같은 결재선을 내는지도 같이 잰다.
+ */
+const AC = {
+  chair: '00000000-0000-0000-0000-0000000059a1',
+  ceo: '00000000-0000-0000-0000-0000000059a2', // DY BusinessCEO, 상사 = 대표
+  lead: '00000000-0000-0000-0000-0000000059a3', // DY TeamLead, 상사 = 대표
+  emp1: '00000000-0000-0000-0000-0000000059a4', // 김병훈 자리 — 상사 = 대표
+  emp2: '00000000-0000-0000-0000-0000000059a5', // 상사 = lead
+  mid: '00000000-0000-0000-0000-0000000059a6', // Executive, 상사 = lead
+  emp3: '00000000-0000-0000-0000-0000000059a7', // 상사 = mid → lead → 대표
+  gone: '00000000-0000-0000-0000-0000000059a8', // 떠난 사람, 상사 = lead
+  emp4: '00000000-0000-0000-0000-0000000059a9', // 상사 = gone(떠남) → lead
+  vboss: '00000000-0000-0000-0000-0000000059aa', // VANA만 보는 TeamLead, 상사 = lead
+  emp5: '00000000-0000-0000-0000-0000000059ab', // 상사 = vboss(DY 접근 없음) → lead
+  vana: '00000000-0000-0000-0000-0000000059ac', // VANA 직원
+  clerk: '00000000-0000-0000-0000-0000000059ad', // DY 경영지원 — «DY 결재 대장 열람»
+  nobody: '00000000-0000-0000-0000-0000000059ae', // DY 직원, 권한 없음
+  cyc1: '00000000-0000-0000-0000-0000000059af', // cyc1 → cyc2 → 대표 (순환 reports_to는 0025 트리거가 막는다)
+  cyc2: '00000000-0000-0000-0000-0000000059b0',
+  agent: '00000000-0000-0000-0000-0000000059b1',
+}
+
+async function approvalChain() {
+  const db = new PGlite({ extensions: { pg_trgm } })
+  await applyAll(db)
+  await db.exec(`
+    grant usage on schema public, auth to authenticated, anon;
+    grant select, insert, update, delete on all tables in schema public to authenticated;
+    grant usage, select on all sequences in schema public to authenticated;
+    revoke all on table approval_steps from authenticated;
+    grant select on table approval_steps to authenticated;
+    insert into auth.users select id::uuid, id || '@x' from unnest(array[${Object.values(AC).map((u) => `'${u}'`).join(', ')}]) id;
+    insert into user_profiles (user_id, role, display_name, max_security_class, team_id) values
+      ('${AC.chair}', 'Chairman', '회장님', 'Vault', null),
+      ('${AC.ceo}', 'BusinessCEO', 'DY 대표이사', 'Restricted', null),
+      ('${AC.lead}', 'TeamLead', '팀장', 'Normal', 'team_dy_support'),
+      ('${AC.emp1}', 'Member', '김병훈', 'Normal', 'team_dy_support'),
+      ('${AC.emp2}', 'Member', '사원2', 'Normal', 'team_dy_support'),
+      ('${AC.mid}', 'Executive', '임원', 'Normal', null),
+      ('${AC.emp3}', 'Member', '사원3', 'Normal', null),
+      ('${AC.gone}', 'Member', '떠난 상사', 'Normal', null),
+      ('${AC.emp4}', 'Member', '사원4', 'Normal', null),
+      ('${AC.vboss}', 'TeamLead', 'VANA 팀장', 'Normal', null),
+      ('${AC.emp5}', 'Member', '사원5', 'Normal', null),
+      ('${AC.vana}', 'Member', 'VANA 직원', 'Normal', null),
+      ('${AC.clerk}', 'Member', '경영지원', 'Normal', 'team_dy_support'),
+      ('${AC.nobody}', 'Member', '권한 없음', 'Normal', null),
+      ('${AC.cyc1}', 'Member', '순환1', 'Normal', null),
+      ('${AC.cyc2}', 'Member', '순환2', 'Normal', null),
+      ('${AC.agent}', 'AIAgent', 'ai', 'Restricted', null);
+    update user_profiles set reports_to = '${AC.chair}' where user_id in ('${AC.ceo}', '${AC.lead}', '${AC.emp1}');
+    update user_profiles set reports_to = '${AC.lead}' where user_id in ('${AC.emp2}', '${AC.mid}', '${AC.gone}', '${AC.vboss}');
+    update user_profiles set reports_to = '${AC.mid}' where user_id = '${AC.emp3}';
+    update user_profiles set reports_to = '${AC.gone}' where user_id = '${AC.emp4}';
+    update user_profiles set reports_to = '${AC.vboss}' where user_id = '${AC.emp5}';
+    update user_profiles set reports_to = '${AC.cyc2}' where user_id = '${AC.cyc1}';
+    update user_profiles set reports_to = '${AC.chair}' where user_id = '${AC.cyc2}'; -- 순환은 0025 트리거가 막는다
+    update user_profiles set revoked_at = now(), status = 'left' where user_id = '${AC.gone}';
+    insert into user_business_access
+      select u::uuid, 'biz_dy' from unnest(array['${AC.ceo}', '${AC.lead}', '${AC.emp1}', '${AC.emp2}', '${AC.mid}', '${AC.emp3}', '${AC.gone}',
+        '${AC.emp4}', '${AC.emp5}', '${AC.clerk}', '${AC.nobody}', '${AC.cyc1}', '${AC.cyc2}']) u;
+    insert into user_business_access values ('${AC.vboss}', 'biz_vana'), ('${AC.vana}', 'biz_vana');
+    insert into user_module_access (user_id, module, can_write, can_approve) values ('${AC.clerk}', '/approvals/ledger/biz_dy', false, false);
+    -- 운영 양식은 첨부 칸이 없다(10-06 회장이 저장 — attachment_required false).
+    update approval_templates set attachment_required = false;
+  `)
+  const owner = async <T,>(sql: string) => (await db.query<T>(sql)).rows
+  const as = async <T,>(uid: string, sql: string, setup = '') => {
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
+    try {
+      if (setup) await db.exec(setup)
+      return (await db.query<T>(sql)).rows
+    } finally {
+      await db.exec('rollback')
+    }
+  }
   const commitAs = async <T,>(uid: string, sql: string) => {
     await db.exec(`begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
     try {
