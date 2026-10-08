@@ -282,7 +282,18 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
           {/* Phase 10 — 결재 근거 파일 + AI 요약(0045: 결재가 보이고 AND 등급). 링크 첨부(attachment_url)는 그대로다. */}
           {selected ? (
             <div className="mt-3.5">
-              <AttachmentsSection key={selected.decision_id} entityTable="decisions" entityId={selected.decision_id} />
+              <AttachmentsSection
+                key={selected.decision_id}
+                entityTable="decisions"
+                entityId={selected.decision_id}
+                // 0059 — 끝난 양식 결재는 증빙을 바꾸지 못한다(대표 본인 결재는 올린 대표가 뒤에 붙인다).
+                locked={
+                  selected.template_key && selected.status !== 'Open' &&
+                  !(selected.step_chain && selected.decided_by_kind === 'chairman' && selected.created_by === user?.user_id)
+                    ? '끝난 결재라 첨부를 더하거나 지울 수 없습니다.'
+                    : undefined
+                }
+              />
             </div>
           ) : (
             <p className="rounded-xl border border-line-soft bg-panel px-4 py-10 text-center text-t12h text-ink-muted">

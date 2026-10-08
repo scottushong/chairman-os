@@ -1141,10 +1141,10 @@ export const dummyRepository: ChairmanRepository = {
       if (!d.step_chain || (memoryDecisionStatuses.get(id) ?? d.status) !== 'Open') throw new Error(`approval_not_pending:${id}`)
       const s = dummySteps.find((x) => x.decision_id === id && x.status === 'pending')
       if (!s) throw new Error(`approval_not_pending:${id}`)
-      const approver = memoryPeople.find((p) => p.user_id === s.approver_user_id)
-      if (s.approver_user_id !== viewer.user_id && !(viewer.role === 'Chairman' && !personHasBusiness(approver, d.business_id))) {
-        throw new Error(`approval_not_your_turn:${id}`)
+      if (viewer.role !== 'Chairman' && !dummySteps.some((x) => x.decision_id === id && x.approver_user_id === viewer.user_id)) {
+        throw new Error(`approval_not_found:${id}`)
       }
+      if (s.approver_user_id !== viewer.user_id && viewer.role !== 'Chairman') throw new Error(`approval_not_your_turn:${id}`)
     }
     for (const id of ids) await dummyRepository.approvalDecide(id, true, note, actor)
     return ids.length

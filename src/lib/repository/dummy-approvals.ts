@@ -1,4 +1,4 @@
-import { bossChain, chainLine } from '@/lib/approval-chain'
+import { bossChain, CHAIN_ROLES, chainLine } from '@/lib/approval-chain'
 import { toChairman } from '@/lib/approval-line'
 import type { ApprovalStep, ApprovalStepState, ApprovalTemplate, Decision, UserAccount } from '@/types'
 
@@ -86,13 +86,19 @@ export function decideStep(
   note: string | null,
 ): DecideOutcome {
   if (viewer.revoked_at || !personHasBusiness(viewer, d.business_id)) throw new Error('approval_not_found')
+  // 0059 리뷰 M2 — 결재선 밖 사람에게는 «없는 결재»(대표는 대리 처리가 있어 예외).
+  if (viewer.role !== 'Chairman' && !dummySteps.some((s) => s.decision_id === d.decision_id && s.approver_user_id === viewer.user_id)) {
+    throw new Error('approval_not_found')
+  }
   if (!d.step_chain || decisionStatus !== 'Open') throw new Error('approval_not_pending')
   const step = dummySteps.find((s) => s.decision_id === d.decision_id && s.status === 'pending')
   if (!step) throw new Error('approval_not_pending')
   let proxy = false
   if (step.approver_user_id !== viewer.user_id) {
     const approver = people.find((p) => p.user_id === step.approver_user_id)
-    if (viewer.role === 'Chairman' && !personHasBusiness(approver, d.business_id)) proxy = true
+    // 떠남 · 회사 접근 잃음 · 사람 역할이 아니게 된 칸만(리뷰 M7 · 재리뷰 Minor 2 — 대표 역할 칸은 가로채지 못한다).
+    const human = !!approver && ['Chairman', ...CHAIN_ROLES].includes(approver.role)
+    if (viewer.role === 'Chairman' && (!personHasBusiness(approver, d.business_id) || (!step.is_chairman && !human))) proxy = true
     else throw new Error('approval_not_your_turn')
   }
   const reason = (note ?? '').trim() || null

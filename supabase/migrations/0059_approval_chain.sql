@@ -504,7 +504,7 @@ begin
        and (not user_has_business(s.approver_user_id, d.business_id)
             or (not s.is_chairman and not exists (
                   select 1 from user_profiles p where p.user_id = s.approver_user_id
-                     and p.role::text in ('GroupCFO', 'BusinessCEO', 'Executive', 'TeamLead', 'Member')))) then
+                     and p.role::text in ('Chairman', 'GroupCFO', 'BusinessCEO', 'Executive', 'TeamLead', 'Member')))) then
       v_proxy := true;
     else
       raise exception 'approval_not_your_turn' using errcode = '42501';
@@ -630,15 +630,21 @@ create policy decisions_lead_read on decisions for select
 -- 열린 결재에, 올린 사람 · 지금 차례 결재자(0059 전 결재는 팀장 칸 · 대표)만. 끝난 결재는 아무도(대표도) 못 바꾼다.
 create or replace function approval_attachment_ok(p_entity_table text, p_entity_id text) returns boolean
 language sql stable security definer set search_path = public, pg_temp as $fn$
+  -- 재리뷰 Minor 1 — 못 보는 회사의 결재는 «양식 결재인가»도 말하지 않는다(참 = 판단 안 함, 0045 정책이 막는다).
   select p_entity_table is distinct from 'decisions'
-      or not exists (select 1 from decisions d where d.decision_id = p_entity_id and d.template_key is not null)
+      or not exists (select 1 from decisions d where d.decision_id = p_entity_id and d.template_key is not null and has_business(d.business_id))
       or exists (
         select 1 from decisions d
-         where d.decision_id = p_entity_id and d.status::text = 'Open' and is_active()
-           and (d.created_by = auth.uid()
-                or (d.step_chain and exists (select 1 from approval_steps s
-                                              where s.decision_id = d.decision_id and s.status = 'pending' and s.approver_user_id = auth.uid()))
-                or (not d.step_chain and (auth_role()::text = 'Chairman' or d.approval_line->0->>'user_id' = auth.uid()::text))));
+         where d.decision_id = p_entity_id and is_active()
+           and (
+             (d.status::text = 'Open'
+              and (d.created_by = auth.uid()
+                   or (d.step_chain and exists (select 1 from approval_steps s
+                                                 where s.decision_id = d.decision_id and s.status = 'pending' and s.approver_user_id = auth.uid()))
+                   or (not d.step_chain and (auth_role()::text = 'Chairman' or d.approval_line->0->>'user_id' = auth.uid()::text))))
+             -- 재리뷰 I-B — 대표 본인 결재는 올리는 순간 닫힌다. 증빙은 올린 대표 본인이 뒤에 붙인다.
+             or (d.step_chain and d.status::text = 'Approved' and d.created_by = auth.uid() and d.decided_by = auth.uid()
+                 and d.decided_by_kind = 'chairman')));
 $fn$;
 
 revoke all on function approval_attachment_ok(text, text) from public, anon;
@@ -648,6 +654,23 @@ create policy attachments_approval_insert on attachments as restrictive for inse
   with check (approval_attachment_ok(entity_table, entity_id));
 create policy attachments_approval_delete on attachments as restrictive for delete
   using (approval_attachment_ok(entity_table, entity_id));
+
+-- 재리뷰 I-A — 줄만 잠그면 파일(storage.objects)은 올린 사람 · 대표가 그대로 지우고(1시간 안이면) 같은 경로에 다시 올린다.
+-- attachments 버킷의 객체에도 같은 판단을 restrictive로 건다. 다른 버킷은 건드리지 않는다.
+create or replace function approval_object_ok(object_name text) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $fn$
+  select coalesce((select approval_attachment_ok(a.entity_table, a.entity_id) from attachments a where a.storage_path = object_name limit 1), true);
+$fn$;
+
+revoke all on function approval_object_ok(text) from public;
+grant execute on function approval_object_ok(text) to anon, authenticated;
+
+drop policy if exists attachments_objects_approval_insert on storage.objects;
+create policy attachments_objects_approval_insert on storage.objects as restrictive for insert
+  with check (bucket_id is distinct from 'attachments' or public.approval_object_ok(name));
+drop policy if exists attachments_objects_approval_delete on storage.objects;
+create policy attachments_objects_approval_delete on storage.objects as restrictive for delete
+  using (bucket_id is distinct from 'attachments' or public.approval_object_ok(name));
 
 -- =====================================================================
 -- 7절. 대장 내려받기 감사

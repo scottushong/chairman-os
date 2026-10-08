@@ -5406,6 +5406,21 @@ async function approvalChain() {
      values ('decisions', 'dec_59b', 'old.pdf', 'application/pdf', 10, 'Normal', '${AC.emp2}')`)
   assert.deepEqual(await as(AC.emp2, `with x as (delete from attachments where entity_id = 'dec_59b' returning 1) select count(*)::int as n from x`), [{ n: 0 }],
     '0059: 끝난 결재의 증빙을 기안자가 지운다(I1)')
+  // 재리뷰 I-A — 파일(storage.objects)도 같은 잠금: 끝난 결재의 파일을 올린 사람 · 대표가 지우거나 같은 경로에 다시 올리지 못한다.
+  const [{ path }] = await owner<{ path: string }>(`select storage_path as path from attachments where entity_id = 'dec_59b' limit 1`)
+  await owner(`insert into storage.objects (bucket_id, name, owner) values ('attachments', '${path}', '${AC.emp2}')`)
+  for (const who of [AC.emp2, AC.chair]) {
+    assert.deepEqual(await as(who, `with x as (delete from storage.objects where bucket_id = 'attachments' and name = '${path}' returning 1) select count(*)::int as n from x`),
+      [{ n: 0 }], `0059: 끝난 결재의 파일을 지운다(재리뷰 I-A, ${who})`)
+  }
+  await owner(`delete from storage.objects where name = '${path}'`)
+  await assert.rejects(as(AC.emp2, 'select 1', `insert into storage.objects (bucket_id, name, owner) values ('attachments', '${path}', '${AC.emp2}')`),
+    /row-level security/, '0059: 끝난 결재의 경로에 파일을 다시 올린다(재리뷰 I-A)')
+  // 재리뷰 I-B — 대표 본인 결재(올리는 순간 닫힘)에는 대표가 증빙을 붙인다. 남은 못 붙인다.
+  assert.deepEqual(await as(AC.chair, `select count(*)::int as n from attachments where entity_id = 'dec_59i'`, attach('dec_59i')), [{ n: 1 }],
+    '0059: 대표 본인 결재에 대표가 증빙을 못 붙인다(재리뷰 I-B)')
+  // 재리뷰 Minor 1 — 못 보는 회사의 결재는 «양식 결재인가»를 말하지 않는다.
+  assert.deepEqual(await as(AC.emp2, `select approval_attachment_ok('decisions', 'dec_59v') as ok`), [{ ok: true }], '0059: approval_attachment_ok가 다른 회사 양식 결재를 알려 준다')
 
   // ── 리뷰 I2 — 회사 접근을 잃은 첫 칸 상사는 더 못 읽는다(0042 decisions_lead_read에 회사 격리) ──
   assert.equal((await as(AC.mid, `select 1 from decisions where decision_id = 'dec_59d2'`)).length, 1, '0059 전제: 첫 칸 상사가 결재를 못 읽는다')
