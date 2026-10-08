@@ -1425,6 +1425,12 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       return ((data as ApprovalChainBoss[] | null) ?? []).map((r) => ({ seq: Number(r.seq), user_id: r.user_id, display_name: r.display_name }))
     },
 
+    async myBossIsChairman(): Promise<boolean> {
+      const { data, error } = await sb.rpc('my_boss_is_chairman')
+      if (error) throw new Error(`Supabase my_boss_is_chairman ${error.code ?? '?'}: ${error.message}`)
+      return data === true
+    },
+
     async approvalDecide(decisionId: string, approve: boolean, note: string | null, actor: AuditActor) {
       void actor // 차례 판정 · 감사 · 알림은 DB(approval_decide)가 auth.uid()로 한다.
       const { data, error } = await sb.rpc('approval_decide', { p_decision: decisionId, p_approve: approve, p_note: note })

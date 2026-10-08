@@ -153,16 +153,15 @@ export interface ApprovalChainPreview {
   bosses: ApprovalChainBoss[]
   /**
    * 직속 상사가 대표인가(대표 칸의 문장 «직속 상사(대표)» · «결재할 상사가 없어 대표»가 갈린다).
-   * 세션은 reports_to를 모른다 — 사슬이 비고 결재선 첫 칸 후보(my_approval_lead, 대표는 후보가 아님)도 없으면 대표로 본다.
-   * 미리보기 문장 하나의 차이이고, 얼리는 값은 트리거가 정한다.
+   * 0059 my_boss_is_chairman()이 답한다. 미리보기 문장 하나의 차이이고, 얼리는 값은 트리거가 정한다.
    */
   directBossIsChairman: boolean
 }
 
 export async function approvalChainPreview(repo: ChairmanRepository, businessId: string): Promise<ApprovalChainPreview> {
-  const [bosses, lead] = await Promise.all([
+  const [bosses, bossIsChairman] = await Promise.all([
     repo.myApprovalChain(businessId).catch(() => [] as ApprovalChainBoss[]),
-    repo.myApprovalLead().catch(() => null),
+    repo.myBossIsChairman().catch(() => false),
   ])
-  return { bosses, directBossIsChairman: bosses.length === 0 && lead === null }
+  return { bosses, directBossIsChairman: bossIsChairman }
 }

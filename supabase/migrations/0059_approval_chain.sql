@@ -179,6 +179,7 @@ $fn$;
 revoke all on function my_approval_chain(text) from public, anon;
 grant execute on function my_approval_chain(text) to authenticated;
 
+
 -- 대표(결재선 마지막 칸) — 가장 먼저 만든 살아 있는 Chairman.
 create or replace function approval_chairman() returns table (user_id uuid, display_name text)
 language sql stable security definer set search_path = public, pg_temp as $fn$
@@ -187,6 +188,16 @@ language sql stable security definer set search_path = public, pg_temp as $fn$
 $fn$;
 
 revoke all on function approval_chairman() from public, anon, authenticated;
+
+-- 미리보기의 대표 칸 문장(«직속 상사(대표)» · «결재할 상사가 없어 대표»)을 트리거와 같게 — 세션 본인의 직속 상사가 대표인가.
+create or replace function my_boss_is_chairman() returns boolean
+language sql stable security definer set search_path = public, pg_temp as $fn$
+  select is_active() and exists (
+    select 1 from user_profiles me join approval_chairman() c on c.user_id = me.reports_to where me.user_id = auth.uid());
+$fn$;
+
+revoke all on function my_boss_is_chairman() from public, anon;
+grant execute on function my_boss_is_chairman() to authenticated;
 
 -- 세션이 그 결재의 결재선에 들었는가(어느 칸이든). 정책이 부른다 — approval_steps를 RLS 없이 본다(재귀 없음).
 create or replace function in_approval_chain(p_decision text) returns boolean

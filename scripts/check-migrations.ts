@@ -5282,6 +5282,8 @@ async function approvalChain() {
   // 미리보기 RPC는 세션 본인의 사슬만.
   assert.deepEqual((await as<{ u: string }>(AC.emp3, `select user_id::text as u from my_approval_chain('biz_dy') order by seq`)).map((r) => r.u), [AC.mid, AC.lead], '0059: 미리보기 사슬이 다르다')
   assert.deepEqual(await as(AC.vana, `select 1 from my_approval_chain('biz_dy')`), [], '0059: 다른 회사 미리보기가 사슬을 낸다')
+  assert.deepEqual([(await as<{ b: boolean }>(AC.emp1, `select my_boss_is_chairman() as b`))[0].b, (await as<{ b: boolean }>(AC.emp2, `select my_boss_is_chairman() as b`))[0].b],
+    [true, false], '0059: my_boss_is_chairman()이 직속 상사 = 대표를 다르게 답한다')
 
   // ── 반려: 사유 필수 · 즉시 종결 · 남은 칸 취소 · 알림 · 재상신 ──
   await assert.rejects(decide(AC.mid, 'dec_59d', false), /approval_reason_required/, '0059: 사유 없는 반려가 된다')

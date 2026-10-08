@@ -1138,6 +1138,12 @@ export const dummyRepository: ChairmanRepository = {
     return bossChain(viewer.user_id, memoryPeople, (uid) => personHasBusiness(memoryPeople.find((p) => p.user_id === uid), businessId))
   },
 
+  async myBossIsChairman() {
+    const me = memoryPeople.find((p) => p.user_id === dummyViewer().user_id)
+    const chair = memoryPeople.find((p) => p.role === 'Chairman' && !p.revoked_at && p.status === 'active')
+    return !!me && !!chair && me.reports_to === chair.user_id
+  },
+
   async approvalDecide(decisionId: string, approve: boolean, note: string | null, actor: AuditActor) {
     const viewer = memoryPeople.find((p) => p.user_id === dummyViewer().user_id)
     const d = memoryDecisions.find((x) => x.decision_id === decisionId)

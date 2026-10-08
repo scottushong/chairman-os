@@ -229,6 +229,8 @@ export interface ChairmanRepository {
   listApprovalSteps(decisionIds?: string[]): Promise<ApprovalStepState[]>
   /** 0059 결재 올리기 미리보기 — 세션 본인의 상사 사슬(대표 앞까지). */
   myApprovalChain(businessId: string): Promise<ApprovalChainBoss[]>
+  /** 0059 my_boss_is_chairman — 세션 본인의 직속 상사가 대표인가(미리보기의 대표 칸 문장). */
+  myBossIsChairman(): Promise<boolean>
   /**
    * 0059 approval_decide — 지금 차례인 결재자만. 반려는 사유 필수.
    * 'next'(다음 차례로) · 'approved'(최종 승인) · 'rejected'(반려 종결).
