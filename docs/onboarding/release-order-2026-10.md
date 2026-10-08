@@ -1,4 +1,56 @@
-# 2026-10 릴리스 순서: 결재(0054) 먼저, ECOUNT(0050~0052) 나중
+# 2026-10 릴리스 순서
+
+> ## 2026-10-08 추가 — 결재 대장 · 상사 승인(0059). 이 상자가 아래 모든 본문보다 우선한다
+>
+> production은 0055다. 남은 DB 묶음 셋은 **번호 순서대로** 내보낸다. 뒤 브랜치가 앞 브랜치를 이미 품고 있다
+> (`feat/intake` ⊃ `feat/ecount-import` ⊃ master, `release/ledger-rehearsal` = `feat/intake` + `feat/approvals-ledger`).
+> **master에 합치는 순간 앱이 그 DB를 기대한다** — 합치기와 `release-production.sh`는 한 묶음씩 짝으로 친다.
+>
+> | 순서 | master에 합칠 브랜치 | 마이그레이션 | 명령 |
+> |---|---|---|---|
+> | B | `feat/ecount-import` | 0050 0051 0052 0056 | `bash scripts/release-production.sh --include-all 0050 0051 0052 0056` |
+> | C | `feat/intake` | 0058 | `bash scripts/release-production.sh 0058` |
+> | D | `release/ledger-rehearsal` | 0059 | `bash scripts/release-production.sh 0059` |
+>
+> ### D-0. staging (회장이 Git Bash에서 — 이 세션은 staging 쓰기가 막혀 있다)
+>
+> ```bash
+> cp ~/projects/chairman-os/.env.staging.local ~/projects/chairman-os-ledger-rehearsal/
+> cd ~/projects/chairman-os-ledger-rehearsal
+> npm run db:push:staging          # 검사 뒤 대기 목록이 0059 하나여야 한다(0058이 아직이면 0058 0059)
+> P="$(grep ^SUPABASE_DB_PASSWORD .env.staging.local | cut -d= -f2-)"
+> cp docs/onboarding/staging-tests/0059_staging_test.sql supabase/.temp/
+> SUPABASE_DB_PASSWORD="$P" npx supabase db query --linked -f "supabase/.temp/0059_staging_test.sql"
+> rm -f supabase/.temp/0059_staging_test.sql
+> ```
+>
+> 기대: 오류 문장이 `0059 STAGING PASS a(…) b(…) c(…) d(…) e(…) f(…) g(…) h(…)`로 시작한다(전부 되돌린다 — staging에 남는 것 없음).
+>
+> ### D-1. production 전 읽기 전용 점검
+>
+> production SQL Editor에서 `docs/onboarding/approval-chain-precheck.sql`(select만) — 열린 양식 결재 수 · 직원별 직속 상사.
+>
+> ### D-2. 합치기 · 검사 · 리허설 · 진짜 (B · C가 끝난 뒤)
+>
+> ```bash
+> cd ~/projects/chairman-os
+> git checkout master
+> git merge --no-ff release/ledger-rehearsal
+> npm run check:migrations && npm run check:db-safety && npm run check:boundaries && npm run check:finance
+> RELEASE_DRY_RUN=1 bash scripts/release-production.sh 0059
+> bash scripts/release-production.sh 0059
+> ```
+>
+> ### D-3. 반영 뒤 회장 클릭 순서 (production 앱)
+>
+> 1. `https://chairman-os-eosin.vercel.app/settings/users` → 조직도 → **김병훈** → 모듈 권한 «결재 대장 · DY (주)» → **결재 대장 열람** 체크.
+> 2. 같은 화면에서 직원마다 **직속 상사**가 맞는지 본다 — 이제 결재선은 이 사슬이다(팀장을 두면 그 사람을 상사로).
+> 3. `https://chairman-os-eosin.vercel.app/settings/approvals` — 양식별 기준 금액 확인(미만 = 직속 상사 종결).
+> 4. `https://chairman-os-eosin.vercel.app/approvals?tab=turn` — 회장 차례 결재 «선택 항목 한 번에 승인».
+> 5. `https://chairman-os-eosin.vercel.app/approvals/ledger` — DY · 이번 달로 거르고 «엑셀 내려받기».
+>
+> 열린 옛 결재(«팀장 대기» · «대표 대기»)는 예전 길로 끝난다. 끝난 결재는 그대로다(고칠 수 없다).
+
 
 > ## 2026-10-07 확정판 — 이 상자가 아래 본문보다 우선한다
 >
