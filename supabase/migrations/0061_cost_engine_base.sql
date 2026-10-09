@@ -383,7 +383,8 @@ end;
 $do$;
 
 /**
- * 리뷰 C2(c) — 터무니없는 값 막기. 대표 외의 입력이 그 원료의 최근 90일 중앙값(무효 제외 · 3점 이상일 때)의 0.2배 미만이거나 5배 초과면 거부.
+ * 리뷰 C2(c) — 터무니없는 값 막기. 대표 외의 입력이 그 원료의 앞선 90일 중앙값(어제까지 들어온 줄 · 무효 포함 · 3점 이상일 때)의 0.2배 미만이거나 5배 초과면 거부.
+ * 3점 미만(새 원료)은 막지 않는다 — 대신 쌍시간(3일)이 그 값을 바로 원가에 비치지 않게 한다.
  * 가짜 시세 · LOT 한 줄로 원가를 크게 흔들어 BOM 비율을 읽는 길(설계서 6.3)을 좁힌다. 진짜 급등락은 대표가 넣거나, 사유와 함께 대표에게 올린다.
  */
 create or replace function cost_outlier_check() returns trigger
@@ -392,18 +393,36 @@ declare
   v_new numeric;
   v_med numeric;
   v_n int;
+  v_today date := cost_today();
+  v_start timestamptz := (cost_today()::timestamp at time zone 'Asia/Seoul');
 begin
   if coalesce(auth_role()::text, '') = 'Chairman' then return new; end if;
+  -- BEFORE 트리거는 RLS 판정보다 먼저 돈다 — 구매 입력 권한이 없는 사람은 여기서 아무 말도 하지 않고 RLS가 거부하게 둔다
+  -- (그렇지 않으면 «너무 다르다» · «미래» 오류가 시세를 못 보는 사람에게 시세 범위를 알려 준다).
+  if not cost_can('purchasing', new.business_id, true) then return new; end if;
+  -- 리뷰 2회차 M1:
+  --   · 기준은 «어제까지 들어온 줄»(무효 포함) — 같은 날 여러 출처로 중앙값을 끌어올리거나, 진짜 줄을 무효로 해 기준을 없애는 길을 막는다.
+  --   · 창은 [날짜 − 90, 날짜] — 먼 미래 날짜로 기준 밖에 넣는 길을 막고, 대표 외는 내일보다 먼 날짜를 받지 않는다.
+  --   · 같은 원료 같은 날 시세는 출처 셋까지.
   if tg_table_name = 'cost_market_prices' then
+    if new.observed_on > v_today + 1 then
+      raise exception 'cost_date_future' using errcode = '22023';
+    end if;
+    if (select count(*) from cost_market_prices where material_id = new.material_id and observed_on = new.observed_on and voided_at is null) >= 3 then
+      raise exception 'cost_price_too_many' using errcode = '22023';
+    end if;
     v_new := new.price_krw_per_kg;
     select percentile_cont(0.5) within group (order by price_krw_per_kg), count(*) into v_med, v_n
-      from cost_market_prices where material_id = new.material_id and voided_at is null
-       and observed_on between new.observed_on - 90 and new.observed_on + 90;
+      from cost_market_prices where material_id = new.material_id and created_at < v_start
+       and observed_on between new.observed_on - 90 and new.observed_on;
   else
+    if new.received_on > v_today + 1 then
+      raise exception 'cost_date_future' using errcode = '22023';
+    end if;
     v_new := new.landed_krw_per_kg;
     select percentile_cont(0.5) within group (order by landed_krw_per_kg), count(*) into v_med, v_n
-      from cost_purchase_lots where material_id = new.material_id and voided_at is null
-       and received_on between new.received_on - 90 and new.received_on + 90;
+      from cost_purchase_lots where material_id = new.material_id and created_at < v_start
+       and received_on between new.received_on - 90 and new.received_on;
   end if;
   if v_n >= 3 and v_med > 0 and (v_new > v_med * 5 or v_new < v_med * 0.2) then
     raise exception 'cost_price_outlier' using errcode = '22023';

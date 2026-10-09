@@ -174,8 +174,8 @@ $fn$;
  * 원가 조회 문. 제품이 보이는 회사인지 · 원가 관리 또는 영업인지 판정하고, 하루 한도를 세고, 하루 · 기준일마다 한 줄 감사를 남긴다.
  * 돌려주는 것: 회사 · 기준일 · 아는 시각 · 대표인가.
  *   대표       기준일 그대로 · 아는 시각 = 지금 전부 · 한도 · 감사 없음.
- *   원가 관리  기준일 = 최근 7일 안(리뷰 I3 — 지난 이력을 한꺼번에 긁지 못하게).
- *   영업       기준일 = 이번 주 월요일 하나(인자 무시 — 설계서 6.3 완화 1 · 리뷰 I3).
+ *   원가 관리 · 영업  기준일 = 이번 주 월요일 하나(인자 무시 — 리뷰 2회차 C1: 시세 표를 읽는 사람이 합계를 여러 날짜로 받으면
+ *                     원료 k개 제품의 비율이 k+1개 날짜로 풀린다. 한 주에 한 점만 쌓이게 한다).
  *   아는 시각 = least(지금 − 3일, 기준일 끝(KST)) — 리뷰 C2(b).
  *   구매 입력 줄을 같이 가진 사람은 원가를 못 본다(리뷰 C2(a) — 시세를 넣고 원가 변화를 읽으면 비율이 그대로 나온다): 'cost_role_conflict'.
  */
@@ -208,11 +208,9 @@ begin
   if cost_grant('purchasing', business_id, true) then
     raise exception 'cost_role_conflict' using errcode = '42501';
   end if;
-  if cost_can('costing', business_id) then
-    as_of := greatest(least(coalesce(p_as_of, v_today), v_today), v_today - 7);
-  else
-    as_of := date_trunc('week', v_today)::date;
-  end if;
+  -- 리뷰 2회차 C1 — 시세를 읽는 사람(원가 관리 · 영업 둘 다 시세 표 O)이 합계를 여러 날짜로 받으면 최소제곱으로 비율이 첫날에 풀린다.
+  -- 대표 외는 원가 관리 · 영업 모두 «이번 주 월요일» 한 값(인자 무시) — 한 주에 한 점씩만 쌓인다(설계서 6.3).
+  as_of := date_trunc('week', v_today)::date;
   known_at := least(now() - interval '3 days', ((as_of + 1)::timestamp at time zone 'Asia/Seoul'));
   select coalesce(sum(r.calls), 0) into v_total from cost_secret.cost_reads r where r.user_id = auth.uid() and r.read_on = v_today;
   if v_total >= 200 then
@@ -227,6 +225,16 @@ begin
             jsonb_build_object('kind', p_kind, 'as_of', as_of), '원가 조회(0062) — 하루 · 기준일마다 한 줄');
   end if;
 end;
+$fn$;
+
+/** 그 회사의 사용 중 원료 전부에 그 종류 · 그 날짜 · 그 시각까지 알려진 단가가 있는가(대표 외 «계산됨»의 문 — 리뷰 2회차 I1). */
+create or replace function cost_secret.business_complete(p_business text, p_kind text, p_on date, p_known timestamptz) returns boolean
+language sql stable security definer set search_path = public, cost_secret, pg_temp as $fn$
+  select not exists (
+    select 1 from public.cost_materials m
+     where m.business_id = p_business and m.active
+       and cost_secret.unit_price(m.material_id, p_kind, p_on, p_known) is null
+  );
 $fn$;
 
 revoke all on all functions in schema cost_secret from public, anon, authenticated;
@@ -250,6 +258,12 @@ begin
     raise exception 'cost_kind_unsupported' using errcode = '22023';
   end if;
   select * into g from cost_secret.cost_gate(p_product, p_kind, p_as_of);
+  -- 리뷰 2회차 I1 — 대표 외에게 «계산됨»이 BOM에 기대면(단가 없는 원료가 이 제품에 있나) 소속이 샌다. 회사의 사용 중 원료 전부에
+  -- 그 종류 단가가 있을 때만 계산한다 — 하나라도 없으면 그 회사 모든 제품이 똑같이 not_computed.
+  if not g.chairman and not cost_secret.business_complete(g.business_id, p_kind, g.as_of, g.known_at) then
+    return query select p_product, p_kind, g.as_of, null::numeric, false, 'not_computed'::text;
+    return;
+  end if;
   select * into c from cost_secret.material_cost(p_product, p_kind, g.as_of, g.known_at);
   return query select p_product, p_kind, g.as_of,
     case when c.total is null then null else round(c.total, -1) end,
@@ -276,12 +290,14 @@ begin
   if p_kind is null or p_kind not in ('market', 'current') or p_from is null or p_to is null then
     raise exception 'cost_kind_unsupported' using errcode = '22023';
   end if;
-  select * into g from cost_secret.cost_gate(p_product, p_kind, p_to);
+  select * into g from cost_secret.cost_gate(p_product, 'impact_' || p_kind, p_to);
   v_from := least(p_from, g.as_of);
   if not g.chairman then
-    v_from := greatest(v_from, g.as_of - 35);
-    if not cost_can('costing', g.business_id) then
-      v_from := date_trunc('week', v_from)::date;
+    -- 리뷰 2회차 C1 — 대표 외는 «지난 주 월요일 → 이번 주 월요일» 한 값만(인자 무시). 날짜를 바꿔 가며 과거 합계를 되살리지 못하게.
+    v_from := g.as_of - 7;
+    if not (cost_secret.business_complete(g.business_id, p_kind, v_from, g.known_at)
+            and cost_secret.business_complete(g.business_id, p_kind, g.as_of, g.known_at)) then
+      return null;
     end if;
   end if;
   select * into a from cost_secret.material_cost(p_product, p_kind, v_from, g.known_at);
