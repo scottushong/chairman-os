@@ -117,7 +117,7 @@ function seed(): Store {
       price: value,
       currency,
       fx_rate: fxr,
-      price_krw_per_kg: round4(value * fxr),
+      price_krw_per_kg: value * fxr,
       source_name,
       source_url: null,
       note: '',
@@ -145,7 +145,7 @@ function seed(): Store {
   ) => {
     const on = day(n)
     const fxr = currency === 'KRW' ? 1 : usd.get(on)!
-    const goods = round4(unit_price * qty_kg * fxr)
+    const goods = unit_price * qty_kg * fxr // 0061처럼 반올림 없음
     const f = extra.freight ?? 0
     const d = extra.duty ?? 0
     const o = extra.other ?? 0
@@ -165,7 +165,7 @@ function seed(): Store {
       duty_krw: d,
       other_krw: o,
       goods_krw: goods,
-      landed_krw_per_kg: round4((goods + f + d + o) / qty_kg),
+      landed_krw_per_kg: (goods + f + d + o) / qty_kg,
       source: 'manual',
       source_ref: null,
       note: '',
@@ -374,14 +374,14 @@ export function dummyPurchasing(): PurchasingMethods {
       if (fxr === null) throw new Error('cost_fx_missing')
       outlier(
         store.prices.filter((p) => p.material_id === input.material_id && !p.voided_at && within90(p.observed_on, input.observed_on)).map((p) => p.price_krw_per_kg),
-        round4(input.price * fxr),
+        input.price * fxr,
       )
       const row: MarketPrice = {
         price_id: store.nextPriceId++,
         business_id: businessId,
         ...input,
         fx_rate: fxr,
-        price_krw_per_kg: round4(input.price * fxr),
+        price_krw_per_kg: input.price * fxr,
         created_at: new Date().toISOString(),
         voided_at: null,
         void_reason: null,
@@ -423,10 +423,10 @@ export function dummyPurchasing(): PurchasingMethods {
       if (input.received_on > day(1)) throw new Error('cost_date_future')
       const fxr = input.currency === 'KRW' ? 1 : (input.fx_rate ?? fxOn(input.currency, input.received_on))
       if (fxr === null) throw new Error('cost_fx_missing')
-      const goods = round4(input.unit_price * input.qty_kg * fxr)
+      const goods = input.unit_price * input.qty_kg * fxr
       outlier(
         store.lots.filter((l) => l.material_id === input.material_id && !l.voided_at && within90(l.received_on, input.received_on)).map((l) => l.landed_krw_per_kg),
-        round4((goods + input.freight_krw + input.duty_krw + input.other_krw) / input.qty_kg),
+        (goods + input.freight_krw + input.duty_krw + input.other_krw) / input.qty_kg,
       )
       const row: PurchaseLot = {
         lot_id: lotId(kstToday()),
@@ -435,7 +435,7 @@ export function dummyPurchasing(): PurchasingMethods {
         source_ref: input.source === 'approval' ? input.source_ref : null,
         fx_rate: fxr,
         goods_krw: goods,
-        landed_krw_per_kg: round4((goods + input.freight_krw + input.duty_krw + input.other_krw) / input.qty_kg),
+        landed_krw_per_kg: (goods + input.freight_krw + input.duty_krw + input.other_krw) / input.qty_kg,
         created_at: new Date().toISOString(),
         voided_at: null,
         void_reason: null,

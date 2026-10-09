@@ -116,7 +116,7 @@ create table cost_market_prices (
   price            numeric(20, 4) not null check (price > 0),       -- 통화 · kg당
   currency         char(3) not null default 'KRW' check (currency ~ '^[A-Z]{3}$'),
   fx_rate          numeric(18, 6) check (fx_rate > 0),              -- 비우면 fx_rates에서 찾는다(트리거)
-  price_krw_per_kg numeric(20, 4) not null default 0,               -- 트리거가 계산한다(입력값 무시)
+  price_krw_per_kg numeric not null default 0,                      -- 트리거가 계산한다(입력값 무시). 소수 그대로(회장 결정 10-09 밤 «1원까지 · 반올림 없음»)
   source_name      text not null check (length(btrim(source_name)) between 1 and 120),
   source_url       text check (source_url is null or (source_url ~* '^https?://' and length(source_url) <= 1000)),
   note             text not null default '' check (length(note) <= 500),
@@ -151,8 +151,8 @@ create table cost_purchase_lots (
   freight_krw       numeric(20, 4) not null default 0 check (freight_krw >= 0),
   duty_krw          numeric(20, 4) not null default 0 check (duty_krw >= 0),
   other_krw         numeric(20, 4) not null default 0 check (other_krw >= 0),
-  goods_krw         numeric(20, 4) not null default 0,               -- 트리거: unit_price × qty × fx
-  landed_krw_per_kg numeric(20, 4) not null default 0,               -- 트리거: (goods + freight + duty + other) ÷ qty
+  goods_krw         numeric not null default 0,                      -- 트리거: unit_price × qty × fx(소수 그대로)
+  landed_krw_per_kg numeric not null default 0,                      -- 트리거: (goods + freight + duty + other) ÷ qty(소수 그대로 — 표시만 1원)
   source            text not null default 'manual' check (source in ('manual', 'approval', 'import')),
   source_ref        text check (source_ref is null or length(source_ref) <= 80),
   note              text not null default '' check (length(note) <= 500),
@@ -295,7 +295,7 @@ create or replace function cost_market_price_calc() returns trigger
 language plpgsql set search_path = public as $fn$
 begin
   new.fx_rate := cost_fx(new.currency, new.observed_on, new.fx_rate);
-  new.price_krw_per_kg := round(new.price * new.fx_rate, 4);
+  new.price_krw_per_kg := new.price * new.fx_rate;
   return new;
 end;
 $fn$;
@@ -304,8 +304,9 @@ create or replace function cost_lot_calc() returns trigger
 language plpgsql set search_path = public as $fn$
 begin
   new.fx_rate := cost_fx(new.currency, new.received_on, new.fx_rate);
-  new.goods_krw := round(new.unit_price * new.qty_kg * new.fx_rate, 4);
-  new.landed_krw_per_kg := round((new.goods_krw + new.freight_krw + new.duty_krw + new.other_krw) / new.qty_kg, 4);
+  new.goods_krw := new.unit_price * new.qty_kg * new.fx_rate;
+  -- 반올림하지 않는다(회장 결정 2026-10-09 밤 — 내부 계산은 소수 그대로, 화면 · 엑셀만 1원). numeric 나눗셈은 유효숫자 16자리 이상을 남긴다.
+  new.landed_krw_per_kg := (new.goods_krw + new.freight_krw + new.duty_krw + new.other_krw) / new.qty_kg;
   return new;
 end;
 $fn$;
@@ -397,7 +398,8 @@ $do$;
 
 /**
  * 리뷰 C2(c) — 터무니없는 값 막기. 대표 외의 입력이 그 원료의 앞선 90일 중앙값(어제까지 들어온 줄 · 무효 포함 · 3점 이상일 때)의 0.2배 미만이거나 5배 초과면 거부.
- * 3점 미만(새 원료)은 막지 않는다 — 대신 쌍시간(3일)이 그 값을 바로 원가에 비치지 않게 한다.
+ * 3점 미만(새 원료)은 막지 않는다. 데이터 품질용이다 — 회장 결정(2026-10-09 밤 «매일 최신»)으로 쌍시간 · 주간 스냅샷은 없앴고,
+ * 넣은 값은 대표 외 원가에도 바로 비친다(설계서 16절 — 이 문이 남은 유일한 «값 범위» 문이다).
  * 가짜 시세 · LOT 한 줄로 원가를 크게 흔들어 BOM 비율을 읽는 길(설계서 6.3)을 좁힌다. 진짜 급등락은 대표가 넣거나, 사유와 함께 대표에게 올린다.
  */
 create or replace function cost_outlier_check() returns trigger

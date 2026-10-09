@@ -35,7 +35,7 @@ export function SalesCostBoard({ rows }: { rows: SalesCostRow[] }) {
             <th className="px-3 py-2 text-right font-normal">DY 원가 (Current)</th>
             <th className="px-3 py-2 text-right font-normal">원가 우위</th>
             <th className="px-3 py-2 text-right font-normal">총원가</th>
-            <th className="px-3 py-2 text-right font-normal">원료비 영향 (지난 주 대비)</th>
+            <th className="px-3 py-2 text-right font-normal">원료비 영향 (7일 전 대비)</th>
             <th className="px-3 py-2 font-normal">
               <span className="sr-only">제시가</span>
             </th>
@@ -77,7 +77,7 @@ export function SalesCostBoard({ rows }: { rows: SalesCostRow[] }) {
                   </>
                 ) : (
                   <td colSpan={6} className="px-3 py-2 text-ink-muted" data-label="원가">
-                    이번 주 원가 계산 전입니다 — 구매 기록이 모이면 계산됩니다.
+                    아직 원가 계산 전입니다 — 구매 기록이 모이면 계산됩니다.
                   </td>
                 )}
               </tr>
@@ -160,9 +160,9 @@ function PriceDetail({ row }: { row: SalesCostRow }) {
             {result.grade === 'red' ? <p className="text-t12 font-semibold text-critical">{RED_NOTICE}</p> : null}
           </div>
         ) : result ? (
-          <p className="text-t12 text-ink-muted">이번 주 원가 계산 전이라 마진을 낼 수 없습니다.</p>
+          <p className="text-t12 text-ink-muted">아직 원가 계산 전이라 마진을 낼 수 없습니다.</p>
         ) : null}
-        <p className="text-t10h text-ink-muted">마진 % = (제시가 − 총원가) ÷ 제시가. 20% 이상 Green · 15~20% Yellow · 15% 미만 Red.</p>
+        <p className="text-t10h text-ink-muted">마진 % = (제시가 − 총원가) ÷ 제시가. 20% 이상 Green · 15~20% Yellow · 15% 미만 Red(소수점 아래까지 계산한 % 기준).</p>
       </form>
 
       <div>

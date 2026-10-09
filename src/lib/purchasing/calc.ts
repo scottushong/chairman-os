@@ -6,9 +6,6 @@ import type { IsoDate, MarketPrice, PurchaseLot } from '@/types'
  * scripts/check-purchasing.ts가 같은 함수를 잰다.
  */
 
-/** DB와 같은 반올림(numeric(20,4) — round(x, 4)). */
-const round4 = (n: number) => Math.round(n * 10_000) / 10_000
-
 export interface LandedInput {
   qty_kg: number | null
   unit_price: number | null
@@ -28,9 +25,10 @@ export interface LandedPreview {
 /** 0061 cost_lot_calc와 같은 식: goods = unit_price × qty × fx, landed/kg = (goods + freight + duty + other) ÷ qty. 칸이 모자라면 null. */
 export function landedPreview(i: LandedInput): LandedPreview | null {
   if (!i.qty_kg || i.qty_kg <= 0 || !i.unit_price || i.unit_price <= 0 || !i.fx_rate || i.fx_rate <= 0) return null
-  const goods = round4(i.unit_price * i.qty_kg * i.fx_rate)
+  // 반올림하지 않는다(0061 · 회장 결정 2026-10-09 밤 — 표시만 1원).
+  const goods = i.unit_price * i.qty_kg * i.fx_rate
   const extra = (i.freight_krw ?? 0) + (i.duty_krw ?? 0) + (i.other_krw ?? 0)
-  return { goods_krw: goods, extra_krw: extra, total_krw: goods + extra, landed_krw_per_kg: round4((goods + extra) / i.qty_kg) }
+  return { goods_krw: goods, extra_krw: extra, total_krw: goods + extra, landed_krw_per_kg: (goods + extra) / i.qty_kg }
 }
 
 // ── 날짜 ─────────────────────────────────────────────────────────────
