@@ -181,6 +181,8 @@ function seed(): Store {
   lot(-6, 'mat_fake_b', 'sup_fake_us', 6000, 1.84, 'USD', { freight: 1_700_000, duty: 920_000, other: 260_000, lotNo: 'FS-77388' })
   lot(-15, 'mat_fake_c', 'sup_fake_kr', 800, 5300, 'KRW', { freight: 60_000, lotNo: 'KR-C-0915' })
   lot(-3, 'mat_fake_a', 'sup_fake_kr', 1800, 2480, 'KRW', { freight: 110_000, lotNo: 'KR-2410-09' })
+  // 포장재 D도 한 번은 산다 — 영업 원가(dummy-sales-cost.ts)는 «사용 중 원료 전부에 단가가 있어야» 계산한다(0062 business_complete).
+  lot(-40, 'mat_fake_d', 'sup_fake_kr', 3000, 350, 'KRW', { freight: 30_000, lotNo: 'KR-D-0830' })
 
   // 승인된 «구매» 결재 한 건(dummy 결재 시드에는 구매 양식이 없다 — 이 화면 전용 후보).
   const candidates: Store['candidates'] = [
@@ -206,6 +208,18 @@ const store: Store = (g.__chairmanDummyPurchasing ??= seed())
 const RLS = 'new row violates row-level security policy'
 
 /** 0061 cost_can의 거울 — 대표 또는 '/<area>/<biz>' 줄(쓰기면 can_write), AND 회사 범위. 시스템 계정 · 회수된 사람은 거짓. */
+export function dummyCostCan(area: CostArea, businessId: string, write = false): boolean {
+  return can(area, businessId, write)
+}
+
+/**
+ * dummy 영업 원가(dummy-sales-cost.ts)만 부르는 원장 — «DB 안»에서 원가 함수가 시세 · LOT를 읽는 자리의 흉내. 화면 코드는 부르지 않는다.
+ * 권한을 보지 않으므로 dummy 저장소 밖으로 내보내지 않는다(복사본).
+ */
+export function dummyCostLedger(): { materials: CostMaterial[]; prices: MarketPrice[]; lots: PurchaseLot[] } {
+  return { materials: copy(store.materials), prices: copy(store.prices), lots: copy(store.lots) }
+}
+
 function can(area: CostArea, businessId: string, write = false): boolean {
   const v = dummyViewer()
   if (v.revoked_at || v.role === 'AIAgent' || v.role === 'Integration') return false
@@ -270,7 +284,8 @@ function openCandidates(businessId: string): PurchaseCandidate[] {
 export function dummyPurchasing(): PurchasingMethods {
   return {
     async listCostMaterials(businessId) {
-      if (!canAny(['purchasing', 'production', 'sales', 'costing'], businessId)) return []
+      // 회장 결정 2026-10-09 «영업은 제품 총액만» — 영업은 원료 이름도 못 읽는다(0061 cost_materials_read).
+      if (!canAny(['purchasing', 'production', 'costing'], businessId)) return []
       return copy(store.materials.filter((m) => m.business_id === businessId)).sort((a, b) => a.name.localeCompare(b.name, 'ko'))
     },
 
@@ -326,7 +341,8 @@ export function dummyPurchasing(): PurchasingMethods {
     },
 
     async listMarketPrices(businessId, sinceDays) {
-      if (!canAny(['purchasing', 'sales', 'costing'], businessId)) return []
+      // 영업은 원료별 시세를 보지 않는다(회장 결정 2026-10-09 · 0061 cost_market_prices_read).
+      if (!canAny(['purchasing', 'costing'], businessId)) return []
       const since = day(-sinceDays)
       return copy(store.prices.filter((p) => p.business_id === businessId && p.observed_on >= since)).sort(
         (a, b) => b.observed_on.localeCompare(a.observed_on) || b.price_id - a.price_id,

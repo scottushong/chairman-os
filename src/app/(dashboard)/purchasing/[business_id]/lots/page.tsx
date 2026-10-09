@@ -2,6 +2,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { LotsManager } from '@/components/purchasing/lots-manager'
 import { PurchasingNav } from '@/components/purchasing/purchasing-nav'
 import { kstToday } from '@/lib/chairman-project'
+import { recordScreenRead } from '@/lib/activity-record'
 import { openPurchasing } from '@/lib/purchasing/page'
 
 /**
@@ -11,6 +12,8 @@ import { openPurchasing } from '@/lib/purchasing/page'
 export default async function PurchasingLotsPage(props: PageProps<'/purchasing/[business_id]/lots'>) {
   const { business_id } = await props.params
   const { repo, business, canWrite } = await openPurchasing(business_id)
+  // 구매 화면 열람은 0031 열람 기록으로 남는다 — 대표의 «원가 관리 권한자» 감시(0061 cost_costing_watch)가 센다. 404 뒤에 둔다.
+  await recordScreenRead({ path: `/purchasing/${business_id}/lots`, kind: 'page', business_id })
   const today = kstToday()
   const [materials, suppliers, lots, docs, candidates] = await Promise.all([
     repo.listCostMaterials(business_id),

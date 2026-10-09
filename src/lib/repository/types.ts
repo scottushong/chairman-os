@@ -108,6 +108,10 @@ import type {
   PurchaseDocDownload,
   PurchaseLot,
   PurchaseLotInput,
+  CostingWatchRow,
+  SalesCostRow,
+  PriceCheck,
+  SalesCostView,
 } from '@/types'
 
 /**
@@ -143,6 +147,22 @@ export interface PurchasingMethods {
 }
 
 /**
+ * 원가 엔진 — 영업 원가(회장 결정 2026-10-09 «영업은 제품 총액만») · 대표의 원가 관리 감시. 판정은 DB(0062 cost_gate · 0061 cost_costing_watch).
+ * **원료 이름 · 원료별 값을 돌려주는 메서드가 없다** — 영업 화면 코드는 PurchasingMethods(원료 · 시세 · LOT)를 부르지 않는다(check:sales-cost).
+ * dummy는 lib/repository/dummy-sales-cost.ts, live는 supabase-sales-cost.ts.
+ */
+export interface SalesCostMethods {
+  /** 0062 cost_sales_list — 그 회사 사용 중 제품 전부의 영업 원가(이름 포함). 하루 한도에 한 번만 센다. 0062 전 DB면 빈 목록. */
+  costSalesList(businessId: string): Promise<SalesCostRow[]>
+  /** 0062 cost_sales_view. 'cost_not_found' · 'cost_role_conflict' · 'cost_rate_limited'로 던진다. 0062 전 DB면 null. */
+  costSalesView(productId: string): Promise<SalesCostView | null>
+  /** 0062 cost_price_check. 'cost_price_invalid'도 던진다. */
+  costPriceCheck(productId: string, priceKrwPerKg: number): Promise<PriceCheck>
+  /** 0061 cost_costing_watch — 대표만(그 밖은 'cost_not_found'). 0061 전 DB면 빈 목록. */
+  costingWatch(businessId: string): Promise<CostingWatchRow[]>
+}
+
+/**
  * 화면과 데이터 사이의 유일한 계약(Port).
  *
  * 화면 컴포넌트는 이 인터페이스만 본다. 뒤에 JSON 시드가 있는지 Supabase가 있는지
@@ -152,7 +172,7 @@ export interface PurchasingMethods {
  * 전부 async다. dummy 어댑터는 동기로 끝나지만 시그니처까지 동기로 두면
  * live로 바꾸는 날 호출부를 전부 다시 써야 한다.
  */
-export interface ChairmanRepository extends PurchasingMethods {
+export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods {
   /** 어느 쪽을 보고 있는지. 화면이 아니라 DUMMY DATA 뱃지와 로그가 쓴다. */
   readonly mode: 'dummy' | 'live'
 

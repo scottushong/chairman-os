@@ -97,6 +97,8 @@ const GROUP_SCOPE: readonly Role[] = ['Chairman', 'GroupCFO']
  */
 function denialMessage(e: unknown, fallback: string, viewer: Role): string {
   const message = e instanceof Error ? e.message : ''
+  // 0061 cost_costing_cap — '/costing/<biz>' 줄은 회사마다 셋까지(원가 관리는 원리상 배합을 역산할 수 있어 소수만).
+  if (/cost_costing_cap/.test(message)) return '원가 관리 권한은 회사마다 세 명까지입니다 — 다른 사람을 먼저 끄세요.'
   if (/순환|자기 자신|회장 승인 칸/.test(message)) {
     // DB가 한국어로 말한 자리. 접두사(Supabase user_profiles 23514: …)만 걷어낸다.
     // 호칭만 보는 사람에 맞춘다 — 직원에게는 «대표»(직원 화면 용어 원칙, CLAUDE.md).

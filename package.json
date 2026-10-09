@@ -32,7 +32,8 @@
     "check:file-drop": "tsx scripts/check-file-drop.ts",
     "check:number-input": "tsx scripts/check-number-input.ts",
     "check:cost-engine": "tsx scripts/check-cost-engine.ts",
-    "check:purchasing": "tsx scripts/check-purchasing.ts"
+    "check:purchasing": "tsx scripts/check-purchasing.ts",
+    "check:sales-cost": "tsx scripts/check-sales-cost.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",

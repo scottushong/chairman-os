@@ -1,10 +1,12 @@
 import Link from 'next/link'
 
+import { CostingWatchCard } from '@/components/cost/costing-watch-card'
 import { PageHeader } from '@/components/layout/page-header'
 import { PriceTrend, type MaterialSeries } from '@/components/purchasing/price-trend'
 import { PurchasingNav } from '@/components/purchasing/purchasing-nav'
 import { kstToday } from '@/lib/chairman-project'
 import { dailyMarket, dailyPurchase, materialOverview, pctText, won, type MaterialOverview } from '@/lib/purchasing/calc'
+import { recordScreenRead } from '@/lib/activity-record'
 import { openPurchasing } from '@/lib/purchasing/page'
 import { MATERIAL_CATEGORY_LABEL_KO } from '@/types'
 
@@ -16,7 +18,9 @@ import { MATERIAL_CATEGORY_LABEL_KO } from '@/types'
  */
 export default async function PurchasingOverviewPage(props: PageProps<'/purchasing/[business_id]'>) {
   const { business_id } = await props.params
-  const { repo, business } = await openPurchasing(business_id)
+  const { repo, user, business } = await openPurchasing(business_id)
+  // 구매 화면 열람은 0031 열람 기록으로 남는다 — 대표의 «원가 관리 권한자» 감시(0061 cost_costing_watch)가 센다. 404 뒤에 둔다.
+  await recordScreenRead({ path: `/purchasing/${business_id}`, kind: 'page', business_id })
   const today = kstToday()
   const [materials, suppliers, prices, lots] = await Promise.all([
     repo.listCostMaterials(business_id),
@@ -24,6 +28,17 @@ export default async function PurchasingOverviewPage(props: PageProps<'/purchasi
     repo.listMarketPrices(business_id, 400),
     repo.listPurchaseLots(business_id),
   ])
+  // 대표에게만 — 원가 관리 권한자 감시(0061 cost_costing_watch). 대표 외는 부르지도 않는다(DB도 cost_not_found).
+  const watch =
+    user.role === 'Chairman'
+      ? await repo.costingWatch(business_id).then(
+          (rows) => ({ rows, error: null }),
+          (e: unknown) => {
+            console.error('[purchasing] cost_costing_watch', e instanceof Error ? e.message : String(e))
+            return { rows: [], error: '원가 관리 권한자를 불러오지 못했습니다.' }
+          },
+        )
+      : null
   const sName = new Map(suppliers.map((s) => [s.supplier_id, s.name]))
   const active = materials.filter((m) => m.active)
   const overview = new Map<string, MaterialOverview>(active.map((m) => [m.material_id, materialOverview(m.material_id, prices, lots, today)]))
@@ -140,6 +155,11 @@ export default async function PurchasingOverviewPage(props: PageProps<'/purchasi
           <PriceTrend series={series} />
         </div>
       )}
+      {watch ? (
+        <div className="mt-3">
+          <CostingWatchCard rows={watch.rows} error={watch.error} />
+        </div>
+      ) : null}
     </div>
   )
 }
