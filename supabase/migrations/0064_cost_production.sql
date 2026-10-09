@@ -10,14 +10,15 @@
 --   → Current 단가(0062)를 «d 시점 남은 LOT 잔량 가중 landed»로 바꾼다(재고 이동평균, 설계서 4절). 남은 게 없으면 마지막 LOT 단가.
 --
 -- ■ 권한(설계서 3.2) ■
+--   (생산 표의 감사 줄도 대표 · 생산 · 본인만 — 리뷰 C1)
 --   표                         대표  생산(줄)  원가 관리  구매  영업
 --   오더 머리(제품 · 계획 kg)    O     O        O          X     X
 --   작업지시 수량(원료 · kg)     O     O        X          X     X   ← «무엇을 몇 kg»만. 비율 · 수율 · 제품 전체 비율표는 없다
 --   생산 LOT(산출 kg)            O     O        O          X     X
 --   투입(어느 LOT 몇 kg)         O     O        X          X     X   ← 투입 kg ÷ 산출 kg = 실제 배합이라 원가 관리에도 주지 않는다
 --   조정(폐기 · 실사)            O     O        O          O     X
---   잔량(함수)                   O     O        O          O     X
---   Actual 총액(함수)            O     X        O(감사)    X     X
+--   잔량(함수)                   O     O        X(리뷰 C1) O     X   ← LOT별 쓴 kg 변화 = 생산 LOT 배합
+--   Actual 총액(함수)            O     X        O(감사 · 투입 kg 없이)  X  X
 --   Actual 분해(함수)            O     X        X          X     X
 --   발행은 대표만. 생산 LOT · 투입은 «생산 입력»(/production/<biz> can_write). 조정은 구매 입력 · 생산 입력.
 --   ※ 작업지시 수량 ÷ 계획 kg = BOM 비율이다 — 회장 결정 «X(작업지시 수량만)»이 허용한 잔여 위험(설계서 9.3). 이 표는 평문이다
@@ -140,8 +141,10 @@ declare
 begin
   new.created_by := auth.uid();
   new.created_at := now();
+  -- 권한 없는 사람에게는 아무 말 없이 넘긴다 — RLS with check가 거부한다(오더가 있는지 · 열렸는지를 오류로 알려 주지 않게, 0064 리뷰 M1).
+  if not cost_can('production', new.business_id, true) then return new; end if;
   select * into o from cost_production_orders where order_id = new.order_id;
-  -- RLS(생산 입력 · 그 회사)는 이 트리거 뒤에 with check로 본다. 여기서는 오더 상태만 — 없는 오더와 닫힌 오더를 같은 말로.
+  -- 없는 오더와 닫힌 오더를 같은 말로.
   if o.order_id is null or o.status <> 'open' or o.business_id <> new.business_id then
     raise exception 'cost_order_closed' using errcode = '23514';
   end if;
@@ -165,22 +168,27 @@ declare
 begin
   new.created_by := auth.uid();
   new.created_at := now();
-  select * into l from cost_purchase_lots where lot_id = new.lot_id for update;
+  -- 권한을 먼저 본다 — 남의 회사 LOT를 잠그지 않게(0064 리뷰 M1).
   if tg_table_name = 'cost_prod_inputs' then
     if not cost_can('production', new.business_id, true) then return new; end if;
-    if not exists (select 1 from cost_prod_lots p where p.prod_lot_id = new.prod_lot_id and p.business_id = new.business_id and p.voided_at is null) then
-      raise exception 'cost_prod_lot_invalid' using errcode = '23514';
-    end if;
   elsif not (cost_can('production', new.business_id, true) or cost_can('purchasing', new.business_id, true)) then
     return new;
   end if;
+  select * into l from cost_purchase_lots where lot_id = new.lot_id for update;
   if l.lot_id is null or l.business_id <> new.business_id or l.voided_at is not null then
     raise exception 'cost_lot_invalid' using errcode = '23514';
   end if;
   if tg_table_name = 'cost_prod_inputs' then
+    -- 생산일이 입고일보다 앞이면 거부(0064 리뷰 M3).
+    if not exists (select 1 from cost_prod_lots p where p.prod_lot_id = new.prod_lot_id and p.business_id = new.business_id
+                    and p.voided_at is null and p.produced_on >= l.received_on) then
+      raise exception 'cost_prod_lot_invalid' using errcode = '23514';
+    end if;
     new.material_id := l.material_id;
   elsif new.adjusted_on > cost_today() + 1 then
     raise exception 'cost_date_future' using errcode = '22023';
+  elsif new.adjusted_on < l.received_on then
+    raise exception 'cost_lot_invalid' using errcode = '23514';
   end if;
   v_left := cost_lot_remaining(new.lot_id);
   if new.qty_kg > v_left then
@@ -221,6 +229,21 @@ begin
   return new;
 end;
 $fn$;
+
+/** 0064 리뷰 I4 — 살아 있는 투입 · 조정이 있는 구매 LOT는 무효로 못 한다(투입 · 조정을 먼저 무효로). Actual이 무효 LOT 단가로 조용히 남지 않게. */
+create or replace function cost_lot_void_guard() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $fn$
+begin
+  if old.voided_at is null and new.void_reason is not null
+     and (exists (select 1 from cost_prod_inputs i join cost_prod_lots pl on pl.prod_lot_id = i.prod_lot_id
+                   where i.lot_id = old.lot_id and i.voided_at is null and pl.voided_at is null)
+          or exists (select 1 from cost_lot_adjustments a where a.lot_id = old.lot_id and a.voided_at is null)) then
+    raise exception 'cost_lot_in_use' using errcode = '23514';
+  end if;
+  return new;
+end;
+$fn$;
+create trigger cost_purchase_lots_in_use before update on cost_purchase_lots for each row execute function cost_lot_void_guard();
 
 create trigger cost_prod_lots_fill before insert on cost_prod_lots for each row execute function cost_prod_lot_fill();
 create trigger cost_prod_inputs_check before insert on cost_prod_inputs for each row execute function cost_lot_draw_check();
@@ -288,13 +311,15 @@ create policy cost_lot_adjustments_void on cost_lot_adjustments for update to au
   using (cost_can('production', business_id, true) or cost_can('purchasing', business_id, true))
   with check (cost_can('production', business_id, true) or cost_can('purchasing', business_id, true));
 
--- 감사 줄: 생산 표의 줄도 본인 · 대표 · 그 회사 구매 · 원가 관리 · 생산만(0061 audit_log_cost_private를 넓혀 다시 만든다).
+-- 감사 줄: 생산 표의 줄은 본인 · 대표 · 그 회사 생산만(0064 리뷰 C1 — 투입 줄의 시각을 원가 관리 · 구매가 보면 LOT 잔량 변화와 묶여
+-- 생산 LOT별 원료 kg = 실제 배합이 나온다). 구매 · 원가 관리는 구매 표의 줄만(0061 그대로).
 drop policy audit_log_cost_private on audit_log;
 create policy audit_log_cost_private on audit_log as restrictive for select
   using (entity_table not in ('cost_materials', 'cost_suppliers', 'cost_market_prices', 'cost_purchase_lots', 'cost_purchase_docs', 'cost_bom',
                               'cost_production_orders', 'cost_prod_lots', 'cost_prod_inputs', 'cost_lot_adjustments')
          or actor_user_id = auth.uid() or coalesce(auth_role()::text, '') = 'Chairman'
-         or cost_can('purchasing', business_id) or cost_can('costing', business_id)
+         or (entity_table in ('cost_materials', 'cost_suppliers', 'cost_market_prices', 'cost_purchase_lots', 'cost_purchase_docs')
+             and (cost_can('purchasing', business_id) or cost_can('costing', business_id)))
          or (entity_table in ('cost_production_orders', 'cost_prod_lots', 'cost_prod_inputs', 'cost_lot_adjustments') and cost_can('production', business_id)));
 
 -- =====================================================================
@@ -344,7 +369,8 @@ end;
 $fn$;
 
 /**
- * 구매 LOT 잔량(지금) — 생산 · 구매 · 원가 관리 · 대표. 생산에게는 0061 «제한»과 같은 칸만(landed 원/kg 1원 · 공급처 이름 · LOT 번호).
+ * 구매 LOT 잔량(지금) — 생산 · 구매 · 대표(0064 리뷰 C1: 원가 관리는 빼고 — LOT별 쓴 kg의 변화가 생산 LOT의 배합을 알려 준다).
+ * landed는 대표 원래 값 · 그 밖 1원(리뷰 M7). 생산에게는 0061 «제한»과 같은 칸만(landed 원/kg 1원 · 공급처 이름 · LOT 번호).
  * 남은 것만(p_all = false) 또는 전부. 화면은 입고 오래된 순으로 제안한다(FIFO 자동 차감 없음).
  */
 create or replace function cost_lot_balances(p_business text, p_all boolean default false)
@@ -352,12 +378,12 @@ returns table (lot_id text, material_id text, material_name text, supplier_name 
                qty_kg numeric, used_kg numeric, adjusted_kg numeric, remaining_kg numeric, landed_krw_per_kg numeric)
 language plpgsql stable security definer set search_path = public, pg_temp as $fn$
 begin
-  if not (cost_can('production', p_business) or cost_can('purchasing', p_business) or cost_can('costing', p_business)) then
+  if not (cost_can('production', p_business) or cost_can('purchasing', p_business)) then
     raise exception 'cost_not_found' using errcode = 'P0002';
   end if;
   return query
   select x.lot_id, x.material_id, x.mname, x.sname, x.supplier_lot_no, x.received_on, x.qty_kg, x.used, x.adj,
-         x.qty_kg - x.used - x.adj, round(x.landed_krw_per_kg, 0)
+         x.qty_kg - x.used - x.adj, case when coalesce(auth_role()::text, '') = 'Chairman' then x.landed_krw_per_kg else round(x.landed_krw_per_kg, 0) end
     from (select l.lot_id, l.material_id, m.name as mname, s.name as sname, l.supplier_lot_no, l.received_on, l.qty_kg, l.landed_krw_per_kg,
                  coalesce((select sum(i.qty_kg) from cost_prod_inputs i join cost_prod_lots pl on pl.prod_lot_id = i.prod_lot_id
                             where i.lot_id = l.lot_id and i.voided_at is null and pl.voided_at is null), 0) as used,
@@ -396,7 +422,8 @@ begin
             jsonb_build_object('kind', 'actual', 'from', p_from, 'to', p_to), '원가 조회(0064) — Actual · 원가 관리 · 호출마다');
   end if;
   return query
-  select pl.prod_lot_id, pl.order_id, pl.product_id, p.name, pl.produced_on, pl.output_kg, s.kg,
+  -- 투입 kg 합(÷ 산출 = 수율)은 대표에게만(0064 리뷰 C1).
+  select pl.prod_lot_id, pl.order_id, pl.product_id, p.name, pl.produced_on, pl.output_kg, case when v_chair then s.kg end,
          cost_secret.shown(s.amt / pl.output_kg, v_chair), s.kg is not null
     from cost_prod_lots pl
     join cost_products p on p.product_id = pl.product_id
@@ -483,8 +510,10 @@ begin
     raise exception 'cost_not_found' using errcode = 'P0002';
   end if;
   return query
-  select l.lot_id, l.material_id, m.name, s.name, l.supplier_lot_no, l.received_on, l.qty_kg, round(l.landed_krw_per_kg, 0),
-         cost_lot_remaining(l.lot_id)
+  -- 잔량은 생산 · 구매 · 대표에게만(원가 관리에게는 null — 0064 리뷰 C1).
+  select l.lot_id, l.material_id, m.name, s.name, l.supplier_lot_no, l.received_on, l.qty_kg,
+         case when coalesce(auth_role()::text, '') = 'Chairman' then l.landed_krw_per_kg else round(l.landed_krw_per_kg, 0) end,
+         case when cost_can('production', p_business) or cost_can('purchasing', p_business) then cost_lot_remaining(l.lot_id) end
     from cost_purchase_lots l
     join cost_materials m on m.material_id = l.material_id
     join cost_suppliers s on s.supplier_id = l.supplier_id
@@ -500,6 +529,7 @@ revoke all on function cost_prod_lot_fill() from public, anon, authenticated;
 revoke all on function cost_lot_draw_check() from public, anon, authenticated;
 revoke all on function cost_audit_0064() from public, anon, authenticated;
 revoke all on function cost_order_update() from public, anon, authenticated;
+revoke all on function cost_lot_void_guard() from public, anon, authenticated;
 revoke all on function cost_production_issue(text, date, numeric, text) from public, anon;
 revoke all on function cost_lot_balances(text, boolean) from public, anon;
 revoke all on function cost_prod_actual(text, date, date) from public, anon;

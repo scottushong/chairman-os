@@ -94,13 +94,15 @@ create policy cost_overheads_void on cost_overheads for update to authenticated
   using (cost_can('costing', business_id, true)) with check (cost_can('costing', business_id, true));
 create policy cost_alloc_settings_read on cost_alloc_settings for select to authenticated using (cost_can('costing', business_id));
 
--- 감사 줄: 비용 표도 본인 · 대표 · 원가 관리만(0064 정책에 한 표 더).
+-- 감사 줄: 비용 표 · 배부 설정도 본인 · 대표 · 원가 관리만(0064 정책에 두 표 더 — 0065 리뷰 I5: 계획 생산량 + 영업이 보는 비용 합 = 월 비용 총액).
 drop policy audit_log_cost_private on audit_log;
 create policy audit_log_cost_private on audit_log as restrictive for select
   using (entity_table not in ('cost_materials', 'cost_suppliers', 'cost_market_prices', 'cost_purchase_lots', 'cost_purchase_docs', 'cost_bom',
-                              'cost_production_orders', 'cost_prod_lots', 'cost_prod_inputs', 'cost_lot_adjustments', 'cost_overheads')
+                              'cost_production_orders', 'cost_prod_lots', 'cost_prod_inputs', 'cost_lot_adjustments', 'cost_overheads', 'cost_alloc_settings')
          or actor_user_id = auth.uid() or coalesce(auth_role()::text, '') = 'Chairman'
-         or (entity_table <> 'cost_overheads' and cost_can('purchasing', business_id)) or cost_can('costing', business_id)
+         or (entity_table in ('cost_materials', 'cost_suppliers', 'cost_market_prices', 'cost_purchase_lots', 'cost_purchase_docs')
+             and (cost_can('purchasing', business_id) or cost_can('costing', business_id)))
+         or (entity_table in ('cost_overheads', 'cost_alloc_settings') and cost_can('costing', business_id))
          or (entity_table in ('cost_production_orders', 'cost_prod_lots', 'cost_prod_inputs', 'cost_lot_adjustments') and cost_can('production', business_id)));
 
 -- =====================================================================
@@ -123,14 +125,15 @@ $fn$;
  */
 create or replace function cost_secret.overhead(p_business text, p_product text, p_on date,
   out mfg numeric, out pack numeric, out logi numeric, out indirect numeric, out total numeric,
-  out ready boolean, out basis_used text, out divisor_kg numeric, out window_days int)
+  out ready boolean, out basis_used text, out divisor_kg numeric, out window_days int, out has_lines boolean)
 language plpgsql stable security definer set search_path = public, cost_secret, pg_temp as $fn$
 declare
   s record;
   v_monthly boolean;
 begin
   ready := false;
-  if not exists (select 1 from public.cost_overheads o where o.business_id = p_business and o.voided_at is null and o.effective_from <= p_on) then
+  has_lines := exists (select 1 from public.cost_overheads o where o.business_id = p_business and o.voided_at is null and o.effective_from <= p_on);
+  if not has_lines then
     return;
   end if;
   select * into s from public.cost_alloc_settings a where a.business_id = p_business;
@@ -145,16 +148,18 @@ begin
     basis_used := case when divisor_kg is null then basis_used else 'plan' end;
   end if;
 
-  -- 월 금액: 창의 날마다 그 날 적용 중인 줄(항목마다 가장 늦은 시작일) × 12 ÷ 365 를 더한다.
+  -- 월 금액: 창의 날마다 그 날 적용 중인 회사 전체 줄(항목마다 가장 늦은 시작일 — 방식과 상관없이, 0065 리뷰 I2: 월 금액 → 원/kg로
+  -- 바꾸면 앞 줄을 대신한다) 중 월 금액인 것 × 12 ÷ 365 를 더한다.
   with days as (select (p_on - g)::date as d from generate_series(0, window_days - 1) g),
        cur as (
          select x.category, x.amount
            from days dd
            cross join lateral (
-             select distinct on (o.category) o.category, o.amount
+             select distinct on (o.category) o.category, o.amount, o.basis
                from public.cost_overheads o
-              where o.business_id = p_business and o.basis = 'monthly' and o.voided_at is null and o.effective_from <= dd.d
-              order by o.category, o.effective_from desc, o.overhead_id desc) x),
+              where o.business_id = p_business and o.product_id is null and o.voided_at is null and o.effective_from <= dd.d
+              order by o.category, o.effective_from desc, o.overhead_id desc) x
+          where x.basis = 'monthly'),
        m as (select cost_secret.overhead_group(c.category) as grp, sum(c.amount) * 12 / 365 as amt from cur c group by 1)
   select exists (select 1 from m where m.amt > 0),
          coalesce((select m.amt from m where m.grp = 'mfg'), 0),
@@ -184,16 +189,17 @@ begin
 end;
 $fn$;
 
-/** 원/kg 직접 단가 줄(기준일에 적용 중 · 항목 × 범위마다 하나). */
+/** 원/kg 직접 단가 줄(기준일에 적용 중 · 항목 × 범위마다 하나). 회사 전체 범위는 방식과 상관없이 가장 늦은 줄이 원/kg일 때만(리뷰 I2). */
 create or replace function cost_secret.overhead_per_kg(p_business text, p_product text, p_on date)
 returns table (category text, grp text, amount numeric, product_id text)
 language sql stable security definer set search_path = public, cost_secret, pg_temp as $fn$
   select y.category, cost_secret.overhead_group(y.category), y.amount, y.product_id
-    from (select distinct on (o.category, coalesce(o.product_id, '')) o.category, o.amount, o.product_id
+    from (select distinct on (o.category, coalesce(o.product_id, '')) o.category, o.amount, o.product_id, o.basis
             from public.cost_overheads o
-           where o.business_id = p_business and o.basis = 'per_kg' and o.voided_at is null and o.effective_from <= p_on
+           where o.business_id = p_business and o.voided_at is null and o.effective_from <= p_on
              and (o.product_id is null or o.product_id = p_product)
-           order by o.category, coalesce(o.product_id, ''), o.effective_from desc, o.overhead_id desc) y;
+           order by o.category, coalesce(o.product_id, ''), o.effective_from desc, o.overhead_id desc) y
+   where y.basis = 'per_kg';
 $fn$;
 
 -- =====================================================================
@@ -225,8 +231,9 @@ begin
   end if;
   select * into o from cost_secret.overhead(p_business, p_product, p_as_of);
   overhead_ready := coalesce(o.ready, false);
-  -- 총원가(Fully Loaded) = 원료비 + 비용 — 원래 값끼리 더한 뒤 1원(대표 외). 비용이 준비 안 됐으면 원료비만(화면이 꼬리표).
-  total_raw := case when v_cu is null then null when overhead_ready then v_cu + o.total else v_cu end;
+  -- 총원가(Fully Loaded) = 원료비 + 비용 — 원래 값끼리 더한 뒤 1원(대표 외). 비용 마스터가 아예 없으면 원료비만(화면이 «비용 마스터 없음»),
+  -- 비용 줄은 있는데 배부를 못 하면(생산 · 계획 kg 없음) 계산 안 함 — 원료비만으로 제시가 · 등급을 내면 손해 보는 값이 Green으로 보인다(0065 리뷰 I1).
+  total_raw := case when v_cu is null then null when overhead_ready then v_cu + o.total when coalesce(o.has_lines, false) then null else v_cu end;
   overhead_krw_per_kg := case when v_cu is not null and overhead_ready then cost_secret.shown(o.total, p_chairman) end;
   market_krw_per_kg := cost_secret.shown(v_mk, p_chairman);
   current_krw_per_kg := cost_secret.shown(v_cu, p_chairman);
@@ -268,8 +275,8 @@ begin
          case when o.ready then cost_secret.shown(o.logi, g.chairman) end,
          case when o.ready then cost_secret.shown(o.indirect, g.chairman) end,
          case when o.ready then cost_secret.shown(o.total, g.chairman) end,
-         cost_secret.shown(case when mc.cu is null then null when o.ready then mc.cu + o.total else mc.cu end, g.chairman),
-         coalesce(o.ready, false), o.basis_used, mc.cu is not null
+         cost_secret.shown(case when mc.cu is null then null when o.ready then mc.cu + o.total when o.has_lines then null else mc.cu end, g.chairman),
+         coalesce(o.ready, false), o.basis_used, mc.cu is not null and (o.ready or not o.has_lines)
     from cost_products p
     cross join lateral (select (case when v_ok then (select x.total from cost_secret.material_cost(p.product_id, 'market', g.as_of) x) end) as mk,
                                (case when v_ok then (select x.total from cost_secret.material_cost(p.product_id, 'current', g.as_of) x) end) as cu) mc
@@ -297,16 +304,16 @@ begin
   select x.category, cost_secret.overhead_group(x.category), x.basis, x.amount, x.product_id, x.effective_from,
          case when x.basis = 'per_kg' then x.amount
               when o.divisor_kg > 0 then (select sum(c.amount) * 12 / 365 from (
-                 select (select oo.amount from cost_overheads oo
-                          where oo.business_id = p_business and oo.basis = 'monthly' and oo.category = x.category and oo.voided_at is null
+                 select (select case when oo.basis = 'monthly' then oo.amount end from cost_overheads oo
+                          where oo.business_id = p_business and oo.product_id is null and oo.category = x.category and oo.voided_at is null
                             and oo.effective_from <= (v_on - g)::date
                           order by oo.effective_from desc, oo.overhead_id desc limit 1) as amount
                    from generate_series(0, o.window_days - 1) g) c) / o.divisor_kg end,
          o.divisor_kg, o.basis_used, o.window_days
-    from (select distinct on (c.category, c.basis, coalesce(c.product_id, '')) c.category, c.basis, c.amount, c.product_id, c.effective_from
+    from (select distinct on (c.category, coalesce(c.product_id, '')) c.category, c.basis, c.amount, c.product_id, c.effective_from
             from cost_overheads c
            where c.business_id = p_business and c.voided_at is null and c.effective_from <= v_on
-           order by c.category, c.basis, coalesce(c.product_id, ''), c.effective_from desc, c.overhead_id desc) x
+           order by c.category, coalesce(c.product_id, ''), c.effective_from desc, c.overhead_id desc) x
    order by cost_secret.overhead_group(x.category), x.category, x.basis, x.product_id nulls first;
 end;
 $fn$;

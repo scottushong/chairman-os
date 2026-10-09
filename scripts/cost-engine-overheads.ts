@@ -105,8 +105,10 @@ export async function overheads({ as, run, owner, p1, U }: OhCtx) {
   const nr = await as<{ computed: boolean; reason: string }>(U.chair, `select computed, reason from cost_product_cost('${p1}', 'total')`)
   assert.deepEqual([nr[0].computed, nr[0].reason], [false, 'overhead_not_ready'], '0065: 나눌 kg가 없는데 비용을 0으로 메운다')
   // (생산 LOT를 무효로 하면 그 투입도 빠져 Current가 바뀐다 — 같은 줄의 원료비와 견준다.)
-  const nrs = (await as<{ overhead_ready: boolean; total_krw_per_kg: string; current_krw_per_kg: string }>(U.sales, `select overhead_ready, total_krw_per_kg::text as total_krw_per_kg, current_krw_per_kg::text as current_krw_per_kg from cost_sales_view('${p1}')`))[0]
-  assert.deepEqual([nrs.overhead_ready, nrs.total_krw_per_kg], [false, nrs.current_krw_per_kg], '0065: 배부 불가일 때 영업 총원가는 원료비만 · «비용 준비 전» 꼬리표')
+  const nrs = (await as<{ overhead_ready: boolean; total_krw_per_kg: string | null; computed: boolean; offers: unknown[] }>(U.sales, `select overhead_ready, total_krw_per_kg::text as total_krw_per_kg, computed, offers from cost_sales_view('${p1}')`))[0]
+  assert.deepEqual([nrs.overhead_ready, nrs.total_krw_per_kg, nrs.computed, nrs.offers.length], [false, null, false, 0],
+    '0065 리뷰 I1: 비용 줄이 있는데 배부를 못 하면 원료비만으로 총원가 · 제시가를 낸다(손해 보는 값이 Green)')
+  assert.equal(((await as<{ grade: string | null }>(U.sales, `select grade from cost_price_check('${p1}', 99999)`))[0]).grade, null, '0065 리뷰 I1: 배부 불가인데 제시가 등급이 나온다')
   await owner(`set session_replication_role = replica`)
   await owner(`update cost_prod_lots set voided_at = null, voided_by = null, void_reason = null where void_reason = '시험 — 잠시'`)
   await owner(`set session_replication_role = origin`)
@@ -115,5 +117,12 @@ export async function overheads({ as, run, owner, p1, U }: OhCtx) {
   assert.equal(String((await as<Record<string, string>>(U.cost, `select * from cost_costing_list('biz_dy') where product_id = '${p1}'`))[0].mfg_krw_per_kg), R(mfgVoid),
     '0065: 무효로 한 비용 줄이 남는다')
   await refuses(run(U.cost, `update cost_overheads set amount = 1 where category = 'labor'`), /permission denied/, '0065: 비용 금액을 고친다(무효 + 새 줄이어야)')
+  // 0065 리뷰 I2 — 같은 항목을 월 금액 → 원/kg로 바꾸면 그 날부터 앞 줄을 대신한다(둘 다 더하지 않는다).
+  await run(U.cost, `insert into cost_overheads (business_id, category, basis, amount, effective_from) values ('biz_dy', 'power', 'per_kg', 5, '${T}')`)
+  const mfgSwitch = qadd(qdiv(qsum([day('12345678.9', 28), day('1234567', 10), day('500000', 28)]), Qof(kg)), Qof(5))
+  assert.equal(String((await as<Record<string, string>>(U.cost, `select * from cost_costing_list('biz_dy') where product_id = '${p1}'`))[0].mfg_krw_per_kg), R(mfgSwitch),
+    '0065 리뷰 I2: 방식을 바꾼 항목이 두 번 더해진다')
+  const sw = await as<{ category: string; basis: string }>(U.cost, `select category, basis from cost_overhead_summary('biz_dy') where category = 'power'`)
+  assert.deepEqual(sw.map((r) => r.basis), ['per_kg'], '0065 리뷰 I2: 요약에 바뀌기 전 방식이 남는다')
   console.log(`  비용: 제조 배부 ${R(mfgAlloc)}원/kg(${kg}kg · 28일) · 포장 ${R(pack)} · 물류 ${R(L)} · 총원가 ${R(total)}원(1원끼리 합 ${qround(cu) + qround(oh)}) · 계획 기준 · 배부 불가 · 무효`)
 }

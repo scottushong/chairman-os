@@ -71,6 +71,14 @@ export async function production({ as, run, owner, p1, p3, lot, mats, U }: ProdC
   assert.equal(Number(bal.find((b) => b.lot_id === lot)!.remaining_kg), 0, '0064: 잔량 = 입고 − 투입이 아니다')
   assert.ok(!(await as<{ lot_id: string }>(U.prod, `select lot_id from cost_lot_balances('biz_dy')`)).some((b) => b.lot_id === lot), '0064: 다 쓴 LOT가 «남은 것» 목록에 있다')
   await refuses(as(U.sales, `select * from cost_lot_balances('biz_dy')`), /cost_not_found/, '0064: 영업이 잔량을 본다')
+  // 0064 리뷰 C1 — 원가 관리는 LOT별 쓴 kg · 잔량 · 생산 감사 줄 · 투입 kg 합을 못 본다(생산 LOT 배합이 된다).
+  await refuses(as(U.cost, `select * from cost_lot_balances('biz_dy')`), /cost_not_found/, '0064 리뷰 C1: 원가 관리가 LOT 잔량을 본다')
+  const cpl = await as<{ remaining_kg: string | null }>(U.cost, `select remaining_kg from cost_production_lots('biz_dy')`)
+  assert.ok(cpl.length > 0 && cpl.every((r) => r.remaining_kg === null), '0064 리뷰 C1: 원가 관리가 LOT 목록에서 잔량을 본다')
+  for (const uid of [U.cost, U.buy, U.sales]) {
+    assert.equal(await count(uid, `audit_log where entity_table in ('cost_prod_inputs', 'cost_prod_lots', 'cost_production_orders', 'cost_lot_adjustments') and actor_user_id <> '${uid}'`), 0,
+      `0064 리뷰 C1: ${uid.slice(-2)}가 생산 감사 줄(투입 시각)을 본다`)
+  }
   const pr = await as<Record<string, unknown>>(U.prod, `select * from cost_production_lots('biz_dy')`)
   assert.ok('remaining_kg' in pr[0] && !('unit_price' in pr[0]) && !('fx_rate' in pr[0]), '0064: 생산 LOT 목록 칸')
   await refuses(run(U.buy, `insert into cost_lot_adjustments (business_id, lot_id, adjusted_on, qty_kg, reason) values ('biz_dy', '${m2lot}', '${T}', 10, '')`),
@@ -88,7 +96,8 @@ export async function production({ as, run, owner, p1, p3, lot, mats, U }: ProdC
   const ca = await as<{ prod_lot_id: string; actual_krw_per_kg: string; input_kg: string }>(U.chair, `select prod_lot_id, actual_krw_per_kg::text as actual_krw_per_kg, input_kg::text as input_kg from cost_prod_actual('biz_dy')`)
   near(Number(ca.find((r) => r.prod_lot_id === pl.p)!.actual_krw_per_kg), exact, '0064: 대표 Actual(원래 값)')
   const auditBefore = Number((await owner<{ n: number }>(`select count(*)::int as n from audit_log where actor_user_id = '${U.cost}' and entity_id = 'actual:biz_dy'`))[0].n)
-  const ka = await as<{ prod_lot_id: string; actual_krw_per_kg: string }>(U.cost, `select prod_lot_id, actual_krw_per_kg::text as actual_krw_per_kg from cost_prod_actual('biz_dy')`, true)
+  const ka = await as<{ prod_lot_id: string; actual_krw_per_kg: string; input_kg: string | null }>(U.cost, `select prod_lot_id, actual_krw_per_kg::text as actual_krw_per_kg, input_kg from cost_prod_actual('biz_dy')`, true)
+  assert.ok(ka.every((r) => r.input_kg === null), '0064 리뷰 C1: 원가 관리가 투입 kg 합(수율)을 본다')
   assert.equal(ka.find((r) => r.prod_lot_id === pl.p)!.actual_krw_per_kg, String(r1(exact)), '0064: 원가 관리 Actual(1원)')
   assert.equal(Number((await owner<{ n: number }>(`select count(*)::int as n from audit_log where actor_user_id = '${U.cost}' and entity_id = 'actual:biz_dy'`))[0].n) - auditBefore, 1,
     '0064: 원가 관리 Actual 조회가 감사되지 않는다')
@@ -110,6 +119,14 @@ export async function production({ as, run, owner, p1, p3, lot, mats, U }: ProdC
   const cur = (0.5 * m1cur + 0.3 * m2cur + 0.25 * 600) / 0.95
   const kc = await as<{ v: string }>(U.cost, `select material_krw_per_kg::text as v from cost_product_cost('${p1}', 'current')`)
   assert.equal(kc[0].v, String(r1(cur)), '0064: Current가 잔량 가중이 아니다(다 쓴 LOT가 남아 있다)')
+
+  // 0064 리뷰 I4 — 살아 있는 투입이 있는 구매 LOT는 무효로 못 한다.
+  await refuses(run(U.buy, `update cost_purchase_lots set void_reason = '시험' where lot_id = '${lot}'`), /cost_lot_in_use/, '0064 리뷰 I4: 투입이 남은 LOT가 무효가 된다')
+  // 리뷰 M3 — 입고일보다 앞선 생산 LOT에 투입하지 못한다.
+  const early = ((await run(U.prod, `insert into cost_prod_lots (business_id, order_id, product_id, produced_on, output_kg) values ('biz_dy', '${order}', '', '${T}'::date - 20, 1) returning prod_lot_id as p`))[0] as { p: string }).p
+  await refuses(run(U.prod, `insert into cost_prod_inputs (business_id, prod_lot_id, lot_id, material_id, qty_kg) values ('biz_dy', '${early}', '${m2lot}', '', 1)`),
+    /cost_prod_lot_invalid/, '0064 리뷰 M3: 입고 전 날짜 생산 LOT에 투입')
+  await run(U.prod, `update cost_prod_lots set void_reason = '시험 정리' where prod_lot_id = '${early}'`)
 
   // 무효 — 투입을 무효로 하면 잔량이 돌아온다.
   await run(U.prod, `update cost_prod_inputs set void_reason = '시험 — 잘못 적음' where lot_id = '${m2lot}'`)
