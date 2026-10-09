@@ -1640,7 +1640,7 @@ function screens() {
    * 글자를 세게 되는 자리다.
    */
   const statements = sql
-    .split('\n')
+    .split(/\r?\n/) // CRLF checkout — \r이 남으면 /--.*$/의 $가 줄 끝을 못 찾아 주석이 안 걷힌다
     .map((line) => line.replace(/--.*$/, ''))
     .join('\n')
     .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -1668,7 +1668,7 @@ function screens() {
    */
   const sql34 = readFileSync(join(MIGRATIONS, '0034_succession_views.sql'), 'utf8')
   const stmt34 = sql34
-    .split('\n')
+    .split(/\r?\n/) // CRLF checkout — 위와 같은 이유
     .map((line) => line.replace(/--.*$/, ''))
     .join('\n')
     .replace(/\/\*[\s\S]*?\*\//g, '')

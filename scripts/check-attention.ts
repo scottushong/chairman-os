@@ -1165,7 +1165,7 @@ async function constraints(db: PGlite, s: Session, ids: { vanaId: number }) {
 /** 주석을 걷고 **문장만** 남긴다. 걷지 않으면 검사가 문장을 세지 않고 글자를 센다. */
 function statementsOf(sql: string): string {
   return sql
-    .split('\n')
+    .split(/\r?\n/) // CRLF checkout — \r이 남으면 /--.*$/의 $가 줄 끝을 못 찾아 주석이 안 걷힌다
     .map((line) => line.replace(/--.*$/, ''))
     .join('\n')
     .replace(/\/\*[\s\S]*?\*\//g, '')
