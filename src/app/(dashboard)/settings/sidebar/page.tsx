@@ -2,7 +2,7 @@ import Link from 'next/link'
 
 import { PageHeader } from '@/components/layout/page-header'
 import { SidebarMenuForm, type MenuRow } from '@/components/settings/sidebar-menu-form'
-import { showsPurchasingNav, showsSalesNav } from '@/lib/auth/roles'
+import { showsCostsNav, showsProductionNav, showsPurchasingNav, showsSalesNav } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
 import { navFor } from '@/lib/nav'
 import { loadUiPrefs } from '@/lib/ui-prefs-server'
@@ -20,7 +20,7 @@ export default async function SidebarSettingsPage() {
   const [prefs, user] = await Promise.all([loadUiPrefs(), currentUser()])
 
   // 사이드바와 같은 목록 — 회장이 아니면 회장 전용 메뉴는 여기에도 없다(lib/nav.ts navFor).
-  const rows: MenuRow[] = navFor(user?.role, { purchasing: showsPurchasingNav(user), ledger: user?.ledger, sales: showsSalesNav(user) }).flatMap((group) =>
+  const rows: MenuRow[] = navFor(user?.role, { purchasing: showsPurchasingNav(user), ledger: user?.ledger, sales: showsSalesNav(user), production: showsProductionNav(user), costs: showsCostsNav(user) }).flatMap((group) =>
     group.items.map((item) => ({
       key: item.key,
       label: item.label,

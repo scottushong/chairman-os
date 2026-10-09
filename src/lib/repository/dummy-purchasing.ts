@@ -117,7 +117,7 @@ function seed(): Store {
       price: value,
       currency,
       fx_rate: fxr,
-      price_krw_per_kg: round4(value * fxr),
+      price_krw_per_kg: value * fxr,
       source_name,
       source_url: null,
       note: '',
@@ -145,7 +145,7 @@ function seed(): Store {
   ) => {
     const on = day(n)
     const fxr = currency === 'KRW' ? 1 : usd.get(on)!
-    const goods = round4(unit_price * qty_kg * fxr)
+    const goods = unit_price * qty_kg * fxr // 0061처럼 반올림 없음
     const f = extra.freight ?? 0
     const d = extra.duty ?? 0
     const o = extra.other ?? 0
@@ -165,7 +165,7 @@ function seed(): Store {
       duty_krw: d,
       other_krw: o,
       goods_krw: goods,
-      landed_krw_per_kg: round4((goods + f + d + o) / qty_kg),
+      landed_krw_per_kg: (goods + f + d + o) / qty_kg,
       source: 'manual',
       source_ref: null,
       note: '',
@@ -216,8 +216,19 @@ export function dummyCostCan(area: CostArea, businessId: string, write = false):
  * dummy 영업 원가(dummy-sales-cost.ts)만 부르는 원장 — «DB 안»에서 원가 함수가 시세 · LOT를 읽는 자리의 흉내. 화면 코드는 부르지 않는다.
  * 권한을 보지 않으므로 dummy 저장소 밖으로 내보내지 않는다(복사본).
  */
-export function dummyCostLedger(): { materials: CostMaterial[]; prices: MarketPrice[]; lots: PurchaseLot[] } {
-  return { materials: copy(store.materials), prices: copy(store.prices), lots: copy(store.lots) }
+export function dummyCostLedger(): { materials: CostMaterial[]; suppliers: CostSupplier[]; prices: MarketPrice[]; lots: PurchaseLot[] } {
+  return { materials: copy(store.materials), suppliers: copy(store.suppliers), prices: copy(store.prices), lots: copy(store.lots) }
+}
+
+/**
+ * 0064 cost_lot_void_guard의 거울 — 생산 저장소(투입 · 조정)는 dummy-sales-cost.ts에 있고 이 파일은 그것을 import하지 않는다
+ * (가짜 BOM 옆 저장소는 dummy.ts만 import — check:sales-cost). 그쪽이 읽혀질 때 판정 함수를 여기 걸어 둔다.
+ */
+const lotGuard = globalThis as unknown as { __chairmanDummyLotInUse?: (lotId: string) => boolean }
+const lotInUse = (lotId: string) => lotGuard.__chairmanDummyLotInUse?.(lotId) ?? false
+
+export function setDummyLotInUseCheck(fn: (lotId: string) => boolean): void {
+  lotGuard.__chairmanDummyLotInUse = fn
 }
 
 function can(area: CostArea, businessId: string, write = false): boolean {
@@ -374,14 +385,14 @@ export function dummyPurchasing(): PurchasingMethods {
       if (fxr === null) throw new Error('cost_fx_missing')
       outlier(
         store.prices.filter((p) => p.material_id === input.material_id && !p.voided_at && within90(p.observed_on, input.observed_on)).map((p) => p.price_krw_per_kg),
-        round4(input.price * fxr),
+        input.price * fxr,
       )
       const row: MarketPrice = {
         price_id: store.nextPriceId++,
         business_id: businessId,
         ...input,
         fx_rate: fxr,
-        price_krw_per_kg: round4(input.price * fxr),
+        price_krw_per_kg: input.price * fxr,
         created_at: new Date().toISOString(),
         voided_at: null,
         void_reason: null,
@@ -423,10 +434,10 @@ export function dummyPurchasing(): PurchasingMethods {
       if (input.received_on > day(1)) throw new Error('cost_date_future')
       const fxr = input.currency === 'KRW' ? 1 : (input.fx_rate ?? fxOn(input.currency, input.received_on))
       if (fxr === null) throw new Error('cost_fx_missing')
-      const goods = round4(input.unit_price * input.qty_kg * fxr)
+      const goods = input.unit_price * input.qty_kg * fxr
       outlier(
         store.lots.filter((l) => l.material_id === input.material_id && !l.voided_at && within90(l.received_on, input.received_on)).map((l) => l.landed_krw_per_kg),
-        round4((goods + input.freight_krw + input.duty_krw + input.other_krw) / input.qty_kg),
+        (goods + input.freight_krw + input.duty_krw + input.other_krw) / input.qty_kg,
       )
       const row: PurchaseLot = {
         lot_id: lotId(kstToday()),
@@ -435,7 +446,7 @@ export function dummyPurchasing(): PurchasingMethods {
         source_ref: input.source === 'approval' ? input.source_ref : null,
         fx_rate: fxr,
         goods_krw: goods,
-        landed_krw_per_kg: round4((goods + input.freight_krw + input.duty_krw + input.other_krw) / input.qty_kg),
+        landed_krw_per_kg: (goods + input.freight_krw + input.duty_krw + input.other_krw) / input.qty_kg,
         created_at: new Date().toISOString(),
         voided_at: null,
         void_reason: null,
@@ -445,11 +456,12 @@ export function dummyPurchasing(): PurchasingMethods {
     },
 
     async voidPurchaseLot(businessId, lotIdValue, reason) {
-      voidIn(
-        store.lots.find((l) => l.lot_id === lotIdValue),
-        businessId,
-        reason,
-      )
+      const row = store.lots.find((l) => l.lot_id === lotIdValue)
+      // 0064 리뷰 I4 cost_lot_void_guard — 살아 있는 투입 · 조정이 있으면 거부(권한 · 이유 검사 뒤에 — DB는 RLS · 무효 트리거와 같은 update 안).
+      if (row && row.business_id === businessId && can('purchasing', businessId, true) && !row.voided_at && reason.trim() && lotInUse(row.lot_id)) {
+        throw new Error('cost_lot_in_use')
+      }
+      voidIn(row, businessId, reason)
     },
 
     async lookupCostFx(currency, onDate) {

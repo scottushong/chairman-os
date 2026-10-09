@@ -21,8 +21,9 @@ import type { MarketPrice, PurchaseLot } from '../src/types'
 
 // ① Landed
 const p = landedPreview({ qty_kg: 5000, unit_price: 1.62, fx_rate: 1380.5, freight_krw: 1_450_000, duty_krw: 690_000, other_krw: 210_000 })!
-assert.equal(p.goods_krw, 11_182_050)
-assert.equal(p.landed_krw_per_kg, Math.round(((11_182_050 + 2_350_000) / 5000) * 10_000) / 10_000)
+// 반올림 없음(0061 · 회장 결정 2026-10-09 밤) — 미리보기는 부동소수라 1e-6 안에서 같으면 된다(화면은 1원으로 그린다).
+assert.ok(Math.abs(p.goods_krw - 11_182_050) < 1e-6)
+assert.ok(Math.abs(p.landed_krw_per_kg - (11_182_050 + 2_350_000) / 5000) < 1e-9)
 assert.equal(landedPreview({ qty_kg: 0, unit_price: 1, fx_rate: 1, freight_krw: 0, duty_krw: 0, other_krw: 0 }), null)
 assert.equal(landedPreview({ qty_kg: 10, unit_price: 1, fx_rate: null, freight_krw: 0, duty_krw: 0, other_krw: 0 }), null, '환율 없으면 미리보기 없음')
 

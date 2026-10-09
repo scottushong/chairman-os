@@ -193,7 +193,10 @@ export const DUMMY_PEOPLE: UserAccount[] = [
   person(DUMMY_UID.supportStaff, 'Member', '경영지원 사원', null, '사원', DUMMY_UID.chair, 'team_dy_support'),
   // 상사가 대표인 팀장과 그 팀원 — 30만은 팀장 승인으로 종결, 600만은 팀장 → 대표.
   person(DUMMY_UID.prodLead, 'TeamLead', '생산팀장', 'Production Team Lead', '팀장', DUMMY_UID.chair, 'team_dy_production'),
-  person(DUMMY_UID.prodStaff, 'Member', '생산 직원', null, '사원', DUMMY_UID.prodLead, 'team_dy_production'),
+  // 원가 엔진 0064 — 생산 입력 줄(생산 화면 /production/biz_dy, DUMMY_USER=prod_staff). 0059 결재 시나리오의 생산팀 사원과 같은 사람.
+  person(DUMMY_UID.prodStaff, 'Member', '생산 직원', 'Production Staff', '사원', DUMMY_UID.prodLead, 'team_dy_production', {
+    modules: [{ module: '/production/biz_dy', can_write: true, can_approve: false }],
+  }),
   // 2026-10-09. 운영 김병훈과 같은 조건 — 사원 · DY · 팀 없음 · 상사 = 대표. 조직도 경고 «팀 미배정»에 잡힌다.
   person(DUMMY_UID.teamless, 'Member', '팀 없는 사원', null, '사원', DUMMY_UID.chair, null),
 ]

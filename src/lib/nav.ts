@@ -153,6 +153,21 @@ export const NAV: readonly NavGroup[] = [
         waitingFor: 'CH-052 DY ECOUNT 엑셀 업로드가 선행되어야 합니다.',
       },
       {
+        // 원가 엔진 0064 — 생산(작업지시 · 생산 LOT · 투입 · LOT 잔량). 그 회사 '/production/<biz>' 줄이 있는 사람과 대표에게만 선다
+        // (navFor의 production). 이 항목이 서면 옛 자리표 «생산 / MES»(준비 중)은 뺀다.
+        key: 'nav_production', label: '생산',
+        href: '/production',
+        icon: 'factory',
+        ready: true,
+      },
+      {
+        // 원가 엔진 0065 — 원가 관리(제품 원가 · 비용 마스터 · 배부 기준 · Actual). 그 회사 '/costing/<biz>' 줄이 있는 사람과 대표에게만(navFor의 costs).
+        key: 'nav_costs', label: '원가 관리',
+        href: '/costs',
+        icon: 'layers',
+        ready: true,
+      },
+      {
         key: 'nav_mes', label: '생산 / MES',
         href: '/mes',
         icon: 'factory',
@@ -280,6 +295,10 @@ export interface NavOptions {
   ledger?: readonly string[]
   /** 영업 원가 화면을 볼 회사가 하나라도 있는가(lib/auth/roles.ts salesBusinessIds). 대표는 늘 참. */
   sales?: boolean
+  /** 생산 화면을 볼 회사가 하나라도 있는가(lib/auth/roles.ts productionBusinessIds). 대표는 늘 참. */
+  production?: boolean
+  /** 원가 관리 화면을 볼 회사가 하나라도 있는가(lib/auth/roles.ts costsBusinessIds). 대표는 늘 참. */
+  costs?: boolean
 }
 
 /**
@@ -289,9 +308,14 @@ export interface NavOptions {
 export function navFor(role: Role | null | undefined, opts: NavOptions = {}): readonly NavGroup[] {
   const purchasing = role === 'Chairman' || opts.purchasing === true
   const sales = role === 'Chairman' || opts.sales === true
+  const production = role === 'Chairman' || opts.production === true
+  const costs = role === 'Chairman' || opts.costs === true
   // «구매»가 서면 옛 자리표 «구매 / SCM»을 뺀다. 못 보는 사람에게는 «구매»를 빼고 자리표만 남는다(지금까지와 같다). «영업»도 같다.
   const purchasingFilter = (item: NavItem) =>
-    (purchasing ? item.key !== 'nav_scm' : item.key !== 'nav_purchasing') && (sales ? item.key !== 'nav_crm' : item.key !== 'nav_sales')
+    (purchasing ? item.key !== 'nav_scm' : item.key !== 'nav_purchasing') &&
+    (sales ? item.key !== 'nav_crm' : item.key !== 'nav_sales') &&
+    (production ? item.key !== 'nav_mes' : item.key !== 'nav_production') &&
+    (costs || item.key !== 'nav_costs')
   if (role === 'Chairman') return NAV.map((group) => ({ ...group, items: group.items.filter(purchasingFilter) }))
   const initiatives = canReadInitiatives(role)
   // 0059 «결재 대장 열람» 줄(SessionUser.ledger)이 없으면 대장 메뉴를 뺀다. 화면은 누구나 열 수 있다(본인 · 결재선 줄만 보인다).

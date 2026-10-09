@@ -10,7 +10,8 @@ import type { CostingWatchRow, SalesCostRow } from '@/types'
  * 영업 원가(회장 결정 2026-10-09 «영업은 제품 총액만, 원료별 가격은 모른다» · 설계서 3.2 · 13절).
  *
  * 제품마다 Market 원가 · DY 원가(Current) · 원가 우위(Market − Current) · 총원가 · 원료비 영향, 펼치면 제시가 확인 · 목표 마진별 제시가.
- * 숫자는 한 번에 0062 cost_sales_list로 받는다(하루 200건 한도에 한 번만 센다). 대표 외는 이번 주 월요일 0시 스냅샷 · 10원/kg.
+ * 숫자는 한 번에 0062 cost_sales_list로 받는다(하루 200건 한도에 한 번만 센다). 오늘 · 지금 저장된 값(매일 최신) · 1원/kg
+ * (회장 결정 2026-10-09 밤 — 대표 외는 DB가 1원으로, 대표는 원래 값을 받아 화면이 1원으로 그린다).
  * **이 화면은 원료 표(원료 · 시세 · LOT)를 부르지 않는다** — check:sales-cost가 정적으로 본다.
  * 대표에게만 «원가 관리 권한자» 감시 카드(0061 cost_costing_watch).
  */
@@ -43,6 +44,7 @@ export default async function SalesCostPage(props: PageProps<'/sales/[business_i
 
   const asOf = rows[0]?.as_of ?? null
   const overheadPending = rows.some((r) => !r.overhead_ready)
+  const overheadReady = rows.some((r) => r.overhead_ready)
 
   return (
     <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6">
@@ -50,7 +52,7 @@ export default async function SalesCostPage(props: PageProps<'/sales/[business_i
         icon="target"
         title={`${business.name} 영업 원가`}
         code="COST-S1"
-        description={asOf ? `${asOfLabel(asOf, chairman)} · 금액은 원/kg · 10원 단위` : '제품 총원가 · 원가 우위 · 제시가 — 금액은 원/kg'}
+        description={asOf ? `${asOfLabel(asOf)} · 금액은 원/kg · 1원 단위` : '제품 총원가 · 원가 우위 · 제시가 — 금액은 원/kg'}
       />
 
       <div className="mt-4 space-y-3">
@@ -67,8 +69,10 @@ export default async function SalesCostPage(props: PageProps<'/sales/[business_i
             <SalesCostBoard rows={rows} />
             <ul className="space-y-0.5 text-t10h text-ink-dim">
               <li>Market 원가 = 오늘 시장가로 샀다면의 원료비 · DY 원가(Current) = 실제로 산 값 기준 원료비 · 원가 우위 = Market − DY 원가(초록이면 시장보다 싸게 샀다).</li>
-              {overheadPending ? <li>비용(물류 · 인건비 등)은 비용 마스터가 생기면 더해집니다 — 지금 총원가는 원료비입니다.</li> : null}
-              <li>원료비 영향 = 지난 주 대비 원료비 변화(0.1%p).{chairman ? '' : ' 값은 매주 월요일 0시에 한 번 바뀝니다.'}</li>
+              {overheadReady ? <li>비용(제조 · 포장 · 물류 · 간접비)은 원가 관리에서 정한 배부 기준 — 총원가 = 원료비 + 비용.</li> : null}
+              {overheadPending ? <li>비용(물류 · 인건비 등)은 비용 마스터가 생기면 더해집니다 — 비용이 없는 제품의 총원가는 원료비입니다.</li> : null}
+              <li>원료비 영향 = 7일 전 대비 원료비 변화(0.1%p). 구매 기록 · 시세가 바뀌면 바로 반영됩니다.</li>
+              <li>원가 우위 · 총원가 · 제시가는 원 단위 아래까지 계산한 뒤 1원으로 보여 줍니다 — 보이는 숫자끼리 빼면 1원 다를 수 있습니다.</li>
             </ul>
           </>
         )}

@@ -12,6 +12,7 @@ export function purchasingError(e: unknown, fallback = '저장하지 못했습�
   if (/cost_fx_missing/.test(m)) return '그 날짜의 환율이 없습니다 — 환율을 직접 넣으세요.'
   if (/cost_void_reason/.test(m)) return '무효 이유를 적으세요.'
   if (/cost_already_voided/.test(m)) return '이미 무효로 한 줄입니다.'
+  if (/cost_lot_in_use/.test(m)) return '이 LOT를 쓴 투입 · 조정을 먼저 무효로 하세요.'
   if (/cost_candidate_invalid/.test(m)) return '승인된 구매 결재가 아닙니다 — 결재 후보에서 다시 고르세요.'
   if (/cost_purchase_lots_one_per_approval/.test(m)) return '이 결재는 이미 LOT로 들어갔습니다.'
   if (/cost_market_prices_one_a_day/.test(m)) return '같은 날 같은 출처의 시장가가 이미 있습니다 — 틀렸다면 그 줄을 무효로 하고 다시 넣으세요.'
