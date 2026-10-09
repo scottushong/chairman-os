@@ -10,9 +10,11 @@ import { STAFF_ADMIN_ERROR, staffAdminMessage } from '@/lib/staff-admin-errors'
 import {
   INVITABLE_ROLE,
   MODULE_GRANT_OPTIONS,
+  ROLE_LABEL_KO,
   SECURITY_CLASS,
   STAFF_ADMIN_PREFIX,
   STAFF_ADMIN_ROLES,
+  TEAM_REQUIRED_ROLES,
   type PersonLanguage,
   type ProfilePatch,
   type Role,
@@ -145,8 +147,24 @@ export async function inviteUser(input: {
     }
   }
 
+  // 2026-10-09 — 임원 · 팀장 · 사원은 팀이 있어야 한다. 팀 없이 들어온 사람(운영 김병훈)은 결재 대장 팀별 합계에서 «팀 없음»으로
+  // 떨어지고 조직도에 «팀 미배정» 경고로 남는다. 0055 위임 초대(staffAdminInvite)는 처음부터 팀 필수다.
+  const teamId = textOrNull(input.teamId, 60)
+  if (TEAM_REQUIRED_ROLES.includes(input.role) && !teamId) {
+    return { error: `${ROLE_LABEL_KO[input.role]}은(는) 팀을 골라야 합니다. 팀이 없으면 결재 대장 · 조직도에서 «팀 없음»으로 남습니다.` }
+  }
+
   const user = await currentUser()
   if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+
+  if (teamId) {
+    // 고른 팀이 고른 회사의 팀인가 — 다른 회사 팀에 매달리면 그 사람의 팀이 회사 범위 밖에서 보이지 않는다.
+    const team = (await (await getRepository()).listTeams()).find((t) => t.team_id === teamId)
+    if (!team) return { error: '없는 팀입니다. 화면을 새로 고친 뒤 다시 고르세요.' }
+    if (businessIds.length > 0 && !businessIds.includes(team.business_id)) {
+      return { error: `«${team.name}» 팀은 고른 회사의 팀이 아닙니다. 회사 범위에 그 팀의 회사를 넣거나 다른 팀을 고르세요.` }
+    }
+  }
 
   // 0026의 위임 초대는 reports_to가 필수다(없으면 회장 외에는 42501). 기본값은 초대자 자신 —
   // 회장 지시 블록 B-4가 정한 값이고, 폼이 비워 보내도 여기서 같은 값으로 떨어진다.
@@ -167,7 +185,7 @@ export async function inviteUser(input: {
         role: input.role,
         max_security_class: input.securityClass,
         business_ids: businessIds,
-        team_id: textOrNull(input.teamId, 60),
+        team_id: teamId,
         reports_to: reportsTo,
         joined_on: isoDateOrNull(input.joinedOn),
         language,
@@ -358,10 +376,17 @@ export async function setModuleGrant(input: {
     return { error: denialMessage(e, '모듈 권한을 바꿀 권한이 없습니다. (대표만 가능합니다)', user.role) }
   }
 
-  // 사용자 화면 · 재무 화면 안내(입력 폼 · 마감 버튼) · 문서 화면의 «링크 등록» · «+ 폴더»가 다 세션 값으로 선다 — 한 번에.
-  // 2026-10-07: '/settings/users' 뒤에 revalidatePath('/finance', 'layout') · ('/documents', 'layout')을 따로 부르면
-  // Server Action 응답이 지금 화면을 새로 그리지 않았다 — 저장은 됐는데 칸이 꺼진 채로 남아 «눌리지 않는다»로 보였다.
-  revalidatePath('/', 'layout')
+  // 지금 화면(/settings/users) 하나만 다시 그린다. 2026-10-09 — 전에는 revalidatePath('/', 'layout')로 앱 전체를 다시 그려
+  // 칸 하나 누를 때마다 느렸다(회장 보고: 칸이 흐려졌다가 돌아온다).
+  // 다른 경로를 부르지 않아도 되는 이유: 켠 권한을 쓰는 쪽은 **대상자 본인의 화면**(재무 입력 · 마감 · 문서 등록 · 결재 올리기)이고,
+  // 그 화면들은 currentUser()(lib/auth/session.ts)로 요청마다 DB에서 줄을 새로 읽는다 — connection() + React cache()뿐이고
+  // unstable_cache · 'use cache'는 이 저장소에 없다. revalidatePath는 **이 브라우저**의 라우터 캐시와 서버 캐시만 지우므로
+  // 다른 사람의 브라우저에는 애초에 닿지 않는다. 회장 본인 세션의 권한은 이 칸들로 바뀌지 않는다(회장은 역할로 다 된다 —
+  // MODULE_GRANT_OPTIONS.roleCovers, 결재 올리기 · 사용자 관리자 칸은 회장에게 그리지 않는다).
+  // 2026-10-07 함정: '/settings/users' 뒤에 revalidatePath('/finance', 'layout') · ('/documents', 'layout')을 **여러 번** 부르면
+  // Server Action 응답이 지금 화면을 새로 그리지 않았다(저장은 됐는데 칸이 꺼진 채). 그래서 한 번만, 지금 화면만 부른다 —
+  // 화면은 useOptimistic이 전환이 끝나는 순간 이 응답의 새 props로 돌아가므로, 이 한 줄이 빠지면 칸이 다시 꺼져 보인다.
+  revalidatePath('/settings/users')
   return {}
 }
 

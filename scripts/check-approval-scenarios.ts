@@ -115,7 +115,18 @@ async function main() {
   // 직원 용어 — 직원이 보는 대장 줄에 «회장»이 없다.
   assert.ok(!JSON.stringify(granted.rows).includes('회장'), '직원 대장에 «회장»')
 
-  console.log('check:approval-scenarios 통과 — ① 대표 대기 · 한 번에 승인 ② 팀장 종결 ③ 팀장 → 대표 ④ 반려 → 재상신 ⑤ 대장 거르기 · 합계 · 엑셀 ⑥ 권한 없음 0건')
+  // ⑦ 2026-10-09 — 팀 없는 사원(운영 김병훈 조건: 사원 · DY · 팀 없음 · 상사 = 대표)의 결재는 팀별 합계에서 «팀 없음»으로 묶인다.
+  //   위 ⑤ · ⑥의 건수를 바꾸지 않게 맨 끝에서 올린다.
+  as('teamless_staff')
+  const c1 = await repo.createDecision(expense('300000'), actor(DUMMY_UID.teamless, 'Member'))
+  assert.deepEqual(await steps(c1.decision_id), ['대표:pending'], '⑦ 팀 없는 사원(상사 = 대표) 30만이 대표 대기가 아니다')
+  as('chairman')
+  const withTeamless = await loadLedger(repo, 'Chairman', parseLedgerFilters({ company: 'biz_dy' }))
+  const noTeam = ledgerTotals(withTeamless.rows, 'month').byTeam.find((g) => g.key === '')
+  assert.equal(noTeam?.label, '팀 없음', '⑦ 팀 없는 사람의 결재가 «팀 없음»으로 묶이지 않는다')
+  assert.equal(noTeam?.count, 1, '⑦ «팀 없음» 건수')
+
+  console.log('check:approval-scenarios 통과 — ① 대표 대기 · 한 번에 승인 ② 팀장 종결 ③ 팀장 → 대표 ④ 반려 → 재상신 ⑤ 대장 거르기 · 합계 · 엑셀 ⑥ 권한 없음 0건 ⑦ 팀 없음 묶음')
 }
 
 main().catch((e) => {

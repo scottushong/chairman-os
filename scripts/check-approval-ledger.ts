@@ -256,7 +256,7 @@ function totals() {
   assert.equal(t.byTemplate.find((g) => g.key === 'purchase')?.sum, 6_000_000 + 450_000 + 9_000_000)
   assert.equal(t.byVendor.find((g) => g.key === '쿠팡')?.count, 2)
   assert.equal(t.byTeam.find((g) => g.key === '구매팀')?.sum, 15_000_000)
-  assert.equal(t.byTeam.find((g) => g.key === '')?.label, '(팀 없음)')
+  assert.equal(t.byTeam.find((g) => g.key === '')?.label, '팀 없음')
 }
 
 function wording() {

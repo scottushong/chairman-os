@@ -548,7 +548,7 @@ export function ledgerTotals(rows: LedgerRow[], grain: LedgerGrain): LedgerTotal
     byPeriod: periodSorted(rollUp(days, grain), grain),
     byTemplate: by((r) => r.template_key, (r) => r.template_name),
     byVendor: by((r) => r.vendor || '', (r) => r.vendor || '(구입처 없음)'),
-    byTeam: by((r) => r.team || '', (r) => r.team || '(팀 없음)'),
+    byTeam: by((r) => r.team || '', (r) => r.team || '팀 없음'),
   }
 }
 
