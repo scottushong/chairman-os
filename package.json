@@ -31,7 +31,8 @@
     "check:release": "bash scripts/check-release.sh",
     "check:file-drop": "tsx scripts/check-file-drop.ts",
     "check:number-input": "tsx scripts/check-number-input.ts",
-    "check:cost-engine": "tsx scripts/check-cost-engine.ts"
+    "check:cost-engine": "tsx scripts/check-cost-engine.ts",
+    "check:purchasing": "tsx scripts/check-purchasing.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",

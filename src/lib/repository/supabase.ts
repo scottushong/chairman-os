@@ -143,6 +143,7 @@ import {
 } from './types'
 import { assistantMethods } from './supabase-assistant'
 import { attachmentMethods } from './supabase-attachments'
+import { purchasingMethods } from './supabase-purchasing'
 
 /**
  * Supabase 어댑터.
@@ -784,6 +785,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     ...attachmentMethods(sb),
     // Phase 11 AI 어시스턴트(0046) — 대화 · 제안 · 사용량. 0046 전 DB를 견딘다(supabase-assistant.ts 머리 주석).
     ...assistantMethods(sb),
+    // 0061 원가 엔진 · 구매 — 판정은 RLS(cost_can). 읽기는 0061 전 DB를 견딘다(supabase-purchasing.ts 머리 주석).
+    ...purchasingMethods(sb),
 
     async listBusinesses(): Promise<Business[]> {
       const { data, error } = await fetchAll('businesses', ['business_id'], (from, to) =>

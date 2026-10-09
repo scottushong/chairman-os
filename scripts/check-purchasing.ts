@@ -125,7 +125,9 @@ assert.equal(
   '이 결재는 이미 LOT로 들어갔습니다.',
 )
 assert.match(purchasingError(new Error('cost_price_outlier')), /90일/)
-for (const code of ['cost_not_found', 'cost_fx_missing', 'cost_void_reason', 'cost_already_voided', 'cost_candidate_invalid', 'cost_price_outlier', '42501']) {
+assert.equal(purchasingError(new Error('cost_date_future')), '내일보다 먼 날짜는 넣을 수 없습니다.')
+assert.equal(purchasingError(new Error('cost_price_too_many')), '같은 원료 같은 날 시세는 출처 셋까지입니다.')
+for (const code of ['cost_not_found', 'cost_fx_missing', 'cost_void_reason', 'cost_already_voided', 'cost_candidate_invalid', 'cost_price_outlier', 'cost_date_future', 'cost_price_too_many', '42501']) {
   assert.ok(!/회장|Chairman/i.test(purchasingError(new Error(code))), `${code} 문구에 회장`)
 }
 

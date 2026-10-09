@@ -110,6 +110,14 @@ export const NAV: readonly NavGroup[] = [
         ready: true,
       },
       {
+        // 0061 원가 엔진 1차 — 구매(원료 · 공급처 · 시장가 · 구매 LOT). 그 회사 '/purchasing/<biz>' · '/costing/<biz>' 줄이 있는 사람과
+        // 대표에게만 선다(navFor의 purchasing). 이 항목이 서면 옛 자리표 «구매 / SCM»(준비 중)은 뺀다 — 같은 영역이 둘로 보이지 않게.
+        key: 'nav_purchasing', label: '구매',
+        href: '/purchasing',
+        icon: 'cart',
+        ready: true,
+      },
+      {
         key: 'nav_hr', label: '인사 / 조직',
         href: '/hr',
         icon: 'users',
@@ -253,16 +261,28 @@ const STAFF_NAV_OVERRIDE: Readonly<Record<string, Partial<NavItem>>> = {
 }
 
 /**
+ * 역할 말고 사람 단위 권한으로 갈리는 메뉴(0061). 세션(SessionUser.cost)에서 레이아웃이 계산해 넘긴다 — 안내일 뿐 판정은 각 화면 · DB.
+ *   purchasing  그 사람이 구매 화면을 볼 회사가 하나라도 있는가(lib/auth/roles.ts purchasingBusinessIds). 대표는 늘 참.
+ */
+export interface NavOptions {
+  purchasing?: boolean
+}
+
+/**
  * 이 역할이 보는 메뉴 한 벌. 회장은 NAV 그대로, 나머지(세션이 없을 때 포함)는 회장 전용을 빼고,
  * 이니셔티브를 못 읽는 역할에게서는 «이니셔티브»도 뺀다.
  */
-export function navFor(role: Role | null | undefined): readonly NavGroup[] {
-  if (role === 'Chairman') return NAV
+export function navFor(role: Role | null | undefined, opts: NavOptions = {}): readonly NavGroup[] {
+  const purchasing = role === 'Chairman' || opts.purchasing === true
+  // «구매»가 서면 옛 자리표 «구매 / SCM»을 뺀다. 못 보는 사람에게는 «구매»를 빼고 자리표만 남는다(지금까지와 같다).
+  const purchasingFilter = (item: NavItem) => (purchasing ? item.key !== 'nav_scm' : item.key !== 'nav_purchasing')
+  if (role === 'Chairman') return NAV.map((group) => ({ ...group, items: group.items.filter(purchasingFilter) }))
   const initiatives = canReadInitiatives(role)
   return NAV.map((group) => ({
     ...group,
     items: group.items
       .filter((item) => !CHAIRMAN_ONLY_NAV.has(item.key) && (initiatives || item.key !== 'nav_initiatives'))
+      .filter(purchasingFilter)
       .map((item) => (STAFF_NAV_OVERRIDE[item.key] ? { ...item, ...STAFF_NAV_OVERRIDE[item.key] } : item)),
   })).filter((group) => group.items.length > 0)
 }

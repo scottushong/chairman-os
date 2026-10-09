@@ -1,4 +1,4 @@
-import type { ModuleGrant } from '@/types'
+import { COST_AREAS, type CostGrants, type ModuleGrant } from '@/types'
 
 /**
  * 0047 모듈 권한 키. 재무는 **회사까지** 키에 넣는다 — '/finance/<business_id>'.
@@ -54,4 +54,19 @@ export const DRAFT_DECISION_MODULE = '/chairman/decisions'
 
 export function hasDraftGrant(grants: ModuleGrant[]): boolean {
   return grants.some((g) => g.module === DRAFT_DECISION_MODULE && g.can_write)
+}
+
+/**
+ * 0061 원가 엔진 네 영역의 줄 → 영역 → 회사 → 쓰기 칸(SessionUser.cost). '/purchasing/<biz>' · '/production/<biz>' ·
+ * '/sales/<biz>' · '/costing/<biz>'. can_approve는 쓰지 않는다. 판정은 DB cost_can(area, biz, write)이다 — 이것은 화면 안내.
+ */
+export function costByBusiness(grants: ModuleGrant[]): CostGrants {
+  const out = Object.fromEntries(COST_AREAS.map((a) => [a, {}])) as CostGrants
+  for (const g of grants) {
+    for (const area of COST_AREAS) {
+      const biz = businessOfModule(`/${area}`, g.module)
+      if (biz) out[area][biz] = { write: g.can_write }
+    }
+  }
+  return out
 }

@@ -1,5 +1,6 @@
 import type { SecurityClass } from './enums'
 import type { BusinessId } from './primitives'
+import type { CostGrants } from './purchasing'
 
 /** 02_기능명세 04_권한 시트. Default Deny / Least Privilege / Business Isolation. */
 
@@ -129,4 +130,9 @@ export interface SessionUser {
    * 없으면(옛 세션 객체 · 카카오 질문자) 모르는 것으로 보고 DB 판정에 맡긴다.
    */
   approvals_write?: boolean
+  /**
+   * 0061 원가 엔진 네 영역(구매 · 생산 · 영업 · 원가 관리)의 본인 줄, 영역 → 회사 → 쓰기 칸('/<area>/<business_id>').
+   * 안내용이다(판정은 DB cost_can). 대표(Chairman)는 역할로 전부 되므로 비어 있을 수 있다. 없으면(옛 세션 객체) 빈 값으로 본다.
+   */
+  cost?: CostGrants
 }
