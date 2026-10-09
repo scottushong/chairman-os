@@ -125,6 +125,27 @@ language sql immutable set search_path = pg_temp as $fn$
 $fn$;
 
 /**
+ * 회장 결정(2026-10-10) 역산 위험 (가) — 영업의 값은 «오늘 0시(KST)까지 저장된 값» 기준. 원가 관리 · 대표는 즉시.
+ * 문(cost_gate_biz)이 트랜잭션 설정 cost.known_at을 정한다: 영업 = 오늘 0시(KST), 원가 관리 · 대표 = 빈 값(즉시).
+ * 문은 모든 공개 원가 RPC의 첫 줄이고 매번 다시 정한다(앞 호출의 값이 남지 않는다). PostgREST로는 이 설정을 바꿀 길이 없다.
+ * 아래 읽기 함수들은 무효 처리(voided_at is null) 대신 known(created_at, voided_at)로 거른다:
+ *   즉시      = 무효가 아닌 줄(예전과 같다).
+ *   0시 기준  = 0시까지 만든 줄 중 0시까지 무효가 안 된 줄(오늘 무효 처리한 줄은 영업에게 내일까지 살아 있다).
+ * created_at · voided_at은 트리거 · 함수가 now()로 찍는다(입력값을 받지 않는다 — 0061 cost_stamp_insert · cost_void_update).
+ */
+create or replace function cost_secret.sales_cutoff() returns timestamptz
+language sql stable set search_path = public, pg_temp as $fn$
+  select (cost_today()::timestamp) at time zone 'Asia/Seoul';
+$fn$;
+
+create or replace function cost_secret.known(p_created timestamptz, p_voided timestamptz) returns boolean
+language sql stable set search_path = pg_temp as $fn$
+  select case when nullif(current_setting('cost.known_at', true), '') is null then p_voided is null
+              else p_created <= current_setting('cost.known_at', true)::timestamptz
+                   and (p_voided is null or p_voided > current_setting('cost.known_at', true)::timestamptz) end;
+$fn$;
+
+/**
  * 원료 m의 d 단가(원/kg). market · current. 없으면 null. 지금 저장된 값(무효 제외) 그대로 — «매일 최신»(회장 결정 2026-10-09 밤).
  */
 create or replace function cost_secret.unit_price(p_material text, p_kind text, p_on date)
@@ -135,18 +156,18 @@ declare
 begin
   if p_kind = 'market' then
     select avg(m.price_krw_per_kg) into v from public.cost_market_prices m
-     where m.material_id = p_material and m.voided_at is null
+     where m.material_id = p_material and cost_secret.known(m.created_at, m.voided_at)
        and m.observed_on = (select max(x.observed_on) from public.cost_market_prices x
-                             where x.material_id = p_material and x.observed_on <= p_on and x.voided_at is null);
+                             where x.material_id = p_material and x.observed_on <= p_on and cost_secret.known(x.created_at, x.voided_at));
     return v;
   elsif p_kind = 'current' then
     select sum(l.landed_krw_per_kg * l.qty_kg) / nullif(sum(l.qty_kg), 0) into v
       from public.cost_purchase_lots l
-     where l.material_id = p_material and l.voided_at is null
+     where l.material_id = p_material and cost_secret.known(l.created_at, l.voided_at)
        and l.received_on <= p_on and l.received_on > p_on - 180;
     if v is null then
       select l.landed_krw_per_kg into v from public.cost_purchase_lots l
-       where l.material_id = p_material and l.voided_at is null and l.received_on <= p_on
+       where l.material_id = p_material and cost_secret.known(l.created_at, l.voided_at) and l.received_on <= p_on
        order by l.received_on desc, l.created_at desc limit 1;
     end if;
     return v;
@@ -155,11 +176,11 @@ begin
 end;
 $fn$;
 
-/** d에 쓰는 BOM 판(무효 제외, valid_from ≤ d 중 가장 늦은 것). 지금 저장된 판 그대로. */
+/** d에 쓰는 BOM 판(무효 제외, valid_from ≤ d 중 가장 늦은 것). 영업은 0시까지 저장된 판(known). */
 create or replace function cost_secret.version_on(p_product text, p_on date) returns bigint
 language sql stable security definer set search_path = public, cost_secret, pg_temp as $fn$
   select version_id from cost_secret.bom_versions
-   where product_id = p_product and valid_from <= p_on and voided_at is null
+   where product_id = p_product and valid_from <= p_on and cost_secret.known(created_at, voided_at)
    order by valid_from desc, created_at desc limit 1;
 $fn$;
 
@@ -198,6 +219,8 @@ declare
   v_total int;
   v_new boolean;
 begin
+  -- (가) 기본은 즉시. 영업으로 판정된 뒤에만 0시 기준으로 바꾼다(아래).
+  perform set_config('cost.known_at', '', true);
   if not is_active() or v_role in ('AIAgent', 'Integration', '') or p_business is null or not has_business(p_business) then
     raise exception 'cost_not_found' using errcode = 'P0002';
   end if;
@@ -215,6 +238,10 @@ begin
     raise exception 'cost_role_conflict' using errcode = '42501';
   end if;
   as_of := v_today;
+  -- 회장 결정(2026-10-10) (가) — 영업(원가 관리 줄이 없는 사람)은 오늘 0시(KST)까지 저장된 값. 원가 관리는 즉시.
+  if not v_costing then
+    perform set_config('cost.known_at', cost_secret.sales_cutoff()::text, true);
+  end if;
   -- 같은 사람의 동시 요청이 한도를 함께 넘지 않게(0063 리뷰 M1).
   perform pg_advisory_xact_lock(hashtext('cost_reads:' || auth.uid()::text || ':' || v_today::text));
   select coalesce(sum(r.calls), 0) into v_total from cost_secret.cost_reads r where r.user_id = auth.uid() and r.read_on = v_today;

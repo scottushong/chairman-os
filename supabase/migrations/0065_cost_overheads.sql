@@ -51,7 +51,12 @@ create table cost_alloc_settings (
   window_days      int not null default 28 check (window_days between 7 and 365),
   planned_kg_month numeric check (planned_kg_month is null or (planned_kg_month > 0 and planned_kg_month <= 1e12)),
   updated_by       uuid,
-  updated_at       timestamptz not null default now()
+  updated_at       timestamptz not null default now(),
+  -- (가) 2026-10-10 — 영업은 오늘 0시 기준. 오늘 바꾼 줄이면 영업은 «오늘 0시의 값»(prev_*)을 쓴다. 0시에 줄이 없었으면 prev_set = false(기본값).
+  prev_set              boolean not null default false,
+  prev_basis            text,
+  prev_window_days      int,
+  prev_planned_kg_month numeric
 );
 comment on table cost_alloc_settings is '0065. 배부 기준(회사마다 한 줄, 없으면 기본 trailing · 28일). cost_alloc_set으로만 바꾼다.';
 
@@ -132,16 +137,24 @@ declare
   v_monthly boolean;
 begin
   ready := false;
-  has_lines := exists (select 1 from public.cost_overheads o where o.business_id = p_business and o.voided_at is null and o.effective_from <= p_on);
+  has_lines := exists (select 1 from public.cost_overheads o where o.business_id = p_business and cost_secret.known(o.created_at, o.voided_at) and o.effective_from <= p_on);
   if not has_lines then
     return;
   end if;
   select * into s from public.cost_alloc_settings a where a.business_id = p_business;
+  -- (가) 영업: 오늘 바꾼 배부 기준은 내일부터. 오늘 0시의 값(없었으면 기본값)을 쓴다.
+  if s.business_id is not null and not cost_secret.known(s.updated_at, null) then
+    if s.prev_set then
+      s.basis := s.prev_basis; s.window_days := s.prev_window_days; s.planned_kg_month := s.prev_planned_kg_month;
+    else
+      s.basis := null; s.window_days := null; s.planned_kg_month := null;
+    end if;
+  end if;
   window_days := coalesce(s.window_days, 28);
   basis_used := coalesce(s.basis, 'trailing');
   if basis_used = 'trailing' then
     select sum(pl.output_kg) into divisor_kg from public.cost_prod_lots pl
-     where pl.business_id = p_business and pl.voided_at is null and pl.produced_on > p_on - window_days and pl.produced_on <= p_on;
+     where pl.business_id = p_business and cost_secret.known(pl.created_at, pl.voided_at) and pl.produced_on > p_on - window_days and pl.produced_on <= p_on;
   end if;
   if coalesce(divisor_kg, 0) = 0 then
     divisor_kg := case when s.planned_kg_month > 0 then s.planned_kg_month * 12 * window_days / 365 end;
@@ -157,7 +170,7 @@ begin
            cross join lateral (
              select distinct on (o.category) o.category, o.amount, o.basis
                from public.cost_overheads o
-              where o.business_id = p_business and o.product_id is null and o.voided_at is null and o.effective_from <= dd.d
+              where o.business_id = p_business and o.product_id is null and cost_secret.known(o.created_at, o.voided_at) and o.effective_from <= dd.d
               order by o.category, o.effective_from desc, o.overhead_id desc) x
           where x.basis = 'monthly'),
        m as (select cost_secret.overhead_group(c.category) as grp, sum(c.amount) * 12 / 365 as amt from cur c group by 1)
@@ -196,7 +209,7 @@ language sql stable security definer set search_path = public, cost_secret, pg_t
   select y.category, cost_secret.overhead_group(y.category), y.amount, y.product_id
     from (select distinct on (o.category, coalesce(o.product_id, '')) o.category, o.amount, o.product_id, o.basis
             from public.cost_overheads o
-           where o.business_id = p_business and o.voided_at is null and o.effective_from <= p_on
+           where o.business_id = p_business and cost_secret.known(o.created_at, o.voided_at) and o.effective_from <= p_on
              and (o.product_id is null or o.product_id = p_product)
            order by o.category, coalesce(o.product_id, ''), o.effective_from desc, o.overhead_id desc) y
    where y.basis = 'per_kg';
@@ -334,7 +347,12 @@ begin
   insert into cost_alloc_settings (business_id, basis, window_days, planned_kg_month, updated_by, updated_at)
   values (p_business, p_basis, p_window_days, p_planned_kg_month, auth.uid(), now())
   on conflict (business_id) do update set basis = excluded.basis, window_days = excluded.window_days,
-    planned_kg_month = excluded.planned_kg_month, updated_by = excluded.updated_by, updated_at = excluded.updated_at;
+    planned_kg_month = excluded.planned_kg_month, updated_by = excluded.updated_by, updated_at = excluded.updated_at,
+    -- (가) 앞 줄이 오늘 0시 전에 저장된 것이면 그것이 «오늘 0시의 값»이다. 오늘 이미 바꾼 줄이면 prev_*는 그대로(0시 값 유지).
+    prev_set = case when cost_alloc_settings.updated_at <= cost_secret.sales_cutoff() then true else cost_alloc_settings.prev_set end,
+    prev_basis = case when cost_alloc_settings.updated_at <= cost_secret.sales_cutoff() then cost_alloc_settings.basis else cost_alloc_settings.prev_basis end,
+    prev_window_days = case when cost_alloc_settings.updated_at <= cost_secret.sales_cutoff() then cost_alloc_settings.window_days else cost_alloc_settings.prev_window_days end,
+    prev_planned_kg_month = case when cost_alloc_settings.updated_at <= cost_secret.sales_cutoff() then cost_alloc_settings.planned_kg_month else cost_alloc_settings.prev_planned_kg_month end;
   insert into audit_log (action, entity_table, entity_id, business_id, actor_user_id, actor_role, before, after, note)
   values ('update', 'cost_alloc_settings', p_business, p_business, auth.uid(), auth_role()::text, null,
           jsonb_build_object('basis', p_basis, 'window_days', p_window_days, 'planned_kg_month', p_planned_kg_month), '배부 기준(0065)');

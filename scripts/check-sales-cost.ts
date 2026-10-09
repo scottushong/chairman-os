@@ -73,7 +73,8 @@ assert.equal(materialImpactPct(null, 1000), null)
 assert.equal(impactText(4.2), '원료비 영향 +4.2%')
 assert.equal(impactText(-1), '원료비 영향 −1.0%')
 assert.equal(impactText(null), null)
-assert.equal(asOfLabel('2026-10-09'), '2026-10-09(금) 기준 · 지금 저장된 값(매일 최신)')
+assert.equal(asOfLabel('2026-10-09'), '2026-10-09(금) 기준 · 지금 저장된 값')
+assert.equal(asOfLabel('2026-10-09', false), '2026-10-09(금) · 오늘 0시 기준 원가(오늘 저장한 값은 내일 반영)', '(가) 영업 문구')
 assert.equal(salesCostError('cost_rate_limited'), '오늘 조회 한도에 걸렸습니다 — 대표에게 문의하세요.', '회장 지시 한도 문구')
 assert.ok(/대표/.test(RED_NOTICE) && !/회장/.test(RED_NOTICE))
 for (const code of ['cost_role_conflict', 'cost_rate_limited', 'cost_price_invalid', 'cost_not_found', 'x']) {
@@ -101,6 +102,8 @@ async function as<T>(user: string | undefined, fn: () => Promise<T>): Promise<T>
 async function main() {
   const repo = dummyRepository
   const today = kstToday()
+  // (가) — 앞 절은 영업도 즉시로 잰다(1원 · 정밀도를 대표 원래 값과 맞춘다). 끝의 (가) 절이 진짜 0시 기준을 잰다.
+  process.env.DUMMY_SALES_CUTOFF = 'now'
 
   // 영업 직원: 오늘 · 원료 없음.
   const staff = await as('sales_staff', () => repo.costSalesList('biz_dy'))
@@ -243,6 +246,20 @@ async function main() {
   await add(DUMMY_UID.dyCeo, true)
   await add(DUMMY_UID.dyCeo, false)
   await add(DUMMY_UID.salesLead, false)
+  // ── (가) 회장 결정 2026-10-10 — 영업은 오늘 0시까지 저장된 값, 대표는 즉시 ──
+  delete process.env.DUMMY_SALES_CUTOFF
+  const pick = (rows: Awaited<ReturnType<typeof repo.costSalesList>>) => rows.find((r) => r.product_name === '제품 X(가짜)')!
+  const s0 = pick(await as('sales_staff', () => repo.costSalesList('biz_dy')))
+  const c0 = pick(await as('chairman', () => repo.costSalesList('biz_dy')))
+  await as('buy_staff', () => repo.addMarketPrice('biz_dy', { material_id: 'mat_fake_a', observed_on: today, price: 9000, currency: 'KRW', fx_rate: null, source_name: '(가) 오늘 시험', source_url: null, note: '' }))
+  const s1 = pick(await as('sales_staff', () => repo.costSalesList('biz_dy')))
+  const c1 = pick(await as('chairman', () => repo.costSalesList('biz_dy')))
+  assert.deepEqual(s1, s0, '(가) dummy: 오늘 넣은 시세가 영업 값에 바로 반영됐다')
+  assert.notEqual(c1.market_krw_per_kg, c0.market_krw_per_kg, '(가) dummy: 오늘 넣은 시세가 대표 값에 바로 반영되지 않는다')
+  process.env.DUMMY_SALES_CUTOFF = 'now' // «내일»
+  const s2 = pick(await as('sales_staff', () => repo.costSalesList('biz_dy')))
+  assert.equal(s2.market_krw_per_kg, round1(c1.market_krw_per_kg!), '(가) dummy: «내일» 영업 Market이 대표 값(1원)과 다르다')
+  delete process.env.DUMMY_SALES_CUTOFF
   console.log('② dummy 거울 OK')
 
   // ── ③ 정적 ─────────────────────────────────────────────────────────
