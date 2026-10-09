@@ -11,7 +11,7 @@
 
 ## 1. staging (itpenmxyracfhyormcep · Seoul)
 
-1. 브라우저에서 https://supabase.com/dashboard/project/itpenmxyracfhyormcep 를 연다.
+1. 브라우저에서 https://supabase.com/dashboard/project/itpenmxyracfhyormcep 를 연다. (2026-10-09 확인: staging에는 pgcrypto · supabase_vault가 이미 켜져 있고, 키는 아직 없다.)
 2. 왼쪽 메뉴 **SQL Editor** → 위 **+ New query**.
 3. 먼저 확장 둘이 켜져 있는지 본다. 아래를 붙여 넣고 **Run**:
 
@@ -42,7 +42,9 @@
 - `vault.decrypted_secrets` 를 열어 키 값을 보지 않는다. 키를 메모장 · 메일 · 메신저 · 저장소에 옮기지 않는다.
 - `cost_bom_key` 를 지우거나 `vault.update_secret` 으로 바꾸지 않는다. 바꾸면 그때까지 저장한 BOM을 **읽을 수 없다**
   («BOM을 읽을 수 없습니다 — 키가 바뀌었거나 저장된 값이 깨졌습니다»). 그때는 R2(원본)에서 BOM을 다시 넣는다.
-- `show log_statement;` 가 `all` 이면 SQL 문장이 로그에 남는다(기본은 `none`). 바꾸지 않는다.
+- `show log_statement;` 는 staging에서 `ddl`이다(2026-10-09 확인 — 표 · 함수 만들기만 로그에 남고, 키를 만드는 `select`는 남지 않는다). `all` · `mod`로 바꾸지 않는다.
+- auto_explain(nested · verbose)을 켜지 않는다 — 해독 결과가 계획 상수로 로그에 남을 수 있다.
+- 확인용(키 값은 보이지 않는다): `select length(cost_secret.bom_key()) > 0;` — 0063 반영 뒤 SQL Editor에서. true면 함수가 키를 읽는다.
 
 ## 3. 진짜 BOM 받기 (나중)
 
