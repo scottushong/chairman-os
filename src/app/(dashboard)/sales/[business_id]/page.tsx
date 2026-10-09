@@ -1,0 +1,80 @@
+import { CostingWatchCard } from '@/components/cost/costing-watch-card'
+import { PageHeader } from '@/components/layout/page-header'
+import { SalesCostBoard } from '@/components/sales/sales-cost-board'
+import { recordScreenRead } from '@/lib/activity-record'
+import { asOfLabel, salesCostError } from '@/lib/sales/cost'
+import { openSales } from '@/lib/sales/page'
+import type { CostingWatchRow, SalesCostRow } from '@/types'
+
+/**
+ * 영업 원가(회장 결정 2026-10-09 «영업은 제품 총액만, 원료별 가격은 모른다» · 설계서 3.2 · 13절).
+ *
+ * 제품마다 Market 원가 · DY 원가(Current) · 원가 우위(Market − Current) · 총원가 · 원료비 영향, 펼치면 제시가 확인 · 목표 마진별 제시가.
+ * 숫자는 한 번에 0062 cost_sales_list로 받는다(하루 200건 한도에 한 번만 센다). 대표 외는 이번 주 월요일 0시 스냅샷 · 10원/kg.
+ * **이 화면은 원료 표(원료 · 시세 · LOT)를 부르지 않는다** — check:sales-cost가 정적으로 본다.
+ * 대표에게만 «원가 관리 권한자» 감시 카드(0061 cost_costing_watch).
+ */
+export default async function SalesCostPage(props: PageProps<'/sales/[business_id]'>) {
+  const { business_id } = await props.params
+  const { repo, user, business } = await openSales(business_id)
+  // 404 뒤에 둔다(볼 수 없는 회사의 id를 찍어 본 것은 조회가 아니다).
+  await recordScreenRead({ path: `/sales/${business_id}`, kind: 'page', business_id })
+  const chairman = user.role === 'Chairman'
+
+  let rows: SalesCostRow[] = []
+  let error: string | null = null
+  try {
+    rows = await repo.costSalesList(business_id)
+  } catch (e) {
+    console.error('[sales] cost_sales_list', e instanceof Error ? e.message : String(e))
+    error = salesCostError(e)
+  }
+
+  let watch: CostingWatchRow[] = []
+  let watchError: string | null = null
+  if (chairman) {
+    try {
+      watch = await repo.costingWatch(business_id)
+    } catch (e) {
+      console.error('[sales] cost_costing_watch', e instanceof Error ? e.message : String(e))
+      watchError = '원가 관리 권한자를 불러오지 못했습니다.'
+    }
+  }
+
+  const asOf = rows[0]?.as_of ?? null
+  const overheadPending = rows.some((r) => !r.overhead_ready)
+
+  return (
+    <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6">
+      <PageHeader
+        icon="target"
+        title={`${business.name} 영업 원가`}
+        code="COST-S1"
+        description={asOf ? `${asOfLabel(asOf, chairman)} · 금액은 원/kg · 10원 단위` : '제품 총원가 · 원가 우위 · 제시가 — 금액은 원/kg'}
+      />
+
+      <div className="mt-4 space-y-3">
+        {error ? (
+          <p role="alert" className="rounded-md border border-critical/40 bg-critical/10 px-3 py-2 text-t12 text-critical">
+            {error}
+          </p>
+        ) : rows.length === 0 ? (
+          <section className="rounded-xl border border-line-soft bg-panel px-4 py-10 text-center text-t13 text-ink-dim">
+            아직 원가를 볼 제품이 없습니다.
+          </section>
+        ) : (
+          <>
+            <SalesCostBoard rows={rows} />
+            <ul className="space-y-0.5 text-t10h text-ink-dim">
+              <li>Market 원가 = 오늘 시장가로 샀다면의 원료비 · DY 원가(Current) = 실제로 산 값 기준 원료비 · 원가 우위 = Market − DY 원가(초록이면 시장보다 싸게 샀다).</li>
+              {overheadPending ? <li>비용(물류 · 인건비 등)은 비용 마스터가 생기면 더해집니다 — 지금 총원가는 원료비입니다.</li> : null}
+              <li>원료비 영향 = 지난 주 대비 원료비 변화(0.1%p).{chairman ? '' : ' 값은 매주 월요일 0시에 한 번 바뀝니다.'}</li>
+            </ul>
+          </>
+        )}
+
+        {chairman ? <CostingWatchCard rows={watch} error={watchError} /> : null}
+      </div>
+    </div>
+  )
+}

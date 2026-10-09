@@ -167,3 +167,28 @@ export function showsPurchasingNav(user: SessionUser | null): boolean {
   const ids = purchasingBusinessIds(user)
   return ids === null || ids.length > 0
 }
+
+/**
+ * 영업 원가 화면(/sales/<biz>)을 볼 수 있는가(안내). DB 0062 cost_gate와 같은 문: 대표 또는 그 회사의 '/sales/<biz>' · '/costing/<biz>' 줄.
+ * 구매 입력 줄을 같이 가진 사람은 화면은 열리고 원가 칸에서 DB가 'cost_role_conflict'로 거부한다 — 화면이 그 문장을 보여 준다.
+ */
+export function canReadSales(user: SessionUser | null, businessId: string): boolean {
+  if (user === null) return false
+  if (user.role === 'Chairman') return true
+  if (SYSTEM.includes(user.role)) return false
+  return !!user.cost?.sales[businessId] || !!user.cost?.costing[businessId]
+}
+
+/** 사이드바 «영업»을 그릴 회사들 — 대표는 null(= 회사 목록 전부). */
+export function salesBusinessIds(user: SessionUser | null): string[] | null {
+  if (user === null) return []
+  if (user.role === 'Chairman') return null
+  if (SYSTEM.includes(user.role)) return []
+  return [...new Set([...Object.keys(user.cost?.sales ?? {}), ...Object.keys(user.cost?.costing ?? {})])].sort()
+}
+
+/** 사이드바 «영업»을 그릴까(안내). 대표는 늘, 그 밖은 '/sales/<biz>' · '/costing/<biz>' 줄이 하나라도 있으면. */
+export function showsSalesNav(user: SessionUser | null): boolean {
+  const ids = salesBusinessIds(user)
+  return ids === null || ids.length > 0
+}

@@ -236,6 +236,13 @@ language plpgsql set search_path = public as $fn$
 begin
   new.created_by := auth.uid();
   new.created_at := now();
+  -- 리뷰 5회차 M1 — 사람이 읽는 키(원료 · 공급처 · 제품)는 DB가 짓는다. 'mat_sesame_oil'처럼 이름을 키에 넣으면 감사 줄 · 오류로 이름이 샌다.
+  if tg_table_name in ('cost_materials', 'cost_suppliers', 'cost_products') then
+    new := jsonb_populate_record(new, jsonb_build_object(
+      case tg_table_name when 'cost_materials' then 'material_id' when 'cost_suppliers' then 'supplier_id' else 'product_id' end,
+      case tg_table_name when 'cost_materials' then 'mat_' when 'cost_suppliers' then 'sup_' else 'prd_' end
+        || substr(replace(gen_random_uuid()::text, '-', ''), 1, 16)));
+  end if;
   return new;
 end;
 $fn$;
@@ -307,6 +314,8 @@ $fn$;
 create or replace function cost_lot_source_check() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $fn$
 begin
+  -- 리뷰 5회차 M3 — BEFORE 트리거는 RLS보다 먼저 돈다. 구매 입력 권한이 없으면 말하지 않고 RLS가 거부하게 둔다(결재 id 탐침 막기).
+  if not cost_can('purchasing', new.business_id, true) then return new; end if;
   if new.source = 'approval' and not exists (
     select 1 from decisions d
      where d.decision_id = new.source_ref and d.business_id = new.business_id
@@ -321,6 +330,7 @@ $fn$;
 create or replace function cost_dismissal_check() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $fn$
 begin
+  if not cost_can('purchasing', new.business_id, true) then return new; end if;
   new.dismissed_by := auth.uid();
   new.dismissed_at := now();
   if not exists (
@@ -473,9 +483,9 @@ revoke all on sequence cost_market_prices_price_id_seq from anon, public;
 revoke update on sequence cost_market_prices_price_id_seq from authenticated;
 grant usage, select on sequence cost_market_prices_price_id_seq to authenticated;
 
--- 원료 · 제품 이름: 네 영역 누구나(이름만 — 구성은 없다).
+-- 원료 이름: 구매 · 생산 · 원가 관리 · 대표. **영업은 원료 이름도 모른다**(회장 결정 2026-10-09 — «영업은 제품 총액만»).
 create policy cost_materials_read on cost_materials for select to authenticated using (
-  cost_can('purchasing', business_id) or cost_can('production', business_id) or cost_can('sales', business_id) or cost_can('costing', business_id));
+  cost_can('purchasing', business_id) or cost_can('production', business_id) or cost_can('costing', business_id));
 create policy cost_materials_insert on cost_materials for insert to authenticated with check (cost_can('purchasing', business_id, true));
 create policy cost_materials_update on cost_materials for update to authenticated
   using (cost_can('purchasing', business_id, true)) with check (cost_can('purchasing', business_id, true));
@@ -493,9 +503,9 @@ create policy cost_suppliers_insert on cost_suppliers for insert to authenticate
 create policy cost_suppliers_update on cost_suppliers for update to authenticated
   using (cost_can('purchasing', business_id, true)) with check (cost_can('purchasing', business_id, true));
 
--- 시장가: 구매 · 영업 · 원가 관리 · 대표(표). 생산은 «제한» 함수.
+-- 시장가: 구매 · 원가 관리 · 대표(표). 생산은 «제한» 함수. **영업은 원료별 시세를 보지 않는다**(회장 결정 2026-10-09).
 create policy cost_market_prices_read on cost_market_prices for select to authenticated using (
-  cost_can('purchasing', business_id) or cost_can('sales', business_id) or cost_can('costing', business_id));
+  cost_can('purchasing', business_id) or cost_can('costing', business_id));
 create policy cost_market_prices_insert on cost_market_prices for insert to authenticated with check (cost_can('purchasing', business_id, true));
 create policy cost_market_prices_void on cost_market_prices for update to authenticated
   using (cost_can('purchasing', business_id, true)) with check (cost_can('purchasing', business_id, true));
@@ -516,6 +526,73 @@ create policy cost_purchase_docs_void on cost_purchase_docs for update to authen
 
 create policy cost_candidate_dismissals_rw on cost_candidate_dismissals for all to authenticated
   using (cost_can('purchasing', business_id, true)) with check (cost_can('purchasing', business_id, true));
+
+-- =====================================================================
+-- 4-b절. 원가 관리 권한 — 회사마다 소수만 · 대표가 지켜본다(회장 결정 2026-10-09)
+--   원가 관리는 원료별 시세 · 구매가 · LOT와 제품 원가를 함께 보므로 원리상 BOM을 역산할 수 있다(설계서 16절).
+--   감수 조건: ① 회사마다 셋까지(user_module_access 트리거) ② 원가 조회는 호출마다 감사(0062 cost_gate) · 구매 화면 열람은 0031 열람 기록
+--   ③ 대표 화면에 «원가 관리 권한자 + 최근 7일 조회 수»(cost_costing_watch).
+-- =====================================================================
+
+create or replace function cost_costing_cap() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $fn$
+begin
+  if new.module like '/costing/%' then
+    -- 리뷰 5회차 M4 — 두 트랜잭션이 동시에 넷째를 넣지 못하게 그 모듈 키로 잠근다.
+    perform pg_advisory_xact_lock(hashtext(new.module));
+  end if;
+  if new.module like '/costing/%' and (
+       select count(*) from user_module_access m
+        where m.module = new.module and m.user_id <> new.user_id) >= 3 then
+    raise exception 'cost_costing_cap' using errcode = '23514';
+  end if;
+  return new;
+end;
+$fn$;
+
+revoke all on function cost_costing_cap() from public, anon, authenticated;
+create trigger user_module_access_costing_cap before insert or update of module on user_module_access
+  for each row execute function cost_costing_cap();
+
+/** 대표: 그 회사 원가 관리 권한자 · 줄 생긴 시각 · 최근 7일 원가 조회 수 · 구매 화면 열람 수. 대표 외는 cost_not_found. */
+create or replace function cost_costing_watch(p_business text)
+returns table (user_id uuid, display_name text, granted_at timestamptz, cost_reads_7d int, screen_reads_7d int, last_read_at timestamptz)
+language plpgsql stable security definer set search_path = public, pg_temp as $fn$
+begin
+  if not is_active() or coalesce(auth_role()::text, '') <> 'Chairman' or not has_business(p_business) then
+    raise exception 'cost_not_found' using errcode = 'P0002';
+  end if;
+  return query
+  select m.user_id, p.display_name, m.granted_at,
+         (select count(*)::int from audit_log a where a.actor_user_id = m.user_id and a.action = 'read'
+             and a.entity_table = 'cost_products' and a.business_id = p_business and a.occurred_at > now() - interval '7 days'),
+         (select count(*)::int from audit_log a where a.actor_user_id = m.user_id and a.action = 'read'
+             and a.entity_table = 'screen'
+             and (a.after ->> 'path' = '/purchasing/' || p_business or left(a.after ->> 'path', length(p_business) + 13) = '/purchasing/' || p_business || '/'
+                  or a.after ->> 'path' = '/sales/' || p_business or left(a.after ->> 'path', length(p_business) + 8) = '/sales/' || p_business || '/')
+             and a.occurred_at > now() - interval '7 days'),
+         (select max(a.occurred_at) from audit_log a where a.actor_user_id = m.user_id and a.action = 'read'
+             and ((a.entity_table = 'cost_products' and a.business_id = p_business)
+                  or (a.entity_table = 'screen' and (a.after ->> 'path' = '/purchasing/' || p_business
+                       or left(a.after ->> 'path', length(p_business) + 13) = '/purchasing/' || p_business || '/'))))
+    from user_module_access m
+    join user_profiles p on p.user_id = m.user_id
+   where m.module = '/costing/' || p_business
+   order by p.display_name;
+end;
+$fn$;
+
+revoke all on function cost_costing_watch(text) from public, anon;
+grant execute on function cost_costing_watch(text) to authenticated;
+
+/**
+ * 리뷰 5회차 M1 — 원가 표의 감사 줄(원료 · 공급처 · 시세 · LOT · 구매 첨부)은 0026 audit_log_read가 «행위자의 상사»에게도 내준다.
+ * 영업 팀장이 아래 구매 담당의 줄로 원료 id · 시각을 보지 않게 restrictive로 좁힌다 — 본인 · 대표 · 그 회사 구매 · 원가 관리만(0045 첨부와 같은 모양).
+ */
+create policy audit_log_cost_private on audit_log as restrictive for select
+  using (entity_table not in ('cost_materials', 'cost_suppliers', 'cost_market_prices', 'cost_purchase_lots', 'cost_purchase_docs', 'cost_bom')
+         or actor_user_id = auth.uid() or coalesce(auth_role()::text, '') = 'Chairman'
+         or cost_can('purchasing', business_id) or cost_can('costing', business_id));
 
 -- =====================================================================
 -- 5절. 구매 첨부 버킷 'purchasing' — 0045 'attachments'와 따로. 0059의 restrictive 정책은 'attachments'에만 걸린다.
@@ -637,31 +714,21 @@ end;
 $fn$;
 
 /**
- * 영업 «요약»: 원료별 지난 달력 달 수량가중 평균 구매단가(landed 원/kg, LOT 3건 이상) + 그 달 말일 시장가 + 시장가 대비 % — LOT · 공급처 · 분해 · 건별 없음.
- * 구매 · 원가 관리 · 대표는 p_days · p_as_of로 창을 고른다(1건부터).
+ * 구매 · 원가 관리용 원료별 요약: 기간 수량가중 평균 구매단가(landed 원/kg) + 최신 시장가 + 시장가 대비 %.
+ * 2026-10-09 회장 결정으로 **영업은 부르지 못한다**(원료별 구매가 · 시세를 영업에 주지 않는다 — 영업은 제품 총액만).
  */
 create or replace function cost_sales_purchase_summary(p_business text, p_days int default 30, p_as_of date default null)
 returns table (material_id text, name text, avg_purchase_krw_per_kg numeric, market_krw_per_kg numeric, purchase_vs_market_pct numeric)
 language plpgsql stable security definer set search_path = public, pg_temp as $fn$
 declare
-  v_full boolean := cost_can('costing', p_business) or cost_can('purchasing', p_business);
   v_on date;
   v_from date;
-  v_min int;
 begin
-  if not (cost_can('sales', p_business) or v_full) then
+  if not (cost_can('costing', p_business) or cost_can('purchasing', p_business)) then
     raise exception 'cost_not_found' using errcode = 'P0002';
   end if;
-  if v_full then
-    v_on := least(coalesce(p_as_of, cost_today()), cost_today());
-    v_from := v_on - greatest(7, least(coalesce(p_days, 30), 365));
-    v_min := 1;
-  else
-    -- 리뷰 I6: 영업(«요약»)은 «지난 달력 달» 한 창만 · LOT 3건 이상일 때만 — 건별 LOT 단가 · Current 단가가 그대로 보이지 않게.
-    v_on := (date_trunc('month', cost_today()) - interval '1 day')::date;
-    v_from := (date_trunc('month', v_on) - interval '1 day')::date;
-    v_min := 3;
-  end if;
+  v_on := least(coalesce(p_as_of, cost_today()), cost_today());
+  v_from := v_on - greatest(7, least(coalesce(p_days, 30), 365));
   return query
   with avgp as (
     select l.material_id, sum(l.landed_krw_per_kg * l.qty_kg) / sum(l.qty_kg) as avg_p
@@ -669,7 +736,6 @@ begin
      where l.business_id = p_business and l.voided_at is null
        and l.received_on > v_from and l.received_on <= v_on
      group by l.material_id
-    having count(*) >= v_min
   )
   select m.material_id, m.name, round(a.avg_p, 0), round(mk.v, 0),
          case when mk.v > 0 and a.avg_p is not null then round((a.avg_p / mk.v - 1) * 100, 1) end

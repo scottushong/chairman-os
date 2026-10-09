@@ -40,6 +40,7 @@ import { attachmentSearchText, dummyAttachmentRaw, dummyAttachments, dummySeedAt
 import { dummyCanDeleteDocument, dummyIntake, dummyIntakeEntity, seedDummyIntake } from './dummy-intake'
 import { dummyFinanceImportEntity, dummyFinanceImports } from './dummy-finance-imports'
 import { dummyPurchasing } from './dummy-purchasing'
+import { dummyCostReadAudit, dummyGrantedAt, dummySalesCost, noteDummyGrant } from './dummy-sales-cost'
 import * as books from './dummy-books'
 import { dummyAssistant } from './dummy-assistant'
 import * as chat from './dummy-chat'
@@ -629,6 +630,38 @@ export const dummyRepository: ChairmanRepository = {
   },
   // 0061 원가 엔진 · 구매 — cost_can · 무효 한 번 · Landed를 옮겨 적은 것(dummy-purchasing.ts).
   ...dummyPurchasing(),
+  // 원가 엔진 · 영업 원가(0062 cost_sales_list · cost_sales_view · cost_price_check) — 가짜 BOM은 dummy-sales-cost.ts 안에만.
+  ...dummySalesCost(),
+
+  /** 0061 cost_costing_watch의 거울 — 대표만. 원가 관리 권한자 · 줄 생긴 시각 · 최근 7일 원가 조회 · 구매 · 영업 화면 열람 · 마지막 조회(그 회사). */
+  async costingWatch(businessId: string) {
+    const viewer = dummyViewer()
+    if (viewer.revoked_at || viewer.role !== 'Chairman' || !dummyHasBusiness(viewer, businessId)) throw new Error('cost_not_found')
+    const key = `/costing/${businessId}`
+    const since = Date.now() - 7 * 86_400_000
+    const audit = dummyCostReadAudit()
+    return memoryPeople
+      .filter((p) => dummyModuleGrants(p.user_id).some((m) => m.module === key))
+      .sort((a, b) => a.display_name.localeCompare(b.display_name, 'ko'))
+      .map((p) => {
+        const costReads = audit.filter((a) => a.user_id === p.user_id && a.business_id === businessId)
+        const screens = memoryActivity.filter(
+          (e) =>
+            e.actor_user_id === p.user_id &&
+            e.action === 'read' &&
+            [`/purchasing/${businessId}`, `/sales/${businessId}`].some((b) => e.path === b || (e.path ?? '').startsWith(`${b}/`)),
+        )
+        const times = [...costReads.map((a) => a.at), ...screens.map((e) => e.occurred_at)].sort()
+        return {
+          user_id: p.user_id,
+          display_name: p.display_name,
+          granted_at: dummyGrantedAt(p.user_id, key),
+          cost_reads_7d: costReads.filter((a) => Date.parse(a.at) > since).length,
+          screen_reads_7d: screens.filter((e) => Date.parse(e.occurred_at) > since).length,
+          last_read_at: times.length ? times[times.length - 1] : null,
+        }
+      })
+  },
 
   /**
    * Phase 10 첨부(0045). 대상 판정은 이 어댑터의 목록(각각 RLS를 옮겨 적은 것)으로 한다 —
@@ -1601,7 +1634,14 @@ export const dummyRepository: ChairmanRepository = {
     if (process.env.DUMMY_FAIL_MODULE && process.env.DUMMY_FAIL_MODULE === grant.module) {
       throw new Error('new row violates row-level security policy for table "user_module_access"')
     }
+    // 0061 cost_costing_cap 거울 — '/costing/<biz>' 줄은 회사마다 셋까지(이 사람 말고 셋이 있으면 거부).
+    const on = grant.can_write || grant.can_approve
+    if (on && grant.module.startsWith('/costing/')) {
+      const others = memoryPeople.filter((p) => p.user_id !== userId && dummyModuleGrants(p.user_id).some((m) => m.module === grant.module))
+      if (others.length >= 3) throw new Error('cost_costing_cap')
+    }
     setDummyModuleGrant(userId, grant)
+    if (grant.module.startsWith('/costing/')) noteDummyGrant(userId, grant.module, on)
     // 0055 리뷰 I5 — '/users/<biz>'를 끄면 그 관리자의 그 회사 대기 위임 초대를 취소(staff_admin_capability_revoked 거울).
     const adminBiz = businessOfModule(STAFF_ADMIN_PREFIX, grant.module)
     if (adminBiz && !grant.can_write) dummyRevokePendingStaffAdmin(userId, adminBiz)

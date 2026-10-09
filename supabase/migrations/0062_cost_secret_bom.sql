@@ -144,11 +144,13 @@ end;
 $fn$;
 
 /** d에 쓰는 BOM 판(무효 제외, valid_from ≤ d 중 가장 늦은 것). */
-create or replace function cost_secret.version_on(p_product text, p_on date) returns bigint
+create or replace function cost_secret.version_on(p_product text, p_on date, p_known timestamptz default 'infinity') returns bigint
 language sql stable security definer set search_path = public, cost_secret, pg_temp as $fn$
+  -- 리뷰 5회차 I2 — 스냅샷 시각에 «이미 저장돼 있었고 아직 무효가 아니던» 판만. 주 중에 대표가 BOM을 고쳐도 대표 외 값은 그 주 그대로.
   select version_id from cost_secret.bom_versions
-   where product_id = p_product and voided_at is null and valid_from <= p_on
-   order by valid_from desc limit 1;
+   where product_id = p_product and valid_from <= p_on
+     and created_at <= p_known and (voided_at is null or voided_at > p_known)
+   order by valid_from desc, created_at desc limit 1;
 $fn$;
 
 /** 원료비 합계(원/kg, 반올림 전) · 단가 없는 원료 수(-1 = BOM 없음). */
@@ -156,7 +158,7 @@ create or replace function cost_secret.material_cost(p_product text, p_kind text
                                                      out total numeric, out missing int)
 language plpgsql stable security definer set search_path = public, cost_secret, pg_temp as $fn$
 declare
-  v_ver bigint := cost_secret.version_on(p_product, p_on);
+  v_ver bigint := cost_secret.version_on(p_product, p_on, p_known);
   v_yield numeric;
 begin
   if v_ver is null then
@@ -171,66 +173,75 @@ end;
 $fn$;
 
 /**
- * 원가 조회 문. 제품이 보이는 회사인지 · 원가 관리 또는 영업인지 판정하고, 하루 한도를 세고, 하루 · 기준일마다 한 줄 감사를 남긴다.
- * 돌려주는 것: 회사 · 기준일 · 아는 시각 · 대표인가.
+ * 원가 조회 문(회사 단위). 대표 외: 원가 관리 또는 영업인지 · 겸직 거부 · 기준일(이번 주 월요일) · 아는 시각(월요일 0시 KST) · 하루 200건 · 감사.
  *   대표       기준일 그대로 · 아는 시각 = 지금 전부 · 한도 · 감사 없음.
- *   원가 관리 · 영업  기준일 = 이번 주 월요일 하나(인자 무시 — 리뷰 2회차 C1: 시세 표를 읽는 사람이 합계를 여러 날짜로 받으면
- *                     원료 k개 제품의 비율이 k+1개 날짜로 풀린다. 한 주에 한 점만 쌓이게 한다).
- *   아는 시각 = least(지금 − 3일, 기준일 끝(KST)) — 리뷰 C2(b).
- *   구매 입력 줄을 같이 가진 사람은 원가를 못 본다(리뷰 C2(a) — 시세를 넣고 원가 변화를 읽으면 비율이 그대로 나온다): 'cost_role_conflict'.
+ *   원가 관리  호출마다 감사(회장 결정 감수 조건). 구매 입력 겸직이면 거부.
+ *   영업       하루 · 키 · 종류 · 기준일마다 감사 한 줄. 구매(읽기만이어도) · 생산 줄을 같이 가지면 거부(리뷰 5회차 I1 — 원료 이름 · 시세가 영업 원가와 한 사람에게 모인다).
+ *   회장 결정(2026-10-09) «주 1회 월요일 0시 스냅샷» — 주 안에서 값이 움직이지 않는다(리뷰 3회차 C1).
  */
-create or replace function cost_secret.cost_gate(p_product text, p_kind text, p_as_of date,
-                                                 out business_id text, out as_of date, out known_at timestamptz, out chairman boolean)
+create or replace function cost_secret.cost_gate_biz(p_business text, p_key text, p_kind text, p_as_of date,
+                                                     out as_of date, out known_at timestamptz, out chairman boolean)
 language plpgsql volatile security definer set search_path = public, cost_secret, pg_temp as $fn$
 declare
   v_role text := coalesce(auth_role()::text, '');
   v_today date := cost_today();
+  v_costing boolean;
   v_total int;
   v_new boolean;
 begin
-  if not is_active() or v_role in ('AIAgent', 'Integration', '') then
+  if not is_active() or v_role in ('AIAgent', 'Integration', '') or p_business is null or not has_business(p_business) then
+    raise exception 'cost_not_found' using errcode = 'P0002';
+  end if;
+  chairman := v_role = 'Chairman';
+  if chairman then
+    as_of := coalesce(p_as_of, v_today);
+    known_at := 'infinity';
+    return;
+  end if;
+  v_costing := cost_can('costing', p_business);
+  if not (v_costing or cost_can('sales', p_business)) then
+    raise exception 'cost_not_found' using errcode = 'P0002';
+  end if;
+  if cost_grant('purchasing', p_business, true)
+     or (not v_costing and (cost_grant('purchasing', p_business) or cost_grant('production', p_business))) then
+    raise exception 'cost_role_conflict' using errcode = '42501';
+  end if;
+  as_of := date_trunc('week', v_today)::date;
+  known_at := (as_of::timestamp at time zone 'Asia/Seoul');
+  select coalesce(sum(r.calls), 0) into v_total from cost_secret.cost_reads r where r.user_id = auth.uid() and r.read_on = v_today;
+  if v_total >= 200 then
+    raise exception 'cost_rate_limited' using errcode = '54000';
+  end if;
+  insert into cost_secret.cost_reads (user_id, read_on, product_id, kind, as_of) values (auth.uid(), v_today, p_key, p_kind, as_of)
+  on conflict on constraint cost_reads_pkey do update set calls = cost_secret.cost_reads.calls + 1
+  returning (xmax = 0) into v_new;
+  if v_new or v_costing then
+    insert into audit_log (action, entity_table, entity_id, business_id, actor_user_id, actor_role, before, after, note)
+    values ('read', 'cost_products', p_key, p_business, auth.uid(), v_role, null,
+            jsonb_build_object('kind', p_kind, 'as_of', as_of),
+            case when v_costing then '원가 조회(0062) — 원가 관리 · 호출마다' else '원가 조회(0062) — 영업 · 하루 · 기준일마다 한 줄' end);
+  end if;
+end;
+$fn$;
+
+/** 제품 하나의 원가 조회 문 — 제품의 회사를 찾아 cost_gate_biz로. 없는 제품 · 다른 회사 = cost_not_found. */
+create or replace function cost_secret.cost_gate(p_product text, p_kind text, p_as_of date,
+                                                 out business_id text, out as_of date, out known_at timestamptz, out chairman boolean)
+language plpgsql volatile security definer set search_path = public, cost_secret, pg_temp as $fn$
+declare
+  g record;
+begin
+  if not is_active() then
     raise exception 'cost_not_found' using errcode = 'P0002';
   end if;
   select p.business_id into business_id from cost_products p where p.product_id = p_product;
   if business_id is null then
     raise exception 'cost_not_found' using errcode = 'P0002';
   end if;
-  chairman := v_role = 'Chairman';
-  if chairman then
-    if not has_business(business_id) then raise exception 'cost_not_found' using errcode = 'P0002'; end if;
-    as_of := coalesce(p_as_of, v_today);
-    known_at := 'infinity';
-    return;
-  end if;
-  if not (cost_can('costing', business_id) or cost_can('sales', business_id)) then
-    raise exception 'cost_not_found' using errcode = 'P0002';
-  end if;
-  if cost_grant('purchasing', business_id, true) then
-    raise exception 'cost_role_conflict' using errcode = '42501';
-  end if;
-  -- 리뷰 2회차 C1 — 시세를 읽는 사람(원가 관리 · 영업 둘 다 시세 표 O)이 합계를 여러 날짜로 받으면 최소제곱으로 비율이 첫날에 풀린다.
-  -- 대표 외는 원가 관리 · 영업 모두 «이번 주 월요일» 한 값(인자 무시) — 한 주에 한 점씩만 쌓인다(설계서 6.3).
-  as_of := date_trunc('week', v_today)::date;
-  -- 리뷰 3회차 C1 — 아는 시각은 그 주 내내 하나(월요일 앞 금요일 0시 KST). now() − 3일처럼 흘러가면 월~금 사이 시세가 하나씩 비쳐 들어와
-  -- 원료 하나씩 비율이 풀린다. 금~일에 들어온 시세는 다음 주 값에 들어간다.
-  known_at := ((as_of - 3)::timestamp at time zone 'Asia/Seoul');
-  -- 리뷰 3회차 I2 — 대표 외는 역할마다 원가 종류 하나: 원가 관리 = Current(재고 이동평균), 영업 = Market(시장가로 산 경쟁사 비교).
-  -- 두 종류를 다 주면 한 주에 식이 둘이라 역산이 두 배 빨라진다. 둘 다 가진 사람은 원가 관리로 본다.
-  if (replace(p_kind, 'impact_', '') <> (case when cost_can('costing', business_id) then 'current' else 'market' end)) then
-    raise exception 'cost_kind_unsupported' using errcode = '22023';
-  end if;
-  select coalesce(sum(r.calls), 0) into v_total from cost_secret.cost_reads r where r.user_id = auth.uid() and r.read_on = v_today;
-  if v_total >= 200 then
-    raise exception 'cost_rate_limited' using errcode = '54000';
-  end if;
-  insert into cost_secret.cost_reads (user_id, read_on, product_id, kind, as_of) values (auth.uid(), v_today, p_product, p_kind, as_of)
-  on conflict on constraint cost_reads_pkey do update set calls = cost_secret.cost_reads.calls + 1
-  returning (xmax = 0) into v_new;
-  if v_new then
-    insert into audit_log (action, entity_table, entity_id, business_id, actor_user_id, actor_role, before, after, note)
-    values ('read', 'cost_products', p_product, business_id, auth.uid(), v_role, null,
-            jsonb_build_object('kind', p_kind, 'as_of', as_of), '원가 조회(0062) — 하루 · 기준일마다 한 줄');
-  end if;
+  select * into g from cost_secret.cost_gate_biz(business_id, p_product, p_kind, p_as_of);
+  as_of := g.as_of;
+  known_at := g.known_at;
+  chairman := g.chairman;
 end;
 $fn$;
 
@@ -241,10 +252,11 @@ language sql stable security definer set search_path = public, cost_secret, pg_t
   select not exists (
     select 1 from public.cost_materials m
      where m.business_id = p_business
+       and m.created_at <= p_known   -- 리뷰 5회차 I2 — 스냅샷 뒤에 생긴 원료는 그 주 계산 여부에 넣지 않는다
        and (m.active or exists (
              select 1 from cost_secret.bom_lines l join cost_secret.bom_versions v on v.version_id = l.version_id
-              where l.material_id = m.material_id and v.voided_at is null
-                and v.version_id = cost_secret.version_on(v.product_id, p_on)))
+              where l.material_id = m.material_id
+                and v.version_id = cost_secret.version_on(v.product_id, p_on, p_known)))
        and cost_secret.unit_price(m.material_id, p_kind, p_on, p_known) is null
   );
 $fn$;
@@ -315,10 +327,8 @@ begin
   select * into a from cost_secret.material_cost(p_product, p_kind, v_from, g.known_at);
   select * into b from cost_secret.material_cost(p_product, p_kind, g.as_of, g.known_at);
   if a.total is null or b.total is null or a.total = 0 then return null; end if;
-  if g.chairman then
-    return round((b.total / a.total - 1) * 100, 1);
-  end if;
-  return round((round(b.total, -1) / nullif(round(a.total, -1), 0) - 1) * 100, 0);
+  -- «원료비 영향 +4.2%» — 묶음 한 값, 0.1%p(회장 결정 화면 예). 영업은 원료별 시세를 못 봐 이 값으로 비율을 풀 수 없다.
+  return round((b.total / a.total - 1) * 100, 1);
 end;
 $fn$;
 
@@ -461,6 +471,129 @@ begin
   values ('update', 'cost_bom', p_version::text, v_biz, auth.uid(), auth_role()::text, null, jsonb_build_object('voided', true), 'BOM 판 무효(0062)');
 end;
 $fn$;
+
+/** 등급 — GM 20% 이상 Green · 15~20% Yellow · 15% 미만 Red(회장 결정). */
+create or replace function cost_grade(p_gm_pct numeric) returns text
+language sql immutable set search_path = public, pg_temp as $fn$
+  select case when p_gm_pct is null then null when p_gm_pct >= 20 then 'green' when p_gm_pct >= 15 then 'yellow' else 'red' end;
+$fn$;
+
+/** 영업 한 줄 계산(문 통과 뒤에만 부른다 — 내부용). */
+create or replace function cost_secret.sales_row(p_product text, p_business text, p_as_of date, p_known timestamptz, p_chairman boolean,
+  p_ok boolean, p_prev_ok boolean,
+  out market_krw_per_kg numeric, out current_krw_per_kg numeric, out advantage_krw_per_kg numeric, out total_krw_per_kg numeric,
+  out material_impact_pct numeric, out computed boolean, out offers jsonb)
+language plpgsql stable security definer set search_path = public, cost_secret, pg_temp as $fn$
+declare
+  v_ok boolean;
+  v_prev_ok boolean;
+  v_mk numeric;
+  v_cu numeric;
+  v_pr numeric;
+begin
+  -- 회사 단위 완전성은 부르는 쪽이 한 번 계산해 넘긴다(목록 500줄에서 제품마다 다시 세지 않게 — 리뷰 6회차).
+  -- 리뷰 5회차 M2 — 지난 주 값도 회사 단위로 완전할 때만(아니면 «새 원료가 든 제품만 영향 없음»이 소속을 알려 준다).
+  v_ok := p_chairman or p_ok;
+  v_prev_ok := p_chairman or p_prev_ok;
+  if v_ok then
+    select x.total into v_mk from cost_secret.material_cost(p_product, 'market', p_as_of, p_known) x;
+    select x.total into v_cu from cost_secret.material_cost(p_product, 'current', p_as_of, p_known) x;
+    if v_prev_ok then
+      select x.total into v_pr from cost_secret.material_cost(p_product, 'current', p_as_of - 7, p_known) x;
+    end if;
+  end if;
+  market_krw_per_kg := round(v_mk, -1);
+  current_krw_per_kg := round(v_cu, -1);
+  advantage_krw_per_kg := market_krw_per_kg - current_krw_per_kg;
+  total_krw_per_kg := current_krw_per_kg;  -- 0065 비용 마스터가 오면 + 배부 비용
+  material_impact_pct := case when v_pr > 0 then round((v_cu / v_pr - 1) * 100, 1) end;
+  computed := current_krw_per_kg is not null;
+  offers := case when total_krw_per_kg is null then '[]'::jsonb else (
+    select jsonb_agg(jsonb_build_object('margin_pct', m, 'price_krw_per_kg', round(total_krw_per_kg / (1 - m / 100.0), -1), 'grade', cost_grade(m)) order by m)
+      from unnest(array[15, 20, 25, 30]) m) end;
+end;
+$fn$;
+
+/**
+ * 영업 화면 한 줄(회장 결정 2026-10-09 «영업은 제품 총액만»): 제품마다
+ *   Market 원료비(시장가로 샀다면) · Current 원료비(DY 원가) · 원가 우위(Market − Current) · 비용(비용 마스터 0065 전에는 null) ·
+ *   총원가(Current + 비용) · 원료비 영향(지난 주 → 이번 주, 0.1%p) · 목표 마진별 제시가(15 · 20 · 25 · 30%).
+ * 모두 10원/kg 반올림 · 이번 주 월요일 0시 스냅샷. **원료 이름 · 원료별 값은 어디에도 없다.**
+ */
+create or replace function cost_sales_view(p_product text)
+returns table (product_id text, as_of date, market_krw_per_kg numeric, current_krw_per_kg numeric, advantage_krw_per_kg numeric,
+               overhead_krw_per_kg numeric, total_krw_per_kg numeric, overhead_ready boolean, material_impact_pct numeric,
+               computed boolean, offers jsonb)
+language plpgsql volatile security definer set search_path = public, cost_secret, pg_temp as $fn$
+declare
+  g record;
+  r record;
+begin
+  select * into g from cost_secret.cost_gate(p_product, 'sales_view', null);
+  select * into r from cost_secret.sales_row(p_product, g.business_id, g.as_of, g.known_at, g.chairman,
+    cost_secret.business_complete(g.business_id, 'market', g.as_of, g.known_at) and cost_secret.business_complete(g.business_id, 'current', g.as_of, g.known_at),
+    cost_secret.business_complete(g.business_id, 'current', g.as_of - 7, g.known_at));
+  return query select p_product, g.as_of, r.market_krw_per_kg, r.current_krw_per_kg, r.advantage_krw_per_kg,
+    null::numeric, r.total_krw_per_kg, false, r.material_impact_pct, r.computed, r.offers;
+end;
+$fn$;
+
+/** 리뷰 5회차 M6 — 영업 목록 화면: 그 회사 사용 중 제품 전부를 한 번의 조회(한도 · 감사 한 번)로. 칸은 cost_sales_view + 제품 이름. */
+create or replace function cost_sales_list(p_business text)
+returns table (product_id text, product_name text, as_of date, market_krw_per_kg numeric, current_krw_per_kg numeric, advantage_krw_per_kg numeric,
+               overhead_krw_per_kg numeric, total_krw_per_kg numeric, overhead_ready boolean, material_impact_pct numeric,
+               computed boolean, offers jsonb)
+language plpgsql volatile security definer set search_path = public, cost_secret, pg_temp as $fn$
+declare
+  g record;
+  v_ok boolean;
+  v_prev_ok boolean;
+begin
+  select * into g from cost_secret.cost_gate_biz(p_business, 'list:' || coalesce(p_business, ''), 'sales_list', null);
+  v_ok := g.chairman or (cost_secret.business_complete(p_business, 'market', g.as_of, g.known_at)
+                         and cost_secret.business_complete(p_business, 'current', g.as_of, g.known_at));
+  v_prev_ok := g.chairman or cost_secret.business_complete(p_business, 'current', g.as_of - 7, g.known_at);
+  return query
+  select p.product_id, p.name, g.as_of, r.market_krw_per_kg, r.current_krw_per_kg, r.advantage_krw_per_kg,
+         null::numeric, r.total_krw_per_kg, false, r.material_impact_pct, r.computed, r.offers
+    from cost_products p
+    cross join lateral cost_secret.sales_row(p.product_id, p_business, g.as_of, g.known_at, g.chairman, v_ok, v_prev_ok) r
+   where p.business_id = p_business and p.active
+   order by p.name
+   limit 500;
+end;
+$fn$;
+
+/** 영업: 제시가를 넣으면 마진(원 · %)과 등급. 총원가는 cost_sales_view와 같은 주간 값. Red면 화면이 0059 결재로 승인 요청을 올린다. */
+create or replace function cost_price_check(p_product text, p_price_krw_per_kg numeric)
+returns table (total_krw_per_kg numeric, margin_krw_per_kg numeric, margin_pct numeric, grade text)
+language plpgsql volatile security definer set search_path = public, cost_secret, pg_temp as $fn$
+declare
+  v record;
+begin
+  if p_price_krw_per_kg is null or p_price_krw_per_kg <= 0 or p_price_krw_per_kg > 1e9 then
+    raise exception 'cost_price_invalid' using errcode = '22023';
+  end if;
+  select * into v from cost_sales_view(p_product);
+  if v.total_krw_per_kg is null then
+    return query select null::numeric, null::numeric, null::numeric, null::text;
+    return;
+  end if;
+  return query select v.total_krw_per_kg, p_price_krw_per_kg - v.total_krw_per_kg,
+    round((p_price_krw_per_kg - v.total_krw_per_kg) / p_price_krw_per_kg * 100, 1),
+    cost_grade(round((p_price_krw_per_kg - v.total_krw_per_kg) / p_price_krw_per_kg * 100, 1));
+end;
+$fn$;
+
+revoke all on all functions in schema cost_secret from public, anon, authenticated;
+revoke all on function cost_grade(numeric) from public, anon;
+grant execute on function cost_grade(numeric) to authenticated;
+revoke all on function cost_sales_view(text) from public, anon;
+revoke all on function cost_sales_list(text) from public, anon;
+grant execute on function cost_sales_list(text) to authenticated;
+revoke all on function cost_price_check(text, numeric) from public, anon;
+grant execute on function cost_sales_view(text) to authenticated;
+grant execute on function cost_price_check(text, numeric) to authenticated;
 
 revoke all on function cost_product_cost(text, text, date) from public, anon;
 revoke all on function cost_material_impact(text, text, date, date) from public, anon;

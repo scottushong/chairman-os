@@ -146,6 +146,8 @@ export const DUMMY_PEOPLE: UserAccount[] = [
       { module: '/documents/biz_dy', can_write: true, can_approve: false },
       // 0055. «DY 사용자 관리자» — 회장이 켠 상태로 시작해 위임 초대 흐름(DUMMY_USER=support_lead)을 바로 눌러 볼 수 있게.
       { module: '/users/biz_dy', can_write: true, can_approve: false },
+      // 원가 관리(회사마다 셋까지) — 대표 화면 «원가 관리 권한자» 감시 카드와 원가 관리 쪽 영업 원가를 dummy에서 볼 자리.
+      { module: '/costing/biz_dy', can_write: true, can_approve: false },
     ],
   }),
   person(DUMMY_UID.exec, 'Executive', '영업본부장', 'Sales Executive', '본부장', DUMMY_UID.dyCeo, 'team_dy_sales', {

@@ -73,17 +73,22 @@ begin
   if n <> 0 then raise exception 'FAIL b: 영업이 LOT %줄을 본다', n; end if;
   select count(*) into n from public.cost_suppliers;
   if n <> 0 then raise exception 'FAIL b: 영업이 공급처 %줄을 본다', n; end if;
-  select count(*) into n from public.cost_market_prices where material_id = v_mat;
-  if n <> 1 then raise exception 'FAIL b: 영업이 시세를 못 본다(%)', n; end if;
-  -- 영업 요약은 «지난 달력 달 · LOT 3건 이상»만(리뷰 I6) — 어제 들어온 1건짜리 단가는 보이지 않아야 한다.
-  select count(*) into n from public.cost_sales_purchase_summary('biz_dy') s where s.material_id = v_mat and s.avg_purchase_krw_per_kg is null;
-  if n <> 1 then raise exception 'FAIL b: 영업 요약이 LOT 1건 단가를 그대로 보인다'; end if;
+  -- 회장 결정(2026-10-09) — 영업은 제품 총액만: 원료 이름 · 시세 · 원료별 요약 0.
+  select count(*) into n from public.cost_market_prices;
+  if n <> 0 then raise exception 'FAIL b: 영업이 원료 시세 %줄을 본다', n; end if;
+  select count(*) into n from public.cost_materials;
+  if n <> 0 then raise exception 'FAIL b: 영업이 원료 이름 %줄을 본다', n; end if;
+  begin
+    perform * from public.cost_sales_purchase_summary('biz_dy');
+    raise exception 'FAIL b: 영업이 원료별 구매가 요약을 본다';
+  exception when no_data_found then null;
+  end;
   begin
     perform * from public.cost_production_lots('biz_dy');
     raise exception 'FAIL b: 영업이 LOT 가격 함수를 부른다';
   exception when no_data_found then null;
   end;
-  v_res := v_res || 'b(영업 — LOT 0 · 공급처 0 · 시세 · 요약에 1건 단가 없음 · LOT 함수 거부) ';
+  v_res := v_res || 'b(영업 — 원료 · 시세 · LOT · 공급처 0 · 원료 요약 · LOT 함수 거부) ';
 
   -- ── (c) 대표: 제품 · 가짜 BOM ──
   reset role;
@@ -102,12 +107,9 @@ begin
   perform set_config('request.jwt.claims', json_build_object('sub', v_sales, 'role', 'authenticated')::text, true);
   perform set_config('request.jwt.claim.sub', v_sales::text, true);
   set local role authenticated;
-  -- 영업은 Market 하나(리뷰 3회차 I2) — Current는 거부되어야 한다.
-  begin
-    perform * from public.cost_product_cost(v_prd, 'current');
-    raise exception 'FAIL d: 영업이 Current 원가를 본다';
-  exception when invalid_parameter_value then null;
-  end;
+  -- 영업 화면 한 줄: 총액 · 원가 우위 · 제시가만(원료 칸 없음).
+  select count(*) into n from public.cost_sales_view(v_prd);
+  if n <> 1 then raise exception 'FAIL d: 영업 화면 한 줄이 아니다(%)', n; end if;
   select * into r from public.cost_product_cost(v_prd, 'market', current_date);
   if r.as_of <> date_trunc('week', current_date)::date then raise exception 'FAIL d: 영업 기준일 % (월요일 고정 아님)', r.as_of; end if;
   if r.as_of > current_date - 1 then
@@ -129,7 +131,7 @@ begin
     raise exception 'FAIL d: 영업이 비공개 스키마 표를 읽는다';
   exception when insufficient_privilege then null;
   end;
-  v_res := v_res || 'd(영업 Market 한 값 · Current 거부 · 월요일 고정 · 분해/BOM/비공개 표 거부) ';
+  v_res := v_res || 'd(영업 화면 한 줄 · Market 한 값 · 월요일 고정 · 분해/BOM/비공개 표 거부) ';
 
   -- ── (e) 구매(원가 줄 없음): 원가 거부 ──
   reset role;

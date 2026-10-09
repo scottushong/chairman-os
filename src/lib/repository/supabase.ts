@@ -149,6 +149,7 @@ import { attachmentMethods } from './supabase-attachments'
 import { financeImportMethods } from './supabase-finance-imports'
 import { intakeMethods } from './supabase-intake'
 import { purchasingMethods } from './supabase-purchasing'
+import { salesCostMethods } from './supabase-sales-cost'
 
 /**
  * Supabase 어댑터.
@@ -818,6 +819,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     ...intakeMethods(sb),
     // 0061 원가 엔진 · 구매 — 판정은 RLS(cost_can). 읽기는 0061 전 DB를 견딘다(supabase-purchasing.ts 머리 주석).
     ...purchasingMethods(sb),
+    // 원가 엔진 · 영업 원가(0062 cost_sales_view · cost_price_check) · 원가 관리 감시(0061 cost_costing_watch). 원료 표는 읽지 않는다.
+    ...salesCostMethods(sb),
 
     async listBusinesses(): Promise<Business[]> {
       const { data, error } = await fetchAll('businesses', ['business_id'], (from, to) =>

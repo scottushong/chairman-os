@@ -131,6 +131,14 @@ export const NAV: readonly NavGroup[] = [
       // 한 화면에서 답한다. 셋에 흩어 두면 그 질문에 아무 데서도 답할 수 없다.
       { key: 'nav_shared', label: '공유받은 것', href: '/shared', icon: 'eye', ready: true },
       {
+        // 원가 엔진 — 영업(제품 총원가 · 원가 우위 · 제시가 · 등급, 회장 결정 2026-10-09 «영업은 제품 총액만»). 그 회사 '/sales/<biz>' ·
+        // '/costing/<biz>' 줄이 있는 사람과 대표에게만 선다(navFor의 sales). 이 항목이 서면 옛 자리표 «영업 / CRM»(준비 중)은 뺀다.
+        key: 'nav_sales', label: '영업',
+        href: '/sales',
+        icon: 'target',
+        ready: true,
+      },
+      {
         key: 'nav_crm', label: '영업 / CRM',
         href: '/crm',
         icon: 'target',
@@ -270,6 +278,8 @@ export interface NavOptions {
   purchasing?: boolean
   /** 0059 «결재 대장 열람» 줄이 있는 회사들(SessionUser.ledger). 비면 대장 메뉴를 뺀다. */
   ledger?: readonly string[]
+  /** 영업 원가 화면을 볼 회사가 하나라도 있는가(lib/auth/roles.ts salesBusinessIds). 대표는 늘 참. */
+  sales?: boolean
 }
 
 /**
@@ -278,8 +288,10 @@ export interface NavOptions {
  */
 export function navFor(role: Role | null | undefined, opts: NavOptions = {}): readonly NavGroup[] {
   const purchasing = role === 'Chairman' || opts.purchasing === true
-  // «구매»가 서면 옛 자리표 «구매 / SCM»을 뺀다. 못 보는 사람에게는 «구매»를 빼고 자리표만 남는다(지금까지와 같다).
-  const purchasingFilter = (item: NavItem) => (purchasing ? item.key !== 'nav_scm' : item.key !== 'nav_purchasing')
+  const sales = role === 'Chairman' || opts.sales === true
+  // «구매»가 서면 옛 자리표 «구매 / SCM»을 뺀다. 못 보는 사람에게는 «구매»를 빼고 자리표만 남는다(지금까지와 같다). «영업»도 같다.
+  const purchasingFilter = (item: NavItem) =>
+    (purchasing ? item.key !== 'nav_scm' : item.key !== 'nav_purchasing') && (sales ? item.key !== 'nav_crm' : item.key !== 'nav_sales')
   if (role === 'Chairman') return NAV.map((group) => ({ ...group, items: group.items.filter(purchasingFilter) }))
   const initiatives = canReadInitiatives(role)
   // 0059 «결재 대장 열람» 줄(SessionUser.ledger)이 없으면 대장 메뉴를 뺀다. 화면은 누구나 열 수 있다(본인 · 결재선 줄만 보인다).
