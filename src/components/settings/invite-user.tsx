@@ -12,6 +12,7 @@ import {
   ROLE_LABEL_KO,
   SECURITY_CLASS,
   SECURITY_CLASS_LABEL_KO,
+  TEAM_REQUIRED_ROLES,
   needsChairmanApproval,
   type Business,
   type PersonLanguage,
@@ -176,10 +177,15 @@ export function InviteUser({
 
   const groupScope = GROUP_SCOPE.includes(role)
   const approval = needsChairmanApproval(role)
+  // 2026-10-09 — 임원 · 팀장 · 사원은 팀 필수(서버 inviteUser도 같은 목록으로 막는다). 팀 칸은 고른 회사의 팀만 보인다.
+  const teamRequired = TEAM_REQUIRED_ROLES.includes(role)
+  const teamChoices = groupScope || businessIds.length === 0 ? teams : teams.filter((t) => businessIds.includes(t.business_id))
+  const chosenTeam = fixedTeam ?? (teamChoices.some((t) => t.team_id === teamId) ? teamId : '')
   const canSave =
     email.trim().length > 0 &&
     displayName.trim().length > 0 &&
     (groupScope || businessIds.length > 0) &&
+    (!teamRequired || chosenTeam !== '') &&
     !busy
 
   function toggleBusiness(id: string) {
@@ -200,7 +206,7 @@ export function InviteUser({
       role,
       securityClass,
       businessIds,
-      teamId: fixedTeam ?? teamId,
+      teamId: chosenTeam,
       reportsTo: reportsTo || viewer?.user_id,
       joinedOn,
       language,
@@ -354,23 +360,36 @@ export function InviteUser({
 
         <label className="block">
           <span className="text-t11 text-ink-dim">
-            팀 {fixedTeam ? '— 팀장은 자기 팀으로만 부릅니다' : ''}
+            팀 {fixedTeam ? '— 팀장은 자기 팀으로만 부릅니다' : teamRequired ? '(필수)' : ''}
           </span>
           <select
-            value={fixedTeam ?? teamId}
+            value={chosenTeam}
             onChange={(e) => setTeamId(e.target.value)}
             disabled={busy || Boolean(fixedTeam)}
+            required={teamRequired}
             className="mt-1 w-full rounded-lg border border-line bg-raised px-3 py-2 text-t13 text-ink outline-none focus:border-accent disabled:opacity-50"
           >
-            <option value="" className="bg-panel">
-              (나중에 배정)
-            </option>
-            {teams.map((t) => (
+            {teamRequired ? (
+              // 빈 칸은 고를 수 없다 — 처음 열었을 때만 보이는 안내 줄이다.
+              <option value="" disabled className="bg-panel">
+                팀을 고르세요
+              </option>
+            ) : (
+              <option value="" className="bg-panel">
+                (팀 없음 — 회사를 이끄는 자리)
+              </option>
+            )}
+            {teamChoices.map((t) => (
               <option key={t.team_id} value={t.team_id} className="bg-panel">
                 {t.name} · {t.name_en}
               </option>
             ))}
           </select>
+          {teamRequired && !chosenTeam ? (
+            <span className="mt-1 block text-t10h text-warning">
+              {ROLE_LABEL_KO[role]}은(는) 팀을 골라야 초대할 수 있습니다{teamChoices.length === 0 ? ' — 고른 회사에 팀이 없습니다. 조직도에서 «팀 추가»를 먼저 하세요' : ''}.
+            </span>
+          ) : null}
         </label>
 
         <label className="block">

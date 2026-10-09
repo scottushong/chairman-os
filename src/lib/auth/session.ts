@@ -4,7 +4,7 @@ import { cache } from 'react'
 import { DATA_MODE } from '@/lib/env'
 import { supabaseConfig } from '@/lib/supabase/config'
 import { createSupabaseServerClient } from '@/lib/supabase/server'
-import { costByBusiness, DRAFT_DECISION_MODULE, documentsByBusiness, financeByBusiness, hasDraftGrant, hasLegacyDocumentWrite, LEGACY_DOCUMENTS_MODULE } from '@/lib/module-grants'
+import { costByBusiness, DRAFT_DECISION_MODULE, documentsByBusiness, financeByBusiness, hasDraftGrant, hasLegacyDocumentWrite, LEDGER_MODULE_PREFIX, LEGACY_DOCUMENTS_MODULE, ledgerBusinesses } from '@/lib/module-grants'
 import { dummyModuleGrants, dummyViewer } from '@/lib/repository/dummy-org'
 import { type Role, type SessionUser } from '@/types'
 
@@ -75,7 +75,7 @@ export const currentUser = cache(async function currentUser(): Promise<SessionUs
     .eq('user_id', user.id)
     // 0061. 원가 엔진 네 영역('/purchasing/<biz>' 등)도 같은 질의로 — 사이드바 «구매»와 구매 화면 안내가 쓴다(판정은 DB cost_can).
     .or(
-      `module.like./finance/%,module.like./documents/%,module.eq.${LEGACY_DOCUMENTS_MODULE},module.eq.${DRAFT_DECISION_MODULE},` +
+      `module.like./finance/%,module.like./documents/%,module.like.${LEDGER_MODULE_PREFIX}/%,module.eq.${LEGACY_DOCUMENTS_MODULE},module.eq.${DRAFT_DECISION_MODULE},` +
         'module.like./purchasing/%,module.like./production/%,module.like./sales/%,module.like./costing/%',
     )
     .returns<{ module: string; can_write: boolean; can_approve: boolean }[]>()
@@ -93,6 +93,7 @@ export const currentUser = cache(async function currentUser(): Promise<SessionUs
     // «결재 올리기»(0002 decisions_create). 회장은 can_module이 늘 참이라 줄이 없어도 된다.
     // 줄을 못 읽었으면(오류) 모르는 것으로 둔다 — «권한 없음»으로 단정하지 않고 DB 판정에 맡긴다.
     approvals_write: data.role === 'Chairman' || (grantsError ? undefined : hasDraftGrant(grants ?? [])),
+    ledger: ledgerBusinesses(grants ?? []),
     cost: costByBusiness(grants ?? []),
   }
 })
@@ -133,6 +134,7 @@ function dummyUser(): SessionUser | null {
     documents: documentsByBusiness(grants),
     documents_legacy_write: hasLegacyDocumentWrite(grants),
     approvals_write: person.role === 'Chairman' || hasDraftGrant(grants),
+    ledger: ledgerBusinesses(grants),
     cost: costByBusiness(grants),
   }
 }

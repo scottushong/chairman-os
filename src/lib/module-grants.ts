@@ -57,6 +57,17 @@ export function hasDraftGrant(grants: ModuleGrant[]): boolean {
 }
 
 /**
+ * 0059 «결재 대장 열람» 접두사 — 키는 '/approvals/ledger/<business_id>'. 줄이 있으면 그 회사 양식 결재 전부를 읽는다
+ * (0059 approval_ledger_grant — can_write · can_approve 칸은 보지 않는다). 회장만 준다.
+ */
+export const LEDGER_MODULE_PREFIX = '/approvals/ledger'
+
+/** 모듈 줄 → «결재 대장 열람» 회사 목록(SessionUser.ledger). */
+export function ledgerBusinesses(grants: ModuleGrant[]): string[] {
+  return grants.map((g) => businessOfModule(LEDGER_MODULE_PREFIX, g.module)).filter((b): b is string => b !== null)
+}
+
+/**
  * 0061 원가 엔진 네 영역의 줄 → 영역 → 회사 → 쓰기 칸(SessionUser.cost). '/purchasing/<biz>' · '/production/<biz>' ·
  * '/sales/<biz>' · '/costing/<biz>'. can_approve는 쓰지 않는다. 판정은 DB cost_can(area, biz, write)이다 — 이것은 화면 안내.
  */

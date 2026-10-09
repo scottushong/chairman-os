@@ -62,6 +62,8 @@ export const NAV: readonly NavGroup[] = [
       // CH-041 전자결재. 라벨은 시안 그대로 두고 대상만 실제 화면으로 잇는다 —
       // 그 화면이 곧 대시보드 '내 결정 사항' 패널의 전체 화면 버전이다.
       { key: 'nav_decisions', label: '내 결정 사항', href: '/approvals', icon: 'check-circle', ready: true },
+      // 0059 결재 대장 — 양식 결재를 한 장의 표로 · 엑셀. 회장과 «결재 대장 열람» 줄이 있는 사람에게만 건다(navFor의 ledger).
+      { key: 'nav_ledger', label: '결재 대장', href: '/approvals/ledger', icon: 'file-text', ready: true },
       // Phase 3-A. 야간 브리핑 전문. CH-044 자연어 질의는 아직 없다 — 붙으면 같은 화면에 들어온다.
       { key: 'nav_morning', label: '아침 루틴', href: '/ai', icon: 'sparkles', badge: 'NEW', ready: true },
       { key: 'nav_calendar', label: '캘린더', href: '/calendar', icon: 'calendar', ready: true },
@@ -289,6 +291,8 @@ const STAFF_NAV_OVERRIDE: Readonly<Record<string, Partial<NavItem>>> = {
  */
 export interface NavOptions {
   purchasing?: boolean
+  /** 0059 «결재 대장 열람» 줄이 있는 회사들(SessionUser.ledger). 비면 대장 메뉴를 뺀다. */
+  ledger?: readonly string[]
   /** 영업 원가 화면을 볼 회사가 하나라도 있는가(lib/auth/roles.ts salesBusinessIds). 대표는 늘 참. */
   sales?: boolean
   /** 생산 화면을 볼 회사가 하나라도 있는가(lib/auth/roles.ts productionBusinessIds). 대표는 늘 참. */
@@ -314,10 +318,12 @@ export function navFor(role: Role | null | undefined, opts: NavOptions = {}): re
     (costs || item.key !== 'nav_costs')
   if (role === 'Chairman') return NAV.map((group) => ({ ...group, items: group.items.filter(purchasingFilter) }))
   const initiatives = canReadInitiatives(role)
+  // 0059 «결재 대장 열람» 줄(SessionUser.ledger)이 없으면 대장 메뉴를 뺀다. 화면은 누구나 열 수 있다(본인 · 결재선 줄만 보인다).
+  const ledgerMenu = (opts.ledger?.length ?? 0) > 0
   return NAV.map((group) => ({
     ...group,
     items: group.items
-      .filter((item) => !CHAIRMAN_ONLY_NAV.has(item.key) && (initiatives || item.key !== 'nav_initiatives'))
+      .filter((item) => !CHAIRMAN_ONLY_NAV.has(item.key) && (initiatives || item.key !== 'nav_initiatives') && (ledgerMenu || item.key !== 'nav_ledger'))
       .filter(purchasingFilter)
       .map((item) => (STAFF_NAV_OVERRIDE[item.key] ? { ...item, ...STAFF_NAV_OVERRIDE[item.key] } : item)),
   })).filter((group) => group.items.length > 0)
