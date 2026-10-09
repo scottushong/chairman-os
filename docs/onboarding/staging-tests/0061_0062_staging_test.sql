@@ -75,14 +75,15 @@ begin
   if n <> 0 then raise exception 'FAIL b: 영업이 공급처 %줄을 본다', n; end if;
   select count(*) into n from public.cost_market_prices where material_id = v_mat;
   if n <> 1 then raise exception 'FAIL b: 영업이 시세를 못 본다(%)', n; end if;
-  select count(*) into n from public.cost_sales_purchase_summary('biz_dy') s where s.material_id = v_mat and s.avg_purchase_krw_per_kg = 950;
-  if n <> 1 then raise exception 'FAIL b: 영업 요약 평균 구매단가가 950이 아니다'; end if;
+  -- 영업 요약은 «지난 달력 달 · LOT 3건 이상»만(리뷰 I6) — 어제 들어온 1건짜리 단가는 보이지 않아야 한다.
+  select count(*) into n from public.cost_sales_purchase_summary('biz_dy') s where s.material_id = v_mat and s.avg_purchase_krw_per_kg is null;
+  if n <> 1 then raise exception 'FAIL b: 영업 요약이 LOT 1건 단가를 그대로 보인다'; end if;
   begin
     perform * from public.cost_production_lots('biz_dy');
     raise exception 'FAIL b: 영업이 LOT 가격 함수를 부른다';
   exception when no_data_found then null;
   end;
-  v_res := v_res || 'b(영업 — LOT 0 · 공급처 0 · 시세 · 요약 950 · LOT 함수 거부) ';
+  v_res := v_res || 'b(영업 — LOT 0 · 공급처 0 · 시세 · 요약에 1건 단가 없음 · LOT 함수 거부) ';
 
   -- ── (c) 대표: 제품 · 가짜 BOM ──
   reset role;

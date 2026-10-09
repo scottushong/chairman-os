@@ -81,8 +81,9 @@ create table cost_secret.cost_reads (
   read_on    date not null,
   product_id text not null,
   kind       text not null,
+  as_of      date not null,
   calls      int not null default 1,
-  primary key (user_id, read_on, product_id, kind)
+  constraint cost_reads_pkey primary key (user_id, read_on, product_id, kind, as_of)
 );
 
 alter table cost_secret.bom_versions enable row level security;
@@ -106,22 +107,34 @@ language sql stable security definer set search_path = public, cost_secret, pg_t
                       where a.user_id = auth.uid() and a.can_read and (not p_write or a.can_write)));
 $fn$;
 
-/** 원료 m의 d 단가(원/kg). market · current. 없으면 null. */
-create or replace function cost_secret.unit_price(p_material text, p_kind text, p_on date) returns numeric
+/**
+ * 원료 m의 d 단가(원/kg). market · current. 없으면 null.
+ * p_known(리뷰 C2(b) — 쌍시간): 그 시각에 «이미 들어와 있었고 아직 무효가 아니던» 줄만 본다. 대표는 'infinity'(지금 아는 전부),
+ * 대표 외는 cost_gate가 정한 시각(지금보다 3일 전 · 기준일 끝 중 이른 것) — 오늘 넣은 가짜 시세 · 과거 날짜로 넣은 줄 · 오늘 무효로 한 줄이
+ * 원가에 바로 비치지 않게.
+ */
+create or replace function cost_secret.unit_price(p_material text, p_kind text, p_on date, p_known timestamptz default 'infinity')
+returns numeric
 language plpgsql stable security definer set search_path = public, cost_secret, pg_temp as $fn$
 declare
   v numeric;
 begin
   if p_kind = 'market' then
-    return public.cost_market_on(p_material, p_on);
+    select avg(m.price_krw_per_kg) into v from public.cost_market_prices m
+     where m.material_id = p_material and m.created_at <= p_known and (m.voided_at is null or m.voided_at > p_known)
+       and m.observed_on = (select max(x.observed_on) from public.cost_market_prices x
+                             where x.material_id = p_material and x.observed_on <= p_on
+                               and x.created_at <= p_known and (x.voided_at is null or x.voided_at > p_known));
+    return v;
   elsif p_kind = 'current' then
     select sum(l.landed_krw_per_kg * l.qty_kg) / nullif(sum(l.qty_kg), 0) into v
       from public.cost_purchase_lots l
-     where l.material_id = p_material and l.voided_at is null
+     where l.material_id = p_material and l.created_at <= p_known and (l.voided_at is null or l.voided_at > p_known)
        and l.received_on <= p_on and l.received_on > p_on - 180;
     if v is null then
       select l.landed_krw_per_kg into v from public.cost_purchase_lots l
-       where l.material_id = p_material and l.voided_at is null and l.received_on <= p_on
+       where l.material_id = p_material and l.created_at <= p_known and (l.voided_at is null or l.voided_at > p_known)
+         and l.received_on <= p_on
        order by l.received_on desc, l.created_at desc limit 1;
     end if;
     return v;
@@ -139,7 +152,8 @@ language sql stable security definer set search_path = public, cost_secret, pg_t
 $fn$;
 
 /** 원료비 합계(원/kg, 반올림 전) · 단가 없는 원료 수(-1 = BOM 없음). */
-create or replace function cost_secret.material_cost(p_product text, p_kind text, p_on date, out total numeric, out missing int)
+create or replace function cost_secret.material_cost(p_product text, p_kind text, p_on date, p_known timestamptz default 'infinity',
+                                                     out total numeric, out missing int)
 language plpgsql stable security definer set search_path = public, cost_secret, pg_temp as $fn$
 declare
   v_ver bigint := cost_secret.version_on(p_product, p_on);
@@ -150,17 +164,23 @@ begin
   end if;
   select yield_pct into v_yield from cost_secret.bom_versions where version_id = v_ver;
   select sum(x.q * x.up), count(*) filter (where x.up is null)::int into total, missing
-    from (select l.kg_per_kg / (v_yield / 100) as q, cost_secret.unit_price(l.material_id, p_kind, p_on) as up
+    from (select l.kg_per_kg / (v_yield / 100) as q, cost_secret.unit_price(l.material_id, p_kind, p_on, p_known) as up
             from cost_secret.bom_lines l where l.version_id = v_ver) x;
   if missing > 0 then total := null; end if;
 end;
 $fn$;
 
 /**
- * 원가 조회 문(대표 외). 제품이 보이는 회사인지 · 원가 관리 또는 영업인지 판정하고, 하루 한도를 세고, 하루 한 줄 감사를 남긴다.
- * 돌려주는 것: 회사 · 기준일(영업은 그 주 월요일로 고정 · 미래 불가). 대표는 기준일 그대로 · 한도 없음 · 감사 없음.
+ * 원가 조회 문. 제품이 보이는 회사인지 · 원가 관리 또는 영업인지 판정하고, 하루 한도를 세고, 하루 · 기준일마다 한 줄 감사를 남긴다.
+ * 돌려주는 것: 회사 · 기준일 · 아는 시각 · 대표인가.
+ *   대표       기준일 그대로 · 아는 시각 = 지금 전부 · 한도 · 감사 없음.
+ *   원가 관리  기준일 = 최근 7일 안(리뷰 I3 — 지난 이력을 한꺼번에 긁지 못하게).
+ *   영업       기준일 = 이번 주 월요일 하나(인자 무시 — 설계서 6.3 완화 1 · 리뷰 I3).
+ *   아는 시각 = least(지금 − 3일, 기준일 끝(KST)) — 리뷰 C2(b).
+ *   구매 입력 줄을 같이 가진 사람은 원가를 못 본다(리뷰 C2(a) — 시세를 넣고 원가 변화를 읽으면 비율이 그대로 나온다): 'cost_role_conflict'.
  */
-create or replace function cost_secret.cost_gate(p_product text, p_kind text, p_as_of date, out business_id text, out as_of date)
+create or replace function cost_secret.cost_gate(p_product text, p_kind text, p_as_of date,
+                                                 out business_id text, out as_of date, out known_at timestamptz, out chairman boolean)
 language plpgsql volatile security definer set search_path = public, cost_secret, pg_temp as $fn$
 declare
   v_role text := coalesce(auth_role()::text, '');
@@ -175,30 +195,36 @@ begin
   if business_id is null then
     raise exception 'cost_not_found' using errcode = 'P0002';
   end if;
-  as_of := coalesce(p_as_of, v_today);
-  if v_role = 'Chairman' then
+  chairman := v_role = 'Chairman';
+  if chairman then
     if not has_business(business_id) then raise exception 'cost_not_found' using errcode = 'P0002'; end if;
+    as_of := coalesce(p_as_of, v_today);
+    known_at := 'infinity';
     return;
   end if;
   if not (cost_can('costing', business_id) or cost_can('sales', business_id)) then
     raise exception 'cost_not_found' using errcode = 'P0002';
   end if;
-  as_of := least(as_of, v_today);
-  -- 영업(원가 관리 줄 없음)은 주간 고정값(설계서 6.3 완화 1) — ISO 주 월요일.
-  if not cost_can('costing', business_id) then
-    as_of := date_trunc('week', as_of)::date;
+  if cost_grant('purchasing', business_id, true) then
+    raise exception 'cost_role_conflict' using errcode = '42501';
   end if;
+  if cost_can('costing', business_id) then
+    as_of := greatest(least(coalesce(p_as_of, v_today), v_today), v_today - 7);
+  else
+    as_of := date_trunc('week', v_today)::date;
+  end if;
+  known_at := least(now() - interval '3 days', ((as_of + 1)::timestamp at time zone 'Asia/Seoul'));
   select coalesce(sum(r.calls), 0) into v_total from cost_secret.cost_reads r where r.user_id = auth.uid() and r.read_on = v_today;
   if v_total >= 200 then
     raise exception 'cost_rate_limited' using errcode = '54000';
   end if;
-  insert into cost_secret.cost_reads (user_id, read_on, product_id, kind) values (auth.uid(), v_today, p_product, p_kind)
-  on conflict (user_id, read_on, product_id, kind) do update set calls = cost_secret.cost_reads.calls + 1
+  insert into cost_secret.cost_reads (user_id, read_on, product_id, kind, as_of) values (auth.uid(), v_today, p_product, p_kind, as_of)
+  on conflict on constraint cost_reads_pkey do update set calls = cost_secret.cost_reads.calls + 1
   returning (xmax = 0) into v_new;
   if v_new then
     insert into audit_log (action, entity_table, entity_id, business_id, actor_user_id, actor_role, before, after, note)
     values ('read', 'cost_products', p_product, business_id, auth.uid(), v_role, null,
-            jsonb_build_object('kind', p_kind), '원가 조회(0062) — 하루 한 줄');
+            jsonb_build_object('kind', p_kind, 'as_of', as_of), '원가 조회(0062) — 하루 · 기준일마다 한 줄');
   end if;
 end;
 $fn$;
@@ -209,7 +235,10 @@ revoke all on all functions in schema cost_secret from public, anon, authenticat
 -- 3절. 공개 RPC
 -- =====================================================================
 
-/** 제품 원료비(원/kg) — 10원 반올림 한 값. 계산 못 하면 computed = false + 이유 코드(no_bom · price_missing). */
+/**
+ * 제품 원료비(원/kg) — 10원 반올림 한 값. 계산 못 하면 computed = false + 이유 코드.
+ * 이유: 대표 = no_bom · price_missing. 대표 외 = not_computed 하나(리뷰 I5 — «이 날 단가 없는 원료가 있다»가 BOM 소속을 알려 준다).
+ */
 create or replace function cost_product_cost(p_product text, p_kind text default 'current', p_as_of date default null)
 returns table (product_id text, kind text, as_of date, material_krw_per_kg numeric, computed boolean, reason text)
 language plpgsql volatile security definer set search_path = public, cost_secret, pg_temp as $fn$
@@ -221,20 +250,25 @@ begin
     raise exception 'cost_kind_unsupported' using errcode = '22023';
   end if;
   select * into g from cost_secret.cost_gate(p_product, p_kind, p_as_of);
-  select * into c from cost_secret.material_cost(p_product, p_kind, g.as_of);
+  select * into c from cost_secret.material_cost(p_product, p_kind, g.as_of, g.known_at);
   return query select p_product, p_kind, g.as_of,
     case when c.total is null then null else round(c.total, -1) end,
     c.total is not null,
-    case when c.missing = -1 then 'no_bom' when c.total is null then 'price_missing' end;
+    case when c.total is not null then null
+         when not g.chairman then 'not_computed'
+         when c.missing = -1 then 'no_bom' else 'price_missing' end;
 end;
 $fn$;
 
-/** 원료비 변화율(묶음 한 값, 0.1%p) — 원료별 영향은 대표만(breakdown). 조회 한도 · 감사는 한 번으로 센다. */
+/**
+ * 원료비 변화율(묶음 한 값). 대표 = 0.1%p(반올림 전 합계). 대표 외 = 반올림한 합계끼리 · 1%p, 시작일은 기준일 35일 안
+ * (리뷰 I4 — 0.1%p는 10원 반올림보다 정밀해서 원료 하나의 값이 움직인 날 비율을 거의 그대로 알려 준다). 한도 · 감사는 한 번.
+ */
 create or replace function cost_material_impact(p_product text, p_kind text, p_from date, p_to date)
 returns numeric
 language plpgsql volatile security definer set search_path = public, cost_secret, pg_temp as $fn$
 declare
-  g_to record;
+  g record;
   v_from date;
   a record;
   b record;
@@ -242,16 +276,21 @@ begin
   if p_kind is null or p_kind not in ('market', 'current') or p_from is null or p_to is null then
     raise exception 'cost_kind_unsupported' using errcode = '22023';
   end if;
-  select * into g_to from cost_secret.cost_gate(p_product, p_kind, p_to);
-  v_from := least(p_from, g_to.as_of);
-  -- 영업이면 시작일도 월요일로.
-  if coalesce(auth_role()::text, '') <> 'Chairman' and not cost_can('costing', g_to.business_id) then
-    v_from := date_trunc('week', v_from)::date;
+  select * into g from cost_secret.cost_gate(p_product, p_kind, p_to);
+  v_from := least(p_from, g.as_of);
+  if not g.chairman then
+    v_from := greatest(v_from, g.as_of - 35);
+    if not cost_can('costing', g.business_id) then
+      v_from := date_trunc('week', v_from)::date;
+    end if;
   end if;
-  select * into a from cost_secret.material_cost(p_product, p_kind, v_from);
-  select * into b from cost_secret.material_cost(p_product, p_kind, g_to.as_of);
+  select * into a from cost_secret.material_cost(p_product, p_kind, v_from, g.known_at);
+  select * into b from cost_secret.material_cost(p_product, p_kind, g.as_of, g.known_at);
   if a.total is null or b.total is null or a.total = 0 then return null; end if;
-  return round((b.total / a.total - 1) * 100, 1);
+  if g.chairman then
+    return round((b.total / a.total - 1) * 100, 1);
+  end if;
+  return round((round(b.total, -1) / nullif(round(a.total, -1), 0) - 1) * 100, 0);
 end;
 $fn$;
 

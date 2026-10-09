@@ -17,9 +17,10 @@
 --   · 고치지 않는 기록 — 시장가 · LOT · 첨부는 insert만, update는 «무효» 칸 셋(칸 단위 grant + 트리거). delete 권한 없음.
 --   · 만든 사람 · 무효 처리자는 DB가 auth.uid()로 찍는다(위조 불가). Landed Cost · 원화 환산은 DB가 계산한다(입력값을 믿지 않는다).
 --   · 감사 줄에는 값(가격 · 공급처 조건)을 넣지 않는다 — audit_log는 행위자의 상사(0026 subtree)도 읽는다. id와 메모만.
+--   · 표는 RLS enable · **FORCE 없음**(리뷰 C1 — 정의자 함수의 소유자가 읽어야 한다).
 --   · 0050~0059에 기대지 않는다(master 위에서 쓴다). 0045 · 0058 · 0059의 첨부 함수 · 정책을 건드리지 않는다 — 구매 첨부는 별도 버킷.
 --
--- 0035 규칙: 0001~0055를 고치지 않는다. force RLS는 새 표에만.
+-- 0035 규칙: 0001~0055를 고치지 않는다.
 -- =====================================================================
 
 begin;
@@ -31,7 +32,7 @@ begin;
 /** '/<area>/<target>' 모듈 줄이 있는가(요구한 칸까지). 사람 역할만 — 시스템 계정은 줄이 있어도 거짓(0047 finance_grant와 같은 문). */
 create or replace function cost_grant(p_area text, p_target text, p_need_write boolean default false)
 returns boolean
-language sql stable security definer set search_path = public as $fn$
+language sql stable security definer set search_path = public, pg_temp as $fn$
   select is_active()
      and p_target is not null
      and p_area in ('purchasing', 'production', 'sales', 'costing')
@@ -47,7 +48,7 @@ $fn$;
 /** 대표 또는 그 회사 그 영역의 줄. 회사 범위(has_business)는 늘 함께 — 줄만 있고 회사 접근이 없으면 거짓. */
 create or replace function cost_can(p_area text, p_target text, p_need_write boolean default false)
 returns boolean
-language sql stable security definer set search_path = public as $fn$
+language sql stable security definer set search_path = public, pg_temp as $fn$
   select is_active()
      and p_target is not null
      and p_area in ('purchasing', 'production', 'sales', 'costing')
@@ -199,7 +200,8 @@ create table cost_purchase_docs (
   size_bytes   int not null check (size_bytes between 1 and 4194304),   -- 4MB — 서버 액션으로 받는다(배합비 검사가 저장 전에 돈다)
   sha256       text not null check (sha256 ~ '^[0-9a-f]{64}$'),
   storage_path text not null unique,
-  mix_checked  boolean not null,          -- 서버가 배합비 검사를 돌렸는가(글자층 없는 파일은 false + 올린 사람 확인)
+  mix_checked  boolean not null,          -- 서버가 배합비 검사를 돌렸는가(글자층 없는 파일은 false + 올린 사람 확인).
+                                          -- 리뷰 M5: DB는 파일 내용을 못 본다 — PostgREST로 직접 넣는 사람은 true라고 적을 수 있다. 감사 줄이 남는다.
   mix_attested boolean not null default false,   -- 글자층 없는 파일: 올린 사람의 «배합비 · 레시피가 아닙니다»
   created_by   uuid not null default auth.uid(),
   created_at   timestamptz not null default now(),
@@ -207,7 +209,7 @@ create table cost_purchase_docs (
   voided_by    uuid,
   void_reason  text check (void_reason is null or length(btrim(void_reason)) between 1 and 300),
   foreign key (supplier_id, business_id) references cost_suppliers (supplier_id, business_id),
-  constraint cost_purchase_docs_path check (storage_path like business_id || '/%' and storage_path !~ '\.\.'),
+  constraint cost_purchase_docs_path check (left(storage_path, length(business_id) + 1) = business_id || '/' and storage_path !~ '\.\.'),
   constraint cost_purchase_docs_mix check (mix_checked or mix_attested),
   constraint cost_purchase_docs_void_shape check ((voided_at is null) = (voided_by is null) and (voided_at is null) = (void_reason is null))
 );
@@ -300,7 +302,7 @@ $fn$;
 
 /** 결재에서 온 LOT: 그 회사의 승인된 «구매» 양식 결재여야 한다. 넣는 사람이 그 결재를 RLS로 못 봐도 판정은 여기서(정의자). */
 create or replace function cost_lot_source_check() returns trigger
-language plpgsql security definer set search_path = public as $fn$
+language plpgsql security definer set search_path = public, pg_temp as $fn$
 begin
   if new.source = 'approval' and not exists (
     select 1 from decisions d
@@ -314,7 +316,7 @@ end;
 $fn$;
 
 create or replace function cost_dismissal_check() returns trigger
-language plpgsql security definer set search_path = public as $fn$
+language plpgsql security definer set search_path = public, pg_temp as $fn$
 begin
   new.dismissed_by := auth.uid();
   new.dismissed_at := now();
@@ -331,7 +333,7 @@ $fn$;
 
 /** 감사 — 값 없이 id와 메모만(머리 주석). 실패하면 쓰기도 실패한다(기록이 먼저 — 0045와 같은 결). */
 create or replace function cost_audit() returns trigger
-language plpgsql security definer set search_path = public as $fn$
+language plpgsql security definer set search_path = public, pg_temp as $fn$
 declare
   v_id text;
   v_action audit_action;
@@ -380,8 +382,40 @@ begin
 end;
 $do$;
 
+/**
+ * 리뷰 C2(c) — 터무니없는 값 막기. 대표 외의 입력이 그 원료의 최근 90일 중앙값(무효 제외 · 3점 이상일 때)의 0.2배 미만이거나 5배 초과면 거부.
+ * 가짜 시세 · LOT 한 줄로 원가를 크게 흔들어 BOM 비율을 읽는 길(설계서 6.3)을 좁힌다. 진짜 급등락은 대표가 넣거나, 사유와 함께 대표에게 올린다.
+ */
+create or replace function cost_outlier_check() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $fn$
+declare
+  v_new numeric;
+  v_med numeric;
+  v_n int;
+begin
+  if coalesce(auth_role()::text, '') = 'Chairman' then return new; end if;
+  if tg_table_name = 'cost_market_prices' then
+    v_new := new.price_krw_per_kg;
+    select percentile_cont(0.5) within group (order by price_krw_per_kg), count(*) into v_med, v_n
+      from cost_market_prices where material_id = new.material_id and voided_at is null
+       and observed_on between new.observed_on - 90 and new.observed_on + 90;
+  else
+    v_new := new.landed_krw_per_kg;
+    select percentile_cont(0.5) within group (order by landed_krw_per_kg), count(*) into v_med, v_n
+      from cost_purchase_lots where material_id = new.material_id and voided_at is null
+       and received_on between new.received_on - 90 and new.received_on + 90;
+  end if;
+  if v_n >= 3 and v_med > 0 and (v_new > v_med * 5 or v_new < v_med * 0.2) then
+    raise exception 'cost_price_outlier' using errcode = '22023';
+  end if;
+  return new;
+end;
+$fn$;
+
 create trigger cost_market_prices_calc before insert on cost_market_prices for each row execute function cost_market_price_calc();
 create trigger cost_purchase_lots_calc before insert on cost_purchase_lots for each row execute function cost_lot_calc();
+create trigger cost_market_prices_outlier before insert on cost_market_prices for each row execute function cost_outlier_check();
+create trigger cost_purchase_lots_outlier before insert on cost_purchase_lots for each row execute function cost_outlier_check();
 create trigger cost_purchase_lots_source before insert on cost_purchase_lots for each row execute function cost_lot_source_check();
 create trigger cost_candidate_dismissals_check before insert on cost_candidate_dismissals for each row execute function cost_dismissal_check();
 
@@ -396,7 +430,8 @@ begin
   foreach t in array array['cost_materials', 'cost_suppliers', 'cost_market_prices', 'cost_purchase_lots', 'cost_products',
                            'cost_purchase_docs', 'cost_candidate_dismissals'] loop
     execute format('alter table %I enable row level security', t);
-    execute format('alter table %I force row level security', t);
+    -- FORCE는 걸지 않는다(리뷰 C1): Supabase의 postgres는 BYPASSRLS가 아니라(0026 · 0027), FORCE면 정의자 함수의 소유자도
+    -- 정책을 받는다 — 정책이 전부 «to authenticated»라 정의자 함수가 0행이 된다(엔진이 통째로 죽는다). 일반 역할은 그대로 RLS를 받는다.
     execute format('revoke all on table %I from anon, public', t);
     execute format('revoke insert, update, delete, truncate, references, trigger on table %I from authenticated', t);
     -- 시스템 계정(야간 AI · 연동)은 원가 표 전부에서 막는다 — 0045와 같은 restrictive.
@@ -412,6 +447,8 @@ grant update (name, spec, category, active, note) on cost_materials to authentic
 grant update (name, country, currency_default, contact, terms, active, note) on cost_suppliers to authenticated;
 grant update (name, sku, pack_kg, active, note) on cost_products to authenticated;
 grant update (voided_at, voided_by, void_reason) on cost_market_prices, cost_purchase_lots, cost_purchase_docs to authenticated;
+revoke all on sequence cost_market_prices_price_id_seq from anon, public;
+revoke update on sequence cost_market_prices_price_id_seq from authenticated;
 grant usage, select on sequence cost_market_prices_price_id_seq to authenticated;
 
 -- 원료 · 제품 이름: 네 영역 누구나(이름만 — 구성은 없다).
@@ -467,7 +504,7 @@ create policy cost_candidate_dismissals_rw on cost_candidate_dismissals for all 
 insert into storage.buckets (id, name, public) values ('purchasing', 'purchasing', false) on conflict (id) do nothing;
 
 create or replace function cost_doc_object_visible(object_name text) returns boolean
-language sql stable security definer set search_path = public as $fn$
+language sql stable security definer set search_path = public, pg_temp as $fn$
   select exists (
     select 1 from cost_purchase_docs d
      where d.storage_path = object_name and d.voided_at is null
@@ -476,7 +513,7 @@ language sql stable security definer set search_path = public as $fn$
 $fn$;
 
 create or replace function cost_doc_object_uploadable(object_name text) returns boolean
-language sql stable security definer set search_path = public as $fn$
+language sql stable security definer set search_path = public, pg_temp as $fn$
   select exists (
     select 1 from cost_purchase_docs d
      where d.storage_path = object_name and d.voided_at is null
@@ -485,8 +522,10 @@ language sql stable security definer set search_path = public as $fn$
   );
 $fn$;
 
-revoke all on function cost_doc_object_visible(text) from public;
-revoke all on function cost_doc_object_uploadable(text) from public;
+revoke all on function cost_doc_object_visible(text) from public, anon;
+revoke all on function cost_doc_object_uploadable(text) from public, anon;
+revoke all on function cost_today() from public, anon;
+grant execute on function cost_today() to authenticated;
 grant execute on function cost_doc_object_visible(text) to authenticated;
 grant execute on function cost_doc_object_uploadable(text) to authenticated;
 
@@ -526,7 +565,7 @@ $fn$;
 
 /** 원료 m의 d 이하 최신 시장가(원/kg). 같은 날 여러 출처는 평균. 무효 제외. 내부용(revoke). */
 create or replace function cost_market_on(p_material text, p_on date) returns numeric
-language sql stable security definer set search_path = public as $fn$
+language sql stable security definer set search_path = public, pg_temp as $fn$
   select avg(price_krw_per_kg) from cost_market_prices
    where material_id = p_material and voided_at is null
      and observed_on = (select max(observed_on) from cost_market_prices
@@ -538,8 +577,12 @@ create or replace function cost_production_materials(p_business text, p_as_of da
 returns table (material_id text, name text, category text, market_krw_per_kg numeric)
 language plpgsql stable security definer set search_path = public, pg_temp as $fn$
 declare
-  v_on date := least(coalesce(p_as_of, cost_today()), cost_today());
+  v_on date;
 begin
+  -- 리뷰 I7: 생산(«제한»)은 오늘 한 값만 — 이력 없음. 날짜를 고르는 것은 구매 · 원가 관리 · 대표.
+  v_on := case when cost_can('purchasing', p_business) or cost_can('costing', p_business)
+               then least(coalesce(p_as_of, cost_today()), cost_today())
+               else cost_today() end;
   if not (cost_can('production', p_business) or cost_can('purchasing', p_business) or cost_can('costing', p_business)) then
     raise exception 'cost_not_found' using errcode = 'P0002';
   end if;
@@ -571,24 +614,40 @@ begin
 end;
 $fn$;
 
-/** 영업 «요약»: 원료별 기간 수량가중 평균 구매단가(landed 원/kg) + 최신 시장가 + 시장가 대비 % — LOT · 공급처 · 분해 · 건별 없음. */
+/**
+ * 영업 «요약»: 원료별 지난 달력 달 수량가중 평균 구매단가(landed 원/kg, LOT 3건 이상) + 그 달 말일 시장가 + 시장가 대비 % — LOT · 공급처 · 분해 · 건별 없음.
+ * 구매 · 원가 관리 · 대표는 p_days · p_as_of로 창을 고른다(1건부터).
+ */
 create or replace function cost_sales_purchase_summary(p_business text, p_days int default 30, p_as_of date default null)
 returns table (material_id text, name text, avg_purchase_krw_per_kg numeric, market_krw_per_kg numeric, purchase_vs_market_pct numeric)
 language plpgsql stable security definer set search_path = public, pg_temp as $fn$
 declare
-  v_on date := least(coalesce(p_as_of, cost_today()), cost_today());
-  v_days int := greatest(7, least(coalesce(p_days, 30), 365));
+  v_full boolean := cost_can('costing', p_business) or cost_can('purchasing', p_business);
+  v_on date;
+  v_from date;
+  v_min int;
 begin
-  if not (cost_can('sales', p_business) or cost_can('costing', p_business) or cost_can('purchasing', p_business)) then
+  if not (cost_can('sales', p_business) or v_full) then
     raise exception 'cost_not_found' using errcode = 'P0002';
+  end if;
+  if v_full then
+    v_on := least(coalesce(p_as_of, cost_today()), cost_today());
+    v_from := v_on - greatest(7, least(coalesce(p_days, 30), 365));
+    v_min := 1;
+  else
+    -- 리뷰 I6: 영업(«요약»)은 «지난 달력 달» 한 창만 · LOT 3건 이상일 때만 — 건별 LOT 단가 · Current 단가가 그대로 보이지 않게.
+    v_on := (date_trunc('month', cost_today()) - interval '1 day')::date;
+    v_from := (date_trunc('month', v_on) - interval '1 day')::date;
+    v_min := 3;
   end if;
   return query
   with avgp as (
     select l.material_id, sum(l.landed_krw_per_kg * l.qty_kg) / sum(l.qty_kg) as avg_p
       from cost_purchase_lots l
      where l.business_id = p_business and l.voided_at is null
-       and l.received_on > v_on - v_days and l.received_on <= v_on
+       and l.received_on > v_from and l.received_on <= v_on
      group by l.material_id
+    having count(*) >= v_min
   )
   select m.material_id, m.name, round(a.avg_p, 0), round(mk.v, 0),
          case when mk.v > 0 and a.avg_p is not null then round((a.avg_p / mk.v - 1) * 100, 1) end
@@ -614,6 +673,7 @@ revoke all on function cost_lot_calc() from public, anon, authenticated;
 revoke all on function cost_lot_source_check() from public, anon, authenticated;
 revoke all on function cost_dismissal_check() from public, anon, authenticated;
 revoke all on function cost_audit() from public, anon, authenticated;
+revoke all on function cost_outlier_check() from public, anon, authenticated;
 revoke all on function cost_purchase_candidates(text) from public, anon;
 revoke all on function cost_production_materials(text, date) from public, anon;
 revoke all on function cost_production_lots(text) from public, anon;
