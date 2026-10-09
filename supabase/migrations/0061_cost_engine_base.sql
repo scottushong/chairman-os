@@ -236,6 +236,13 @@ language plpgsql set search_path = public as $fn$
 begin
   new.created_by := auth.uid();
   new.created_at := now();
+  -- 리뷰 5회차 M1 — 사람이 읽는 키(원료 · 공급처 · 제품)는 DB가 짓는다. 'mat_sesame_oil'처럼 이름을 키에 넣으면 감사 줄 · 오류로 이름이 샌다.
+  if tg_table_name in ('cost_materials', 'cost_suppliers', 'cost_products') then
+    new := jsonb_populate_record(new, jsonb_build_object(
+      case tg_table_name when 'cost_materials' then 'material_id' when 'cost_suppliers' then 'supplier_id' else 'product_id' end,
+      case tg_table_name when 'cost_materials' then 'mat_' when 'cost_suppliers' then 'sup_' else 'prd_' end
+        || substr(replace(gen_random_uuid()::text, '-', ''), 1, 16)));
+  end if;
   return new;
 end;
 $fn$;
@@ -307,6 +314,8 @@ $fn$;
 create or replace function cost_lot_source_check() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $fn$
 begin
+  -- 리뷰 5회차 M3 — BEFORE 트리거는 RLS보다 먼저 돈다. 구매 입력 권한이 없으면 말하지 않고 RLS가 거부하게 둔다(결재 id 탐침 막기).
+  if not cost_can('purchasing', new.business_id, true) then return new; end if;
   if new.source = 'approval' and not exists (
     select 1 from decisions d
      where d.decision_id = new.source_ref and d.business_id = new.business_id
@@ -321,6 +330,7 @@ $fn$;
 create or replace function cost_dismissal_check() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $fn$
 begin
+  if not cost_can('purchasing', new.business_id, true) then return new; end if;
   new.dismissed_by := auth.uid();
   new.dismissed_at := now();
   if not exists (
@@ -527,6 +537,10 @@ create policy cost_candidate_dismissals_rw on cost_candidate_dismissals for all 
 create or replace function cost_costing_cap() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $fn$
 begin
+  if new.module like '/costing/%' then
+    -- 리뷰 5회차 M4 — 두 트랜잭션이 동시에 넷째를 넣지 못하게 그 모듈 키로 잠근다.
+    perform pg_advisory_xact_lock(hashtext(new.module));
+  end if;
   if new.module like '/costing/%' and (
        select count(*) from user_module_access m
         where m.module = new.module and m.user_id <> new.user_id) >= 3 then
@@ -553,10 +567,14 @@ begin
          (select count(*)::int from audit_log a where a.actor_user_id = m.user_id and a.action = 'read'
              and a.entity_table = 'cost_products' and a.business_id = p_business and a.occurred_at > now() - interval '7 days'),
          (select count(*)::int from audit_log a where a.actor_user_id = m.user_id and a.action = 'read'
-             and a.entity_table = 'screen' and a.after ->> 'path' like '/purchasing/' || p_business || '%'
+             and a.entity_table = 'screen'
+             and (a.after ->> 'path' = '/purchasing/' || p_business or left(a.after ->> 'path', length(p_business) + 12) = '/purchasing/' || p_business || '/'
+                  or a.after ->> 'path' = '/sales/' || p_business or left(a.after ->> 'path', length(p_business) + 8) = '/sales/' || p_business || '/')
              and a.occurred_at > now() - interval '7 days'),
          (select max(a.occurred_at) from audit_log a where a.actor_user_id = m.user_id and a.action = 'read'
-             and (a.entity_table = 'cost_products' or (a.entity_table = 'screen' and a.after ->> 'path' like '/purchasing/%')))
+             and ((a.entity_table = 'cost_products' and a.business_id = p_business)
+                  or (a.entity_table = 'screen' and (a.after ->> 'path' = '/purchasing/' || p_business
+                       or left(a.after ->> 'path', length(p_business) + 12) = '/purchasing/' || p_business || '/'))))
     from user_module_access m
     join user_profiles p on p.user_id = m.user_id
    where m.module = '/costing/' || p_business
@@ -566,6 +584,15 @@ $fn$;
 
 revoke all on function cost_costing_watch(text) from public, anon;
 grant execute on function cost_costing_watch(text) to authenticated;
+
+/**
+ * 리뷰 5회차 M1 — 원가 표의 감사 줄(원료 · 공급처 · 시세 · LOT · 구매 첨부)은 0026 audit_log_read가 «행위자의 상사»에게도 내준다.
+ * 영업 팀장이 아래 구매 담당의 줄로 원료 id · 시각을 보지 않게 restrictive로 좁힌다 — 본인 · 대표 · 그 회사 구매 · 원가 관리만(0045 첨부와 같은 모양).
+ */
+create policy audit_log_cost_private on audit_log as restrictive for select
+  using (entity_table not in ('cost_materials', 'cost_suppliers', 'cost_market_prices', 'cost_purchase_lots', 'cost_purchase_docs', 'cost_bom')
+         or actor_user_id = auth.uid() or coalesce(auth_role()::text, '') = 'Chairman'
+         or cost_can('purchasing', business_id) or cost_can('costing', business_id));
 
 -- =====================================================================
 -- 5절. 구매 첨부 버킷 'purchasing' — 0045 'attachments'와 따로. 0059의 restrictive 정책은 'attachments'에만 걸린다.

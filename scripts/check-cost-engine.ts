@@ -37,6 +37,8 @@ const U = {
   cfo: '00000000-0000-0000-0000-0000000061aa', // GroupCFO — 줄 없음
   both: '00000000-0000-0000-0000-0000000061ab', // 구매 입력 + 원가 관리(겸직 — 리뷰 C2)
   both2: '00000000-0000-0000-0000-0000000061ac', // 구매 입력 + 영업
+  sp: '00000000-0000-0000-0000-0000000061ad', // 영업 + 생산(리뷰 5회차 I1)
+  sr: '00000000-0000-0000-0000-0000000061ae', // 영업 + 구매 읽기만(리뷰 5회차 I1)
 }
 
 const FAKE_MATERIAL_NAMES = ['가짜원료알파', '가짜원료베타', '가짜원료감마', '가짜원료델타']
@@ -65,24 +67,28 @@ async function main() {
     insert into auth.users (id, email) values
       ('${U.chair}', 'c@x'), ('${U.buy}', 'b@x'), ('${U.prod}', 'p@x'), ('${U.sales}', 's@x'), ('${U.cost}', 'k@x'),
       ('${U.exec}', 'e@x'), ('${U.ceo}', 'o@x'), ('${U.vana}', 'v@x'), ('${U.agent}', 'a@x'), ('${U.cfo}', 'f@x'),
-      ('${U.both}', 'bo@x'), ('${U.both2}', 'bs@x');
+      ('${U.both}', 'bo@x'), ('${U.both2}', 'bs@x'), ('${U.sp}', 'sp@x'), ('${U.sr}', 'sr@x');
     insert into user_profiles (user_id, role, display_name, max_security_class) values
       ('${U.chair}', 'Chairman', '대표', 'Vault'), ('${U.buy}', 'Member', '구매', 'Normal'), ('${U.prod}', 'Member', '생산', 'Normal'),
       ('${U.sales}', 'Member', '영업', 'Normal'), ('${U.cost}', 'Member', '경영지원', 'Normal'), ('${U.exec}', 'Executive', '임원', 'Restricted'),
       ('${U.ceo}', 'BusinessCEO', '회사 대표', 'Restricted'), ('${U.vana}', 'Member', 'VANA', 'Normal'),
       ('${U.agent}', 'AIAgent', 'ai', 'Restricted'), ('${U.cfo}', 'GroupCFO', 'cfo', 'Restricted'),
-      ('${U.both}', 'Member', '겸직1', 'Normal'), ('${U.both2}', 'Member', '겸직2', 'Normal');
+      ('${U.both}', 'Member', '겸직1', 'Normal'), ('${U.both2}', 'Member', '겸직2', 'Normal'),
+      ('${U.sp}', 'Member', '영업생산', 'Normal'), ('${U.sr}', 'Member', '영업구매읽기', 'Normal');
+    update user_profiles set reports_to = '${U.sales}' where user_id = '${U.buy}'; -- 영업 담당이 구매 담당의 상사(감사 줄 subtree 시험)
     insert into user_business_access values
       ('${U.buy}', 'biz_dy'), ('${U.prod}', 'biz_dy'), ('${U.sales}', 'biz_dy'), ('${U.cost}', 'biz_dy'),
       ('${U.exec}', 'biz_dy'), ('${U.ceo}', 'biz_dy'), ('${U.vana}', 'biz_vana'), ('${U.agent}', 'biz_dy'),
-      ('${U.both}', 'biz_dy'), ('${U.both2}', 'biz_dy');
+      ('${U.both}', 'biz_dy'), ('${U.both2}', 'biz_dy'), ('${U.sp}', 'biz_dy'), ('${U.sr}', 'biz_dy');
     insert into user_module_access (user_id, module, can_write, can_approve) values
       ('${U.buy}', '/purchasing/biz_dy', true, false), ('${U.prod}', '/production/biz_dy', true, false),
       ('${U.sales}', '/sales/biz_dy', true, false), ('${U.cost}', '/costing/biz_dy', true, false),
       ('${U.vana}', '/sales/biz_dy', true, false), ('${U.vana}', '/purchasing/biz_dy', true, false),
       ('${U.agent}', '/purchasing/biz_dy', true, false), ('${U.agent}', '/sales/biz_dy', true, false), ('${U.agent}', '/costing/biz_dy', true, false),
       ('${U.both}', '/purchasing/biz_dy', true, false), ('${U.both}', '/costing/biz_dy', true, false),
-      ('${U.both2}', '/purchasing/biz_dy', true, false), ('${U.both2}', '/sales/biz_dy', true, false);
+      ('${U.both2}', '/purchasing/biz_dy', true, false), ('${U.both2}', '/sales/biz_dy', true, false),
+      ('${U.sp}', '/sales/biz_dy', true, false), ('${U.sp}', '/production/biz_dy', true, false),
+      ('${U.sr}', '/sales/biz_dy', true, false), ('${U.sr}', '/purchasing/biz_dy', false, false);
     insert into fx_rates (rate_date, base, quote, rate, source_name, source, fetched_at)
       values ('${T}'::date - 60, 'USD', 'KRW', 1400, 'test', 'manual', now());
   `)
@@ -102,11 +108,18 @@ async function main() {
   const count = async (uid: string | null, table: string) => Number((await as<{ n: number }>(uid, `select count(*)::int as n from ${table}`))[0].n)
   const refuses = (p: Promise<unknown>, re: RegExp, why: string) => assert.rejects(p, re, why)
   const one = async <T,>(uid: string, sql: string) => ((await run(uid, sql)) as T[])[0]
-  /** 넣은 줄을 «열흘 전에 들어온 것»으로 만든다 — 대표 외 원가는 3일 전까지 들어온 줄만 본다(쌍시간). 트리거를 잠시 끈다. */
+  /**
+   * 넣은 줄을 «열흘 전에 들어온 것»으로 만든다 — 대표 외 원가는 월요일 0시 스냅샷까지 들어와 있던 줄만 본다(쌍시간).
+   * 시세 · LOT · 원료 · BOM 판 모두. 무효 시각도 같이 옮긴다(무효가 스냅샷 뒤면 대표 외에게는 아직 살아 있는 줄이다).
+   * BOM 판은 판 번호 순서를 지키게 1초씩 벌린다. 트리거를 잠시 끈다.
+   */
   const age = () =>
     db.exec(`set session_replication_role = replica;
-      update cost_market_prices set created_at = now() - interval '10 days';
-      update cost_purchase_lots set created_at = now() - interval '10 days';
+      update cost_market_prices set created_at = now() - interval '10 days', voided_at = case when voided_at is null then null else now() - interval '9 days' end;
+      update cost_purchase_lots set created_at = now() - interval '10 days', voided_at = case when voided_at is null then null else now() - interval '9 days' end;
+      update cost_materials set created_at = now() - interval '10 days';
+      update cost_secret.bom_versions set created_at = now() - interval '10 days' + version_id * interval '1 second',
+        voided_at = case when voided_at is null then null else now() - interval '10 days' + version_id * interval '1 second' + interval '500 milliseconds' end;
       set session_replication_role = origin;`)
 
   // ── ② 구매가 기초를 넣는다 ─────────────────────────────────────────────
@@ -114,6 +127,9 @@ async function main() {
   const { m2 } = await one<{ m2: string }>(U.buy, `insert into cost_materials (business_id, name) values ('biz_dy', '${FAKE_MATERIAL_NAMES[1]}') returning material_id as m2`)
   const { m3 } = await one<{ m3: string }>(U.buy, `insert into cost_materials (business_id, name) values ('biz_dy', '${FAKE_MATERIAL_NAMES[2]}') returning material_id as m3`)
   const { m4 } = await one<{ m4: string }>(U.buy, `insert into cost_materials (business_id, name) values ('biz_dy', '${FAKE_MATERIAL_NAMES[3]}') returning material_id as m4`)
+  const forcedId = await one<{ id: string }>(U.buy, `insert into cost_materials (material_id, business_id, name) values ('mat_sesame_oil', 'biz_dy', '참기름 시험') returning material_id as id`)
+  assert.notEqual(forcedId.id, 'mat_sesame_oil', '0061: 원료 키를 사람이 지어 이름을 키에 넣을 수 있다(리뷰 5회차 M1)')
+  await run(U.buy, `update cost_materials set active = false where material_id = '${forcedId.id}'`)
   assert.equal((await owner<{ c: string }>(`select created_by::text as c from cost_materials where material_id = '${m1}'`))[0].c, U.buy,
     '0061: 만든 사람을 남으로 위조할 수 있다')
   const { s1 } = await one<{ s1: string }>(U.buy, `insert into cost_suppliers (business_id, name, currency_default, contact, terms) values ('biz_dy', '가짜공급처', 'USD', '010-0000', 'FOB 30일') returning supplier_id as s1`)
@@ -263,10 +279,12 @@ async function main() {
   const { v } = await one<{ v: number }>(U.chair, `select cost_bom_save('${p1}', '${M}'::date - 30, 95, '${lines}'::jsonb, '가짜 BOM') as v`)
   assert.ok(Number(v) > 0, '0062: 대표가 BOM을 못 쓴다')
   await run(U.chair, `select cost_bom_save('${p3}', '${M}'::date - 30, 100, '[{"material_id":"${m1}","kg_per_kg":0.5},{"material_id":"${m4}","kg_per_kg":0.5}]'::jsonb)`)
+  await age()
   await refuses(run(U.chair, `select cost_bom_save('${p1}', '${M}'::date - 30, 95, '[{"material_id":"${m1}","kg_per_kg":0.5},{"material_id":"${m1}","kg_per_kg":0.1}]'::jsonb)`),
     /cost_bom_invalid/, '0062: 같은 원료 두 줄')
   await refuses(db.query(`insert into cost_secret.bom_versions (product_id, valid_from, is_fake, created_by) values ('${p1}', '2027-01-01', false, '${U.chair}')`),
     /check constraint/, '0062: 진짜 BOM(is_fake=false)이 들어간다 — 암호화 전 입력 금지')
+  await age() // BOM 판 · 원료를 스냅샷 앞으로
 
   for (const uid of [U.buy, U.prod, U.sales, U.cost, U.exec, U.ceo, U.cfo, U.agent, U.vana]) {
     for (const sql of [
@@ -346,6 +364,10 @@ async function main() {
 
   // 리뷰 2회차 I1 — 회사의 사용 중 원료 하나라도 단가가 없으면 그 회사 모든 제품이 not_computed(BOM 소속이 «계산됨»으로 새지 않게).
   const { m5 } = await one<{ m5: string }>(U.buy, `insert into cost_materials (business_id, name) values ('biz_dy', '가짜원료 새것') returning material_id as m5`)
+  // 리뷰 5회차 I2 — 스냅샷 뒤에 생긴 원료는 그 주 계산 여부를 흔들지 않는다.
+  const fresh = await as<{ computed: boolean }>(U.cost, `select computed from cost_product_cost('${p1}', 'current')`)
+  assert.equal(fresh[0].computed, true, '0062: 주 중에 새로 만든 원료가 그 주 모든 제품 원가를 지운다')
+  await age()
   const inc = await as<{ computed: boolean; reason: string }>(U.cost, `select computed, reason from cost_product_cost('${p1}', 'current')`)
   assert.deepEqual([inc[0].computed, inc[0].reason], [false, 'not_computed'], '0062: 단가 없는 새 원료가 있는데 BOM에 없는 제품은 계산된다(소속이 샌다)')
   const incI = await as<{ v: string | null }>(U.sales, `select cost_material_impact('${p1}', 'market', '${M3}', '${T}') as v`)
@@ -353,9 +375,14 @@ async function main() {
   await run(U.buy, `update cost_materials set active = false where material_id = '${m5}'`)
   // 리뷰 3회차 I1 — 사용 중이 아닌 원료라도 그 날 쓰는 BOM에 들어 있으면 센다(그 제품만 not_computed가 되지 않게).
   await run(U.chair, `select cost_bom_save('${p3}', '${M}'::date - 30, 100, '[{"material_id":"${m1}","kg_per_kg":0.5},{"material_id":"${m5}","kg_per_kg":0.5}]'::jsonb)`)
+  // 리뷰 5회차 I2 — 주 중에 고친 BOM은 대표 외 값을 그 주 안에서 바꾸지 않는다(스냅샷 뒤 판).
+  const midweek = await as<{ computed: boolean }>(U.cost, `select computed from cost_product_cost('${p1}', 'current')`)
+  assert.equal(midweek[0].computed, true, '0062: 주 중 BOM 저장이 그 주 대표 외 값을 바꾼다')
+  await age()
   const incB = await as<{ computed: boolean }>(U.cost, `select computed from cost_product_cost('${p1}', 'current')`)
   assert.equal(incB[0].computed, false, '0062: 단종 원료가 든 BOM이 있는데 다른 제품은 계산된다(소속이 샌다)')
   await run(U.chair, `select cost_bom_save('${p3}', '${M}'::date - 30, 100, '[{"material_id":"${m1}","kg_per_kg":0.5},{"material_id":"${m4}","kg_per_kg":0.5}]'::jsonb)`)
+  await age()
 
   // 이유 코드 — 대표 외는 not_computed 하나(리뷰 I5).
   for (const p of [p2]) {
@@ -434,6 +461,25 @@ async function main() {
     await refuses(as(uid, `select * from cost_sales_view('${p1}')`), /cost_not_found/, `결정: ${uid.slice(-2)}가 영업 원가 화면을 본다`)
   }
   await refuses(as(U.both2, `select * from cost_sales_view('${p1}')`), /cost_role_conflict/, '결정: 구매 입력 + 영업 견적 겸직이 영업 원가를 본다')
+
+  // 리뷰 5회차 I1 — 영업 + 생산 · 영업 + 구매(읽기만) 겸직은 영업 원가를 못 본다(원료 이름 · 시세가 한 사람에게 모인다).
+  for (const uid of [U.sp, U.sr]) {
+    await refuses(as(uid, `select * from cost_sales_view('${p1}')`), /cost_role_conflict/, `5회차: 겸직(${uid.slice(-2)})이 영업 원가를 본다`)
+    await refuses(as(uid, `select * from cost_sales_list('biz_dy')`), /cost_role_conflict/, `5회차: 겸직(${uid.slice(-2)})이 영업 목록을 본다`)
+  }
+  // 리뷰 5회차 M6 — 영업 목록은 한 번의 조회로(한도 한 칸).
+  const reads0 = Number((await owner<{ n: number }>(`select coalesce(sum(calls), 0)::int as n from cost_secret.cost_reads where user_id = '${U.sales}'`))[0].n)
+  const list = await as<{ product_id: string; product_name: string; current_krw_per_kg: string }>(U.sales, `select * from cost_sales_list('biz_dy')`, true)
+  const reads1 = Number((await owner<{ n: number }>(`select coalesce(sum(calls), 0)::int as n from cost_secret.cost_reads where user_id = '${U.sales}'`))[0].n)
+  assert.equal(reads1 - reads0, 1, '5회차: 영업 목록이 제품마다 한도를 쓴다')
+  assert.equal(Number(list.find((r) => r.product_id === p1)!.current_krw_per_kg), tot, '5회차: 영업 목록 값이 한 줄 값과 다르다')
+  assert.ok(!FAKE_MATERIAL_NAMES.some((n) => JSON.stringify(list).includes(n)), '5회차: 영업 목록에 원료가 샌다')
+  // 리뷰 5회차 M1 — 영업 팀장은 아래 구매 담당의 원가 표 감사 줄(원료 id · 시각)을 못 본다.
+  assert.equal(await count(U.sales, `audit_log where entity_table in ('cost_materials', 'cost_market_prices', 'cost_purchase_lots')`), 0,
+    '5회차: 영업이 subtree 감사로 원료 id를 본다')
+  // 리뷰 5회차 M3 — 결재 후보 트리거가 RLS보다 먼저 말하지 않는다.
+  await refuses(run(U.sales, `insert into cost_candidate_dismissals (decision_id, business_id) values ('dec_c61_open', 'biz_dy')`), /row-level security|permission denied/,
+    '5회차: 권한 없는 사람이 결재 id를 탐침한다')
 
   // 원가 관리 감수 조건 — 회사마다 셋까지 · 호출마다 감사 · 대표 감시.
   await refuses(db.query(`insert into user_module_access (user_id, module, can_write) values ('${U.exec}', '/costing/biz_dy', true)`), /cost_costing_cap/,
