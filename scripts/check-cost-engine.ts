@@ -23,8 +23,10 @@ import { join } from 'node:path'
 
 import { PGlite } from '@electric-sql/pglite'
 import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm'
+import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto'
 
 import { applyOne, MIGRATIONS, SUPABASE_STUBS } from './pglite'
+import { encryption } from './cost-engine-encryption'
 
 const U = {
   chair: '00000000-0000-0000-0000-0000000061a1',
@@ -46,9 +48,19 @@ const U = {
 const FAKE_MATERIAL_NAMES = ['가짜원료알파', '가짜원료베타', '가짜원료감마', '가짜원료델타']
 
 async function main() {
-  const db = new PGlite({ extensions: { pg_trgm } })
+  const db = new PGlite({ extensions: { pg_trgm, pgcrypto } })
   // Supabase는 public의 새 함수에도 anon · authenticated execute를 기본으로 준다(리뷰 M1) — pglite.ts의 표 흉내에 함수 한 줄을 더해 올린다.
   await db.exec(SUPABASE_STUBS + '\n alter default privileges in schema public grant all on functions to anon, authenticated;')
+  // 0063 — Supabase에는 pgcrypto(extensions)와 Vault가 기본으로 있다. Vault는 표 하나 + decrypted_secrets 뷰로 흉내 낸다(authenticated 권한 없음).
+  // 키는 bom-key-setup.md와 같은 식으로 DB 안에서 만든다(글자로 보지 않는다).
+  await db.exec(`
+    create extension if not exists pgcrypto with schema extensions;
+    create schema vault;
+    create table vault.secrets (id uuid primary key default gen_random_uuid(), name text unique, secret text not null, created_at timestamptz not null default now());
+    create view vault.decrypted_secrets as select id, name, secret as decrypted_secret, created_at from vault.secrets;
+    revoke all on schema vault from public;
+    insert into vault.secrets (name, secret) values ('cost_bom_key', encode(extensions.gen_random_bytes(32), 'base64'));
+  `)
   const files = readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql')).sort()
   for (const f of files) await applyOne(db, f)
   assert.ok(files.includes('0061_cost_engine_base.sql') && files.includes('0062_cost_secret_bom.sql'), '0061 · 0062가 없다')
@@ -284,13 +296,16 @@ async function main() {
   await age()
   await refuses(run(U.chair, `select cost_bom_save('${p1}', '${M}'::date - 30, 95, '[{"material_id":"${m1}","kg_per_kg":0.5},{"material_id":"${m1}","kg_per_kg":0.1}]'::jsonb)`),
     /cost_bom_invalid/, '0062: 같은 원료 두 줄')
-  await refuses(db.query(`insert into cost_secret.bom_versions (product_id, valid_from, is_fake, created_by) values ('${p1}', '2027-01-01', false, '${U.chair}')`),
-    /check constraint/, '0062: 진짜 BOM(is_fake=false)이 들어간다 — 암호화 전 입력 금지')
+  // 0063 — 진짜 BOM은 «진짜 BOM 받기» 스위치(기본 꺼짐)가 켜져야만.
+  await refuses(run(U.chair, `select cost_bom_save('${p1}', '2027-01-01', 100, '${lines}'::jsonb, '', false)`), /cost_bom_real_locked/, '0063: 스위치 꺼진 채 진짜 BOM이 들어간다')
+  await refuses(db.query(`insert into cost_secret.bom_versions (product_id, valid_from, is_fake, created_by) values ('${p1}', '2027-01-01', true, '${U.chair}')`),
+    /check constraint/, '0063: 암호문 없는 판이 들어간다')
   await age() // BOM 판 · 원료를 스냅샷 앞으로
 
   for (const uid of [U.buy, U.prod, U.sales, U.cost, U.exec, U.ceo, U.cfo, U.agent, U.vana]) {
     for (const sql of [
-      `select * from cost_secret.bom_lines`, `select * from cost_secret.bom_versions`, `select * from cost_secret.bom_access`,
+      `select * from cost_secret.bom_settings`, `select * from cost_secret.bom_versions`, `select * from cost_secret.bom_access`, `select cost_secret.bom_key()`,
+      `select * from cost_secret.bom_lines_of(1)`, `select * from vault.decrypted_secrets`,
       `select cost_secret.material_cost('${p1}', 'market', '${T}')`, `select cost_secret.unit_price('${m1}', 'market', '${T}')`,
     ]) {
       await refuses(as(uid, sql), /permission denied/, `0062: ${uid.slice(-2)}가 비공개 스키마에 닿는다 — ${sql}`)
@@ -299,7 +314,7 @@ async function main() {
     await refuses(as(uid, `select * from cost_product_breakdown('${p1}', 'market', '${T}')`), /cost_not_found/, `0062: ${uid.slice(-2)}가 원료별 분해를 본다`)
   }
   await refuses(as(null, `select * from cost_product_cost('${p1}')`), /permission denied/, '0062: anon이 원가 함수를 부른다')
-  await refuses(as(null, `select * from cost_secret.bom_lines`), /permission denied/, '0062: anon이 BOM 표에 닿는다')
+  await refuses(as(null, `select * from cost_secret.bom_versions`), /permission denied/, '0062: anon이 BOM 표에 닿는다')
 
   // 대표: 분해 · BOM 읽기.
   const bom = await as<{ material_id: string; is_fake: boolean }>(U.chair, `select * from cost_bom_get('${p1}', '${T}')`)
@@ -453,9 +468,12 @@ async function main() {
   assert.deepEqual(offers.map((o) => [o.margin_pct, Number(o.price_krw_per_kg), o.grade]),
     [15, 20, 25, 30].map((m) => [m, r1(currentT / (1 - m / 100)), m >= 20 ? 'green' : m >= 15 ? 'yellow' : 'red']), '결정: 목표 마진별 제시가(원래 총원가 ÷ (1 − 마진) → 1원) · 등급')
   assert.ok(!JSON.stringify(sv).includes(m1) && !FAKE_MATERIAL_NAMES.some((n) => JSON.stringify(sv).includes(n)), '결정: 영업 화면에 원료가 샌다')
+  // 리뷰(10-09 밤) C2 — 대표 외 제시가는 1원 단위만(소수 제시가로 마진 반올림 · 등급 경계를 이분 탐색하면 원래 총원가가 풀린다).
+  await refuses(as(U.sales, `select * from cost_price_check('${p1}', 2345.67)`), /cost_price_invalid/, '리뷰 C2: 영업이 소수 제시가를 넣는다')
+  assert.equal((await as(U.chair, `select * from cost_price_check('${p1}', 2345.67)`)).length, 1, '대표는 소수 제시가를 넣을 수 있다')
   const pc = async (price: number) => (await as<{ margin_pct: string; margin_krw_per_kg: string; grade: string; total_krw_per_kg: string }>(U.sales, `select * from cost_price_check('${p1}', ${price})`))[0]
   // 마진 · % · 등급은 원래 총원가로(1원 총원가로 빼지 않는다). 등급은 반올림 전 %로 — 14.96%는 Red.
-  for (const price of [tot * 2, Math.round(tot / 0.82), tot, 2345.67]) {
+  for (const price of [tot * 2, Math.round(tot / 0.82), tot, 2346]) {
     const got = await pc(price)
     const pct = ((price - currentT) / price) * 100
     assert.equal(got.total_krw_per_kg, String(tot), '결정: 제시가 확인의 총원가(1원)')
@@ -464,8 +482,13 @@ async function main() {
     assert.equal(got.grade, pct >= 20 ? 'green' : pct >= 15 ? 'yellow' : 'red', `결정: 등급(반올림 전 %) — 제시가 ${price}`)
   }
   // 경계: 원래 %가 15 바로 밑(14.96…)이면 표시 15.0%여도 Red — 원래 값으로 판정한다.
-  const edge = currentT / (1 - 0.14955)
-  const ge = await pc(Number(edge.toFixed(4)))
+  const gm = (pr: number) => ((pr - currentT) / pr) * 100
+  let edgeP = Math.floor(currentT / 0.85) // 1원 단위 제시가 중 원래 %가 [14.95, 15)인 것
+  while (!(gm(edgeP) >= 14.95 && gm(edgeP) < 15)) {
+    assert.ok(gm(edgeP) >= 14.95, '정밀도 시험 준비: 경계 제시가를 못 찾았다')
+    edgeP--
+  }
+  const ge = await pc(edgeP)
   assert.equal(ge.margin_pct, '15.0', '정밀도: 경계 시험 준비(표시 15.0%)')
   assert.equal(ge.grade, 'red', '정밀도: 반올림 전 14.96%가 Yellow로 올라간다(표시값으로 등급을 매긴다)')
   await refuses(as(U.sales, `select * from cost_price_check('${p1}', 0)`), /cost_price_invalid/, '결정: 0원 제시가')
@@ -483,7 +506,8 @@ async function main() {
   const reads0 = Number((await owner<{ n: number }>(`select coalesce(sum(calls), 0)::int as n from cost_secret.cost_reads where user_id = '${U.sales}'`))[0].n)
   const list = await as<{ product_id: string; product_name: string; current_krw_per_kg: string }>(U.sales, `select * from cost_sales_list('biz_dy')`, true)
   const reads1 = Number((await owner<{ n: number }>(`select coalesce(sum(calls), 0)::int as n from cost_secret.cost_reads where user_id = '${U.sales}'`))[0].n)
-  assert.equal(reads1 - reads0, 1, '5회차: 영업 목록이 제품마다 한도를 쓴다')
+  const activeN = Number((await owner<{ n: number }>(`select count(*)::int as n from cost_products where business_id = 'biz_dy' and active`))[0].n)
+  assert.equal(reads1 - reads0, activeN, '리뷰(10-09 밤) C1: 영업 목록 한 번이 제품 수만큼 한도를 쓰지 않는다')
   assert.equal(Number(list.find((r) => r.product_id === p1)!.current_krw_per_kg), tot, '5회차: 영업 목록 값이 한 줄 값과 다르다')
   assert.ok(!FAKE_MATERIAL_NAMES.some((n) => JSON.stringify(list).includes(n)), '5회차: 영업 목록에 원료가 샌다')
   // 리뷰 5회차 M1 — 영업 팀장은 아래 구매 담당의 원가 표 감사 줄(원료 id · 시각)을 못 본다.
@@ -494,6 +518,7 @@ async function main() {
     '5회차: 권한 없는 사람이 결재 id를 탐침한다')
 
   await precision({ as, run, one, owner, s1 })
+  await encryption({ as, run, owner, db, p1, mats: [m1, m2, m3, m4], U })
 
   // 원가 관리 감수 조건 — 회사마다 셋까지 · 호출마다 감사 · 대표 감시.
   await refuses(db.query(`insert into user_module_access (user_id, module, can_write) values ('${U.exec}', '/costing/biz_dy', true)`), /cost_costing_cap/,
@@ -522,7 +547,7 @@ async function main() {
       join pg_class tc on tc.oid = dp.refobjid join pg_namespace tn on tn.oid = tc.relnamespace
      where n.nspname <> 'cost_secret' and tn.nspname = 'cost_secret'`)
   assert.deepEqual(deps, [], `0062: 공개 뷰가 비공개 BOM을 참조한다 — ${deps.map((x) => x.v).join(', ')}`)
-  await db.exec('analyze cost_secret.bom_lines; analyze cost_secret.bom_versions;')
+  await db.exec('analyze cost_secret.bom_versions;')
   assert.equal(await count(U.sales, `pg_stats where schemaname = 'cost_secret'`), 0, '0062: pg_stats로 BOM 값 분포가 보인다')
   const anonCallable = await owner<{ f: string }>(`
     select p.proname as f from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -557,6 +582,8 @@ async function main() {
     grant select on auth.users to app_owner;
     grant usage on schema storage to app_owner;
     grant select on storage.buckets to app_owner;
+    grant usage on schema extensions, vault to app_owner;
+    grant select on vault.decrypted_secrets to app_owner;
     do $o$
     declare r record;
     begin
@@ -615,7 +642,7 @@ async function main() {
 
   await db.close()
   console.log(
-    'PASS: 0061 · 0062 원가 엔진 — 권한 표(구매 · 생산 · 영업 · 원가 관리 · 대표 · 줄 없는 임원/회사 대표/CFO · 다른 회사 · AIAgent · anon) · ' +
+    'PASS: 0061~0063 원가 엔진 — BOM 암호화(Vault 키 · 암호문만 · 키 없음 멈춤 · 틀린 키 · 깨진 암호문 · 진짜 BOM 스위치) · 권한 표(구매 · 생산 · 영업 · 원가 관리 · 대표 · 줄 없는 임원/회사 대표/CFO · 다른 회사 · AIAgent · anon) · ' +
       '무효만 · 시퀀스 되감기 거부 · Landed · 환율 · 만든 사람 위조 불가 · 터무니없는 값 거부 · 생산 «제한»(오늘만) · 영업 원료 0(이름 · 시세 · 요약) · 영업 화면 총액만(Market · Current · 우위 · 제시가 · 등급) · 원가 관리 셋까지 · 호출마다 감사 · 대표 감시 · ' +
       '결재 후보 · 구매 첨부 버킷 · BOM 대표만 · 진짜 BOM 거부 · 원가 합계 한 줄 · 1원(대표 외) · 원래 값(대표) · Market/Current 값 · 대표 외 기준일 오늘 하나 · 매일 최신(LOT · 시세 · 무효 · 새 원료 · BOM 즉시) · ' +
       '회사 단위 계산 여부(단종 BOM 원료 포함) · 원료비 영향 7일 전→오늘 · 출처 셋 · 미래 날짜 거부 · 무효로 기준 없애기 거부 · 구매 겸직 거부 · 같은 오류 · 이유 코드 하나 · 오류에 원료 없음 · ' +

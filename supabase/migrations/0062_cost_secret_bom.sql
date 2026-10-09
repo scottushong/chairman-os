@@ -189,7 +189,7 @@ $fn$;
  *   회장 결정(2026-10-09 밤) «매일 최신» — 대표 외 기준일 = 오늘(KST) 하나. 날짜 인자는 무시한다(지난 날짜 합계를 여러 개 받는 길을 열지 않는다).
  */
 create or replace function cost_secret.cost_gate_biz(p_business text, p_key text, p_kind text, p_as_of date,
-                                                     out as_of date, out chairman boolean)
+                                                     out as_of date, out chairman boolean, p_calls int default 1)
 language plpgsql volatile security definer set search_path = public, cost_secret, pg_temp as $fn$
 declare
   v_role text := coalesce(auth_role()::text, '');
@@ -216,13 +216,16 @@ begin
   end if;
   as_of := v_today;
   select coalesce(sum(r.calls), 0) into v_total from cost_secret.cost_reads r where r.user_id = auth.uid() and r.read_on = v_today;
-  if v_total >= 200 then
+  -- 리뷰(10-09 밤) C1 — 목록 한 번은 제품 수만큼 센다(p_calls). 회사 전체를 하루 200번 찍어 시세 입력 하나하나의 영향을 떼어 보는 길을 좁힌다.
+  if v_total + greatest(coalesce(p_calls, 1), 1) > 200 then
     raise exception 'cost_rate_limited' using errcode = '54000';
   end if;
-  insert into cost_secret.cost_reads (user_id, read_on, product_id, kind, as_of) values (auth.uid(), v_today, p_key, p_kind, as_of)
-  on conflict on constraint cost_reads_pkey do update set calls = cost_secret.cost_reads.calls + 1
+  insert into cost_secret.cost_reads (user_id, read_on, product_id, kind, as_of, calls)
+  values (auth.uid(), v_today, p_key, p_kind, as_of, greatest(coalesce(p_calls, 1), 1))
+  on conflict on constraint cost_reads_pkey do update set calls = cost_secret.cost_reads.calls + excluded.calls
   returning (xmax = 0) into v_new;
-  if v_new or v_costing then
+  -- 원가 관리 · 영업 목록은 호출마다 한 줄(언제 몇 번 찍었는지가 대표 감시에 남는다).
+  if v_new or v_costing or p_kind = 'sales_list' then
     insert into audit_log (action, entity_table, entity_id, business_id, actor_user_id, actor_role, before, after, note)
     values ('read', 'cost_products', p_key, p_business, auth.uid(), v_role, null,
             jsonb_build_object('kind', p_kind, 'as_of', as_of),
@@ -561,7 +564,8 @@ declare
   v_ok boolean;
   v_prev_ok boolean;
 begin
-  select * into g from cost_secret.cost_gate_biz(p_business, 'list:' || coalesce(p_business, ''), 'sales_list', null);
+  select * into g from cost_secret.cost_gate_biz(p_business, 'list:' || coalesce(p_business, ''), 'sales_list', null,
+    (select count(*)::int from cost_products p where p.business_id = p_business and p.active));
   v_ok := g.chairman or (cost_secret.business_complete(p_business, 'market', g.as_of)
                          and cost_secret.business_complete(p_business, 'current', g.as_of));
   v_prev_ok := g.chairman or cost_secret.business_complete(p_business, 'current', g.as_of - 7);
@@ -593,6 +597,10 @@ begin
     raise exception 'cost_price_invalid' using errcode = '22023';
   end if;
   select * into g from cost_secret.cost_gate(p_product, 'price_check', null);
+  -- 리뷰(10-09 밤) C2 — 대표 외 제시가는 1원 단위만. 소수 제시가로 마진 1원 반올림 · 등급 경계를 이분 탐색하면 원래 총원가가 1원 아래까지 풀린다.
+  if not g.chairman and p_price_krw_per_kg <> trunc(p_price_krw_per_kg) then
+    raise exception 'cost_price_invalid' using errcode = '22023';
+  end if;
   select * into r from cost_secret.sales_row(p_product, g.business_id, g.as_of, g.chairman,
     cost_secret.business_complete(g.business_id, 'market', g.as_of) and cost_secret.business_complete(g.business_id, 'current', g.as_of),
     false);

@@ -134,7 +134,7 @@ function businessComplete(businessId: string, kind: 'market' | 'current', on: Is
  * 0062 cost_secret.cost_gate. 제품 하나(cost_sales_view) 또는 회사 전체 목록(cost_sales_list — 한도에 한 번만 센다).
  * 겸직: 원가 관리 = 구매 입력 줄이 있으면 거부. 영업(원가 관리 아님) = 구매 줄(보기만이라도) · 생산 줄이 하나라도 있으면 거부.
  */
-function gateFor(businessId: string, target: string, kind: string): { as_of: IsoDate; chairman: boolean } {
+function gateFor(businessId: string, target: string, kind: string, calls = 1): { as_of: IsoDate; chairman: boolean } {
   const v = dummyViewer()
   if (v.revoked_at || v.role === 'AIAgent' || v.role === 'Integration') throw new Error('cost_not_found')
   const today = kstToday()
@@ -152,12 +152,13 @@ function gateFor(businessId: string, target: string, kind: string): { as_of: Iso
   const asOf = today
   const prefix = `${v.user_id}|${today}|`
   const used = [...store.reads].filter(([k]) => k.startsWith(prefix)).reduce((s, [, n]) => s + n, 0)
-  if (used >= 200) throw new Error('cost_rate_limited')
+  // 목록 한 번은 제품 수만큼 센다(0062 리뷰 10-09 밤 C1).
+  if (used + Math.max(calls, 1) > 200) throw new Error('cost_rate_limited')
   const key = `${prefix}${target}|${kind}|${asOf}`
   const fresh = !store.reads.has(key)
-  store.reads.set(key, (store.reads.get(key) ?? 0) + 1)
+  store.reads.set(key, (store.reads.get(key) ?? 0) + Math.max(calls, 1))
   // 원가 관리는 호출마다, 영업은 하루 · 대상 · 종류마다 한 줄.
-  if (fresh || costing) store.audit.push({ user_id: v.user_id, business_id: businessId, at: new Date().toISOString() })
+  if (fresh || costing || kind === 'sales_list') store.audit.push({ user_id: v.user_id, business_id: businessId, at: new Date().toISOString() })
   return { as_of: asOf, chairman: false }
 }
 
@@ -222,9 +223,9 @@ export function dummySalesCost(): Omit<SalesCostMethods, 'costingWatch'> {
   return {
     async costSalesList(businessId) {
       if (!/^[a-z0-9_]+$/.test(businessId)) throw new Error('cost_not_found')
-      const gt = gateFor(businessId, `biz:${businessId}`, 'sales_list')
-      return store.products
-        .filter((p) => p.business_id === businessId && p.active)
+      const active = store.products.filter((p) => p.business_id === businessId && p.active)
+      const gt = gateFor(businessId, `biz:${businessId}`, 'sales_list', active.length)
+      return active
         .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
         .map((p) => ({ ...viewAfterGate(p.product_id, businessId, gt), product_name: p.name }))
     },
@@ -238,6 +239,8 @@ export function dummySalesCost(): Omit<SalesCostMethods, 'costingWatch'> {
       const p = store.products.find((x) => x.product_id === productId)
       if (!p) throw new Error('cost_not_found')
       const gt = gateFor(p.business_id, productId, 'price_check')
+      // 대표 외 제시가는 1원 단위만(0062 리뷰 C2 — 소수 제시가로 원래 총원가를 이분 탐색하지 못하게).
+      if (!gt.chairman && !Number.isInteger(price)) throw new Error('cost_price_invalid')
       // 마진은 원래 총원가로(0062 cost_price_check) — 1원 총원가로 빼지 않는다.
       return priceCheck(rawAfterGate(productId, p.business_id, gt, false).total, price, gt.chairman)!
     },

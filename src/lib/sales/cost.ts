@@ -99,7 +99,7 @@ export function salesCostError(e: unknown): string {
   const m = e instanceof Error ? e.message : typeof e === 'string' ? e : ''
   if (/cost_role_conflict/.test(m)) return '구매 · 생산 권한과 영업 원가는 같이 볼 수 없습니다 — 대표에게 권한 정리를 요청하세요.'
   if (/cost_rate_limited/.test(m)) return '오늘 조회 한도에 걸렸습니다 — 대표에게 문의하세요.'
-  if (/cost_price_invalid/.test(m)) return '제시가를 원/kg으로 0보다 크게 적으세요.'
+  if (/cost_price_invalid/.test(m)) return '제시가를 1원 단위(원/kg)로 0보다 크게 적으세요.'
   if (/cost_not_found|P0002/.test(m)) return '찾을 수 없거나 권한이 없습니다.'
   return '원가를 불러오지 못했습니다. 잠시 후 다시 시도하세요.'
 }
