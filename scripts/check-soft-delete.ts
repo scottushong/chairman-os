@@ -37,6 +37,7 @@ const DELETE_ALLOWED: Record<string, string> = {
   doc_folders: '폴더 구조(문서는 폴더 밖으로 나온다)',
   exception_rules: '규칙 설정',
   attention_scores: '재계산되는 점수',
+  cost_candidate_dismissals: '구매 결재 후보 «무시» 표시 — 지우면 후보로 돌아온다(기록이 아니다 · 0061)',
   // 자연 키 — 키가 곧 그 줄이라 숨기면 같은 키로 다시 못 쓴다(0042 리뷰 I4). 지우는 대신 값을 고친다.
   chairman_checkins: '자연 키(날짜)',
   initiative_notes: '자연 키(이니셔티브당 한 줄)',
