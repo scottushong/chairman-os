@@ -16,7 +16,8 @@
 --
 -- ■ 새지 않게 ■
 --   · 암호: pgp_sym_encrypt(…, 'cipher-algo=aes256, compress-algo=0, s2k-mode=1') — 압축 없음(길이로 내용을 짐작하는 길), 키가 무작위
---     256비트라 s2k 반복은 필요 없다(계산 속도). 원문은 512바이트 단위로 공백을 채워 길이로 원료 수가 드러나지 않게 한다.
+--     256비트라 s2k 반복은 필요 없다(계산 속도). 원문은 512글자 단위로 공백을 채운다 — 길이로는 원료 수가 «약 12~15줄 폭»으로만 보인다
+--     (암호문을 읽을 수 있는 것은 postgres뿐이라 덧댄 겹이다). auto_explain(nested · verbose)을 켜면 해독 결과가 계획 상수로 로그에 남을 수 있다 — 켜지 않는다.
 --   · 감사 줄 · 오류 · NOTICE에 값이 없다(0062와 같다). 이 파일에는 raise notice/warning/info가 없다(check:cost-engine이 정적으로 잰다).
 --   · 표 · 함수 권한은 0062와 같다 — cost_secret에 usage 없음, 내부 함수 execute 없음. vault 스키마도 authenticated에 권한이 없다(Supabase 기본).
 --
@@ -286,7 +287,7 @@ begin
   if v_biz is null or not has_business(v_biz) then
     raise exception 'cost_not_found' using errcode = 'P0002';
   end if;
-  if p_is_fake is null or (not p_is_fake and not (select s.real_allowed from cost_secret.bom_settings s where s.id)) then
+  if p_is_fake is null or (not p_is_fake and not coalesce((select s.real_allowed from cost_secret.bom_settings s where s.id), false)) then
     raise exception 'cost_bom_real_locked' using errcode = '42501';
   end if;
   if p_valid_from is null or p_yield_pct is null or p_yield_pct <= 0 or p_yield_pct > 100 then
@@ -306,6 +307,7 @@ begin
         or jsonb_typeof(e -> 'material_id') is distinct from 'string'
         or jsonb_typeof(e -> 'kg_per_kg') is distinct from 'number'
         or (case when jsonb_typeof(e -> 'kg_per_kg') = 'number' then (e ->> 'kg_per_kg')::numeric end) not between 0.00000001 and 100
+        or (case when jsonb_typeof(e -> 'kg_per_kg') = 'number' then (e ->> 'kg_per_kg')::numeric <> round((e ->> 'kg_per_kg')::numeric, 8) end)  -- 0062와 같은 소수 8자리
         or not exists (select 1 from cost_materials m where m.material_id = e ->> 'material_id' and m.business_id = v_biz)
   ) or (select count(distinct e ->> 'material_id') from jsonb_array_elements(p_lines) e) <> v_n then
     raise exception 'cost_bom_invalid' using errcode = '22023';

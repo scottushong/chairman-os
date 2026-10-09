@@ -152,8 +152,9 @@ function gateFor(businessId: string, target: string, kind: string, calls = 1): {
   const asOf = today
   const prefix = `${v.user_id}|${today}|`
   const used = [...store.reads].filter(([k]) => k.startsWith(prefix)).reduce((s, [, n]) => s + n, 0)
-  // 목록 한 번은 제품 수만큼 센다(0062 리뷰 10-09 밤 C1).
   if (used + Math.max(calls, 1) > 200) throw new Error('cost_rate_limited')
+  // 회사 전체 목록은 하루 20번까지(0062 리뷰 10-09 밤 C1 — 시세 입력 하나하나를 떼어 보려고 자주 찍는 길).
+  if (kind === 'sales_list' && (store.reads.get(`${prefix}${target}|${kind}|${today}`) ?? 0) >= 20) throw new Error('cost_rate_limited')
   const key = `${prefix}${target}|${kind}|${asOf}`
   const fresh = !store.reads.has(key)
   store.reads.set(key, (store.reads.get(key) ?? 0) + Math.max(calls, 1))
@@ -224,7 +225,7 @@ export function dummySalesCost(): Omit<SalesCostMethods, 'costingWatch'> {
     async costSalesList(businessId) {
       if (!/^[a-z0-9_]+$/.test(businessId)) throw new Error('cost_not_found')
       const active = store.products.filter((p) => p.business_id === businessId && p.active)
-      const gt = gateFor(businessId, `biz:${businessId}`, 'sales_list', active.length)
+      const gt = gateFor(businessId, `biz:${businessId}`, 'sales_list')
       return active
         .sort((a, b) => a.name.localeCompare(b.name, 'ko'))
         .map((p) => ({ ...viewAfterGate(p.product_id, businessId, gt), product_name: p.name }))

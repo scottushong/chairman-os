@@ -215,9 +215,16 @@ begin
     raise exception 'cost_role_conflict' using errcode = '42501';
   end if;
   as_of := v_today;
+  -- 같은 사람의 동시 요청이 한도를 함께 넘지 않게(0063 리뷰 M1).
+  perform pg_advisory_xact_lock(hashtext('cost_reads:' || auth.uid()::text || ':' || v_today::text));
   select coalesce(sum(r.calls), 0) into v_total from cost_secret.cost_reads r where r.user_id = auth.uid() and r.read_on = v_today;
-  -- 리뷰(10-09 밤) C1 — 목록 한 번은 제품 수만큼 센다(p_calls). 회사 전체를 하루 200번 찍어 시세 입력 하나하나의 영향을 떼어 보는 길을 좁힌다.
   if v_total + greatest(coalesce(p_calls, 1), 1) > 200 then
+    raise exception 'cost_rate_limited' using errcode = '54000';
+  end if;
+  -- 리뷰(10-09 밤) C1 — 회사 전체 목록(영업 · 원가 관리)은 하루 20번까지(200건 한도와 따로). «매일 최신»이라 목록을 자주 찍으면
+  -- 시세 · LOT 입력 하나하나가 만든 제품별 변화를 떼어 볼 수 있다 — 찍는 횟수를 묶는다(목록 한 번은 200건 중 한 건).
+  if p_kind in ('sales_list', 'costing_list') and coalesce((select r.calls from cost_secret.cost_reads r
+       where r.user_id = auth.uid() and r.read_on = v_today and r.product_id = p_key and r.kind = p_kind), 0) >= 20 then
     raise exception 'cost_rate_limited' using errcode = '54000';
   end if;
   insert into cost_secret.cost_reads (user_id, read_on, product_id, kind, as_of, calls)
@@ -564,8 +571,7 @@ declare
   v_ok boolean;
   v_prev_ok boolean;
 begin
-  select * into g from cost_secret.cost_gate_biz(p_business, 'list:' || coalesce(p_business, ''), 'sales_list', null,
-    (select count(*)::int from cost_products p where p.business_id = p_business and p.active));
+  select * into g from cost_secret.cost_gate_biz(p_business, 'list:' || coalesce(p_business, ''), 'sales_list', null);
   v_ok := g.chairman or (cost_secret.business_complete(p_business, 'market', g.as_of)
                          and cost_secret.business_complete(p_business, 'current', g.as_of));
   v_prev_ok := g.chairman or cost_secret.business_complete(p_business, 'current', g.as_of - 7);
@@ -597,7 +603,8 @@ begin
     raise exception 'cost_price_invalid' using errcode = '22023';
   end if;
   select * into g from cost_secret.cost_gate(p_product, 'price_check', null);
-  -- 리뷰(10-09 밤) C2 — 대표 외 제시가는 1원 단위만. 소수 제시가로 마진 1원 반올림 · 등급 경계를 이분 탐색하면 원래 총원가가 1원 아래까지 풀린다.
+  -- 리뷰(10-09 밤) C2 — 대표 외 제시가는 1원 단위만. 소수 제시가로 마진 1원 반올림 · 등급 경계를 이분 탐색하면 원래 총원가가 1e-6원까지 풀린다.
+  -- (남는 것: 목표 마진 넷의 1원 제시가를 겹치면 원래 총원가가 0.1~0.3원 폭으로 좁혀진다 — «1원»은 표시 단위이지 정보 한계가 아니다. 설계서 16절.)
   if not g.chairman and p_price_krw_per_kg <> trunc(p_price_krw_per_kg) then
     raise exception 'cost_price_invalid' using errcode = '22023';
   end if;

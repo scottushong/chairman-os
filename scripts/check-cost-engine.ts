@@ -27,6 +27,8 @@ import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto'
 
 import { applyOne, MIGRATIONS, SUPABASE_STUBS } from './pglite'
 import { encryption } from './cost-engine-encryption'
+import { q4, qadd, qdiv, qfrac, qmul, qnear, Qof, qround, qsub, qsum, type Q } from './cost-rational'
+import { overheads } from './cost-engine-overheads'
 import { production } from './cost-engine-production'
 
 const U = {
@@ -507,8 +509,12 @@ async function main() {
   const reads0 = Number((await owner<{ n: number }>(`select coalesce(sum(calls), 0)::int as n from cost_secret.cost_reads where user_id = '${U.sales}'`))[0].n)
   const list = await as<{ product_id: string; product_name: string; current_krw_per_kg: string }>(U.sales, `select * from cost_sales_list('biz_dy')`, true)
   const reads1 = Number((await owner<{ n: number }>(`select coalesce(sum(calls), 0)::int as n from cost_secret.cost_reads where user_id = '${U.sales}'`))[0].n)
-  const activeN = Number((await owner<{ n: number }>(`select count(*)::int as n from cost_products where business_id = 'biz_dy' and active`))[0].n)
-  assert.equal(reads1 - reads0, activeN, '리뷰(10-09 밤) C1: 영업 목록 한 번이 제품 수만큼 한도를 쓰지 않는다')
+  assert.equal(reads1 - reads0, 1, '영업 목록 한 번 = 한도 한 건(0063 리뷰 I1 — 제품 수만큼 세면 제품 50개에 하루 네 번)')
+  // 리뷰(10-09 밤) C1 — 목록은 하루 20번까지(200건과 따로). 시세 입력 하나하나의 영향을 떼어 보려고 자주 찍는 길을 묶는다.
+  await db.exec(`update cost_secret.cost_reads set calls = 20 where user_id = '${U.sales}' and kind = 'sales_list'`)
+  await refuses(as(U.sales, `select * from cost_sales_list('biz_dy')`), /cost_rate_limited/, '리뷰 C1: 영업 목록이 하루 20번을 넘는다')
+  assert.equal((await as(U.sales, `select * from cost_sales_view('${p1}')`)).length, 1, '목록 한도에 걸려도 제품 하나 보기는 된다(200건 안)')
+  await db.exec(`update cost_secret.cost_reads set calls = 1 where user_id = '${U.sales}' and kind = 'sales_list'`)
   assert.equal(Number(list.find((r) => r.product_id === p1)!.current_krw_per_kg), tot, '5회차: 영업 목록 값이 한 줄 값과 다르다')
   assert.ok(!FAKE_MATERIAL_NAMES.some((n) => JSON.stringify(list).includes(n)), '5회차: 영업 목록에 원료가 샌다')
   // 리뷰 5회차 M1 — 영업 팀장은 아래 구매 담당의 원가 표 감사 줄(원료 id · 시각)을 못 본다.
@@ -628,6 +634,8 @@ async function main() {
 
   // ── ⑩ 생산(0064) — BYPASSRLS 없는 소유자 아래에서.
   await production({ as, run, owner, p1, p3, lot, mats: [m1, m2, m3], U })
+  // ── ⑪ 비용 마스터 · 배부 · 총원가(0065)
+  await overheads({ as, run, owner, p1, U })
 
   // ── ⑦ 코드 경계 — AI 도구 · 프롬프트 · 요약이 BOM · 원가 함수를 부르지 않는다 ─────────────────
   const root = join(__dirname, '..', 'src')
@@ -646,7 +654,7 @@ async function main() {
 
   await db.close()
   console.log(
-    'PASS: 0061~0063 원가 엔진 — BOM 암호화(Vault 키 · 암호문만 · 키 없음 멈춤 · 틀린 키 · 깨진 암호문 · 진짜 BOM 스위치) · 권한 표(구매 · 생산 · 영업 · 원가 관리 · 대표 · 줄 없는 임원/회사 대표/CFO · 다른 회사 · AIAgent · anon) · ' +
+    'PASS: 0061~0065 원가 엔진 — 생산(발행 · 투입 · 잔량 · Actual) · 비용 마스터(배부 · 총원가 · 계획 기준) · BOM 암호화(Vault 키 · 암호문만 · 키 없음 멈춤 · 틀린 키 · 깨진 암호문 · 진짜 BOM 스위치) · 권한 표(구매 · 생산 · 영업 · 원가 관리 · 대표 · 줄 없는 임원/회사 대표/CFO · 다른 회사 · AIAgent · anon) · ' +
       '무효만 · 시퀀스 되감기 거부 · Landed · 환율 · 만든 사람 위조 불가 · 터무니없는 값 거부 · 생산 «제한»(오늘만) · 영업 원료 0(이름 · 시세 · 요약) · 영업 화면 총액만(Market · Current · 우위 · 제시가 · 등급) · 원가 관리 셋까지 · 호출마다 감사 · 대표 감시 · ' +
       '결재 후보 · 구매 첨부 버킷 · BOM 대표만 · 진짜 BOM 거부 · 원가 합계 한 줄 · 1원(대표 외) · 원래 값(대표) · Market/Current 값 · 대표 외 기준일 오늘 하나 · 매일 최신(LOT · 시세 · 무효 · 새 원료 · BOM 즉시) · ' +
       '회사 단위 계산 여부(단종 BOM 원료 포함) · 원료비 영향 7일 전→오늘 · 출처 셋 · 미래 날짜 거부 · 무효로 기준 없애기 거부 · 구매 겸직 거부 · 같은 오류 · 이유 코드 하나 · 오류에 원료 없음 · ' +
@@ -656,47 +664,6 @@ async function main() {
 }
 
 // ── ⑧ 정밀도 — 유리수(BigInt)로 직접 계산한 값과 DB 값 ─────────────────────────────────────────────
-
-/** 유리수 n/d(d > 0). 부동소수 없이 «원래 값»을 만든다. */
-type Q = { n: bigint; d: bigint }
-const gcd = (a: bigint, b: bigint): bigint => (b === 0n ? (a < 0n ? -a : a) : gcd(b, a % b))
-const qn = (n: bigint, d: bigint): Q => {
-  const s = d < 0n ? -1n : 1n
-  const g = gcd(n, d) || 1n
-  return { n: (s * n) / g, d: (s * d) / g }
-}
-/** '1234.5678' · 12 → 유리수. */
-const Qof = (v: string | number): Q => {
-  const str = String(v)
-  const neg = str.startsWith('-')
-  const [i, f = ''] = (neg ? str.slice(1) : str).split('.')
-  return qn((neg ? -1n : 1n) * BigInt(i + f), 10n ** BigInt(f.length))
-}
-const qadd = (a: Q, b: Q) => qn(a.n * b.d + b.n * a.d, a.d * b.d)
-const qsub = (a: Q, b: Q) => qn(a.n * b.d - b.n * a.d, a.d * b.d)
-const qmul = (a: Q, b: Q) => qn(a.n * b.n, a.d * b.d)
-const qdiv = (a: Q, b: Q) => qn(a.n * b.d, a.d * b.n)
-const qsum = (xs: Q[]) => xs.reduce(qadd, Qof(0))
-/** Postgres round(x, 0) — 0.5는 0에서 먼 쪽. */
-const qround = (a: Q): bigint => {
-  const neg = a.n < 0n
-  const n = neg ? -a.n : a.n
-  const r = (2n * n + a.d) / (2n * a.d)
-  return neg ? -r : r
-}
-/** 소수 부분(0 ≤ f < 1, 양수만). */
-const qfrac = (a: Q): Q => qn(a.n % a.d, a.d)
-/** |a − b| < 1e-9 */
-const qnear = (a: Q, b: Q) => {
-  const x = qsub(a, b)
-  return (x.n < 0n ? -x.n : x.n) * 1_000_000_000n < x.d
-}
-/** 소수 4자리 문자열(반올림) — numeric(20, 4) 칸에 넣을 값. */
-const q4 = (a: Q): string => {
-  const r = qround(qmul(a, Qof(10000)))
-  const s = (r < 0n ? -r : r).toString().padStart(5, '0')
-  return `${r < 0n ? '-' : ''}${s.slice(0, -4)}.${s.slice(-4)}`
-}
 
 interface Ctx {
   as: <T>(uid: string | null, sql: string, commit?: boolean) => Promise<T[]>
