@@ -51,7 +51,7 @@ export async function overheads({ as, run, owner, p1, U }: OhCtx) {
   // 물류 원/kg를 골라 «1원 원가 + 1원 비용 ≠ 1원 총원가»가 되게 한다.
   const cu = Qof((await as<{ v: string }>(U.chair, `select material_krw_per_kg::text as v from cost_product_cost('${p1}', 'current')`))[0].v)
   const fc = qfrac(cu)
-  const fo = qsub(fc, Qof('0.5')).n < 0n ? qsub(Qof('0.5'), qdiv(fc, Qof(2))) : qadd(Qof('0.5'), qdiv(qsub(Qof(1), fc), Qof(2)))
+  const fo = qsub(fc, Qof('0.5')).n < BigInt(0) ? qsub(Qof('0.5'), qdiv(fc, Qof(2))) : qadd(Qof('0.5'), qdiv(qsub(Qof(1), fc), Qof(2)))
   const base = qadd(mfgAlloc, pack)
   let L = qadd(qsub(Qof(30), qfrac(base)), fo)
   L = Qof(q4(L))

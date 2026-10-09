@@ -722,7 +722,7 @@ async function precision({ as, run, one, owner, s1 }: Ctx) {
   // ③을 위해 Market을 고른다: Current의 소수 부분 fc에 따라 Market의 소수 부분을 정해 round(차) ≠ round(앞) − round(뒤)가 되게.
   const pA = Qof('1999.9')
   const fc = qfrac(cu)
-  const fTarget = qsub(fc, Qof('0.5')).n < 0n ? qadd(Qof('0.5'), qdiv(fc, Qof(2))) : qdiv(fc, Qof(2))
+  const fTarget = qsub(fc, Qof('0.5')).n < BigInt(0) ? qadd(Qof('0.5'), qdiv(fc, Qof(2))) : qdiv(fc, Qof(2))
   const approx = qadd(qmul(qA, pA), qmul(qB, Qof('3500')))
   const targetMk = qadd(Qof((approx.n / approx.d).toString()), fTarget) // 정수 부분 + 고른 소수 부분
   const pBkrw = q4(qdiv(qsub(targetMk, qmul(qA, pA)), qB)) // 원화 시세(소수 4자리)
