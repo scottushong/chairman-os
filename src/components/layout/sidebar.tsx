@@ -99,7 +99,7 @@ export function Sidebar({
 
       <nav className="flex-1 overflow-y-auto px-2.5 pb-3">
         {/* 회장 전용 메뉴(아침 루틴 · 의존 · 주의 · 회장 루틴)는 회장에게만, 이니셔티브는 읽는 역할에게만 — lib/nav.ts navFor. */}
-        {navFor(user?.role).map((group, i) => {
+        {navFor(user?.role, user?.ledger).map((group, i) => {
           // 숨긴 항목은 아예 그리지 않는다. 회색으로 죽여 두면 '숨김'이 아니라 '고장'으로 읽힌다.
           // 지금 보고 있는 화면의 메뉴는 숨겨도 남는다 — 길을 잃지 않게(isHidden의 active).
           const items = group.items.filter(

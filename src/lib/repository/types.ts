@@ -61,7 +61,9 @@ import type {
   ProcessChartInput,
   CityLayout,
   CityLayoutInput,
+  ApprovalChainBoss,
   ApprovalLead,
+  ApprovalStepState,
   ApprovalTemplate,
   ApprovalTemplateKey,
   AiAction,
@@ -219,6 +221,25 @@ export interface ChairmanRepository {
   leadDecide(decisionId: string, approve: boolean, escalate: boolean, actor: AuditActor): Promise<'closed_by_rule' | 'to_chairman' | 'rejected'>
   /** 회장 기안(취합) — 내가 승인해 회장 큐에 올린 요청 여럿을 한 건으로. 새 결재 id. */
   leadBundle(decisionIds: string[], title: string, actor: AuditActor): Promise<string>
+
+  /**
+   * 0059 단계 결재. 단계 칸 — 보이는 결재의 칸만 온다(approval_steps_read = 결재가 보이면).
+   * decisionIds를 주면 그 결재들만.
+   */
+  listApprovalSteps(decisionIds?: string[]): Promise<ApprovalStepState[]>
+  /** 0059 결재 올리기 미리보기 — 세션 본인의 상사 사슬(대표 앞까지). */
+  myApprovalChain(businessId: string): Promise<ApprovalChainBoss[]>
+  /** 0059 my_boss_is_chairman — 세션 본인의 직속 상사가 대표인가(미리보기의 대표 칸 문장). */
+  myBossIsChairman(): Promise<boolean>
+  /**
+   * 0059 approval_decide — 지금 차례인 결재자만. 반려는 사유 필수.
+   * 'next'(다음 차례로) · 'approved'(최종 승인) · 'rejected'(반려 종결).
+   */
+  approvalDecide(decisionId: string, approve: boolean, note: string | null, actor: AuditActor): Promise<'next' | 'approved' | 'rejected'>
+  /** 0059 approval_decide_many — 선택 항목 한 번에 승인(한 트랜잭션). 처리한 건수. */
+  approvalDecideMany(decisionIds: string[], note: string | null, actor: AuditActor): Promise<number>
+  /** 0059 approval_ledger_log — 결재 대장 엑셀 내려받기 감사. */
+  logLedgerExport(businessId: string | null, count: number, filters: Record<string, string>, actor: AuditActor): Promise<void>
 
   /** 블록 3 — 문서 폴더(회사 > 팀 > 폴더). */
   listDocFolders(): Promise<DocFolder[]>
@@ -1038,6 +1059,8 @@ export interface NewDecision {
    */
   template_key?: ApprovalTemplateKey
   form?: Record<string, string>
+  /** 0059. 반려된 내 결재를 고쳐 다시 올리면 그 원본(같은 양식 · 같은 회사만 — 트리거가 본다). */
+  resubmit_of?: string
 }
 
 /**

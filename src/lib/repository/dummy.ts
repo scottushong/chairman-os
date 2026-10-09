@@ -42,6 +42,8 @@ import { dummyAssistant } from './dummy-assistant'
 import * as chat from './dummy-chat'
 import * as city from './dummy-city'
 import * as groupware from './dummy-groupware'
+import { bossChain } from '@/lib/approval-chain'
+import { buildChain, decideStep, dummySteps, turnCheck, ledgerGrant, personHasBusiness, resubmitOk, stepsFromLine } from './dummy-approvals'
 import { dummyLedger } from './dummy-books'
 import {
   DUMMY_DOCUMENTS,
@@ -51,6 +53,7 @@ import {
   DUMMY_SHARE_SEED,
   DUMMY_TASKS,
   DUMMY_TEAMS,
+  DUMMY_UID,
   dummyCanWriteDocuments,
   dummyHasBusiness,
   clearDummyModuleGrants,
@@ -151,8 +154,19 @@ import {
  * CH-051의 '삭제 불가'는 서버를 한 번 재시작하면 그냥 사라지는 배열로는 만족되지 않는다.
  * 진짜 기록은 live 모드에서 Supabase audit_log에만 남는다(DEFERRED D-05).
  */
-const memoryAudit: DecisionAuditRecord[] = []
-const memoryDecisionStatuses = new Map<string, DecisionStatus>()
+// 결재 저장소는 globalThis에 둔다 — webpack dev는 Server Action 층과 화면 층이 이 모듈을 따로 읽어 저장소가 둘이 된다
+// (2026-10-07 모듈 권한 · 결재 양식에서 겪은 함정 — 올린 결재가 화면에 안 보였다).
+const dummyDecisionStore = ((globalThis as unknown as {
+  __dummyDecisionStore?: {
+    audit: DecisionAuditRecord[]
+    statuses: Map<string, DecisionStatus>
+    decisions: Decision[]
+    notifications: AppNotification[]
+    notificationOwner: Map<string, string>
+  }
+}).__dummyDecisionStore ??= { audit: [], statuses: new Map(), decisions: [], notifications: [], notificationOwner: new Map() })
+const memoryAudit: DecisionAuditRecord[] = dummyDecisionStore.audit
+const memoryDecisionStatuses = dummyDecisionStore.statuses
 
 /**
  * DEFERRED D-12. 단건 화면이 읽는 이력.
@@ -231,7 +245,7 @@ const memoryDocuments: DocumentRecord[] = []
 const memoryStrategyPatches = new Map<string, StrategyPatch>()
 
 /** CH-041로 올린 기안. 여기도 서버가 살아 있는 동안만이다. */
-const memoryDecisions: Decision[] = []
+const memoryDecisions: Decision[] = dummyDecisionStore.decisions
 
 /**
  * CH-049로 만든 초대장. 여기도 서버가 살아 있는 동안만이다.
@@ -240,7 +254,9 @@ const memoryDecisions: Decision[] = []
  * 없어서 흉내 낼 사람이 없다 — 시드로 가짜 계정을 만들어 두면 '누가 이 시스템을 쓰나'의
  * 답이 두 곳(가짜 시드 / 진짜 DB)으로 갈라진다. 화면은 그때 빈 목록을 그리고 이유를 말한다.
  */
-const memoryInvitations: UserInvitation[] = DUMMY_INVITATION_SEED.map((i) => ({ ...i }))
+// 초대도 같은 이유로 globalThis(초대한 줄이 화면 층에 안 보이는 함정).
+const memoryInvitations: UserInvitation[] = ((globalThis as unknown as { __dummyInvitations?: UserInvitation[] })
+  .__dummyInvitations ??= DUMMY_INVITATION_SEED.map((i) => ({ ...i })))
 
 /**
  * Phase 6-1. 조직도·공유의 dummy 저장소.
@@ -330,8 +346,13 @@ function assertRuleWrite() {
 const memoryExceptions: ExceptionRecord[] = DUMMY_EXCEPTIONS.map((e) => ({ ...e }))
 const memoryExceptionRules: ExceptionRule[] = DUMMY_EXCEPTION_RULES.map((r) => ({ ...r }))
 
-const memoryPeople: UserAccount[] = DUMMY_PEOPLE.map((p) => ({ ...p }))
-const memoryTeams: Team[] = DUMMY_TEAMS.map((t) => ({ ...t }))
+// 사람 · 팀은 globalThis에 둔다 — webpack dev는 Server Action 층과 화면 층이 이 모듈을 따로 읽어 저장소가 둘이 된다
+// (2026-10-09: 조직도에서 팀을 옮기면 액션 쪽 배열만 바뀌고 화면 쪽은 그대로라 «저장됐는데 안 보인다»가 됐다).
+// 결재 저장소(__dummyDecisionStore) · 모듈 권한(__dummyModuleGrants)과 같은 방식.
+const dummyOrgStore = ((globalThis as unknown as { __dummyOrgStore?: { people: UserAccount[]; teams: Team[] } })
+  .__dummyOrgStore ??= { people: DUMMY_PEOPLE.map((p) => ({ ...p })), teams: DUMMY_TEAMS.map((t) => ({ ...t })) })
+const memoryPeople: UserAccount[] = dummyOrgStore.people
+const memoryTeams: Team[] = dummyOrgStore.teams
 const memoryShares: ShareRecord[] = DUMMY_SHARE_SEED.map((s) => ({ ...s }))
 
 /** 0025 class_rank(). 배열 순서가 곧 등급 순서다(SECURITY_CLASS). */
@@ -380,8 +401,20 @@ function seesInitiatives(): boolean {
  * decisions_read(0026) + decisions_lead_read(0042)를 줄여 옮긴 것 — 회사 범위 안이거나, 내가 결재선 첫 줄이다.
  * subtree 겹은 옮기지 않았다(시드 결재에 기안자가 없어 전부 '주인 없음'으로 회사 규칙만 탄다).
  */
-function seesDecision(d: { business_id: string; approval_line?: { user_id?: string | null }[] }): boolean {
-  return seesBusiness(d.business_id) || d.approval_line?.[0]?.user_id === dummyViewer().user_id
+function seesDecision(d: Pick<Decision, 'decision_id' | 'business_id' | 'approval_line' | 'template_key' | 'created_by' | 'step_chain'>): boolean {
+  const viewer = dummyViewer()
+  // 0059 — 양식 결재는 본인 · 결재선에 든 사람 · 대표 · 그 회사 «결재 대장 열람»만(0026 subtree 겹은 옮기지 않았다).
+  if (d.template_key) {
+    if (!seesBusiness(d.business_id)) return false
+    return (
+      viewer.role === 'Chairman' ||
+      d.created_by === viewer.user_id ||
+      d.approval_line?.[0]?.user_id === viewer.user_id ||
+      (!!d.step_chain && dummySteps.some((s) => s.decision_id === d.decision_id && s.approver_user_id === viewer.user_id)) ||
+      ledgerGrant(viewer, d.business_id, dummyModuleGrants(viewer.user_id))
+    )
+  }
+  return seesBusiness(d.business_id) || d.approval_line?.[0]?.user_id === viewer.user_id
 }
 
 /** 화면에서 상사를 옮기면 그 순간부터 subtree도 달라져야 한다 — 시드가 아니라 현재 상태를 본다. */
@@ -471,9 +504,48 @@ const memorySettings: UserSettings = {
  * live에서 '0'이 뜬다 — 하드코딩 12/5를 지운 이유가 정확히 그 어긋남이다.
  * 알림을 **만드는** 코드가 생기는 날 이 배열도 같이 채운다.
  */
-const memoryNotifications: AppNotification[] = []
+const memoryNotifications: AppNotification[] = dummyDecisionStore.notifications
 /** 0055 — 알림 받는 사람(live notifications.user_id). 0055 위임 초대가 회장에게 남기는 알림이 첫 생산자다. */
-const memoryNotificationOwner = new Map<string, string>()
+const memoryNotificationOwner = dummyDecisionStore.notificationOwner
+
+/**
+ * 0059 화면 점검용 씨앗 — DUMMY_APPROVAL_DEMO=1일 때만, 서버마다 한 번. DUMMY_USER가 프로세스당 하나라 사람을 바꾸려면
+ * 서버를 다시 띄워야 하고 그러면 메모리 결재가 사라진다 — 그래서 시나리오 결재를 미리 심는다. 기본은 꺼짐(검사 · 평소 dummy와 무관).
+ *   경영지원 사원(상사 = 대표) 30만 · 휴가 → 대표 차례 / 생산 직원 600만 → 생산팀장 승인 뒤 대표 차례 /
+ *   생산 직원 30만 → 생산팀장 종결 / 생산 직원 120만 → 반려(사유)
+ */
+async function seedApprovalDemo() {
+  const flag = globalThis as unknown as { __dummyApprovalDemo?: boolean }
+  if (process.env.DUMMY_APPROVAL_DEMO !== '1' || flag.__dummyApprovalDemo) return
+  flag.__dummyApprovalDemo = true
+  const day = new Date().toISOString().slice(0, 10)
+  const person = (id: string) => memoryPeople.find((p) => p.user_id === id)!
+  const make = (by: string, title: string, template: 'expense' | 'leave', form: Record<string, string>) =>
+    dummyRepository.createDecision(
+      { business_id: 'biz_dy', title, options: ['승인', '반려'], impact: 'Low', deadline: day, template_key: template, form },
+      { user_id: by, role: person(by).role },
+    )
+  const decide = (d: Decision, by: string, approve: boolean, note: string | null) => {
+    decideStep(d, memoryDecisionStatuses.get(d.decision_id) ?? d.status, person(by), memoryPeople, approve, note)
+    memoryDecisionStatuses.set(d.decision_id, d.status)
+  }
+  const ex = (amount: string, purpose: string, vendor: string) => ({ amount, purpose, spent_on: day, vendor })
+  await make(DUMMY_UID.supportStaff, '사무용품 구입', 'expense', ex('300000', '복사지 · 토너', '오피스디포'))
+  await make(DUMMY_UID.supportStaff, '휴가 10/13~10/14', 'leave', { starts_on: day, ends_on: day, reason: '가족 행사' })
+  const big = await make(DUMMY_UID.prodStaff, '생산 설비 부품', 'expense', ex('6,000,000', '라인 2 감속기 교체', '한빛기계'))
+  decide(memoryDecisions.find((x) => x.decision_id === big.decision_id)!, DUMMY_UID.prodLead, true, '현장 확인')
+  const small = await make(DUMMY_UID.prodStaff, '안전화', 'expense', ex('300000', '안전화 6켤레', '세이프몰'))
+  decide(memoryDecisions.find((x) => x.decision_id === small.decision_id)!, DUMMY_UID.prodLead, true, null)
+  const rej = await make(DUMMY_UID.prodStaff, '공구 세트', 'expense', ex('1,200,000', '전동 공구', '한빛기계'))
+  decide(memoryDecisions.find((x) => x.decision_id === rej.decision_id)!, DUMMY_UID.prodLead, false, '견적서 두 곳 더 받아 주세요')
+}
+
+/** 0059 — 결재 알림 한 줄(live는 approval_decide · decisions_steps_create가 남긴다). */
+function pushDecisionNotification(userId: string, title: string, body: string, decisionId: string) {
+  const id = `ntf_${memoryNotifications.length + 1}`
+  memoryNotifications.push({ notification_id: id, kind: 'decision', title, body, link: `/approvals?id=${decisionId}`, read_at: null, created_at: new Date().toISOString() })
+  memoryNotificationOwner.set(id, userId)
+}
 
 /**
  * dummy의 본인 프로필. 시드 사람(dummy-org.ts)에서 시작하고, 설정 화면에서 고친 값이
@@ -688,6 +760,7 @@ export const dummyRepository: ChairmanRepository = {
     return [...seeded, ...owned]
   },
   async listDecisions() {
+    await seedApprovalDemo()
     return [...decisions, ...memoryDecisions].filter(seesDecision).map((decision) => ({
       ...decision,
       status: memoryDecisionStatuses.get(decision.decision_id) ?? decision.status,
@@ -1058,10 +1131,90 @@ export const dummyRepository: ChairmanRepository = {
     return id
   },
 
+  async listApprovalSteps(decisionIds?: string[]) {
+    // 0059 approval_steps_read — 결재가 보이면 단계도.
+    const visible = new Set((await dummyRepository.listDecisions()).map((d) => d.decision_id))
+    return dummySteps
+      .filter((s) => visible.has(s.decision_id) && (!decisionIds || decisionIds.includes(s.decision_id)))
+      .map((s) => ({ ...s }))
+  },
+
+  async myApprovalChain(businessId: string) {
+    const viewer = memoryPeople.find((p) => p.user_id === dummyViewer().user_id)
+    if (!viewer || !personHasBusiness(viewer, businessId)) return []
+    return bossChain(viewer.user_id, memoryPeople, (uid) => personHasBusiness(memoryPeople.find((p) => p.user_id === uid), businessId))
+  },
+
+  async myBossIsChairman() {
+    const me = memoryPeople.find((p) => p.user_id === dummyViewer().user_id)
+    const chair = memoryPeople.find((p) => p.role === 'Chairman' && !p.revoked_at && p.status === 'active')
+    return !!me && !!chair && me.reports_to === chair.user_id
+  },
+
+  async approvalDecide(decisionId: string, approve: boolean, note: string | null, actor: AuditActor) {
+    const viewer = memoryPeople.find((p) => p.user_id === dummyViewer().user_id)
+    const d = memoryDecisions.find((x) => x.decision_id === decisionId)
+    if (!viewer || !d) throw new Error('approval_not_found')
+    const out = decideStep(d, memoryDecisionStatuses.get(d.decision_id) ?? d.status, viewer, memoryPeople, approve, note)
+    if (out.result !== 'next') memoryDecisionStatuses.set(d.decision_id, d.status)
+    memoryAudit.push({
+      decision_id: decisionId,
+      action: approve ? 'approve' : 'reject',
+      occurred_at: new Date().toISOString(),
+      actor_user_id: actor.user_id,
+      actor_name: viewer.display_name,
+    })
+    if (out.result === 'next' && out.next && !out.next.is_chairman) {
+      pushDecisionNotification(out.next.approver_user_id, `결재 차례: ${d.title.slice(0, 80)}`, `${d.requester_name ?? '—'}님이 올린 결재입니다. 앞 단계가 승인했습니다.`, decisionId)
+    } else if (out.result !== 'next' && d.created_by && d.created_by !== viewer.user_id) {
+      pushDecisionNotification(
+        d.created_by,
+        `${out.result === 'approved' ? '결재 최종 승인: ' : '결재 반려: '}${d.title.slice(0, 80)}`,
+        out.result === 'approved' ? '결재가 끝났습니다.' : `반려 사유: ${(note ?? '').trim().slice(0, 300)} — 고쳐서 다시 올릴 수 있습니다.`,
+        decisionId,
+      )
+    }
+    return out.result
+  },
+
+  async approvalDecideMany(decisionIds: string[], note: string | null, actor: AuditActor) {
+    const ids = [...new Set(decisionIds)].sort()
+    if (ids.length === 0 || ids.length > 200) throw new Error('approval_batch_invalid')
+    // 한 트랜잭션의 거울 — 먼저 전부 내 차례인지 본 뒤에 처리한다.
+    const viewer = memoryPeople.find((p) => p.user_id === dummyViewer().user_id)
+    for (const id of ids) {
+      const d = memoryDecisions.find((x) => x.decision_id === id)
+      if (!viewer || !d) throw new Error(`approval_not_found:${id}`)
+      try {
+        turnCheck(d, memoryDecisionStatuses.get(id) ?? d.status, viewer, memoryPeople)
+      } catch (e) {
+        throw new Error(`${e instanceof Error ? e.message : String(e)}:${id}`)
+      }
+    }
+    for (const id of ids) await dummyRepository.approvalDecide(id, true, note, actor)
+    return ids.length
+  },
+
+  async logLedgerExport(businessId: string | null, count: number, filters: Record<string, string>, actor: AuditActor) {
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn(`[dummy] 결재 대장 엑셀 ${count}건 (${businessId ?? '전체'}) by ${actor.role} ${JSON.stringify(filters)} — dummy는 감사를 남기지 않는다.`)
+    }
+  },
+
   /** CH-041 기안. id는 live에서 0010의 시퀀스가 준다. 여기서는 같은 모양(dec_005)을 흉내 낸다. */
   async createDecision(input: NewDecision, actor: AuditActor): Promise<Decision> {
-    // 0038 트리거의 거울 — 필수 항목 · 첨부를 보고 결재선을 여기서 만든다(화면 값은 안 믿는다).
-    const line = input.template_key ? await groupware.draftApprovalLine(input) : undefined
+    // 0038 트리거의 거울 — 필수 항목 · 첨부를 본다(화면 값은 안 믿는다). 결재선은 0059 상사 사슬로 새로 만든다.
+    if (input.template_key) await groupware.draftApprovalLine(input)
+    const requester = memoryPeople.find((p) => p.user_id === actor.user_id)
+    const template = input.template_key ? (await groupware.listApprovalTemplates()).find((t) => t.template_key === input.template_key) : undefined
+    const chain = template && requester ? buildChain(template, input.form ?? {}, requester, input.business_id, memoryPeople) : undefined
+    if (input.resubmit_of) {
+      const orig = memoryDecisions.find((x) => x.decision_id === input.resubmit_of)
+      const origStatus = orig ? memoryDecisionStatuses.get(orig.decision_id) ?? orig.status : undefined
+      if (!input.template_key || !resubmitOk(orig, origStatus, actor.user_id, input)) throw new Error('approval_resubmit_invalid')
+      if (memoryDecisions.some((x) => x.resubmit_of === input.resubmit_of)) throw new Error('duplicate key value violates unique constraint "decisions_resubmit_once"')
+    }
+    const line = chain?.line
     const created: Decision = {
       decision_id: `dec_${String(decisions.length + memoryDecisions.length + 1).padStart(3, '0')}`,
       business_id: input.business_id,
@@ -1077,21 +1230,30 @@ export const dummyRepository: ChairmanRepository = {
       form: input.template_key ? (input.form ?? {}) : undefined,
       approval_line: line,
       created_by: actor.user_id,
-      // 0042 트리거의 거울 — 팀장 칸이 있으면 팀장 대기, 없으면 규칙이 바로 판정.
-      ...(line
-        ? (() => {
-            const toChairman = line.some((st) => st.step === 'chairman')
-            const hasLead = line[0]?.user_id != null
-            return {
-              chairman_required: toChairman,
-              lead_status: hasLead ? ('pending' as const) : ('skipped' as const),
-              status: !hasLead && !toChairman ? ('Approved' as const) : ('Open' as const),
-              decided_by_kind: !hasLead && !toChairman ? ('rule' as const) : null,
-            }
-          })()
+      created_at: new Date().toISOString(),
+      decided_at: null,
+      // 0059 트리거의 거울 — 단계 결재. 대표 본인 결재만 바로 닫힌다.
+      ...(chain
+        ? {
+            step_chain: true,
+            lead_status: null,
+            chairman_required: chain.chairman_required,
+            resubmit_of: input.resubmit_of ?? null,
+            requester_name: requester?.display_name ?? null,
+            requester_team_id: requester?.team_id ?? null,
+            requester_team_name: memoryTeams.find((t) => t.team_id === requester?.team_id)?.name ?? null,
+            ...(chain.self_close ? { status: 'Approved' as const, decided_by_kind: 'chairman' as const, decided_at: new Date().toISOString() } : {}),
+          }
         : {}),
     }
     memoryDecisions.push(created)
+    if (chain && !chain.self_close) {
+      const steps = stepsFromLine(created.decision_id, chain.line)
+      dummySteps.push(...steps)
+      if (steps[0] && !steps[0].is_chairman) {
+        pushDecisionNotification(steps[0].approver_user_id, `결재 차례: ${created.title.slice(0, 80)}`, `${created.requester_name ?? '—'}님이 올린 결재입니다.`, created.decision_id)
+      }
+    }
 
     if (process.env.NODE_ENV !== 'production') {
       console.warn(
@@ -1155,7 +1317,8 @@ export const dummyRepository: ChairmanRepository = {
     if (patch.reports_to !== undefined && patch.reports_to !== null) {
       if (patch.reports_to === userId) throw new Error('자기 자신을 직속 상사로 지정할 수 없습니다')
       if (inMemorySubtree(userId, patch.reports_to)) {
-        throw new Error('보고 체계에 순환이 생깁니다')
+        // 0025:276과 같은 글자 — 화면(denialMessage)이 그대로 보여 준다.
+        throw new Error('보고 체계에 순환이 생깁니다. 이미 내 아래에 있는 사람을 직속 상사로 지정할 수 없습니다.')
       }
     }
     const was = { role: target.role, team_id: target.team_id }
@@ -1393,6 +1556,11 @@ export const dummyRepository: ChairmanRepository = {
       throw new Error('new row violates row-level security policy for table "user_module_access"')
     }
     if (!memoryPeople.some((p) => p.user_id === userId)) throw new Error('Dummy user_module_access: 사람이 없다.')
+    // 화면 시험 전용(dummy만) — DUMMY_FAIL_MODULE='/documents/biz_dy'처럼 키를 주면 그 줄 저장을 DB 거부로 흉내 낸다.
+    // 조직도 칸이 실패하면 제자리로 돌아가고 그 칸 옆에 이유가 뜨는지 보는 데 쓴다. live에는 이 길이 없다.
+    if (process.env.DUMMY_FAIL_MODULE && process.env.DUMMY_FAIL_MODULE === grant.module) {
+      throw new Error('new row violates row-level security policy for table "user_module_access"')
+    }
     setDummyModuleGrant(userId, grant)
     // 0055 리뷰 I5 — '/users/<biz>'를 끄면 그 관리자의 그 회사 대기 위임 초대를 취소(staff_admin_capability_revoked 거울).
     const adminBiz = businessOfModule(STAFF_ADMIN_PREFIX, grant.module)

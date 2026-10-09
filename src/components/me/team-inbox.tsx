@@ -3,13 +3,112 @@
 import Link from 'next/link'
 import { useState, useTransition } from 'react'
 
+import { approvalDecideAction } from '@/app/actions/approvals'
 import { leadBundleAction, leadDecideAction } from '@/app/actions/lead'
 import { boss, bossEn, bossText } from '@/lib/boss'
 import { tr, type Lang } from '@/lib/i18n'
 import type { Decision, Role } from '@/types'
 
+/** «내 차례 결재» 한 줄 — 서버(/me)가 단계에서 뽑아 넘긴다. */
+export interface MyTurnItem {
+  decision_id: string
+  title: string
+  requester_name: string | null
+  /** 내 칸의 이유(직속 상사 · 상위 상사) — 보는 사람에 맞춘 글자. */
+  why: string
+  /** 내 다음 칸(없으면 내가 마지막 — 승인하면 종결). 보는 사람에 맞춘 글자. */
+  next: string | null
+}
+
 /**
- * 팀장 요청함 (Phase 6-2). 팀원이 올린 요청 가운데 내가 결재선 첫 칸인 것.
+ * 내 차례 결재 (0059 단계 결재). 결재선의 지금 칸(pending)이 나인 결재.
+ * 승인은 바로, 반려는 사유를 받아야 누를 수 있다(DB approval_decide도 사유 없는 반려를 거부한다).
+ * 판정 · 다음 차례 · 알림은 DB다 — 여기는 결과 한 줄만 보여 준다.
+ */
+export function MyTurnInbox({ items, lang }: { items: MyTurnItem[]; lang: Lang }) {
+  const [msg, setMsg] = useState<Record<string, string>>({})
+  const [rejecting, setRejecting] = useState<string | null>(null)
+  const [reason, setReason] = useState('')
+  const [pendingUi, start] = useTransition()
+
+  if (items.length === 0) return <p className="py-3 text-center text-t12h text-ink-muted">{tr(lang, '내 차례인 결재가 없습니다.', 'Nothing waiting on you.')}</p>
+
+  function act(id: string, approve: boolean, note: string | null) {
+    start(async () => {
+      const r = await approvalDecideAction({ decisionId: id, approve, note })
+      setMsg((m) => ({ ...m, [id]: r.error ?? r.message ?? (approve ? tr(lang, '승인했습니다.', 'Approved.') : tr(lang, '반려했습니다.', 'Rejected.')) }))
+      if (!r.error) {
+        setRejecting(null)
+        setReason('')
+      }
+    })
+  }
+
+  return (
+    <ul className="space-y-2">
+      {items.map((d) => (
+        <li key={d.decision_id} className="rounded-xl border border-line-soft bg-raised p-3">
+          <Link href={`/approvals?id=${d.decision_id}`} className="text-t13 font-semibold hover:text-accent">
+            {d.title}
+          </Link>
+          <p className="mt-0.5 text-t11h text-ink-dim">
+            {d.requester_name ? tr(lang, `${d.requester_name}님 요청`, `From ${d.requester_name}`) : null}
+            {d.requester_name ? ' · ' : null}
+            {tr(lang, `내 칸: ${d.why}`, `My step: ${d.why}`)} · {d.next ? tr(lang, `승인하면 → ${d.next}`, `Next → ${d.next}`) : tr(lang, '승인하면 종결', 'Approving closes it')}
+          </p>
+          {msg[d.decision_id] ? (
+            <p className="mt-1 text-t11h font-semibold">{msg[d.decision_id]}</p>
+          ) : rejecting === d.decision_id ? (
+            <div className="mt-2 space-y-1.5">
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                maxLength={2000}
+                rows={2}
+                placeholder={tr(lang, '반려 사유 (올린 사람에게 그대로 갑니다)', 'Reason (sent to the requester)')}
+                aria-label={tr(lang, '반려 사유', 'Reason')}
+                className="w-full rounded-md border border-line bg-panel px-2.5 py-2 text-t12h"
+              />
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  disabled={pendingUi || !reason.trim()}
+                  onClick={() => act(d.decision_id, false, reason.trim())}
+                  className="rounded-md bg-critical px-3 py-1.5 text-t12 font-semibold text-white disabled:opacity-40"
+                >
+                  {tr(lang, '반려 확정', 'Reject')}
+                </button>
+                <button type="button" disabled={pendingUi} onClick={() => setRejecting(null)} className="rounded-md border border-line bg-panel px-3 py-1.5 text-t12">
+                  {tr(lang, '취소', 'Cancel')}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              <button type="button" disabled={pendingUi} onClick={() => act(d.decision_id, true, null)} className="rounded-md bg-accent px-3 py-1.5 text-t12 font-semibold text-white disabled:opacity-40">
+                {tr(lang, '승인', 'Approve')}
+              </button>
+              <button
+                type="button"
+                disabled={pendingUi}
+                onClick={() => {
+                  setRejecting(d.decision_id)
+                  setReason('')
+                }}
+                className="rounded-md border border-line bg-panel px-3 py-1.5 text-t12"
+              >
+                {tr(lang, '반려…', 'Reject…')}
+              </button>
+            </div>
+          )}
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+/**
+ * 팀장 요청함 (Phase 6-2, 옛 결재). 팀원이 올린 요청 가운데 내가 결재선 첫 칸인 것. 0059 전에 올라와 아직 «팀장 대기»인 건만 — 예전 길(lead_decide)로 끝낸다.
  * 승인하면 DB가 규칙으로 판정한다 — 이 화면은 그 결과(팀 선 종결 / 회장 결재)를 한 줄로 알려 준다.
  * 규칙 결과를 미리 보여 준다: 얼린 결재선의 «규칙 판정» 칸 그대로.
  */

@@ -30,7 +30,10 @@
     "check:mobile": "tsx scripts/check-mobile.ts",
     "check:release": "bash scripts/check-release.sh",
     "check:file-drop": "tsx scripts/check-file-drop.ts",
-    "check:number-input": "tsx scripts/check-number-input.ts"
+    "check:number-input": "tsx scripts/check-number-input.ts",
+    "check:approval-ledger": "tsx scripts/check-approval-ledger.ts",
+    "check:approval-scenarios": "tsx --conditions=react-server scripts/check-approval-scenarios.ts",
+    "check:staging-sql-0059": "tsx scripts/check-staging-sql-0059.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",

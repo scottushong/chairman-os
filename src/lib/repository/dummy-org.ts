@@ -36,6 +36,7 @@ import {
  *                                  └─ (퇴사자)
  *   회장 ─ 시스템 계정 둘(Integration · AI Agent)
  *   (배치 전 신입 한 명은 트리에 매달려 있지 않다 — 조직도가 경고로 보여 준다)
+ *   회장 ─ 팀 없는 사원 (2026-10-09 — 운영 김병훈 자리: 사원 · DY · 팀 없음. 조직도 «팀 이동» 재현용)
  */
 
 /** 사람 id. uuid 모양을 유지한다 — live와 같은 자리에 같은 종류의 값이 들어가야 한다. */
@@ -54,6 +55,12 @@ export const DUMMY_UID = {
   integration: '00000000-0000-0000-0000-0000000d000c',
   aiAgent: '00000000-0000-0000-0000-0000000d000d',
   supportLead: '00000000-0000-0000-0000-0000000d000e',
+  // 0059 결재 시나리오 — 상사가 대표인 사원(김병훈 자리) · 상사가 대표인 팀장과 그 팀원.
+  supportStaff: '00000000-0000-0000-0000-0000000d000f',
+  prodLead: '00000000-0000-0000-0000-0000000d0010',
+  prodStaff: '00000000-0000-0000-0000-0000000d0011',
+  // 2026-10-09 — 운영 김병훈의 조건 그대로(사원 · DY · 팀 없음 · 상사 = 대표). 조직도 «팀 이동»을 dummy에서 재현하는 자리.
+  teamless: '00000000-0000-0000-0000-0000000d0012',
 } as const
 
 const DAY = 86_400_000
@@ -172,6 +179,13 @@ export const DUMMY_PEOPLE: UserAccount[] = [
     max_security_class: 'Restricted',
   }),
   person(DUMMY_UID.aiAgent, 'AIAgent', 'AI Agent', null, '야간 Job', DUMMY_UID.chair, null),
+  // 0059 결재 시나리오. 경영지원 사원은 운영의 김병훈 자리(상사 = 대표) — 30만 지출도 대표 승인 대기.
+  person(DUMMY_UID.supportStaff, 'Member', '경영지원 사원', null, '사원', DUMMY_UID.chair, 'team_dy_support'),
+  // 상사가 대표인 팀장과 그 팀원 — 30만은 팀장 승인으로 종결, 600만은 팀장 → 대표.
+  person(DUMMY_UID.prodLead, 'TeamLead', '생산팀장', 'Production Team Lead', '팀장', DUMMY_UID.chair, 'team_dy_production'),
+  person(DUMMY_UID.prodStaff, 'Member', '생산 직원', null, '사원', DUMMY_UID.prodLead, 'team_dy_production'),
+  // 2026-10-09. 운영 김병훈과 같은 조건 — 사원 · DY · 팀 없음 · 상사 = 대표. 조직도 경고 «팀 미배정»에 잡힌다.
+  person(DUMMY_UID.teamless, 'Member', '팀 없는 사원', null, '사원', DUMMY_UID.chair, null),
 ]
 
 const BY_ID = new Map(DUMMY_PEOPLE.map((p) => [p.user_id, p]))
@@ -198,6 +212,10 @@ export const DUMMY_SESSION_KEY: Record<string, string> = {
   buy_lead: DUMMY_UID.buyLead,
   buy_staff: DUMMY_UID.buyStaff,
   support_lead: DUMMY_UID.supportLead,
+  support_staff: DUMMY_UID.supportStaff,
+  prod_lead: DUMMY_UID.prodLead,
+  prod_staff: DUMMY_UID.prodStaff,
+  teamless_staff: DUMMY_UID.teamless,
 }
 
 export function dummyViewer(): UserAccount {

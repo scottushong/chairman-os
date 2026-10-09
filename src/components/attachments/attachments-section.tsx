@@ -13,11 +13,15 @@ export async function AttachmentsSection({
   entityId,
   fill,
   compact,
+  locked,
+  deleteLocked,
 }: {
   entityTable: AttachmentEntity
   entityId: string
   fill?: AttachmentsPanelProps['fill']
   compact?: boolean
+  locked?: string
+  deleteLocked?: boolean
 }) {
   const [repo, user] = await Promise.all([getRepository(), currentUser()])
   if (!user) return null
@@ -54,6 +58,8 @@ export async function AttachmentsSection({
       people={isChairman ? people.filter((p) => !p.revoked_at && p.user_id !== user.user_id).map((p) => ({ user_id: p.user_id, display_name: p.display_name })) : undefined}
       fill={fill}
       compact={compact}
+      locked={locked}
+      deleteLocked={deleteLocked}
     />
   )
 }

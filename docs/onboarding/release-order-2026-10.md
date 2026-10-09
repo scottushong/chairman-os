@@ -1,4 +1,126 @@
-# 2026-10 릴리스 순서: 결재(0054) 먼저, ECOUNT(0050~0052) 나중
+# 2026-10 릴리스 순서
+
+> ## 2026-10-09 확정: D 먼저 — 결재 대장(0059)을 ECOUNT · 입구보다 먼저 낸다. 이 상자가 아래 모든 본문(10-08 상자 포함)보다 우선한다
+>
+> **근거(PGlite, 쓰기 없음 — 2026-10-09):** 순서 (가) 0055 → 0050·0051·0052·0056 → 0058 → 0059와 (나) 0055 → 0059 → 0050·0051·0052·0056 → 0058을
+> 빈 DB에 각각 올려 끝 DB의 함수 216 · 정책 483(storage.objects · attachments 포함) · 트리거 85 · 제약 868 · 칸 794 · 표 101 · 인덱스 155 · grant를
+> 비교했다 — **차이 0.** 0059가 만드는 23개 이름은 0050~0058 어디에도 없다(0050 · 0058이 다시 쓰는 attachment_* 함수와 0059의 잠금은 겹치지 않는다).
+> (나) 순서로 0050~0059 시험 9개(ecountImport · ecountImportRpc · ecountRpcUnderNonBypassOwner · ecountMonthlyRpc · ecountMonthlyUnderNonBypassOwner ·
+> ecountPrecheckSql · intake · intake(true) · approvalChain) 전부 통과, 0055 + 0059만 있는 중간 상태에서도 approvalChain · ecountPrecheckSql 통과.
+> `scripts/release-production.sh`는 고칠 것 없이 받는다(가짜 CLI로 세 단계 모두 리허설).
+>
+> | 순서 | master에 합칠 브랜치 | 마이그레이션 | 명령 |
+> |---|---|---|---|
+> | **D** | `release/approvals-only` (= master + feat/approvals-ledger, 0-3 ~ 0-5 화면 수정 포함) | 0059 | `bash scripts/release-production.sh 0059` |
+> | B | `feat/ecount-import` (feat/intake 말고 이것만) | 0050 0051 0052 0056 | `bash scripts/release-production.sh --include-all 0050 0051 0052 0056` |
+> | C | `feat/intake` | 0058 | `bash scripts/release-production.sh --include-all 0058` |
+>
+> ### D-1. 회장이 칠 명령 (Git Bash, 한 줄씩)
+>
+> ```bash
+> cd ~/projects/chairman-os
+> git checkout master
+> git merge --no-ff release/approvals-only
+> npm run check:migrations
+> RELEASE_DRY_RUN=1 bash scripts/release-production.sh 0059
+> bash scripts/release-production.sh 0059
+> ```
+>
+> - 합치기 전에 production SQL Editor에서 `docs/onboarding/approval-chain-precheck.sql`(select만)과 `docs/onboarding/kim-grant-history.sql`(select만)을 한 번씩.
+> - dry-run 대기 목록은 **0059 하나**여야 한다. 다르면 멈춘다(스크립트가 멈춘다).
+> - 반영 뒤 클릭 순서: 아래 «D-3» (김병훈 팀 · 결재 대장 열람 · 직속 상사 · 열린 옛 결재).
+>
+> ### B · C (D 다음 — 따로 날에 해도 된다)
+>
+> ```bash
+> cd ~/projects/chairman-os
+> git checkout master
+> git merge --no-ff feat/ecount-import
+> npm run check:migrations
+> RELEASE_DRY_RUN=1 bash scripts/release-production.sh --include-all 0050 0051 0052 0056
+> bash scripts/release-production.sh --include-all 0050 0051 0052 0056
+> ```
+>
+> - `feat/ecount-import`를 합칠 때 `src/lib/version.ts`가 충돌한다 — `LATEST_MIGRATION = '0059_approval_chain'`을 남긴다(번호가 가장 큰 파일).
+> - B에서 **feat/intake를 같이 합치지 않는다** — 0058 파일이 같이 오면 대기 목록이 달라 스크립트가 멈춘다.
+>
+> ```bash
+> cd ~/projects/chairman-os
+> git checkout master
+> git merge --no-ff feat/intake
+> npm run check:migrations
+> RELEASE_DRY_RUN=1 bash scripts/release-production.sh --include-all 0058
+> bash scripts/release-production.sh --include-all 0058
+> ```
+>
+> ### D-3. 반영 직후 회장 클릭 순서 (production 앱 · 2026-10-09판 — 끌어다 놓기 화면 기준)
+>
+> 1. **김병훈 → 경영지원 팀.** `https://chairman-os-eosin.vercel.app/settings/users` → 조직도 «DY (주)» 탭 → «팀 없음» 상자의 **김병훈**을 끌어
+>    **경영지원** 상자 위에 놓는다 → 확인 창 «김병훈: 팀 미배정 → 경영지원» → **확인**. (폰이면 김병훈 줄의 **이동** → 팀 «경영지원» → 확인.)
+>    상사는 그대로 «회장»이다 — 그래서 김병훈의 결재는 회장이 바로 받는다.
+> 2. **결재 대장 열람 켜기.** 같은 화면에서 **김병훈**을 누른다 → 오른쪽 «모듈 권한» → «결재 대장 · DY (주)»의 **결재 대장 열람** 체크.
+>    체크는 누르는 즉시 켜지고 옆에 «저장 중…»이 잠깐 보였다가 사라진다. 실패하면 칸이 원래대로 돌아가고 바로 옆에 이유가 나온다.
+> 3. **직속 상사 확인.** 조직도에서 직원마다 오른쪽 패널 «직속 상사»를 본다 — 0059부터 결재선 = 이 사슬이다(직원 → 직속 상사 → 그 상사 … → 회장).
+>    바꿀 사람은 그 사람을 **다른 사람 위에** 끌어 놓는다 → 확인 창 «상사 X → Y — 이 사람의 결재는 Y부터 올라갑니다» → 확인.
+>    이미 올라간(열린) 결재는 올릴 때 정해진 결재선 그대로 간다.
+> 4. **0059 전에 열려 있던 결재 끝내기**(precheck ②에 나온 줄). 옛 길 그대로다:
+>    - «팀장 대기» — 그 팀장이 `https://chairman-os-eosin.vercel.app/me` «받은 결재»에서 승인 · 반려.
+>    - «대표 대기» — 회장이 `https://chairman-os-eosin.vercel.app/approvals`에서 그 결재를 열고 승인 · 반려(예전 4버튼).
+>    - 둘 다 끝나면 새로 올리는 결재부터 상사 사슬로 간다. 끝난 결재는 고칠 수 없다.
+> 5. `https://chairman-os-eosin.vercel.app/settings/approvals` — 양식별 대표 기준 금액(미만 = 직속 상사 종결) 확인.
+> 6. `https://chairman-os-eosin.vercel.app/approvals/ledger` — DY · 이번 달 · «엑셀 내려받기»(팀이 빈 직원은 «팀 없음»으로 묶인다).
+
+> ## 2026-10-08 추가 — 결재 대장 · 상사 승인(0059). 이 상자가 아래 모든 본문보다 우선한다
+>
+> production은 0055다. 남은 DB 묶음 셋은 **번호 순서대로** 내보낸다. 뒤 브랜치가 앞 브랜치를 이미 품고 있다
+> (`feat/intake` ⊃ `feat/ecount-import` ⊃ master, `release/ledger-rehearsal` = `feat/intake` + `feat/approvals-ledger`).
+> **master에 합치는 순간 앱이 그 DB를 기대한다** — 합치기와 `release-production.sh`는 한 묶음씩 짝으로 친다.
+>
+> | 순서 | master에 합칠 브랜치 | 마이그레이션 | 명령 |
+> |---|---|---|---|
+> | B | `feat/ecount-import` | 0050 0051 0052 0056 | `bash scripts/release-production.sh --include-all 0050 0051 0052 0056` |
+> | C | `feat/intake` | 0058 | `bash scripts/release-production.sh 0058` |
+> | D | `release/ledger-rehearsal` | 0059 | `bash scripts/release-production.sh 0059` |
+>
+> ### D-0. staging (회장이 Git Bash에서 — 이 세션은 staging 쓰기가 막혀 있다)
+>
+> ```bash
+> cp ~/projects/chairman-os/.env.staging.local ~/projects/chairman-os-ledger-rehearsal/
+> cd ~/projects/chairman-os-ledger-rehearsal
+> npm run db:push:staging          # 검사 뒤 대기 목록이 0059 하나여야 한다(0058이 아직이면 0058 0059)
+> P="$(grep ^SUPABASE_DB_PASSWORD .env.staging.local | cut -d= -f2-)"
+> cp docs/onboarding/staging-tests/0059_staging_test.sql supabase/.temp/
+> SUPABASE_DB_PASSWORD="$P" npx supabase db query --linked -f "supabase/.temp/0059_staging_test.sql"
+> rm -f supabase/.temp/0059_staging_test.sql
+> ```
+>
+> 기대: 오류 문장이 `0059 STAGING PASS a(…) b(…) c(…) d(…) e(…) f(…) g(…) h(…)`로 시작한다(전부 되돌린다 — staging에 남는 것 없음).
+>
+> ### D-1. production 전 읽기 전용 점검
+>
+> production SQL Editor에서 `docs/onboarding/approval-chain-precheck.sql`(select만) — 열린 양식 결재 수 · 직원별 직속 상사.
+>
+> ### D-2. 합치기 · 검사 · 리허설 · 진짜 (B · C가 끝난 뒤)
+>
+> ```bash
+> cd ~/projects/chairman-os
+> git checkout master
+> git merge --no-ff release/ledger-rehearsal
+> npm run check:migrations && npm run check:db-safety && npm run check:boundaries && npm run check:finance
+> RELEASE_DRY_RUN=1 bash scripts/release-production.sh 0059
+> bash scripts/release-production.sh 0059
+> ```
+>
+> ### D-3. 반영 뒤 회장 클릭 순서 (production 앱)
+>
+> 1. `https://chairman-os-eosin.vercel.app/settings/users` → 조직도 → **김병훈** → 모듈 권한 «결재 대장 · DY (주)» → **결재 대장 열람** 체크.
+> 2. 같은 화면에서 직원마다 **직속 상사**가 맞는지 본다 — 이제 결재선은 이 사슬이다(팀장을 두면 그 사람을 상사로).
+> 3. `https://chairman-os-eosin.vercel.app/settings/approvals` — 양식별 기준 금액 확인(미만 = 직속 상사 종결).
+> 4. `https://chairman-os-eosin.vercel.app/approvals?tab=turn` — 회장 차례 결재 «선택 항목 한 번에 승인».
+> 5. `https://chairman-os-eosin.vercel.app/approvals/ledger` — DY · 이번 달로 거르고 «엑셀 내려받기».
+>
+> 열린 옛 결재(«팀장 대기» · «대표 대기»)는 예전 길로 끝난다. 끝난 결재는 그대로다(고칠 수 없다).
+
 
 > ## 2026-10-07 확정판 — 이 상자가 아래 본문보다 우선한다
 >

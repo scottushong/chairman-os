@@ -71,13 +71,41 @@ export interface ApprovalTemplate {
   sort_order: number
 }
 
-/** 결재선 한 칸. decisions.approval_line에 제출 순간의 값이 얼려 들어간다. */
+/**
+ * 결재선 한 칸. decisions.approval_line에 제출 순간의 값이 얼려 들어간다.
+ * 'lead'는 0059 전 결재(팀장 한 칸), 'boss'는 0059 단계 결재(상사 사슬의 한 칸).
+ */
 export interface ApprovalStep {
-  step: 'lead' | 'rule' | 'chairman'
+  step: 'lead' | 'boss' | 'rule' | 'chairman'
   user_id: UserId | null
   name: string
   /** 왜 이 칸이 섰는가(또는 비었는가) — 사람이 읽는 한 줄. */
   why: string
+}
+
+/** 0059 approval_steps 한 줄 — 단계 결재의 칸(얼린 결재자 · 상태 · 처리 시각 · 의견). */
+export const APPROVAL_STEP_STATUS = ['waiting', 'pending', 'approved', 'rejected', 'cancelled'] as const
+export type ApprovalStepStatus = (typeof APPROVAL_STEP_STATUS)[number]
+
+export interface ApprovalStepState {
+  decision_id: string
+  seq: number
+  approver_user_id: UserId
+  approver_name: string
+  why: string
+  is_chairman: boolean
+  status: ApprovalStepStatus
+  decided_at: IsoDateTime | null
+  /** 실제로 누른 사람(대표가 떠난 결재자의 칸을 대신 처리했으면 대표). */
+  decided_by: UserId | null
+  note: string | null
+}
+
+/** 0059 my_approval_chain()의 한 줄 — 상사 사슬(대표 앞까지). */
+export interface ApprovalChainBoss {
+  seq: number
+  user_id: UserId
+  display_name: string
 }
 
 /** my_approval_lead()의 한 줄. */

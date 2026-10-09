@@ -1,25 +1,39 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import { useMemo, useState, useTransition } from 'react'
+import { useEffect, useMemo, useState, useTransition } from 'react'
 
-import { submitApprovalForm } from '@/app/actions/approval-form'
+import { approvalChainAction, submitApprovalForm } from '@/app/actions/approval-form'
+import { chainText } from '@/components/approvals/chain-text'
 import { StepHeader, StepNav, useMobileSteps } from '@/components/ui/mobile-steps'
 import { NumberInput } from '@/components/ui/number-input'
-import { AMOUNT_INVALID_MESSAGE, amountInvalid, approvalLine, missingFields } from '@/lib/approval-line'
-import { boss, bossEn, bossText } from '@/lib/boss'
+import { chainLine } from '@/lib/approval-chain'
+import { AMOUNT_INVALID_MESSAGE, amountInvalid, missingFields } from '@/lib/approval-line'
+import type { ApprovalChainPreview } from '@/lib/approval-submit'
+import { boss, bossEn, isChairman } from '@/lib/boss'
 import { tr, type Lang } from '@/lib/i18n'
-import type { ApprovalLead, ApprovalTemplate, Role } from '@/types'
+import type { ApprovalLead, ApprovalTemplate, ApprovalTemplateKey, Role } from '@/types'
+
+/** 반려된 결재를 고쳐 다시 올릴 때(0059 재상신) 채워 둘 값. */
+export interface ApprovalFormInitial {
+  templateKey: ApprovalTemplateKey
+  businessId: string
+  title: string
+  form: Record<string, string>
+  resubmitOf: string
+}
 
 /**
  * /approvals/new — 양식 고르기 → 항목 채우기 → **결재선 미리보기** → 올리기 (Phase 9 블록 2).
  *
- * 미리보기는 lib/approval-line.ts가 그린다. 제출하면 0038 트리거가 같은 규칙으로 결재선을 새로
- * 만들어 얼린다 — 이 화면의 결재선은 «이렇게 올라갈 것이다»이지 저장되는 값이 아니다.
+ * 미리보기는 lib/approval-chain.ts(0059 거울)가 그린다 — 조직도 상사 사슬 → (기준 이상 · 계약 · 채용이면) 대표.
+ * 사슬은 회사마다 다르다(그 회사 접근이 없는 상사는 건너뛴다). 서버가 미리 준 회사는 그 값, 없는 회사는 고를 때 묻는다.
+ * 제출하면 0059 트리거가 같은 규칙으로 결재선을 새로 만들어 얼린다 — 이 화면의 결재선은 «이렇게 올라갈 것이다»이지 저장되는 값이 아니다.
  */
 export function ApprovalForm({
   templates,
-  lead,
+  chains,
+  initial,
   businesses,
   defaultDeadline,
   lang,
@@ -27,7 +41,12 @@ export function ApprovalForm({
   afterSubmit,
 }: {
   templates: ApprovalTemplate[]
-  lead: ApprovalLead | null
+  /** 0059 이전의 결재선 첫 칸. 더는 미리보기에 쓰지 않는다 — 부르는 화면이 아직 넘기면 받기만 한다. */
+  lead?: ApprovalLead | null
+  /** 회사 id → 상사 사슬(서버가 미리 읽은 것). 없는 회사는 고를 때 approvalChainAction으로 묻는다. */
+  chains?: Record<string, ApprovalChainPreview>
+  /** 재상신(/approvals/new?resubmit=) — 원본 값으로 채워 두고 resubmit_of로 올린다. */
+  initial?: ApprovalFormInitial
   businesses: { id: string; name: string }[]
   defaultDeadline: string
   lang: Lang
@@ -37,18 +56,39 @@ export function ApprovalForm({
   afterSubmit?: string
 }) {
   const router = useRouter()
-  const [key, setKey] = useState(templates[0]?.template_key ?? 'expense')
-  const [form, setForm] = useState<Record<string, string>>({})
-  const [business, setBusiness] = useState(businesses[0]?.id ?? '')
-  const [title, setTitle] = useState('')
+  const [key, setKey] = useState(initial?.templateKey ?? templates[0]?.template_key ?? 'expense')
+  const [form, setForm] = useState<Record<string, string>>(initial?.form ?? {})
+  const [business, setBusiness] = useState(initial?.businessId ?? businesses[0]?.id ?? '')
+  const [title, setTitle] = useState(initial?.title ?? '')
+  const [chainBy, setChainBy] = useState<Record<string, ApprovalChainPreview>>(chains ?? {})
   const [deadline, setDeadline] = useState(defaultDeadline)
   const [error, setError] = useState<string | null>(null)
   const [pending, start] = useTransition()
   // 폰은 ① 양식·기본 ② 항목 ③ 결재선·올리기 세 화면으로 넘긴다(mobile-steps.tsx). 640px 이상은 지금 그대로 한 화면.
   const steps = useMobileSteps(3)
 
+  // 미리 받지 않은 회사의 사슬은 고를 때 묻는다(/me의 요청 올리기는 미리 받지 않는다).
+  const known = business ? chainBy[business] : undefined
+  useEffect(() => {
+    if (!business || known) return
+    let live = true
+    approvalChainAction(business).then((c) => {
+      if (live) setChainBy((cur) => ({ ...cur, [business]: c }))
+    })
+    return () => {
+      live = false
+    }
+  }, [business, known])
+
+  const selfClose = isChairman(viewerRole)
   const template = templates.find((t) => t.template_key === key) ?? templates[0]
-  const line = useMemo(() => (template ? approvalLine(template, form, lead) : []), [template, form, lead])
+  const line = useMemo(
+    () =>
+      template && known && !selfClose
+        ? chainLine(template, form, known.bosses, { user_id: null, name: boss(viewerRole) }, known.directBossIsChairman)
+        : [],
+    [template, form, known, selfClose, viewerRole],
+  )
   if (!template) return null
   const missing = missingFields(template, form)
   // 0054 리뷰 C1 — 금액이 숫자 모양이 아니면 미리보기도 «기록 완료»라 말하지 않고, 올리지 못한다.
@@ -63,6 +103,7 @@ export function ApprovalForm({
         title,
         deadline,
         form,
+        resubmitOf: initial?.resubmitOf,
       })
       if (result.error) setError(result.error)
       else if (result.decisionId) router.push(afterSubmit ?? `/approvals?id=${result.decisionId}`)
@@ -179,44 +220,49 @@ export function ApprovalForm({
 
         <aside className={`glass space-y-3 rounded-glass p-4 ${steps.only(2)}`}>
           <h2 className="text-t13 font-semibold">{tr(lang, '결재선 미리보기', 'Approval line preview')}</h2>
-          <ol className="space-y-2">
-            {line.map((s, i) => (
-              <li key={s.step} className="flex items-start gap-2">
-                <span
-                  className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-t10h font-bold ${
-                    s.step === 'chairman'
-                      ? 'bg-gold text-white'
-                      : s.step === 'rule'
-                        ? 'bg-line-soft text-ink-dim'
-                        : 'bg-accent text-white'
-                  }`}
-                >
-                  {i + 1}
-                </span>
-                <span className="min-w-0">
-                  {/* 팀장 칸이 직속 상위(대표 본인)일 수 있다 — 이름도 bossText로(직원 화면 용어 원칙). */}
-                  <span className="block text-t12h font-semibold">{bossText(s.name, viewerRole)}</span>
-                  <span className="block text-t11 text-ink-dim">{bossText(s.why, viewerRole)}</span>
-                </span>
-              </li>
-            ))}
-          </ol>
+          {selfClose ? (
+            // 0059 — 대표 본인이 올린 양식 결재는 결재선 없이 대표 결정으로 바로 닫힌다(자기 결재를 자기에게 올리지 않는다).
+            <p className="rounded-md bg-raised px-2 py-1.5 text-t11 text-ink-dim">
+              {tr(lang, `${boss(viewerRole)} 본인 결재 — 올리면 바로 승인으로 닫힙니다.`, `Your own approval — it closes as approved right away.`)}
+            </p>
+          ) : !known ? (
+            <p className="text-t11 text-ink-muted">{tr(lang, '결재선을 불러오는 중…', 'Loading the approval line…')}</p>
+          ) : (
+            <ol className="space-y-2">
+              {line.map((s, i) => (
+                <li key={`${s.step}-${i}`} className="flex items-start gap-2">
+                  <span
+                    className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-t10h font-bold ${
+                      s.step === 'chairman'
+                        ? 'bg-gold text-white'
+                        : s.step === 'rule'
+                          ? 'bg-line-soft text-ink-dim'
+                          : 'bg-accent text-white'
+                    }`}
+                  >
+                    {i + 1}
+                  </span>
+                  <span className="min-w-0">
+                    {/* 상사 칸은 사람 이름 그대로, 대표 칸 · 규칙 문장은 보는 사람의 호칭으로(직원 화면 용어 원칙). */}
+                    <span className="block text-t12h font-semibold">{s.step === 'boss' ? s.name : chainText(s.name, viewerRole)}</span>
+                    <span className="block text-t11 text-ink-dim">{chainText(s.why, viewerRole)}</span>
+                  </span>
+                </li>
+              ))}
+            </ol>
+          )}
           {badAmount ? (
             <p role="alert" className="rounded-md border border-critical/40 bg-raised px-2 py-1.5 text-t11h text-critical">
               {tr(lang, AMOUNT_INVALID_MESSAGE, 'Write the amount as a number — e.g. 6000000 or 6,000,000')}
             </p>
-          ) : line.every((s) => s.step !== 'chairman') ? (
-            <p className="rounded-md bg-raised px-2 py-1.5 text-t11 text-ink-dim">
-              {/* 0042/0054 — 팀장 칸이 비면(대표는 팀장 칸에 서지 않는다) 팀장 단계를 건너뛰고 규칙이 바로 종결한다(decided_by_kind 'rule'). */}
-              {line[0]?.user_id
-                ? tr(lang, `${boss(viewerRole)}까지 올라가지 않는 결재입니다.`, `This does not go up to ${bossEn(viewerRole)}.`)
-                : tr(
-                    lang,
-                    `팀장 결재 단계가 없어(팀장 · 직속 상위가 없거나 ${boss(viewerRole)}) 올리면 «기록 완료»로 바로 저장됩니다. ${boss(viewerRole)}도 목록에서 볼 수 있습니다.`,
-                    `No lead step (no lead, or the only one above is ${bossEn(viewerRole)}) — this is saved as «Recorded» right away. ${bossEn(viewerRole)} can still see it.`,
-                  )}
-            </p>
           ) : null}
+          <p className="rounded-md bg-raised px-2 py-1.5 text-t11 text-ink-dim">
+            {tr(
+              lang,
+              `기준 금액 미만은 직속 상사 승인으로 끝나고, 이상이면 상사들을 거쳐 ${isChairman(viewerRole) ? '회장이' : '대표가'} 최종 승인합니다.`,
+              `Below the threshold your direct manager closes it; at or above it goes up the chain to ${bossEn(viewerRole)} for final approval.`,
+            )}
+          </p>
           <p className="text-t10h leading-relaxed text-ink-muted">
             {tr(
               lang,

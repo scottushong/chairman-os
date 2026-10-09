@@ -153,6 +153,17 @@ export interface Decision {
   /** 0042. 회장 기안(취합)에 묶였으면 그 한 건. */
   bundle_id?: string | null
   decided_by_kind?: 'chairman' | 'ceo' | 'rule' | null
+  /** 0059. 단계 결재(조직도 상사 사슬 → 대표)인가. 처리는 approval_decide()만. 0059 전 결재는 false. */
+  step_chain?: boolean
+  /** 0059. 반려된 결재를 고쳐 다시 올렸으면 그 원본. */
+  resubmit_of?: string | null
+  /** 0059. 올린 사람 이름 · 팀 — 올리는 순간 얼린 값(대장이 남의 프로필을 못 읽어도 그린다). */
+  requester_name?: string | null
+  requester_team_id?: string | null
+  requester_team_name?: string | null
+  /** 올린 시각 · 마지막 처리 시각(대장). */
+  created_at?: string
+  decided_at?: string | null
 }
 
 export const ALERT_STATUS = ['Open', 'Acknowledged', 'Resolved'] as const
