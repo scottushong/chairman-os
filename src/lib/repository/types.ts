@@ -108,7 +108,51 @@ import type {
   WorkPriority,
   StaffAdminInviteInput,
   StaffAdminOptions,
+  CostMaterial,
+  CostMaterialInput,
+  CostSupplier,
+  CostSupplierInput,
+  MarketPrice,
+  MarketPriceInput,
+  NewPurchaseDoc,
+  PurchaseCandidate,
+  PurchaseDoc,
+  PurchaseDocDownload,
+  PurchaseLot,
+  PurchaseLotInput,
 } from '@/types'
+
+/**
+ * 0061 원가 엔진 1차 — 구매(Purchase Intelligence). 판정은 DB(cost_can · RLS)다. 회사마다 부른다.
+ * 고치지 않는 기록(시장가 · LOT · 첨부)은 넣기와 무효만 있다. Landed Cost · 원화 환산은 DB가 계산해서 돌려준다.
+ * 권한이 없거나 없는 줄이면 'cost_not_found'로 던진다(있는지 없는지 말하지 않는다 — 0061 6절).
+ * dummy는 lib/repository/dummy-purchasing.ts, live는 supabase-purchasing.ts.
+ */
+export interface PurchasingMethods {
+  listCostMaterials(businessId: string): Promise<CostMaterial[]>
+  /** materialId가 있으면 고치기(이름 · 규격 · 분류 · 사용 · 메모), 없으면 새로. */
+  saveCostMaterial(businessId: string, input: CostMaterialInput, materialId?: string): Promise<CostMaterial>
+  listCostSuppliers(businessId: string): Promise<CostSupplier[]>
+  saveCostSupplier(businessId: string, input: CostSupplierInput, supplierId?: string): Promise<CostSupplier>
+  /** 무효 줄도 함께(화면이 가린다). 최근 sinceDays일. */
+  listMarketPrices(businessId: string, sinceDays: number): Promise<MarketPrice[]>
+  addMarketPrice(businessId: string, input: MarketPriceInput): Promise<MarketPrice>
+  voidMarketPrice(businessId: string, priceId: number, reason: string): Promise<void>
+  listPurchaseLots(businessId: string): Promise<PurchaseLot[]>
+  addPurchaseLot(businessId: string, input: PurchaseLotInput): Promise<PurchaseLot>
+  voidPurchaseLot(businessId: string, lotId: string, reason: string): Promise<void>
+  /** 통화 → 원화 환율(그 날짜 이하 최신, 0061 cost_fx). KRW는 1. 없으면 null. */
+  lookupCostFx(currency: string, onDate: IsoDate): Promise<number | null>
+  /** 0061 cost_purchase_candidates — 구매 입력 권한자만. */
+  listPurchaseCandidates(businessId: string): Promise<PurchaseCandidate[]>
+  dismissPurchaseCandidate(businessId: string, decisionId: string): Promise<void>
+  listPurchaseDocs(businessId: string): Promise<PurchaseDoc[]>
+  /** 줄이 먼저(0061 5절) — 그다음 putPurchaseDocObject. 경로는 '<biz>/<doc_id>/<이름>'. */
+  createPurchaseDoc(businessId: string, input: NewPurchaseDoc): Promise<PurchaseDoc>
+  putPurchaseDocObject(path: string, bytes: ArrayBuffer, contentType: string): Promise<void>
+  voidPurchaseDoc(businessId: string, docId: string, reason: string): Promise<void>
+  downloadPurchaseDoc(businessId: string, docId: string): Promise<PurchaseDocDownload | null>
+}
 
 /**
  * 화면과 데이터 사이의 유일한 계약(Port).
@@ -120,7 +164,7 @@ import type {
  * 전부 async다. dummy 어댑터는 동기로 끝나지만 시그니처까지 동기로 두면
  * live로 바꾸는 날 호출부를 전부 다시 써야 한다.
  */
-export interface ChairmanRepository {
+export interface ChairmanRepository extends PurchasingMethods {
   /** 어느 쪽을 보고 있는지. 화면이 아니라 DUMMY DATA 뱃지와 로그가 쓴다. */
   readonly mode: 'dummy' | 'live'
 

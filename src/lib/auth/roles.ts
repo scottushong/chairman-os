@@ -133,3 +133,37 @@ export function canWriteNotice(user: SessionUser | null): boolean {
 export function canWriteGroupNotice(user: SessionUser | null): boolean {
   return user?.role === 'Chairman' || user?.role === 'GroupCFO'
 }
+
+/**
+ * 0061 원가 엔진 · 구매 화면을 볼 수 있는가(안내). DB cost_can과 같은 문: 대표(Chairman) 또는 그 회사의
+ * '/purchasing/<biz>' · '/costing/<biz>' 줄. 시스템 계정은 줄이 있어도 false. 회사 범위(has_business)는 화면이
+ * 회사 목록(listBusinesses)으로 따로 본다. GroupCFO · 회사 대표 · 임원도 줄을 받아야 한다(설계서 3.1).
+ */
+export function canReadPurchasing(user: SessionUser | null, businessId: string): boolean {
+  if (user === null) return false
+  if (user.role === 'Chairman') return true
+  if (SYSTEM.includes(user.role)) return false
+  return !!user.cost?.purchasing[businessId] || !!user.cost?.costing[businessId]
+}
+
+/** 구매 입력(원료 · 공급처 · 시장가 · LOT · 결재 후보 · 첨부) — 대표 또는 '/purchasing/<biz>' can_write(안내, 문은 DB). */
+export function canWritePurchasing(user: SessionUser | null, businessId: string): boolean {
+  if (user === null) return false
+  if (user.role === 'Chairman') return true
+  if (SYSTEM.includes(user.role)) return false
+  return user.cost?.purchasing[businessId]?.write === true
+}
+
+/** 사이드바 «구매»를 그릴 회사들 — 대표는 null(= 회사 목록 전부, 화면이 고른다). */
+export function purchasingBusinessIds(user: SessionUser | null): string[] | null {
+  if (user === null) return []
+  if (user.role === 'Chairman') return null
+  if (SYSTEM.includes(user.role)) return []
+  return [...new Set([...Object.keys(user.cost?.purchasing ?? {}), ...Object.keys(user.cost?.costing ?? {})])].sort()
+}
+
+/** 사이드바 «구매»를 그릴까(안내). 대표는 늘, 그 밖은 '/purchasing/<biz>' · '/costing/<biz>' 줄이 하나라도 있으면. */
+export function showsPurchasingNav(user: SessionUser | null): boolean {
+  const ids = purchasingBusinessIds(user)
+  return ids === null || ids.length > 0
+}

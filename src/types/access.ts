@@ -108,6 +108,40 @@ export const MODULE_GRANT_OPTIONS: readonly {
     note: '그 회사의 결재(지출 · 구매 · 휴가 · 계약 · 채용) 전부를 결재 대장에서 보고 엑셀로 내려받습니다 — 회사마다 따로 켭니다. 결재를 처리하는 권한은 아닙니다. 사용자 관리자 권한과는 별개입니다.',
     roleCovers: ['Chairman'],
   },
+  // 0061 원가 엔진 네 영역. 키 '/<area>/<business_id>' · can_write만 쓴다. 역할로 되는 사람은 대표(Chairman)뿐 —
+  // 그룹 CFO · 회사 대표 · 임원도 줄을 받아야 한다(설계서 3.1). 배합 · 투입 비율(BOM)은 이 넷 어디로도 열리지 않는다.
+  {
+    prefix: '/purchasing',
+    label: '구매',
+    write: '구매 입력',
+    approve: null,
+    note: '구매 화면(원료 · 공급처 · 시장가 · 구매 LOT · 승인된 구매 결재의 LOT 후보 · 견적서 첨부)을 엽니다. 켜면 보기, «구매 입력»까지 켜면 넣고 무효로 할 수 있습니다. 배합 · 투입 비율은 열리지 않습니다.',
+    roleCovers: ['Chairman'],
+  },
+  {
+    prefix: '/production',
+    label: '생산',
+    write: '생산 입력',
+    approve: null,
+    note: '생산 화면을 엽니다 — 원료별 오늘 시장가 한 값과 LOT 가격(원/kg) · 공급처 이름 · LOT 번호만 봅니다(외화 단가 · 운송비 분해 · 공급처 연락처 · 조건 없음). «생산 입력»은 생산 LOT · 투입 기록입니다.',
+    roleCovers: ['Chairman'],
+  },
+  {
+    prefix: '/sales',
+    label: '영업',
+    write: '영업 견적',
+    approve: null,
+    note: '영업 화면을 엽니다 — 원료 시세와 기간 평균 구매단가 · 시장가 대비 % 요약만 봅니다(LOT · 공급처 · 건별 단가 없음). «영업 견적»은 견적 만들기 · 시뮬레이터입니다. 제품 원가는 합계 · 반올림만 나갑니다.',
+    roleCovers: ['Chairman'],
+  },
+  {
+    prefix: '/costing',
+    label: '원가',
+    write: '원가 관리',
+    approve: null,
+    note: '원가 관리 화면을 엽니다 — 구매 기록(시장가 · LOT · 공급처 · 첨부)을 읽고, «원가 관리»는 비용 마스터 · 배부 기준 · 제품 원가 합계 · 매출원가입니다. 배합 · 투입 비율은 열리지 않습니다.',
+    roleCovers: ['Chairman'],
+  },
 ]
 
 export interface UserInvitation {

@@ -148,6 +148,7 @@ import { assistantMethods } from './supabase-assistant'
 import { attachmentMethods } from './supabase-attachments'
 import { financeImportMethods } from './supabase-finance-imports'
 import { intakeMethods } from './supabase-intake'
+import { purchasingMethods } from './supabase-purchasing'
 
 /**
  * Supabase 어댑터.
@@ -815,6 +816,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     ...financeImportMethods(sb),
     // 0058 자료 받는 입구.
     ...intakeMethods(sb),
+    // 0061 원가 엔진 · 구매 — 판정은 RLS(cost_can). 읽기는 0061 전 DB를 견딘다(supabase-purchasing.ts 머리 주석).
+    ...purchasingMethods(sb),
 
     async listBusinesses(): Promise<Business[]> {
       const { data, error } = await fetchAll('businesses', ['business_id'], (from, to) =>

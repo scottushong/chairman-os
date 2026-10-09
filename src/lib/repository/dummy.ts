@@ -39,6 +39,7 @@ import {
 import { attachmentSearchText, dummyAttachmentRaw, dummyAttachments, dummySeedAttachment } from './dummy-attachments'
 import { dummyCanDeleteDocument, dummyIntake, dummyIntakeEntity, seedDummyIntake } from './dummy-intake'
 import { dummyFinanceImportEntity, dummyFinanceImports } from './dummy-finance-imports'
+import { dummyPurchasing } from './dummy-purchasing'
 import * as books from './dummy-books'
 import { dummyAssistant } from './dummy-assistant'
 import * as chat from './dummy-chat'
@@ -626,6 +627,8 @@ export const dummyRepository: ChairmanRepository = {
     memoryDeletedDocuments.add(documentId)
     intake.onDocumentDeleted(documentId, actor)
   },
+  // 0061 원가 엔진 · 구매 — cost_can · 무효 한 번 · Landed를 옮겨 적은 것(dummy-purchasing.ts).
+  ...dummyPurchasing(),
 
   /**
    * Phase 10 첨부(0045). 대상 판정은 이 어댑터의 목록(각각 RLS를 옮겨 적은 것)으로 한다 —

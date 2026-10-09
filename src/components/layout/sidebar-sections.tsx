@@ -135,7 +135,7 @@ const DOT_LABEL_STAFF: Record<SidebarLevel, string> = { RED: '확인 필요 · �
 
 /** 이 회사의 화면인가 — 회사 상세와 그 회사의 재무(장부 · 계정 · 전표). */
 function companyActive(pathname: string, id: string) {
-  return ['/business/', '/finance/'].some((p) => pathname === `${p}${id}` || pathname.startsWith(`${p}${id}/`))
+  return ['/business/', '/finance/', '/purchasing/'].some((p) => pathname === `${p}${id}` || pathname.startsWith(`${p}${id}/`))
 }
 
 export function CompaniesSection({
