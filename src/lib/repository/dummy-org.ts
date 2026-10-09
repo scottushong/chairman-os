@@ -54,6 +54,7 @@ export const DUMMY_UID = {
   integration: '00000000-0000-0000-0000-0000000d000c',
   aiAgent: '00000000-0000-0000-0000-0000000d000d',
   supportLead: '00000000-0000-0000-0000-0000000d000e',
+  prodStaff: '00000000-0000-0000-0000-0000000d000f',
 } as const
 
 const DAY = 86_400_000
@@ -164,6 +165,11 @@ export const DUMMY_PEOPLE: UserAccount[] = [
   person(DUMMY_UID.buyStaff, 'Member', '구매 직원', null, '사원', DUMMY_UID.buyLead, 'team_dy_purchasing', {
     modules: [{ module: '/purchasing/biz_dy', can_write: true, can_approve: false }],
   }),
+  // 원가 엔진 0064. 생산 입력 줄 — 생산 화면(/production/biz_dy)을 dummy에서 눌러 볼 자리(DUMMY_USER=prod_staff).
+  // 생산팀은 팀장이 없는 팀으로 남긴다(조직도 경고 시드) — 본부장 밑에 둔다.
+  person(DUMMY_UID.prodStaff, 'Member', '생산 직원', 'Production Staff', '사원', DUMMY_UID.exec, 'team_dy_production', {
+    modules: [{ module: '/production/biz_dy', can_write: true, can_approve: false }],
+  }),
   // 경고 두 종을 한 사람이 같이 진다: 팀 미배정 + 상사 없음. 트리에 매달려 있지 않아
   // 회장 말고는 아무에게도 보이지 않는다 — 그것이 0026의 정책이 하는 일 그대로다.
   person(DUMMY_UID.newbie, 'Member', '신입 (배치 전)', null, '사원', null, null, {
@@ -208,6 +214,7 @@ export const DUMMY_SESSION_KEY: Record<string, string> = {
   buy_lead: DUMMY_UID.buyLead,
   buy_staff: DUMMY_UID.buyStaff,
   support_lead: DUMMY_UID.supportLead,
+  prod_staff: DUMMY_UID.prodStaff,
 }
 
 export function dummyViewer(): UserAccount {

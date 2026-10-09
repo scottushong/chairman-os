@@ -112,6 +112,28 @@ import type {
   SalesCostRow,
   PriceCheck,
   SalesCostView,
+  AllocBasis,
+  AllocSettings,
+  BomCurrent,
+  BomStatus,
+  BomVersionRow,
+  CostingRow,
+  CostProduct,
+  LotAdjustment,
+  LotAdjustmentInput,
+  LotBalance,
+  Overhead,
+  OverheadInput,
+  OverheadSummaryRow,
+  ProdActualBreakdownRow,
+  ProdActualRow,
+  ProdInput,
+  ProdInputInput,
+  ProdLot,
+  ProdLotInput,
+  ProductBreakdownRow,
+  ProductionOrder,
+  ProductionOrderLine,
 } from '@/types'
 
 /**
@@ -163,6 +185,66 @@ export interface SalesCostMethods {
 }
 
 /**
+ * 원가 엔진 — 생산(0064). 판정은 DB(RLS cost_can · 트리거 · 함수)다. 회사마다 부른다.
+ * 생산 LOT · 투입 · 조정은 넣기와 무효만, 오더는 상태만(open → done · cancelled). 잔량을 넘는 투입 · 조정은 'cost_lot_short'.
+ * **비율 · 수율을 돌려주는 메서드가 없다** — 작업지시는 원료 · kg뿐이다. Actual 분해(prodActualBreakdown)는 대표만.
+ * dummy는 lib/repository/dummy-sales-cost.ts(가짜 BOM 옆), live는 supabase-production.ts.
+ */
+export interface ProductionMethods {
+  /** 오더 머리(무효 없음 — 상태만). 0064 전 DB면 빈 목록. */
+  listProductionOrders(businessId: string): Promise<ProductionOrder[]>
+  /** 작업지시 수량 — 대표 · 생산만(그 밖은 RLS로 빈 목록). */
+  listProductionOrderLines(orderIds: string[]): Promise<ProductionOrderLine[]>
+  /** 0064 cost_production_issue — 대표만. 오더 id. */
+  issueProductionOrder(productId: string, plannedOn: IsoDate, plannedKg: number, note: string): Promise<string>
+  /** done = 생산 입력 · 대표, cancelled = 대표. */
+  closeProductionOrder(businessId: string, orderId: string, status: 'done' | 'cancelled'): Promise<void>
+  /** 무효 줄도 함께(화면이 가린다). */
+  listProdLots(businessId: string): Promise<ProdLot[]>
+  addProdLot(businessId: string, input: ProdLotInput): Promise<ProdLot>
+  voidProdLot(businessId: string, prodLotId: string, reason: string): Promise<void>
+  listProdInputs(businessId: string): Promise<ProdInput[]>
+  addProdInput(businessId: string, input: ProdInputInput): Promise<ProdInput>
+  voidProdInput(businessId: string, inputId: number, reason: string): Promise<void>
+  listLotAdjustments(businessId: string): Promise<LotAdjustment[]>
+  addLotAdjustment(businessId: string, input: LotAdjustmentInput): Promise<LotAdjustment>
+  voidLotAdjustment(businessId: string, adjId: number, reason: string): Promise<void>
+  /** 0064 cost_lot_balances — 입고 오래된 순. all = false면 남은 것만. */
+  lotBalances(businessId: string, all?: boolean): Promise<LotBalance[]>
+  /** 0064 cost_prod_actual — 대표 · 원가 관리(1원 · 호출마다 감사). */
+  prodActual(businessId: string, from?: IsoDate | null, to?: IsoDate | null): Promise<ProdActualRow[]>
+  /** 0064 cost_prod_actual_breakdown — 대표만. */
+  prodActualBreakdown(prodLotId: string): Promise<ProdActualBreakdownRow[]>
+}
+
+/**
+ * 원가 엔진 — 원가 관리(0065 비용 마스터 · 배부 · 제품 원가 목록)와 대표 BOM(0063). 판정은 DB.
+ * BOM 메서드(bom*) · 분해(productBreakdown)는 대표만 — 원가 관리 · 생산 화면 코드는 부르지 않는다(check:sales-cost 정적 검사).
+ * dummy는 lib/repository/dummy-sales-cost.ts, live는 supabase-costs.ts.
+ */
+export interface CostsMethods {
+  /** 0061 cost_products — 이름만(구매 · 생산 · 영업 · 원가 관리 · 대표). */
+  listCostProducts(businessId: string): Promise<CostProduct[]>
+  /** 0065 cost_costing_list — 대표 · 원가 관리. 하루 20번 · 호출마다 감사. 0065 전 DB면 빈 목록. */
+  costingList(businessId: string): Promise<CostingRow[]>
+  /** 무효 줄도 함께. */
+  listOverheads(businessId: string): Promise<Overhead[]>
+  addOverhead(businessId: string, input: OverheadInput): Promise<Overhead>
+  voidOverhead(businessId: string, overheadId: number, reason: string): Promise<void>
+  overheadSummary(businessId: string): Promise<OverheadSummaryRow[]>
+  /** 줄이 없으면 null(기본 trailing · 28일). */
+  allocSettings(businessId: string): Promise<AllocSettings | null>
+  setAllocSettings(businessId: string, basis: AllocBasis, windowDays: number, plannedKgMonth: number | null): Promise<void>
+  bomStatus(): Promise<BomStatus | null>
+  bomVersions(businessId: string): Promise<BomVersionRow[]>
+  bomGet(productId: string, asOf?: IsoDate | null): Promise<BomCurrent | null>
+  bomSave(productId: string, validFrom: IsoDate, yieldPct: number, lines: { material_id: string; kg_per_kg: number }[], note: string, isFake: boolean): Promise<number>
+  bomVoid(versionId: number, reason: string): Promise<void>
+  bomRealAllow(on: boolean): Promise<boolean>
+  productBreakdown(productId: string, kind: 'market' | 'current'): Promise<ProductBreakdownRow[]>
+}
+
+/**
  * 화면과 데이터 사이의 유일한 계약(Port).
  *
  * 화면 컴포넌트는 이 인터페이스만 본다. 뒤에 JSON 시드가 있는지 Supabase가 있는지
@@ -172,7 +254,7 @@ export interface SalesCostMethods {
  * 전부 async다. dummy 어댑터는 동기로 끝나지만 시그니처까지 동기로 두면
  * live로 바꾸는 날 호출부를 전부 다시 써야 한다.
  */
-export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods {
+export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods, ProductionMethods, CostsMethods {
   /** 어느 쪽을 보고 있는지. 화면이 아니라 DUMMY DATA 뱃지와 로그가 쓴다. */
   readonly mode: 'dummy' | 'live'
 

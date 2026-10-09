@@ -44,6 +44,7 @@ export default async function SalesCostPage(props: PageProps<'/sales/[business_i
 
   const asOf = rows[0]?.as_of ?? null
   const overheadPending = rows.some((r) => !r.overhead_ready)
+  const overheadReady = rows.some((r) => r.overhead_ready)
 
   return (
     <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6">
@@ -68,7 +69,8 @@ export default async function SalesCostPage(props: PageProps<'/sales/[business_i
             <SalesCostBoard rows={rows} />
             <ul className="space-y-0.5 text-t10h text-ink-dim">
               <li>Market 원가 = 오늘 시장가로 샀다면의 원료비 · DY 원가(Current) = 실제로 산 값 기준 원료비 · 원가 우위 = Market − DY 원가(초록이면 시장보다 싸게 샀다).</li>
-              {overheadPending ? <li>비용(물류 · 인건비 등)은 비용 마스터가 생기면 더해집니다 — 지금 총원가는 원료비입니다.</li> : null}
+              {overheadReady ? <li>비용(제조 · 포장 · 물류 · 간접비)은 원가 관리에서 정한 배부 기준 — 총원가 = 원료비 + 비용.</li> : null}
+              {overheadPending ? <li>비용(물류 · 인건비 등)은 비용 마스터가 생기면 더해집니다 — 비용이 없는 제품의 총원가는 원료비입니다.</li> : null}
               <li>원료비 영향 = 7일 전 대비 원료비 변화(0.1%p). 구매 기록 · 시세가 바뀌면 바로 반영됩니다.</li>
               <li>원가 우위 · 총원가 · 제시가는 원 단위 아래까지 계산한 뒤 1원으로 보여 줍니다 — 보이는 숫자끼리 빼면 1원 다를 수 있습니다.</li>
             </ul>

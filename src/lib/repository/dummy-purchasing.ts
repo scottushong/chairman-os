@@ -216,8 +216,19 @@ export function dummyCostCan(area: CostArea, businessId: string, write = false):
  * dummy 영업 원가(dummy-sales-cost.ts)만 부르는 원장 — «DB 안»에서 원가 함수가 시세 · LOT를 읽는 자리의 흉내. 화면 코드는 부르지 않는다.
  * 권한을 보지 않으므로 dummy 저장소 밖으로 내보내지 않는다(복사본).
  */
-export function dummyCostLedger(): { materials: CostMaterial[]; prices: MarketPrice[]; lots: PurchaseLot[] } {
-  return { materials: copy(store.materials), prices: copy(store.prices), lots: copy(store.lots) }
+export function dummyCostLedger(): { materials: CostMaterial[]; suppliers: CostSupplier[]; prices: MarketPrice[]; lots: PurchaseLot[] } {
+  return { materials: copy(store.materials), suppliers: copy(store.suppliers), prices: copy(store.prices), lots: copy(store.lots) }
+}
+
+/**
+ * 0064 cost_lot_void_guard의 거울 — 생산 저장소(투입 · 조정)는 dummy-sales-cost.ts에 있고 이 파일은 그것을 import하지 않는다
+ * (가짜 BOM 옆 저장소는 dummy.ts만 import — check:sales-cost). 그쪽이 읽혀질 때 판정 함수를 여기 걸어 둔다.
+ */
+const lotGuard = globalThis as unknown as { __chairmanDummyLotInUse?: (lotId: string) => boolean }
+const lotInUse = (lotId: string) => lotGuard.__chairmanDummyLotInUse?.(lotId) ?? false
+
+export function setDummyLotInUseCheck(fn: (lotId: string) => boolean): void {
+  lotGuard.__chairmanDummyLotInUse = fn
 }
 
 function can(area: CostArea, businessId: string, write = false): boolean {
@@ -445,11 +456,12 @@ export function dummyPurchasing(): PurchasingMethods {
     },
 
     async voidPurchaseLot(businessId, lotIdValue, reason) {
-      voidIn(
-        store.lots.find((l) => l.lot_id === lotIdValue),
-        businessId,
-        reason,
-      )
+      const row = store.lots.find((l) => l.lot_id === lotIdValue)
+      // 0064 리뷰 I4 cost_lot_void_guard — 살아 있는 투입 · 조정이 있으면 거부(권한 · 이유 검사 뒤에 — DB는 RLS · 무효 트리거와 같은 update 안).
+      if (row && row.business_id === businessId && can('purchasing', businessId, true) && !row.voided_at && reason.trim() && lotInUse(row.lot_id)) {
+        throw new Error('cost_lot_in_use')
+      }
+      voidIn(row, businessId, reason)
     },
 
     async lookupCostFx(currency, onDate) {

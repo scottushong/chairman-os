@@ -5,8 +5,10 @@
  *      마진 %(원래 총원가) · 원료비 영향 · 기준 문구(매일 최신) · 한도 문구
  *   ② dummy 거울 — 오늘 · 매일 최신 · 1원 · 대표는 원래 값 · 제시가 · 겸직 거부(구매 입력 · 구매 보기 · 생산 + 영업) · 영업은 원료 · 시세 목록 0 ·
  *      원가 관리 셋까지(cost_costing_cap) · 대표만 감시 목록 · 하루 200건
- *   ③ 정적 — 영업 화면 코드가 원료 단위 저장소 메서드 · 표를 부르지 않는다 · 가짜 BOM(dummy-sales-cost)은 dummy 어댑터만 import ·
- *      직원이 보는 문구에 «회장» 없음
+ *   ②' 생산 · 원가 관리 dummy 거울(0064 · 0065) — 작업지시 = 원료 · kg만 · 원가 관리는 작업지시 · 투입 · LOT 잔량 0 · 잔량 초과 거부 ·
+ *      투입 남은 LOT 무효 거부 · Actual 1원(투입 kg 대표만) · 원가 관리 총원가 = 원래 값끼리 · 방식 바뀐 새 줄이 앞 줄 대신 · 배부 불가면 계산 안 함 · BOM 대표만
+ *   ③ 정적 — 영업 화면 코드가 원료 단위 저장소 메서드 · 표 · 원가 관리 목록 · 비용을 부르지 않는다 · 가짜 BOM(dummy-sales-cost)은 dummy 어댑터만 import ·
+ *      생산 · 원가 관리 화면이 BOM · 분해 · AI를 부르지 않는다 · 원가 관리 화면은 LOT 잔량을 부르지 않는다 · 직원이 보는 문구에 «회장» 없음
  */
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
@@ -18,6 +20,7 @@ import { DUMMY_UID, dummyModuleGrants, setDummyModuleGrant } from '../src/lib/re
 import { kstToday } from '../src/lib/chairman-project'
 
 const ROOT = join(__dirname, '..')
+const shiftDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10)
 
 // ── ① 순수 함수 ──────────────────────────────────────────────────────
 assert.equal(round1(1234.4), 1234)
@@ -114,8 +117,11 @@ async function main() {
   assert.equal(x.current_krw_per_kg, round1(chairX.current_krw_per_kg!), '대표 외 = 원래 값의 1원')
   assert.equal(x.advantage_krw_per_kg, round1(chairX.market_krw_per_kg! - chairX.current_krw_per_kg!), '원가 우위 = round(원래 차)')
   assert.deepEqual(x.offers, salesOffers(chairX.total_krw_per_kg), '제시가 = 원래 총원가 ÷ (1 − 마진) → 1원')
-  assert.equal(x.overhead_ready, false)
-  assert.equal(x.overhead_krw_per_kg, null)
+  // 0065 — dummy 시드에 비용 마스터(계획 기준)가 있다: 비용 = 대표 원래 값의 1원, 총원가 = round(원래 원료비 + 원래 비용).
+  assert.equal(x.overhead_ready, true, 'dummy 비용 마스터 시드가 배부되지 않는다')
+  assert.ok(Number.isInteger(x.overhead_krw_per_kg) && x.overhead_krw_per_kg! > 0, '비용 1원')
+  assert.equal(x.overhead_krw_per_kg, round1(chairX.overhead_krw_per_kg!), '비용 = 원래 값의 1원')
+  assert.equal(x.total_krw_per_kg, round1(chairX.current_krw_per_kg! + chairX.overhead_krw_per_kg!), '총원가 = round(원래 원료비 + 원래 비용)')
   assert.equal(staff.find((r) => r.product_name === '제품 Z(가짜)')!.computed, false, 'BOM 없는 제품은 계산 안 됨')
   const pc = await as('sales_staff', () => repo.costPriceCheck(x.product_id, x.total_krw_per_kg! * 2))
   assert.deepEqual(pc, priceCheck(chairX.total_krw_per_kg, x.total_krw_per_kg! * 2), 'dummy cost_price_check = 순수 함수(원래 총원가)')
@@ -141,6 +147,80 @@ async function main() {
   await as('support_lead', () => repo.costSalesList('biz_dy'))
   const after = (await as('chairman', () => repo.costingWatch('biz_dy'))).find((w) => w.user_id === DUMMY_UID.supportLead)!.cost_reads_7d
   assert.equal(after - before, 2, '원가 관리 조회가 호출마다 감사되지 않는다')
+
+  // ── 생산 · 원가 관리 dummy 거울(0064 · 0065) ───────────────────────
+  // 생산 직원: 작업지시 수량(원료 · kg)은 보고, 원가 · 분해 · 발행은 못 한다.
+  const orders = await as('prod_staff', () => repo.listProductionOrders('biz_dy'))
+  assert.ok(orders.length >= 3 && orders.some((o) => o.status === 'open'), 'dummy 오더 시드')
+  const olines = await as('prod_staff', () => repo.listProductionOrderLines(orders.map((o) => o.order_id)))
+  assert.ok(olines.length > 0 && olines.every((l) => Object.keys(l).sort().join() === 'material_id,order_id,planned_kg'), '작업지시 = 원료 · kg만')
+  assert.equal((await as('support_lead', () => repo.listProductionOrderLines(orders.map((o) => o.order_id)))).length, 0, '원가 관리가 작업지시 수량을 본다')
+  assert.equal((await as('support_lead', () => repo.listProdInputs('biz_dy'))).length, 0, '원가 관리가 투입을 본다')
+  await assert.rejects(as('prod_staff', () => repo.prodActual('biz_dy')), /cost_not_found/, '생산이 Actual을 본다')
+  await assert.rejects(as('prod_staff', () => repo.issueProductionOrder('prd_fake_x', today, 100, '')), /cost_not_found/, '생산이 오더를 발행한다')
+  await assert.rejects(as('support_lead', () => repo.lotBalances('biz_dy')), /cost_not_found/, '원가 관리가 LOT 잔량을 본다(0064 리뷰 C1)')
+  await assert.rejects(as('chairman', () => repo.prodActualBreakdown('ML-20260101-000000')), /cost_not_found/)
+  // 잔량 초과 투입 거부 · 투입이 남은 구매 LOT 무효 거부.
+  const bal = await as('prod_staff', () => repo.lotBalances('biz_dy'))
+  assert.ok(bal.length > 0 && bal.every((b, i) => i === 0 || bal[i - 1].received_on <= b.received_on), '잔량은 입고 오래된 순')
+  const openOrder = orders.find((o) => o.status === 'open')!
+  const pl = await as('prod_staff', () => repo.addProdLot('biz_dy', { order_id: openOrder.order_id, produced_on: today, output_kg: 10, note: '' }))
+  await assert.rejects(
+    as('prod_staff', () => repo.addProdInput('biz_dy', { prod_lot_id: pl.prod_lot_id, lot_id: bal[0].lot_id, qty_kg: bal[0].remaining_kg + 1 })),
+    /cost_lot_short/,
+  )
+  const inp = await as('prod_staff', () => repo.addProdInput('biz_dy', { prod_lot_id: pl.prod_lot_id, lot_id: bal[0].lot_id, qty_kg: 1 }))
+  await assert.rejects(as('buy_staff', () => repo.voidPurchaseLot('biz_dy', bal[0].lot_id, '시험')), /cost_lot_in_use/, '투입이 남은 구매 LOT 무효')
+  await as('prod_staff', () => repo.voidProdInput('biz_dy', inp.input_id, '시험 정리'))
+  await as('prod_staff', () => repo.voidProdLot('biz_dy', pl.prod_lot_id, '시험 정리'))
+  await assert.rejects(as('prod_staff', () => repo.closeProductionOrder('biz_dy', openOrder.order_id, 'cancelled')), /cost_order_closed/, '생산이 오더를 취소한다')
+  // Actual: 원가 관리 = 1원 · 투입 kg 없음, 대표 = 원래 값 · 투입 kg.
+  const actStaff = await as('support_lead', () => repo.prodActual('biz_dy'))
+  const actChair = await as('chairman', () => repo.prodActual('biz_dy'))
+  const done1 = actChair.find((r) => r.computed)!
+  assert.ok(done1.input_kg !== null && !Number.isInteger(done1.actual_krw_per_kg), 'dummy 시험 준비: 대표 Actual 원래 값')
+  const staff1 = actStaff.find((r) => r.prod_lot_id === done1.prod_lot_id)!
+  assert.equal(staff1.input_kg, null, '원가 관리에게 투입 kg 합이 간다')
+  assert.equal(staff1.actual_krw_per_kg, round1(done1.actual_krw_per_kg!), 'Actual 1원')
+  const bd = await as('chairman', () => repo.prodActualBreakdown(done1.prod_lot_id))
+  assert.ok(bd.length > 0 && bd.every((r) => r.planned_kg !== null), '분해에 작업지시 kg')
+  // 원가 관리 목록: 총원가 = round(원래 Current + 원래 비용), 대표는 원래 값.
+  const cl = await as('support_lead', () => repo.costingList('biz_dy'))
+  const clChair = await as('chairman', () => repo.costingList('biz_dy'))
+  const cx = cl.find((r) => r.product_id === 'prd_fake_x')!
+  const cxr = clChair.find((r) => r.product_id === 'prd_fake_x')!
+  assert.ok(cx.computed && cx.overhead_ready && cx.overhead_basis === 'plan', '원가 관리 목록 시드')
+  assert.equal(cx.total_krw_per_kg, round1(cxr.current_krw_per_kg! + cxr.overhead_krw_per_kg!), '원가 관리 총원가 = 원래 값끼리 더한 뒤 1원')
+  await assert.rejects(as('sales_staff', () => repo.costingList('biz_dy')), /cost_not_found/, '영업이 원가 관리 목록을 본다')
+  await assert.rejects(as('prod_staff', () => repo.overheadSummary('biz_dy')), /cost_not_found/)
+  // 방식이 달라도 같은 항목 새 줄이 앞 줄을 대신한다(0065 리뷰 I2) — 시험 뒤 무효로 되돌린다.
+  const before2 = (await as('support_lead', () => repo.overheadSummary('biz_dy'))).filter((r) => r.category === 'labor')
+  const swap = await as('support_lead', () =>
+    repo.addOverhead('biz_dy', { category: 'labor', basis: 'per_kg', amount: 100, product_id: null, effective_from: today, note: '시험' }),
+  )
+  const after2 = (await as('support_lead', () => repo.overheadSummary('biz_dy'))).filter((r) => r.category === 'labor')
+  assert.deepEqual([before2.length, after2.length, after2[0].basis], [1, 1, 'per_kg'], '월 금액 → 원/kg 새 줄이 앞 줄을 대신하지 않는다')
+  await as('support_lead', () => repo.voidOverhead('biz_dy', swap.overhead_id, '시험 정리'))
+  // 배부 불가(생산 · 계획 없음) → 총원가 · 제시가 계산 안 함(0065 리뷰 I1) — 시험 뒤 되돌린다.
+  // 직전 7일 생산(시드 이틀 전 LOT)을 무효로 해 «생산 없음»을 만든다 — 이 검사 프로세스 안의 dummy 저장소만 바뀐다.
+  for (const p of (await as('prod_staff', () => repo.listProdLots('biz_dy'))).filter((r) => !r.voided_at && r.produced_on > shiftDays(today, -7))) {
+    await as('prod_staff', () => repo.voidProdLot('biz_dy', p.prod_lot_id, '배부 불가 시험'))
+  }
+  await as('support_lead', () => repo.setAllocSettings('biz_dy', 'trailing', 7, null))
+  const noAlloc = (await as('sales_staff', () => repo.costSalesList('biz_dy'))).find((r) => r.product_id === x.product_id)!
+  assert.deepEqual([noAlloc.computed, noAlloc.total_krw_per_kg, noAlloc.offers.length, noAlloc.overhead_ready], [false, null, 0, false], '배부 불가인데 원료비만으로 총원가')
+  await as('support_lead', () => repo.setAllocSettings('biz_dy', 'plan', 28, 120_000))
+  // BOM은 대표만.
+  await assert.rejects(as('support_lead', () => repo.bomGet('prd_fake_x')), /cost_not_found/)
+  await assert.rejects(as('prod_staff', () => repo.bomStatus()), /cost_not_found/)
+  const bom = await as('chairman', () => repo.bomGet('prd_fake_x'))
+  assert.ok(bom && bom.lines.length === 3 && bom.is_fake)
+  await assert.rejects(
+    as('chairman', () => repo.bomSave('prd_fake_x', today, 95, [{ material_id: 'mat_fake_a', kg_per_kg: 1 }], '', false)),
+    /cost_bom_real_locked/,
+    '스위치 꺼짐에 진짜 판',
+  )
+  console.log("②' 생산 · 원가 관리 dummy 거울 OK")
 
   // 겸직 거부.
   await assert.rejects(as('buy_staff', () => repo.costSalesList('biz_dy')), /cost_not_found/, '구매만 있는 사람이 영업 원가를 본다')
@@ -176,7 +256,7 @@ async function main() {
   ]
   assert.ok(salesFiles.length >= 6, '영업 화면 파일을 못 찾았다')
   const MATERIAL_LEVEL =
-    /\b(listCostMaterials|saveCostMaterial|listMarketPrices|addMarketPrice|listPurchaseLots|addPurchaseLot|listCostSuppliers|listPurchaseCandidates|listPurchaseDocs|downloadPurchaseDoc|costProductBreakdown|dummyCostLedger)\b|cost_materials|cost_market_prices|cost_purchase_lots|cost_sales_purchase_summary|cost_product_breakdown|cost_bom_|dummy-purchasing|dummy-sales-cost|MATERIAL_CATEGORY/
+    /\b(listCostMaterials|saveCostMaterial|listMarketPrices|addMarketPrice|listPurchaseLots|addPurchaseLot|listCostSuppliers|listPurchaseCandidates|listPurchaseDocs|downloadPurchaseDoc|costProductBreakdown|dummyCostLedger)\b|cost_materials|cost_market_prices|cost_purchase_lots|cost_sales_purchase_summary|cost_product_breakdown|cost_bom_|dummy-purchasing|dummy-sales-cost|MATERIAL_CATEGORY|costingList|listOverheads|overheadSummary|allocSettings|cost_costing_list|cost_overhead|lotBalances|prodActual|listProductionOrderLines|listProdInputs/
   const stripComments = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\s\/\/ .*$/gm, '')
   for (const f of salesFiles) {
     const code = stripComments(readFileSync(f, 'utf8'))
@@ -186,6 +266,39 @@ async function main() {
   }
   const live = stripComments(readFileSync(join(ROOT, 'src/lib/repository/supabase-sales-cost.ts'), 'utf8'))
   assert.ok(!/from\('cost_(materials|market_prices|purchase_lots|suppliers)'\)/.test(live), 'live 영업 어댑터가 원료 표를 읽는다')
+
+  // 생산 · 원가 관리 화면: BOM · 제품 분해를 부르지 않는다(대표 BOM 화면 · bom 액션만 예외 — Actual 분해는 cost_prod_actual_breakdown) ·
+  // AI import 없음 · 원가 관리 화면은 구매 LOT 잔량(0064 리뷰 C1)도 부르지 않는다 · 문구에 «회장» 없음(BOM 화면은 회장 전용이라 예외).
+  const BOM_LEVEL =
+    /\b(bomGet|bomSave|bomVoid|bomStatus|bomVersions|bomRealAllow|productBreakdown|bomBreakdownAction|bomSaveAction|bomVoidAction|bomRealAllowAction)\b|cost_bom_|cost_product_breakdown|actions\/bom'/
+  const prodCostFiles = [
+    ...walk(join(ROOT, 'src/app/(dashboard)/production')),
+    ...walk(join(ROOT, 'src/app/(dashboard)/costs')).filter((f) => !/[\\/]bom[\\/]/.test(f)),
+    ...walk(join(ROOT, 'src/components/production')),
+    ...walk(join(ROOT, 'src/components/costs')),
+    ...walk(join(ROOT, 'src/lib/production')),
+    ...walk(join(ROOT, 'src/lib/costs')),
+    join(ROOT, 'src/app/actions/production.ts'),
+    join(ROOT, 'src/app/actions/costs.ts'),
+  ]
+  assert.ok(prodCostFiles.length >= 10, '생산 · 원가 관리 화면 파일을 못 찾았다')
+  for (const f of prodCostFiles) {
+    const code = stripComments(readFileSync(f, 'utf8'))
+    const rel = relative(ROOT, f)
+    // 오류 문구 표(lib/costs/errors.ts)는 BOM 이유 코드를 사람 말로 바꾸는 자리라 이름만 적힌다 — 부르는 곳이 아니다.
+    const hit = /errors\.ts$/.test(f) ? null : code.match(BOM_LEVEL)
+    assert.equal(hit, null, `생산 · 원가 관리 화면 코드가 BOM을 부른다: ${rel} — ${hit?.[0]}`)
+    assert.ok(!/from '@\/lib\/ai/.test(code), `생산 · 원가 관리 화면이 AI 코드를 import: ${rel}`)
+    assert.ok(!/회장|Chairman OS/.test(code.replace(/'Chairman'/g, '')), `생산 · 원가 관리 화면 문구에 «회장»: ${rel}`)
+  }
+  for (const f of [...walk(join(ROOT, 'src/app/(dashboard)/costs')), ...walk(join(ROOT, 'src/components/costs'))]) {
+    assert.ok(!/\blotBalances\b|cost_lot_balances/.test(stripComments(readFileSync(f, 'utf8'))), `원가 관리 화면이 LOT 잔량을 부른다: ${relative(ROOT, f)}`)
+  }
+  for (const f of [...walk(join(ROOT, 'src/app/(dashboard)/costs/[business_id]/bom')), ...walk(join(ROOT, 'src/components/bom')), join(ROOT, 'src/app/actions/bom.ts')]) {
+    assert.ok(!/from '@\/lib\/ai/.test(readFileSync(f, 'utf8')), `BOM 화면이 AI 코드를 import: ${relative(ROOT, f)}`)
+  }
+  const bomPage = readFileSync(join(ROOT, 'src/app/(dashboard)/costs/[business_id]/bom/page.tsx'), 'utf8')
+  assert.ok(/role !== 'Chairman'\) redirect\('\/me'\)/.test(bomPage), 'BOM 화면이 대표 외를 /me로 돌리지 않는다')
 
   // 가짜 BOM은 dummy 어댑터만 — 화면 · live · 액션이 dummy-sales-cost를 import하지 않는다.
   for (const f of walk(join(ROOT, 'src'))) {
