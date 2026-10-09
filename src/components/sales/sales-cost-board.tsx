@@ -62,7 +62,7 @@ export function SalesCostBoard({ rows }: { rows: SalesCostRow[] }) {
                       {krw(r.total_krw_per_kg)}원/kg
                     </td>
                     <td className="px-3 py-2 text-right tnum" data-label="원료비 영향">
-                      {impactText(r.material_impact_pct) ?? <span className="text-ink-muted">—</span>}
+                      {impactText(r.material_impact_pct)?.replace('원료비 영향 ', '') ?? <span className="text-ink-muted">—</span>}
                     </td>
                     <td className="px-3 py-2 text-right">
                       <button
