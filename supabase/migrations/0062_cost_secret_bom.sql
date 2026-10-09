@@ -480,6 +480,7 @@ $fn$;
 
 /** 영업 한 줄 계산(문 통과 뒤에만 부른다 — 내부용). */
 create or replace function cost_secret.sales_row(p_product text, p_business text, p_as_of date, p_known timestamptz, p_chairman boolean,
+  p_ok boolean, p_prev_ok boolean,
   out market_krw_per_kg numeric, out current_krw_per_kg numeric, out advantage_krw_per_kg numeric, out total_krw_per_kg numeric,
   out material_impact_pct numeric, out computed boolean, out offers jsonb)
 language plpgsql stable security definer set search_path = public, cost_secret, pg_temp as $fn$
@@ -490,10 +491,10 @@ declare
   v_cu numeric;
   v_pr numeric;
 begin
-  v_ok := p_chairman or (cost_secret.business_complete(p_business, 'market', p_as_of, p_known)
-                         and cost_secret.business_complete(p_business, 'current', p_as_of, p_known));
+  -- 회사 단위 완전성은 부르는 쪽이 한 번 계산해 넘긴다(목록 500줄에서 제품마다 다시 세지 않게 — 리뷰 6회차).
   -- 리뷰 5회차 M2 — 지난 주 값도 회사 단위로 완전할 때만(아니면 «새 원료가 든 제품만 영향 없음»이 소속을 알려 준다).
-  v_prev_ok := p_chairman or cost_secret.business_complete(p_business, 'current', p_as_of - 7, p_known);
+  v_ok := p_chairman or p_ok;
+  v_prev_ok := p_chairman or p_prev_ok;
   if v_ok then
     select x.total into v_mk from cost_secret.material_cost(p_product, 'market', p_as_of, p_known) x;
     select x.total into v_cu from cost_secret.material_cost(p_product, 'current', p_as_of, p_known) x;
@@ -529,7 +530,9 @@ declare
   r record;
 begin
   select * into g from cost_secret.cost_gate(p_product, 'sales_view', null);
-  select * into r from cost_secret.sales_row(p_product, g.business_id, g.as_of, g.known_at, g.chairman);
+  select * into r from cost_secret.sales_row(p_product, g.business_id, g.as_of, g.known_at, g.chairman,
+    cost_secret.business_complete(g.business_id, 'market', g.as_of, g.known_at) and cost_secret.business_complete(g.business_id, 'current', g.as_of, g.known_at),
+    cost_secret.business_complete(g.business_id, 'current', g.as_of - 7, g.known_at));
   return query select p_product, g.as_of, r.market_krw_per_kg, r.current_krw_per_kg, r.advantage_krw_per_kg,
     null::numeric, r.total_krw_per_kg, false, r.material_impact_pct, r.computed, r.offers;
 end;
@@ -543,13 +546,18 @@ returns table (product_id text, product_name text, as_of date, market_krw_per_kg
 language plpgsql volatile security definer set search_path = public, cost_secret, pg_temp as $fn$
 declare
   g record;
+  v_ok boolean;
+  v_prev_ok boolean;
 begin
   select * into g from cost_secret.cost_gate_biz(p_business, 'list:' || coalesce(p_business, ''), 'sales_list', null);
+  v_ok := g.chairman or (cost_secret.business_complete(p_business, 'market', g.as_of, g.known_at)
+                         and cost_secret.business_complete(p_business, 'current', g.as_of, g.known_at));
+  v_prev_ok := g.chairman or cost_secret.business_complete(p_business, 'current', g.as_of - 7, g.known_at);
   return query
   select p.product_id, p.name, g.as_of, r.market_krw_per_kg, r.current_krw_per_kg, r.advantage_krw_per_kg,
          null::numeric, r.total_krw_per_kg, false, r.material_impact_pct, r.computed, r.offers
     from cost_products p
-    cross join lateral cost_secret.sales_row(p.product_id, p_business, g.as_of, g.known_at, g.chairman) r
+    cross join lateral cost_secret.sales_row(p.product_id, p_business, g.as_of, g.known_at, g.chairman, v_ok, v_prev_ok) r
    where p.business_id = p_business and p.active
    order by p.name
    limit 500;

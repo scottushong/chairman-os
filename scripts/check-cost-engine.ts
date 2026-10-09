@@ -487,8 +487,16 @@ async function main() {
   const ca0 = await auditN(U.cost)
   for (let i = 0; i < 3; i++) await run(U.cost, `select * from cost_product_cost('${p1}', 'current')`)
   assert.equal((await auditN(U.cost)) - ca0, 3, '결정: 원가 관리 원가 조회가 호출마다 감사되지 않는다')
+  for (const path of ['/purchasing/biz_dy', '/purchasing/biz_dy/lots', '/purchasing/biz_dyx', '/sales/biz_dy/q', '/sales/biz_dyx']) {
+    await db.exec(`set session_replication_role = replica;
+      insert into audit_log (action, entity_table, entity_id, business_id, actor_user_id, actor_role, after, note)
+      values ('read', 'screen', '${path}', 'biz_dy', '${U.cost}', 'Member', jsonb_build_object('path', '${path}'), '시험 열람');
+      set session_replication_role = origin;`)
+  }
   const watch = await as<{ user_id: string; cost_reads_7d: number }>(U.chair, `select * from cost_costing_watch('biz_dy')`)
   assert.ok(watch.some((w) => w.user_id === U.cost && Number(w.cost_reads_7d) >= 3), '결정: 대표 감시 목록에 원가 관리 권한자 · 조회 수가 없다')
+  assert.equal(Number((watch.find((w) => w.user_id === U.cost) as unknown as { screen_reads_7d: number }).screen_reads_7d), 3,
+    '6회차: 감시 목록 화면 열람 수(/purchasing/biz_dy · /purchasing/biz_dy/lots · /sales/biz_dy/q — biz_dyx 제외)')
   for (const uid of [U.cost, U.sales, U.buy]) {
     await refuses(as(uid, `select * from cost_costing_watch('biz_dy')`), /cost_not_found/, `결정: ${uid.slice(-2)}가 원가 관리 감시 목록을 본다`)
   }

@@ -568,13 +568,13 @@ begin
              and a.entity_table = 'cost_products' and a.business_id = p_business and a.occurred_at > now() - interval '7 days'),
          (select count(*)::int from audit_log a where a.actor_user_id = m.user_id and a.action = 'read'
              and a.entity_table = 'screen'
-             and (a.after ->> 'path' = '/purchasing/' || p_business or left(a.after ->> 'path', length(p_business) + 12) = '/purchasing/' || p_business || '/'
+             and (a.after ->> 'path' = '/purchasing/' || p_business or left(a.after ->> 'path', length(p_business) + 13) = '/purchasing/' || p_business || '/'
                   or a.after ->> 'path' = '/sales/' || p_business or left(a.after ->> 'path', length(p_business) + 8) = '/sales/' || p_business || '/')
              and a.occurred_at > now() - interval '7 days'),
          (select max(a.occurred_at) from audit_log a where a.actor_user_id = m.user_id and a.action = 'read'
              and ((a.entity_table = 'cost_products' and a.business_id = p_business)
                   or (a.entity_table = 'screen' and (a.after ->> 'path' = '/purchasing/' || p_business
-                       or left(a.after ->> 'path', length(p_business) + 12) = '/purchasing/' || p_business || '/'))))
+                       or left(a.after ->> 'path', length(p_business) + 13) = '/purchasing/' || p_business || '/'))))
     from user_module_access m
     join user_profiles p on p.user_id = m.user_id
    where m.module = '/costing/' || p_business
