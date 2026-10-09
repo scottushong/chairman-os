@@ -254,7 +254,9 @@ const memoryDecisions: Decision[] = dummyDecisionStore.decisions
  * 없어서 흉내 낼 사람이 없다 — 시드로 가짜 계정을 만들어 두면 '누가 이 시스템을 쓰나'의
  * 답이 두 곳(가짜 시드 / 진짜 DB)으로 갈라진다. 화면은 그때 빈 목록을 그리고 이유를 말한다.
  */
-const memoryInvitations: UserInvitation[] = DUMMY_INVITATION_SEED.map((i) => ({ ...i }))
+// 초대도 같은 이유로 globalThis(초대한 줄이 화면 층에 안 보이는 함정).
+const memoryInvitations: UserInvitation[] = ((globalThis as unknown as { __dummyInvitations?: UserInvitation[] })
+  .__dummyInvitations ??= DUMMY_INVITATION_SEED.map((i) => ({ ...i })))
 
 /**
  * Phase 6-1. 조직도·공유의 dummy 저장소.
@@ -344,8 +346,13 @@ function assertRuleWrite() {
 const memoryExceptions: ExceptionRecord[] = DUMMY_EXCEPTIONS.map((e) => ({ ...e }))
 const memoryExceptionRules: ExceptionRule[] = DUMMY_EXCEPTION_RULES.map((r) => ({ ...r }))
 
-const memoryPeople: UserAccount[] = DUMMY_PEOPLE.map((p) => ({ ...p }))
-const memoryTeams: Team[] = DUMMY_TEAMS.map((t) => ({ ...t }))
+// 사람 · 팀은 globalThis에 둔다 — webpack dev는 Server Action 층과 화면 층이 이 모듈을 따로 읽어 저장소가 둘이 된다
+// (2026-10-09: 조직도에서 팀을 옮기면 액션 쪽 배열만 바뀌고 화면 쪽은 그대로라 «저장됐는데 안 보인다»가 됐다).
+// 결재 저장소(__dummyDecisionStore) · 모듈 권한(__dummyModuleGrants)과 같은 방식.
+const dummyOrgStore = ((globalThis as unknown as { __dummyOrgStore?: { people: UserAccount[]; teams: Team[] } })
+  .__dummyOrgStore ??= { people: DUMMY_PEOPLE.map((p) => ({ ...p })), teams: DUMMY_TEAMS.map((t) => ({ ...t })) })
+const memoryPeople: UserAccount[] = dummyOrgStore.people
+const memoryTeams: Team[] = dummyOrgStore.teams
 const memoryShares: ShareRecord[] = DUMMY_SHARE_SEED.map((s) => ({ ...s }))
 
 /** 0025 class_rank(). 배열 순서가 곧 등급 순서다(SECURITY_CLASS). */
@@ -1310,7 +1317,8 @@ export const dummyRepository: ChairmanRepository = {
     if (patch.reports_to !== undefined && patch.reports_to !== null) {
       if (patch.reports_to === userId) throw new Error('자기 자신을 직속 상사로 지정할 수 없습니다')
       if (inMemorySubtree(userId, patch.reports_to)) {
-        throw new Error('보고 체계에 순환이 생깁니다')
+        // 0025:276과 같은 글자 — 화면(denialMessage)이 그대로 보여 준다.
+        throw new Error('보고 체계에 순환이 생깁니다. 이미 내 아래에 있는 사람을 직속 상사로 지정할 수 없습니다.')
       }
     }
     const was = { role: target.role, team_id: target.team_id }
@@ -1548,6 +1556,11 @@ export const dummyRepository: ChairmanRepository = {
       throw new Error('new row violates row-level security policy for table "user_module_access"')
     }
     if (!memoryPeople.some((p) => p.user_id === userId)) throw new Error('Dummy user_module_access: 사람이 없다.')
+    // 화면 시험 전용(dummy만) — DUMMY_FAIL_MODULE='/documents/biz_dy'처럼 키를 주면 그 줄 저장을 DB 거부로 흉내 낸다.
+    // 조직도 칸이 실패하면 제자리로 돌아가고 그 칸 옆에 이유가 뜨는지 보는 데 쓴다. live에는 이 길이 없다.
+    if (process.env.DUMMY_FAIL_MODULE && process.env.DUMMY_FAIL_MODULE === grant.module) {
+      throw new Error('new row violates row-level security policy for table "user_module_access"')
+    }
     setDummyModuleGrant(userId, grant)
     // 0055 리뷰 I5 — '/users/<biz>'를 끄면 그 관리자의 그 회사 대기 위임 초대를 취소(staff_admin_capability_revoked 거울).
     const adminBiz = businessOfModule(STAFF_ADMIN_PREFIX, grant.module)

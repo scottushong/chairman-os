@@ -54,6 +54,12 @@ export const SYSTEM_ROLE: readonly Role[] = ['AIAgent', 'Integration']
 export const INVITABLE_ROLE: readonly Role[] = ROLE.filter((r) => !SYSTEM_ROLE.includes(r))
 
 /**
+ * 2026-10-09 — 초대할 때 팀이 꼭 있어야 하는 역할(서버 inviteUser · 초대 폼이 같은 목록을 본다).
+ * 회사를 이끄는 자리(회장 · CFO · 대표)와 외부 역할은 팀 없이 둔다. 팀 없이 들어온 사원은 결재 대장 팀별 합계에서 «팀 없음»이 된다.
+ */
+export const TEAM_REQUIRED_ROLES: readonly Role[] = ['Executive', 'TeamLead', 'Member']
+
+/**
  * 0026 role_rank()와 같은 순서. 초대 폼이 "회장 결재가 필요합니다"를 **미리** 말할 때 쓴다.
  * 실제 강제는 0026의 user_invitations_set_approval 트리거가 한다 — 화면은 그 트리거와
  * 같은 기준을 쓸 뿐이고, 두 곳이 갈라지면 화면이 거짓말을 한다.
