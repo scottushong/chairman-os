@@ -176,7 +176,8 @@ async function main() {
   const expect: Record<string, Record<string, boolean>> = {
     [U.buy]: { cost_materials: true, cost_suppliers: true, cost_market_prices: true, cost_purchase_lots: true, cost_products: true },
     [U.prod]: { cost_materials: true, cost_suppliers: false, cost_market_prices: false, cost_purchase_lots: false, cost_products: true },
-    [U.sales]: { cost_materials: true, cost_suppliers: false, cost_market_prices: true, cost_purchase_lots: false, cost_products: true },
+    // 회장 결정(2026-10-09) — 영업은 제품 총액만: 원료 이름 · 원료별 시세 · 구매가 · LOT 0.
+    [U.sales]: { cost_materials: false, cost_suppliers: false, cost_market_prices: false, cost_purchase_lots: false, cost_products: true },
     [U.cost]: { cost_materials: true, cost_suppliers: true, cost_market_prices: true, cost_purchase_lots: true, cost_products: true },
     [U.chair]: { cost_materials: true, cost_suppliers: true, cost_market_prices: true, cost_purchase_lots: true, cost_products: true },
   }
@@ -209,10 +210,8 @@ async function main() {
   assert.equal(Number(bmat.find((r) => r.material_id === m1)!.market_krw_per_kg), 1000, '0061: 구매는 날짜를 골라 볼 수 있어야 한다')
   await refuses(as(U.prod, `select * from cost_sales_purchase_summary('biz_dy')`), /cost_not_found/, '0061: 생산이 영업 요약을 본다')
   await refuses(as(U.sales, `select * from cost_production_lots('biz_dy')`), /cost_not_found/, '0061: 영업이 LOT 가격을 본다')
-  // 영업 «요약»: 지난 달력 달 · LOT 3건 이상(리뷰 I6). m3는 지난 달 600 × 3건, m2는 1건 → null.
-  const summary = await as<{ material_id: string; avg_purchase_krw_per_kg: string | null }>(U.sales, `select * from cost_sales_purchase_summary('biz_dy', 7, '${T}')`)
-  assert.equal(Number(summary.find((r) => r.material_id === m3)!.avg_purchase_krw_per_kg), 600, '0061: 영업 요약(지난 달 3건 평균)')
-  assert.equal(summary.find((r) => r.material_id === m2)!.avg_purchase_krw_per_kg, null, '0061: 영업 요약이 LOT 1건 단가를 그대로 보인다')
+  // 회장 결정 — 영업은 원료별 요약도 못 본다.
+  await refuses(as(U.sales, `select * from cost_sales_purchase_summary('biz_dy')`), /cost_not_found/, '0061: 영업이 원료별 구매가 요약을 본다')
   const fullSummary = await as<{ material_id: string; avg_purchase_krw_per_kg: string; purchase_vs_market_pct: string }>(U.buy,
     `select * from cost_sales_purchase_summary('biz_dy', 30, '${T}')`)
   const s1row = fullSummary.find((r) => r.material_id === m1)!
@@ -293,9 +292,9 @@ async function main() {
   // 원가 관리: 합계 한 값 · 10원 반올림 · 이번 주 월요일(리뷰 2회차 C1).
   const m1M = T === M ? 1200 : 1000
   const marketM = (0.5 * m1M + 0.3 * 2800 + 0.25 * 500) / 0.95
-  // 리뷰 3회차 I2 — 대표 외는 역할마다 종류 하나(원가 관리 = Current · 영업 = Market).
-  await refuses(as(U.cost, `select * from cost_product_cost('${p1}', 'market')`), /cost_kind_unsupported/, '0062: 원가 관리가 Market까지 본다(한 주 식 둘)')
-  await refuses(as(U.sales, `select * from cost_product_cost('${p1}', 'current')`), /cost_kind_unsupported/, '0062: 영업이 Current까지 본다')
+  // 회장 결정 — 영업 · 원가 관리 모두 Market · Current 총액을 본다(영업은 원료별 값을 못 보므로 두 식이 역산이 되지 않는다).
+  assert.equal((await as(U.cost, `select * from cost_product_cost('${p1}', 'market')`)).length, 1, '0062: 원가 관리가 Market 총액을 못 본다')
+  assert.equal((await as(U.sales, `select * from cost_product_cost('${p1}', 'current')`)).length, 1, '0062: 영업이 Current 총액을 못 본다')
   const cc = await as<Record<string, unknown>>(U.cost, `select * from cost_product_cost('${p1}', 'current', '${T}')`)
   assert.equal(cc.length, 1, '0062: 원가 함수가 한 줄이 아니다(원료 수가 응답 크기로 샌다)')
   assert.deepEqual(Object.keys(cc[0]).sort(), ['as_of', 'computed', 'kind', 'material_krw_per_kg', 'product_id', 'reason'], '0062: 원가 함수 칸')
@@ -390,7 +389,7 @@ async function main() {
   const marketPrev = (0.5 * 900 + 0.3 * 2800 + 0.25 * 500) / 0.95
   for (const from of [M3, '2026-01-01']) {
     const imp = await as<{ v: string }>(U.sales, `select cost_material_impact('${p1}', 'market', '${from}', '${T}') as v`)
-    assert.equal(Number(imp[0].v), Math.round((Math.round(marketM / 10) * 10 / (Math.round(marketPrev / 10) * 10) - 1) * 100), '0062: 영업 원료비 영향(지난 주 → 이번 주 · 1%p)')
+    assert.equal(Number(imp[0].v), Math.round((marketM / marketPrev - 1) * 1000) / 10, '0062: 영업 원료비 영향(지난 주 → 이번 주 · 0.1%p)')
   }
   const impC = await as<{ v: string }>(U.chair, `select cost_material_impact('${p1}', 'market', '${M3}', '${T}') as v`)
   assert.equal(Number(impC[0].v), Math.round((marketT / marketM3 - 1) * 1000) / 10, '0062: 대표 원료비 영향(0.1%p)')
@@ -411,6 +410,42 @@ async function main() {
   assert.equal(bomAudit.length, 4, '0062: BOM 저장 감사가 저장마다 한 줄이 아니다(p1 · p3 · p3 단종 시험 · p3 되돌림)')
   const bomAuditText = JSON.stringify(bomAudit)
   assert.ok(!bomAuditText.includes(m1) && !bomAuditText.includes('0.5'), '0062: BOM 저장 감사에 원료 · 비율이 들어갔다')
+
+  // ── 회장 결정(2026-10-09) — 영업 화면 한 줄: 총액만 · 원가 우위 · 목표 마진별 제시가 · 등급 ─────────────────────
+  await db.exec(`delete from cost_secret.cost_reads where user_id = '${U.sales}'`) // 위 200건 한도 시험이 쓴 몫을 비운다
+  const sv = await as<Record<string, unknown>>(U.sales, `select * from cost_sales_view('${p1}')`)
+  assert.deepEqual(Object.keys(sv[0]).sort(), ['advantage_krw_per_kg', 'as_of', 'computed', 'current_krw_per_kg', 'market_krw_per_kg', 'material_impact_pct',
+    'offers', 'overhead_krw_per_kg', 'overhead_ready', 'product_id', 'total_krw_per_kg'], '결정: 영업 화면 칸에 원료 · 원료별 값이 섞였다')
+  assert.equal(Number(sv[0].market_krw_per_kg), Math.round(marketM / 10) * 10, '결정: 영업 Market 총액')
+  assert.equal(Number(sv[0].current_krw_per_kg), Math.round(currentT / 10) * 10, '결정: 영업 Current 총액')
+  assert.equal(Number(sv[0].advantage_krw_per_kg), Math.round(marketM / 10) * 10 - Math.round(currentT / 10) * 10, '결정: 원가 우위 = Market − Current')
+  const offers = sv[0].offers as { margin_pct: number; price_krw_per_kg: number; grade: string }[]
+  const tot = Math.round(currentT / 10) * 10
+  assert.deepEqual(offers.map((o) => [o.margin_pct, Number(o.price_krw_per_kg), o.grade]),
+    [15, 20, 25, 30].map((m) => [m, Math.round(tot / (1 - m / 100) / 10) * 10, m >= 20 ? 'green' : m >= 15 ? 'yellow' : 'red']), '결정: 목표 마진별 제시가 · 등급')
+  assert.ok(!JSON.stringify(sv).includes(m1) && !FAKE_MATERIAL_NAMES.some((n) => JSON.stringify(sv).includes(n)), '결정: 영업 화면에 원료가 샌다')
+  const pc = async (price: number) => (await as<{ margin_pct: string; grade: string }>(U.sales, `select * from cost_price_check('${p1}', ${price})`))[0]
+  assert.equal((await pc(tot * 2)).grade, 'green', '결정: 마진 50% = Green')
+  assert.equal((await pc(Math.round(tot / 0.82))).grade, 'yellow', '결정: 마진 18% = Yellow')
+  assert.equal((await pc(tot)).grade, 'red', '결정: 마진 0% = Red')
+  assert.equal(Number((await pc(tot * 2)).margin_pct), 50, '결정: 마진 % = (판매가 − 총원가) ÷ 판매가')
+  await refuses(as(U.sales, `select * from cost_price_check('${p1}', 0)`), /cost_price_invalid/, '결정: 0원 제시가')
+  for (const uid of [U.buy, U.prod, U.exec, U.ceo, U.cfo, U.vana, U.agent]) {
+    await refuses(as(uid, `select * from cost_sales_view('${p1}')`), /cost_not_found/, `결정: ${uid.slice(-2)}가 영업 원가 화면을 본다`)
+  }
+  await refuses(as(U.both2, `select * from cost_sales_view('${p1}')`), /cost_role_conflict/, '결정: 구매 입력 + 영업 견적 겸직이 영업 원가를 본다')
+
+  // 원가 관리 감수 조건 — 회사마다 셋까지 · 호출마다 감사 · 대표 감시.
+  await refuses(db.query(`insert into user_module_access (user_id, module, can_write) values ('${U.exec}', '/costing/biz_dy', true)`), /cost_costing_cap/,
+    '결정: 원가 관리 권한자가 회사에 넷 이상')
+  const ca0 = await auditN(U.cost)
+  for (let i = 0; i < 3; i++) await run(U.cost, `select * from cost_product_cost('${p1}', 'current')`)
+  assert.equal((await auditN(U.cost)) - ca0, 3, '결정: 원가 관리 원가 조회가 호출마다 감사되지 않는다')
+  const watch = await as<{ user_id: string; cost_reads_7d: number }>(U.chair, `select * from cost_costing_watch('biz_dy')`)
+  assert.ok(watch.some((w) => w.user_id === U.cost && Number(w.cost_reads_7d) >= 3), '결정: 대표 감시 목록에 원가 관리 권한자 · 조회 수가 없다')
+  for (const uid of [U.cost, U.sales, U.buy]) {
+    await refuses(as(uid, `select * from cost_costing_watch('biz_dy')`), /cost_not_found/, `결정: ${uid.slice(-2)}가 원가 관리 감시 목록을 본다`)
+  }
 
   // 카탈로그 — 공개 뷰가 비공개 스키마를 참조하지 않는다 · pg_stats 비공개 · anon execute 없음 · 내부 함수 execute 없음 · pg_temp · FORCE 없음.
   const deps = await owner<{ v: string }>(`
@@ -475,7 +510,7 @@ async function main() {
   assert.equal((await as(U.chair, `select * from cost_bom_get('${p1}', '${T}')`)).length, 3, '0062(BYPASSRLS 없는 소유자): 대표 BOM 읽기가 죽는다')
   assert.ok((await as(U.prod, `select * from cost_production_lots('biz_dy')`)).length >= 4, '0061(BYPASSRLS 없는 소유자): 생산 LOT 함수가 0행')
   assert.ok((await as(U.prod, `select * from cost_production_materials('biz_dy')`)).length >= 4, '0061(BYPASSRLS 없는 소유자): 생산 시세 함수가 0행')
-  assert.ok((await as(U.sales, `select * from cost_sales_purchase_summary('biz_dy')`)).length >= 4, '0061(BYPASSRLS 없는 소유자): 영업 요약이 0행')
+  assert.ok((await as(U.cost, `select * from cost_sales_purchase_summary('biz_dy')`)).length >= 4, '0061(BYPASSRLS 없는 소유자): 원료 요약이 0행')
   assert.equal(await count(U.cost, `storage.objects where bucket_id = 'purchasing'`), 1, '0061(BYPASSRLS 없는 소유자): 구매 첨부가 안 보인다')
   await run(U.buy, `insert into cost_market_prices (business_id, material_id, observed_on, price, source_name) values ('biz_dy', '${m3}', '${T}', 510, '소유자 시험')`)
   await refuses(run(U.buy, `insert into cost_market_prices (business_id, material_id, observed_on, price, source_name) values ('biz_dy', '${m2}', '${M3}', 1000000000000, '소유자 1조')`),
@@ -505,7 +540,7 @@ async function main() {
   const aiFiles = walk(join(root, 'lib', 'ai')).concat(walk(join(root, 'lib', 'attachments')))
   for (const f of aiFiles) {
     const text = readFileSync(f, 'utf8')
-    for (const bad of ['cost_secret', 'cost_bom_', 'cost_product_breakdown', 'cost_product_cost', 'cost_material_impact', 'costBom', 'productCost']) {
+    for (const bad of ['cost_secret', 'cost_bom_', 'cost_product_breakdown', 'cost_product_cost', 'cost_material_impact', 'cost_sales_view', 'cost_price_check', 'costBom', 'productCost']) {
       assert.ok(!text.includes(bad), `경계: AI · 첨부 코드(${f})가 원가 · BOM(${bad})을 부른다`)
     }
   }
@@ -513,8 +548,8 @@ async function main() {
   await db.close()
   console.log(
     'PASS: 0061 · 0062 원가 엔진 — 권한 표(구매 · 생산 · 영업 · 원가 관리 · 대표 · 줄 없는 임원/회사 대표/CFO · 다른 회사 · AIAgent · anon) · ' +
-      '무효만 · 시퀀스 되감기 거부 · Landed · 환율 · 만든 사람 위조 불가 · 터무니없는 값 거부 · 생산 «제한»(오늘만) · 영업 «요약»(지난 달 · 3건) · ' +
-      '결재 후보 · 구매 첨부 버킷 · BOM 대표만 · 진짜 BOM 거부 · 원가 합계 한 줄 · 10원 반올림 · Market/Current 값 · 대표 외 이번 주 월요일 하나 · 아는 시각 주 고정 · 역할마다 종류 하나 · ' +
+      '무효만 · 시퀀스 되감기 거부 · Landed · 환율 · 만든 사람 위조 불가 · 터무니없는 값 거부 · 생산 «제한»(오늘만) · 영업 원료 0(이름 · 시세 · 요약) · 영업 화면 총액만(Market · Current · 우위 · 제시가 · 등급) · 원가 관리 셋까지 · 호출마다 감사 · 대표 감시 · ' +
+      '결재 후보 · 구매 첨부 버킷 · BOM 대표만 · 진짜 BOM 거부 · 원가 합계 한 줄 · 10원 반올림 · Market/Current 값 · 대표 외 이번 주 월요일 하나 · 월요일 0시 스냅샷 · ' +
       '회사 단위 계산 여부(단종 BOM 원료 포함) · 원료비 영향 지난 주→이번 주 · 출처 셋 · 미래 날짜 거부 · 무효로 기준 없애기 거부 · 구매 겸직 거부 · 쌍시간(오늘 넣은 시세 · 오늘 무효 무시) · 같은 오류 · 이유 코드 하나 · 오류에 원료 없음 · ' +
       '원료비 영향 1%p/0.1%p · 하루 · 기준일 감사 한 줄 · 200건 한도 · BOM 감사에 값 없음 · 공개 뷰 의존 0 · pg_stats 0 · anon execute 0(함수 기본 권한 흉내) · ' +
       'pg_temp 고정 · FORCE 없음 · BYPASSRLS 없는 소유자에서 정의자 함수 동작 · AI 코드 경계',
