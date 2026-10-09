@@ -102,7 +102,13 @@ begin
   perform set_config('request.jwt.claims', json_build_object('sub', v_sales, 'role', 'authenticated')::text, true);
   perform set_config('request.jwt.claim.sub', v_sales::text, true);
   set local role authenticated;
-  select * into r from public.cost_product_cost(v_prd, 'current', current_date);
+  -- 영업은 Market 하나(리뷰 3회차 I2) — Current는 거부되어야 한다.
+  begin
+    perform * from public.cost_product_cost(v_prd, 'current');
+    raise exception 'FAIL d: 영업이 Current 원가를 본다';
+  exception when invalid_parameter_value then null;
+  end;
+  select * into r from public.cost_product_cost(v_prd, 'market', current_date);
   if r.as_of <> date_trunc('week', current_date)::date then raise exception 'FAIL d: 영업 기준일 % (월요일 고정 아님)', r.as_of; end if;
   if r.as_of > current_date - 1 then
     -- 이번 주 월요일이 시세 · LOT 날짜(어제)보다 앞이면 계산되지 않는 것이 맞다.
@@ -123,7 +129,7 @@ begin
     raise exception 'FAIL d: 영업이 비공개 스키마 표를 읽는다';
   exception when insufficient_privilege then null;
   end;
-  v_res := v_res || 'd(영업 원가 한 값 · 월요일 고정 · 분해/BOM/비공개 표 거부) ';
+  v_res := v_res || 'd(영업 Market 한 값 · Current 거부 · 월요일 고정 · 분해/BOM/비공개 표 거부) ';
 
   -- ── (e) 구매(원가 줄 없음): 원가 거부 ──
   reset role;

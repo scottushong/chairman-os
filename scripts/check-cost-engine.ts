@@ -293,17 +293,20 @@ async function main() {
   // 원가 관리: 합계 한 값 · 10원 반올림 · 이번 주 월요일(리뷰 2회차 C1).
   const m1M = T === M ? 1200 : 1000
   const marketM = (0.5 * m1M + 0.3 * 2800 + 0.25 * 500) / 0.95
-  const cc = await as<Record<string, unknown>>(U.cost, `select * from cost_product_cost('${p1}', 'market', '${T}')`)
+  // 리뷰 3회차 I2 — 대표 외는 역할마다 종류 하나(원가 관리 = Current · 영업 = Market).
+  await refuses(as(U.cost, `select * from cost_product_cost('${p1}', 'market')`), /cost_kind_unsupported/, '0062: 원가 관리가 Market까지 본다(한 주 식 둘)')
+  await refuses(as(U.sales, `select * from cost_product_cost('${p1}', 'current')`), /cost_kind_unsupported/, '0062: 영업이 Current까지 본다')
+  const cc = await as<Record<string, unknown>>(U.cost, `select * from cost_product_cost('${p1}', 'current', '${T}')`)
   assert.equal(cc.length, 1, '0062: 원가 함수가 한 줄이 아니다(원료 수가 응답 크기로 샌다)')
   assert.deepEqual(Object.keys(cc[0]).sort(), ['as_of', 'computed', 'kind', 'material_krw_per_kg', 'product_id', 'reason'], '0062: 원가 함수 칸')
-  assert.equal(Number(cc[0].material_krw_per_kg), Math.round(marketM / 10) * 10, '0062: Market 원가(10원 반올림 · 월요일)가 틀렸다')
   const m1cur = (1480 * 1000 + 1600 * 1000 + 1400 * 500) / 2500
   const currentT = (0.5 * m1cur + 0.3 * 3000 + 0.25 * 600) / 0.95
+  assert.equal(Number(cc[0].material_krw_per_kg), Math.round(currentT / 10) * 10, '0062: Current 원가(10원 반올림 · 월요일)가 틀렸다')
   const cur = await as<{ material_krw_per_kg: string }>(U.cost, `select * from cost_product_cost('${p1}', 'current', '${T}')`)
   assert.equal(Number(cur[0].material_krw_per_kg), Math.round(currentT / 10) * 10, '0062: Current 원가가 틀렸다')
-  const old = await as<{ as_of: string }>(U.cost, `select as_of::text as as_of from cost_product_cost('${p1}', 'market', '${T}'::date - 60)`)
+  const old = await as<{ as_of: string }>(U.cost, `select as_of::text as as_of from cost_product_cost('${p1}', 'current', '${T}'::date - 60)`)
   assert.equal(old[0].as_of, M, '0062: 원가 관리가 이번 주 월요일 밖을 본다(리뷰 2회차 C1)')
-  const fut = await as<{ as_of: string }>(U.cost, `select as_of::text as as_of from cost_product_cost('${p1}', 'market', '2999-01-01')`)
+  const fut = await as<{ as_of: string }>(U.cost, `select as_of::text as as_of from cost_product_cost('${p1}', 'current', '2999-01-01')`)
   assert.equal(fut[0].as_of, M, '0062: 미래 기준일을 받는다')
 
   // 영업: 이번 주 월요일 하나(인자 무시).
@@ -319,36 +322,45 @@ async function main() {
     await refuses(as(uid, `select cost_material_impact('${p1}', 'market', '${M3}', '${T}')`), /cost_role_conflict/, `0062: 구매 겸직(${uid.slice(-2)})이 원료비 영향을 본다`)
   }
   // (b) 쌍시간 — 오늘 넣은 시세 · 오늘 무효로 한 시세는 원가 관리 원가에 비치지 않는다(대표는 본다).
-  const before = Number((await as<{ x: string }>(U.cost, `select material_krw_per_kg as x from cost_product_cost('${p1}', 'market', '${T}')`))[0].x)
-  await run(U.buy, `insert into cost_market_prices (business_id, material_id, observed_on, price, currency, source_name) values ('biz_dy', '${m2}', '${T}', 10000, 'KRW', 'zz')`)
+  const before = Number((await as<{ x: string }>(U.cost, `select material_krw_per_kg as x from cost_product_cost('${p1}', 'current', '${T}')`))[0].x)
+  const { zlot } = await one<{ zlot: string }>(U.buy, `insert into cost_purchase_lots (business_id, material_id, supplier_id, received_on, qty_kg, unit_price) values ('biz_dy', '${m2}', '${s1}', '${M3}', 100000, 4000) returning lot_id as zlot`)
+  await run(U.buy, `insert into cost_market_prices (business_id, material_id, observed_on, price, currency, source_name) values ('biz_dy', '${m2}', '${M3}', 10000, 'KRW', 'zz')`)
   await run(U.buy, `update cost_market_prices set void_reason = '시험' where material_id = '${m3}'`)
-  const after = Number((await as<{ x: string }>(U.cost, `select material_krw_per_kg as x from cost_product_cost('${p1}', 'market', '${T}')`))[0].x)
+  const after = Number((await as<{ x: string }>(U.cost, `select material_krw_per_kg as x from cost_product_cost('${p1}', 'current', '${T}')`))[0].x)
+  const salesAfter = Number((await as<{ x: string }>(U.sales, `select material_krw_per_kg as x from cost_product_cost('${p1}', 'market')`))[0].x)
+  assert.equal(salesAfter, Math.round(marketM / 10) * 10, '0062: 오늘 넣은 시세 · 오늘 무효가 영업 원가에 바로 비친다')
   assert.equal(after, before, '0062: 오늘 넣은 시세 · 오늘 무효가 원가 관리 원가에 바로 비친다(쌍시간 없음 — 리뷰 C2(b))')
   const chairRow = await as<{ computed: boolean; reason: string }>(U.chair, `select computed, reason from cost_product_cost('${p1}', 'market', '${T}')`)
   assert.deepEqual([chairRow[0].computed, chairRow[0].reason], [false, 'price_missing'], '0062: 대표는 지금 아는 전부(무효 반영)로 본다')
   await db.exec(`set session_replication_role = replica;
     update cost_market_prices set voided_at = null, voided_by = null, void_reason = null where material_id = '${m3}';
     update cost_market_prices set voided_at = now(), voided_by = '${U.buy}', void_reason = '시험 정리' where source_name = 'zz';
+    update cost_purchase_lots set voided_at = now(), voided_by = '${U.buy}', void_reason = '시험 정리' where lot_id = '${zlot}';
     set session_replication_role = origin;`)
 
   // 그 밖: 생산 · 구매 · 임원 · 회사 대표 · CFO · 다른 회사 · 시스템 계정 → 같은 오류.
   for (const uid of [U.buy, U.prod, U.exec, U.ceo, U.cfo, U.vana, U.agent]) {
-    await refuses(as(uid, `select * from cost_product_cost('${p1}', 'market')`), /cost_not_found/, `0062: ${uid.slice(-2)}가 제품 원가를 본다`)
+    await refuses(as(uid, `select * from cost_product_cost('${p1}', 'current')`), /cost_not_found/, `0062: ${uid.slice(-2)}가 제품 원가를 본다`)
   }
-  await refuses(as(U.cost, `select * from cost_product_cost('prd_nope_nope', 'market')`), /cost_not_found/, '0062: 없는 제품의 오류가 다르다')
+  await refuses(as(U.cost, `select * from cost_product_cost('prd_nope_nope', 'current')`), /cost_not_found/, '0062: 없는 제품의 오류가 다르다')
   await refuses(as(U.cost, `select * from cost_product_cost('${p1}', 'actual')`), /cost_kind_unsupported/, '0062: 1차에 없는 Actual을 받는다')
 
   // 리뷰 2회차 I1 — 회사의 사용 중 원료 하나라도 단가가 없으면 그 회사 모든 제품이 not_computed(BOM 소속이 «계산됨»으로 새지 않게).
   const { m5 } = await one<{ m5: string }>(U.buy, `insert into cost_materials (business_id, name) values ('biz_dy', '가짜원료 새것') returning material_id as m5`)
-  const inc = await as<{ computed: boolean; reason: string }>(U.cost, `select computed, reason from cost_product_cost('${p1}', 'market')`)
+  const inc = await as<{ computed: boolean; reason: string }>(U.cost, `select computed, reason from cost_product_cost('${p1}', 'current')`)
   assert.deepEqual([inc[0].computed, inc[0].reason], [false, 'not_computed'], '0062: 단가 없는 새 원료가 있는데 BOM에 없는 제품은 계산된다(소속이 샌다)')
-  const incI = await as<{ v: string | null }>(U.cost, `select cost_material_impact('${p1}', 'market', '${M3}', '${T}') as v`)
+  const incI = await as<{ v: string | null }>(U.sales, `select cost_material_impact('${p1}', 'market', '${M3}', '${T}') as v`)
   assert.equal(incI[0].v, null, '0062: 회사가 불완전한데 원료비 영향이 나온다')
   await run(U.buy, `update cost_materials set active = false where material_id = '${m5}'`)
+  // 리뷰 3회차 I1 — 사용 중이 아닌 원료라도 그 날 쓰는 BOM에 들어 있으면 센다(그 제품만 not_computed가 되지 않게).
+  await run(U.chair, `select cost_bom_save('${p3}', '${M}'::date - 30, 100, '[{"material_id":"${m1}","kg_per_kg":0.5},{"material_id":"${m5}","kg_per_kg":0.5}]'::jsonb)`)
+  const incB = await as<{ computed: boolean }>(U.cost, `select computed from cost_product_cost('${p1}', 'current')`)
+  assert.equal(incB[0].computed, false, '0062: 단종 원료가 든 BOM이 있는데 다른 제품은 계산된다(소속이 샌다)')
+  await run(U.chair, `select cost_bom_save('${p3}', '${M}'::date - 30, 100, '[{"material_id":"${m1}","kg_per_kg":0.5},{"material_id":"${m4}","kg_per_kg":0.5}]'::jsonb)`)
 
   // 이유 코드 — 대표 외는 not_computed 하나(리뷰 I5).
   for (const p of [p2]) {
-    const r = await as<{ computed: boolean; reason: string; material_krw_per_kg: unknown }>(U.cost, `select * from cost_product_cost('${p}', 'market', '${T}')`)
+    const r = await as<{ computed: boolean; reason: string; material_krw_per_kg: unknown }>(U.cost, `select * from cost_product_cost('${p}', 'current', '${T}')`)
     assert.deepEqual([r[0].computed, r[0].reason, r[0].material_krw_per_kg], [false, 'not_computed', null], '0062: 대표 외에게 이유가 갈라진다')
   }
   const cr2 = await as<{ reason: string }>(U.chair, `select reason from cost_product_cost('${p2}', 'market', '${T}')`)
@@ -377,8 +389,8 @@ async function main() {
   // 대표 외는 인자와 무관하게 «지난 주 월요일 → 이번 주 월요일» 한 값(리뷰 2회차 C1). 지난 주 월요일(M−7)에는 M−10 시세가 쓰인다.
   const marketPrev = (0.5 * 900 + 0.3 * 2800 + 0.25 * 500) / 0.95
   for (const from of [M3, '2026-01-01']) {
-    const imp = await as<{ v: string }>(U.cost, `select cost_material_impact('${p1}', 'market', '${from}', '${T}') as v`)
-    assert.equal(Number(imp[0].v), Math.round((Math.round(marketM / 10) * 10 / (Math.round(marketPrev / 10) * 10) - 1) * 100), '0062: 원가 관리 원료비 영향(지난 주 → 이번 주 · 1%p)')
+    const imp = await as<{ v: string }>(U.sales, `select cost_material_impact('${p1}', 'market', '${from}', '${T}') as v`)
+    assert.equal(Number(imp[0].v), Math.round((Math.round(marketM / 10) * 10 / (Math.round(marketPrev / 10) * 10) - 1) * 100), '0062: 영업 원료비 영향(지난 주 → 이번 주 · 1%p)')
   }
   const impC = await as<{ v: string }>(U.chair, `select cost_material_impact('${p1}', 'market', '${M3}', '${T}') as v`)
   assert.equal(Number(impC[0].v), Math.round((marketT / marketM3 - 1) * 1000) / 10, '0062: 대표 원료비 영향(0.1%p)')
@@ -387,16 +399,16 @@ async function main() {
   const auditN = async (uid: string) =>
     Number((await owner<{ n: number }>(`select count(*)::int as n from audit_log where entity_table = 'cost_products' and actor_user_id = '${uid}'`))[0].n)
   const a0 = await auditN(U.sales)
-  for (let i = 0; i < 3; i++) await run(U.sales, `select * from cost_product_cost('${p1}', 'current')`)
+  for (let i = 0; i < 3; i++) await run(U.sales, `select * from cost_product_cost('${p1}', 'market')`)
   assert.equal((await auditN(U.sales)) - a0, 1, '0062: 같은 날 같은 제품 · 종류 · 기준일 조회가 감사 한 줄로 합쳐지지 않는다')
   const lastAudit = await owner<{ a: string }>(`select after->>'as_of' as a from audit_log where entity_table = 'cost_products' and actor_user_id = '${U.sales}' order by id desc limit 1`)
   assert.equal(lastAudit[0].a, M, '0062: 원가 조회 감사에 기준일이 없다')
-  await db.exec(`update cost_secret.cost_reads set calls = 199 where user_id = '${U.sales}' and kind = 'current'`)
-  await run(U.sales, `select * from cost_product_cost('${p1}', 'current')`)
-  await refuses(run(U.sales, `select * from cost_product_cost('${p1}', 'current')`), /cost_rate_limited/, '0062: 하루 200건 한도가 없다')
+  await db.exec(`update cost_secret.cost_reads set calls = 199 where user_id = '${U.sales}' and kind = 'market'`)
+  await run(U.sales, `select * from cost_product_cost('${p1}', 'market')`)
+  await refuses(run(U.sales, `select * from cost_product_cost('${p1}', 'market')`), /cost_rate_limited/, '0062: 하루 200건 한도가 없다')
   assert.equal(await auditN(U.chair), 0, '0062: 대표 조회가 한도 · 감사에 걸린다')
   const bomAudit = await owner<{ after: unknown }>(`select after from audit_log where entity_table = 'cost_bom' and action = 'create'`)
-  assert.equal(bomAudit.length, 2, '0062: BOM 저장 감사가 없다')
+  assert.equal(bomAudit.length, 4, '0062: BOM 저장 감사가 저장마다 한 줄이 아니다(p1 · p3 · p3 단종 시험 · p3 되돌림)')
   const bomAuditText = JSON.stringify(bomAudit)
   assert.ok(!bomAuditText.includes(m1) && !bomAuditText.includes('0.5'), '0062: BOM 저장 감사에 원료 · 비율이 들어갔다')
 
@@ -458,8 +470,8 @@ async function main() {
   `)
   const nb = await owner<{ s: boolean; b: boolean }>(`select rolsuper as s, rolbypassrls as b from pg_roles where rolname = 'app_owner'`)
   assert.deepEqual([nb[0].s, nb[0].b], [false, false], '실험 설정이 깨졌다 — app_owner가 superuser · bypassrls다')
-  const nbCost = await as<{ x: string }>(U.cost, `select material_krw_per_kg as x from cost_product_cost('${p1}', 'market', '${T}')`)
-  assert.equal(Number(nbCost[0].x), Math.round(marketM / 10) * 10, '0062(BYPASSRLS 없는 소유자): 원가 관리 원가가 죽는다')
+  const nbCost = await as<{ x: string }>(U.cost, `select material_krw_per_kg as x from cost_product_cost('${p1}', 'current', '${T}')`)
+  assert.equal(Number(nbCost[0].x), Math.round(currentT / 10) * 10, '0062(BYPASSRLS 없는 소유자): 원가 관리 원가가 죽는다')
   assert.equal((await as(U.chair, `select * from cost_bom_get('${p1}', '${T}')`)).length, 3, '0062(BYPASSRLS 없는 소유자): 대표 BOM 읽기가 죽는다')
   assert.ok((await as(U.prod, `select * from cost_production_lots('biz_dy')`)).length >= 4, '0061(BYPASSRLS 없는 소유자): 생산 LOT 함수가 0행')
   assert.ok((await as(U.prod, `select * from cost_production_materials('biz_dy')`)).length >= 4, '0061(BYPASSRLS 없는 소유자): 생산 시세 함수가 0행')
@@ -468,7 +480,7 @@ async function main() {
   await run(U.buy, `insert into cost_market_prices (business_id, material_id, observed_on, price, source_name) values ('biz_dy', '${m3}', '${T}', 510, '소유자 시험')`)
   await refuses(run(U.buy, `insert into cost_market_prices (business_id, material_id, observed_on, price, source_name) values ('biz_dy', '${m2}', '${M3}', 1000000000000, '소유자 1조')`),
     /cost_price_outlier/, '0061(BYPASSRLS 없는 소유자): 터무니없는 값 거부가 죽는다')
-  assert.ok((await as(U.cost, `select cost_material_impact('${p1}', 'market', '${M3}', '${T}') as v`)).length === 1, '0062(BYPASSRLS 없는 소유자): 원료비 영향이 죽는다')
+  assert.ok((await as(U.cost, `select cost_material_impact('${p1}', 'current', '${M3}', '${T}') as v`)).length === 1, '0062(BYPASSRLS 없는 소유자): 원료비 영향이 죽는다')
   await db.exec(`set session_replication_role = replica;
     insert into decisions (decision_id, business_id, title, status, template_key, form, decided_at) values
       ('dec_c61_ok2', 'biz_dy', '원료 구매 3', 'Approved', 'purchase', '{"item":"a","vendor":"b","quantity":"10","amount":"7000"}', now());
@@ -502,8 +514,8 @@ async function main() {
   console.log(
     'PASS: 0061 · 0062 원가 엔진 — 권한 표(구매 · 생산 · 영업 · 원가 관리 · 대표 · 줄 없는 임원/회사 대표/CFO · 다른 회사 · AIAgent · anon) · ' +
       '무효만 · 시퀀스 되감기 거부 · Landed · 환율 · 만든 사람 위조 불가 · 터무니없는 값 거부 · 생산 «제한»(오늘만) · 영업 «요약»(지난 달 · 3건) · ' +
-      '결재 후보 · 구매 첨부 버킷 · BOM 대표만 · 진짜 BOM 거부 · 원가 합계 한 줄 · 10원 반올림 · Market/Current 값 · 대표 외 이번 주 월요일 하나 · ' +
-      '회사 단위 계산 여부 · 원료비 영향 지난 주→이번 주 · 출처 셋 · 미래 날짜 거부 · 무효로 기준 없애기 거부 · 구매 겸직 거부 · 쌍시간(오늘 넣은 시세 · 오늘 무효 무시) · 같은 오류 · 이유 코드 하나 · 오류에 원료 없음 · ' +
+      '결재 후보 · 구매 첨부 버킷 · BOM 대표만 · 진짜 BOM 거부 · 원가 합계 한 줄 · 10원 반올림 · Market/Current 값 · 대표 외 이번 주 월요일 하나 · 아는 시각 주 고정 · 역할마다 종류 하나 · ' +
+      '회사 단위 계산 여부(단종 BOM 원료 포함) · 원료비 영향 지난 주→이번 주 · 출처 셋 · 미래 날짜 거부 · 무효로 기준 없애기 거부 · 구매 겸직 거부 · 쌍시간(오늘 넣은 시세 · 오늘 무효 무시) · 같은 오류 · 이유 코드 하나 · 오류에 원료 없음 · ' +
       '원료비 영향 1%p/0.1%p · 하루 · 기준일 감사 한 줄 · 200건 한도 · BOM 감사에 값 없음 · 공개 뷰 의존 0 · pg_stats 0 · anon execute 0(함수 기본 권한 흉내) · ' +
       'pg_temp 고정 · FORCE 없음 · BYPASSRLS 없는 소유자에서 정의자 함수 동작 · AI 코드 경계',
   )

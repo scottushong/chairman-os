@@ -211,7 +211,14 @@ begin
   -- 리뷰 2회차 C1 — 시세를 읽는 사람(원가 관리 · 영업 둘 다 시세 표 O)이 합계를 여러 날짜로 받으면 최소제곱으로 비율이 첫날에 풀린다.
   -- 대표 외는 원가 관리 · 영업 모두 «이번 주 월요일» 한 값(인자 무시) — 한 주에 한 점씩만 쌓인다(설계서 6.3).
   as_of := date_trunc('week', v_today)::date;
-  known_at := least(now() - interval '3 days', ((as_of + 1)::timestamp at time zone 'Asia/Seoul'));
+  -- 리뷰 3회차 C1 — 아는 시각은 그 주 내내 하나(월요일 앞 금요일 0시 KST). now() − 3일처럼 흘러가면 월~금 사이 시세가 하나씩 비쳐 들어와
+  -- 원료 하나씩 비율이 풀린다. 금~일에 들어온 시세는 다음 주 값에 들어간다.
+  known_at := ((as_of - 3)::timestamp at time zone 'Asia/Seoul');
+  -- 리뷰 3회차 I2 — 대표 외는 역할마다 원가 종류 하나: 원가 관리 = Current(재고 이동평균), 영업 = Market(시장가로 산 경쟁사 비교).
+  -- 두 종류를 다 주면 한 주에 식이 둘이라 역산이 두 배 빨라진다. 둘 다 가진 사람은 원가 관리로 본다.
+  if (replace(p_kind, 'impact_', '') <> (case when cost_can('costing', business_id) then 'current' else 'market' end)) then
+    raise exception 'cost_kind_unsupported' using errcode = '22023';
+  end if;
   select coalesce(sum(r.calls), 0) into v_total from cost_secret.cost_reads r where r.user_id = auth.uid() and r.read_on = v_today;
   if v_total >= 200 then
     raise exception 'cost_rate_limited' using errcode = '54000';
@@ -227,12 +234,17 @@ begin
 end;
 $fn$;
 
-/** 그 회사의 사용 중 원료 전부에 그 종류 · 그 날짜 · 그 시각까지 알려진 단가가 있는가(대표 외 «계산됨»의 문 — 리뷰 2회차 I1). */
+/** 리뷰 3회차 I1 — 사용 중이 아니어도 그 날 쓰는 BOM 판에 든 원료는 센다(단종 원료가 든 제품만 계산 안 됨이 소속을 알려 주지 않게).
+ *  그 회사의 사용 중 원료 전부에 그 종류 · 그 날짜 · 그 시각까지 알려진 단가가 있는가(대표 외 «계산됨»의 문 — 리뷰 2회차 I1). */
 create or replace function cost_secret.business_complete(p_business text, p_kind text, p_on date, p_known timestamptz) returns boolean
 language sql stable security definer set search_path = public, cost_secret, pg_temp as $fn$
   select not exists (
     select 1 from public.cost_materials m
-     where m.business_id = p_business and m.active
+     where m.business_id = p_business
+       and (m.active or exists (
+             select 1 from cost_secret.bom_lines l join cost_secret.bom_versions v on v.version_id = l.version_id
+              where l.material_id = m.material_id and v.voided_at is null
+                and v.version_id = cost_secret.version_on(v.product_id, p_on)))
        and cost_secret.unit_price(m.material_id, p_kind, p_on, p_known) is null
   );
 $fn$;

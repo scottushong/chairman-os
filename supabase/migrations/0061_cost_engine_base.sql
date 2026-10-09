@@ -130,6 +130,8 @@ create table cost_market_prices (
 );
 create unique index cost_market_prices_one_a_day on cost_market_prices (material_id, observed_on, lower(source_name)) where voided_at is null;
 create index cost_market_prices_by_day on cost_market_prices (business_id, material_id, observed_on desc) where voided_at is null;
+-- 리뷰 3회차 M3 — 원가 함수의 쌍시간 조건(무효 시점까지)은 위 부분 인덱스를 못 쓴다.
+create index cost_market_prices_by_material on cost_market_prices (material_id, observed_on desc);
 comment on table cost_market_prices is '0061. 원료 시장가격(일 단위 원자료). 고치지 않는다 — 틀리면 무효 + 새 줄. 주 · 월은 합산 뷰로만(설계서 9).';
 
 create table cost_purchase_lots (
@@ -166,6 +168,7 @@ create table cost_purchase_lots (
 );
 create unique index cost_purchase_lots_one_per_approval on cost_purchase_lots (source_ref) where source = 'approval' and voided_at is null;
 create index cost_purchase_lots_by_material on cost_purchase_lots (business_id, material_id, received_on desc) where voided_at is null;
+create index cost_purchase_lots_by_material_all on cost_purchase_lots (material_id, received_on desc);
 comment on table cost_purchase_lots is '0061. 구매 · 입고 LOT. Landed Cost(원/kg)를 DB가 계산해 저장한다. 고치지 않는다 — 무효 + 새 줄. 잔량은 저장하지 않는다(0064 뷰).';
 
 create table cost_products (
