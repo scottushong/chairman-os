@@ -1,13 +1,13 @@
 'use client'
 
-import { createContext, useContext, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useOptimistic, useRef, useState, useTransition } from 'react'
 
 import { saveTeam, setDraftGrant, setModuleGrant, setStaffAdminGrant, updateUserProfile } from '@/app/actions/users'
 import { ProfilePhoto } from '@/components/settings/profile-photo'
 import { ForceLogoutButton } from '@/components/settings/force-logout-button'
 import { RevokeButton } from '@/components/settings/revoke-button'
 import { Icon } from '@/components/ui/icon'
-import { roleLabelFor } from '@/lib/boss'
+import { boss, roleLabelFor } from '@/lib/boss'
 import { businessName } from '@/lib/lookup'
 import { businessOfModule, hasDraftGrant, moduleKey } from '@/lib/module-grants'
 import {
@@ -63,6 +63,122 @@ function useRoleLabel(): (role: Role) => string {
   const viewerRole = useContext(ViewerRoleContext)
   return (role) => roleLabelFor(ROLE_LABEL_KO[role], role, viewerRole)
 }
+
+type ActionResult = { error?: string }
+
+/**
+ * 칸 하나의 저장 — 2026-10-09 회장 보고(«칸이 느리고 흐려졌다가 돌아온다 · 한 번은 켠 칸이 꺼져 보였다»)의 답.
+ *
+ *   · 누르는 순간 바뀐다(useOptimistic). 전환(transition)이 끝나면 서버가 다시 그린 props로 돌아간다 —
+ *     그래서 액션이 revalidatePath('/settings/users')를 꼭 불러야 한다(빠지면 칸이 옛 값으로 되돌아 보인다).
+ *   · 저장하는 동안에도 칸을 잠그지 않는다(disabled · 흐림 없음). 대신 그 칸 옆에 «저장 중…».
+ *   · 실패하면 props(진짜 값)로 돌아가고 그 칸 옆에 이유가 뜬다 — 패널 맨 아래가 아니라.
+ *   · 칸마다 따로다. 예전에는 패널 전체가 busy 하나를 나눠 써서 칸 하나가 저장되는 동안 «팀 이동»까지 잠겼다.
+ * 연달아 두 번 눌러도 다음 값은 지금 **보이는** 값에서 계산한다(save에 넘기는 next를 부르는 쪽이 value로 만든다).
+ * Server Action은 Next가 차례대로 보내므로 서버에는 마지막 값이 남는다.
+ */
+function useOptimisticSave<T>(value: T) {
+  const [shown, setShown] = useOptimistic(value)
+  const [, startTransition] = useTransition()
+  const [saving, setSaving] = useState(0)
+  const [error, setError] = useState<string | null>(null)
+  function save(next: T, run: () => Promise<ActionResult>) {
+    setError(null)
+    setSaving((n) => n + 1)
+    startTransition(async () => {
+      setShown(next)
+      let message: string | null = null
+      try {
+        message = (await run()).error ?? null
+      } catch {
+        // 연결이 끊기는 등 응답이 아예 오지 않은 경우. 오류 화면으로 넘기지 않고 그 칸 옆에 말한다.
+        message = '저장하지 못했습니다 — 연결을 확인하고 다시 누르세요.'
+      }
+      setSaving((n) => n - 1)
+      if (message) setError(message)
+    })
+  }
+  return { value: shown, saving: saving > 0, error, save }
+}
+
+/** 칸 옆의 작은 상태 한 줄 — 저장 중 / 실패 이유. */
+function SaveState({ saving, error }: { saving: boolean; error: string | null }) {
+  if (error) {
+    return (
+      <span role="alert" className="text-t10h font-semibold text-critical">
+        {error}
+      </span>
+    )
+  }
+  if (saving) {
+    return (
+      <span role="status" className="text-t10h text-ink-muted">
+        저장 중…
+      </span>
+    )
+  }
+  return null
+}
+
+/** 사람과 그 아래(직속 · 그 아래) 전부. 자기 자신을 포함한다. */
+function subtreeOf(personId: string, people: readonly UserAccount[]): Set<string> {
+  const out = new Set<string>()
+  const queue = [personId]
+  while (queue.length) {
+    const cur = queue.shift()!
+    out.add(cur)
+    for (const p of people) if (p.reports_to === cur && !out.has(p.user_id)) queue.push(p.user_id)
+  }
+  return out
+}
+
+/**
+ * 상사로 고를 수 있는 사람 — 자기 · 자기 아래 · 회수된 사람 · 시스템 계정 제외. 0025 순환 트리거가 어차피 막지만,
+ * 고를 수 있게 두면 사람은 누른 뒤에야 안 된다는 것을 알게 된다.
+ */
+function canBeBoss(candidate: UserAccount, below: Set<string>): boolean {
+  return !below.has(candidate.user_id) && !candidate.revoked_at && !SYSTEM_ROLE.includes(candidate.role)
+}
+
+/** 그 사람이 들어갈 수 있는 팀 — 그 사람의 회사 범위 안의 팀(전사 역할은 전부). */
+function canJoinTeam(person: UserAccount, team: Team): boolean {
+  return person.business_ids.length === 0 || person.business_ids.includes(team.business_id)
+}
+
+/** 옮길 수 있는 사람 — 회장 · 시스템 계정 · 회수된 사람은 옮기지 않는다. */
+function movable(person: UserAccount): boolean {
+  return person.role !== 'Chairman' && !SYSTEM_ROLE.includes(person.role) && !person.revoked_at
+}
+
+/** 이동 요청 — 끌어 놓기(바뀐 칸 하나)이거나 «이동» 버튼(팀 · 상사를 고르는 대화상자). */
+interface MoveRequest {
+  personId: string
+  teamId?: string | null
+  reportsTo?: string | null
+  /** true면 대화상자 안에서 팀 · 상사를 고른다(«이동» 버튼 · 폰 · 키보드). */
+  pick: boolean
+}
+
+interface MoveContextValue {
+  /** 회장만 끌고 놓고 «이동»을 누른다. */
+  enabled: boolean
+  dragId: string | null
+  setDragId: (id: string | null) => void
+  /** 끌고 있는 사람을 이 사람 밑으로 놓을 수 있는가. */
+  canDropOnPerson: (targetId: string) => boolean
+  /** 끌고 있는 사람을 이 팀에 놓을 수 있는가. */
+  canDropOnTeam: (team: Team) => boolean
+  request: (r: MoveRequest) => void
+}
+
+const MoveContext = createContext<MoveContextValue>({
+  enabled: false,
+  dragId: null,
+  setDragId: () => {},
+  canDropOnPerson: () => false,
+  canDropOnTeam: () => false,
+  request: () => {},
+})
 
 export function OrgChart({
   people,
@@ -134,11 +250,50 @@ export function OrgChart({
     setSelection({ kind: 'team', id })
   }
 
+  // ── 0-5 끌어 놓기 · «이동» (회장만) ─────────────────────────────────────
+  //   놓는 순간 저장하지 않는다. 확인 대화상자가 바뀌는 것(팀 · 상사 · 결재가 어디서부터 올라가는가)을 말하고,
+  //   «확인»을 눌러야 updateUserProfile 한 번으로 저장한다. 자물쇠는 여전히 DB다(0002 · 0025 순환 트리거).
+  const [dragId, setDragId] = useState<string | null>(null)
+  const [move, setMove] = useState<MoveRequest | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const dragged = dragId ? (byId.get(dragId) ?? null) : null
+  const draggedBelow = useMemo(() => (dragId ? subtreeOf(dragId, people) : new Set<string>()), [dragId, people])
+  const moveCtx: MoveContextValue = {
+    enabled: canManage,
+    dragId,
+    setDragId,
+    canDropOnPerson: (targetId) => {
+      const target = byId.get(targetId)
+      if (!dragged || !target) return false
+      return target.user_id !== dragged.reports_to && canBeBoss(target, draggedBelow)
+    },
+    canDropOnTeam: (team) => Boolean(dragged) && dragged!.team_id !== team.team_id && canJoinTeam(dragged!, team),
+    request: (r) => {
+      setNotice(null)
+      setDragId(null)
+      setMove(r)
+    },
+  }
+  const movingPerson = move ? (byId.get(move.personId) ?? null) : null
+
   return (
     <ViewerRoleContext.Provider value={viewer?.role ?? null}>
+    <MoveContext.Provider value={moveCtx}>
     {/* 폰에서는 카드 사이를 12px로 좁힌다(회장 규칙 «카드 간격 12px»). 넓은 화면은 그대로. */}
     <div className="grid gap-3 sm:gap-3.5 xl:grid-cols-[minmax(0,1fr)_340px]">
       <div className="space-y-3 sm:space-y-3.5">
+        {notice ? (
+          <p
+            role="status"
+            className="flex items-start justify-between gap-2 rounded-xl border border-ok/40 bg-ok/10 px-3.5 py-2 text-t11h text-ink"
+          >
+            <span>{notice}</span>
+            <button type="button" onClick={() => setNotice(null)} className="shrink-0 text-t10h text-ink-muted hover:text-ink">
+              닫기
+            </button>
+          </p>
+        ) : null}
+
         <WarningBar
           leadlessTeams={leadlessTeams}
           teamless={teamlessPeople}
@@ -174,6 +329,13 @@ export function OrgChart({
               </button>
             ) : null}
           </div>
+
+          {canManage ? (
+            <p className="mt-2 text-t10h text-ink-muted max-sm:hidden">
+              사람을 팀 상자에 끌어다 놓으면 팀이, 다른 사람 위에 놓으면 상사(결재선)가 바뀝니다 — 놓은 뒤 확인을 한 번 더 받습니다.
+              폰 · 키보드는 줄 끝의 «이동»을 누르세요.
+            </p>
+          ) : null}
 
           <div className="mt-3">
             {activeTab === SYSTEM_TAB ? (
@@ -226,6 +388,7 @@ export function OrgChart({
           />
         ) : selected ? (
           <PersonPanel
+            key={selected.user_id}
             person={selected}
             people={people}
             teams={teams}
@@ -242,6 +405,22 @@ export function OrgChart({
         )}
       </aside>
     </div>
+    {move && movingPerson && canManage ? (
+      <MoveDialog
+        key={`${move.personId}:${move.teamId ?? ''}:${move.reportsTo ?? ''}:${move.pick}`}
+        request={move}
+        person={movingPerson}
+        people={people}
+        teams={teams}
+        businesses={businesses}
+        onClose={() => setMove(null)}
+        onSaved={(message) => {
+          setMove(null)
+          setNotice(message)
+        }}
+      />
+    ) : null}
+    </MoveContext.Provider>
     </ViewerRoleContext.Provider>
   )
 }
@@ -361,8 +540,8 @@ function CompanyTree({
 
       <ul className="mt-2 space-y-2.5">
         {buckets.map((b) => (
-          <li key={b.team?.team_id ?? UNASSIGNED} className="rounded-lg border border-line-soft">
-            <div className="flex flex-wrap items-center gap-1.5 border-b border-line-soft px-2.5 py-1.5">
+          <TeamBox key={b.team?.team_id ?? UNASSIGNED} team={b.team}>
+            <div className="flex flex-wrap items-center gap-1.5 border-b border-line-soft px-2.5 py-1.5 transition-opacity group-data-[dim=true]/team:opacity-40">
               {b.team ? (
                 <button
                   type="button"
@@ -415,10 +594,49 @@ function CompanyTree({
                   ))}
               </ul>
             )}
-          </li>
+          </TeamBox>
         ))}
       </ul>
     </div>
+  )
+}
+
+/**
+ * 팀 상자 — 끌고 온 사람을 놓으면 그 팀으로 옮기는 확인 대화상자가 열린다(회장만).
+ * 놓을 수 없는 상자(지금 그 팀 · 그 사람 회사 범위 밖의 팀 · «팀 없음» 칸)는 끄는 동안 흐리게 둔다.
+ */
+function TeamBox({ team, children }: { team: Team | null; children: React.ReactNode }) {
+  const ctx = useContext(MoveContext)
+  const [over, setOver] = useState(false)
+  const dragging = ctx.enabled && ctx.dragId !== null
+  const droppable = dragging && team !== null && ctx.canDropOnTeam(team)
+  return (
+    <li
+      data-team-box={team?.team_id ?? UNASSIGNED}
+      data-droppable={dragging ? String(droppable) : undefined}
+      // 흐림은 머리 줄에만 건다 — 상자 안의 사람들은 «상사로 놓기» 자리라 따로 판정한다.
+      data-dim={dragging && !droppable ? 'true' : undefined}
+      onDragOver={(e) => {
+        if (!droppable) return
+        e.preventDefault()
+        e.dataTransfer.dropEffect = 'move'
+        if (!over) setOver(true)
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false)
+      }}
+      onDrop={(e) => {
+        setOver(false)
+        if (!droppable || !team || !ctx.dragId) return
+        e.preventDefault()
+        ctx.request({ personId: ctx.dragId, teamId: team.team_id, pick: false })
+      }}
+      className={`group/team rounded-lg border transition-[border-color,background-color] ${
+        over ? 'border-accent bg-accent/10' : droppable ? 'border-dashed border-accent/60' : 'border-line-soft'
+      }`}
+    >
+      {children}
+    </li>
   )
 }
 
@@ -502,14 +720,53 @@ function PersonRow({
 }) {
   const revoked = Boolean(person.revoked_at)
   const roleLabel = useRoleLabel()
+  const ctx = useContext(MoveContext)
+  const [over, setOver] = useState(false)
+  const canMove = ctx.enabled && movable(person)
+  const dragging = ctx.enabled && ctx.dragId !== null
+  const self = ctx.dragId === person.user_id
+  // 끌고 있는 사람을 이 사람 밑으로 놓을 수 있는가 — 자기 · 자기 아래 · 회수된 사람 · 지금 상사는 아니다.
+  const droppable = dragging && !self && ctx.canDropOnPerson(person.user_id)
   return (
-    <li className="border-t border-line-soft first:border-t-0">
+    <li
+      data-person-row={person.user_id}
+      data-droppable={dragging && !self ? String(droppable) : undefined}
+      onDragOver={(e) => {
+        if (!droppable) return
+        // 팀 상자(바깥 li)가 아니라 이 사람이 받는다.
+        e.preventDefault()
+        e.stopPropagation()
+        e.dataTransfer.dropEffect = 'move'
+        if (!over) setOver(true)
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false)
+      }}
+      onDrop={(e) => {
+        setOver(false)
+        if (!droppable || !ctx.dragId) return
+        e.preventDefault()
+        e.stopPropagation()
+        ctx.request({ personId: ctx.dragId, reportsTo: person.user_id, pick: false })
+      }}
+      className={`flex items-stretch border-t border-line-soft transition-opacity first:border-t-0 ${
+        over ? 'bg-accent/15 outline-2 -outline-offset-2 outline-accent' : ''
+      } ${dragging && !droppable && !self ? 'opacity-40' : ''} ${self ? 'opacity-60' : ''}`}
+    >
       <button
         type="button"
+        draggable={canMove}
+        onDragStart={(e) => {
+          if (!canMove) return
+          e.dataTransfer.effectAllowed = 'move'
+          e.dataTransfer.setData('text/plain', person.user_id)
+          ctx.setDragId(person.user_id)
+        }}
+        onDragEnd={() => ctx.setDragId(null)}
         onClick={() => onSelect(person.user_id)}
-        className={`flex w-full flex-wrap items-center gap-1.5 px-2.5 py-2 text-left transition-colors hover:bg-raised/60 ${
+        className={`flex min-w-0 flex-1 flex-wrap items-center gap-1.5 px-2.5 py-2 text-left transition-colors hover:bg-raised/60 ${
           active ? 'bg-raised' : ''
-        } ${revoked ? 'opacity-50' : ''}`}
+        } ${revoked ? 'opacity-50' : ''} ${canMove ? 'cursor-grab active:cursor-grabbing' : ''}`}
       >
         {/* 0032. 얼굴이 먼저 온다 — 회장이 목록에서 찾는 것은 이름이 아니라 얼굴이다. */}
         <ProfilePhoto
@@ -557,6 +814,18 @@ function PersonRow({
           마지막 접속 —
         </span>
       </button>
+      {canMove ? (
+        // 폰(끌기가 없다) · 키보드의 길 — 같은 확인 대화상자에서 팀 · 상사를 고른다.
+        <button
+          type="button"
+          onClick={() => ctx.request({ personId: person.user_id, pick: true })}
+          aria-label={`${person.display_name} 이동`}
+          className="flex min-h-11 shrink-0 items-center gap-1 border-l border-line-soft px-2.5 text-t11 text-ink-dim transition-colors hover:bg-raised/60 hover:text-ink sm:min-h-0"
+        >
+          <Icon name="chevron-right" className="size-3.5" />
+          이동
+        </button>
+      ) : null}
     </li>
   )
 }
@@ -570,7 +839,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
-/** 우측 패널 — 상세 · 권한 회수 · 팀 이동 · 역할 변경 · 상사 변경 (블록 B-3). */
+/** 우측 패널 — 상세 · 권한 회수 · 역할 변경 · 팀 · 상사 이동 (블록 B-3). */
 function PersonPanel({
   person,
   people,
@@ -590,33 +859,12 @@ function PersonPanel({
   photoUrls: Record<string, string>
   onClose: () => void
 }) {
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const roleLabel = useRoleLabel()
-
-  async function apply(patch: { role?: Role; teamId?: string; reportsTo?: string }) {
-    setBusy(true)
-    setError(null)
-    const result = await updateUserProfile({ userId: person.user_id, ...patch })
-    setBusy(false)
-    if (result.error) setError(result.error)
-  }
-
-  /**
-   * 상사 후보에서 자기 자신과 **자기 아래 사람들**을 뺀다. 0025의 순환 트리거가 어차피
-   * 막지만, 고를 수 있게 두면 사람은 그것을 누른 뒤에야 안 된다는 것을 알게 된다.
-   */
-  const descendants = new Set<string>()
-  {
-    const queue = [person.user_id]
-    while (queue.length) {
-      const cur = queue.shift()!
-      descendants.add(cur)
-      for (const p of people) if (p.reports_to === cur && !descendants.has(p.user_id)) queue.push(p.user_id)
-    }
-  }
-  const bossOptions = people.filter((p) => !descendants.has(p.user_id) && !p.revoked_at)
+  const moveCtx = useContext(MoveContext)
+  // 역할 변경도 칸 하나다 — 고르는 순간 바뀌어 보이고, 저장 중 · 실패 이유가 그 칸 바로 아래에 뜬다.
+  const role = useOptimisticSave<Role>(person.role)
   const boss = people.find((p) => p.user_id === person.reports_to)
+  const teamName = teams.find((t) => t.team_id === person.team_id)?.name ?? null
 
   return (
     <div className="rounded-xl border border-line bg-panel p-3.5">
@@ -654,9 +902,7 @@ function PersonPanel({
         <Field label="입사일">{person.joined_on ?? '—'}</Field>
         <Field label="퇴사일">{person.left_on ?? '—'}</Field>
         <Field label="직속 상사">{boss?.display_name ?? (person.role === 'Chairman' ? '없음 (뿌리)' : '—')}</Field>
-        <Field label="소속 팀">
-          {teams.find((t) => t.team_id === person.team_id)?.name ?? '미배정'}
-        </Field>
+        <Field label="소속 팀">{teamName ?? '미배정'}</Field>
         <div className="col-span-2">
           <Field label="회사 범위">
             {person.business_ids.length === 0
@@ -674,12 +920,17 @@ function PersonPanel({
       {canManage ? (
         <div className="mt-3 space-y-2.5 border-t border-line-soft pt-3">
           <label className="block">
-            <span className="text-t11 text-ink-dim">역할 변경</span>
+            <span className="flex flex-wrap items-baseline gap-x-2 text-t11 text-ink-dim">
+              역할 변경
+              <SaveState saving={role.saving} error={role.error} />
+            </span>
             <select
-              value={person.role}
-              disabled={busy}
-              onChange={(e) => apply({ role: e.target.value as Role })}
-              className="mt-1 w-full rounded-lg border border-line bg-raised px-2.5 py-1.5 text-t12 text-ink outline-none focus:border-accent disabled:opacity-50"
+              value={role.value}
+              onChange={(e) => {
+                const next = e.target.value as Role
+                role.save(next, () => updateUserProfile({ userId: person.user_id, role: next }))
+              }}
+              className="mt-1 w-full rounded-lg border border-line bg-raised px-2.5 py-1.5 text-t12 text-ink outline-none focus:border-accent"
             >
               {INVITABLE_ROLE.map((r) => (
                 <option key={r} value={r} className="bg-panel">
@@ -695,50 +946,33 @@ function PersonPanel({
             </select>
           </label>
 
-          <label className="block">
-            <span className="text-t11 text-ink-dim">팀 이동</span>
-            <select
-              value={person.team_id ?? ''}
-              disabled={busy}
-              onChange={(e) => apply({ teamId: e.target.value })}
-              className="mt-1 w-full rounded-lg border border-line bg-raised px-2.5 py-1.5 text-t12 text-ink outline-none focus:border-accent disabled:opacity-50"
-            >
-              <option value="" className="bg-panel">
-                (미배정)
-              </option>
-              {teams.map((t) => (
-                <option key={t.team_id} value={t.team_id} className="bg-panel">
-                  {t.name} · {t.name_en}
-                </option>
-              ))}
-            </select>
-          </label>
+          {/*
+           * 팀 · 상사는 고르는 즉시 저장하지 않는다(2026-10-09). 예전의 «팀 이동» 고르기 칸은 저장되는 동안 옛 값으로 튀어
+           * 돌아가 보였고, 오류는 패널 맨 아래에만 떠서 «안 된다»로 읽혔다(운영 김병훈). 이제 조직도의 끌어 놓기와 같은
+           * 확인 대화상자로 간다 — 무엇이 바뀌고 결재가 어디서부터 올라가는지 보고 «확인»을 누른다.
+           */}
+          {movable(person) ? (
+            <div className="rounded-lg border border-line-soft px-2.5 py-2">
+              <p className="text-t11 text-ink-dim">팀 · 상사</p>
+              <p className="mt-0.5 text-t12 text-ink">
+                {teamName ?? '팀 없음'} · 상사 {boss?.display_name ?? '없음'}
+              </p>
+              <button
+                type="button"
+                onClick={() => moveCtx.request({ personId: person.user_id, pick: true })}
+                className="mt-1.5 flex min-h-11 items-center gap-1 rounded-md border border-line px-2.5 py-1 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink sm:min-h-0"
+              >
+                <Icon name="chevron-right" className="size-3.5" />
+                팀 · 상사 이동
+              </button>
+              <span className="mt-1 block text-t10 text-ink-muted">
+                조직도에서 사람을 팀 상자나 다른 사람 위에 끌어다 놓아도 됩니다. 자기 아래 사람은 상사로 고를 수 없습니다 —
+                고리가 되면 서로가 서로의 아래가 되어 서로를 다 보게 됩니다.
+              </span>
+            </div>
+          ) : null}
 
-          <label className="block">
-            <span className="text-t11 text-ink-dim">상사 변경</span>
-            <select
-              value={person.reports_to ?? ''}
-              disabled={busy}
-              onChange={(e) => apply({ reportsTo: e.target.value })}
-              className="mt-1 w-full rounded-lg border border-line bg-raised px-2.5 py-1.5 text-t12 text-ink outline-none focus:border-accent disabled:opacity-50"
-            >
-              <option value="" className="bg-panel">
-                (없음)
-              </option>
-              {bossOptions.map((p) => (
-                <option key={p.user_id} value={p.user_id} className="bg-panel">
-                  {p.display_name} · {ROLE_LABEL_KO[p.role]}
-                </option>
-              ))}
-            </select>
-            <span className="mt-1 block text-t10 text-ink-muted">
-              자기 아래 사람은 목록에 없습니다 — 고리가 되면 서로가 서로의 아래가 되어 서로를 다 보게 됩니다.
-            </span>
-          </label>
-
-          {SYSTEM_ROLE.includes(person.role) ? null : (
-            <ModuleGrants person={person} businesses={businesses} busy={busy} setBusy={setBusy} setError={setError} />
-          )}
+          {SYSTEM_ROLE.includes(person.role) ? null : <ModuleGrants person={person} businesses={businesses} />}
 
           <div className="flex items-center justify-between gap-2 pt-1">
             <span className="text-t10h text-ink-muted">
@@ -780,12 +1014,227 @@ function PersonPanel({
           </p>
         </div>
       )}
+    </div>
+  )
+}
 
-      {error ? (
-        <p role="alert" className="mt-2 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-t11h text-critical">
-          {error}
-        </p>
-      ) : null}
+/**
+ * 팀 · 상사 이동 확인 대화상자(회장만) — 끌어 놓기와 «이동» 버튼이 같은 길로 온다.
+ *
+ * 바뀌는 칸만 말한다: «<이름>: 팀 A → B / 상사 X → Y — 이 사람의 결재는 Y부터 올라갑니다». 상사가 없어지거나 회장이면
+ * «결재는 회장이 받습니다»(회장 본인 화면이라 boss(role)이 «회장»을 낸다 — 직원 화면 용어 원칙). 이미 올라간 결재는
+ * 올릴 때 얼린 결재선(0059 approval_steps)으로 가므로 그 한 줄을 늘 붙인다.
+ * «확인» = updateUserProfile 한 번(바뀐 칸만). 감사 · 순환 판정은 그 길 그대로(0002 · 0025 트리거) — 거부 문구는
+ * denialMessage가 한국어로 옮겨 이 대화상자 안에 띄운다.
+ */
+function MoveDialog({
+  request,
+  person,
+  people,
+  teams,
+  businesses,
+  onClose,
+  onSaved,
+}: {
+  request: MoveRequest
+  person: UserAccount
+  people: UserAccount[]
+  teams: Team[]
+  businesses: Business[]
+  onClose: () => void
+  onSaved: (message: string) => void
+}) {
+  const viewerRole = useContext(ViewerRoleContext)
+  const roleLabel = useRoleLabel()
+  const [teamId, setTeamId] = useState<string | null>(request.teamId !== undefined ? request.teamId : person.team_id)
+  const [reportsTo, setReportsTo] = useState<string | null>(
+    request.reportsTo !== undefined ? request.reportsTo : person.reports_to,
+  )
+  const [error, setError] = useState<string | null>(null)
+  const [saving, startSaving] = useTransition()
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    ref.current?.focus()
+  }, [])
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' && !saving) onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose, saving])
+
+  const below = useMemo(() => subtreeOf(person.user_id, people), [person.user_id, people])
+  const bossCandidates = people
+    .filter((p) => canBeBoss(p, below))
+    .sort((a, b) => Number(b.role === 'Chairman') - Number(a.role === 'Chairman') || a.display_name.localeCompare(b.display_name, 'ko'))
+  const teamName = (id: string | null) => (id ? (teams.find((t) => t.team_id === id)?.name ?? id) : '팀 없음')
+  // 회장 자리는 이름이 아니라 호칭으로 말한다(회장 화면 = «회장»). 상사 없음도 결재는 회장에게 간다.
+  const personName = (id: string | null) => {
+    const p = id ? people.find((x) => x.user_id === id) : undefined
+    if (!p) return '없음'
+    return p.role === 'Chairman' ? boss(viewerRole) : p.display_name
+  }
+  const teamChanged = teamId !== person.team_id
+  const bossChanged = reportsTo !== person.reports_to
+  const newBoss = reportsTo ? people.find((p) => p.user_id === reportsTo) : undefined
+  const bossSubject = boss(viewerRole) === '회장' ? '회장이' : '대표가'
+  const chainLine =
+    !newBoss || newBoss.role === 'Chairman'
+      ? `이 사람의 결재는 ${bossSubject} 받습니다.`
+      : `이 사람의 결재는 ${newBoss.display_name}부터 올라갑니다.`
+  const teamless = TEAMLESS_BY_DESIGN.includes(person.role)
+
+  function confirm() {
+    setError(null)
+    startSaving(async () => {
+      let message: string | null = null
+      try {
+        message =
+          (
+            await updateUserProfile({
+              userId: person.user_id,
+              ...(teamChanged ? { teamId: teamId ?? '' } : {}),
+              ...(bossChanged ? { reportsTo: reportsTo ?? '' } : {}),
+            })
+          ).error ?? null
+      } catch {
+        message = '저장하지 못했습니다 — 연결을 확인하고 다시 누르세요.'
+      }
+      if (message) {
+        setError(message)
+        return
+      }
+      const parts = [
+        teamChanged ? `팀 ${teamName(person.team_id)} → ${teamName(teamId)}` : null,
+        bossChanged ? `상사 ${personName(person.reports_to)} → ${personName(reportsTo)}` : null,
+      ].filter(Boolean)
+      // 닫기는 서버가 다시 그린 조직도와 같은 전환 안에서 한다 — 닫힌 뒤 옛 자리가 잠깐 보이지 않게.
+      startSaving(() => onSaved(`저장했습니다 — ${person.display_name}: ${parts.join(' / ')}`))
+    })
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center overflow-y-auto bg-app/80 p-0 sm:items-center sm:p-4"
+      onClick={() => (saving ? null : onClose())}
+    >
+      <div
+        ref={ref}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`${person.display_name} 이동`}
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+        className="glass w-full max-w-md rounded-t-2xl border border-line p-4 outline-none sm:rounded-glass"
+      >
+        <h2 className="text-t13 font-semibold">{person.display_name} — 팀 · 상사 이동</h2>
+
+        {request.pick ? (
+          <div className="mt-3 space-y-2.5">
+            <label className="block">
+              <span className="text-t11 text-ink-dim">팀</span>
+              <select
+                value={teamId ?? ''}
+                onChange={(e) => setTeamId(e.target.value || null)}
+                disabled={saving}
+                className="mt-1 w-full rounded-lg border border-line bg-raised px-2.5 py-2 text-t13 text-ink outline-none focus:border-accent"
+              >
+                {teamless || !person.team_id ? (
+                  <option value="" disabled={!teamless} className="bg-panel">
+                    {teamless ? '팀 없음 (회사를 이끄는 자리)' : '팀 없음 — 팀을 고르세요'}
+                  </option>
+                ) : null}
+                {businesses
+                  .filter((b) => teams.some((t) => t.business_id === b.business_id))
+                  .map((b) => (
+                    <optgroup key={b.business_id} label={b.name}>
+                      {teams
+                        .filter((t) => t.business_id === b.business_id)
+                        .map((t) => (
+                          <option key={t.team_id} value={t.team_id} disabled={!canJoinTeam(person, t)} className="bg-panel">
+                            {t.name} · {t.name_en}
+                            {canJoinTeam(person, t) ? '' : ' (회사 범위 밖)'}
+                          </option>
+                        ))}
+                    </optgroup>
+                  ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-t11 text-ink-dim">직속 상사 (결재가 처음 가는 사람)</span>
+              <select
+                value={reportsTo ?? ''}
+                onChange={(e) => setReportsTo(e.target.value || null)}
+                disabled={saving}
+                className="mt-1 w-full rounded-lg border border-line bg-raised px-2.5 py-2 text-t13 text-ink outline-none focus:border-accent"
+              >
+                <option value="" className="bg-panel">
+                  없음 — 결재는 {bossSubject} 받습니다
+                </option>
+                {bossCandidates.map((p) => (
+                  <option key={p.user_id} value={p.user_id} className="bg-panel">
+                    {p.display_name} · {roleLabel(p.role)}
+                  </option>
+                ))}
+              </select>
+              <span className="mt-1 block text-t10 text-ink-muted">
+                자기 자신과 자기 아래 사람은 목록에 없습니다(고리가 생깁니다).
+              </span>
+            </label>
+          </div>
+        ) : null}
+
+        <div className="mt-3 rounded-lg border border-line-soft bg-panel/70 px-3 py-2.5 text-t12h leading-relaxed text-ink">
+          {teamChanged || bossChanged ? (
+            <>
+              <p data-move-summary>
+                <span className="font-semibold">{person.display_name}</span>:{' '}
+                {[
+                  teamChanged ? `팀 ${teamName(person.team_id)} → ${teamName(teamId)}` : null,
+                  bossChanged ? `상사 ${personName(person.reports_to)} → ${personName(reportsTo)}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' / ')}
+                {bossChanged ? ` — ${chainLine}` : ''}
+              </p>
+              {bossChanged ? (
+                <p className="mt-1 text-t11h text-ink-dim">이미 올라간(열린) 결재는 올릴 때 정해진 결재선 그대로 갑니다.</p>
+              ) : (
+                <p className="mt-1 text-t11h text-ink-dim">상사는 그대로라 결재선은 바뀌지 않습니다.</p>
+              )}
+            </>
+          ) : (
+            <p className="text-ink-dim">바뀌는 것이 없습니다. 팀이나 상사를 고르세요.</p>
+          )}
+        </div>
+
+        {error ? (
+          <p role="alert" className="mt-2.5 rounded-md border border-critical/40 bg-critical/10 px-2.5 py-1.5 text-t11h text-critical">
+            {error}
+          </p>
+        ) : null}
+
+        <div className="mt-3 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={saving}
+            className="min-h-11 rounded-lg border border-line px-3 py-1.5 text-t12 text-ink-dim transition-colors hover:text-ink disabled:opacity-40 sm:min-h-0"
+          >
+            취소
+          </button>
+          <button
+            type="button"
+            onClick={confirm}
+            disabled={saving || (!teamChanged && !bossChanged)}
+            className="min-h-11 rounded-lg bg-accent px-3 py-1.5 text-t12 font-semibold text-ink transition-opacity disabled:opacity-40 sm:min-h-0"
+          >
+            {saving ? '저장 중…' : '확인'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -797,71 +1246,11 @@ function PersonPanel({
  * has_business(target)). 범위 밖인데 줄만 남은 회사도 그린다 — 효과가 없다는 표시와 함께, 지울 수 있게.
  * 칸 둘을 다 끄면 줄이 지워진다(줄이 있으면 보기가 열리므로). 역할로 이미 되는 사람(MODULE_GRANT_OPTIONS.roleCovers)에게는
  * 그 모듈을 그리지 않는다. 0048 «문서»는 칸이 하나(문서 등록)다 — approve가 null인 모듈은 마감 칸이 없다.
+ * 2026-10-09 — 칸마다 따로 저장한다(useOptimisticSave). 누르는 순간 바뀌고, 저장 중에도 잠기지 않는다.
  */
-function ModuleGrants({
-  person,
-  businesses,
-  busy,
-  setBusy,
-  setError,
-}: {
-  person: UserAccount
-  businesses: Business[]
-  busy: boolean
-  setBusy: (v: boolean) => void
-  setError: (v: string | null) => void
-}) {
-  async function toggle(prefix: string, businessId: string, next: { can_write: boolean; can_approve: boolean }) {
-    setBusy(true)
-    setError(null)
-    const result = await setModuleGrant({
-      userId: person.user_id,
-      prefix,
-      businessId,
-      canWrite: next.can_write,
-      canApprove: next.can_approve,
-    })
-    setBusy(false)
-    if (result.error) setError(result.error)
-  }
-
-  async function toggleDraft(on: boolean) {
-    setBusy(true)
-    setError(null)
-    const result = await setDraftGrant({ userId: person.user_id, on })
-    setBusy(false)
-    if (result.error) setError(result.error)
-  }
-
+function ModuleGrants({ person, businesses }: { person: UserAccount; businesses: Business[] }) {
   // 2026-10-06. 회장 외 모든 사람에게 필요한 칸이라 맨 위에 둔다 — 꺼져 있으면 결재 양식을 하나도 못 올린다(0002 decisions_create).
-  const draftOn = hasDraftGrant(person.modules)
-  const draft =
-    person.role === 'Chairman' ? null : (
-      <div className="py-1">
-        <label className="flex min-h-11 items-center gap-1.5 text-t12 font-semibold sm:min-h-0">
-          <input
-            type="checkbox"
-            checked={draftOn}
-            disabled={busy}
-            onChange={(e) => toggleDraft(e.target.checked)}
-            className="size-4 accent-[var(--color-accent)] disabled:opacity-50"
-          />
-          결재 올리기
-          {draftOn ? null : <span className="text-t10 font-normal text-warning">꺼짐 — 결재 양식을 올리지 못합니다</span>}
-        </label>
-        <span className="mt-0.5 block text-t10 leading-relaxed text-ink-muted">
-          전자결재 양식(지출 · 구매 · 휴가 · 계약 · 채용)을 올립니다. 올릴 수 있는 회사는 회사 범위가 정합니다.
-        </span>
-      </div>
-    )
-
-  async function toggleStaffAdmin(businessId: string, on: boolean) {
-    setBusy(true)
-    setError(null)
-    const result = await setStaffAdminGrant({ userId: person.user_id, businessId, on })
-    setBusy(false)
-    if (result.error) setError(result.error)
-  }
+  const draft = person.role === 'Chairman' ? null : <DraftGrant person={person} />
 
   // 0055 «<회사> 사용자 관리자» — 그 회사의 사원 · 팀장을 초대한다(본인이 가진 권한까지만). 회사마다 회장만 켠다.
   // 사람 역할에게만(회장 · 시스템 · 외부 역할 제외). 회사 범위 밖인데 줄만 남은 회사도 그려 끌 수 있게 한다.
@@ -874,22 +1263,16 @@ function ModuleGrants({
   const staffAdmin =
     !['GroupCFO', 'BusinessCEO', 'Executive', 'TeamLead', 'Member'].includes(person.role) || adminCompanies.length === 0 ? null : (
       <div className="py-1">
-        {adminCompanies.map((biz) => {
-          const on = adminGranted.includes(biz)
-          return (
-            <label key={biz} className="flex min-h-11 items-center gap-1.5 text-t12 font-semibold sm:min-h-0">
-              <input
-                type="checkbox"
-                checked={on}
-                disabled={busy}
-                onChange={(e) => toggleStaffAdmin(biz, e.target.checked)}
-                className="size-4 accent-[var(--color-accent)] disabled:opacity-50"
-              />
-              {businessName(businesses, biz)} 사용자 관리자
-              {adminScope.includes(biz) ? null : <span className="text-t10 font-normal text-warning">회사 범위 밖 — 효과 없음</span>}
-            </label>
-          )
-        })}
+        {adminCompanies.map((biz) => (
+          <StaffAdminGrant
+            key={biz}
+            person={person}
+            businessId={biz}
+            label={`${businessName(businesses, biz)} 사용자 관리자`}
+            on={adminGranted.includes(biz)}
+            outOfScope={!adminScope.includes(biz)}
+          />
+        ))}
         <span className="mt-0.5 block text-t10 leading-relaxed text-ink-muted">
           그 회사의 사원 · 팀장을 초대합니다(팀 · 상사 필수, 본인이 가진 권한까지만 · 월 마감 불가). 초대는 바로 효력이 나고 회장에게
           알림이 옵니다. 다른 사람의 결재 · 업무를 보는 권한은 아닙니다.
@@ -934,37 +1317,18 @@ function ModuleGrants({
               <ul className="mt-1 space-y-1">
                 {companies.map((biz) => {
                   const row = person.modules.find((m) => m.module === moduleKey(o.prefix, biz))
-                  const cur = { can_write: row?.can_write ?? false, can_approve: row?.can_approve ?? false }
-                  const outOfScope = !scope.includes(biz)
                   return (
-                    <li key={biz} className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <span className="min-w-16 text-t12">{businessName(businesses, biz)}</span>
-                      <label className="flex min-h-11 items-center gap-1.5 text-t12 sm:min-h-0">
-                        <input
-                          type="checkbox"
-                          checked={cur.can_write}
-                          disabled={busy}
-                          onChange={(e) => toggle(o.prefix, biz, { ...cur, can_write: e.target.checked })}
-                          className="size-4 accent-[var(--color-accent)] disabled:opacity-50"
-                        />
-                        {o.write}
-                      </label>
-                      {o.approve ? (
-                        <label className="flex min-h-11 items-center gap-1.5 text-t12 sm:min-h-0">
-                          <input
-                            type="checkbox"
-                            checked={cur.can_approve}
-                            disabled={busy}
-                            onChange={(e) => toggle(o.prefix, biz, { ...cur, can_approve: e.target.checked })}
-                            className="size-4 accent-[var(--color-accent)] disabled:opacity-50"
-                          />
-                          {o.approve}
-                        </label>
-                      ) : null}
-                      {outOfScope ? (
-                        <span className="text-t10 text-warning">회사 범위 밖 — 효과 없음</span>
-                      ) : null}
-                    </li>
+                    <GrantRow
+                      key={biz}
+                      person={person}
+                      prefix={o.prefix}
+                      businessId={biz}
+                      companyName={businessName(businesses, biz)}
+                      writeLabel={o.write}
+                      approveLabel={o.approve}
+                      current={{ can_write: row?.can_write ?? false, can_approve: row?.can_approve ?? false }}
+                      outOfScope={!scope.includes(biz)}
+                    />
                   )
                 })}
               </ul>
@@ -977,6 +1341,128 @@ function ModuleGrants({
         )
       })}
     </fieldset>
+  )
+}
+
+/** «결재 올리기» 칸 — 0002 decisions_create의 전역 키 한 줄. */
+function DraftGrant({ person }: { person: UserAccount }) {
+  const draft = useOptimisticSave(hasDraftGrant(person.modules))
+  return (
+    <div className="py-1">
+      <label className="flex min-h-11 flex-wrap items-center gap-1.5 text-t12 font-semibold sm:min-h-0">
+        <input
+          type="checkbox"
+          data-grant="draft"
+          checked={draft.value}
+          onChange={() => {
+            const next = !draft.value
+            draft.save(next, () => setDraftGrant({ userId: person.user_id, on: next }))
+          }}
+          className="size-4 accent-[var(--color-accent)]"
+        />
+        결재 올리기
+        {draft.value ? null : <span className="text-t10 font-normal text-warning">꺼짐 — 결재 양식을 올리지 못합니다</span>}
+        <SaveState saving={draft.saving} error={draft.error} />
+      </label>
+      <span className="mt-0.5 block text-t10 leading-relaxed text-ink-muted">
+        전자결재 양식(지출 · 구매 · 휴가 · 계약 · 채용)을 올립니다. 올릴 수 있는 회사는 회사 범위가 정합니다.
+      </span>
+    </div>
+  )
+}
+
+/** «<회사> 사용자 관리자» 칸 하나(0055). */
+function StaffAdminGrant({
+  person,
+  businessId,
+  label,
+  on,
+  outOfScope,
+}: {
+  person: UserAccount
+  businessId: string
+  label: string
+  on: boolean
+  outOfScope: boolean
+}) {
+  const grant = useOptimisticSave(on)
+  return (
+    <label className="flex min-h-11 flex-wrap items-center gap-1.5 text-t12 font-semibold sm:min-h-0">
+      <input
+        type="checkbox"
+        data-grant={`${STAFF_ADMIN_PREFIX}/${businessId}`}
+        checked={grant.value}
+        onChange={() => {
+          const next = !grant.value
+          grant.save(next, () => setStaffAdminGrant({ userId: person.user_id, businessId, on: next }))
+        }}
+        className="size-4 accent-[var(--color-accent)]"
+      />
+      {label}
+      {outOfScope ? <span className="text-t10 font-normal text-warning">회사 범위 밖 — 효과 없음</span> : null}
+      <SaveState saving={grant.saving} error={grant.error} />
+    </label>
+  )
+}
+
+/**
+ * 모듈 × 회사 한 줄(재무 입력 · 월 마감 / 문서 등록 / 결재 대장 열람 …). 두 칸이 한 DB 줄이라 낙관적 값도 한 덩어리다 —
+ * «입력»을 켜고 바로 «마감»을 눌러도 두 번째 저장이 첫 번째 칸의 새 값을 싣고 간다.
+ */
+function GrantRow({
+  person,
+  prefix,
+  businessId,
+  companyName,
+  writeLabel,
+  approveLabel,
+  current,
+  outOfScope,
+}: {
+  person: UserAccount
+  prefix: string
+  businessId: string
+  companyName: string
+  writeLabel: string
+  approveLabel: string | null
+  current: { can_write: boolean; can_approve: boolean }
+  outOfScope: boolean
+}) {
+  const row = useOptimisticSave(current)
+  function flip(field: 'can_write' | 'can_approve') {
+    const next = { ...row.value, [field]: !row.value[field] }
+    row.save(next, () =>
+      setModuleGrant({ userId: person.user_id, prefix, businessId, canWrite: next.can_write, canApprove: next.can_approve }),
+    )
+  }
+  return (
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <span className="min-w-16 text-t12">{companyName}</span>
+      <label className="flex min-h-11 items-center gap-1.5 text-t12 sm:min-h-0">
+        <input
+          type="checkbox"
+          data-grant={`${prefix}/${businessId}:write`}
+          checked={row.value.can_write}
+          onChange={() => flip('can_write')}
+          className="size-4 accent-[var(--color-accent)]"
+        />
+        {writeLabel}
+      </label>
+      {approveLabel ? (
+        <label className="flex min-h-11 items-center gap-1.5 text-t12 sm:min-h-0">
+          <input
+            type="checkbox"
+            data-grant={`${prefix}/${businessId}:approve`}
+            checked={row.value.can_approve}
+            onChange={() => flip('can_approve')}
+            className="size-4 accent-[var(--color-accent)]"
+          />
+          {approveLabel}
+        </label>
+      ) : null}
+      {outOfScope ? <span className="text-t10 text-warning">회사 범위 밖 — 효과 없음</span> : null}
+      <SaveState saving={row.saving} error={row.error} />
+    </li>
   )
 }
 
