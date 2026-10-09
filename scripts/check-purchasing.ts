@@ -134,6 +134,10 @@ for (const code of ['cost_not_found', 'cost_fx_missing', 'cost_void_reason', 'co
 // ⑦ feat/intake와 같은 파일
 const here = readFileSync(join(__dirname, '..', 'src', 'lib', 'intake', 'mix-ratio.ts'))
 const intake = join(__dirname, '..', '..', 'chairman-os-intake', 'src', 'lib', 'intake', 'mix-ratio.ts')
-if (existsSync(intake)) assert.ok(here.equals(readFileSync(intake)), 'mix-ratio.ts가 feat/intake 사본과 다르다')
+// 줄끝(CRLF · LF)은 checkout마다 다르다 — git은 같은 blob으로 본다. 줄끝만 맞춰 비교한다.
+const lf = (b: Buffer) => b.toString('utf8').replace(/
+/g, '
+')
+if (existsSync(intake)) assert.equal(lf(here), lf(readFileSync(intake)), 'mix-ratio.ts가 feat/intake 사본과 다르다')
 
 console.log('PASS: 구매 — Landed 미리보기 · ISO 주 · 수량 가중 묶기 · 개요(출처 평균 · 무효 제외 · 30일 · 공급처별) · 첨부 형식/4MB/저장 이름 · CSV 배합비 감지 · 오류 문구(회장 없음) · mix-ratio 사본')
