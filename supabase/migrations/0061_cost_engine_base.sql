@@ -184,7 +184,8 @@ create table cost_products (
   created_by  uuid not null default auth.uid(),
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now(),
-  unique (business_id, name_norm)
+  unique (business_id, name_norm),
+  unique (product_id, business_id)   -- 0064 · 0065가 (제품, 회사)로 묶는다
 );
 comment on table cost_products is '0061. 제품 마스터 — 이름만. 원료 구성은 여기 없다(0062 cost_secret).';
 

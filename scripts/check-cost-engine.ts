@@ -27,6 +27,7 @@ import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto'
 
 import { applyOne, MIGRATIONS, SUPABASE_STUBS } from './pglite'
 import { encryption } from './cost-engine-encryption'
+import { production } from './cost-engine-production'
 
 const U = {
   chair: '00000000-0000-0000-0000-0000000061a1',
@@ -231,7 +232,7 @@ async function main() {
   const plots = await as<Record<string, unknown>>(U.prod, `select * from cost_production_lots('biz_dy')`)
   assert.ok(plots.length >= 4, '0061: 생산이 LOT 목록을 못 본다')
   assert.deepEqual(Object.keys(plots[0]).sort(),
-    ['landed_krw_per_kg', 'lot_id', 'material_id', 'material_name', 'qty_kg', 'received_on', 'supplier_lot_no', 'supplier_name'],
+    ['landed_krw_per_kg', 'lot_id', 'material_id', 'material_name', 'qty_kg', 'received_on', 'remaining_kg', 'supplier_lot_no', 'supplier_name'],
     '0061: 생산 LOT 함수가 «제한» 밖의 칸(외화 단가 · 환율 · 부대비 · 연락처)을 돌려준다')
   const pmat = await as<Record<string, string>>(U.prod, `select * from cost_production_materials('biz_dy', '${M3}')`)
   assert.deepEqual(Object.keys(pmat[0]).sort(), ['category', 'market_krw_per_kg', 'material_id', 'name'], '0061: 생산 시장가 함수의 칸')
@@ -624,6 +625,9 @@ async function main() {
     values ('22222222-2222-2222-2222-222222222222', 'biz_dy', 'quote', 'r.pdf', 'application/pdf', 100, '${'c'.repeat(64)}', '${path2}', true)`)
   await run(U.buy, `insert into storage.objects (bucket_id, name) values ('purchasing', '${path2}')`)
   await run(U.chair, `select cost_bom_save('${p2}', '${T}', 100, '[{"material_id":"${m1}","kg_per_kg":1}]'::jsonb)`)
+
+  // ── ⑩ 생산(0064) — BYPASSRLS 없는 소유자 아래에서.
+  await production({ as, run, owner, p1, p3, lot, mats: [m1, m2, m3], U })
 
   // ── ⑦ 코드 경계 — AI 도구 · 프롬프트 · 요약이 BOM · 원가 함수를 부르지 않는다 ─────────────────
   const root = join(__dirname, '..', 'src')
