@@ -111,15 +111,57 @@ begin
   if to_regclass('cost_secret.bom_lines') is not null then raise exception 'FAIL c: 평문 BOM 표가 남았다'; end if;
   v_res := v_res || 'c(키 준비 · 암호문 저장 · 읽기 · 진짜 잠김 · 평문 없음) ';
 
-  -- ── (d) 영업: 오늘 · 1원 · 매일 최신 · 제시가 1원 단위 · 분해 · BOM · 비공개 거부 ──
+  -- ── (d) 영업: (가) 오늘 0시 기준 · 1원 · 매일 최신 · 제시가 1원 단위 · 분해 · BOM · 비공개 거부 ──
+  -- 회장 결정(2026-10-10) (가): 영업은 «오늘 0시(KST)까지 저장된 값», 대표 · 원가 관리는 즉시.
+  -- 이 시험이 오늘 넣은 원료 · 시세 · LOT · BOM은 영업에게 «내일 보일 값»이다 → d1에서 NULL을 확인하고,
+  -- d2에서 시험 줄만 트랜잭션 안에서 하루 앞으로 돌린(= «내일») 뒤 기대값을 본다. 끝의 raise로 전부 되돌아간다.
+  -- 준비 확인: staging biz_dy에 이 시험 밖의 «0시 전에 만든 · 사용 중 · 단가 없는» 원료가 있으면 회사 단위로 영업 값이 비는 것이 앱 규칙이다.
+  select count(*) into n from public.cost_materials m
+   where m.business_id = 'biz_dy' and m.active and m.material_id not in (v_mat, v_mat2)
+     and m.created_at <= cost_secret.sales_cutoff()
+     and (cost_secret.unit_price(m.material_id, 'market', v_today) is null or cost_secret.unit_price(m.material_id, 'current', v_today) is null);
+  if n <> 0 then
+    raise exception 'FAIL d 준비: staging biz_dy에 단가 없는 사용 중 원료 %개(시험 밖) — 앱 규칙상 영업 값이 회사 전체에서 비어 시험이 성립하지 않는다', n;
+  end if;
+  -- d1 · 영업: 오늘 넣은 값은 아직 안 보인다.
   perform set_config('request.jwt.claims', json_build_object('sub', v_sales, 'role', 'authenticated')::text, true);
   perform set_config('request.jwt.claim.sub', v_sales::text, true);
   set local role authenticated;
   select * into r from public.cost_sales_view(v_prd);
-  if r.as_of <> v_today then raise exception 'FAIL d: 영업 기준일 % (오늘이어야 — 매일 최신)', r.as_of; end if;
+  if r.as_of <> v_today then raise exception 'FAIL d1: 영업 기준일 % (오늘이어야)', r.as_of; end if;
+  if r.current_krw_per_kg is not null or r.market_krw_per_kg is not null or r.advantage_krw_per_kg is not null then
+    raise exception 'FAIL d1: 영업이 오늘 넣은 값을 바로 본다 — Current % · Market % · 우위 % (기대 NULL · 0시 기준)', r.current_krw_per_kg, r.market_krw_per_kg, r.advantage_krw_per_kg;
+  end if;
+  -- d1 · 대표: 즉시(원래 값).
+  reset role;
+  perform set_config('request.jwt.claims', json_build_object('sub', v_chair, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_chair::text, true);
+  set local role authenticated;
+  select * into r from public.cost_sales_view(v_prd);
+  if r.current_krw_per_kg is null or abs(r.current_krw_per_kg - (0.7 * 2710::numeric / 3 + 0.3 * 1800)) > 0.000001 or r.market_krw_per_kg is distinct from 1300 then
+    raise exception 'FAIL d1: 대표 값 Current % · Market % (기대 즉시 1172.333… · 1300)', r.current_krw_per_kg, r.market_krw_per_kg;
+  end if;
+  -- «내일»: 시험이 넣은 줄만 하루 앞으로(트리거는 만든 시각을 못 바꾸게 막으므로 잠시 끈다 — 소유자 · 이 트랜잭션 안에서만).
+  reset role;
+  alter table public.cost_materials disable trigger user;
+  alter table public.cost_market_prices disable trigger user;
+  alter table public.cost_purchase_lots disable trigger user;
+  update public.cost_materials set created_at = created_at - interval '1 day' where material_id in (v_mat, v_mat2);
+  update public.cost_market_prices set created_at = created_at - interval '1 day' where material_id in (v_mat, v_mat2);
+  update public.cost_purchase_lots set created_at = created_at - interval '1 day' where lot_id in (v_lot, v_lot2);
+  update cost_secret.bom_versions set created_at = created_at - interval '1 day' where version_id = v_ver;
+  alter table public.cost_materials enable trigger user;
+  alter table public.cost_market_prices enable trigger user;
+  alter table public.cost_purchase_lots enable trigger user;
+  -- d2 · 영업(«내일»): 기대값.
+  perform set_config('request.jwt.claims', json_build_object('sub', v_sales, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_sales::text, true);
+  set local role authenticated;
+  select * into r from public.cost_sales_view(v_prd);
+  if r.as_of <> v_today then raise exception 'FAIL d2: 영업 기준일 % (오늘이어야 — 매일 최신)', r.as_of; end if;
   -- Current = 0.7 × 903.333… + 0.3 × 1800 = 1172.333… → 1원 1172. Market = 0.7 × 1000 + 0.3 × 2000 = 1300. 우위 = round(127.666…) = 128.
   if r.current_krw_per_kg is distinct from 1172 or r.market_krw_per_kg is distinct from 1300 or r.advantage_krw_per_kg is distinct from 128 then
-    raise exception 'FAIL d: 영업 값 Current % · Market % · 우위 % (기대 1172 · 1300 · 128)', r.current_krw_per_kg, r.market_krw_per_kg, r.advantage_krw_per_kg;
+    raise exception 'FAIL d2: 영업 값 Current % · Market % · 우위 % (기대 1172 · 1300 · 128)', r.current_krw_per_kg, r.market_krw_per_kg, r.advantage_krw_per_kg;
   end if;
   begin
     perform * from public.cost_price_check(v_prd, 1500.5);
@@ -143,7 +185,7 @@ begin
     raise exception 'FAIL d: 영업이 비공개 스키마 표를 읽는다';
   exception when insufficient_privilege then null;
   end;
-  v_res := v_res || 'd(영업 오늘 · 1원 · 제시가 1원 단위 · 분해/BOM/비공개 거부) ';
+  v_res := v_res || 'd(오늘 넣은 값 영업 NULL · 대표 즉시 · «내일» 영업 1원 · 제시가 1원 단위 · 분해/BOM/비공개 거부) ';
 
   -- ── (e) 생산: 대표가 발행 → 생산이 작업지시 수량 · 생산 LOT · 투입 · 잔량 초과 거부 ──
   reset role;
