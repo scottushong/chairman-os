@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
+import { ChainProgress } from '@/components/approvals/chain-progress'
 import { PageHeader } from '@/components/layout/page-header'
 import { QuoteActions } from '@/components/sales/quote-actions'
 import { QuoteForm } from '@/components/sales/quote-form'
@@ -29,6 +30,8 @@ export default async function QuoteDetailPage(props: PageProps<'/sales/[business
   const shown = shownQuoteStatus(q, today)
   const owner = user.role === 'Chairman' || q.created_by === user.user_id
   const decisionStatus = q.decision_id ? ((await repo.listDecisions()).find((d) => d.decision_id === q.decision_id)?.status ?? null) : null
+  // 결재 진행(0059 칸) — 결재를 읽을 수 있는 사람에게만 칸이 온다(못 읽으면 빈 목록 → 상태 링크만).
+  const steps = q.decision_id ? await repo.listApprovalSteps([q.decision_id]).catch(() => []) : []
   const products = owner ? (await repo.listCostProducts(business_id)).filter((p) => p.active) : []
   const latest = versions[versions.length - 1]?.quote_id === q.quote_id
   const fx = q.currency !== 'KRW' ? ` (견적서 ${q.currency})` : ''
@@ -107,6 +110,12 @@ export default async function QuoteDetailPage(props: PageProps<'/sales/[business
           ) : null}
         </dl>
       </section>
+      {steps.length > 0 ? (
+        <section className="rounded-xl border border-line-soft bg-panel p-4" aria-label="가격 예외 결재 진행">
+          <h2 className="mb-2 text-t13 font-semibold">가격 예외 결재 진행</h2>
+          <ChainProgress steps={steps} viewerId={user.user_id} viewerRole={user.role} />
+        </section>
+      ) : null}
       {owner ? <QuoteActions quote={q} shown={shown} decisionStatus={decisionStatus} /> : null}
 
       <section className="rounded-xl border border-line-soft bg-panel p-4" aria-label="판 이력">

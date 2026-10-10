@@ -74,8 +74,8 @@ export function quoteMethods(sb: SupabaseClient): QuoteMethods {
       return { quote, versions: (vs ?? []).map((r) => toQuote(r as Record<string, unknown>)) }
     },
     async createQuote(i) {
-      return String(
-        await rpc('quote_create', {
+      // 0066 재검토 N1 — 대표 외 제시가가 총원가 절반 미만이면 DB는 저장 없이 null을 돌려준다(raise하면 한도 · 감사가 되돌아간다).
+      const id = await rpc('quote_create', {
           p_product: i.product_id,
           p_customer_name: i.customer_name,
           p_customer_company: i.customer_company,
@@ -84,8 +84,9 @@ export function quoteMethods(sb: SupabaseClient): QuoteMethods {
           p_currency: i.currency,
           p_valid_until: i.valid_until,
           p_parent: i.parent_id,
-        }),
-      )
+        })
+      if (id === null || id === undefined) throw new Error('cost_price_too_low')
+      return String(id)
     },
     async requestQuoteApproval(quoteId) {
       return String(await rpc('quote_request_approval', { p_quote: quoteId }))

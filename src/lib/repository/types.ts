@@ -182,7 +182,7 @@ export interface SalesCostMethods {
   costSalesList(businessId: string): Promise<SalesCostRow[]>
   /** 0062 cost_sales_view. 'cost_not_found' · 'cost_role_conflict' · 'cost_rate_limited'로 던진다. 0062 전 DB면 null. */
   costSalesView(productId: string): Promise<SalesCostView | null>
-  /** 0062 cost_price_check. 'cost_price_invalid'도 던진다. */
+  /** 0062 cost_price_check. 'cost_price_invalid' · 'cost_price_too_low'(0066 — 대표 외 총원가 절반 미만)도 던진다. */
   costPriceCheck(productId: string, priceKrwPerKg: number): Promise<PriceCheck>
   /** 0061 cost_costing_watch — 대표만(그 밖은 'cost_not_found'). 0061 전 DB면 빈 목록. */
   costingWatch(businessId: string): Promise<CostingWatchRow[]>

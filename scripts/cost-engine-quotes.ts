@@ -63,14 +63,15 @@ export async function quotes({ db, as, run, owner, p1, mats, materialNames, U }:
   assert.equal((await q(r1)).grade, 'red', '0066 전제: 마진 10% 견적이 Red가 아니다')
   await refuses(run(U.sales, `select quote_confirm('${r1}')`), /quote_needs_approval/, '0066: Red가 결재 없이 확정된다')
   await refuses(run(U.sales, `insert into decisions (decision_id, business_id, title, template_key, form, created_by)
-    values ('dec_fake_pe', 'biz_dy', '가격 예외', 'price_exception', '{"quote":"x","product":"x","kg":"1","price":"1","currency":"KRW","margin_pct":"30","grade":"Green"}'::jsonb, '${U.sales}')`),
+    values ('dec_fake_pe', 'biz_dy', '가격 예외', 'price_exception', '{"quote":"x","product":"x","kg":"1","price":"1","currency":"KRW","grade":"Green"}'::jsonb, '${U.sales}')`),
     /price_exception_use_quote/, '0066: 가격 예외 결재를 손으로(지어낸 양식으로) 올린다')
   const dec = (await as<{ v: string }>(U.sales, `select quote_request_approval('${r1}') as v`, true))[0].v
   assert.equal((await q(r1)).status, 'pending_approval')
   const steps = await owner<{ who: string }>(`select approver_user_id::text as who from approval_steps where decision_id = '${dec}' order by seq`)
   assert.deepEqual(steps.map((s) => s.who), [lead, U.chair], '0066: 가격 예외 결재선이 상사 사슬 → 대표가 아니다')
   const form = (await owner<{ f: Record<string, string>; t: string }>(`select form as f, title as t from decisions where decision_id = '${dec}'`))[0]
-  assert.deepEqual(Object.keys(form.f).sort(), ['currency', 'grade', 'kg', 'margin_pct', 'price', 'product', 'quote'], '0066: 가격 예외 양식 칸이 다르다')
+  assert.deepEqual(Object.keys(form.f).sort(), ['currency', 'grade', 'kg', 'price', 'product', 'quote'], '0066: 가격 예외 양식 칸이 다르다(리뷰 I1 — 마진 % 없음)')
+  assert.equal(form.f.grade, 'Red (마진 15% 미만)', '0066: 가격 예외 등급 칸')
   const formText = JSON.stringify(form)
   for (const bad of [...mats, ...materialNames, 'total', 'cost']) assert.ok(!formText.includes(bad), `0066: 가격 예외 결재에 원료 · 원가 정보(${bad})가 들어갔다`)
   await refuses(run(U.sales, `select quote_request_approval('${r1}')`), /quote_not_draft/, '0066: 같은 견적에 결재를 두 번 올린다')
@@ -123,6 +124,26 @@ export async function quotes({ db, as, run, owner, p1, mats, materialNames, U }:
   await refuses(run(other, `select quote_cancel('${r1b}')`), /quote_not_found/, '0066: 다른 영업이 남의 견적을 취소한다')
   await refuses(run(lead, `select quote_confirm('${r2b}')`), /quote_not_found/, '0066: 팀장이 팀원 견적을 확정한다(읽기만)')
   await refuses(as(U.sp, `select quote_create('${p1}', 'a', 'b', 1, 100000, 'KRW', '${T}')`), /cost_role_conflict/, '0066: 영업 + 생산 겸직이 견적(원가)을 만든다')
+  // 리뷰 I2 — 영업 팀장이 구매 읽기 줄을 같이 가지면(원가 문은 cost_role_conflict) 견적 표도 0행.
+  await db.exec(`insert into user_module_access (user_id, module, can_write, can_approve) values ('${lead}', '/purchasing/biz_dy', false, false)`)
+  assert.equal(await n(lead), 0, '리뷰 I2: 구매 겸직 영업 팀장이 팀원 견적(원가 스냅숏)을 본다')
+  await db.exec(`delete from user_module_access where user_id = '${lead}' and module = '/purchasing/biz_dy'`)
+  assert.equal(await n(lead), mine, '리뷰 I2: 겸직을 걷은 뒤 팀장 읽기가 돌아오지 않는다')
+  // 리뷰 M3 — 영업 줄을 잃은 만든 사람은 옛 견적도 0행.
+  await db.exec(`update user_module_access set module = '/sales/biz_vana' where user_id = '${U.sales}' and module = '/sales/biz_dy'`)
+  assert.equal(await n(U.sales), 0, '리뷰 M3: 영업 줄을 잃은 사람이 옛 견적 원가를 본다')
+  await db.exec(`update user_module_access set module = '/sales/biz_dy' where user_id = '${U.sales}' and module = '/sales/biz_vana'`)
+  // 리뷰 I3 — 대표 외 제시가 하한(1원 총원가의 절반): 제시가 1원으로 마진 %(0.1%p)를 찍어 원래 총원가를 0.001원까지 푸는 길.
+  // 재검토 N1 — 하한 밑은 raise가 아니라 답(한도 · 감사가 남는다 — raise면 되돌아가 «거부 여부»가 공짜 오라클).
+  const reads = async () => Number((await owner<{ n: number }>(`select coalesce(sum(calls), 0)::int as n from cost_secret.cost_reads where user_id = '${U.sales}'`))[0].n)
+  const before = await reads()
+  const low = (await as<{ m: string | null; g: string }>(U.sales, `select margin_pct::text as m, grade as g from cost_price_check('${p1}', 1)`, true))[0]
+  assert.deepEqual([low.m, low.g], [null, 'too_low'], '리뷰 I3: 영업이 제시가 1원으로 마진 %를 받는다')
+  const lowQ = (await as<{ id: string | null }>(U.sales, `select quote_create('${p1}', 'a', 'b', 1, ${Math.floor((total - 1) / 2)}, 'KRW', '${T}') as id`, true))[0]
+  assert.equal(lowQ.id, null, '리뷰 I3: 총원가 절반 미만 견적이 저장된다')
+  assert.equal(await reads(), before + 2, '재검토 N1: 하한 밑 조회가 한도에 세어지지 않는다')
+  assert.equal((await as(U.sales, `select * from cost_price_check('${p1}', ${Math.ceil(total / 2)})`)).length, 1, '리뷰 I3: 절반 이상은 받는다')
+  assert.equal((await as(U.chair, `select * from cost_price_check('${p1}', 1)`)).length, 1, '리뷰 I3: 대표는 하한 없음')
 
   // ── 내려받기 감사 · 만료 ──
   await refuses(run(U.sales, `select quote_download_log('${r1b}', 'xlsx')`), /quote_not_confirmed/, '0066: 확정 전 견적서를 내려받는다')

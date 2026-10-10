@@ -8,7 +8,9 @@
 --     대표용 원래 값(0시 기준 원래 값 · 지금 원래 값)은 비공개 스키마(cost_secret.quote_raw)에.
 --   · 견적은 고치지 않는다 — 바꾸려면 새 판(원본 연결, 같은 뿌리 · 판 번호 +1). 상태만 함수가 바꾼다. 모든 쓰기 감사.
 --   · Red(마진 15% 미만)는 0059 결재(상사 사슬 → 대표)로 승인받아야 확정. 새 양식 «가격 예외»(approval_templates check 확장).
---     결재 화면 · 대장 · 엑셀에 원료 정보 0 — 양식 칸은 견적 번호 · 제품 · kg · 제시가 · 통화 · 마진 % · 등급뿐이고 DB가 만든다.
+--     결재 화면 · 대장 · 엑셀에 원료 정보 0 — 양식 칸은 견적 번호 · 제품 · kg · 제시가 · 통화 · 등급(«Red (마진 15% 미만)»)뿐이고 DB가 만든다.
+--     리뷰 I1 — 마진 %는 양식에 넣지 않는다: 결재는 상사 사슬 · 결재 대장 권한자(구매 · 생산 겸직 포함)가 읽어서, 제시가 × (1 − 마진 %)로
+--     제품 원가가 겸직자에게 간다(cost_role_conflict 우회). 마진은 견적 화면(본인 · 영업 팀장 · 대표)에만.
 --   · Green · Yellow는 바로 확정.
 --   · 권한: 영업 견적 권한자('/sales/<회사>' 쓰기)는 본인 견적 쓰기 · 읽기. 같은 회사 영업 팀장(TeamLead + 그 회사 영업 줄)은
 --     subtree 팀원 견적 읽기. 대표 전부. 구매 · 생산 · 원가 관리는 견적 표 0행 — 원가 관리는 확정 견적의 제품 · kg · 제시가만(회계용 RPC).
@@ -39,7 +41,6 @@ insert into approval_templates (template_key, name_ko, name_en, fields, attachme
      {"key":"kg","label_ko":"수량(kg)","label_en":"Quantity (kg)","type":"text","required":true},
      {"key":"price","label_ko":"제시가(원/kg)","label_en":"Price (KRW/kg)","type":"text","required":true},
      {"key":"currency","label_ko":"통화","label_en":"Currency","type":"text","required":true},
-     {"key":"margin_pct","label_ko":"마진 %","label_en":"Margin %","type":"text","required":true},
      {"key":"grade","label_ko":"등급","label_en":"Grade","type":"text","required":true}
    ]'::jsonb, false, true, null, 60)
 on conflict (template_key) do nothing;
@@ -114,11 +115,16 @@ revoke all on table quotes from public, anon, authenticated;
 grant select on table quotes to authenticated;
 
 -- 본인 · 같은 회사 영업 팀장(subtree) · 대표. 회사 접근은 늘 함께.
+-- 리뷰 I2 · M3 — 대표 외에는 원가 문(cost_gate_biz)과 같은 겸직 거부: 구매 쓰기 줄, 또는 원가 관리 없이 구매 · 생산 줄이 있으면 0행.
+-- 본인 견적도 지금 그 회사 영업 줄이 있을 때만(영업에서 구매로 옮긴 사람이 옛 견적 원가를 계속 읽지 않게).
 create policy quotes_read on quotes for select to authenticated
   using (is_active() and has_business(business_id) and (
            auth_role()::text = 'Chairman'
-           or created_by = auth.uid()
-           or (auth_role()::text = 'TeamLead' and cost_grant('sales', business_id) and in_my_subtree(created_by))));
+           or (cost_grant('sales', business_id)
+               and not cost_grant('purchasing', business_id, true)
+               and (cost_grant('costing', business_id) or not (cost_grant('purchasing', business_id) or cost_grant('production', business_id)))
+               and (created_by = auth.uid()
+                    or (auth_role()::text = 'TeamLead' and in_my_subtree(created_by))))));
 
 -- 얼림 — 정의자 함수가 바꾸는 칸(상태 · 결재 · 확정/취소 시각)만. 소유자 경로(함수)도 이 트리거를 지난다.
 create or replace function quotes_frozen() returns trigger
@@ -145,19 +151,63 @@ create trigger quotes_frozen before update on quotes for each row execute functi
 -- 3절. 함수
 -- =====================================================================
 
+/**
+ * 리뷰 I3 — 0062 cost_price_check에 대표 외 제시가 하한(1원 총원가의 절반)을 더한다(quote_create와 같은 문). 하한 밑이면 등급 'too_low' ·
+ * 마진 null(raise 아님 — 재검토 N1). 나머지는 0062 그대로.
+ * 0062를 고치지 않으려고 여기서 다시 정의한다(같은 서명 · 같은 권한).
+ */
+create or replace function cost_price_check(p_product text, p_price_krw_per_kg numeric)
+returns table (total_krw_per_kg numeric, margin_krw_per_kg numeric, margin_pct numeric, grade text)
+language plpgsql volatile security definer set search_path = public, cost_secret, pg_temp as $fn$
+declare
+  g record;
+  r record;
+  v_pct numeric;
+begin
+  if p_price_krw_per_kg is null or p_price_krw_per_kg <= 0 or p_price_krw_per_kg > 1e9 then
+    raise exception 'cost_price_invalid' using errcode = '22023';
+  end if;
+  select * into g from cost_secret.cost_gate(p_product, 'price_check', null);
+  if not g.chairman and p_price_krw_per_kg <> trunc(p_price_krw_per_kg) then
+    raise exception 'cost_price_invalid' using errcode = '22023';
+  end if;
+  select * into r from cost_secret.sales_row(p_product, g.business_id, g.as_of, g.chairman,
+    cost_secret.business_complete(g.business_id, 'market', g.as_of) and cost_secret.business_complete(g.business_id, 'current', g.as_of),
+    false);
+  if r.total_raw is null then
+    return query select null::numeric, null::numeric, null::numeric, null::text;
+    return;
+  end if;
+  -- 재검토 N1 — 문 뒤에서는 raise하지 않는다(한도 · 감사가 되돌아간다). 등급 'too_low'로 답한다(총원가는 이 함수가 원래 알려 주는 값).
+  if not g.chairman and p_price_krw_per_kg * 2 < r.total_krw_per_kg then
+    return query select r.total_krw_per_kg, null::numeric, null::numeric, 'too_low'::text;
+    return;
+  end if;
+  v_pct := (p_price_krw_per_kg - r.total_raw) / p_price_krw_per_kg * 100;
+  return query select r.total_krw_per_kg, cost_secret.shown(p_price_krw_per_kg - r.total_raw, g.chairman), round(v_pct, 1), cost_grade(v_pct);
+end;
+$fn$;
+revoke all on function cost_price_check(text, numeric) from public, anon;
+grant execute on function cost_price_check(text, numeric) to authenticated;
+
 /** 보이는 견적(정책과 같은 조건) — 정의자 함수 안에서 «읽을 수 있나»를 같은 글자로. */
 create or replace function quote_visible(p_quote text) returns boolean
 language sql stable security definer set search_path = public, pg_temp as $fn$
   select exists (select 1 from quotes q
                   where q.quote_id = p_quote and is_active() and has_business(q.business_id)
-                    and (auth_role()::text = 'Chairman' or q.created_by = auth.uid()
-                         or (auth_role()::text = 'TeamLead' and cost_grant('sales', q.business_id) and in_my_subtree(q.created_by))));
+                    and (auth_role()::text = 'Chairman'
+                         or (cost_grant('sales', q.business_id)
+                             and not cost_grant('purchasing', q.business_id, true)
+                             and (cost_grant('costing', q.business_id) or not (cost_grant('purchasing', q.business_id) or cost_grant('production', q.business_id)))
+                             and (q.created_by = auth.uid()
+                                  or (auth_role()::text = 'TeamLead' and in_my_subtree(q.created_by))))));
 $fn$;
 
 /** 쓸 수 있는 견적 — 만든 사람(그 회사 영업 쓰기 줄이 아직 있을 때) 또는 대표. */
 create or replace function quote_writable(p_quote text) returns boolean
 language sql stable security definer set search_path = public, pg_temp as $fn$
-  select exists (select 1 from quotes q
+  -- 재검토 N3 — 읽을 수 있는 견적만(겸직 거부 · 지금 영업 줄).
+  select quote_visible(p_quote) and exists (select 1 from quotes q
                   where q.quote_id = p_quote and is_active() and has_business(q.business_id)
                     and (auth_role()::text = 'Chairman' or (q.created_by = auth.uid() and cost_can('sales', q.business_id, true))));
 $fn$;
@@ -218,6 +268,14 @@ begin
   if r.total_raw is null then
     raise exception 'quote_cost_unavailable' using errcode = '22023';
   end if;
+  -- 리뷰 I3 — 대표 외 제시가 하한(1원 총원가의 절반). 마진 %(0.1%p)는 원래 총원가를 «제시가 × 0.001원» 폭으로 푼다 —
+  -- 제시가 1원이면 0.001원. 하한이 있으면 한 번에 «총원가 × 0.0005» 폭 아래로는 못 내려간다(총원가 1,000원/kg 이상이면 0.5원 이상).
+  -- 회장 결정(마진 %는 원래 값)은 그대로. 여러 제시가를 겹쳐 좁히는 길은 설계서 16절의 남는 위험(200건 한도 안).
+  -- 재검토 N1 — 문(cost_gate) 뒤에서 raise하면 한도 · 감사 줄까지 되돌아가 «거부 여부»가 공짜 오라클이 된다. 저장 없이 null을 돌려준다
+  -- (앱 저장소가 cost_price_too_low로 바꾼다). 한도 · 감사는 남는다.
+  if not g.chairman and p_price_krw_per_kg * 2 < r.total_krw_per_kg then
+    return null;
+  end if;
   v_pct := (p_price_krw_per_kg - r.total_raw) / p_price_krw_per_kg * 100;
 
   insert into quotes (quote_id, business_id, root_id, version, parent_id, customer_name, customer_company, product_id, product_name,
@@ -225,7 +283,8 @@ begin
                       cost_total_krw_per_kg, margin_krw_per_kg, margin_pct, grade, created_by)
   values (v_id, v_biz, v_root, v_ver, p_parent, btrim(p_customer_name), btrim(p_customer_company), p_product, v_name,
           p_kg, p_price_krw_per_kg, p_currency, v_fx, p_valid_until, 'draft', g.as_of, v_basis,
-          r.total_krw_per_kg, cost_secret.shown(p_price_krw_per_kg - r.total_raw, g.chairman), round(v_pct, 1), cost_grade(v_pct), auth.uid());
+          r.total_krw_per_kg, cost_secret.shown(p_price_krw_per_kg - r.total_raw, g.chairman),
+          round(v_pct, 1), cost_grade(v_pct), auth.uid());
 
   -- 대표용 원래 값 — 같은 순간의 즉시 값도(영업 견적이면 0시 기준과 다를 수 있다). 이 뒤로 이 트랜잭션은 즉시다(함수 끝).
   perform set_config('cost.known_at', '', true);
@@ -272,7 +331,7 @@ begin
           jsonb_build_object('quote', q.quote_id || ' (' || q.version || '판)', 'product', q.product_name,
                              'kg', trim(to_char(q.kg, 'FM999,999,999,990.###')),
                              'price', trim(to_char(q.price_krw_per_kg, 'FM999,999,999,990')),
-                             'currency', q.currency, 'margin_pct', q.margin_pct::text, 'grade', 'Red'),
+                             'currency', q.currency, 'grade', 'Red (마진 15% 미만)'),
           auth.uid());
   perform set_config('chairman.quote_approval', '', true);
   select status::text into v_status from decisions where decision_id = v_dec;

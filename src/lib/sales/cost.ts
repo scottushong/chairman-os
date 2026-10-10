@@ -103,6 +103,7 @@ export function salesCostError(e: unknown): string {
   if (/cost_role_conflict/.test(m)) return '구매 · 생산 권한과 영업 원가는 같이 볼 수 없습니다 — 대표에게 권한 정리를 요청하세요.'
   if (/cost_rate_limited/.test(m)) return '오늘 조회 한도에 걸렸습니다 — 대표에게 문의하세요.'
   if (/cost_price_invalid/.test(m)) return '제시가를 1원 단위(원/kg)로 0보다 크게 적으세요.'
+  if (/cost_price_too_low/.test(m)) return '제시가가 총원가의 절반보다 낮습니다 — 이런 가격은 대표에게 직접 문의하세요.'
   if (/quote_invalid/.test(m)) return '고객 이름 · 회사, kg(0보다 크게), 제시가(1원 단위), 유효기간(오늘~1년)을 확인하세요.'
   if (/quote_cost_unavailable/.test(m)) return '이 제품은 아직 원가가 계산되지 않아 견적을 저장할 수 없습니다.'
   if (/quote_needs_approval/.test(m)) return '마진 15% 미만(Red) 견적은 대표 승인 뒤에만 확정할 수 있습니다.'

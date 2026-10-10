@@ -276,7 +276,7 @@ async function main() {
   await as('sales_staff', () => repo.confirmQuote(g1))
   assert.equal((await get(g1)).status, 'confirmed', '0066 dummy: Green이 바로 확정되지 않는다')
   await assert.rejects(as('sales_staff', () => repo.createDecision({ business_id: 'biz_dy', title: 'x', options: [], impact: 'Medium', deadline: today,
-    template_key: 'price_exception' as never, form: { quote: 'x', product: 'x', kg: '1', price: '1', currency: 'KRW', margin_pct: '30', grade: 'Green' } }, staffActor)),
+    template_key: 'price_exception' as never, form: { quote: 'x', product: 'x', kg: '1', price: '1', currency: 'KRW', grade: 'Green' } }, staffActor)),
     /price_exception_use_quote/, '0066 dummy: 가격 예외를 손으로 올린다')
   const redPrice = Math.ceil(tot / 0.9)
   const r1 = await mk(redPrice)
@@ -300,6 +300,7 @@ async function main() {
   const nb = await get(r2b)
   assert.deepEqual([nb.version, nb.root_id, nb.grade], [2, r2, 'green'], '0066 dummy: 새 판이 원본에 이어지지 않는다')
   assert.equal((await as('buy_staff', () => repo.listQuotes('biz_dy'))).length, 0, '0066 dummy: 구매가 견적을 본다')
+  await assert.rejects(mk(Math.floor((tot - 1) / 2)), /cost_price_too_low/, '0066 리뷰 I3 dummy: 총원가 절반 미만 제시가')
   // 고객용 견적서 — 원가 · 마진 · 등급 없음.
   const wb = buildCustomerQuote(gq.status === 'draft' ? await get(g1) : gq, 'DY')
   const cells: string[] = []

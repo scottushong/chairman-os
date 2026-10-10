@@ -87,6 +87,7 @@ import type {
   ChatMessageInput,
   ChatRead,
   ApprovalTemplate,
+  AnyTemplateKey,
   ApprovalTemplateKey,
   DocFolder,
   Notice,
@@ -295,7 +296,7 @@ interface DecisionRow {
   status: DecisionStatus
   ai_confidence: number | string | null
   attachment_url: string | null
-  template_key: ApprovalTemplateKey | null
+  template_key: AnyTemplateKey | null
   form: Record<string, string> | null
   approval_line: ApprovalStep[] | null
   created_by?: string | null

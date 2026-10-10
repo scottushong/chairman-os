@@ -31,7 +31,12 @@ export function dummyQuotes(deps: DummyQuoteDeps): QuoteMethods {
   const chairman = () => viewer().role === 'Chairman'
   const visible = (q: Quote) => {
     const v = viewer()
-    return chairman() || q.created_by === v.user_id || (v.role === 'TeamLead' && grantOf(`/sales/${q.business_id}`) && deps.inSubtree(v.user_id, q.created_by))
+    if (chairman()) return true
+    // 0066 리뷰 I2 · M3 거울 — 지금 영업 줄 + 원가 문과 같은 겸직 거부(구매 쓰기, 또는 원가 관리 없이 구매 · 생산 줄).
+    const b = q.business_id
+    if (!grantOf(`/sales/${b}`) || grantOf(`/purchasing/${b}`, true)) return false
+    if (!grantOf(`/costing/${b}`) && (grantOf(`/purchasing/${b}`) || grantOf(`/production/${b}`))) return false
+    return q.created_by === v.user_id || (v.role === 'TeamLead' && deps.inSubtree(v.user_id, q.created_by))
   }
   const writable = (q: Quote) => chairman() || (q.created_by === viewer().user_id && grantOf(`/sales/${q.business_id}`, true))
   const sync = (q: Quote) => {
@@ -106,7 +111,7 @@ export function dummyQuotes(deps: DummyQuoteDeps): QuoteMethods {
           // 0066 «가격 예외»는 다섯 양식 밖이다(사람이 고르는 목록에 없다) — 이 길만 쓴다.
           template_key: QUOTE_TEMPLATE_KEY as unknown as ApprovalTemplateKey,
           form: { quote: `${q.quote_id} (${q.version}판)`, product: q.product_name, kg, price: q.price_krw_per_kg.toLocaleString('en-US'),
-                  currency: q.currency, margin_pct: q.margin_pct.toFixed(1), grade: 'Red' },
+                  currency: q.currency, grade: 'Red (마진 15% 미만)' },
         },
         { user_id: viewer().user_id, role: viewer().role },
       )

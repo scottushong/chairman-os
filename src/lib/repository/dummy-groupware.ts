@@ -186,7 +186,7 @@ const SEED_TEMPLATES: ApprovalTemplate[] = [
   },
   // 0066 «가격 예외» — 견적(Red)만 올린다. 결재 올리기 · 양식 설정에는 draftableTemplates가 뺀다.
   {
-    template_key: QUOTE_TEMPLATE_KEY as unknown as ApprovalTemplateKey, name_ko: '가격 예외', name_en: 'Price exception', attachment_required: false,
+    template_key: QUOTE_TEMPLATE_KEY, name_ko: '가격 예외', name_en: 'Price exception', attachment_required: false,
     chairman_always: true, chairman_over: null, sort_order: 60,
     fields: [
       { key: 'quote', label_ko: '견적 번호', label_en: 'Quote', type: 'text', required: true },

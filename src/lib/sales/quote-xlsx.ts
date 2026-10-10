@@ -25,7 +25,8 @@ export function buildCustomerQuote(q: Quote, supplierName: string): ExcelJS.Work
   const money = q.currency === 'KRW' ? '#,##0' : '#,##0.00'
   const rows: [string, string | number | Date][] = [
     ['견적 번호', `${q.root_id} (${q.version}판)`],
-    ['견적일', new Date(`${q.created_at.slice(0, 10)}T00:00:00Z`)],
+    // 견적일은 KST 날짜(리뷰 M6 — created_at UTC 앞 10자는 KST 00~09시 저장분을 전날로 찍는다).
+    ['견적일', new Date(`${new Date(Date.parse(q.created_at) + 9 * 3_600_000).toISOString().slice(0, 10)}T00:00:00Z`)],
     ['고객 회사', q.customer_company],
     ['고객 담당', q.customer_name],
     ['제품', q.product_name],
