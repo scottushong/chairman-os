@@ -140,9 +140,10 @@ $fn$;
 
 create or replace function cost_secret.known(p_created timestamptz, p_voided timestamptz) returns boolean
 language sql stable set search_path = pg_temp as $fn$
+  -- 설정 값은 epoch 초(글자 → 시각 변환이 세션 DateStyle · TimeZone에 기대지 않게 — 리뷰 Minor).
   select case when nullif(current_setting('cost.known_at', true), '') is null then p_voided is null
-              else p_created <= current_setting('cost.known_at', true)::timestamptz
-                   and (p_voided is null or p_voided > current_setting('cost.known_at', true)::timestamptz) end;
+              else p_created <= to_timestamp(current_setting('cost.known_at', true)::double precision)
+                   and (p_voided is null or p_voided > to_timestamp(current_setting('cost.known_at', true)::double precision)) end;
 $fn$;
 
 /**
@@ -240,7 +241,7 @@ begin
   as_of := v_today;
   -- 회장 결정(2026-10-10) (가) — 영업(원가 관리 줄이 없는 사람)은 오늘 0시(KST)까지 저장된 값. 원가 관리는 즉시.
   if not v_costing then
-    perform set_config('cost.known_at', cost_secret.sales_cutoff()::text, true);
+    perform set_config('cost.known_at', extract(epoch from cost_secret.sales_cutoff())::text, true);
   end if;
   -- 같은 사람의 동시 요청이 한도를 함께 넘지 않게(0063 리뷰 M1).
   perform pg_advisory_xact_lock(hashtext('cost_reads:' || auth.uid()::text || ':' || v_today::text));

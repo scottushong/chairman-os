@@ -103,6 +103,10 @@ export async function knownCutoff({ db, as, run, owner, p1, mats, s1, U }: Known
     assert.notEqual(after.c, before.c, `(가) 전제: 오늘 넣은 ${what}가 원가 관리 ${kind} 값을 바꾸지 않는다(시험이 아무것도 재지 않는다)`)
     assert.notEqual(after.h, before.h, `(가): 오늘 넣은 ${what}가 대표 값에 바로 반영되지 않는다`)
   }
+  // 리뷰 I — 오늘 만든 원료(사용 중 · 단가 없음)가 영업의 회사 전체 «계산 안 됨»을 바로 켜지 않는다.
+  const { nm } = (await run(U.buy, `insert into cost_materials (business_id, name) values ('biz_dy', '오늘 원료(가짜)') returning material_id as nm`))[0] as { nm: string }
+  assert.deepEqual(await sales(), base, '(가): 오늘 만든 원료가 영업 값(계산 여부)을 바로 바꿨다')
+  await run(U.buy, `update cost_materials set active = false where material_id = '${nm}'`)
   const nowCost = await costing()
   assert.notEqual(nowCost, prevCost, '(가) 전제: 오늘 넣은 것들이 원가 관리 총원가를 바꾸지 않았다')
   assert.notEqual(await chair(), prevChair, '(가): 대표 총원가가 즉시 바뀌지 않는다')
