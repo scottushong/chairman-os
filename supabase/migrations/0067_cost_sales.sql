@@ -49,7 +49,8 @@ create table cost_sales (
   snap_total_krw_per_kg numeric,                                   -- 계산 안 됨 · too_low면 null
   snap_margin_pct  numeric,
   snap_grade       text not null check (snap_grade in ('green', 'yellow', 'red', 'too_low', 'unknown')),
-  created_by       uuid not null,
+  created_by       uuid not null,                                  -- 실적 주인(대표가 대체해도 앞 줄 주인 그대로 — 리뷰 I3)
+  entered_by       uuid not null,                                  -- 실제로 넣은 사람
   created_at       timestamptz not null default now(),
   voided_at        timestamptz,
   voided_by        uuid,
@@ -188,6 +189,12 @@ begin
     v_total := r.total_krw_per_kg;
   end if;
 
+  -- 리뷰 I3: 대표가 남의 줄을 대체하면 주인은 앞 줄 주인 그대로, 스냅숏은 'unknown' — 대표의 즉시 원래 값이 영업 화면으로 새지 않게.
+  if v_old.sale_id is not null and v_old.created_by <> auth.uid() then
+    v_grade := 'unknown';
+    v_total := null;
+  end if;
+
   if v_old.sale_id is not null then
     update cost_sales set voided_at = now(), voided_by = auth.uid(), void_reason = btrim(p_reason) where sale_id = v_old.sale_id;
     insert into audit_log (action, entity_table, entity_id, business_id, actor_user_id, actor_role, before, after, note)
@@ -196,10 +203,10 @@ begin
   end if;
   insert into cost_sales (sale_id, business_id, shipped_on, customer_name, customer_company, product_id, product_name, kg, price_krw_per_kg,
                           currency, fx_rate, quote_id, prod_lot_id, replaces_id, snap_as_of, snap_basis, snap_total_krw_per_kg,
-                          snap_margin_pct, snap_grade, created_by)
+                          snap_margin_pct, snap_grade, created_by, entered_by)
   values (v_id, v_biz, p_shipped_on, btrim(p_customer_name), btrim(p_customer_company), p_product, v_name, p_kg, p_price_krw_per_kg,
           p_currency, v_fx, p_quote, p_prod_lot, p_replaces, g.as_of, v_basis, v_total,
-          case when v_total is null then null else round(v_pct, 1) end, v_grade, auth.uid());
+          case when v_total is null then null else round(v_pct, 1) end, v_grade, coalesce(v_old.created_by, auth.uid()), auth.uid());
   insert into audit_log (action, entity_table, entity_id, business_id, actor_user_id, actor_role, before, after, note)
   values ('create', 'cost_sales', v_id, v_biz, auth.uid(), auth_role()::text, null,
           jsonb_build_object('shipped_on', p_shipped_on, 'kg', p_kg, 'price', p_price_krw_per_kg, 'quote', p_quote, 'lot', p_prod_lot,
@@ -325,7 +332,7 @@ begin
       left join quotes q on q.quote_id = x.quote_id
       left join cost_secret.quote_raw qr on qr.quote_id = x.quote_id
       cross join lateral cost_secret.sale_actual(x.business_id, x.product_id, x.shipped_on, x.prod_lot_id,
-                                                 v_complete and cost_secret.business_complete(x.business_id, 'current', x.shipped_on)) a
+                                                 g.chairman or (v_complete and cost_secret.business_complete(x.business_id, 'current', x.shipped_on))) a
      where x.business_id = p_business and x.voided_at is null and x.shipped_on between p_from and p_to
   ),
   b as (
@@ -377,6 +384,22 @@ begin
           jsonb_build_object('from', p_from, 'to', p_to, 'grain', p_grain, 'by', p_by), '마진 엑셀 내려받기(0067)');
 end;
 $fn$;
+
+-- 감사 줄: 판매 · 견적 줄도 표와 같은 읽기 범위(리뷰 I1 — 0031 audit_log_read는 상사 사슬 전부라, 겸직 거부된 임원 · 회사 대표가
+-- 감사 after의 판매가 · 등급으로 0시 원가 띠를 읽었다. 0066 견적 줄도 같은 구멍). 표 정책이 걸린 exists로 — 표에서 못 보면 감사도 못 본다.
+-- 대표 · 본인은 그대로. 원가 관리의 cost_margins 내려받기 줄(entity_id 'margins:<회사>')은 본인 · 대표만.
+drop policy audit_log_cost_private on audit_log;
+create policy audit_log_cost_private on audit_log as restrictive for select to authenticated
+  using (entity_table not in ('cost_materials', 'cost_suppliers', 'cost_market_prices', 'cost_purchase_lots', 'cost_purchase_docs', 'cost_bom',
+                              'cost_production_orders', 'cost_prod_lots', 'cost_prod_inputs', 'cost_lot_adjustments', 'cost_overheads', 'cost_alloc_settings',
+                              'cost_sales', 'quotes')
+         or actor_user_id = auth.uid() or coalesce(auth_role()::text, '') = 'Chairman'
+         or (entity_table in ('cost_materials', 'cost_suppliers', 'cost_market_prices', 'cost_purchase_lots', 'cost_purchase_docs')
+             and (cost_can('purchasing', business_id) or cost_can('costing', business_id)))
+         or (entity_table in ('cost_overheads', 'cost_alloc_settings') and cost_can('costing', business_id))
+         or (entity_table in ('cost_production_orders', 'cost_prod_lots', 'cost_prod_inputs', 'cost_lot_adjustments') and cost_can('production', business_id))
+         or (entity_table = 'cost_sales' and exists (select 1 from cost_sales s where s.sale_id = audit_log.entity_id))
+         or (entity_table = 'quotes' and exists (select 1 from quotes q where q.quote_id = audit_log.entity_id)));
 
 revoke all on function sale_visible(text) from public, anon, authenticated;
 revoke all on function sale_record(text, date, text, text, numeric, numeric, text, text, text, text, text) from public, anon;

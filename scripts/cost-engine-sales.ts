@@ -177,4 +177,21 @@ export async function sales({ db, as, run, owner, p1, U }: SalesCtx) {
   assert.equal((await owner(`select 1 from audit_log where entity_table = 'cost_sales' and action = 'export' and actor_user_id = '${U.cost}'`)).length, 1, '0067: 마진 엑셀 감사가 없다')
   const sAud = await owner<{ n: number }>(`select count(*)::int as n from audit_log where entity_table = 'cost_sales'`)
   assert.ok(sAud[0].n >= 7, '0067: 판매 쓰기 감사가 모자라다')
+
+  // ── 리뷰 I1: 판매 · 견적 감사 줄도 표와 같은 읽기 범위(상사 사슬 · 겸직 거부된 사람이 after의 판매가 · 등급을 못 읽는다) ──
+  const audSee = (uid: string) => as<{ n: number }>(uid, `select count(*)::int as n from audit_log
+      where entity_table in ('cost_sales', 'quotes') and actor_user_id <> '${uid}'`).then((r) => Number(r[0].n))
+  for (const uid of [U.buy, U.prod, U.cost, U.exec, U.ceo, U.cfo, U.vana, U.agent, U.sp, U.sr, other]) {
+    assert.equal(await audSee(uid), 0, `0067 I1: ${uid.slice(-2)}가 남의 판매 · 견적 감사 줄을 읽는다`)
+  }
+  assert.ok((await audSee(lead)) > 0, '0067 I1: 영업 팀장이 팀원 판매 · 견적 감사 줄을 못 본다')
+  assert.ok((await audSee(U.chair)) > 0, '0067 I1: 대표가 판매 · 견적 감사 줄을 못 본다')
+
+  // ── 리뷰 I3: 대표가 영업 줄을 대체해도 실적 주인은 영업 · 스냅숏은 unknown(대표 즉시 값이 영업 화면으로 새지 않는다) ──
+  const fix = await rec(U.chair, `'${p1}', '${T}'::date - 2, '최출고', '(주)가짜출고3', 12, ${total * 2}, 'KRW', null, null, '${s3}', 'kg 고침'`)
+  const fr = (await owner<{ c: string; e: string; g: string; t: string | null }>(`select created_by::text as c, entered_by::text as e, snap_grade as g,
+      snap_total_krw_per_kg::text as t from cost_sales where sale_id = '${fix}'`))[0]
+  assert.deepEqual([fr.c, fr.e, fr.g, fr.t], [U.sales, U.chair, 'unknown', null], '0067 I3: 대표 대체가 실적 주인을 바꾸거나 대표 값을 영업 스냅숏에 남긴다')
+  assert.equal(await n(U.sales), mine + 1, '0067 I3: 대표가 대체한 줄이 영업에게 안 보인다')
+  assert.equal(await n(lead), mine + 1, '0067 I3: 대표가 대체한 줄이 팀장에게 안 보인다')
 }
