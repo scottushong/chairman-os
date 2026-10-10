@@ -101,7 +101,7 @@ create policy cost_alloc_settings_read on cost_alloc_settings for select to auth
 
 -- 감사 줄: 비용 표 · 배부 설정도 본인 · 대표 · 원가 관리만(0064 정책에 두 표 더 — 0065 리뷰 I5: 계획 생산량 + 영업이 보는 비용 합 = 월 비용 총액).
 drop policy audit_log_cost_private on audit_log;
-create policy audit_log_cost_private on audit_log as restrictive for select
+create policy audit_log_cost_private on audit_log as restrictive for select to authenticated
   using (entity_table not in ('cost_materials', 'cost_suppliers', 'cost_market_prices', 'cost_purchase_lots', 'cost_purchase_docs', 'cost_bom',
                               'cost_production_orders', 'cost_prod_lots', 'cost_prod_inputs', 'cost_lot_adjustments', 'cost_overheads', 'cost_alloc_settings')
          or actor_user_id = auth.uid() or coalesce(auth_role()::text, '') = 'Chairman'

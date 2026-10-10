@@ -591,8 +591,9 @@ grant execute on function cost_costing_watch(text) to authenticated;
 /**
  * 리뷰 5회차 M1 — 원가 표의 감사 줄(원료 · 공급처 · 시세 · LOT · 구매 첨부)은 0026 audit_log_read가 «행위자의 상사»에게도 내준다.
  * 영업 팀장이 아래 구매 담당의 줄로 원료 id · 시각을 보지 않게 restrictive로 좁힌다 — 본인 · 대표 · 그 회사 구매 · 원가 관리만(0045 첨부와 같은 모양).
+ * `to authenticated` — 대상이 public이면 anon의 audit_log select가 cost_can execute(anon 없음)에서 42501로 멈춘다(0060과 같은 함정, check-anon-health가 잡았다).
  */
-create policy audit_log_cost_private on audit_log as restrictive for select
+create policy audit_log_cost_private on audit_log as restrictive for select to authenticated
   using (entity_table not in ('cost_materials', 'cost_suppliers', 'cost_market_prices', 'cost_purchase_lots', 'cost_purchase_docs', 'cost_bom')
          or actor_user_id = auth.uid() or coalesce(auth_role()::text, '') = 'Chairman'
          or cost_can('purchasing', business_id) or cost_can('costing', business_id));
