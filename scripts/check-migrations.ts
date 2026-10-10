@@ -1348,7 +1348,9 @@ async function groupware(db: Db, as: As) {
   assert.equal(await as(UID.member, `delete from notice_reads where notice_id = 9001`), 0, '0038: 읽음을 지운다')
 
   // ── 결재 양식 ──
-  assert.equal(await as(UID.member, `select count(*)::int from approval_templates`), 5, '0038: 양식 다섯이 안 보인다')
+  // 0066이 «가격 예외»(견적 전용 — 손으로 올리지 못함)를 더해 표에는 여섯이다. 사람이 고르는 양식은 다섯 그대로.
+  assert.equal(await as(UID.member, `select count(*)::int from approval_templates where template_key <> 'price_exception'`), 5, '0038: 양식 다섯이 안 보인다')
+  assert.equal(await as(UID.member, `select count(*)::int from approval_templates`), 6, '0066: 가격 예외 양식이 없다(또는 양식이 더 늘었다)')
   assert.equal(await as(UID.member, `update approval_templates set chairman_over = 1 where template_key = 'expense'`), 0, '0038: Member가 회장 규칙을 고친다')
   assert.equal(await as(UID.chairman, `update approval_templates set chairman_over = 1 where template_key = 'expense'`), 1, '0038: 회장이 규칙을 못 고친다')
   assert.equal(

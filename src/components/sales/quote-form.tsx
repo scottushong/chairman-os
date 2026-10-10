@@ -34,17 +34,20 @@ export function QuoteForm({
   const [price, setPrice] = useState(parent ? parent.price_krw_per_kg.toLocaleString('en-US') : '')
   const [currency, setCurrency] = useState(parent?.currency ?? 'KRW')
   const [validUntil, setValidUntil] = useState(new Date(Date.parse(`${today}T00:00:00Z`) + 30 * 86_400_000).toISOString().slice(0, 10))
-  const [check, setCheck] = useState<PriceCheck | null>(null)
+  // 결과는 그것을 낸 입력(제품 | 제시가)과 함께 둔다 — 입력이 바뀌면 옛 결과는 그리지 않는다.
+  const [checked, setChecked] = useState<{ key: string; result: PriceCheck } | null>(null)
+  const key = `${productId}|${price}`
+  const check = checked?.key === key ? checked.result : null
   const [error, setError] = useState<string | null>(null)
   const [pending, start] = useTransition()
 
   // 제시가 · 제품이 바뀌면 잠깐 뒤 등급을 다시 본다(하루 조회 한도에 하루 · 제품마다 한 건으로 센다 — DB 감사 규칙).
   useEffect(() => {
-    setCheck(null)
     if (!productId || !price) return
+    const k = `${productId}|${price}`
     const t = setTimeout(async () => {
       const r = await checkPriceAction({ productId, price })
-      if (r.result) setCheck(r.result)
+      if (r.result) setChecked({ key: k, result: r.result })
     }, 600)
     return () => clearTimeout(t)
   }, [productId, price])
