@@ -543,6 +543,12 @@ function salesView(productId: string): SalesCostView {
 }
 
 /** dummy 대표 감시(dummy.ts costingWatch)가 세는 원가 조회 감사 줄. */
+/** 0066 dummy 견적 — 제품의 회사 · 이름(권한 판정 없음 — 견적 함수가 한다). */
+export function dummyCostProduct(productId: string): { business_id: string; name: string } | null {
+  const p = store.products.find((x) => x.product_id === productId)
+  return p ? { business_id: p.business_id, name: p.name } : null
+}
+
 export function dummyCostReadAudit(): { user_id: string; business_id: string; at: string }[] {
   return store.audit.map((a) => ({ ...a }))
 }

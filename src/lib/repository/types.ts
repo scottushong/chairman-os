@@ -5,6 +5,8 @@ import type { CorrectionResult, NewCorrection, NewJournalEntry } from '@/lib/led
 import type { DecisionAuditRecord, DecisionAction } from '@/lib/decision-log'
 import type { SearchHit } from '@/lib/search'
 import type {
+  Quote,
+  QuoteInput,
   ModuleGrant,
   AbsenceDays,
   AbsenceResult,
@@ -256,7 +258,26 @@ export interface CostsMethods {
  * 전부 async다. dummy 어댑터는 동기로 끝나지만 시그니처까지 동기로 두면
  * live로 바꾸는 날 호출부를 전부 다시 써야 한다.
  */
-export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods, ProductionMethods, CostsMethods {
+/**
+ * 0066 견적 · 가격 예외 결재. 판정 · 스냅숏 · 결재선은 DB(quote_* 정의자 함수)다. 원가 스냅숏 칸은 견적을 읽을 수 있는 사람
+ * (본인 · 영업 팀장 · 대표)에게만 RLS가 돌려준다. dummy는 lib/repository/dummy-quotes.ts, live는 supabase-quotes.ts.
+ */
+export interface QuoteMethods {
+  /** 그 회사의 보이는 견적(최근 순). 0066 전 DB면 빈 목록. */
+  listQuotes(businessId: string): Promise<Quote[]>
+  /** 보이는 견적 하나와 같은 뿌리의 판 전부(판 순). 없거나 못 보면 null. */
+  getQuote(quoteId: string): Promise<{ quote: Quote; versions: Quote[] } | null>
+  /** 0066 quote_create — 새 견적 id. 'quote_invalid' · 'quote_cost_unavailable' · 'cost_*'로 던진다. */
+  createQuote(input: QuoteInput): Promise<string>
+  /** 0066 quote_request_approval — 결재 id. */
+  requestQuoteApproval(quoteId: string): Promise<string>
+  confirmQuote(quoteId: string): Promise<void>
+  cancelQuote(quoteId: string): Promise<void>
+  /** 0066 quote_download_log — 확정 견적만. 내려받기 전에 부른다(감사가 먼저). */
+  logQuoteDownload(quoteId: string, format: 'xlsx' | 'pdf'): Promise<void>
+}
+
+export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods, ProductionMethods, CostsMethods, QuoteMethods {
   /** 어느 쪽을 보고 있는지. 화면이 아니라 DUMMY DATA 뱃지와 로그가 쓴다. */
   readonly mode: 'dummy' | 'live'
 

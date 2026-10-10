@@ -38,7 +38,8 @@ import {
 } from './dummy-succession'
 import { attachmentSearchText, dummyAttachments } from './dummy-attachments'
 import { dummyPurchasing } from './dummy-purchasing'
-import { dummyCostReadAudit, dummyCosts, dummyGrantedAt, dummyProduction, dummySalesCost, noteDummyGrant } from './dummy-sales-cost'
+import { dummyQuotes } from './dummy-quotes'
+import { dummyCostProduct, dummyCostReadAudit, dummyCosts, dummyGrantedAt, dummyProduction, dummySalesCost, noteDummyGrant } from './dummy-sales-cost'
 import * as books from './dummy-books'
 import { dummyAssistant } from './dummy-assistant'
 import * as chat from './dummy-chat'
@@ -69,7 +70,7 @@ import {
 } from './dummy-org'
 import { emptyStrategy } from '@/lib/strategy-fields'
 import { attachmentHitId, type SearchHit } from '@/lib/search'
-import { MONITOR_DAYS, STAFF_ADMIN_PREFIX, STAFF_ADMIN_ROLES, needsChairmanApproval } from '@/types'
+import { MONITOR_DAYS, QUOTE_TEMPLATE_KEY, STAFF_ADMIN_PREFIX, STAFF_ADMIN_ROLES, needsChairmanApproval } from '@/types'
 import { businessOfModule, DRAFT_DECISION_MODULE } from '@/lib/module-grants'
 import type {
   AppNotification,
@@ -217,6 +218,8 @@ const memoryLogos = new Map<string, string>()
 const memoryPhotos = new Map<string, string>()
 const memoryEvents: ChairmanEvent[] = []
 let initiativeSeq = 0
+/** 0066 — dummy-quotes가 «가격 예외»를 올리는 동안만 켠다(chairman.quote_approval 거울). */
+let quoteApprovalOn = false
 
 /**
  * CH-024 키맨(0015). 시드가 없다 — 실제 사람 이름이 git에 들어가면 안 된다(0014 회장 루틴과 같은 이유).
@@ -602,6 +605,25 @@ export const dummyRepository: ChairmanRepository = {
   ...dummyPurchasing(),
   // 원가 엔진 · 영업 원가(0062 cost_sales_list · cost_sales_view · cost_price_check) — 가짜 BOM은 dummy-sales-cost.ts 안에만.
   ...dummySalesCost(),
+  // 0066 견적 — 결재 · 사람 거울은 이 파일의 것을 빌려 쓴다(함수 안에서 늦게 읽는다).
+  ...dummyQuotes({
+    priceCheck: (productId, price) => dummySalesCost().costPriceCheck(productId, price),
+    productOf: dummyCostProduct,
+    createDecision: async (input, actor) => {
+      quoteApprovalOn = true
+      try {
+        const d = await dummyRepository.createDecision(input, actor)
+        return { decision_id: d.decision_id, status: d.status }
+      } finally {
+        quoteApprovalOn = false
+      }
+    },
+    decisionStatus: (id) => {
+      const d = memoryDecisions.find((x) => x.decision_id === id)
+      return d ? (memoryDecisionStatuses.get(id) ?? d.status) : null
+    },
+    inSubtree: (viewerId, targetId) => inMemorySubtree(viewerId, targetId),
+  }),
   // 원가 엔진 · 생산(0064) · 원가 관리(0065) · 대표 BOM(0063) — 작업지시 수량 · BOM이 가짜 BOM 옆이라 같은 파일.
   ...dummyProduction(),
   ...dummyCosts(),
@@ -1243,6 +1265,8 @@ export const dummyRepository: ChairmanRepository = {
 
   /** CH-041 기안. id는 live에서 0010의 시퀀스가 준다. 여기서는 같은 모양(dec_005)을 흉내 낸다. */
   async createDecision(input: NewDecision, actor: AuditActor): Promise<Decision> {
+    // 0066 decisions_price_exception_guard 거울 — «가격 예외»는 견적(dummy-quotes)만 올린다.
+    if ((input.template_key as string | undefined) === QUOTE_TEMPLATE_KEY && !quoteApprovalOn) throw new Error('price_exception_use_quote')
     // 0038 트리거의 거울 — 필수 항목 · 첨부를 본다(화면 값은 안 믿는다). 결재선은 0059 상사 사슬로 새로 만든다.
     if (input.template_key) await groupware.draftApprovalLine(input)
     const requester = memoryPeople.find((p) => p.user_id === actor.user_id)

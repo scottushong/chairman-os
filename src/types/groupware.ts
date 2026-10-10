@@ -46,6 +46,12 @@ export interface NoticeRead {
 
 export const APPROVAL_TEMPLATE_KEY = ['expense', 'purchase', 'leave', 'contract', 'hiring'] as const
 export type ApprovalTemplateKey = (typeof APPROVAL_TEMPLATE_KEY)[number]
+/** 0066 «가격 예외» — 견적(/sales/<회사>/quotes)이 DB 함수로만 올린다. 결재 올리기 · 양식 설정 · AI 초안에는 없다. */
+export const QUOTE_TEMPLATE_KEY = 'price_exception'
+/** 사람이 손으로 올릴 수 있는 양식만(가격 예외 제외). */
+export function draftableTemplates<T extends { template_key: string }>(templates: T[]): T[] {
+  return templates.filter((t) => (APPROVAL_TEMPLATE_KEY as readonly string[]).includes(t.template_key))
+}
 
 export const TEMPLATE_FIELD_TYPES = ['text', 'number', 'money', 'date', 'textarea', 'url'] as const
 /** 'url'은 2026-10-06 추가(구매·지출의 «링크»). DB는 fields를 jsonb로만 본다 — 형식 검사는 앱(actions/approval-form.ts)이 한다. */

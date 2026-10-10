@@ -3,11 +3,13 @@ import type {
   ApprovalLead,
   ApprovalStep,
   ApprovalTemplate,
+  ApprovalTemplateKey,
   DocFolder,
   Notice,
   NoticeInput,
   NoticeRead,
 } from '@/types'
+import { QUOTE_TEMPLATE_KEY } from '@/types'
 
 import { DUMMY_PEOPLE, DUMMY_TEAMS, DUMMY_UID, dummyCanWriteDocuments, dummyHasBusiness, dummyPerson, dummyViewer } from './dummy-org'
 import type { AuditActor } from './types'
@@ -180,6 +182,20 @@ const SEED_TEMPLATES: ApprovalTemplate[] = [
       { key: 'team', label_ko: '배치 팀', label_en: 'Team', type: 'text', required: true },
       { key: 'amount', label_ko: '연봉(원)', label_en: 'Annual salary (KRW)', type: 'money', required: true },
       { key: 'reason', label_ko: '채용 사유', label_en: 'Reason', type: 'textarea', required: true },
+    ],
+  },
+  // 0066 «가격 예외» — 견적(Red)만 올린다. 결재 올리기 · 양식 설정에는 draftableTemplates가 뺀다.
+  {
+    template_key: QUOTE_TEMPLATE_KEY as unknown as ApprovalTemplateKey, name_ko: '가격 예외', name_en: 'Price exception', attachment_required: false,
+    chairman_always: true, chairman_over: null, sort_order: 60,
+    fields: [
+      { key: 'quote', label_ko: '견적 번호', label_en: 'Quote', type: 'text', required: true },
+      { key: 'product', label_ko: '제품', label_en: 'Product', type: 'text', required: true },
+      { key: 'kg', label_ko: '수량(kg)', label_en: 'Quantity (kg)', type: 'text', required: true },
+      { key: 'price', label_ko: '제시가(원/kg)', label_en: 'Price (KRW/kg)', type: 'text', required: true },
+      { key: 'currency', label_ko: '통화', label_en: 'Currency', type: 'text', required: true },
+      { key: 'margin_pct', label_ko: '마진 %', label_en: 'Margin %', type: 'text', required: true },
+      { key: 'grade', label_ko: '등급', label_en: 'Grade', type: 'text', required: true },
     ],
   },
 ]

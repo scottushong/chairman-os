@@ -10,6 +10,7 @@ import { kstToday } from '@/lib/chairman-project'
 import { tr, type Lang } from '@/lib/i18n'
 import { firstParam } from '@/lib/query'
 import { getRepository } from '@/lib/repository'
+import { draftableTemplates } from '@/types'
 
 /**
  * `/approvals/new` — 양식으로 결재 올리기 (Phase 9 블록 2 · 0059 단계 결재).
@@ -29,7 +30,7 @@ export default async function NewApprovalPage(props: PageProps<'/approvals/new'>
   const lang: Lang = user?.language ?? 'ko'
   const repo = await getRepository()
   const [templates, businessRows, decisions] = await Promise.all([
-    repo.listApprovalTemplates(),
+    repo.listApprovalTemplates().then(draftableTemplates),
     repo.listBusinesses(),
     resubmitId ? repo.listDecisions() : Promise.resolve([]),
   ])

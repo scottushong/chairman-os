@@ -18,6 +18,7 @@ import {
   type WorkPriority,
 } from '@/types'
 import { decisionStatusLabel } from '@/lib/decision-status'
+import { QUOTE_TEMPLATE_KEY } from '@/types'
 
 /**
  * CH-041 상세 패널 — 내용 · 첨부 · 이력.
@@ -87,6 +88,8 @@ export function ApprovalDetail({
     chain &&
     decision.status === 'Rejected' &&
     !!decision.template_key &&
+    // 0066 가격 예외는 견적의 새 판으로 다시 올린다(손 재상신은 DB가 거부).
+    (decision.template_key as string) !== QUOTE_TEMPLATE_KEY &&
     viewerId !== null &&
     decision.created_by === viewerId &&
     !resubmittedAs
