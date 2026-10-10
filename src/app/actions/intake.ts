@@ -5,6 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { ATTACHMENT_MAX_BYTES, attachmentMime } from '@/lib/attachments/rules'
 import { currentUser } from '@/lib/auth/session'
 import { readIntake } from '@/lib/intake/read'
+import { intakeOpenFor } from '@/lib/intake/switch'
 import { getRepository } from '@/lib/repository'
 import { INTAKE_KIND, INTAKE_KIND_DOC_TYPE, type IntakeKind } from '@/types'
 
@@ -47,7 +48,8 @@ function explain(e: unknown, fallback: string): IntakeActionState {
 
 async function who() {
   const user = await currentUser()
-  return user ? { user, actor: { user_id: user.user_id, role: user.role } } : null
+  // 입구 스위치(lib/intake/switch.ts) — 꺼져 있으면 대표 외에는 로그인 안 한 것과 같이 모든 입구 동작을 거부한다.
+  return user && intakeOpenFor(user) ? { user, actor: { user_id: user.user_id, role: user.role } } : null
 }
 
 const pathOf = (businessId: string) => `/business/${encodeURIComponent(businessId)}`
