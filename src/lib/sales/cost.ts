@@ -62,8 +62,11 @@ export function weekdayKo(d: IsoDate): string {
  * 기준 문구 — «2026-10-09(금) 기준 · 지금 저장된 값(매일 최신)». 회장 결정(2026-10-09 밤)으로 대표 외도 오늘 · 지금 저장된 값을 본다
  * (주 1회 월요일 0시 스냅샷은 없앴다). 원료 · 시세 · BOM 변경이 바로 비친다.
  */
-export function asOfLabel(asOf: IsoDate): string {
-  return `${asOf}(${weekdayKo(asOf)}) 기준 · 지금 저장된 값(매일 최신)`
+export function asOfLabel(asOf: IsoDate, immediate = true): string {
+  // 회장 결정(2026-10-10) (가) — 영업은 오늘 0시(KST)까지 저장된 값, 원가 관리 · 대표는 즉시.
+  return immediate
+    ? `${asOf}(${weekdayKo(asOf)}) 기준 · 지금 저장된 값`
+    : `${asOf}(${weekdayKo(asOf)}) · 오늘 0시 기준 원가(오늘 저장한 값은 내일 반영)`
 }
 
 /** «원료비 영향 +4.2%» · 값이 없으면 null(화면이 줄을 그리지 않는다). */

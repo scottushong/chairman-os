@@ -168,6 +168,8 @@ declare
 begin
   if exists (select 1 from public.cost_materials m
               where m.business_id = p_business and m.active
+                -- (가) 리뷰 I — 영업에게는 오늘 만든 원료를 아직 없는 것으로(오늘 넣은 원료가 회사 전체 «계산 안 됨»을 바로 켜지 않게).
+                and cost_secret.known(m.created_at, null)
                 and cost_secret.unit_price(m.material_id, p_kind, p_on) is null) then
     return false;
   end if;

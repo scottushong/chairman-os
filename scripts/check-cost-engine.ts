@@ -28,6 +28,7 @@ import { pgcrypto } from '@electric-sql/pglite/contrib/pgcrypto'
 import { applyOne, MIGRATIONS, SUPABASE_STUBS } from './pglite'
 import { encryption } from './cost-engine-encryption'
 import { q4, qadd, qdiv, qfrac, qmul, qnear, Qof, qround, qsub, qsum, type Q } from './cost-rational'
+import { knownCutoff, PIN_SALES_IMMEDIATE } from './cost-engine-known'
 import { overheads } from './cost-engine-overheads'
 import { production } from './cost-engine-production'
 
@@ -66,6 +67,8 @@ async function main() {
   `)
   const files = readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql')).sort()
   for (const f of files) await applyOne(db, f)
+  // (가) — 앞 절들은 영업도 즉시로 잰다(계산 · 정밀도 단언). ⑫ knownCutoff가 진짜 0시 기준으로 되돌려 따로 잰다.
+  await db.exec(PIN_SALES_IMMEDIATE)
   assert.ok(files.includes('0061_cost_engine_base.sql') && files.includes('0062_cost_secret_bom.sql'), '0061 · 0062가 없다')
 
   const owner = async <T,>(sql: string) => (await db.query<T>(sql)).rows
@@ -636,6 +639,8 @@ async function main() {
   await production({ as, run, owner, p1, p3, lot, mats: [m1, m2, m3], U })
   // ── ⑪ 비용 마스터 · 배부 · 총원가(0065)
   await overheads({ as, run, owner, p1, U })
+  // ── ⑫ 회장 결정(2026-10-10) (가) — 영업은 오늘 0시까지 저장된 값, 원가 관리 · 대표는 즉시
+  await knownCutoff({ db, as, run, owner, p1, mats: [m1, m2, m3], s1, U })
 
   // ── ⑦ 코드 경계 — AI 도구 · 프롬프트 · 요약이 BOM · 원가 함수를 부르지 않는다 ─────────────────
   const root = join(__dirname, '..', 'src')
@@ -654,7 +659,7 @@ async function main() {
 
   await db.close()
   console.log(
-    'PASS: 0061~0065 원가 엔진 — 생산(발행 · 투입 · 잔량 · Actual) · 비용 마스터(배부 · 총원가 · 계획 기준) · BOM 암호화(Vault 키 · 암호문만 · 키 없음 멈춤 · 틀린 키 · 깨진 암호문 · 진짜 BOM 스위치) · 권한 표(구매 · 생산 · 영업 · 원가 관리 · 대표 · 줄 없는 임원/회사 대표/CFO · 다른 회사 · AIAgent · anon) · ' +
+    'PASS: 0061~0065 원가 엔진 — (가) 영업 0시 기준(시세 · LOT · BOM · 비용 · 배부 · 무효는 내일 · 원가 관리 · 대표 즉시) · 생산(발행 · 투입 · 잔량 · Actual) · 비용 마스터(배부 · 총원가 · 계획 기준) · BOM 암호화(Vault 키 · 암호문만 · 키 없음 멈춤 · 틀린 키 · 깨진 암호문 · 진짜 BOM 스위치) · 권한 표(구매 · 생산 · 영업 · 원가 관리 · 대표 · 줄 없는 임원/회사 대표/CFO · 다른 회사 · AIAgent · anon) · ' +
       '무효만 · 시퀀스 되감기 거부 · Landed · 환율 · 만든 사람 위조 불가 · 터무니없는 값 거부 · 생산 «제한»(오늘만) · 영업 원료 0(이름 · 시세 · 요약) · 영업 화면 총액만(Market · Current · 우위 · 제시가 · 등급) · 원가 관리 셋까지 · 호출마다 감사 · 대표 감시 · ' +
       '결재 후보 · 구매 첨부 버킷 · BOM 대표만 · 진짜 BOM 거부 · 원가 합계 한 줄 · 1원(대표 외) · 원래 값(대표) · Market/Current 값 · 대표 외 기준일 오늘 하나 · 매일 최신(LOT · 시세 · 무효 · 새 원료 · BOM 즉시) · ' +
       '회사 단위 계산 여부(단종 BOM 원료 포함) · 원료비 영향 7일 전→오늘 · 출처 셋 · 미래 날짜 거부 · 무효로 기준 없애기 거부 · 구매 겸직 거부 · 같은 오류 · 이유 코드 하나 · 오류에 원료 없음 · ' +

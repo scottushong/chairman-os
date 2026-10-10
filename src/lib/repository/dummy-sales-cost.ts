@@ -260,10 +260,24 @@ function seedOverheads(s: Store) {
 function versionIn(s: Store, productId: string, on: IsoDate): BomVersion | null {
   return (
     s.boms
-      .filter((b) => b.product_id === productId && b.valid_from <= on && !b.voided_at)
+      .filter((b) => b.product_id === productId && b.valid_from <= on && known(b))
       .sort((a, b) => b.valid_from.localeCompare(a.valid_from) || b.version_id - a.version_id)[0] ?? null
   )
 }
+
+/**
+ * 회장 결정(2026-10-10) (가) 거울 — 0062 cost_secret.known · cost.known_at. 문(gateFor)이 정한다: 영업 = 오늘 0시(KST, ms), 원가 관리 · 대표 = null(즉시).
+ * dummy는 한 요청 안에서 문 → 계산이 이어서(await 없이) 돈다.
+ */
+let knownAt: number | null = null
+const salesCutoffMs = () =>
+  // 검사 전용(dummy만) — DUMMY_SALES_CUTOFF=now면 영업도 즉시(check:sales-cost 앞 절이 1원 · 정밀도를 대표 값과 맞춰 본다). live에는 이 길이 없다.
+  process.env.DUMMY_SALES_CUTOFF === 'now' ? Date.now() + 2 * 86_400_000 : Date.parse(`${kstToday()}T00:00:00+09:00`)
+const known = (r: { created_at: string; voided_at: string | null }) =>
+  knownAt === null ? !r.voided_at : Date.parse(r.created_at) <= knownAt && (!r.voided_at || Date.parse(r.voided_at) > knownAt)
+/** 0065 cost_alloc_settings.prev_* 거울 — 오늘 0시의 배부 기준(없었으면 null). */
+const g2 = globalThis as unknown as { __chairmanDummyAllocPrev?: Map<string, AllocSettings | null> }
+const allocPrev: Map<string, AllocSettings | null> = (g2.__chairmanDummyAllocPrev ??= new Map())
 
 // globalThis — webpack dev는 서버 액션 층과 화면 층이 이 모듈을 따로 읽는다(dummy-purchasing.ts와 같은 이유).
 // 키 이름에 생산 · 비용을 넣었다 — 0062 시절 저장소(생산 칸 없음)가 dev 서버에 남아 있어도 새로 만든다.
@@ -305,20 +319,20 @@ function bomReader(): boolean {
 /** 0064 cost_lot_remaining — 입고 kg − 투입(생산일 ≤ d) − 조정(조정일 ≤ d). d = null이면 전부. */
 function lotRemaining(lot: PurchaseLot, on: IsoDate | null = null): number {
   const used = store.inputs
-    .filter((i) => i.lot_id === lot.lot_id && !i.voided_at)
+    .filter((i) => i.lot_id === lot.lot_id && known(i))
     .filter((i) => {
       const pl = store.prodLots.find((p) => p.prod_lot_id === i.prod_lot_id)
-      return !!pl && !pl.voided_at && (on === null || pl.produced_on <= on)
+      return !!pl && known(pl) && (on === null || pl.produced_on <= on)
     })
     .reduce((t, i) => t + i.qty_kg, 0)
-  const adj = store.adjustments.filter((a) => a.lot_id === lot.lot_id && !a.voided_at && (on === null || a.adjusted_on <= on)).reduce((t, a) => t + a.qty_kg, 0)
+  const adj = store.adjustments.filter((a) => a.lot_id === lot.lot_id && known(a) && (on === null || a.adjusted_on <= on)).reduce((t, a) => t + a.qty_kg, 0)
   return lot.qty_kg - used - adj
 }
 
 /** 0064 cost_secret.unit_price — Market = 그 날 이하 최신 날의 평균, Current = 기준일 남은 LOT 잔량 가중 landed(없으면 마지막 LOT). */
 function unitPrice(materialId: string, kind: 'market' | 'current', on: IsoDate): number | null {
   const ledger = dummyCostLedger()
-  const seen = (r: { voided_at: string | null }) => r.voided_at === null
+  const seen = known
   if (kind === 'market') {
     const rows = ledger.prices.filter((p) => p.material_id === materialId && p.observed_on <= on && seen(p))
     if (rows.length === 0) return null
@@ -376,7 +390,7 @@ interface OverheadCalc {
   window_days: number | null
 }
 
-const liveOverheads = (businessId: string) => store.overheads.filter((o) => o.business_id === businessId && !o.voided_at)
+const liveOverheads = (businessId: string) => store.overheads.filter((o) => o.business_id === businessId && known(o))
 const latestFirst = (a: Overhead, b: Overhead) => b.effective_from.localeCompare(a.effective_from) || b.overhead_id - a.overhead_id
 
 /** 그 날 적용 중인 회사 전체 줄(항목마다 가장 늦은 줄 — 방식과 상관없이, 0065 리뷰 I2). */
@@ -391,14 +405,16 @@ function overhead(businessId: string, productId: string | null, on: IsoDate): Ov
   const out: OverheadCalc = { mfg: null, pack: null, logi: null, indirect: null, total: null, ready: false, has_lines: false, basis_used: null, divisor_kg: null, window_days: null }
   out.has_lines = liveOverheads(businessId).some((o) => o.effective_from <= on)
   if (!out.has_lines) return out
-  const s = store.alloc.get(businessId)
+  let s = store.alloc.get(businessId)
+  // (가) 영업: 오늘 바꾼 배부 기준은 내일부터(0065 prev_*).
+  if (s && knownAt !== null && s.updated_at && Date.parse(s.updated_at) > knownAt) s = allocPrev.get(businessId) ?? undefined
   const win = s?.window_days ?? 28
   out.window_days = win
   let basis: AllocBasis = s?.basis ?? 'trailing'
   let divisor: number | null = null
   if (basis === 'trailing') {
     const from = shiftDate(on, -win)
-    const kg = store.prodLots.filter((p) => p.business_id === businessId && !p.voided_at && p.produced_on > from && p.produced_on <= on).reduce((t, p) => t + p.output_kg, 0)
+    const kg = store.prodLots.filter((p) => p.business_id === businessId && known(p) && p.produced_on > from && p.produced_on <= on).reduce((t, p) => t + p.output_kg, 0)
     divisor = kg > 0 ? kg : null
   }
   if (!divisor) {
@@ -452,6 +468,7 @@ function totalRaw(cu: number | null, o: OverheadCalc): number | null {
  */
 function gateFor(businessId: string, target: string, kind: string, calls = 1): { as_of: IsoDate; chairman: boolean } {
   const v = dummyViewer()
+  knownAt = null
   if (v.revoked_at || v.role === 'AIAgent' || v.role === 'Integration') throw new Error('cost_not_found')
   const today = kstToday()
   if (v.role === 'Chairman') {
@@ -466,6 +483,8 @@ function gateFor(businessId: string, target: string, kind: string, calls = 1): {
     : rows.some((m) => m.module === `/purchasing/${businessId}` || m.module === `/production/${businessId}`)
   if (conflict) throw new Error('cost_role_conflict')
   const asOf = today
+  // (가) 영업(원가 관리 줄 없음)은 오늘 0시까지 저장된 값.
+  if (!costing) knownAt = salesCutoffMs()
   const prefix = `${v.user_id}|${today}|`
   const used = [...store.reads].filter(([k]) => k.startsWith(prefix)).reduce((s, [, n]) => s + n, 0)
   if (used + Math.max(calls, 1) > 200) throw new Error('cost_rate_limited')
@@ -982,6 +1001,8 @@ export function dummyCosts(): CostsMethods {
       ) {
         throw new Error('cost_alloc_invalid')
       }
+      const old = store.alloc.get(businessId) ?? null
+      if (!old || !old.updated_at || Date.parse(old.updated_at) <= salesCutoffMs()) allocPrev.set(businessId, old ? { ...old } : null)
       store.alloc.set(businessId, { business_id: businessId, basis, window_days: windowDays, planned_kg_month: plannedKgMonth, updated_at: new Date().toISOString() })
     },
 

@@ -2614,6 +2614,16 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - **«팀 없음» 칸에는 놓을 수 없다.** 사원 · 팀장 · 임원을 팀 없이 만드는 길을 새로 열지 않는다(초대도 팀 필수로 바꿨다). 회사를 이끄는 자리(대표 · CFO)는 대화상자에서 «팀 없음»을 고를 수 있다.
 - **결재 대장 엑셀 «목록» 시트의 팀 칸은 비워 둔다.** «팀 없음» 라벨은 묶음 합계(화면 · 엑셀 «묶음 합계»)에만 쓴다 — 목록 칸에 글자를 넣으면 거르기(team=…)가 그 글자를 진짜 팀처럼 찾는다.
 
+
+## 2026-10-10 — 0060 긴급 수정(0059 읽기 정책 · anon health 42501)
+
+- **(가) 정책을 `to authenticated`로 좁혔다(권장안).** 다른 선택지 (나) — 함수가 anon이면 false를 내고 anon에 execute를 준다. (나)는 결재선 · 대장 판정 함수를 anon RPC로 연다.
+- **«결산 잠정» 제안 번호 0060 → 0068 이후로.** 0060은 이 긴급 수정이 썼다. 설계서 2026-10-07-approval-chain-ledger.md 0절 표 정정.
+- **PGlite 공용 스텁(scripts/pglite.ts)은 함수 기본 권한을 흉내 내지 않는다.** Supabase는 public에 만든 함수의 execute를 anon · authenticated에게 이름으로 준다 — `revoke … from public`만 한 함수는 production에서 anon이 여전히 부른다. 새 검사 scripts/check-anon-health.ts만 그 줄을 더해 돈다. 공용 스텁에 넣으면 다른 검사의 카탈로그 단언(«anon execute 없음») 몇이 production과 같은 답으로 바뀌어 다시 맞춰야 한다 — 다음 정리 블록.
+- **0059 검사가 못 잡은 이유:** authenticated 세션만 돌렸고 함수 권한은 카탈로그(has_function_privilege)로만 쟀다. anon에게도 걸리는 정책이 그 함수를 부른다는 것은 anon으로 행동해 봐야 보인다.
+- **리뷰(0060) Minor:** BusinessCEO 경로는 «오류 없음»만 재고 행 수는 재지 않는다 · 네 정책의 pg_policies.roles를 카탈로그로 따로 재지 않는다(행동 검사로 충분) · 원가 표를 health TABLES에 넣으면 anon은 0행이 아니라 «표 권한 없음»이 된다 — 넣지 않거나 health가 그 오류를 «잠김»으로 읽게.
+- **check:dependency · check:attention CRLF:** 주석 걷기를 `split(/\r?\n/)`로. 본 checkout은 SQL이 LF라 재현되지 않고 워크트리(CRLF)에서만 거짓 실패가 났다.
+
 ## 원가 엔진(Secret BOM) 1차 — 2026-10-09 권장안으로 진행한 갈림길
 
 - **«대표» = Chairman 역할 한 사람**으로 읽었다(직원 화면 용어). 회사 대표(BusinessCEO) · GroupCFO · 임원도 BOM 불가, 원가 모듈은 줄을 받아야 한다. 다른 안: GroupCFO에게 역할로 원가 열람.

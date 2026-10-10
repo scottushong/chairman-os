@@ -126,10 +126,10 @@ create or replace function cost_lot_remaining(p_lot text, p_on date default null
 language sql stable security definer set search_path = public, pg_temp as $fn$
   select l.qty_kg
          - coalesce((select sum(i.qty_kg) from cost_prod_inputs i join cost_prod_lots pl on pl.prod_lot_id = i.prod_lot_id
-                      where i.lot_id = l.lot_id and i.voided_at is null and pl.voided_at is null
+                      where i.lot_id = l.lot_id and cost_secret.known(i.created_at, i.voided_at) and cost_secret.known(pl.created_at, pl.voided_at)
                         and (p_on is null or pl.produced_on <= p_on)), 0)
          - coalesce((select sum(a.qty_kg) from cost_lot_adjustments a
-                      where a.lot_id = l.lot_id and a.voided_at is null and (p_on is null or a.adjusted_on <= p_on)), 0)
+                      where a.lot_id = l.lot_id and cost_secret.known(a.created_at, a.voided_at) and (p_on is null or a.adjusted_on <= p_on)), 0)
     from cost_purchase_lots l where l.lot_id = p_lot;
 $fn$;
 
@@ -478,19 +478,19 @@ declare
 begin
   if p_kind = 'market' then
     select avg(m.price_krw_per_kg) into v from public.cost_market_prices m
-     where m.material_id = p_material and m.voided_at is null
+     where m.material_id = p_material and cost_secret.known(m.created_at, m.voided_at)
        and m.observed_on = (select max(x.observed_on) from public.cost_market_prices x
-                             where x.material_id = p_material and x.observed_on <= p_on and x.voided_at is null);
+                             where x.material_id = p_material and x.observed_on <= p_on and cost_secret.known(x.created_at, x.voided_at));
     return v;
   elsif p_kind = 'current' then
     select sum(r.landed * r.left_kg) / nullif(sum(r.left_kg), 0) into v
       from (select l.landed_krw_per_kg as landed, public.cost_lot_remaining(l.lot_id, p_on) as left_kg
               from public.cost_purchase_lots l
-             where l.material_id = p_material and l.voided_at is null and l.received_on <= p_on) r
+             where l.material_id = p_material and cost_secret.known(l.created_at, l.voided_at) and l.received_on <= p_on) r
      where r.left_kg > 0;
     if v is null then
       select l.landed_krw_per_kg into v from public.cost_purchase_lots l
-       where l.material_id = p_material and l.voided_at is null and l.received_on <= p_on
+       where l.material_id = p_material and cost_secret.known(l.created_at, l.voided_at) and l.received_on <= p_on
        order by l.received_on desc, l.created_at desc limit 1;
     end if;
     return v;

@@ -10,7 +10,7 @@ import type { CostingWatchRow, SalesCostRow } from '@/types'
  * 영업 원가(회장 결정 2026-10-09 «영업은 제품 총액만, 원료별 가격은 모른다» · 설계서 3.2 · 13절).
  *
  * 제품마다 Market 원가 · DY 원가(Current) · 원가 우위(Market − Current) · 총원가 · 원료비 영향, 펼치면 제시가 확인 · 목표 마진별 제시가.
- * 숫자는 한 번에 0062 cost_sales_list로 받는다(하루 200건 한도에 한 번만 센다). 오늘 · 지금 저장된 값(매일 최신) · 1원/kg
+ * 숫자는 한 번에 0062 cost_sales_list로 받는다(하루 200건 한도에 한 번만 센다). 영업 = 오늘 0시까지 저장된 값(회장 결정 2026-10-10 (가)) · 1원/kg
  * (회장 결정 2026-10-09 밤 — 대표 외는 DB가 1원으로, 대표는 원래 값을 받아 화면이 1원으로 그린다).
  * **이 화면은 원료 표(원료 · 시세 · LOT)를 부르지 않는다** — check:sales-cost가 정적으로 본다.
  * 대표에게만 «원가 관리 권한자» 감시 카드(0061 cost_costing_watch).
@@ -43,6 +43,8 @@ export default async function SalesCostPage(props: PageProps<'/sales/[business_i
   }
 
   const asOf = rows[0]?.as_of ?? null
+  // (가) 원가 관리 줄이 있거나 대표면 즉시, 영업은 오늘 0시 기준(문은 DB 0062 cost_gate_biz).
+  const immediate = chairman || !!user.cost?.costing?.[business_id]
   const overheadPending = rows.some((r) => !r.overhead_ready)
   const overheadReady = rows.some((r) => r.overhead_ready)
 
@@ -52,7 +54,7 @@ export default async function SalesCostPage(props: PageProps<'/sales/[business_i
         icon="target"
         title={`${business.name} 영업 원가`}
         code="COST-S1"
-        description={asOf ? `${asOfLabel(asOf)} · 금액은 원/kg · 1원 단위` : '제품 총원가 · 원가 우위 · 제시가 — 금액은 원/kg'}
+        description={asOf ? `${asOfLabel(asOf, immediate)} · 금액은 원/kg · 1원 단위` : '제품 총원가 · 원가 우위 · 제시가 — 금액은 원/kg'}
       />
 
       <div className="mt-4 space-y-3">
