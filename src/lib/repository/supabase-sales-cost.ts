@@ -81,6 +81,8 @@ export function salesCostMethods(sb: SupabaseClient): SalesCostMethods {
       const { data, error } = await sb.rpc('cost_price_check', { p_product: productId, p_price_krw_per_kg: priceKrwPerKg })
       if (error) fail('cost_price_check', error)
       const r = (Array.isArray(data) ? data[0] : data) as Record<string, unknown> | undefined
+      // 0066 재검토 N1 — 하한 밑은 등급 'too_low'(raise 아님 — 한도 · 감사가 남는다). 화면에는 같은 오류 문구로.
+      if (r?.grade === 'too_low') throw new Error('cost_price_too_low')
       return {
         total_krw_per_kg: nn(r?.total_krw_per_kg),
         margin_krw_per_kg: nn(r?.margin_krw_per_kg),

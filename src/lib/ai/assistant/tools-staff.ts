@@ -10,7 +10,7 @@ import { kstToday } from '@/lib/chairman-project'
 import { closablePeriod } from '@/lib/ledger/closing'
 import { isPeriodLocked, lastClosedPeriod } from '@/lib/ledger/journal'
 import { JOURNAL_TEMPLATES } from '@/lib/ledger/journal-templates'
-import type { ApprovalTemplate, Business } from '@/types'
+import { draftableTemplates, type ApprovalTemplate, type Business } from '@/types'
 
 import { addEvidence, FINANCE_ROLES, krw, norm, resolveBusiness, str, type AssistantTool, type ToolContext } from './kit'
 import { propose } from './tools-propose'
@@ -81,7 +81,7 @@ export const approvalTemplatesTool: AssistantTool = {
   },
   available: webOnly,
   async run(_input, ctx) {
-    const templates = await ctx.repo.listApprovalTemplates()
+    const templates = draftableTemplates(await ctx.repo.listApprovalTemplates())
     addEvidence(ctx, { label: '결재 올리기', href: '/approvals/new', detail: `양식 ${templates.length}개` })
     return {
       can_submit: cannotSubmit(ctx) ? false : ctx.user.approvals_write === true ? true : 'unknown',
@@ -123,7 +123,7 @@ export const proposeApprovalFormTool: AssistantTool = {
   available: webOnly,
   async run(input, ctx) {
     if (cannotSubmit(ctx)) return { error: 'no_permission', message: NO_APPROVAL_GRANT }
-    const templates = await ctx.repo.listApprovalTemplates()
+    const templates = draftableTemplates(await ctx.repo.listApprovalTemplates())
     const template = findTemplate(templates, str(input.template))
     if (!template) return { error: 'unknown_template', message: '양식을 찾지 못했습니다.', templates: templates.map((t) => ({ key: t.template_key, name: t.name_ko })) }
 

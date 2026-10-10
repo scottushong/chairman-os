@@ -130,7 +130,7 @@ begin
     insert into public.decisions (decision_id, business_id, title, template_key, form, created_by)
     values ('dec_t66hand', 'biz_dy', '손 가격 예외', 'price_exception',
             jsonb_build_object('quote', v_q2 || ' (1판)', 'product', '견적검사 제품 가짜', 'kg', '800', 'price', '1,350',
-                               'currency', 'KRW', 'margin_pct', '30', 'grade', 'Green'), v_sales);
+                               'currency', 'KRW', 'grade', 'Green'), v_sales);
     raise exception 'FAIL b: 손으로 «가격 예외» 결재를 올렸다';
   exception when insufficient_privilege then null;
   end;
@@ -138,6 +138,8 @@ begin
   reset role;
   select * into r from public.decisions where decision_id = v_dec;
   if r.template_key <> 'price_exception' or r.status::text <> 'Open' then raise exception 'FAIL b: 결재 % · %', r.template_key, r.status; end if;
+  -- 리뷰 I1 — 가격 예외 양식에 마진 %가 없다(결재 대장 · 상사 사슬로 원가가 샌다).
+  if r.form ? 'margin_pct' then raise exception 'FAIL b: 가격 예외 양식에 margin_pct — %', r.form; end if;
   if (r.form::text || r.title) ~ (v_mat || '|' || v_mat2 || '|견적검사원료|kg_per_kg|' || v_sup)
      or (r.form::text || r.title || coalesce(r.approval_line::text, '')) like '%회장%' then
     raise exception 'FAIL b: 결재에 원료 정보 또는 «회장» — %', r.form;
@@ -174,7 +176,7 @@ begin
   set local role authenticated;
   perform public.quote_confirm(v_q2);
   if (select status from public.quotes where quote_id = v_q2) <> 'confirmed' then raise exception 'FAIL b: 승인된 Red가 확정되지 않았다'; end if;
-  v_res := v_res || format('b(Red 결재 전 확정 거부 · 손 가격 예외 거부 · 결재 원료 0 · «회장» 0 · 사슬 %s칸 → 대표 승인 → 확정) ', v_steps);
+  v_res := v_res || format('b(Red 결재 전 확정 거부 · 손 가격 예외 거부 · 양식 마진 %% 없음 · 결재 원료 0 · «회장» 0 · 사슬 %s칸 → 대표 승인 → 확정) ', v_steps);
 
   -- ── (c) Red → 반려 → 견적 «반려» → 새 판(2판) ──
   v_q3 := public.quote_create(v_prd, '검사 고객', '검사 고객사', 100, 1310, 'KRW', v_today + 30);

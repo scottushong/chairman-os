@@ -88,7 +88,7 @@ import type {
   ChatMessageInput,
   ChatRead,
   ApprovalTemplate,
-  ApprovalTemplateKey,
+  AnyTemplateKey,
   DocFolder,
   Notice,
   NoticeInput,
@@ -149,6 +149,7 @@ import { attachmentMethods } from './supabase-attachments'
 import { financeImportMethods } from './supabase-finance-imports'
 import { intakeMethods } from './supabase-intake'
 import { purchasingMethods } from './supabase-purchasing'
+import { quoteMethods } from './supabase-quotes'
 import { salesCostMethods } from './supabase-sales-cost'
 import { productionMethods } from './supabase-production'
 import { costsMethods } from './supabase-costs'
@@ -297,7 +298,7 @@ interface DecisionRow {
   status: DecisionStatus
   ai_confidence: number | string | null
   attachment_url: string | null
-  template_key: ApprovalTemplateKey | null
+  template_key: AnyTemplateKey | null
   form: Record<string, string> | null
   approval_line: ApprovalStep[] | null
   created_by?: string | null
@@ -823,6 +824,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     ...purchasingMethods(sb),
     // 원가 엔진 · 영업 원가(0062 cost_sales_view · cost_price_check) · 원가 관리 감시(0061 cost_costing_watch). 원료 표는 읽지 않는다.
     ...salesCostMethods(sb),
+    ...quoteMethods(sb),
     // 원가 엔진 · 생산(0064 오더 · 생산 LOT · 투입 · 잔량 · Actual) — 판정은 RLS · 함수. 0064 전 DB를 견딘다.
     ...productionMethods(sb),
     // 원가 엔진 · 원가 관리(0065 비용 · 배부 · 제품 원가 목록) · 대표 BOM(0063). 0063 · 0065 전 DB를 견딘다.

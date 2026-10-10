@@ -1,3 +1,5 @@
+import Link from 'next/link'
+
 import { CostingWatchCard } from '@/components/cost/costing-watch-card'
 import { PageHeader } from '@/components/layout/page-header'
 import { SalesCostBoard } from '@/components/sales/sales-cost-board'
@@ -58,6 +60,12 @@ export default async function SalesCostPage(props: PageProps<'/sales/[business_i
       />
 
       <div className="mt-4 space-y-3">
+        <p className="text-t12">
+          <Link href={`/sales/${business_id}/quotes`} className="font-semibold text-accent hover:underline">
+            견적 →
+          </Link>
+          <span className="ml-2 text-ink-muted">고객 견적 저장 · Red는 대표 승인 요청</span>
+        </p>
         {error ? (
           <p role="alert" className="rounded-md border border-critical/40 bg-critical/10 px-3 py-2 text-t12 text-critical">
             {error}

@@ -10,6 +10,7 @@ import { kstToday } from '@/lib/chairman-project'
 import { tr, type Lang } from '@/lib/i18n'
 import { firstParam } from '@/lib/query'
 import { getRepository } from '@/lib/repository'
+import { draftableTemplates } from '@/types'
 
 /**
  * `/approvals/new` — 양식으로 결재 올리기 (Phase 9 블록 2 · 0059 단계 결재).
@@ -29,7 +30,7 @@ export default async function NewApprovalPage(props: PageProps<'/approvals/new'>
   const lang: Lang = user?.language ?? 'ko'
   const repo = await getRepository()
   const [templates, businessRows, decisions] = await Promise.all([
-    repo.listApprovalTemplates(),
+    repo.listApprovalTemplates().then(draftableTemplates),
     repo.listBusinesses(),
     resubmitId ? repo.listDecisions() : Promise.resolve([]),
   ])
@@ -54,10 +55,12 @@ export default async function NewApprovalPage(props: PageProps<'/approvals/new'>
     original && !already
       ? ((await repo.listApprovalSteps([original.decision_id]).catch(() => [])).find((s) => s.status === 'rejected')?.note ?? null)
       : null
+  // 손으로 올리는 양식(가격 예외 제외)으로 좁힌다 — original은 templates에 있는 키만 통과했다.
+  const draftKey = original ? templates.find((t) => t.template_key === original.template_key)?.template_key : undefined
   const initial: ApprovalFormInitial | undefined =
-    original && !already && original.template_key
+    original && !already && draftKey
       ? {
-          templateKey: original.template_key,
+          templateKey: draftKey,
           businessId: original.business_id,
           title: original.title,
           form: original.form ?? {},

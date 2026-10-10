@@ -18,6 +18,7 @@ import { asOfLabel, costGrade, impactText, krw, materialImpactPct, pgRound, pric
 import { dummyRepository } from '../src/lib/repository/dummy'
 import { DUMMY_UID, dummyModuleGrants, setDummyModuleGrant } from '../src/lib/repository/dummy-org'
 import { kstToday } from '../src/lib/chairman-project'
+import { buildCustomerQuote, CUSTOMER_QUOTE_FIELDS } from '../src/lib/sales/quote-xlsx'
 
 const ROOT = join(__dirname, '..')
 const shiftDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10)
@@ -260,6 +261,54 @@ async function main() {
   const s2 = pick(await as('sales_staff', () => repo.costSalesList('biz_dy')))
   assert.equal(s2.market_krw_per_kg, round1(c1.market_krw_per_kg!), '(가) dummy: «내일» 영업 Market이 대표 값(1원)과 다르다')
   delete process.env.DUMMY_SALES_CUTOFF
+
+  // ── 0066 견적 dummy 시나리오 — Green 바로 확정 / Red → 결재 → 승인 → 확정 / Red → 반려 → 새 판 ──
+  const sx = pick(await as('sales_staff', () => repo.costSalesList('biz_dy')))
+  const tot = sx.total_krw_per_kg!
+  const valid = new Date(Date.parse(`${today}T00:00:00Z`) + 30 * 86_400_000).toISOString().slice(0, 10)
+  const mk = (price: number, parent: string | null = null) =>
+    as('sales_staff', () => repo.createQuote({ product_id: sx.product_id, customer_name: '김고객', customer_company: '(주)가짜고객', kg: 1000, price_krw_per_kg: price, currency: 'KRW', valid_until: valid, parent_id: parent }))
+  const get = async (id: string) => (await as('sales_staff', () => repo.getQuote(id)))!.quote
+  const staffActor = { user_id: DUMMY_UID.salesStaff, role: 'Member' }
+  const g1 = await mk(tot * 2)
+  const gq = await get(g1)
+  assert.deepEqual([gq.grade, gq.status, gq.cost_total_krw_per_kg, gq.cost_basis], ['green', 'draft', tot, 'midnight'], '0066 dummy: Green 스냅숏이 영업 화면 값(0시 기준)이 아니다')
+  await as('sales_staff', () => repo.confirmQuote(g1))
+  assert.equal((await get(g1)).status, 'confirmed', '0066 dummy: Green이 바로 확정되지 않는다')
+  await assert.rejects(as('sales_staff', () => repo.createDecision({ business_id: 'biz_dy', title: 'x', options: [], impact: 'Medium', deadline: today,
+    template_key: 'price_exception' as never, form: { quote: 'x', product: 'x', kg: '1', price: '1', currency: 'KRW', grade: 'Green' } }, staffActor)),
+    /price_exception_use_quote/, '0066 dummy: 가격 예외를 손으로 올린다')
+  const redPrice = Math.ceil(tot / 0.9)
+  const r1 = await mk(redPrice)
+  assert.equal((await get(r1)).grade, 'red')
+  await assert.rejects(as('sales_staff', () => repo.confirmQuote(r1)), /quote_needs_approval/, '0066 dummy: Red가 결재 없이 확정된다')
+  const dec = await as('sales_staff', () => repo.requestQuoteApproval(r1))
+  const decided: string[] = []
+  for (const who of ['sales_lead', 'exec', 'dy_ceo', 'chairman']) {
+    const v = await as(who, () => repo.approvalDecide(dec, true, null, { user_id: 'x', role: 'x' })).catch(() => null)
+    if (v) decided.push(`${who}:${v}`)
+    if (v === 'approved') break
+  }
+  assert.equal(decided.at(-1), 'chairman:approved', `0066 dummy: 가격 예외가 대표 최종 승인으로 끝나지 않는다(${decided.join(', ')})`)
+  await as('sales_staff', () => repo.confirmQuote(r1))
+  assert.equal((await get(r1)).status, 'confirmed', '0066 dummy: 승인된 Red가 확정되지 않는다')
+  const r2 = await mk(redPrice)
+  const dec2 = await as('sales_staff', () => repo.requestQuoteApproval(r2))
+  assert.equal(await as('sales_lead', () => repo.approvalDecide(dec2, false, '마진이 낮습니다', { user_id: 'x', role: 'x' })), 'rejected')
+  assert.equal((await get(r2)).status, 'rejected', '0066 dummy: 반려된 Red가 «반려»가 아니다')
+  const r2b = await mk(Math.ceil(tot / 0.75), r2)
+  const nb = await get(r2b)
+  assert.deepEqual([nb.version, nb.root_id, nb.grade], [2, r2, 'green'], '0066 dummy: 새 판이 원본에 이어지지 않는다')
+  assert.equal((await as('buy_staff', () => repo.listQuotes('biz_dy'))).length, 0, '0066 dummy: 구매가 견적을 본다')
+  await assert.rejects(mk(Math.floor((tot - 1) / 2)), /cost_price_too_low/, '0066 리뷰 I3 dummy: 총원가 절반 미만 제시가')
+  // 고객용 견적서 — 원가 · 마진 · 등급 없음.
+  const wb = buildCustomerQuote(gq.status === 'draft' ? await get(g1) : gq, 'DY')
+  const cells: string[] = []
+  wb.getWorksheet('견적서')!.eachRow((row) => row.eachCell((c) => cells.push(String(c.value instanceof Date ? 'date' : c.value))))
+  const sheetText = cells.join('|')
+  for (const bad of ['원가', '마진', 'Green', 'green', 'Red', String(tot)]) assert.ok(!sheetText.includes(bad), `0066: 고객용 견적서에 ${bad}가 들어갔다`)
+  for (const f of CUSTOMER_QUOTE_FIELDS) assert.ok(cells.includes(f), `0066: 고객용 견적서에 «${f}» 칸이 없다`)
+  console.log('②″ 견적 dummy(Green · Red 승인 · Red 반려 → 새 판 · 가격 예외 손 올리기 거부 · 고객용 견적서 원가 0) OK')
   console.log('② dummy 거울 OK')
 
   // ── ③ 정적 ─────────────────────────────────────────────────────────

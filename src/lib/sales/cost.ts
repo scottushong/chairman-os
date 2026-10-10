@@ -93,7 +93,7 @@ export const GRADE_CLASS: Record<CostGrade, string> = {
 }
 
 /** Red일 때 화면 문구(승인 요청 연결은 견적 블록). 호칭은 «대표». */
-export const RED_NOTICE = 'Red — 대표 승인이 필요합니다. 승인 요청(결재)은 가격 엔진(견적) 블록에서 열립니다.'
+export const RED_NOTICE = 'Red — 대표 승인이 필요합니다. 견적을 저장한 뒤 «대표 승인 요청»으로 결재를 올리세요(승인 전에는 확정할 수 없습니다).'
 
 /**
  * 영업 원가 함수의 DB 거부 → 사람의 말(0062 이유 코드). 호칭은 «대표»(직원 화면).
@@ -103,6 +103,15 @@ export function salesCostError(e: unknown): string {
   if (/cost_role_conflict/.test(m)) return '구매 · 생산 권한과 영업 원가는 같이 볼 수 없습니다 — 대표에게 권한 정리를 요청하세요.'
   if (/cost_rate_limited/.test(m)) return '오늘 조회 한도에 걸렸습니다 — 대표에게 문의하세요.'
   if (/cost_price_invalid/.test(m)) return '제시가를 1원 단위(원/kg)로 0보다 크게 적으세요.'
-  if (/cost_not_found|P0002/.test(m)) return '찾을 수 없거나 권한이 없습니다.'
+  if (/cost_price_too_low/.test(m)) return '제시가가 총원가의 절반보다 낮습니다 — 이런 가격은 대표에게 직접 문의하세요.'
+  if (/quote_invalid/.test(m)) return '고객 이름 · 회사, kg(0보다 크게), 제시가(1원 단위), 유효기간(오늘~1년)을 확인하세요.'
+  if (/quote_cost_unavailable/.test(m)) return '이 제품은 아직 원가가 계산되지 않아 견적을 저장할 수 없습니다.'
+  if (/quote_needs_approval/.test(m)) return '마진 15% 미만(Red) 견적은 대표 승인 뒤에만 확정할 수 있습니다.'
+  if (/quote_not_red/.test(m)) return 'Green · Yellow 견적은 승인 요청 없이 바로 확정합니다.'
+  if (/quote_not_draft/.test(m)) return '이 견적은 지금 상태에서 그 일을 할 수 없습니다.'
+  if (/quote_not_confirmed/.test(m)) return '확정된 견적만 고객용 견적서를 내려받을 수 있습니다.'
+  if (/quote_expired/.test(m)) return '유효기간이 지난 견적입니다 — 새 판을 만드세요.'
+  if (/cost_fx_missing/.test(m)) return '그 통화의 환율이 없습니다 — 원화(KRW)로 저장하거나 경영지원에 환율 입력을 요청하세요.'
+  if (/cost_not_found|quote_not_found|P0002/.test(m)) return '찾을 수 없거나 권한이 없습니다.'
   return '원가를 불러오지 못했습니다. 잠시 후 다시 시도하세요.'
 }

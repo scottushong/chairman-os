@@ -18,6 +18,7 @@ import {
   type WorkPriority,
 } from '@/types'
 import { decisionStatusLabel } from '@/lib/decision-status'
+import { QUOTE_TEMPLATE_KEY } from '@/types'
 
 /**
  * CH-041 상세 패널 — 내용 · 첨부 · 이력.
@@ -87,6 +88,8 @@ export function ApprovalDetail({
     chain &&
     decision.status === 'Rejected' &&
     !!decision.template_key &&
+    // 0066 가격 예외는 견적의 새 판으로 다시 올린다(손 재상신은 DB가 거부).
+    (decision.template_key as string) !== QUOTE_TEMPLATE_KEY &&
     viewerId !== null &&
     decision.created_by === viewerId &&
     !resubmittedAs
@@ -211,7 +214,15 @@ export function ApprovalDetail({
                   <dt className="text-ink-muted">{fieldLabels[k] ?? k}</dt>
                   <dd className="whitespace-pre-wrap break-all">
                     {/* 양식의 «링크»(type url) 값. https만 링크로 연다 — 다른 스킴은 글자로만. */}
-                    {/^https?:\/\//i.test(v) ? (
+                    {/* 0066 가격 예외 — 견적 번호는 견적 상세로(견적을 못 읽는 결재자에게는 그 화면이 «없음»을 보인다). */}
+                    {(decision.template_key as string) === QUOTE_TEMPLATE_KEY && k === 'quote' && /^qt_[0-9a-z]+/.test(v) ? (
+                      <Link
+                        href={`/sales/${encodeURIComponent(decision.business_id)}/quotes/${v.match(/^qt_[0-9a-z]+/)![0]}`}
+                        className="text-accent tnum underline-offset-2 hover:underline"
+                      >
+                        {v} · 견적 보기
+                      </Link>
+                    ) : /^https?:\/\//i.test(v) ? (
                       <a href={v} target="_blank" rel="noreferrer noopener" className="text-accent underline-offset-2 hover:underline">
                         {v}
                       </a>

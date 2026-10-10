@@ -6,6 +6,7 @@ import { recordScreenRead } from '@/lib/activity-record'
 import { currentUser } from '@/lib/auth/session'
 import { boss } from '@/lib/boss'
 import { getRepository } from '@/lib/repository'
+import { draftableTemplates } from '@/types'
 
 /**
  * `/settings/approvals` — 결재 양식 · 대표 규칙 (2026-10-06 첫 직원 피드백).
@@ -17,7 +18,7 @@ export default async function ApprovalSettingsPage() {
   const user = await currentUser()
   if (user?.role !== 'Chairman') redirect('/me')
   await recordScreenRead({ path: '/settings/approvals', kind: 'page' })
-  const templates = await (await getRepository()).listApprovalTemplates()
+  const templates = draftableTemplates(await (await getRepository()).listApprovalTemplates())
   const b = boss(user.role)
 
   return (

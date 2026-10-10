@@ -543,6 +543,12 @@ function salesView(productId: string): SalesCostView {
 }
 
 /** dummy 대표 감시(dummy.ts costingWatch)가 세는 원가 조회 감사 줄. */
+/** 0066 dummy 견적 — 제품의 회사 · 이름(권한 판정 없음 — 견적 함수가 한다). */
+export function dummyCostProduct(productId: string): { business_id: string; name: string } | null {
+  const p = store.products.find((x) => x.product_id === productId)
+  return p ? { business_id: p.business_id, name: p.name } : null
+}
+
 export function dummyCostReadAudit(): { user_id: string; business_id: string; at: string }[] {
   return store.audit.map((a) => ({ ...a }))
 }
@@ -581,7 +587,10 @@ export function dummySalesCost(): Omit<SalesCostMethods, 'costingWatch'> {
       // 대표 외 제시가는 1원 단위만(0062 리뷰 C2 — 소수 제시가로 원래 총원가를 이분 탐색하지 못하게).
       if (!gt.chairman && !Number.isInteger(price)) throw new Error('cost_price_invalid')
       // 마진은 원래 총원가로(0062 cost_price_check) — 1원 총원가로 빼지 않는다.
-      return priceCheck(rawAfterGate(productId, p.business_id, gt, false).total, price, gt.chairman)!
+      const out = priceCheck(rawAfterGate(productId, p.business_id, gt, false).total, price, gt.chairman)!
+      // 0066 리뷰 I3 — 대표 외 제시가 하한(1원 총원가의 절반).
+      if (!gt.chairman && out.total_krw_per_kg !== null && price * 2 < out.total_krw_per_kg) throw new Error('cost_price_too_low')
+      return out
     },
   }
 }
