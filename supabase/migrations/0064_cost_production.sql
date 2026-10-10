@@ -314,7 +314,7 @@ create policy cost_lot_adjustments_void on cost_lot_adjustments for update to au
 -- 감사 줄: 생산 표의 줄은 본인 · 대표 · 그 회사 생산만(0064 리뷰 C1 — 투입 줄의 시각을 원가 관리 · 구매가 보면 LOT 잔량 변화와 묶여
 -- 생산 LOT별 원료 kg = 실제 배합이 나온다). 구매 · 원가 관리는 구매 표의 줄만(0061 그대로).
 drop policy audit_log_cost_private on audit_log;
-create policy audit_log_cost_private on audit_log as restrictive for select
+create policy audit_log_cost_private on audit_log as restrictive for select to authenticated
   using (entity_table not in ('cost_materials', 'cost_suppliers', 'cost_market_prices', 'cost_purchase_lots', 'cost_purchase_docs', 'cost_bom',
                               'cost_production_orders', 'cost_prod_lots', 'cost_prod_inputs', 'cost_lot_adjustments')
          or actor_user_id = auth.uid() or coalesce(auth_role()::text, '') = 'Chairman'
