@@ -55,10 +55,12 @@ export default async function NewApprovalPage(props: PageProps<'/approvals/new'>
     original && !already
       ? ((await repo.listApprovalSteps([original.decision_id]).catch(() => [])).find((s) => s.status === 'rejected')?.note ?? null)
       : null
+  // 손으로 올리는 양식(가격 예외 제외)으로 좁힌다 — original은 templates에 있는 키만 통과했다.
+  const draftKey = original ? templates.find((t) => t.template_key === original.template_key)?.template_key : undefined
   const initial: ApprovalFormInitial | undefined =
-    original && !already && original.template_key
+    original && !already && draftKey
       ? {
-          templateKey: original.template_key,
+          templateKey: draftKey,
           businessId: original.business_id,
           title: original.title,
           form: original.form ?? {},

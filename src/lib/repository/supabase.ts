@@ -88,7 +88,6 @@ import type {
   ChatRead,
   ApprovalTemplate,
   AnyTemplateKey,
-  ApprovalTemplateKey,
   DocFolder,
   Notice,
   NoticeInput,
