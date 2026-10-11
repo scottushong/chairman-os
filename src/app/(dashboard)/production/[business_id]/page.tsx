@@ -1,3 +1,4 @@
+import { CostImportPanel } from '@/components/cost-import/cost-import-panel'
 import { PageHeader } from '@/components/layout/page-header'
 import { ActualTable } from '@/components/production/actual-table'
 import { LotBalances } from '@/components/production/lot-balances'
@@ -66,6 +67,11 @@ export default async function ProductionPage(props: PageProps<'/production/[busi
         code="COST-M1"
         description={`진행 중 작업지시 ${open}건 · 오늘 ${today} · kg는 0.001까지 · 기록은 고치지 않고 무효로 하고 다시 넣습니다.`}
       />
+      {canWrite ? (
+        <div className="mt-4">
+          <CostImportPanel businessId={business_id} target="production" title="생산 LOT · 투입 엑셀로 넣기" />
+        </div>
+      ) : null}
       <ProductionBoard
         businessId={business_id}
         today={today}

@@ -1,3 +1,4 @@
+import { CostImportPanel } from '@/components/cost-import/cost-import-panel'
 import { PageHeader } from '@/components/layout/page-header'
 import { MarketManager } from '@/components/purchasing/market-manager'
 import { PurchasingNav } from '@/components/purchasing/purchasing-nav'
@@ -23,7 +24,12 @@ export default async function PurchasingMarketPage(props: PageProps<'/purchasing
       >
         <PurchasingNav businessId={business_id} current="market" />
       </PageHeader>
-      <MarketManager businessId={business_id} materials={materials} prices={prices} canEdit={canWrite} today={kstToday()} />
+      {canWrite ? (
+        <div className="mt-4">
+          <CostImportPanel businessId={business_id} target="market_prices" />
+        </div>
+      ) : null}
+      <MarketManager key={prices.length} businessId={business_id} materials={materials} prices={prices} canEdit={canWrite} today={kstToday()} />
     </div>
   )
 }

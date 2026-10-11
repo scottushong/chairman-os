@@ -1,3 +1,4 @@
+import { CostImportPanel } from '@/components/cost-import/cost-import-panel'
 import { PageHeader } from '@/components/layout/page-header'
 import { MaterialsManager } from '@/components/purchasing/materials-manager'
 import { PurchasingNav } from '@/components/purchasing/purchasing-nav'
@@ -18,7 +19,12 @@ export default async function PurchasingMaterialsPage(props: PageProps<'/purchas
       <PageHeader icon="cart" title={`${business.name} 원료`} code="COST-P2" description="원료 이름 · 규격 · 분류. 고친 내용은 감사에 남습니다.">
         <PurchasingNav businessId={business_id} current="materials" />
       </PageHeader>
-      <MaterialsManager businessId={business_id} materials={materials} canEdit={canWrite} bossWord={boss(user.role)} />
+      {canWrite ? (
+        <div className="mt-4">
+          <CostImportPanel businessId={business_id} target="materials" />
+        </div>
+      ) : null}
+      <MaterialsManager key={materials.length} businessId={business_id} materials={materials} canEdit={canWrite} bossWord={boss(user.role)} />
     </div>
   )
 }

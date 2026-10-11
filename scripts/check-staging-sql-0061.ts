@@ -112,6 +112,13 @@ async function main() {
     const left = (await db.query<{ n: number }>(`select (select count(*) from quotes) + (select count(*) from decisions where template_key = 'price_exception') as n`)).rows[0].n
     assert.equal(Number(left), 0, '0066 staging 시험 SQL이 견적 · 결재를 남겼다')
   }
+  // 0068(엑셀 넣기)이 있는 브랜치에서만.
+  if (files.includes('0068_cost_import.sql')) {
+    const m68 = await runFile('0068_staging_test.sql')
+    assert.match(m68, /^0068 STAGING PASS a\(.*b\(.*c\(.*d\(.*e\(.*f\(anon 거부\)$/, '0068 staging 시험 SQL이 PASS로 끝나지 않는다')
+    const left = (await db.query<{ n: number }>(`select (select count(*) from cost_imports) + (select count(*) from cost_materials where name like '스테이징 엑셀%') as n`)).rows[0].n
+    assert.equal(Number(left), 0, '0068 staging 시험 SQL이 엑셀 기록 · 원료를 남겼다')
+  }
   await db.close()
 }
 

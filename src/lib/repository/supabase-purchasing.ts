@@ -288,6 +288,11 @@ export function purchasingMethods(sb: SupabaseClient): PurchasingMethods {
 
     voidPurchaseDoc: (businessId, docId, reason) => voidRow(sb, 'cost_purchase_docs', 'doc_id', docId, businessId, reason),
 
+    async logPurchaseDocDownload(docId) {
+      const { error } = await sb.rpc('cost_purchase_doc_download_log', { p_doc: docId })
+      if (error) fail('cost_purchase_doc_download_log', error)
+    },
+
     async downloadPurchaseDoc(businessId, docId) {
       const { data, error } = await sb
         .from('cost_purchase_docs')

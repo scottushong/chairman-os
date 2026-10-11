@@ -152,6 +152,7 @@ import { purchasingMethods } from './supabase-purchasing'
 import { quoteMethods } from './supabase-quotes'
 import { salesCostMethods } from './supabase-sales-cost'
 import { productionMethods } from './supabase-production'
+import { costImportMethods } from './supabase-cost-import'
 import { costsMethods } from './supabase-costs'
 
 /**
@@ -829,6 +830,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     ...productionMethods(sb),
     // 원가 엔진 · 원가 관리(0065 비용 · 배부 · 제품 원가 목록) · 대표 BOM(0063). 0063 · 0065 전 DB를 견딘다.
     ...costsMethods(sb),
+    ...costImportMethods(sb),
 
     async listBusinesses(): Promise<Business[]> {
       const { data, error } = await fetchAll('businesses', ['business_id'], (from, to) =>

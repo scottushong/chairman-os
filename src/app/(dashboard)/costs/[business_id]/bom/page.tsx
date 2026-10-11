@@ -1,6 +1,7 @@
 import { notFound, redirect } from 'next/navigation'
 
 import { BomBoard } from '@/components/bom/bom-board'
+import { CostImportPanel } from '@/components/cost-import/cost-import-panel'
 import { PageHeader } from '@/components/layout/page-header'
 import { currentUser } from '@/lib/auth/session'
 import { kstToday } from '@/lib/chairman-project'
@@ -53,6 +54,9 @@ export default async function BomPage(props: PageProps<'/costs/[business_id]/bom
   return (
     <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6">
       <PageHeader icon="layers" title={`${business.name} BOM`} code="COST-B1" description="회장 전용 — 배합(원료 · kg/kg)은 암호문으로만 저장되고, 열 때마다 기록이 남습니다." />
+      <div className="mt-4">
+        <CostImportPanel businessId={business_id} target="bom" title="BOM 엑셀로 넣기" />
+      </div>
       <BomBoard
         businessId={business_id}
         today={kstToday()}
