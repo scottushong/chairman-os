@@ -14,9 +14,14 @@ import type { ImportTarget } from '@/lib/cost-import/types'
 import type { MaterialCategory, OverheadBasis, OverheadCategory } from '@/types'
 
 import { dummyViewer } from './dummy-org'
-import { dummyPurchasing } from './dummy-purchasing'
-import { dummyCosts, dummyProduction } from './dummy-sales-cost'
-import type { CostImportMethods } from './types'
+import type { CostImportMethods, CostsMethods, ProductionMethods, PurchasingMethods } from './types'
+
+/** dummy.ts가 넘긴다 — 가짜 BOM 저장소(dummy-sales-cost)는 dummy.ts 밖에서 import하지 않는다(check:sales-cost). */
+export interface DummyImportDeps {
+  purchasing: PurchasingMethods
+  production: ProductionMethods
+  costs: CostsMethods
+}
 
 /**
  * 0068 엑셀 넣기의 dummy 거울. live의 cost_import_apply를 흉내 낸다 — 도장 대조 · 같은 해시 · 하루 20번 · 바꾸기(무효 + 새 줄 / 마스터 수정)
@@ -27,10 +32,10 @@ import type { CostImportMethods } from './types'
 const seen = new Set<string>()
 const log: { target: ImportTarget; user: string; at: number }[] = []
 
-async function stampOf(businessId: string, target: ImportTarget): Promise<string> {
-  const p = dummyPurchasing()
-  const pr = dummyProduction()
-  const c = dummyCosts()
+async function stampOf(d: DummyImportDeps, businessId: string, target: ImportTarget): Promise<string> {
+  const p = d.purchasing
+  const pr = d.production
+  const c = d.costs
   const parts: unknown[] = [target]
   if (['materials', 'market_prices', 'purchase_lots', 'bom'].includes(target)) parts.push(await p.listCostMaterials(businessId))
   if (['suppliers', 'purchase_lots'].includes(target)) parts.push(await p.listCostSuppliers(businessId))
@@ -43,10 +48,10 @@ async function stampOf(businessId: string, target: ImportTarget): Promise<string
   return createHash('md5').update(JSON.stringify(parts)).digest('hex')
 }
 
-export function dummyCostImport(): CostImportMethods {
+export function dummyCostImport(d: DummyImportDeps): CostImportMethods {
   return {
     async costImportCheck(businessId, target, sha256) {
-      return { stamp: await stampOf(businessId, target), seen: seen.has(`${businessId}|${target}|${sha256}`) }
+      return { stamp: await stampOf(d, businessId, target), seen: seen.has(`${businessId}|${target}|${sha256}`) }
     },
 
     async applyCostImport(input) {
@@ -55,12 +60,12 @@ export function dummyCostImport(): CostImportMethods {
       if (target === 'bom' && me.role !== 'Chairman') throw new Error('cost_not_found')
       const since = Date.now() - 86_400_000
       if (log.filter((x) => x.user === me.user_id && x.target === target && x.at > since).length >= 20) throw new Error('cost_import_too_many')
-      if (input.stamp !== (await stampOf(b, target))) throw new Error('cost_import_stale')
+      if (input.stamp !== (await stampOf(d, b, target))) throw new Error('cost_import_stale')
       const key = `${b}|${target}|${input.sha256}`
       if (seen.has(key)) throw new Error('cost_import_duplicate')
-      const p = dummyPurchasing()
-      const pr = dummyProduction()
-      const c = dummyCosts()
+      const p = d.purchasing
+      const pr = d.production
+      const c = d.costs
       let replaced = 0
       let inserted = 0
       const rows: ImportPayload[] = input.rows

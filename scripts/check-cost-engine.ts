@@ -287,7 +287,9 @@ async function main() {
   await run(U.buy, `insert into storage.objects (bucket_id, name) values ('purchasing', '${path}')`)
   await refuses(run(U.buy, `insert into storage.objects (bucket_id, name) values ('purchasing', 'biz_dy/x/y.pdf')`), /row-level security/, '0061: 줄 없는 파일을 올린다')
   assert.equal(await count(U.sales, `storage.objects where bucket_id = 'purchasing'`), 0, '0061: 영업이 구매 첨부 파일을 본다')
-  assert.equal(await count(U.cost, `storage.objects where bucket_id = 'purchasing'`), 1, '0061: 원가 관리가 구매 첨부를 못 본다')
+  // 0068(회장 결정 2026-10-11 «원가 엔진 빼기 금지 — 대표 예외만»): 원가 관리는 파일을 못 읽는다. 올린 사람은 한 시간 자기 파일만(업로드 returning).
+  assert.equal(await count(U.cost, `storage.objects where bucket_id = 'purchasing'`), 0, '0068: 원가 관리가 구매 첨부 파일을 읽는다(대표만이어야)')
+  assert.equal(await count(U.buy, `storage.objects where bucket_id = 'purchasing'`), 1, '0068: 올린 사람이 한 시간 안의 자기 파일을 못 읽는다(업로드가 죽는다)')
   await run(U.buy, `delete from storage.objects where bucket_id = 'purchasing'`)
   assert.equal(await count(U.chair, `storage.objects where bucket_id = 'purchasing'`), 1, '0061: 올린 파일을 지울 수 있다(정책 없음이어야)')
 
@@ -617,7 +619,7 @@ async function main() {
   assert.ok((await as(U.prod, `select * from cost_production_lots('biz_dy')`)).length >= 4, '0061(BYPASSRLS 없는 소유자): 생산 LOT 함수가 0행')
   assert.ok((await as(U.prod, `select * from cost_production_materials('biz_dy')`)).length >= 4, '0061(BYPASSRLS 없는 소유자): 생산 시세 함수가 0행')
   assert.ok((await as(U.cost, `select * from cost_sales_purchase_summary('biz_dy')`)).length >= 4, '0061(BYPASSRLS 없는 소유자): 원료 요약이 0행')
-  assert.equal(await count(U.cost, `storage.objects where bucket_id = 'purchasing'`), 1, '0061(BYPASSRLS 없는 소유자): 구매 첨부가 안 보인다')
+  assert.equal(await count(U.chair, `storage.objects where bucket_id = 'purchasing'`), 1, '0061(BYPASSRLS 없는 소유자): 구매 첨부가 안 보인다(0068부터 대표만)')
   await run(U.buy, `insert into cost_market_prices (business_id, material_id, observed_on, price, source_name) values ('biz_dy', '${m3}', '${T}', 510, '소유자 시험')`)
   await refuses(run(U.buy, `insert into cost_market_prices (business_id, material_id, observed_on, price, source_name) values ('biz_dy', '${m2}', '${M3}', 1000000000000, '소유자 1조')`),
     /cost_price_outlier/, '0061(BYPASSRLS 없는 소유자): 터무니없는 값 거부가 죽는다')
