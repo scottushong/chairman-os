@@ -24,8 +24,13 @@ async function xlsx(path: string, rows: (string | number)[][]) {
 
 async function open(page: Page, url: string, file: string) {
   await page.goto(url, { waitUntil: 'networkidle', timeout: 240_000 })
-  await page.locator('section[aria-label$="엑셀로 넣기"]').first().getByRole('button', { name: '엑셀로 넣기', exact: true }).click()
-  await page.locator('input[type=file]').first().setInputFiles(file)
+  const panel = page.locator('section[aria-label$="엑셀로 넣기"]').first()
+  // 첫 컴파일 직후에는 hydration 전에 눌러 아무 일도 없을 수 있다 — 칸이 뜰 때까지 다시 누른다.
+  for (let i = 0; i < 4 && (await panel.locator('input[type=file]').count()) === 0; i += 1) {
+    await panel.getByRole('button', { name: '엑셀로 넣기', exact: true }).click().catch(() => {})
+    await page.waitForTimeout(3000)
+  }
+  await panel.locator('input[type=file]').first().setInputFiles(file)
   await page.getByText('칸 맞추기').first().waitFor({ timeout: 120_000 })
   await page.waitForTimeout(800)
 }
@@ -94,7 +99,10 @@ async function main() {
   const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
   await open(phone, url, market)
   await confirmMapping(phone)
-  await shot(phone, '07-phone-market-preview.png')
+  await phone.locator('[aria-label="줄 상태 수"]').first().scrollIntoViewIfNeeded()
+  await phone.screenshot({ path: join(OUT, '07-phone-market-preview.png') })
+  await phone.getByRole('button', { name: '등록', exact: true }).scrollIntoViewIfNeeded()
+  await phone.screenshot({ path: join(OUT, '07b-phone-market-locked.png') })
   const overflow = await phone.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)
   console.log(`phone page horizontal overflow: ${overflow}px`)
 

@@ -567,6 +567,14 @@ export function planImport(
     }
   }
 
+  // 파일 안 겹침에서 «이 줄 버림»을 고른 줄 — 겹침 판정에서 빠졌으니 짝은 새 줄로 돌아온다. 버린 줄은 충돌 + 기존 유지로 남겨 등록에서 건너뛴다.
+  for (const w of work) {
+    if (dropped(w) && w.status === 'new') {
+      w.status = 'conflict'
+      w.message = '파일 안 겹침 — 이 줄은 버립니다.'
+    }
+  }
+
   // ── 묶음(생산 LOT · BOM 판) 검사 ──
   if (target === 'production' || target === 'bom') {
     const groups = new Map<string, Work[]>()

@@ -296,6 +296,11 @@ function planChecks() {
   assert.equal(p4.locked, null, `다 고쳤는데 잠겼다: ${p4.locked}`)
   assert.equal(p4.payloads.length, 4, '등록 줄 수가 틀렸다(3 바꾸기 · 4 · 5 · 8)')
   assert.ok(p4.payloads.some((x) => 'replace_id' in x && x.replace_id === '1'), '바꾸기 줄에 기존 id가 없다')
+  // 파일 안 겹침: 6행을 «이 줄 버림» → 5행은 새 줄로 돌아오고 6행은 등록에서 빠진다
+  const pDrop = planImport('market_prices', sheet, { mapping, edits: { '7': { material: '가짜원료가' } }, choices: { '3': { choice: 'replace', reason: '정정' }, '6': { choice: 'keep' } } }, ctx)
+  assert.equal(st(pDrop)[5], 'new', '파일 안 겹침의 짝을 버렸는데 5행이 새 줄로 돌아오지 않았다')
+  assert.equal(pDrop.locked, null, `한 줄을 버렸는데 잠겼다: ${pDrop.locked}`)
+  assert.ok(!pDrop.payloads.some((x) => 'price' in x && x.price === '1100'), '버린 6행이 등록 줄에 들어갔다')
   // «둘 다 맞음»은 구분 칸이 다를 때만 — 시장가는 기준에 출처가 들어 있어 고를 수 없다
   const p5 = planImport('market_prices', sheet, { mapping, edits, choices: { '3': { choice: 'both' } } }, ctx)
   assert.match(p5.locked ?? '', /둘 다 맞음/, '구분 칸이 같은데 «둘 다 맞음»이 됐다')

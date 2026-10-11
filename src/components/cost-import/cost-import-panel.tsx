@@ -253,6 +253,14 @@ export function CostImportPanel({ businessId, target, title }: { businessId: str
 
   function setChoice(row: number, choice: ConflictChoice) {
     setChoices((c) => ({ ...c, [String(row)]: { choice, reason: c[String(row)]?.reason ?? '' } }))
+    // 파일 안 겹침(바꿀 기존 줄이 없음)에서 한 줄을 버리면 짝 줄의 상태가 바뀐다 — 서버가 다시 잰다.
+    const r = rows.find((x) => x.row === row)
+    if (file && r && !r.canReplace) {
+      const kept = { ...(base.choices ?? {}) }
+      if (choice === 'keep') kept[String(row)] = { choice: 'keep' }
+      else delete kept[String(row)]
+      void runPreview(file, { ...base, choices: kept })
+    }
   }
 
   function cell(r: PreviewRow, key: string) {
