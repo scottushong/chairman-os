@@ -371,12 +371,12 @@ begin
 end;
 $fn$;
 
-/** 원가 관리 · 대표: 마진 엑셀 내려받기 전 감사 한 줄(어느 기간 · 어느 묶음). */
+/** 대표만: 마진 엑셀 내려받기 전 감사 한 줄(어느 기간 · 어느 묶음). 회장 결정 2026-10-11 «원가 엔진 빼기 금지 — 대표 예외만(감사)». */
 create or replace function cost_margins_download_log(p_business text, p_from date, p_to date, p_grain text, p_by text)
 returns void
 language plpgsql volatile security definer set search_path = public, pg_temp as $fn$
 begin
-  if not (coalesce(auth_role()::text, '') = 'Chairman' or cost_can('costing', p_business)) then
+  if not (is_active() and coalesce(auth_role()::text, '') = 'Chairman' and has_business(p_business)) then
     raise exception 'cost_not_found' using errcode = 'P0002';
   end if;
   insert into audit_log (action, entity_table, entity_id, business_id, actor_user_id, actor_role, before, after, note)

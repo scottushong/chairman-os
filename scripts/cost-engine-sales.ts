@@ -173,8 +173,10 @@ export async function sales({ db, as, run, owner, p1, U }: SalesCtx) {
   await db.exec(`update cost_secret.cost_reads set calls = 20 where user_id = '${U.cost}' and product_id = 'margins:biz_dy'`)
   await refuses(as(U.cost, M('deal')), /cost_rate_limited/, '0067: 원가 관리 마진 조회 하루 20번 한도가 없다')
   await refuses(as(U.sales, `select cost_margins_download_log('biz_dy', '${T}', '${T}', 'month', 'product')`), /cost_not_found/, '0067: 영업이 마진 엑셀을 받는다')
-  await run(U.cost, `select cost_margins_download_log('biz_dy', '${T}'::date - 30, '${T}', 'month', 'product')`)
-  assert.equal((await owner(`select 1 from audit_log where entity_table = 'cost_sales' and action = 'export' and actor_user_id = '${U.cost}'`)).length, 1, '0067: 마진 엑셀 감사가 없다')
+  // 회장 결정 2026-10-11 — 원가 엔진 빼기는 대표만(원가 관리도 거부)
+  await refuses(as(U.cost, `select cost_margins_download_log('biz_dy', '${T}', '${T}', 'month', 'product')`), /cost_not_found/, '0067: 원가 관리가 마진 엑셀을 받는다(대표만)')
+  await run(U.chair, `select cost_margins_download_log('biz_dy', '${T}'::date - 30, '${T}', 'month', 'product')`)
+  assert.equal((await owner(`select 1 from audit_log where entity_table = 'cost_sales' and action = 'export' and actor_user_id = '${U.chair}'`)).length, 1, '0067: 마진 엑셀 감사가 없다')
   const sAud = await owner<{ n: number }>(`select count(*)::int as n from audit_log where entity_table = 'cost_sales'`)
   assert.ok(sAud[0].n >= 7, '0067: 판매 쓰기 감사가 모자라다')
 
