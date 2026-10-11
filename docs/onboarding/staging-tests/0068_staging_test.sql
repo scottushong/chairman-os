@@ -5,7 +5,7 @@
 -- 끝은 언제나 raise exception이다: 통과해도 «0068 STAGING PASS …»로 던져서 트랜잭션 전체가 버려진다(가짜 원료 · 시세 · 엑셀 기록 · 권한 줄 모두).
 -- 맨 앞 begin과 맨 끝 rollback은 psql로 돌릴 때를 위한 두 번째 안전줄이다.
 -- 돌리는 법(staging에 link된 checkout 루트에서, 상대 경로로):
---   cd ~/projects/chairman-os-excel
+--   cd ~/projects/chairman-os-rel68
 --   cp docs/onboarding/staging-tests/0068_staging_test.sql supabase/.temp/
 --   SUPABASE_DB_PASSWORD="$(grep ^SUPABASE_DB_PASSWORD .env.staging.local | cut -d= -f2-)" npx supabase db query --linked -f "supabase/.temp/0068_staging_test.sql"
 --   rm -f supabase/.temp/0068_staging_test.sql
