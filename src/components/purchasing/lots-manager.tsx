@@ -68,6 +68,7 @@ export function LotsManager({
   candidates,
   docs,
   canEdit,
+  canDownloadDocs = false,
   today,
   initialFx,
 }: {
@@ -79,6 +80,8 @@ export function LotsManager({
   candidates: PurchaseCandidate[] | null
   docs: PurchaseDoc[]
   canEdit: boolean
+  /** 구매 첨부 내려받기 — 대표만(0068 · 회장 결정 2026-10-11 «원가 엔진 빼기 금지 · 대표 예외는 감사»). */
+  canDownloadDocs?: boolean
   today: string
   /** 첫 공급처 통화의 오늘 환율(서버가 미리 찾아 둔 값 — 첫 화면에서 «찾는 중»이 깜빡이지 않게). */
   initialFx: number | null
@@ -381,7 +384,7 @@ export function LotsManager({
         </section>
       ) : null}
 
-      <PurchaseDocs businessId={businessId} docs={docs} suppliers={activeSuppliers} canEdit={canEdit} onChanged={() => router.refresh()} />
+      <PurchaseDocs businessId={businessId} docs={docs} suppliers={activeSuppliers} canEdit={canEdit} canDownload={canDownloadDocs} onChanged={() => router.refresh()} />
 
       <section className="rounded-xl border border-line-soft bg-panel p-3 max-sm:border-0 max-sm:bg-transparent max-sm:p-0">
         <div className="flex flex-wrap items-center justify-between gap-2">

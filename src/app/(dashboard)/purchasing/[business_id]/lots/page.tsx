@@ -1,3 +1,4 @@
+import { CostImportPanel } from '@/components/cost-import/cost-import-panel'
 import { PageHeader } from '@/components/layout/page-header'
 import { LotsManager } from '@/components/purchasing/lots-manager'
 import { PurchasingNav } from '@/components/purchasing/purchasing-nav'
@@ -11,7 +12,7 @@ import { openPurchasing } from '@/lib/purchasing/page'
  */
 export default async function PurchasingLotsPage(props: PageProps<'/purchasing/[business_id]/lots'>) {
   const { business_id } = await props.params
-  const { repo, business, canWrite } = await openPurchasing(business_id)
+  const { repo, user, business, canWrite } = await openPurchasing(business_id)
   // 구매 화면 열람은 0031 열람 기록으로 남는다 — 대표의 «원가 관리 권한자» 감시(0061 cost_costing_watch)가 센다. 404 뒤에 둔다.
   await recordScreenRead({ path: `/purchasing/${business_id}/lots`, kind: 'page', business_id })
   const today = kstToday()
@@ -41,7 +42,13 @@ export default async function PurchasingLotsPage(props: PageProps<'/purchasing/[
       >
         <PurchasingNav businessId={business_id} current="lots" />
       </PageHeader>
+      {canWrite ? (
+        <div className="mt-4">
+          <CostImportPanel businessId={business_id} target="purchase_lots" />
+        </div>
+      ) : null}
       <LotsManager
+        key={lots.length}
         businessId={business_id}
         materials={materials}
         suppliers={suppliers}
@@ -49,6 +56,7 @@ export default async function PurchasingLotsPage(props: PageProps<'/purchasing/[
         candidates={candidates}
         docs={docs}
         canEdit={canWrite}
+        canDownloadDocs={user.role === 'Chairman'}
         today={today}
         initialFx={initialFx}
       />

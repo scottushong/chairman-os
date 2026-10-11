@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { CostingWatchCard } from '@/components/cost/costing-watch-card'
 import { CostingTable } from '@/components/costs/costing-table'
 import { OverheadManager } from '@/components/costs/overhead-manager'
+import { CostImportPanel } from '@/components/cost-import/cost-import-panel'
 import { PageHeader } from '@/components/layout/page-header'
 import { ActualTable } from '@/components/production/actual-table'
 import { recordScreenRead } from '@/lib/activity-record'
@@ -94,15 +95,18 @@ export default async function CostsPage(props: PageProps<'/costs/[business_id]'>
             {summary.error}
           </p>
         ) : (
-          <OverheadManager
-            businessId={business_id}
-            today={today}
-            canWrite={canWrite}
-            products={products}
-            summary={summary.value}
-            overheads={overheads}
-            alloc={alloc}
-          />
+          <>
+            {canWrite ? <CostImportPanel businessId={business_id} target="overheads" title="비용 줄 엑셀로 넣기" /> : null}
+            <OverheadManager
+              businessId={business_id}
+              today={today}
+              canWrite={canWrite}
+              products={products}
+              summary={summary.value}
+              overheads={overheads}
+              alloc={alloc}
+            />
+          </>
         )}
 
         <ActualTable rows={actual.value} chairman={chairman} error={actual.error} />

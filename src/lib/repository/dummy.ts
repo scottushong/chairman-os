@@ -39,6 +39,7 @@ import {
 import { attachmentSearchText, dummyAttachmentRaw, dummyAttachments, dummySeedAttachment } from './dummy-attachments'
 import { dummyCanDeleteDocument, dummyIntake, dummyIntakeEntity, seedDummyIntake } from './dummy-intake'
 import { dummyFinanceImportEntity, dummyFinanceImports } from './dummy-finance-imports'
+import { dummyCostImport } from './dummy-cost-import'
 import { dummyPurchasing } from './dummy-purchasing'
 import { dummyQuotes } from './dummy-quotes'
 import { dummyCostProduct, dummyCostReadAudit, dummyCosts, dummyGrantedAt, dummyProduction, dummySalesCost, noteDummyGrant } from './dummy-sales-cost'
@@ -657,6 +658,7 @@ export const dummyRepository: ChairmanRepository = {
   // 원가 엔진 · 생산(0064) · 원가 관리(0065) · 대표 BOM(0063) — 작업지시 수량 · BOM이 가짜 BOM 옆이라 같은 파일.
   ...dummyProduction(),
   ...dummyCosts(),
+  ...dummyCostImport(),
 
   /** 0061 cost_costing_watch의 거울 — 대표만. 원가 관리 권한자 · 줄 생긴 시각 · 최근 7일 원가 조회 · 구매 · 영업 화면 열람 · 마지막 조회(그 회사). */
   async costingWatch(businessId: string) {
