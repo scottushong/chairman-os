@@ -1,3 +1,4 @@
+import type { CostImportApply, ImportTarget } from '@/lib/cost-import/payload'
 import type { ActivityEvent, ActivityKind } from '@/lib/activity'
 import type { EntityAuditRecord } from '@/lib/audit-log'
 import type { MonthlyBasis } from '@/lib/ecount/excel/mapping'
@@ -180,6 +181,8 @@ export interface PurchasingMethods {
   putPurchaseDocObject(path: string, bytes: ArrayBuffer, contentType: string): Promise<void>
   voidPurchaseDoc(businessId: string, docId: string, reason: string): Promise<void>
   downloadPurchaseDoc(businessId: string, docId: string): Promise<PurchaseDocDownload | null>
+  /** 0068 cost_purchase_doc_download_log — 대표만(그 밖은 'cost_not_found'). 내려받기 **전에** 부른다. */
+  logPurchaseDocDownload(docId: string): Promise<void>
 }
 
 /**
@@ -287,7 +290,19 @@ export interface QuoteMethods {
   logQuoteDownload(quoteId: string, format: 'xlsx' | 'pdf'): Promise<void>
 }
 
-export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods, ProductionMethods, CostsMethods, QuoteMethods {
+/**
+ * 원가 엔진 엑셀 넣기(0068). 판정은 DB(cost_import_apply — security invoker라 대상 표의 RLS · 트리거 · 이상치 검사가 그대로 돈다).
+ * 넣기만 — 이 묶음에 내려받기 · 내보내기 메서드는 없다(회장 결정 2026-10-11).
+ * dummy는 lib/repository/dummy-cost-import.ts, live는 supabase-cost-import.ts.
+ */
+export interface CostImportMethods {
+  /** 0068 cost_import_check — 그 회사 그 대상의 자료 도장 · 같은 파일(해시)을 넣은 적이 있는가. 0068 전 DB면 null. */
+  costImportCheck(businessId: string, target: ImportTarget, sha256: string): Promise<{ stamp: string; seen: boolean } | null>
+  /** 0068 cost_import_apply — 한 트랜잭션. 'cost_import_stale' · 'cost_import_duplicate' · 대상 표의 cost_* 오류로 던진다. */
+  applyCostImport(input: CostImportApply): Promise<{ importId: string; inserted: number; replaced: number }>
+}
+
+export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods, ProductionMethods, CostsMethods, QuoteMethods, CostImportMethods {
   /** 어느 쪽을 보고 있는지. 화면이 아니라 DUMMY DATA 뱃지와 로그가 쓴다. */
   readonly mode: 'dummy' | 'live'
 

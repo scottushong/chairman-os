@@ -363,15 +363,20 @@ export async function voidDocAction(businessId: string, docId: string, reason: s
   }
 }
 
-/** 내려받기 — live는 10분 서명 URL, dummy는 바이트. */
+/** 내려받기 — 대표만(0068). live는 10분 서명 URL, dummy는 바이트. 감사 줄(action 'export')이 먼저. */
 export async function downloadDocAction(
   businessId: string,
   docId: string,
 ): Promise<PurchasingState & { url?: string; file?: { file_name: string; mime: string; base64: string } }> {
   if (!BIZ.test(businessId) || !/^[0-9a-f-]{36}$/.test(docId)) return { error: '찾을 수 없거나 권한이 없습니다.' }
-  if (!(await session())) return EXPIRED
+  const user = await session()
+  if (!user) return EXPIRED
+  // 원가 엔진 빼기 금지(회장 결정 2026-10-11) — 대표만 내려받는다. 문은 DB(0068 cost_doc_object_visible · 감사 함수)다.
+  if (user.role !== 'Chairman') return { error: '찾을 수 없거나 권한이 없습니다.' }
   try {
-    const got = await (await getRepository()).downloadPurchaseDoc(businessId, docId)
+    const repo = await getRepository()
+    await repo.logPurchaseDocDownload(docId)   // 감사가 먼저 — 실패하면 파일도 없다
+    const got = await repo.downloadPurchaseDoc(businessId, docId)
     if (!got) return { error: '파일을 열 수 없습니다(없거나 볼 권한이 없습니다).' }
     return 'url' in got ? { url: got.url } : { file: got }
   } catch (e) {

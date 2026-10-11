@@ -1,3 +1,4 @@
+import { CostImportPanel } from '@/components/cost-import/cost-import-panel'
 import { PageHeader } from '@/components/layout/page-header'
 import { PurchasingNav } from '@/components/purchasing/purchasing-nav'
 import { SuppliersManager } from '@/components/purchasing/suppliers-manager'
@@ -17,7 +18,12 @@ export default async function PurchasingSuppliersPage(props: PageProps<'/purchas
       <PageHeader icon="cart" title={`${business.name} 공급처`} code="COST-P3" description="이름 · 나라 · 기본 통화 · 연락처 · 결제 · 인도 조건.">
         <PurchasingNav businessId={business_id} current="suppliers" />
       </PageHeader>
-      <SuppliersManager businessId={business_id} suppliers={suppliers} canEdit={canWrite} />
+      {canWrite ? (
+        <div className="mt-4">
+          <CostImportPanel businessId={business_id} target="suppliers" />
+        </div>
+      ) : null}
+      <SuppliersManager key={suppliers.length} businessId={business_id} suppliers={suppliers} canEdit={canWrite} />
     </div>
   )
 }

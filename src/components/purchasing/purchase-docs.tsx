@@ -20,12 +20,15 @@ export function PurchaseDocs({
   docs,
   suppliers,
   canEdit,
+  canDownload = false,
   onChanged,
 }: {
   businessId: string
   docs: PurchaseDoc[]
   suppliers: CostSupplier[]
   canEdit: boolean
+  /** 대표만 — 원가 엔진 화면에서 내려받기는 대표 예외뿐(0068 · 감사 줄이 먼저). */
+  canDownload?: boolean
   onChanged: () => void
 }) {
   const [list, setList] = useState(docs)
@@ -123,9 +126,13 @@ export function PurchaseDocs({
           {visible.map((d) => (
             <li key={d.doc_id} className="flex flex-wrap items-center justify-between gap-2 py-1.5 text-t12">
               <span className="min-w-0">
-                <button type="button" className="break-all text-left font-semibold text-ink underline-offset-2 hover:underline" onClick={() => download(d)}>
-                  {d.file_name}
-                </button>
+                {canDownload ? (
+                  <button type="button" className="break-all text-left font-semibold text-ink underline-offset-2 hover:underline" onClick={() => download(d)}>
+                    {d.file_name}
+                  </button>
+                ) : (
+                  <span className="break-all font-semibold text-ink">{d.file_name}</span>
+                )}
                 {d.voided_at ? <VoidTag reason={d.void_reason} /> : null}
                 <span className="block text-t10h text-ink-muted">
                   {PURCHASE_DOC_KIND_LABEL_KO[d.kind]}
@@ -134,9 +141,11 @@ export function PurchaseDocs({
                 </span>
               </span>
               <span className="flex items-center gap-1">
-                <button type="button" className={LINK_BTN} onClick={() => download(d)}>
-                  내려받기
-                </button>
+                {canDownload ? (
+                  <button type="button" className={LINK_BTN} onClick={() => download(d)}>
+                    내려받기
+                  </button>
+                ) : null}
                 {canEdit ? (
                   <VoidButton
                     onVoid={async (reason) => {

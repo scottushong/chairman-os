@@ -528,8 +528,13 @@ export function dummyPurchasing(): PurchasingMethods {
       )
     },
 
+    async logPurchaseDocDownload(docId) {
+      // 0068 — 대표만. dummy는 감사 표가 없어 판정만 흉내 낸다.
+      if (dummyViewer().role !== 'Chairman' || !store.docs.some((d) => d.doc_id === docId && !d.voided_at)) throw new Error('cost_not_found')
+    },
+
     async downloadPurchaseDoc(businessId, docId) {
-      if (!canAny(['purchasing', 'costing'], businessId)) return null
+      if (dummyViewer().role !== 'Chairman' || !canAny(['purchasing', 'costing'], businessId)) return null
       const row = store.docs.find((d) => d.doc_id === docId && d.business_id === businessId && !d.voided_at)
       const obj = row ? store.bytes.get(row.storage_path) : undefined
       if (!row || !obj) return null
