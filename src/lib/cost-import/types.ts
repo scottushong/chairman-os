@@ -58,6 +58,8 @@ export interface PreviewRow {
   existing: string | null
   /** «둘 다 맞음»을 고를 수 있는가(구분 칸이 다를 때만). */
   canBoth: boolean
+  /** «엑셀 값으로 바꾸기»를 고를 수 있는가(기존 줄과 겹칠 때만 — 파일 안 겹침은 «기존 유지»로 한 줄을 버린다). */
+  canReplace: boolean
   /** 파일 안에서 겹친 다른 줄(엑셀 행 번호). */
   fileRow: number | null
   /** 이 줄이 다른 사람이 넣은 기존 줄을 바꾸는가(바꾸기를 고르면 그 사람에게 알림). */

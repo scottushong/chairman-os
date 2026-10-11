@@ -64,21 +64,18 @@ create or replace function cost_import_can(p_business text, p_target text) retur
 language sql stable security definer set search_path = public, pg_temp as $fn$
   select case cost_import_area(p_target)
     when 'chairman' then is_active() and coalesce(auth_role()::text, '') = 'Chairman' and has_business(p_business)
-    when null then false
-    else cost_can(cost_import_area(p_target), p_business, true) end;
+    else coalesce(cost_can(cost_import_area(p_target), p_business, true), false) end;
 $fn$;
 
 alter table cost_imports enable row level security;
 revoke all on table cost_imports from anon, public;
 revoke insert, update, delete, truncate, references, trigger on table cost_imports from authenticated;
-grant select, insert on cost_imports to authenticated;
+grant select on cost_imports to authenticated;   -- 넣기 grant 없음(리뷰 I2) — cost_import_log(정의자)만 넣는다
 create policy cost_imports_no_system on cost_imports as restrictive for all to authenticated
   using (coalesce(auth_role()::text, '') not in ('AIAgent', 'Integration'));
--- 읽기: 본인 · 대표 · 그 대상 입력 권한자. 넣기: 본인 이름으로 · 그 대상 입력 권한자(cost_import_apply 안에서만 부른다 — 직접 넣어도 자기 해시를 막을 뿐).
+-- 읽기: 본인 · 대표 · 그 대상 입력 권한자. 넣기 정책 없음 — 직접 넣으면 남의 파일 해시를 막거나 가짜 감사 줄을 만들 수 있다(리뷰 I2).
 create policy cost_imports_read on cost_imports for select to authenticated
   using (created_by = auth.uid() or coalesce(auth_role()::text, '') = 'Chairman' or cost_import_can(business_id, target));
-create policy cost_imports_insert on cost_imports for insert to authenticated
-  with check (created_by = auth.uid() and cost_import_can(business_id, target));
 
 -- =====================================================================
 -- 2절. 도장 · 같은 파일
@@ -217,6 +214,7 @@ declare
   v_ver bigint;
   v_cnt int;
   v_table text;
+  v_before jsonb;
 begin
   if not is_active() or not cost_import_can(p_business, p_target) then
     raise exception 'cost_not_found' using errcode = 'P0002';
@@ -245,6 +243,7 @@ begin
     i := i + 1;
     v_rep := r ->> 'replace_id';
     continue when v_rep is null;
+    v_before := null;
     v_reason := btrim(coalesce(r ->> 'reason', ''));
     if v_reason = '' or length(v_reason) > 300 then
       raise exception 'cost_void_reason' using errcode = '23514', hint = 'item ' || i;
@@ -252,12 +251,20 @@ begin
     begin
       case p_target
         when 'materials' then
-          update cost_materials set category = r ->> 'category', spec = coalesce(r ->> 'spec', ''), note = coalesce(r ->> 'note', '')
+          -- 마스터 수정 — 지우지 않는다. 이전 값 · 이유는 감사에 남긴다(리뷰 I1). 빈 칸은 기존 값을 지우지 않는다.
+          select jsonb_build_object('category', category, 'spec', spec, 'note', note) into v_before
+            from cost_materials where material_id = v_rep and business_id = p_business for update;
+          update cost_materials set category = coalesce(nullif(r ->> 'category', ''), category), spec = coalesce(nullif(r ->> 'spec', ''), spec),
+                 note = coalesce(nullif(r ->> 'note', ''), note)
            where material_id = v_rep and business_id = p_business;
           v_table := 'cost_materials';
         when 'suppliers' then
-          update cost_suppliers set country = coalesce(r ->> 'country', ''), currency_default = r ->> 'currency_default',
-                 contact = coalesce(r ->> 'contact', ''), terms = coalesce(r ->> 'terms', ''), note = coalesce(r ->> 'note', '')
+          select jsonb_build_object('country', country, 'currency_default', currency_default, 'contact', contact, 'terms', terms, 'note', note) into v_before
+            from cost_suppliers where supplier_id = v_rep and business_id = p_business for update;
+          update cost_suppliers set country = coalesce(nullif(r ->> 'country', ''), country),
+                 currency_default = coalesce(nullif(r ->> 'currency_default', ''), currency_default),
+                 contact = coalesce(nullif(r ->> 'contact', ''), contact), terms = coalesce(nullif(r ->> 'terms', ''), terms),
+                 note = coalesce(nullif(r ->> 'note', ''), note)
            where supplier_id = v_rep and business_id = p_business;
           v_table := 'cost_suppliers';
         when 'market_prices' then
@@ -293,19 +300,10 @@ begin
     exception when others then
       raise exception using message = sqlerrm, errcode = sqlstate, hint = 'item ' || i;
     end;
-    v_replaced := v_replaced || jsonb_build_array(jsonb_build_object('t', v_table, 'id', v_rep));
+    v_replaced := v_replaced || jsonb_build_array(jsonb_build_object('t', v_table, 'id', v_rep, 'reason', v_reason, 'before', v_before));
   end loop;
 
-  -- ── 2. 엑셀 한 줄(감사 · 알림은 트리거) ──
-  begin
-    insert into cost_imports (business_id, target, file_name, file_sha256, row_count, skipped, edits, replaced)
-    values (p_business, p_target, left(btrim(coalesce(p_file_name, '')), 120), p_sha, n, greatest(coalesce(p_skipped, 0), 0), p_edits, v_replaced)
-    returning import_id into v_import;
-  exception when unique_violation then
-    raise exception 'cost_import_duplicate' using errcode = '23505';
-  end;
-
-  -- ── 3. 새 줄 ──
+  -- ── 2. 새 줄 ──
   i := 0;
   for r in select * from jsonb_array_elements(p_rows) loop
     i := i + 1;
@@ -349,6 +347,9 @@ begin
             values (p_business, v_prod, inp ->> 'lot_id', cost_import_num(inp ->> 'qty_kg'));
           end loop;
         when 'bom' then
+          if not exists (select 1 from cost_products p where p.product_id = r ->> 'product_id' and p.business_id = p_business) then
+            raise exception 'cost_import_invalid' using errcode = '22023';   -- 리뷰 M1: 다른 회사 제품
+          end if;
           -- 같은 제품 · 시작일 판이 (바꾸기 뒤에도) 살아 있으면 거부 — cost_bom_save가 조용히 갈지 않게(회장 결정: 겹침은 사람이 고른다).
           if cost_import_bom_live(r ->> 'product_id', cost_import_date(r ->> 'valid_from')) is not null then
             raise exception 'cost_import_stale' using errcode = '40001';
@@ -370,8 +371,79 @@ begin
     end;
   end loop;
 
+  -- ── 3. 엑셀 한 줄(감사 · 알림은 트리거) — 새 줄 뒤에. 정의자 cost_import_log가 «이 트랜잭션에서 이 사람이 실제로 넣고 바꾼 것»을 대조한다(리뷰 I2).
+  v_import := cost_import_log(p_business, p_target, p_file_name, p_sha, n, coalesce(p_skipped, 0), p_edits, v_replaced);
+
   return jsonb_build_object('import_id', v_import, 'inserted', n - case when p_target in ('materials', 'suppliers') then jsonb_array_length(v_replaced) else 0 end,
                             'replaced', jsonb_array_length(v_replaced));
+end;
+$fn$;
+
+/**
+ * 엑셀 한 줄 넣기 — cost_import_apply만 부른다(cost_imports에 넣기 grant · 정책이 없다). 직접 불러도 «이 트랜잭션(now())에서 이 사람이
+ * 대상 표에 실제로 넣은 줄 수 ≥ 파일 줄 수(마스터 바꾸기 제외)» · «바꾼 줄 = 이 사람이 지금 무효/수정한 줄»이 아니면 거부한다 —
+ * 데이터 변경 없는 가짜 감사 줄 · 남의 파일 해시 막기를 닫는다(리뷰 I2). BOM의 고친 칸은 값 없이 저장한다(리뷰 M2).
+ */
+create or replace function cost_import_log(p_business text, p_target text, p_file_name text, p_sha text, p_rows int, p_skipped int,
+                                           p_edits jsonb, p_replaced jsonb) returns uuid
+language plpgsql volatile security definer set search_path = public, cost_secret, pg_temp as $fn$
+declare
+  v_id uuid;
+  v_made int;
+  v_master int := 0;
+  x jsonb;
+  v_ok boolean;
+begin
+  if not is_active() or not cost_import_can(p_business, p_target) then
+    raise exception 'cost_not_found' using errcode = 'P0002';
+  end if;
+  if p_sha is null or p_sha !~ '^[0-9a-f]{64}$' or p_rows is null or p_rows < 1 or jsonb_typeof(p_replaced) is distinct from 'array'
+     or jsonb_typeof(p_edits) is distinct from 'array' then
+    raise exception 'cost_import_invalid' using errcode = '22023';
+  end if;
+  for x in select * from jsonb_array_elements(p_replaced) loop
+    v_ok := case x ->> 't'
+      when 'cost_materials' then exists (select 1 from cost_materials where material_id = x ->> 'id' and business_id = p_business and updated_at = now())
+      when 'cost_suppliers' then exists (select 1 from cost_suppliers where supplier_id = x ->> 'id' and business_id = p_business and updated_at = now())
+      when 'cost_market_prices' then exists (select 1 from cost_market_prices where price_id::text = x ->> 'id' and business_id = p_business
+                                                and voided_by = auth.uid() and voided_at = now())
+      when 'cost_purchase_lots' then exists (select 1 from cost_purchase_lots where lot_id = x ->> 'id' and business_id = p_business
+                                                and voided_by = auth.uid() and voided_at = now())
+      when 'cost_overheads' then exists (select 1 from cost_overheads where overhead_id::text = x ->> 'id' and business_id = p_business
+                                            and voided_by = auth.uid() and voided_at = now())
+      when 'cost_bom' then exists (select 1 from cost_secret.bom_versions where version_id::text = x ->> 'id' and voided_by = auth.uid() and voided_at = now())
+      else false end;
+    if not v_ok then
+      raise exception 'cost_import_invalid' using errcode = '22023';
+    end if;
+    if x ->> 't' in ('cost_materials', 'cost_suppliers') then v_master := v_master + 1; end if;
+  end loop;
+  v_made := case p_target
+    when 'materials' then (select count(*) from cost_materials where business_id = p_business and created_by = auth.uid() and created_at = now())
+    when 'suppliers' then (select count(*) from cost_suppliers where business_id = p_business and created_by = auth.uid() and created_at = now())
+    when 'market_prices' then (select count(*) from cost_market_prices where business_id = p_business and created_by = auth.uid() and created_at = now())
+    when 'purchase_lots' then (select count(*) from cost_purchase_lots where business_id = p_business and created_by = auth.uid() and created_at = now())
+    when 'overheads' then (select count(*) from cost_overheads where business_id = p_business and created_by = auth.uid() and created_at = now())
+    when 'production' then (select count(*) from cost_prod_lots where business_id = p_business and created_by = auth.uid() and created_at = now())
+    when 'bom' then (select count(*) from cost_secret.bom_versions b join cost_products p on p.product_id = b.product_id
+                      where p.business_id = p_business and b.created_by = auth.uid() and b.created_at = now())
+    else 0 end;
+  if v_made < p_rows - v_master then
+    raise exception 'cost_import_invalid' using errcode = '22023';
+  end if;
+  begin
+    insert into cost_imports (business_id, target, file_name, file_sha256, row_count, skipped, edits, replaced, created_by)
+    values (p_business, p_target, left(btrim(coalesce(p_file_name, '')), 120), p_sha, p_rows, greatest(coalesce(p_skipped, 0), 0),
+            case when p_target = 'bom'
+                 then (select coalesce(jsonb_agg(jsonb_build_object('row', e -> 'row', 'field', e -> 'field', 'from', '', 'to', '고침')), '[]'::jsonb)
+                         from jsonb_array_elements(p_edits) e)
+                 else p_edits end,
+            p_replaced, auth.uid())
+    returning import_id into v_id;
+  exception when unique_violation then
+    raise exception 'cost_import_duplicate' using errcode = '23505';
+  end;
+  return v_id;
 end;
 $fn$;
 
@@ -440,10 +512,12 @@ create trigger cost_imports_after after insert on cost_imports for each row exec
 
 create or replace function cost_doc_object_visible(object_name text) returns boolean
 language sql stable security definer set search_path = public, pg_temp as $fn$
-  select is_active() and coalesce(auth_role()::text, '') = 'Chairman' and exists (
+  select (is_active() and coalesce(auth_role()::text, '') = 'Chairman' and exists (
     select 1 from cost_purchase_docs d
      where d.storage_path = object_name and d.voided_at is null and has_business(d.business_id)
-  );
+  ))
+  -- 리뷰 V1: storage-api의 insert … returning이 select 정책을 탄다 — 올린 사람이 한 시간 안의 자기 파일만(올리기가 죽지 않게. 자기가 가진 파일이다).
+  or cost_doc_object_uploadable(object_name);
 $fn$;
 
 /** 대표: 구매 첨부 내려받기 전 감사 한 줄(action 'export'). 대표 외는 cost_not_found. 실패하면 내려받기도 없다. */
@@ -477,6 +551,7 @@ revoke all on function cost_import_bom_live(text, date) from public, anon;
 revoke all on function cost_import_num(text, numeric) from public, anon;
 revoke all on function cost_import_date(text, boolean) from public, anon;
 revoke all on function cost_import_apply(text, text, text, text, text, jsonb, jsonb, int) from public, anon;
+revoke all on function cost_import_log(text, text, text, text, int, int, jsonb, jsonb) from public, anon;
 revoke all on function cost_imports_after() from public, anon, authenticated;
 revoke all on function cost_purchase_doc_download_log(uuid) from public, anon;
 grant execute on function cost_import_area(text) to authenticated;
@@ -487,6 +562,7 @@ grant execute on function cost_import_bom_live(text, date) to authenticated;
 grant execute on function cost_import_num(text, numeric) to authenticated;
 grant execute on function cost_import_date(text, boolean) to authenticated;
 grant execute on function cost_import_apply(text, text, text, text, text, jsonb, jsonb, int) to authenticated;
+grant execute on function cost_import_log(text, text, text, text, int, int, jsonb, jsonb) to authenticated;
 grant execute on function cost_purchase_doc_download_log(uuid) to authenticated;
 
 commit;

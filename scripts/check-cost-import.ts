@@ -130,6 +130,13 @@ async function dbChecks() {
   await apply(U.buy2, 'materials', 4, [{ name: '가짜원료나', category: 'additive', spec: '', note: '', replace_id: mat, reason: '분류 정정' }])
   assert.equal((await owner<{ c: string }>(`select category as c from cost_materials where material_id = '${mat}'`))[0].c, 'additive')
   assert.equal(await n(`select count(*) from notifications where user_id = '${U.buy}'`), 1, '다른 사람이 넣은 원료를 바꿨는데 알림이 없다')
+  const repAudit = JSON.stringify(await owner(`select after from audit_log where entity_table = 'cost_materials' and note like '엑셀 넣기%바꾼 줄%'`))
+  assert.ok(repAudit.includes('분류 정정') && repAudit.includes('"category": "sub"') || repAudit.includes('"category":"sub"'), `원료 바꾸기의 이전 값 · 이유가 감사에 없다(리뷰 I1) ${repAudit}`)
+  assert.equal((await owner<{ s: string }>(`select spec as s from cost_materials where material_id = '${mat}'`))[0].s, '포대', '빈 칸이 기존 규격을 지웠다(리뷰 I1)')
+  // 리뷰 I2 — cost_imports에 직접 넣기 · 데이터 없이 cost_import_log 부르기 거부
+  await refuses(as(U.buy, `insert into cost_imports (business_id, target, file_name, file_sha256, row_count) values ('biz_dy', 'materials', 'x.xlsx', '${SHA(77)}', 1)`), /permission denied|row-level/, 'cost_imports에 직접 넣었다')
+  await refuses(as(U.buy, `select cost_import_log('biz_dy', 'materials', 'x.xlsx', '${SHA(78)}', 5, 0, '[]'::jsonb, '[]'::jsonb)`), /cost_import_invalid/, '데이터 없이 엑셀 감사 줄을 만들었다')
+  await refuses(as(U.buy, `select cost_import_log('biz_dy', 'materials', 'x.xlsx', '${SHA(79)}', 1, 0, '[]'::jsonb, '[{"t":"cost_materials","id":"${mat}"}]'::jsonb)`), /cost_import_invalid/, '바꾸지 않은 줄로 알림 · 감사를 만들었다')
   await apply(U.buy, 'suppliers', 5, [{ name: '가짜공급사', country: '한국', currency_default: 'KRW', contact: '', terms: '', note: '' }])
   const [m1, m2] = (await owner<{ id: string }>(`select material_id as id from cost_materials order by name`)).map((x) => x.id)
   const sup = (await owner<{ id: string }>(`select supplier_id as id from cost_suppliers`))[0].id
@@ -218,7 +225,7 @@ async function dbChecks() {
   await as(U.buy, `insert into cost_purchase_docs (business_id, kind, file_name, mime, size_bytes, sha256, storage_path, mix_checked)
                values ('biz_dy', 'quote', 'q.pdf', 'application/pdf', 10, '${SHA(9)}', 'biz_dy/x/q.pdf', true)`)
   const doc = (await owner<{ id: string }>(`select doc_id::text as id from cost_purchase_docs`))[0].id
-  assert.equal((await as<{ v: boolean }>(U.buy, `select cost_doc_object_visible('biz_dy/x/q.pdf') as v`))[0].v, false, '구매 담당이 첨부 파일을 내려받을 수 있다')
+  assert.equal((await as<{ v: boolean }>(U.buy2, `select cost_doc_object_visible('biz_dy/x/q.pdf') as v`))[0].v, false, '다른 구매 담당이 첨부 파일을 내려받을 수 있다')
   assert.equal((await as<{ v: boolean }>(U.cost, `select cost_doc_object_visible('biz_dy/x/q.pdf') as v`))[0].v, false, '원가 관리가 첨부 파일을 내려받을 수 있다')
   assert.equal((await as<{ v: boolean }>(U.chair, `select cost_doc_object_visible('biz_dy/x/q.pdf') as v`))[0].v, true, '대표가 첨부 파일을 못 내려받는다')
   await refuses(as(U.buy, `select cost_purchase_doc_download_log('${doc}')`), /cost_not_found/, '대표 외가 내려받기 감사 함수를 불렀다')

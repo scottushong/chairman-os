@@ -206,11 +206,11 @@ export async function previewCostImportAction(form: FormData): Promise<CostImpor
       counts: result.counts,
       stamp: check.stamp,
       seen,
-      locked: seen ?? result.locked,
+      locked: seen ?? result.hardLocked,
       realAllowed: bomStatus?.real_allowed ?? false,
     }
   } catch (e) {
-    console.error('[cost-import] preview', input.target, e instanceof CostImportFileError ? e.message : 'failed')
+    console.error('[cost-import] preview', input.target, e instanceof CostImportFileError ? 'file' : (/cost_[a-z_]+/.exec(e instanceof Error ? e.message : '') ?? ['failed'])[0])
     return { error: importError(e, input.target) }
   }
 }

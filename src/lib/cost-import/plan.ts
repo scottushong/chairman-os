@@ -61,8 +61,10 @@ export interface PlanResult {
   payloads: ImportPayload[]
   edits: ImportEdit[]
   skipped: number
-  /** 등록이 잠긴 이유(null = 등록 가능). seen(같은 파일)은 서버가 덧붙인다. */
+  /** 등록이 잠긴 이유(null = 등록 가능) — 충돌 처리 · 중복 확인까지. seen(같은 파일)은 서버가 덧붙인다. */
   locked: string | null
+  /** 사람의 고르기와 무관한 잠김(칸 지정 · 오류 · 줄 수) — 미리보기 화면은 이것만 받고 고르기 잠김은 화면이 센다. */
+  hardLocked: string | null
   /** 환율이 필요한 (통화|날짜) — 서버가 ctx.fx를 채워 다시 부른다. */
   fxNeeded: string[]
 }
@@ -156,6 +158,7 @@ export function planImport(
     edits: [],
     skipped: 0,
     locked: '읽을 자료가 없습니다.',
+    hardLocked: '읽을 자료가 없습니다.',
     fxNeeded: [],
   }
   if (!sheet) return empty
@@ -426,11 +429,13 @@ export function planImport(
       case 'materials': {
         const m = matByName.get(w.key ?? '')
         if (!m) break
-        if (m.category === p.category && m.spec === p.spec) w.status = 'same'
+        // 빈 칸은 «기존 값 유지»(DB도 같다 — 0068 리뷰 I1). 분류는 비우면 'main'이 들어오므로 파일에 분류 칸이 있을 때만 잰다.
+        const catGiven = !!w.values.category
+        if ((!catGiven || m.category === p.category) && (!p.spec || m.spec === p.spec)) w.status = 'same'
         else {
           w.status = 'conflict'
           w.message = '같은 이름의 원료가 이미 있고 분류 · 규격이 다릅니다.'
-          w.existing = `기존: ${MATERIAL_CATEGORY_LABEL_KO[m.category]}${m.spec ? ` · ${m.spec}` : ''}`
+          w.existing = `${MATERIAL_CATEGORY_LABEL_KO[m.category]}${m.spec ? ` · ${m.spec}` : ''}`
           w.replaceId = m.material_id
         }
         break
@@ -438,11 +443,13 @@ export function planImport(
       case 'suppliers': {
         const s = supByName.get(w.key ?? '')
         if (!s) break
-        if (s.country === p.country && s.currency_default === p.currency_default && s.contact === p.contact && s.terms === p.terms) w.status = 'same'
+        const keep = (a: string, b: string | null) => !b || a === b
+        if (keep(s.country, p.country) && (!w.values.currency || s.currency_default === p.currency_default) && keep(s.contact, p.contact) && keep(s.terms, p.terms))
+          w.status = 'same'
         else {
           w.status = 'conflict'
           w.message = '같은 이름의 공급처가 이미 있고 국가 · 통화 · 연락처 · 조건이 다릅니다.'
-          w.existing = `기존: ${[s.country, s.currency_default].filter(Boolean).join(' · ')}`
+          w.existing = `${[s.country, s.currency_default].filter(Boolean).join(' · ')}`
           w.replaceId = s.supplier_id
         }
         break
@@ -456,7 +463,7 @@ export function planImport(
         else {
           w.status = 'conflict'
           w.message = '같은 원료 · 같은 날짜 · 같은 출처의 시세가 이미 있고 가격이 다릅니다.'
-          w.existing = `기존: ${numText(hit.price)} ${hit.currency}/kg`
+          w.existing = `${numText(hit.price)} ${hit.currency}/kg`
           w.replaceId = String(hit.price_id)
         }
         break
@@ -473,7 +480,7 @@ export function planImport(
           sameNumber(hit.freight_krw, p.freight_krw) &&
           sameNumber(hit.duty_krw, p.duty_krw) &&
           sameNumber(hit.other_krw, p.other_krw)
-        w.existing = `기존: ${hit.lot_id} · 단가 ${numText(hit.unit_price)} ${hit.currency}${hit.supplier_lot_no ? ` · LOT ${hit.supplier_lot_no}` : ''}`
+        w.existing = `${hit.lot_id} · 단가 ${numText(hit.unit_price)} ${hit.currency}${hit.supplier_lot_no ? ` · LOT ${hit.supplier_lot_no}` : ''}`
         w.replaceId = hit.lot_id
         if (same) {
           w.status = 'duplicate'
@@ -494,7 +501,7 @@ export function planImport(
         else {
           w.status = 'conflict'
           w.message = '같은 항목 · 범위 · 시작일의 비용 줄이 이미 있고 방식 · 금액이 다릅니다.'
-          w.existing = `기존: ${OVERHEAD_BASIS_LABEL_KO[hit.basis]} ${won(hit.amount)}원`
+          w.existing = `${OVERHEAD_BASIS_LABEL_KO[hit.basis]} ${won(hit.amount)}원`
           w.replaceId = String(hit.overhead_id)
         }
         break
@@ -505,7 +512,7 @@ export function planImport(
         if (hit) {
           w.status = 'duplicate'
           w.message = '같은 오더 · 생산일 · 산출 kg의 생산 LOT가 이미 있습니다.'
-          w.existing = `기존: ${hit.prod_lot_id} · ${kg(hit.output_kg)}`
+          w.existing = `${hit.prod_lot_id} · ${kg(hit.output_kg)}`
         }
         break
       }
@@ -515,7 +522,7 @@ export function planImport(
         if (hit) {
           w.status = 'conflict'
           w.message = '같은 제품 · 같은 시작일 판이 이미 있습니다.'
-          w.existing = `기존: 판 #${hit.version_id}${hit.is_fake ? '(가짜)' : ''}`
+          w.existing = `판 #${hit.version_id}${hit.is_fake ? '(가짜)' : ''}`
           w.replaceId = String(hit.version_id)
         }
         break
@@ -757,19 +764,23 @@ export function planImport(
     message: w.message,
     existing: w.existing,
     canBoth: w.canBoth,
+    canReplace: !!w.replaceId,
     fileRow: w.fileRow,
     othersRow: false,
   }))
   const counts: ImportCounts = { new: 0, same: 0, conflict: 0, duplicate: 0, error: 0 }
   for (const r of rows) counts[r.status] += 1
 
-  let locked: string | null = null
-  if (!confirmed) locked = '칸 지정을 확인하세요(«이 칸 지정으로 미리보기»).'
-  else if (missingRequired.length > 0) locked = `꼭 있어야 하는 칸이 지정되지 않았습니다: ${missingRequired.join(' · ')}`
-  else if (twice) locked = '한 열을 두 칸에 지정했습니다.'
-  else if (tooMany) locked = `한 파일에 ${max.toLocaleString('ko-KR')}줄까지입니다(지금 ${lines.length.toLocaleString('ko-KR')}줄). 나눠서 넣으세요.`
-  else if (counts.error > 0) locked = `오류 줄 ${counts.error}개를 고치세요(칸을 눌러 고치거나 엑셀을 고쳐 다시 올리세요).`
-  else if (problems.length > 0) locked = problems.slice(0, 3).join(' ') + (problems.length > 3 ? ` 외 ${problems.length - 3}건` : '')
+  let hardLocked: string | null = null
+  if (!confirmed) hardLocked = '칸 지정을 확인하세요(«이 칸 지정으로 미리보기»).'
+  else if (missingRequired.length > 0) hardLocked = `꼭 있어야 하는 칸이 지정되지 않았습니다: ${missingRequired.join(' · ')}`
+  else if (twice) hardLocked = '한 열을 두 칸에 지정했습니다.'
+  else if (tooMany) hardLocked = `한 파일에 ${max.toLocaleString('ko-KR')}줄까지입니다(지금 ${lines.length.toLocaleString('ko-KR')}줄). 나눠서 넣으세요.`
+  else if (counts.error > 0) hardLocked = `오류 줄 ${counts.error}개를 고치세요(칸을 눌러 고치거나 엑셀을 고쳐 다시 올리세요).`
+  let locked: string | null = hardLocked
+  if (locked) {
+    // 위에서 정했다
+  } else if (problems.length > 0) locked = problems.slice(0, 3).join(' ') + (problems.length > 3 ? ` 외 ${problems.length - 3}건` : '')
   else if (payloads.length === 0) locked = '넣을 새 줄이 없습니다.'
 
   return {
@@ -785,6 +796,7 @@ export function planImport(
     edits,
     skipped,
     locked,
+    hardLocked,
     fxNeeded: [...fxNeeded],
   }
 }

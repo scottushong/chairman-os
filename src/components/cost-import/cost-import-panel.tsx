@@ -40,10 +40,10 @@ const STATUS_CLASS: Record<RowStatus, string> = {
   error: 'bg-critical/15 text-critical',
 }
 
-function conflictOptions(canBoth: boolean): [ConflictChoice, string][] {
+function conflictOptions(canBoth: boolean, canReplace: boolean): [ConflictChoice, string][] {
   const out: [ConflictChoice, string][] = [
-    ['keep', '기존 유지'],
-    ['replace', '엑셀 값으로 바꾸기'],
+    ['keep', canReplace ? '기존 유지' : '이 줄 버림'],
+    ...(canReplace ? ([['replace', '엑셀 값으로 바꾸기']] as [ConflictChoice, string][]) : []),
   ]
   if (canBoth) out.push(['both', '둘 다 맞음'])
   return out
@@ -501,7 +501,7 @@ export function CostImportPanel({ businessId, target, title }: { businessId: str
                                 <fieldset className="space-y-1">
                                   <legend className="sr-only">{r.row}행 충돌 처리</legend>
                                   <div className="flex flex-wrap gap-x-3 gap-y-1">
-                                    {conflictOptions(r.canBoth).map(([v, text]) => (
+                                    {conflictOptions(r.canBoth, r.canReplace).map(([v, text]) => (
                                       <label key={v} className="flex min-h-11 items-center gap-1 lg:min-h-0">
                                         <input
                                           type="radio"
