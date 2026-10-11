@@ -2003,10 +2003,18 @@ B-4가 찾은 결함 하나를 고쳤다. **리뷰 루프가 없는 작업이고
   slide XML.** npm `xlsx` 0.18.x는 미패치 CVE(프로토타입 오염 · ReDoS)가 있고 첨부는 믿을 수 없는 파일이라 쓰지 않는다. exceljs 4.4는
   uuid<11 moderate 경고가 남는다(buf 인자 경계 — 이 경로에서 쓰지 않는다). OOXML 셋은 풀기 전에 fflate로 압축 해제 크기 합(200MB)을 잰다.
 - **스캔본 PDF(글자 없음)는 «텍스트를 찾지 못했습니다»로 failed.** 다른 선택지: PDF를 document 블록으로 Claude에 통째로 보낸다(비용 ↑).
+  → **2026-10-06 feat/intake: document 블록으로 보낸다**(쪽당 평균 40자 미만 = 스캔본, limits.ts `pdfRoute`). 천장 30쪽 · base64 30MB
+  (API: 요청 32MB · 이 모델 100쪽). 넘으면 «이 파일은 아직 읽을 수 없습니다 — 스캔한 PDF가 N쪽입니다 … 파일은 올라갔습니다.»로 멈춘다.
+  앞 N쪽만 잘라 보내기는 PDF 쓰기 라이브러리(pdf-lib 등)가 있어야 해서 하지 않았다 — 다른 선택지: pdf-lib을 더해 앞 30쪽만 보내고 «뒷부분 생략».
 - **긴 문서: 12만 자 또는 50쪽을 넘으면 4만 자 구간(최대 8)으로 나눠 요약한 뒤 같은 프롬프트로 합친다.** 8구간을 넘는 뒷부분은 읽지 않고
   confidence를 low로 내린다(«뒷부분 생략»을 요약 첫 줄에 적는다). 비용 천장이다.
 - **이미지는 5MB(API 한도)를 넘으면 브라우저가 긴 변 2400px JPEG로 줄여 올린다**(폰 카메라 촬영본이 대개 그렇다). 원본 대신 줄인
   사진이 «원본»이 된다. 다른 선택지: 서버에서 sharp로 줄이기(번들 ↑).
+  → **2026-10-06 feat/intake: 문턱을 base64 5MB(= 원본 3.75MB)로.** 공식 문서 확인 — 한 장 한도는 base64 기준 Claude API 직접 10MB ·
+  Bedrock · Google Cloud 5MB · 8000px. 예전 4.5MB 문턱은 base64 6MB라 5MB 플랫폼에서 깨진다(직접 API에서는 통과). 8000px 넘는 사진도 줄인다.
+  서버는 직접 API 한도(10MB)를 넘는 것만 거절(예전 사진 재요약이 깨지지 않게). **HEIC · HEIF · WebP · GIF는 브라우저가 JPEG로 바꿔 올린다**
+  (DB 0045 mime 제약은 그대로) — HEIC는 Safari만 열고, 못 열면 «이 사진은 아직 올릴 수 없습니다 … 파일은 올리지 않았습니다.» 다른 선택지: 0045 mime에
+  webp를 더해 원본 보관(마이그레이션 필요).
 - **비용 추정은 모델별 단가표(lib/ai/pricing.ts)로 한다.** 표에 없는 모델은 Sonnet 단가로 적는다 — 실제 청구와 다를 수 있다.
 - **dummy에서 키가 없으면 «DUMMY 요약»(결정적 가짜)을 적는다.** 키가 있으면 dummy에서도 실제 API를 부른다(세 문서 실측용).
 - **«채우기»(목표 · 다음 행동 · 막힌 점이 빈 이니셔티브)는 요약의 next_actions · decisions_needed 첫 줄을 제안한다.** 받으면
@@ -2087,6 +2095,7 @@ B-4가 찾은 결함 하나를 고쳤다. **리뷰 루프가 없는 작업이고
   `attachments_no_vault_insert`다 — check는 `not valid`여도 기존 Vault 줄(0045 이후 production에 있을 수 있다)을
   고칠 때마다 다시 재서 요약 상태 갱신 · soft delete가 23514로 깨진다. 등급 칸은 update grant가 없어 insert만 막으면 된다.
 - **스캔본 PDF(글자 없음) → vision 경로는 다음 세션.** 지금은 «텍스트를 찾지 못했습니다»로 failed.
+  → 2026-10-06 feat/intake에서 document 블록으로 풀었다(위 Phase 10 줄 참고). 검사 `npm run check:attachments`.
 
 ## 세계시간 · 관심 도시 10곳 (2026-09-29 회장 지시)
 
@@ -2306,6 +2315,264 @@ B-4가 찾은 결함 하나를 고쳤다. **리뷰 루프가 없는 작업이고
 - **직원 화면 개발자 문구(Minor):** /settings/users «대기 중인 초대» 설명에 «Supabase Dashboard · 0011 on_auth_user_created · (0026)»이 직원에게도 보인다.
 - **모델:** 지금 AI_MODEL = claude-sonnet-5(로컬 · staging .env), 코드 기본값 claude-sonnet-4-5. production Vercel 값은 이 세션에서 못 봤다. 바꾸지 않았다.
 
+## 2026-10-03 블록 — ECOUNT 엑셀 업로드 0050(표 · 정책 · 출처 칸)
+
+- **번호는 0050** — 설계서는 0049로 적었지만 0049_staff_terms가 먼저 썼다.
+- **RPC 둘(official_statement_import_ecount · ecount_monthly_import)은 0051 이후** — 열 구성(회장 스크린샷) 확정 뒤 연간 · 월별 단계에서. 0050은 표 · 정책 · 칸 · guard · official_statement_save 수정 · 첨부 대상 · accounts_books_insert까지.
+- **finance_imports 첨부는 그 draft를 만든 본인만 올린다**(restrictive insert, 설계서에 없던 한 줄) — 0045 insert는 «대상이 보이면» 올리게 해서 재무 읽기 권한자가 남의 업로드에 파일을 끼울 수 있었다. 다른 선택지: 앱에서만 uploaded_by로 고르기(DB가 못 막음).
+- **ECOUNT 잠정 결산의 증빙은 import_id(원본 첨부)이고 링크는 선택** — accountant는 0020 그대로 링크 필수 + import_id 없음. 다른 선택지: 첨부 서명 URL을 evidence_url에 넣기(만료되는 링크라 버림).
+- **official_statements update guard는 «superseded_at 말고 전부»를 to_jsonb로 잰다** — 칸 목록을 적으면 나중 칸이 새는 구멍이 된다.
+- **남은 구멍 — 0050에서 고치지 않는다, 0051에서 헤더 · 줄 insert를 RPC로만 + 복합 FK(리뷰 I-3)**:
+  - `official_statements_insert`(0020)로 basis='accountant' 헤더를 균형 검사 · 감사 없이 직접 넣을 수 있다(0020부터).
+  - `official_statement_lines`에 (statement_id, business_id) 복합 FK가 없어 다른 회사 결산에 줄을 붙일 수 있다 — 회사 격리 위반(앱이 lines를 아직 안 읽어 화면엔 안 보인다).
+  - 0050 이후 basis='ecount_excel' 헤더도 업로드의 상태 · 종류 · 만든 사람 확인 없이 직접 insert된다(import_id FK는 같은 회사만 본다).
+- **«빈 committed»(리뷰 M-1)**: 만든 사람이 PostgREST로 draft를 곧장 committed로 바꿀 수 있다(해시만 있으면). 0051 RPC는 finance_imports의 status · summary를 증거로 믿지 않는다 — 가능하면 commit은 definer RPC가 하고 사람 정책 with check는 status in ('draft', 'cancelled')로 좁힌다.
+- **앱의 basis 대응은 ecount_excel 행을 만드는 첫 RPC · 화면과 같이 나간다(리뷰 M-5)**: listOfficialStatements의 basis 필터(월별 잠금 · 기준 문구는 accountant만), evidence_url nullable 타입.
+- **첨부 라벨 · 경로에 finance_imports 추가(리뷰 M-6)**: 앱의 첨부 대상 라벨 · 경로 표에 finance_imports를 더하고, 업로드 원본 첨부의 등급(security_class)은 앱이 정해 보낸다(DB 기본 «제한»).
+- **업로드 전표 잇기 · 내리기의 실제 조건**(리뷰 I-1 · 2차 I-1):
+  - 잇기: 본인 monthly draft 업로드 + **이 트랜잭션에서 본인이 세운**(`created_at = now()`) 그 달 전표 + 역분개 아님. 정정분개(restatement)는 잇는다 — 재업로드가 세우는 새 활성 전표라서(리뷰 문구는 «역분개/정정 전표가 아님»이었지만 막으면 재업로드가 새 활성 줄을 못 세운다).
+  - 내리기(supersede): 그 전표를 가리키는 역분개가 있고, 그 역분개를 **본인이** 세웠고, 그 줄이 **원 전표 줄의 정확한 반대**다 — line_no로 full join해 계정 · 금액 · 적요가 같고 차변↔대변만 바뀐 것(post_correction 0016:691-708이 만드는 모양 그대로). journal_entry_insert(invoker, 누구나 부름)로 세운 1원 · 다른 계정 · 순서만 다른 가짜 역분개로는 못 내린다. 손으로 세웠어도 정확한 반대면 진짜 역분개로 본다(판정은 줄의 모양이다).
+- **범위 밖 기존 구멍(0016부터)**: journal_entry_insert를 직접 불러 아무 전표에나 가짜 역분개를 세우면 journal_entries_one_reversal(전표당 역분개 하나) 때문에 그 전표의 진짜 정정(post_correction)이 already_corrected로 막힌다. 0050은 이 구멍을 넓히지 않는다(가짜 역분개로 업로드 줄은 못 내린다). 고치려면 journal_entry_insert를 definer 내부 함수로 돌리거나 역분개 모양 검사를 트리거로 — 장부 블록에서.
+- **0051 월별 RPC가 챙길 것**:
+  - 활성 업로드 줄의 전표가 **이미 역분개된 경우**(누가 손으로 post_correction했거나 위 가짜 역분개로 막힌 경우) — 정정 전표를 또 세우지 말고 그 상태를 보고 멈추거나 이어 처리한다.
+  - **역분개를 세운 사람만 줄을 내릴 수 있다** — 그 사람이 권한을 잃거나 떠나면 그 달 줄이 활성으로 남는다(운영 리스크). RPC가 역분개와 supersede를 한 트랜잭션에서 같은 사람으로 하면 평소엔 문제 없다.
+  - commit RPC는 첨부 줄을 `for update`로 잡고, 원본 객체가 있는지 · sha256이 미리보기 때 적은 값과 같은지 다시 확인한 뒤 싣는다.
+- **committed · cancelled 업로드 원본은 줄 삭제 · 객체 삭제 · 재업로드 창이 다 닫힌다**(리뷰 I-2) — 그래서 취소는 «첨부 취소 → cancelled» 순서다. 판정 함수 finance_import_is_draft는 definer(Storage 정책을 anon도 거친다 — 0045 8절과 같은 이유).
+- **finance_imports 상태 변화는 감사하지 않는다** — 감사는 대상별 쓰기(계정 · 결산 · 전표)가 같은 트랜잭션에서 남긴다(설계서 A). 업로드 기록 자체는 지우지 않는다.
+
+## 2026-10-03 블록 — ECOUNT 엑셀 업로드 공통 기반(설계서 A · E 1단계)
+
+- **대상별(계정과목 · 연간 · 월별) 파싱 · 판정 · 등록은 없다** — 열 구성(ECOUNT 화면 캡처) 확인 뒤 `actions/ecount-import.ts`의 KIND_STAGES에 종류마다 붙인다. 그 전까지 미리보기는 공통부(원본 다시 읽기 · sha256 기록 · 시트 개요)까지 하고 «아직 지원하지 않는 종류»(화면: «미리보기: 열 구성 확인 후 제공»), 등록은 해시 대조까지 하고 같은 오류로 멈춘다.
+- **업로드 원본 첨부 등급은 서버가 «일반»으로 정한다(리뷰 M-6)** — beginAttachment가 finance_imports면 화면이 보낸 등급을 무시한다. 보이는 범위는 업로드의 재무 읽기 권한(can_read_books)이 이미 좁히고, «제한»이면 보안등급 일반인 DY 경영지원 팀장(첫 실사용자)이 자기 원본을 못 올리고 못 본다. 다른 선택지: 등급을 사람이 고르게(재무 원본에 고를 이유가 없다).
+- **업로드 원본은 한 건에 하나 · xlsx만** — beginAttachment가 둘째 원본과 xlsx 아닌 파일을 막는다. 미리보기 · 등록은 원본이 정확히 하나 · 올린 사람 = 만든 사람 · 회사 같음 · 크기 같음일 때만 읽는다.
+- **sha256은 미리보기가 처음 읽을 때 적는다**(finance_imports.file_sha256, 0050이 한 번만 적게 한다) — 등록은 다시 읽은 파일의 해시가 같아야 한다. 미리보기가 쓰는 DB는 그 draft 한 줄(해시 · 개요)뿐이다.
+- **취소 = 원본 첨부 삭제 → cancelled**(0050 :25). 첨부를 못 지우면 취소하지 않는다(cancelled 뒤에는 원본을 못 지운다). 올리기 중 실패도 같은 순서로 되돌린다.
+- **업로드 원본은 AI로 보내지 않는다** — summarizeAttachmentAction(AI 어시스턴트 «요약 제안» 실행도 이 문을 지난다) · propose_attachment_summary · attachment_summaries 도구에서 finance_imports를 뺐다. 다른 선택지: 0045 요약 그대로(장부 숫자 원문이 외부 AI로 나간다 — 버림).
+- **finance_imports 첨부의 경로**: entityPath에 businessId 인자를 더해 `/finance/<회사>/import`로. 검색 결과(hit id에 회사가 없다)는 `/finance`로 — 다른 선택지: hit id에 회사를 싣기(검색 두 어댑터를 같이 고쳐야 해 미룸).
+- **셀 규칙**: 수식은 저장된 result만(없으면 오류 — 다시 계산하지 않는다) · 병합 칸은 주인 칸만 값(나머지는 빈 칸 — 금액이 두 번 서지 않게) · 글 금액은 paste.ts 규칙(쉼표 · 괄호 음수 · ₩)을 `parseAccountingNumber`로 빼서 같이 쓰고 **단위(천원)를 곱한 뒤 반올림**한다(parseCell은 반올림만 남겨 동작 그대로). ~~«△1,000» · «-» 단독은 오류로 둔다~~ → **2026-10-04 결정으로 바뀜**: «△1,000» = −1,000 · 칸 전체가 «-»/«–» = 0(한국 재무제표 관례 · 회장 결정). «▲» · 그 밖의 못 읽는 칸은 여전히 오류(아래 «2026-10-04 — ECOUNT 0051 등록 RPC»).
+- **행 종류의 «이익 줄»은 이름 목록(매출총이익 · 영업이익 · 법인세차감전순이익 · 당기순이익 …)** — 접미사 «…이익»으로 보면 유형자산처분이익 같은 계정이 걸린다. 단위는 «단위»라는 낱말이 있을 때만 잡고, 없으면 null(짐작하지 않는다).
+- **파일 상한**: 압축 해제 50MB · 시트당 1만 행 · 100열 — ECOUNT 내보내기 크기의 한참 위. 바이트 앞머리로 옛 .xls(OLE) · 웹 표(HTML) · CSV를 이름과 따로 거른다(ECOUNT «엑셀 내려받기»가 HTML을 주는 경우).
+- **화면**: `/finance/<회사>/import`는 ECOUNT 코드 회사(DY)가 아니면 404, 권한이 없으면 공식 결산 입력과 같은 문장. BooksNav «ECOUNT 업로드» 탭은 `canImportEcount`(ECOUNT 회사 + canKeepBooks)일 때만 — BooksNav에 canImport prop(필수)을 더하고 호출부 6곳을 다 고쳤다. 진입 링크는 계정과목 빈 상태 문구 한 곳(재무 화면 · statements/new · monthly 링크는 대상별 단계에서). 기능번호(CH-0xx)는 달지 않았다(직원 화면).
+- **진행 중 목록은 회사의 재무 쓰기 권한자에게 보이는 draft 전부**(0050 읽기 = can_read_books) — 이어 가기 · 취소 버튼은 만든 본인에게만. 다른 선택지: 본인 것만 보이기(동료가 진행 중인 업로드를 모르고 같은 파일을 또 올린다).
+
+## 2026-10-03 — ECOUNT 업로드 열 지정
+
+ECOUNT 열 구성 캡처가 없어 **열은 사람이 지정한다**(머리글 짐작 → 사람이 «이 열 지정으로 미리보기»로 확정 → summary.mapping). 계정과목은 등록까지, 연간 · 월별은 미리보기 검증까지.
+
+- **열 지정 저장은 finance_imports.summary.mapping**(새 표 없음) — 다음 업로드는 같은 회사 · 종류의 가장 최근(취소 제외) 확정 지정을 **시트 · 머리글 행 · 지정한 열의 머리글 글이 전부 같을 때만** 다시 쓴다(시트가 하나면 시트 이름은 달라도 됨). 다른 선택지: 표 finance_import_mappings(0051+ · DB 리뷰) / 머리글이 달라도 불러오고 경고(엉뚱한 열을 확정할 위험이라 버림). 제목 행이 한 줄 늘어 머리글 행이 밀리면 다시 쓰지 않는다 — 근처 행을 찾아 맞추는 것은 나중.
+- **등록은 확정한 지정으로만** — 서버가 summary.mapping과 화면이 보낸 지정이 같은지(sameMapping) 보고, 원본을 다시 읽어 sha256 · 계획을 처음부터 다시 만든다. summary는 만든 사람이 PostgREST로 고칠 수 있는 칸이지만 «그 사람의 선택»이라 화면 값과 같은 무게다(금액 · 행은 늘 원본에서).
+- **[0051에서 해소]** ~~계정과목 등록은 한 트랜잭션이 아니다~~ — 이제 ecount_accounts_import 한 번. 옛 기록: (RPC 없음 — 0051+): live는 감사 → 새 코드 insert 한 문장(전부 아니면 전무) → 이름 바꿈마다 감사 + update → committed. 이름 바꿈 도중 끊기면 일부만 바뀌고 업로드는 draft로 남는다 — 다시 미리보기하면 «같음»으로 모여 이어서 등록된다. 감사는 새 코드 묶음 한 줄(코드 목록) + 이름 바꿈 한 줄씩(createAccount는 계정마다 한 줄 — 수백 줄 업로드라 묶었다).
+- **[0051에서 해소]** ~~committed 전이는 앱이 PostgREST로~~ — 사람의 with check가 draft · cancelled뿐. 옛 기록: (commitFinanceImport) — 0050 리뷰 M-1 «빈 committed»와 같은 구멍이 그대로다. 0051 RPC가 commit을 맡으면 정책을 좁힌다.
+- **있는 계정은 분류도 사용여부도 안 바꾼다** — «사용안함»은 새 코드에만 active=false로 싣는다. 있는 계정의 사용여부 차이는 아직 경고도 없다(다음).
+- **분류 제안 규칙**: 구분 열 > 코드 대역(K-GAAP 세 자리 · 네 자리면 앞 세 자리) > 이름 낱말. 구분 열과 코드 대역의 갈래(자산/부채/자본/수익/비용, 영업외는 둘 다와 맞음)가 다르면 «모순»으로 막고 사람이 고른다. 대역 표는 ECOUNT 기본 계정 캡처로 확인 필요.
+- **차단 중 화면에서 못 푸는 것**: 파일 안 중복 코드 · 코드 빈 줄 — 파일을 고쳐 다시 올려야 한다(줄 빼기 선택은 없음).
+- **[0051 블록에서 해소 — 줄마다 고르기]** ~~연간 — 이름이 계정 둘 이상과 맞으면 차단~~(계정코드 열을 지정하라고 안내). 설계서의 «모호하면 사람이 고름»(줄마다 계정 고르기)은 안 했다 — 등록 단계에서.
+- **연간 — 당기 금액은 한 열** — K-GAAP 양식처럼 «당기»가 두 칸(내역 · 합계)이면 사람이 한 칸만 고르고 다른 칸의 금액은 안 읽는다. 열 구성 캡처로 확인 후 «두 칸 중 찬 쪽» 규칙을 넣을지 정한다.
+- **차감 계정(감가상각누계액 · 대손충당금)은 파일이 음수 · 괄호로 적었을 때만 뺀다** — 양수로 적고 «차감»으로만 보이는 양식이면 자산총계 대조가 막힌다(캡처 확인 후 이름 규칙 추가).
+- **혼자 선 머리 = 계정 줄**(«Ⅸ. 법인세비용»), **로마숫자가 붙은 이익 · 합계 줄 = 이익 · 합계**(«Ⅲ. 매출총이익»), **계정과 안 맞는 묶음 이름 = 소계**(«(1) 당좌자산»). 아래 줄 없이 «Ⅰ. 매출액»만 금액을 달면 소계로 보고 매출이 안 실려 대조가 막힌다(드묾).
+- **영업외 수익/비용은 소속 머리(«영업외수익» · «영업외비용»)로, 없으면 이름 낱말로** 가른다 — 대조에만 쓴다(부호는 등록 RPC가 계정 구분으로).
+- **월별 — 마감 달 · 확정 달은 원장 전체 읽기(loadFinanceLedger)로 판정** — live에서 무겁다. 계정 목록도 같은 길로 읽는다 → 가벼운 listAccounts(회사) · lastClosed 조회를 repo에 두는 것은 다음. 공식 결산 잠금은 basis 구분 전이라 모든 활성 결산을 센다(지금은 전부 세무사 확정).
+- **월별 — 재무상태표 계정이 섞이면 경고만**(등록 단계에서 막을지 정한다) · 월 머리글의 해(2025-01)와 지정한 해가 다르면 경고가 없다(연간만 있음) · 대응 계정(«ECOUNT 월별손익 대응»)은 등록 RPC와 같이.
+- **누계(YTD) → 당월은 1월부터 빈 달 없이 지정했을 때만** — 빈 칸 달은 그대로 빈 칸, 다음 달은 마지막 누계를 뺀다. 당월/누계는 제목 · 머리글의 «누계»로 짐작만 하고 사람이 고른다(가장 중요한 확인).
+- ~~«△1,000» · «-» 칸은 여전히 오류~~ → 2026-10-04: «△» 음수 · «-»/«–» 단독 0으로 연다(아래 0051 절).
+- **머리글 행은 위 30행에서만 고른다** · 열 지정 화면 격자(위 30행 글)는 화면으로 보낸다(금액 원문 포함 — 본인 파일 · summary에는 안 남김).
+- **견본 xlsx는 저장소에 두지 않는다** — `ECOUNT_SAMPLE_DIR=<폴더> npm run check:ecount-import`가 계정 · 계정(clean) · 연간 · 월별 · 월별 누계 다섯 개를 쓴다.
+- **흐름이 열리면 업로드 단이 한 줄 전체(lg:col-span-3)를 차지한다** — 표가 넓어서. 다른 선택지: 별도 상세 화면(/import/[id]).
+
+## 2026-10-04 — ECOUNT 0051 등록 RPC
+
+0050이 남긴 구멍(위 «0050» 절의 «0051에서 …» 줄 · «열 지정» 절의 한 트랜잭션 · committed · 연간 모호)을 닫고, 계정과목 · 연간 등록을 RPC 한 번으로 했다. 월별은 아직(아래).
+
+**고른 것(다른 선택지 — 버린 이유)**
+- **헤더 · 줄 직접 insert는 정책을 지우고 force를 내려 definer RPC로만** — 다른 선택지: force 유지 + 정책을 «RPC 안에서만» 통과하게(트랜잭션 GUC 표시 — 호출자가 set_config로 위조 가능, 버림) · insert 정책을 basis로만 좁히기(균형 · 감사 없는 직접 insert가 그대로라 구멍이 안 닫힘).
+- **official_statement_save도 definer로**(몸통 맨 앞에서 can_keep_books · AIAgent/Integration 거부) — 정책을 지우면 invoker 함수도 못 넣는다. 다른 선택지: 세무사 저장만 정책을 남기기(그 정책이 곧 구멍이다).
+- **supersede(update) 정책도 지웠다**(DEFERRED 목록에는 insert만 있었다) — 사람이 PostgREST로 활성 결산을 supersede만 하면 «그 해 확정 없음»이 되어 월별 잠금이 풀린다. 두 RPC 안에서만 supersede한다.
+- **accounts · audit_log의 force는 그대로** — definer 안에서도 호출자의 auth.uid()로 정책을 다시 타고, 몸통이 이미 can_keep_books를 봤으니 같은 답이다. 다른 선택지: accounts force도 내리기(필요 없는 표를 넓힌다).
+- **판정은 도우미 하나(finance_import_claim)에 · 순서는 사람/활성 → 없음(못 읽으면 없음) → 본인 → 쓰기 권한 → ECOUNT 회사 → draft → 종류 → 해시** — dummy도 같은 순서 · 같은 낱말. 다른 선택지: RPC마다 복사(두 벌이 어긋난다).
+- **ECOUNT 회사 판정은 DB 함수 ecount_code_business(목록 ['biz_dy'])** — 앱 ECOUNT_CODE_BUSINESSES와 check-migrations가 대조. 다른 선택지: businesses 표에 칸(enum · 마이그레이션 · 화면이 늘어난다 — 회사 하나라 과함).
+- **감사 note · ECOUNT 결산 memo는 DB가 업로드 줄에서 만든다**(ecount_audit_note — 앱 ecountAuditNote와 같은 글, check-migrations 대조). 다른 선택지: 앱이 note를 보냄(호출자가 감사 문구를 고른다 — 버림).
+- **연간 감사도 «먼저»** — 새 결산 id를 시퀀스에서 먼저 받고(overriding system value) 감사 줄을 앞에 쓴다. 다른 선택지: official_statement_save처럼 뒤에(한 트랜잭션이라 결과는 같지만 HANDOVER ③ 순서를 지킨다).
+- **RPC가 sha256을 다시 받는다**(p_file_sha256 = 서버가 방금 다시 읽은 파일) — 저장된 해시와 다르면 거부. 다른 선택지: 해시 있음만 확인(앱의 비교 하나에만 기댄다).
+- **계정과목: 이름 바꿈은 «from»이 지금 장부 이름과 같을 때만**(account_changed) · 새 코드가 그 사이 생겼으면 account_exists — 둘 다 아무것도 안 쓰고 멈춘다. 다른 선택지: 덮어쓰기(감사 before가 거짓이 된다).
+- **바뀔 것이 없는 계정과목 업로드(전부 «같음»)도 committed** — 다른 선택지: 거부(사람이 할 일이 «취소»뿐이라 어색하다).
+- **연간 원장 부호는 앱이 정한다**(annualLedgerLines — 자산 · 비용 +, 부채 · 자본 · 수익 −, 영업외는 소속 머리) — 영업외 수익/비용이 같은 non_operating이라 DB가 다시 정할 수 없다. DB는 균형(자산+부채+자본=0) · 한 계정 한 줄 · 장부에 있는 계정만 다시 본다. 다른 선택지: 파일 금액 그대로 넘기고 DB가 부호(영업외를 못 가른다).
+- **연간: 마감된 달(closings)은 막지 않는다** — 연간은 원장(전표)에 손대지 않는 별도 층이고(설계서 0-2), 연간의 «확정»은 세무사 결산(accountant)이라 그것이 덮은 해만 거부. 다른 선택지: 그 해 어느 달이든 마감이면 거부(자체 장부 마감과 ECOUNT 잠정 결산은 다른 층 — 막을 이유가 없다).
+- **세무사 확정 «해»만 막는다(분기 결산은 안 막음)** — 미리보기(officialKeys가 year만)와 같은 판정. 다른 선택지: 그 해의 분기 확정도 막기(설계서 «세무사 확정이 덮은 해»가 연 단위라 따랐다).
+- **listOfficialStatements 기본은 세무사 확정만**(basis는 앱에서 거른다 — 0050 전 DB에 칸이 없어서 .eq를 쓰지 않는다) — 월별 잠금 · 기준 문구가 ECOUNT 잠정을 세지 않게(0050 리뷰 M-5). 다른 선택지: 부르는 곳 넷에서 각각 거르기(하나 빠뜨리면 잠정이 월을 잠근다).
+- **연간 모호 이름 → 줄마다 고르기**: 후보는 서버가 원본 + 지금 장부로 다시 만들고, 고른 값(pickKey «시트!행» → 코드)이 그 줄의 후보일 때만 쓴다. 고를 때마다 서버 미리보기를 다시 만든다(합계 대조까지). 고른 값은 summary.picks에 남겨 이어 가기에서 그대로. 다른 선택지: 화면에서만 풀고 등록 때 한 번 판정(사람이 합계 대조를 못 보고 등록한다).
+- **한 계정에 줄 둘이면 막는다**(미리보기 · RPC 둘 다) — 다른 선택지: 더해서 한 줄(두 번 세는 실수를 숨긴다).
+- **셀 «△»/«-»는 ECOUNT 칸(parseEcountNumber)만** — paste.ts(손으로 붙여 넣기)는 그대로. 다른 선택지: paste.ts도 같이(지운 줄로 알고 «-»를 넣은 칸이 0원으로 확정된다). «△(100)» · «△-100»(부호 두 번)은 오류.
+- **0050 검사(ecountImport)는 0050까지만 올린 DB로 돈다**(applyAll upTo) — 0050이 선 순간의 모양을 지키고, 0051 뒤 모양은 ecountImportRpc가 잰다. 다른 선택지: 0050 검사를 0051에 맞춰 고치기(0050의 기록이 사라진다).
+- **0047 검사의 «거부» 판정에 books_forbidden을 더했다** — official_statement_save가 정책 대신 몸통에서 42501로 거절한다(같은 거부).
+- **definerUnderNonBypassOwner의 force 카탈로그(표 여섯)에는 안 넣고 0051 전용 실험을 따로 세웠다**(ecountRpcUnderNonBypassOwner — 소유자 넘김 → 세 RPC 성공 → official_statements에 force를 되살리면 RLS 거부 대조군). 다른 선택지: 기존 실험에 표 둘을 더하기(그 실험의 시드가 0051 사람들과 섞인다).
+
+**0051 리뷰 반영(2026-10-04, 0051 미적용이라 파일을 그 자리에서 고침)**
+- **m-1 이름 바꿈 경쟁**: update도 `btrim(a.name) = btrim(from)`을 다시 대고, 행 수가 모자라면 `account_changed`(books_forbidden 아님). 공백만 다른 바꿈은 계획에서 빠진다(감사 · 쓰기 없음). dummy도 같다. 다른 선택지: accounts 행을 for update로 먼저 잠그기(같은 효과에 잠금이 하나 더).
+- **m-2 해**: `official_statement_import_ecount(p_import_id, p_file_sha256, p_period_key, p_lines)` — 앱이 미리보기에서 확정한 해를 보내고 업로드의 period_key와 다르면 `import_changed`.
+- **m-3**: 23505 · official_statements_one_active · official_statement_immutable → «다른 사람이 같은 해 결산을 방금 등록했습니다. 새로 고친 뒤 다시 확인해 주세요.»(import-errors.ts · statements.ts).
+- **m-4 (그대로 둠)**: official_statement_save는 여전히 감사를 **나중에** 쓴다 — 한 트랜잭션이라 결과는 같고, 0020 본문을 그대로 두는 쪽을 골랐다.
+- **m-5 반올림**: 두 함수 다 줄마다 `round(x, 2)` 뒤 균형을 재고 그 값으로 줄을 넣는다. dummy는 센트 정수(0에서 먼 쪽 반올림)로 같은 계산. 앱의 연간 금액은 원 단위 정수라 영향 없음. 다른 선택지: 소수 셋째 자리 이상이면 거부(엑셀 수식 결과의 부동소수 꼬리를 사람이 못 고친다 — 버림).
+- **m-6**: 0051의 definer 셋(ecount_accounts_import · official_statement_import_ecount · official_statement_save)은 `search_path = public, pg_temp`. 예전 마이그레이션의 definer는 손대지 않았다.
+- **m-7 배포 순서**: 0051 전 앱은 ecount_excel 행을 확정으로 센다(basis를 모름). 순서는 **DB → 앱**이고, ecount_excel 행이 생긴 뒤에는 앱을 이 릴리스 아래로 되돌리지 않는다.
+- **감사 문구 정규식 · UTF-16 차이(겉모양만)**: DB `[[:cntrl:]]` · `\s` · char_length와 앱 정규식 · `.length`는 C1 제어 문자 · 유니코드 공백 · BMP 밖 글자에서 다를 수 있다. live 문구는 DB가 만들어서 dummy 문구만 다를 수 있다.
+- **I-1 production 사전 확인(0050+0051 올리기 전, 읽기만)**: `select l.statement_id, l.business_id, s.business_id from official_statement_lines l join official_statements s on s.id = l.statement_id where l.business_id <> s.business_id;` — **0행이어야 한다**(아니면 0051의 복합 FK가 실패한다).
+
+**못 한 것 · 남은 일**
+- ~~**월별 RPC(ecount_monthly_import)**~~ → **[0052에서 해소]** 아래 «2026-10-04 — ECOUNT 월별 등록 RPC 0052».
+- **ECOUNT 잠정 연간을 보여 주는 화면 없음** — 등록은 되고 기본 목록에서는 빠진다(월별 잠금에 안 끼게). 공식 재무제표 화면에 «ECOUNT 엑셀(잠정)» 줄을 그리는 것은 다음.
+- **production 기존 줄의 복합 FK** — official_statement_lines의 business_id가 헤더와 어긋난 줄이 있으면 0051이 실패한다(지금까지 줄은 official_statement_save 하나가 같은 회사로만 넣어서 없을 것). staging 적용 때 확인.
+- **dummy에 감사 기록이 없다** — live는 RPC 안에서 남긴다. dummy는 콘솔 note뿐(다른 dummy 쓰기와 같은 한계).
+- **finance_imports.summary는 만든 사람이 draft일 때 PostgREST로 고칠 수 있다**(mapping · picks) — 둘 다 «그 사람의 선택»이고 금액은 늘 원본에서 다시 읽으니 그대로 둔다(0050 «열 지정» 절과 같은 판단).
+- **next build · 화면 dummy 점검(:3100)은 하지 않았다** — 이 블록은 typecheck · lint · check 스크립트까지(서버는 컨트롤러가).
+
+## 2026-10-04 — ECOUNT 월별 등록 RPC 0052
+
+`ecount_monthly_import(p_import_id, p_file_sha256, p_period_key, p_basis, p_months)` → `{posted, corrected, unchanged, months}` 한 트랜잭션. 월별 등록 버튼을 열었다(live · dummy 같은 판정 · 같은 거부 낱말 · `registerEcountMonthly`). 0050 «0051 월별 RPC가 챙길 것» 세 줄과 «업로드 전표 잇기 · 내리기»를 이 RPC가 지킨다.
+
+**고른 것(다른 선택지 — 버린 이유)**
+- **대응 계정 = `ECOUNT-PL` «ECOUNT 월별손익 대응» · equity · cash_flow operating · source ecount, 없으면 RPC가 감사 → 만든다** — 그 달 손익 합(= −순이익)의 반대쪽 한 줄. equity라 현금 · 채권 · 채무 KPI를 안 건드리고, operating이라 현금흐름표가 순이익을 되돌려 «현금 증감 0»으로 검산이 맞는다. 다른 선택지: 가지급금(1360, 월별 그리드의 미분류) — 자산이라 재무상태표가 매달 커지고 «미분류 차액» 경고와 섞인다 · cash_flow null — 현금흐름표 검산 불일치 · 숫자 코드(39xx) — ECOUNT 코드와 부딪힐 수 있다.
+- **누계 → 당월은 앱이 바꾸고(ytdToMonthly) DB는 basis가 미리보기에서 확정한 열 지정(summary.mapping.basis)과 같은지만 본다**(다르면 `import_changed`). 다른 선택지: 누계 원값을 DB로 보내 DB가 빼기(같은 규칙이 SQL · TS 두 벌 — 빈 달 처리까지 어긋날 자리가 생긴다) · 검사 없음(사람이 본 표시와 실은 금액이 갈라져도 모른다). 앱 변환은 check-ecount-import(누계판 등록 줄 = 당월판 등록 줄)와 check-migrations(ytdToMonthly 결과가 장부의 달 금액)가 잰다.
+- **재업로드 = `post_correction`을 그대로 부른다**(역분개 + 정정분개 · 같은 호출자 · 같은 트랜잭션) → 옛 줄 supersede → 정정분개를 새 활성 줄로. 다른 선택지: 역분개를 RPC가 손으로(정확한 반대 모양을 두 벌 유지) · 옛 전표를 지우기(0016 위반).
+- **내용이 같으면 건너뛴다**(계정 · 차대 · 금액의 모음이 같을 때 — 전표 · 감사 없음, 결과 unchanged). 다른 선택지: 늘 정정(같은 파일 두 번에 정정 전표가 쌓인다).
+- **활성 업로드 전표가 이미 역분개됐으면 누가 했든 `ecount_month_reversed`로 멈춘다** — 본인이 한 정확한 역분개도 이어 처리하지 않는다(그 정정분개가 손 전표로 남아 있으면 새 업로드와 두 번 센다). 다른 선택지: 본인의 정확한 역분개면 줄만 내리고 이어 싣기(DEFERRED 0050 «이어 처리») — 정정분개 쪽 겹침을 RPC가 판단할 수 없어 버림.
+- **재무상태표 계정이 섞이면 거부(`ecount_monthly_bs_account`) · 미리보기도 경고 → 차단** — 월별 손익 파일에 BS가 맞으면 거의 이름 오매칭이다. 다른 선택지: BS 줄만 빼고 싣기(사람이 모르게 줄이 사라진다).
+- **비활성 계정 · 한 달 한 계정 두 줄 · 대응 계정 줄도 미리보기가 먼저 막는다**(RPC도 거부) — 등록 단계에서 처음 알게 하지 않는다. 연간과 같은 «한 계정 한 줄».
+- **회사 단위 advisory lock**(`pg_advisory_xact_lock(hashtext('ecount_monthly_import:'||회사))`) — 같은 회사 월별 등록 둘이 같은 달 활성 줄 · 대응 계정을 동시에 만지지 않게. 기다린 쪽은 앞 등록이 끝난 장부를 보고 정정으로 이어 간다. 다른 선택지: 활성 줄 `for update`만(없던 달은 잠글 줄이 없어 unique 23505로 깨진다 — 그 경우 문장은 `SAME_MONTH_RACE_MESSAGE`로 남겨 뒀다).
+- **원본 확인 = 첨부 줄 `for update` · 정확히 하나 · 올린 사람 = 만든 사람 · 같은 회사 · xlsx · Storage 객체 있음**(`ecount_original_missing`). sha256은 0051 claim이 p_file_sha256(서버가 방금 다시 읽은 파일)과 대조. 객체 확인은 소유자에게 `storage.objects` select 권한이 있을 때만(아래 «남은 일»).
+- **마감 달(그 달 이후 closings 포함) `closed_period` · 세무사 확정(accountant 활성 · 해 또는 분기)이 덮은 달 `official_month_locked`** — 미리보기(lastClosed · isLocked)와 같은 판정. ECOUNT 잠정 연간(ecount_excel)은 월을 잠그지 않는다. 다른 선택지: 마감 달은 당월 자동 정정(설계서 B-③ — 손익이 엉뚱한 달로 간다, 버림).
+- **금액 있는 달만 보낸다**(monthlyLedgerMonths) — 0원뿐인 달은 손대지 않는다. 다른 선택지: 지정한 달 전부(빈 달이 앞 업로드를 지우는 것인지 «자료 없음»인지 파일만으로 가를 수 없다).
+- **감사**: 대응 계정 만들 때 한 줄(accounts) + 달마다 한 줄(entity `finance_import_slips` · `회사:YYYY-MM`, 정정이면 before에 옛 전표 · 줄) — 전표 번호는 insert 뒤에 정해져 entity를 달로 잡았다. 정정이면 post_correction이 자기 감사 줄을 하나 더 남긴다. note는 DB `ecount_audit_note('monthly', 달, …)`.
+- **finance_import_slips의 0050 정책(사람의 insert · supersede)은 그대로** — RPC는 소유자로 쓰지만(force 없음) 실험에서 force를 걸어도 같은 결과(정책과 RPC가 같은 말). 사람이 «정확한 역분개 뒤 줄 내리기»를 PostgREST로 하는 길은 남는다(아래).
+- **수기 전표 경고에서 업로드 전표(적요 «[ECOUNT 엑셀]» · «[역분개] [ECOUNT 엑셀]»)를 뺀다** — 지난 업로드는 재업로드가 정정하므로 겹침이 아니다. 적요는 사람이 흉내 낼 수 있지만 경고 하나에만 쓴다. 다른 선택지: finance_import_slips를 읽는 repo 메서드(다음).
+- **[리뷰 반영] 누계 파일의 빈 칸 = 누계 0(파일이 그 달을 말할 때)** — «말하는 달» = 계정 줄 중 하나라도 그 달 칸이 찬 달. 그 안의 빈 칸은 0으로 보고 앞 달 누계를 뺀다(1월 100 · 2월 빈 칸 · 3월 50 → +100 · −100 · +50 / 11월까지 100 · 12월 빈 칸 → 12월 −100). 열 전체가 빈 달만 «자료 없음». 합계 열 대조도 «마지막으로 말한 달의 누계(빈 칸 = 0)». 미리보기가 바꾼 값을 그대로 보인다. 다른 선택지(첫 구현): 빈 칸 = 자료 없음 · 다음 달이 마지막 누계를 뺌 — 줄어든 누계(환입 · 0으로 돌아간 계정)를 놓쳐 그 달 손익이 사라졌다.
+- **[리뷰 m-1] Storage 객체 확인은 닫힌 쪽으로 실패** — storage.objects가 있는데 소유자가 select 못 하면 `ecount_original_missing`. storage 스키마가 아예 없을 때만 건너뛴다(Storage 없는 Postgres). staging 확인: postgres는 select 권한 있음 · 그 표 force 아님. 다른 선택지(첫 구현): 권한이 없으면 조용히 건너뛰기(확인 못 한 원본을 «있음»으로 본다).
+- **import_changed 문장을 «해나 당월/누계 표시가 바뀌었습니다»로 넓혔다**(연간 · 월별 같이 쓴다).
+
+**남은 일**
+- **`ecount_month_reversed`로 멈춘 달을 푸는 화면이 없다** — 그 역분개를 세운 사람이 PostgREST로 `finance_import_slips.superseded_at`을 채우면(0050 supersede 정책 — 정확한 반대일 때만) 다음 업로드가 새 전표로 싣는다. 화면 · 안내는 다음. 가짜 역분개(0016 범위 밖 구멍)로 막힌 달은 그 길도 없다 — 장부 블록에서.
+- **0원이 된 달**(앞 업로드엔 금액, 새 파일엔 전부 0)은 되돌리지 않는다 — 사람이 그 달 업로드 전표를 전표 화면에서 정정한다. 미리보기에 «그 달 활성 업로드 전표가 있음(정정될 것)» 표시도 아직 없다.
+- **[리뷰 m-2] close_period는 회사 단위 advisory lock을 잡지 않는다** — 월별 등록(lock 잡음)과 같은 달 마감이 동시에 돌면 마감 스냅샷 뒤에 전표가 끼어들 수 있다(0016부터 수기 전표 입력과도 같은 경쟁 — closed_period 트리거는 커밋 전 마감을 못 본다). 고치는 곳은 장부 블록(close_period · post_journal_entry가 같은 lock을 잡게).
+- **[리뷰 m-3] 금액이 빠진 달은 옛 업로드 전표가 그대로 남는다**(위 «0원이 된 달»과 같은 줄) · 수기 전표 경고에서 업로드 전표를 적요 머리로 빼는 것은 겉모양뿐(적요는 사람이 흉내 낼 수 있다 — 판정에는 안 쓴다).
+- **dummy 전표 금액은 정수만**(entryProblem) — DB는 소수 둘째 자리까지 받는다. ECOUNT 금액은 단위를 곱한 뒤 반올림해 정수라 화면에서는 갈리지 않는다.
+- **dummy에 감사 · advisory lock이 없다**(콘솔 note뿐 · 한 프로세스).
+- **staging 적용 · 리허설은 하지 않았다** — 0052는 파일 · PGlite까지. 적용 순서는 0051과 같다(DB → 앱). 0052 전 앱은 월별 등록 버튼이 잠겨 있어 DB가 먼저 가도 안전하고, 0052 전 DB에서 새 앱이 등록을 누르면 PGRST202 → «DB 반영 전» 문장.
+
+## 2026-10-06 — ECOUNT 마무리 0056 · 업로드 칸 끌어다 놓기 · 바로가기 · 출처 꼬리표
+
+브랜치 `feat/ecount-import`를 master(86460dd — FileDropZone · AI 어시스턴트 · --include-all) 위로 다시 얹었다(충돌은 DEFERRED · package.json 두 곳 — 둘 다 남김). 0053은 비고 0054 · 0055는 결재 브랜치 몫이라 새 마이그레이션은 **0056_ecount_finish**.
+
+**해소(위 «2026-10-04 블록» ECOUNT 남은 것 · 0052 «남은 일»)**
+- ~~이어 간 업로드의 거절 문구가 새로 고침에 사라짐~~ → 거절 · 오류 문구도 «진행 중» 목록 단(부모)이 업로드 id별로 들고 그린다(`EcountImportFlow onError` · DraftItem `note`). 줄이 다시 그려지거나 목록에서 빠져도 «처리하지 못함 · 파일 — 이유»가 닫을 때까지 남는다. 다른 선택지: 흐름 안 상태 그대로(원인 미상 재마운트에 또 사라진다).
+- ~~월별 첫 등록은 감사가 finance_import_slips 줄만~~ → 0056: 첫 등록도 전표 감사 한 줄(entity `journal_entries` · 전표 번호 · post_journal_entry와 같은 after 모양 · note «업로드 문구 — 전표 M…»). 달 감사는 그대로 먼저. 다른 선택지: 달 감사 entity를 전표 번호로 바꾸기(번호는 insert 뒤에 정해진다 · 0052 감사 모양이 바뀐다).
+- ~~업로드 전표 출처가 «자체»~~ → 전표 화면 꼬리표 «ECOUNT 엑셀»(`slipOriginLabel`) — 판정은 적요가 아니라 `finance_import_slips`(원 전표 · 정정분개, 활성 · 내려간 줄 모두) + 그 전표를 뒤집은 역분개. 새 repo 메서드 `listFinanceImportSlips`(0050 전 DB면 빈 목록). 미리보기의 «수기 전표 경고»도 같은 판정으로 바꿨다(전에는 적요 정규식). journal_lines.source는 그대로 manual(0016 가드 — 바꾸지 않는다).
+- ~~빈 달이 된 재업로드는 옛 전표를 안 내린다(m-3)~~ → 0056: `lines = []`인 달 = «파일이 말하는데 금액이 없는 달» → 그 달 활성 업로드 전표를 `post_correction(줄 없음)`(역분개만) + 옛 줄 supersede(새 활성 줄 없음, 결과 `reversed`). 활성 전표가 없으면 아무것도 안 함(`empty`) — **리뷰 I-2로 바뀜: 아래**. 이미 역분개됐으면 `ecount_month_reversed`. 마감 · 확정 달 판정은 **손댈 달만**(금액 있는 달 + 되돌릴 전표가 있는 빈 달). 대응 계정은 금액 있는 달이 있을 때만 만든다.
+  - ~~**«말하는 달»** = 계정 줄 중 하나라도 칸(0 포함)이 찬 **마지막 달까지**~~ → 리뷰 I-1: 첫 칸 달부터 + 머리 기간 안(`spokenMonthIndexes`). 그 안의 전부 0 · 빈 칸인 달이 금액 없는 달. 마지막 달 뒤의 빈 열은 «자료 없음»(손대지 않음). 누계는 ytdToMonthly가 이미 0으로 바꾼다(누계가 그대로인 달 = 당월 0). 다른 선택지: 칸이 하나라도 찬 달만(ECOUNT는 0을 빈 칸으로 둬서 «전부 0이 된 달»을 못 본다) · 지정한 월 열 전부(아직 안 온 달의 지난 전표를 지운다).
+  - **앱은 역분개할 빈 달만 보낸다**(미리보기 `reversals` — 말하는 빈 달 + 활성 업로드 전표가 있는 달). 지난 업로드 없는 빈 달은 안 보낸다 — 0056 전 DB(0052)는 빈 달을 `ecount_plan_invalid`로 거부하므로 첫 릴리스(업로드 전표 0)에는 영향이 없다. 미리보기는 그 달에 경고(«역분개합니다»), 마감 · 확정 달이면 차단.
+- ~~close_period가 회사 advisory lock을 안 잡는다(m-2)~~ → 0056: `finance_books_lock_key(회사)` = **0052 열쇠 그대로**(`hashtext('ecount_monthly_import:'||회사)`) — close_period(권한 판정 바로 뒤)와 ecount_monthly_import가 같이 잡는다. 배포 순간 0052판 등록과 0056판 마감도 같은 열쇠라 서로 기다린다. 다른 선택지: 새 열쇠 'books:'(배포 순간 서로 못 본다). check-migrations: 열쇠 = 0052 값 · 두 함수 본문 · close_period가 실제로 그 advisory 잠금을 쥔다(pg_locks).
+
+**고른 것 · 남은 것**
+- **수기 전표(post_journal_entry · 손 post_correction)는 회사 잠금을 안 잡는다** — 0016부터의 같은 경쟁(커밋 전 마감을 트리거가 못 본다). 장부 블록에서 같은 열쇠로.
+- **업로드 칸 = 공통 FileDropZone**(max 1 · `checkEcountFile` — 이름 규칙(.xls · CSV는 «xlsx로 저장» 안내) + 20MB · 빈 파일) · 놓자마자 올림(«올리기» 버튼 없앰). 바이트 앞머리는 올리기 직전, 서버가 한 번 더. 사진 찍기 없음. 다른 선택지: 고르기 + «올리기» 두 걸음 유지(공통 부품과 모양이 갈린다).
+- **«ECOUNT 업로드» 바로가기**(그룹 재무 · 회사 재무 머리글, `ecountUploadShortcuts`) — canImportEcount(ECOUNT 회사 + 재무 쓰기: Chairman · GroupCFO · 그 회사 BusinessCEO · '/finance/<회사>' 쓰기 줄) **AND 볼 수 있는 회사**. 읽기 · 마감만 받은 직원 · 시스템 계정 · 다른 회사 줄에는 없다. 그룹 재무는 «DY ECOUNT 업로드», 회사 재무는 «ECOUNT 업로드». 남은 것: BusinessCEO 역할은 화면이 회사 범위를 모른다(목록이 DY를 보여 주면 바로가기도 선다 — DB가 막는다, BooksNav와 같은 한계).
+- **`*.xlsx` · `*.xls`를 .gitignore에** — 실제 장부 파일이 저장소에 들어오지 않게. 실제 파일은 저장소 밖 `C:\Users\Edison Hong\projects\ecount-real\`(docs/onboarding/ecount-real-files.md — 2026-10-06 현재 폴더 없음). 개요만 찍는 `scripts/ecount-outline.ts`(읽기만).
+- **릴리스 전 확인 SQL** `docs/onboarding/ecount-release-precheck.sql`(select만) — check-migrations가 «select만 · 0049 DB와 전부 올린 DB에서 begin read only로 돈다»를 잰다. 0050 전 표는 to_regclass + query_to_xml로만 읽는다.
+- **배포 순서는 그대로 DB → 앱**. 0056 전 DB에 새 앱: 역분개할 빈 달이 있을 때만 등록이 거부된다(그 외 동작 같음).
+
+**0056 리뷰 반영(2026-10-06, staging 적용 전이라 파일을 그 자리에서 고침)**
+- **I-1 «말하는 달»을 좁혔다**: 첫 칸이 찬 달부터 마지막 칸이 찬 달까지 + 시트 머리 기간(«YYYY/MM/DD ~ YYYY/MM/DD», findPeriod)이 있으면 그 안만. 3분기 파일의 1~6월 빈 열은 말하지 않는 달 — 그 달 업로드 전표를 안 건드린다. 그리고 **역분개는 사람의 확인이 있어야 한다** — 미리보기의 «이 달들은 역분개합니다 — 확인» 체크(달 · 전표 번호를 보인다)가 없으면 등록 버튼이 잠기고, 서버도 확인 목록(reversalKey 글)이 다시 만든 역분개와 같지 않으면 거부한다. 다른 선택지: 기간 머리만(머리 없는 파일이 많다) · 확인 없이 경고만(첫 구현 — 사람이 모르는 역분개가 생긴다).
+- **I-2 보지 않은 전표를 뒤집지 않는다**: 빈 달은 `{month, lines: [], reverses: '<미리보기 때 본 활성 업로드 전표>'}`로 간다. RPC는 지금 활성 전표가 없거나 다르면 `import_changed`(detail `ecount_ledger_changed: …`)로 거부 — `reverses` 없는 빈 달 · 금액 있는 달의 `reverses`는 `ecount_plan_invalid`. 앱도 미리보기 때 역분개 목록을 summary.reversals에 적고, 등록 때 다시 만든 목록과 다르면 «미리보기 뒤에 장부가 바뀌었습니다 — 다시 미리보기 하세요»(`LEDGER_CHANGED_MESSAGE`, 거부 낱말 `ecount_ledger_changed`가 import_changed보다 먼저 맞는다). 그래서 0056의 `empty`(활성 전표 없는 빈 달 = 아무것도 안 함)는 없어졌다 — 앱이 그런 달을 보내지 않고, 보내면 import_changed다. 금액 있는 달의 «그 사이 남이 등록함»은 0052 그대로(재업로드 = 정정 — 같은 파일이면 건너뜀). 다른 선택지: 앱 대조만(앱과 RPC 사이 경쟁이 남는다) · DB 대조만(전표 번호 없이 «있음»만 보면 남의 새 전표를 뒤집는다).
+- **m-1 누계 파일의 가운데 빈 열**(첫 · 마지막 말하는 달 사이의 열 전체가 빈 칸)은 막는다 — 그 달 누계를 몰라 다음 달이 두 달 치를 뺀다. 앞쪽 빈 열(누계 0 — 그 달까지 거래 없음)은 막지 않는다.
+- **m-2 (그대로 둠)** closings를 **직접 insert**(0047 closings_books_insert — 마감 권한자)하면 회사 잠금을 안 거친다. 화면 · close_period는 잠금을 잡는다. 직접 insert 정책을 걷거나 트리거로 잠그는 것은 장부 블록에서(수기 전표 잠금과 같이).
+- **m-3 (의도)** 역분개된 달은 그 달 장부가 0이다 — 시트값(06_Dummy_Data)으로 돌아가지 않는다. finance_kpis는 «그 회사-달에 원장 줄이 있으면 원장» 규칙이고, 역분개 두 장도 원장 줄이다. 업로드로 장부에 들어온 달은 장부가 원천이다(CLAUDE.md 데이터 원칙).
+- **m-4 (그대로 둠)** 역분개할 전표에 지금은 비활성인 계정이 있으면 post_correction이 0016 트리거(inactive_account)에 막혀 «비활성 계정에 금액이 있습니다» 문장이 나온다(빈 달인데 금액 이야기) — 드물고 장부는 그대로. 문장을 가르는 것은 다음.
+- **m-5 배포 순서는 DB → 앱**(0050~0052 · 0056 먼저, 앱 push 뒤). 0056 전 DB에 새 앱: 역분개할 빈 달이 있는 등록만 ecount_plan_invalid로 거부(첫 릴리스는 업로드 전표가 없어 해당 없음).
+- **m-6 검사 더함**: 정정분개가 활성인 달을 비우기(그 정정분개를 역분개 · 장부 0) · 빈 달 둘 중 뒤 달이 이미 역분개 → 앞 달 역분개도 안 남음(전부 아니면 전무) · committed summary.result.reversed · 미리보기와 다른 전표 / 이미 비운 달 → import_changed · 3분기 앞쪽 빈 열 · 머리 기간 밖 · 누계 가운데 빈 열.
+
+**0056 재리뷰 반영(같은 날)**
+- **N-1 누계의 앞쪽 빈 열**: 누계 파일은 **1월부터** 말하는 달로 센다(머리 기간으로는 여전히 자른다). 앞쪽 빈 열 = 그 달까지 누계 0 = 그 달 당월 0이라, 그 달에 지난 업로드 전표가 있으면 확인을 거쳐 역분개한다 — 안 그러면 1월 100(지난 업로드) + 2월 150(누계 150 − 0)으로 두 번 센다. 당월 파일은 그대로 첫~마지막 칸(3분기 파일의 1~6월은 안 건드린다).
+- **m-a** 머리 기간의 해 ≠ 열 지정의 해 → 막는다(«파일 머리의 기간(…)이 지정한 해(…)와 다릅니다»).
+- **m-c** 이 파일 밖 달(첫 칸 앞 · 마지막 칸 뒤 · 머리 기간 밖)에 지난 업로드 전표가 있으면 알림 줄 «YYYY-MM: 이 파일 밖 — 지난 업로드 전표 M… 그대로»(AmountsPreview.notes — 막지도 경고하지도 않는다).
+- **m-d** 등록 문의 역분개 판정을 순수 함수 `monthlyReversalProblem`(미리보기가 본 summary.reversals · 지금 다시 만든 것 · 사람의 confirmReversals)으로 빼서 check-ecount-import가 잰다(확인 없음 · 다른 목록 · 글 아님 · 생김 · 사라짐 · 다른 전표 · 망가진 summary).
+
+### 전표 증빙 — 0057 제안, 병합 시점에 확정 (**쓰지 않음 — DB 변경이 필요해서 멈춤**)
+
+요구: 전표(journal_entries)에 증빙 파일(이미지 · PDF, FileDropZone 끌어다 놓기). 올리기 = 그 회사 재무 쓰기 권한자만 · 보기 = 재무 읽기 권한자만 · 마감된 달 = 더하기만(지우기 없음, 권장) · AI 요약 · 외부 전송 제외. 지금 0045 첨부 대상은 initiatives · businesses · documents · decisions · finance_imports뿐이고, 0045 insert는 «대상이 보이면» 올리게 해서 재무 읽기 권한자도 올릴 수 있다 — 그래서 DB가 필요하다.
+
+```sql
+-- 0057_journal_evidence.sql (제안 — 번호는 병합 시점에 확정)
+-- 1) 대상 하나 더 — entity_id = '<business_id>:<slip_no>' (journal_entries PK가 둘이라 한 칸으로)
+alter table attachments drop constraint attachments_entity_check;
+alter table attachments add constraint attachments_entity_check
+  check (entity_table in ('initiatives','businesses','documents','decisions','finance_imports','journal_entries'));
+-- attachment_entity_visible(): when 'journal_entries' then exists (select 1 from journal_entries
+--     where business_id = split_part(p_id, ':', 1) and slip_no = split_part(p_id, ':', 2))   -- 읽기 = journal_entries_read(can_read_books)
+-- attachments_stamp(): business_id := split_part(new.entity_id, ':', 1) (위 exists가 참일 때만 — 아니면 null → 정책이 막음)
+-- 2) 올리기 = 재무 쓰기만 (restrictive insert — 0050 attachments_finance_import_owner와 같은 모양)
+create policy attachments_journal_writer on attachments as restrictive for insert
+  with check (entity_table <> 'journal_entries' or can_keep_books(split_part(entity_id, ':', 1)));
+-- 3) 마감된 달 = 지우기 없음 (restrictive delete + Storage 객체 삭제 정책에 같은 조건)
+create or replace function journal_evidence_deletable(p_id text) returns boolean   -- definer · search_path public, pg_temp
+  -- 세션 있음 AND 그 전표의 달 이후 closings 없음 AND can_keep_books(회사)
+create policy attachments_journal_delete on attachments as restrictive for delete
+  using (entity_table <> 'journal_entries' or journal_evidence_deletable(entity_id));
+-- attachments_objects_delete(storage): ... and (split_part(name,'/',1) <> 'journal_entries' or journal_evidence_deletable(split_part(name,'/',2)))
+-- 4) AI 제외 — DB에서도 (앱 분기가 틀려도 감사 없이 모델을 부르는 길이 없게)
+-- record_attachment_ai_send(): if a.entity_table in ('finance_imports','journal_entries') then
+--     raise exception 'attachment_finance_no_ai' using errcode = '42501'; end if;   -- 0050 finance_imports도 같이 닫는다(지금은 앱만 막는다)
+-- attachments 요약 칸 update도: restrictive update with check (entity_table not in (...) or ai_summary is null)
+-- 5) 등급 = 앱이 «일반»으로 보낸다(DB 기본 «제한»). Vault 거부는 0047 그대로.
+```
+
+화면(0057 뒤): 전표 화면 줄마다 «증빙» 칸(AttachmentsPanel 재사용 · `summarize=false` · 마감 달은 삭제 버튼 없음) · 첨부 라벨 · 경로 표에 journal_entries · check-migrations(쓰기 권한자만 올림 · 읽기 권한자 보기만 · 다른 회사 0행 · 마감 달 삭제 거부 · AI 전송 거부 · anon 잠금). 기존 evidence_url(링크)은 그대로 둔다.
+
+## 2026-10-07 — 0058 자료 받는 입구(블록 1, 브랜치 `feat/intake`, staging · production 미적용)
+
+회장 결정(10-07): 구매(0059) 취소 — 원가 엔진 설계로 대체. 0058의 적재 대상은 문서 하나(`loaded_table in ('documents')`), 0060이 결산 초안을 더한다. §F는 전부 권장안.
+
+- **입구 줄에도 등급 칸(`security_class`)** — 설계서 D에 없음. 읽기 «has_business AND attachment_class_ok»를 첨부 줄을 읽지 않고 판정하려고(첨부 정책 ↔ 입구 정책이 서로를 부르는 원). 같은 값은 첨부 restrictive insert + 커밋 때 제약 트리거가 잰다. 다른 안: definer 함수로 첨부 등급을 읽기.
+- **`intake_move_to_document`는 security definer**(설계서 A1-6은 invoker) — 쓰는 칸(attachments.entity_* · intake_items.loaded_*)이 전부 호출자에게 grant가 없는 칸이라. 판정(활성 · 사람 역할 · 회사 AND 등급 · 0048 can_write_documents · 등급 ≤ 열람 등급 · 등록자 = 본인 · AI 차단 줄은 대표만)은 함수 안에 다 적었다. **Supabase 소유자는 BYPASSRLS라 documents · audit_log의 force는 이 함수에 걸리지 않는다** — 함수 안 판정이 전부이고, check-migrations의 BYPASSRLS 없는 소유자 실험은 보조 확인일 뿐이다(리뷰 I3로 고쳐 적음). 다른 안: 그 칸들을 authenticated에 열고 트리거 + GUC 깃발로 거르기(PostgREST 직접 쓰기 길이 같이 열림).
+- **attachments.storage_path: 생성 칸 → 보통 칸**(`drop expression`, 값 그대로 · stamp가 insert 때 같은 식으로 적고 update 때 고정). 입구 → 문서로 대상을 바꾸면 생성 칸이 경로를 다시 계산하는데 Storage 객체는 SQL로 못 옮긴다. 경로 = «처음 올린 자리». 다른 안: 앱이 Storage move 후 경로 갱신(두 단계 · 실패 창), 또는 재지정 대신 문서가 입구 첨부를 링크.
+- **입구 만들기는 `intake_begin` RPC 하나**(invoker) — 입구 줄 ↔ 첨부가 서로를 가리켜 한 트랜잭션이어야 해서. FK는 deferrable initially deferred, 커밋 때 `intake_items_link_check`가 «그 첨부가 이 줄의 파일인가»를 잰다. 다른 안: attachment_id nullable + 나중에 채우기(그 칸 update grant가 열림).
+- **첨부 삭제 → 입구 줄 cascade**(첨부 삭제는 delete_request 감사에 남는다) · **적재 중인 원본은 삭제 거부**(restrictive). A5 «올린 파일은 지우세요»를 막지 않으려고. 다른 안: on delete restrict(입구 줄이 있는 한 파일을 못 지움).
+- **되돌리기 = 문서 soft delete가 트리거로**(별도 RPC 없음) — 권한은 0048 documents_update(적재한 사람 = 그 문서의 등록자 · 회장). 문서에는 승인 권한(can_approve)이 없어 A3 «그 대상의 승인 권한자»는 해당 없음. 일반 문서 지우기 화면으로 지워도 입구로 돌아온다. 상태는 'proposed'(AI 제안이 없던 줄도 — 지시대로), AI 차단 줄은 no_ai(같은 이유)로(리뷰 I1). 다른 안: 전용 RPC · 제안 없던 줄은 'kept'.
+- **입구에서 온 문서의 storage_url = `/documents/<id>`**(앱 안 링크 — 파일 실체는 그 문서의 첨부). documents.storage_url이 not null이고 DB 검사는 없다(앱 createDocument만 http(s)를 요구). 블록 3이 이 링크를 앱 안 링크로 그린다. 다른 안: storage_url을 nullable로.
+- **AI 제외 DB 문이 막는 것은 제3자뿐(리뷰 I2로 고쳐 적음)**: 감사 줄이 없으면 읽기 통행증이 없어 Storage가 제3자에게 파일을 안 주지만, **올린 사람 · 회장은 통행증 없이 객체를 연다**(0045 attachment_object_visible — 의미는 바꾸지 않음). 그 둘에게는 «record_attachment_ai_send 먼저 → 거부면 멈춤 → 그다음 파일 읽기»라는 앱의 호출 순서(summarize.ts)가 문이다. 다른 안: 0045 객체 정책에서 올린 사람 · 회장 예외를 걷기(지우기 · 내려받기 흐름이 바뀐다 — 하지 않음).
+- **AI 제외 DB 문을 둘 더**: 입구 줄이 no_ai이거나, 사진(image/*)인데 «배합비 아님» 확인이 없으면 `record_attachment_ai_send` 42501 ai_excluded(F4). 스캔 PDF는 DB가 글자층을 몰라 앱이 같은 확인을 요구한다. 제외 목록에 0057 전표 증빙 자리(주석 한 줄).
+- **0057이 서면 주의**: 0058이 entity check · attachment_entity_visible · attachments_stamp · attachment_object_uploadable · record_attachment_ai_send를 0050/0045판에서 다시 만든다. 0057(전표 증빙)이 0058보다 **앞 번호로** 들어가면 0058이 그 case를 조용히 지운다 → 0057은 0058 뒤 번호로 쓰거나, 0058 본문에 그 case를 더한 뒤 들인다.
+- **확인 권한자 = 종류와 무관하게 0048 문서 쓰기**(`intake_can_confirm` — 적재가 문서뿐이라). 0060이 statement → can_keep_books 갈래를 더한다. 종류 바꾸기 · 다시 읽기 = 올린 사람 · 확인 권한자 · 회장.
+- **제안 이력(`proposal_history`)은 jsonb 배열, DB만 덧붙인다**(grant 없음 — 오분류 기록을 앱이 지우지 못하게). 설계서의 jsonb[] 대신 jsonb(배열 검사).
+- **감사**: 종류 확인/바꿈 · AI 제외(이유별) · 배합비 차단 풀림(«대표 확인») · «배합비 아님» 확인은 트리거가, 적재(«입구 ‹item›에서 — AI 제안, ‹역할› 확인» · 제안 없으면 «사람이 분류») · 되돌림은 함수가 남긴다. 배합비 규칙 이름은 DB가 모른다 — 블록 2 앱이 note를 한 줄 더 남긴다. 역할 라벨의 회장은 «대표»(0049; 0046 ai_action_decide는 아직 «회장» — 별건).
+- **입구 줄 읽기에 AIAgent 포함**(첨부와 같은 잣대 — 브리핑 집계). 쓰기는 restrictive 세 짝으로 닫힘. 다른 안: AIAgent 읽기도 닫기.
+- **남긴 틈**: Storage 객체 삭제 정책(0050 attachments_objects_delete)은 그대로 — 문서로 적재된 원본의 객체를 올린 사람 · 회장이 지우는 길은 0045부터 모든 첨부와 같다. TS `ATTACHMENT_ENTITY`에는 'intake_items'를 아직 안 넣었다(블록 2 — 일반 첨부 액션이 입구 대상을 받지 않게).
+- **오류 코드**: intake_already_loaded 23505 · intake_not_ready 55000 · intake_loaded_locked 55000 · intake_kind_missing / intake_title_invalid / intake_attachment_missing 23514 · 권한 · 제외 42501.
+- **배포 순서**: 0058은 0050(finance_imports)을 전제한다 → ECOUNT 릴리스 B(0050~0052 · 0056) 뒤. LATEST_MIGRATION = 0058_intake(0057 파일은 아직 없다).
+- **검증 메모**: typecheck가 처음에 `.next/types/routes.d.ts`(10-06 빌드, ECOUNT 병합 전)가 낡아 `/finance/[business_id]/import` 경로로 실패 — `npx next typegen`으로 다시 만든 뒤 통과(코드 변경 아님, .next는 git 밖).
+
+### 0058 리뷰 1차(2026-10-07) 반영
+
+- **I1 AI 차단은 끈적하다** — 새 칸 `ai_blocked_reason`(grant 없음, stamp만 바꾼다). no_ai에 들어가면 이유가 복사되고, no_ai에서 나가거나 이유를 바꾸는 것은 **이유와 무관하게 대표(또는 세션 없는 SQL)만**(`intake_ai_unblock_forbidden`). 대표가 직접 풀면 차단이 지워지고(감사 «배합비 차단 풀림 / AI 제외 풀림 — 대표 확인»), 대표가 차단 줄을 적재하면 차단이 남아 문서 첨부가 된 원본도 AI로 못 간다. 적재 RPC는 no_ai 줄을 대표가 아니면 거부(`intake_ai_blocked`). 되돌리기는 차단 줄을 no_ai(같은 이유)로. record_attachment_ai_send는 definer 한 비트 `intake_ai_blocked(attachment, mime)`로 재다 — 적재 뒤 입구 줄 RLS가 좁아져도(I4) 빠지지 않게.
+  - **예외 하나(회장 · 코디네이터 결정, 같은 날 바꿈 — 설계서 F3 · F4)**: **not_attested 차단은 올린 사람 본인의 «배합비 아님» 확인이 푼다**(사진 · 스캔본의 1차 문은 올린 사람). 확인 = 본인 줄 · 본인만(`intake_mix_attest_uploader_only` — 문서 쓰기 권한자 · 대표도 남의 줄은 못 누름). 풀리면 ai_blocked_reason을 지우고 감사 한 줄 «배합비 아님 확인 — 올린 사람»(«대표 확인» 줄은 안 남김). mix_ratio · excluded_entity는 확인해도 그대로 — 대표만. 판단: 확인과 같은 update에서 상태를 no_ai로 두면 DB가 'reading'으로 옮긴다(확인 = «읽어도 된다», uploaded로는 못 돌아감 — M1). 다른 안: 'proposed' · 'failed'로 옮기거나 앱이 반드시 상태를 함께 보내게.
+- **I3 판 사슬** — 0038 documents_version이 소유자 권한(BYPASSRLS)으로 «직전 판»을 찾아 못 보는 · 지운 문서에 이어 붙였다. 적재 함수가 그 후보를 `intake_doc_readable`(0026 documents_read와 같은 식 + soft delete 숨김, definer)로 다시 재고 못 보면 supersedes = null · version = 1. **documents_read를 바꾸는 마이그레이션은 이 함수도 같이 고친다**(두 벌 — 다른 안: 판 사슬을 적재에서 아예 끄기).
+- **I4 적재된 입구 줄 읽기** — status = 'loaded'면 + (그 문서가 보이는 사람(attachment_entity_visible — documents RLS) · 올린 사람 · 회장). 올린 사람은 자기 파일의 제안이라 남겼다. 다른 안: 올린 사람도 문서 가시성으로.
+- **M1** — 어느 상태에서든 'uploaded'로 되돌아가기 거부(`intake_status_back_to_uploaded`) — 0045 재업로드 창이 다시 열리지 않게.
+- **M5** — 직접 insert의 storage_path 위조는 stamp가 덮는다 · 직원 update는 grant 없음 · 소유자 update도 stamp가 고정(검사 더함).
+- **M2(그대로 둠)** — 감사 메모의 «AI 제안»은 `proposal is not null`만 보고 적는다. 제안 칸은 올린 사람 · 확인 권한자가 쓸 수 있는 칸이라 «정말 AI가 냈는가»를 DB가 증명하지 못한다(ai_usage_log와 잇지 않음). 다른 안: 제안 칸을 서버 전용 RPC로만 쓰기.
+- **N1(재리뷰, 같은 날)** — no_ai 안에서 **조이기는 이 줄을 고칠 수 있는 사람 누구나**: not_attested → mix_ratio · excluded_entity(차단 칸도 따라 조여진다). 확인 뒤 다시 돌린 결정적 감지가 «배합비로 보임»을 적을 수 있어야 해서다 — 전에는 그 변경이 intake_ai_unblock_forbidden으로 막혀, 올린 사람이 확인하면 reading으로 넘어가 AI로 갔다. 늦추기 · 풀기 · mix_ratio ↔ excluded_entity 변경은 계속 대표만. 확인이 아무것도 풀지 못한 줄(배합비 · 제외 자료)에는 «배합비 아님 확인 — 올린 사람» 감사 줄을 남기지 않는다.
+- **M3(그대로 둠)** — `intake_attachment_loaded(uuid)` · `intake_ai_blocked(uuid, text)`는 첨부 id를 아는 사람에게 한 비트를 알려 주는 definer 함수(오라클)다. 첨부 id는 uuid라 추측이 어렵고 내용은 «적재 중 · 차단» 한 비트뿐이라 위험이 낮다.
+
+### 블록 2–3 — 입구 화면 · 읽기 · 분류 · 문서 적재 · 되돌리기(2026-10-07, 앱만 — DB는 0058 그대로)
+
+- **회사 화면 «첨부» → «자료 받는 입구»(F9).** 0058 전에 회사에 붙인 첨부(entity businesses)는 지우지 않고 그 아래 «이전 첨부»(올리기 칸 없음)로 남긴다. 이니셔티브 · 결재 · 문서의 첨부 칸은 그대로. 다른 안: 이전 첨부를 입구로 옮기기(DB 재지정 길이 없다 — 하지 않음).
+- **읽기 순서**(lib/intake/read.ts): 막힌 줄은 끝 → «읽는 중»(재업로드 창 닫힘) → 올린 사람 · 대표가 아니면 «내려받기» 감사(0045 통행증) → 서버 추출 → **글자층이면 배합비 감지(매번 — 확인 뒤 다시 읽을 때도, 재리뷰 N1)** / 글자층이 없으면 올린 사람의 확인 필요 → 키 없음(dummy는 결정적 가짜 제안) → **record_attachment_ai_send** → **바이트를 다시 읽어 sha256이 같은지** 보고 그 바이트를 AI로 → 모델 한 번(구조 출력) → ai_usage_log(intake_classify). 판단: 감지를 위해 감사 **전에** 서버가 한 번 읽는다(감사 뒤에 읽으면 «보내지 않은 전송»이 감사에 남는다) — 그 바이트는 메모리에서 감지에만 쓰고 버리고, AI로 가는 것은 감사 뒤에 다시 읽은 바이트다. 다른 안: 감사 → 읽기 → 감지(감지에 걸린 파일에도 «외부 AI 전송» 줄이 남음).
+- **대표가 배합비 감지를 «배합비 아님»으로 풀면** 그 한 번은 결정적 감지를 건너뛴다(지분표 · 영양성분표 같은 잘못 걸음 — 안 그러면 같은 규칙에 영영 다시 걸린다). 모델의 mix_ratio 판정은 그대로 건다.
+- **분류에 보내는 글은 앞 6만 자**(요약과 달리 구간 나누기 없음 — 종류 · 표지 칸이면 앞부분으로 충분, 비용). 넘으면 truncated로 알려 확신을 낮추게 한다. 사진 · 스캔 PDF는 0045 요약과 같은 블록(image · document).
+- **실패 이유는 줄에 남지 않는다** — 0058에 칸이 없다(DB를 바꾸지 않기로). 올릴 때 · «다시 읽기» 때는 «이 파일은 아직 읽을 수 없습니다 — ‹이유›. 파일은 올라갔습니다.»가 그대로 보이고, 목록을 다시 열면 일반 문장(«읽기에 실패했습니다 — 다시 읽거나 종류를 직접 고르세요»)이다. 다른 안: 0060 무렵 intake_items.read_error 칸.
+- **버튼**: «이 메뉴에 초안 만들기(문서)»(계약서 · 공문 · 그 외) · «종류 바꾸기»(= 직접 종류 고르기) · «그냥 보관(문서)»(종류 «그 외»로 문서) · «입구에만 두기»(kept) · «다시 읽기» · «원본 보기». 재무제표 · 단가표는 한 줄 안내 뒤 보관 · 문서만. 확인 = 적재 액션이 종류가 비어 있으면 제안의 종류(«그냥 보관»이면 other)를 먼저 확인 도장으로 적는다 — 확인한 사람 = 적재한 사람. 문서 종류는 종류를 바꿔도 다시 읽지 않는다(설계서 A1-3) — 재무제표 · 단가표도 이 블록에는 뽑을 칸이 없어 다시 읽지 않는다.
+- **올리기 칸의 «배합비 · 레시피가 아닙니다(사진 · 스캔본)»**는 그 묶음의 파일 전부에 적힌다(글자 파일에 적혀도 감지는 그대로 돈다). 안 누르고 올린 사진은 no_ai/not_attested → 올린 사람만 줄에서 확인하고 읽기(0058 — 확인이 not_attested를 푼다).
+- **입구에서 문서로 넣은 원본의 «요약하기»**(문서 첨부 칸 · AI 어시스턴트 제안)는 요약 전에 배합비 감지를 한 번 더 돈다(글자 파일만 — 사람이 AI 없이 종류를 골라 넣었을 수 있다). 입구에 있는 원본(entity intake_items)은 일반 첨부 액션 · 어시스턴트 요약 도구가 받지 않는다 — 입구 칸에서만 읽는다. beginAttachment도 intake_items를 거부한다(intake_begin 한 길).
+- **문서 링크**: 입구에서 온 문서의 storage_url(/documents/<id>)은 문서 목록에서 앱 안 링크(같은 탭), 문서 상세에서는 «자료 받는 입구에서 온 문서 · 원본은 아래 첨부» 안내로 그린다(자기 자신을 가리키는 바깥 링크 버튼 대신).
+- **dummy**: 입구 메서드가 0058 규칙을 옮겨 적었다(dummy-intake.ts) — 단 dummy 문서 목록은 0026 subtree를 옮기지 않아(기존 그대로) 적재된 줄의 I4 읽기 좁힘은 dummy에서 드러나지 않는다. dummy 문서 지우기는 회장 · 그 문서를 입구에서 적재한 사람만. 시드 다섯 줄(DY — 계약서 제안 · 재무제표 제안(제한) · 배합비 막힘 · 확인 없는 사진 · 읽기 실패)을 심어 DUMMY_USER를 바꿔 다시 켜도 같은 줄이 선다. check:intake가 dummy 흐름을 한 프로세스에서 사람을 바꿔 가며 잰다.
+- **확인 권한 안내 문장**은 «문서 등록 권한자에게 넘기세요»까지(설계서의 «‹담당자›에게 넘기세요» · 넘기기 알림은 2단계).
 ## 2026-10-07 — 실사용 버그 블록(김병훈 패널 · 결재 양식 · 금액 칸)
 
 - **김병훈 패널 «재무 입력» · «문서 등록»이 «눌리지 않음»의 원인:** 저장은 됐다. `setModuleGrant`가 `revalidatePath('/settings/users')` 뒤에 `revalidatePath('/finance', 'layout')` · `('/documents', 'layout')`을 더 불러 Server Action 응답이 지금 화면을 새로 그리지 않았다 — 칸이 꺼진 채 남았다(새로고침하면 켜져 보인다). `revalidatePath('/', 'layout')` 한 번으로 바꿨다(사용자 · 재무 · 문서 화면이 다 세션 값으로 선다). 다른 선택지: `router.refresh()`를 화면에서 부르기(서버 무효화와 화면 새로 그리기가 갈라짐). DB 변경 없음. «결재 올리기» · «사용자 관리자»는 그 두 줄이 없어서 됐다.
@@ -2347,6 +2614,7 @@ B-4가 찾은 결함 하나를 고쳤다. **리뷰 루프가 없는 작업이고
 - **«팀 없음» 칸에는 놓을 수 없다.** 사원 · 팀장 · 임원을 팀 없이 만드는 길을 새로 열지 않는다(초대도 팀 필수로 바꿨다). 회사를 이끄는 자리(대표 · CFO)는 대화상자에서 «팀 없음»을 고를 수 있다.
 - **결재 대장 엑셀 «목록» 시트의 팀 칸은 비워 둔다.** «팀 없음» 라벨은 묶음 합계(화면 · 엑셀 «묶음 합계»)에만 쓴다 — 목록 칸에 글자를 넣으면 거르기(team=…)가 그 글자를 진짜 팀처럼 찾는다.
 
+
 ## 2026-10-10 — 0060 긴급 수정(0059 읽기 정책 · anon health 42501)
 
 - **(가) 정책을 `to authenticated`로 좁혔다(권장안).** 다른 선택지 (나) — 함수가 anon이면 false를 내고 anon에 execute를 준다. (나)는 결재선 · 대장 판정 함수를 anon RPC로 연다.
@@ -2355,3 +2623,59 @@ B-4가 찾은 결함 하나를 고쳤다. **리뷰 루프가 없는 작업이고
 - **0059 검사가 못 잡은 이유:** authenticated 세션만 돌렸고 함수 권한은 카탈로그(has_function_privilege)로만 쟀다. anon에게도 걸리는 정책이 그 함수를 부른다는 것은 anon으로 행동해 봐야 보인다.
 - **리뷰(0060) Minor:** BusinessCEO 경로는 «오류 없음»만 재고 행 수는 재지 않는다 · 네 정책의 pg_policies.roles를 카탈로그로 따로 재지 않는다(행동 검사로 충분) · 원가 표를 health TABLES에 넣으면 anon은 0행이 아니라 «표 권한 없음»이 된다 — 넣지 않거나 health가 그 오류를 «잠김»으로 읽게.
 - **check:dependency · check:attention CRLF:** 주석 걷기를 `split(/\r?\n/)`로. 본 checkout은 SQL이 LF라 재현되지 않고 워크트리(CRLF)에서만 거짓 실패가 났다.
+
+## 원가 엔진(Secret BOM) 1차 — 2026-10-09 권장안으로 진행한 갈림길
+
+- **«대표» = Chairman 역할 한 사람**으로 읽었다(직원 화면 용어). 회사 대표(BusinessCEO) · GroupCFO · 임원도 BOM 불가, 원가 모듈은 줄을 받아야 한다. 다른 안: GroupCFO에게 역할로 원가 열람.
+- **BOM은 별도 스키마 `cost_secret` + 공개 정의자 함수**(RLS 표 대신). 이유: 정책 실수 하나로 PostgREST가 내주는 길이 생기지 않게 — 스키마 usage 자체가 없다. 다른 안: public 표 + Chairman 전용 RLS.
+- **1차 BOM은 평문 · 가짜만(check is_fake)**. 암호화(Supabase Vault 키 + pgcrypto)는 0063, 승인 후. 진짜 BOM 입력은 그때부터.
+- **Current 원가 1차 = 최근 180일 입고 LOT 수량가중 평균**(소진 반영 없음). 0064(생산 투입)에서 «남은 LOT 잔량 가중»으로 바꾼다.
+- **영업 원가 = 주간 고정(ISO 월요일)** — 설계서 6.3 완화 1. 원가 관리(경영지원)는 일 단위. 다른 안: 영업도 일 단위 / 영업은 원가 X.
+- **반올림 10원/kg · 원료비 영향 0.1%p · 하루 200건 한도** — 회장 확인 전 기본값.
+- **구매 첨부는 별도 버킷 'purchasing' + 서버 액션 업로드(4MB)** — 배합비 검사를 저장 전에 돌리려고. 0045 'attachments'와 0058 · 0059의 첨부 함수를 건드리지 않는다(브랜치 순서와 무관하게 합쳐지게).
+- **검사는 새 스크립트 `check:cost-engine`** — check-migrations.ts에 넣지 않았다(10-08 합치기 함정).
+- **원가 모듈 넷은 사용자 관리자(0055) 위임 불가** — 0055 허용 목록을 고치지 않아서 자동으로 그렇다. 넓힐 때 후보는 구매 입력 · 생산 입력.
+- **구매 화면 1차(10-09)** — 사이드바 «구매»가 서는 사람에게는 옛 자리표 «구매 / SCM»(준비 중)을 뺀다(같은 영역 둘 방지). 다른 안: 둘 다 두기 / SCM 키를 «구매»로 바꾸기(사이드바 숨김 키가 바뀜).
+- **원가 모듈 네 칸은 쓰기 칸 하나만**(approve null) — 사용자 화면에서 «보기만» 줄은 못 준다(문서 모듈과 같은 모양). 다른 안: 보기 · 쓰기 두 칸.
+- **구매 첨부 저장 이름은 ASCII**(Supabase Storage가 한글 키를 거부) — 보이는 이름은 file_name 칸. 시장가 주 · 월 추이는 날 평균(하루 한 값), 구매가는 kg 가중.
+- **결재 후보 «LOT로 넣기»는 원료 · 공급처를 이름이 같을 때만 미리 고른다** — 금액 ÷ 수량은 KRW 후보 단가로만 채운다(부가세 · 배송비 섞임 — 사람이 고친다).
+- **영업 원가 화면(10-09)** — 목록은 cost_sales_list 한 번(한도 · 감사 한 번), 제시가는 «확인»을 누를 때만 cost_price_check(글자마다 부르면 하루 200건 · 원가 관리 감사가 쌓인다). 다른 안: 브라우저에서 같은 식으로 즉시 계산(조회 0회, 견적 스냅샷과 값이 갈릴 위험).
+- **사이드바 «영업»** — '/sales/<biz>' · '/costing/<biz>' 줄이 있으면 옛 자리표 «영업 / CRM»(준비 중)을 뺀다(«구매»와 같은 방식). 겸직 거부(구매 · 생산 + 영업)인 사람도 메뉴는 서고 화면이 DB 거부 문장을 보여 준다.
+- **대표 감시 카드 칸 이름 «구매 · 영업 화면 열람»** — e0c6c54부터 cost_costing_watch가 /purchasing/<biz> · /sales/<biz> 둘 다 센다. dummy 원료는 created_at이 없어 «스냅샷 뒤에 생긴 원료 제외»는 흉내 내지 않는다(dummy가 더 엄격).
+
+### 원가 엔진 2차 — 2026-10-09 밤(1원 · 매일 최신 · 0063 암호화 · 0064 생산 · 0065 비용)
+
+- (위 «영업 원가 = 주간 고정» · «반올림 10원/kg» 두 줄은 회장 결정으로 **폐기**.) 대표 외 = 오늘 · 지금 저장된 값 · 나가는 칸만 1원(`cost_secret.shown`), 대표 = 원래 값(화면이 1원). 다른 안: 화면에서만 1원(DB가 소수까지 줌) — 대표 외에게 1원 아래 자릿수를 주지 않으려고 버렸다.
+- **등급은 반올림 전 %** — 14.96%는 표시 «15.0%»여도 Red. 다른 안: 표시 %로 등급(원래 값 원칙과 어긋남).
+- **원료비 영향 = 7일 전 → 오늘, 0.1%p, 모두 같은 식**(1차 대표 외 1%p는 10원 반올림 때문이었다 — 1원에서는 0.1%p가 총액보다 거칠다).
+- **영업 목록 = 200건 중 한 건 + 하루 20번 상한 + 호출마다 감사**(리뷰 C1 · 0063 리뷰 I1). 다른 안: 목록 한 번 = 제품 수만큼(제품 50개면 하루 네 번 — 버림) / 상한 없음(시세 입력마다 사건을 떼어 볼 수 있다).
+- **대표 외 제시가는 1원 단위만**(리뷰 C2 — 소수 제시가 이분 탐색). 남는 것: 목표 마진 넷의 1원 제시가를 겹치면 총원가가 0.1~0.3원 폭(설계서 16절) — 감수.
+- **Minor 보류(0063 리뷰)**: 해독을 판마다 따로(키 조회 · 해독 반복 — 제품 500개 목록에서 0.3~0.8초 추정) → 묶음 해독 함수는 성능이 문제될 때. 원료가 SQL로 지워지면 BOM 화면에서 그 줄이 빠짐(삭제 권한 없음 — 운영자 SQL만). `bom_key()`가 권한 오류도 «키 없음»으로 말함 — staging에서 `select length(cost_secret.bom_key())`로 한 번 확인(bom-key-setup).
+- **평문 BOM 표 삭제(0063)** — 0062까지 줄은 가짜뿐(check)이고 암호문으로 옮긴 뒤 지운다. 다른 안: 표를 비워 두기(실수로 다시 쓰는 길이 남는다).
+- **진짜 BOM 받기 스위치(DB · 기본 꺼짐)** — 회장 결정 «암호화가 운영에서 확인된 뒤». 다른 안: 화면에서만 막기(코드 바꿔야 켬).
+- **생산 표 이름 `cost_prod_lots` · `cost_prod_inputs`** — 0061 함수 `cost_production_lots`(생산이 보는 구매 LOT 목록)와 헷갈리지 않게. 오더 발행은 대표만(작업지시 수량 = BOM × kg이라 생산이 계획 kg을 바꿔 가며 비율을 받지 않게).
+- **투입 · 작업지시 수량은 원가 관리에도 안 준다**(투입 ÷ 산출 = 실제 배합). Actual은 총액만(1원 + 감사), 분해는 대표만.
+- **Current = 잔량 가중(재고 이동평균)** — 1차의 «180일 입고 가중»을 0064에서 교체. 남은 게 없으면 마지막 LOT 단가.
+- **배부 기본 = 직전 28일 생산 kg**(권장안) · 생산 0이면 계획 생산량(월 kg) · 둘 다 없으면 계산 안 함(0으로 메우지 않음 — 영업 총원가는 원료비만 + «비용 준비 전»). 월 금액 하루치 = × 12 ÷ 365. 원/kg 직접 단가는 전체 + 제품별을 더한다. 다른 안: 월 단위 배부 · 생산 LOT 수 기준.
+- **커미션은 지금 원가 항목**(월 금액 / 원·kg) — 가격식 분모(설계서 5.1)는 0066에서.
+
+## 2026-10-10 — 원가 엔진 (가) 영업 0시 기준 · 0066 견적(브랜치 `feat/cost-engine`, staging 미반영)
+
+- **(가) 구현 방식(권장안):** 문(cost_gate_biz)이 트랜잭션 설정 `cost.known_at`(epoch 초)을 영업일 때만 세우고, 읽기 함수가 `cost_secret.known(created_at, voided_at)`로 거른다. 다른 선택지 — 모든 내부 함수에 «기준 시각» 인자를 더하기(서명 수십 개 변경).
+- **배부 기준(cost_alloc_settings)은 이력 표 대신 prev_* 칸 하나**(오늘 0시의 값). 다른 선택지 — 배부 기준 이력 표.
+- **남는 즉시 신호(Minor):** 원료 «사용 중» 켜고 끄기 · 제품 추가 · 단종(이력 없음). 0시 직전에 시작해 0시 뒤 커밋한 트랜잭션은 created_at이 0시 전(now() = 트랜잭션 시작). 생산 투입 트리거(cost_lot_draw_check)는 설정을 다시 비우지 않는다 — PostgREST로는 한 트랜잭션에 섞이지 않는다.
+- **dummy (가) 거울은 사용 중 원료의 created_at을 보지 않는다**(SQL만 리뷰 I 반영).
+- **견적 상태 «반려» 추가:** 회장 지시의 다섯(초안 · 승인 대기 · 확정 · 만료 · 취소)에 반려를 더했다 — 반려된 Red는 새 판으로. 만료는 저장하지 않고 읽을 때 계산(유효기간 지난 초안 · 승인 대기). 확정 뒤 유효기간이 지나도 «확정» 그대로.
+- **승인 뒤 확정은 영업이 «확정»을 누른다**(결재 승인으로 자동 확정하지 않음 — 확정 함수 하나에 만료 · 판 검사를 모은다). 다른 선택지 — 승인 트리거로 자동 확정.
+- **취소한 견적의 열린 가격 예외 결재는 그대로 남는다**(결재는 approval_decide만 닫는다). 승인돼도 취소된 견적은 확정되지 않는다.
+- **고객용 견적서는 엑셀만**(PDF는 다음 — 한글 글꼴 포함 PDF 생성기 필요). 통화가 원화가 아니면 단가 = 제시가 ÷ 저장 순간 환율(소수 둘째).
+- **견적 감사 줄(audit_log, entity_table 'quotes')에는 kg · 제시가 · 등급이 들어간다(원가 · 마진 없음).** 0026 audit_log_read가 행위자의 상사에게 내준다 — 영업 팀장 · 상사는 원래 견적을 읽으므로 새로 새는 값은 없다.
+- **audit_log_cost_private(0061 · 0064 · 0065) `to authenticated`:** 대상이 public이면 anon health가 42501(0060과 같은 함정). check-anon-health가 cost 브랜치에서 잡았다.
+- **견적 화면의 제시가 등급 미리보기는 cost_price_check를 부른다**(하루 · 제품마다 감사 한 줄 · 200건 한도에 센다). 다른 선택지 — 목록의 1원 총원가로 화면에서 계산(경계 ±0.01%p에서 등급이 DB와 갈림).
+
+## 2026-10-10 0066 견적 리뷰 — Minor(보류)
+- M1 quote_confirm이 «대표 칸 승인»을 따로 보지 않는다(양식 chairman_always에 기댐 — 양식 수정은 대표만). 다음 손댈 때 approval_steps is_chairman approved 확인 추가.
+- M2 견적 취소 · 새 판 자동 취소 때 연결된 가격 예외 결재가 열린 채 남는다(확정은 막힘 — 결재자 화면에 죽은 결재). 결재를 함께 닫는 길은 0059 approval_decide 경로라 다음 블록.
+- M4 원가 관리 겸 영업이 만든 견적은 cost_basis 'now' — 같은 회사 영업 팀장이 그 스냅숏(즉시 값)을 읽는다. 대표 외 견적 스냅숏을 늘 0시 기준으로 할지 다음 블록.
+- M5 등급은 0시 기준 원가 — 지금 원가로는 Red인 견적이 Green으로 확정될 수 있다(설계 (가) 그대로). 대표 아침 요약에 basis/now 차이 표시 후보.
+- I3는 «마진 %를 1원 총원가로» 대신 «대표 외 제시가 하한 = 1원 총원가의 절반»으로 막았다 — 회장 결정(마진 %는 원래 값)을 바꾸지 않으려고. 다른 선택지: % 표시를 1원 총원가 기준으로(결정 변경 필요).

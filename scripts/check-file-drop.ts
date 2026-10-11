@@ -8,10 +8,12 @@
  *   3) 한 장만 받는 칸(로고 · 사진, max=1)은 맞는 파일 중 첫 장만 올리고 나머지는 «넘김»(그렇다고 말한다).
  *   4) 칸마다 규칙이 그대로다 — 첨부: 확장자로도 판정(Windows .xlsx 빈 type) · 20MB · 사진은 줄이므로 크기 면제,
  *      로고 · 사진: 서버 액션처럼 file.type만 · 2MB · SVG 없음.
+ *   5) ECOUNT 업로드 칸(0056 마무리): .xlsx 한 개만(이름으로 — Windows 빈 type) · .xls · CSV는 «xlsx로 저장» 안내 · 20MB · 빈 파일 거절.
  */
 import assert from 'node:assert/strict'
 
-import { checkAttachmentFile, ATTACHMENT_MAX_BYTES } from '../src/lib/attachments/rules'
+import { checkAttachmentFile, ATTACHMENT_FORMATS_KO, ATTACHMENT_MAX_BYTES } from '../src/lib/attachments/rules'
+import { checkEcountFile } from '../src/lib/ecount/excel/file-rules'
 import { dropSummary, limitLabel, planDrop, type FileLike } from '../src/lib/file-drop'
 import { checkLogoFile, LOGO_MAX_BYTES } from '../src/lib/initiative-logo'
 import { checkPhotoFile, PHOTO_MAX_BYTES } from '../src/lib/profile-photo'
@@ -30,15 +32,21 @@ function attachmentRules() {
   assert.equal(checkAttachmentFile(f('계약서.pdf', 'application/pdf', 3 * MB)), null)
   // Windows는 .xlsx의 type을 비워 준다 — 확장자로 통과해야 한다.
   assert.equal(checkAttachmentFile(f('매출.xlsx', '', 1 * MB)), null)
-  // 사진은 크기를 보지 않는다(4.5MB 넘으면 줄여 올린다).
+  // 사진은 크기를 보지 않는다(base64 5MB · 8000px 넘으면 줄여 올린다).
   assert.equal(checkAttachmentFile(f('명함.jpg', 'image/jpeg', 30 * MB)), null)
 
   const wrong = checkAttachmentFile(f('설치.exe', 'application/x-msdownload', 1 * MB))
   assert.ok(wrong?.includes('받지 않는 형식'), `형식 거절이어야 한다: ${wrong}`)
-  assert.ok(wrong?.includes('PDF · Word · Excel · PowerPoint · PNG · JPG') && wrong.includes('20MB'), `받는 형식 · 상한이 들어가야 한다: ${wrong}`)
+  assert.ok(wrong?.includes(ATTACHMENT_FORMATS_KO) && wrong.includes('20MB'), `받는 형식 · 상한이 들어가야 한다: ${wrong}`)
+  assert.ok(ATTACHMENT_FORMATS_KO.includes('HEIC') && ATTACHMENT_FORMATS_KO.includes('WebP'), '안내 문구에 새로 받는 사진 형식')
 
-  const heic = checkAttachmentFile(f('IMG_0001.HEIC', 'image/heic', 2 * MB))
-  assert.ok(heic?.includes('받지 않는 형식'), 'HEIC는 받지 않는다(요약이 PNG · JPG만 본다)')
+  // HEIC · WebP · GIF는 받는다 — 올리기 전에 브라우저가 JPEG로 바꾼다(limits.ts convertibleImage). 크기는 바꾼 뒤에 본다.
+  assert.equal(checkAttachmentFile(f('IMG_0001.HEIC', 'image/heic', 2 * MB)), null)
+  assert.equal(checkAttachmentFile(f('IMG_0002.heic', '', 30 * MB)), null)
+  assert.equal(checkAttachmentFile(f('a.webp', 'image/webp', 1 * MB)), null)
+  assert.equal(checkAttachmentFile(f('a.gif', 'image/gif', 1 * MB)), null)
+  // 사진이 아닌 것은 여전히 20MB.
+  assert.ok(checkAttachmentFile(f('a.svg', 'image/svg+xml', 1 * MB))?.includes('받지 않는 형식'))
 
   const big = checkAttachmentFile(f('도면.pdf', 'application/pdf', 25 * MB))
   assert.ok(big?.includes('25.0MB') && big.includes('20MB까지'), `크기 거절에 지금 크기와 상한: ${big}`)
@@ -100,7 +108,21 @@ function summary() {
   assert.equal(dropSummary({ done: 0, failed: 0, rejected: 0, skipped: 0 }), '올린 파일이 없습니다.')
 }
 
-const cases = { labels, attachmentRules, logoPhotoRules, order, singleFile, summary }
+function ecountRules() {
+  assert.equal(checkEcountFile(f('DY 월별.xlsx', '', 1 * MB)), null, 'Windows는 xlsx type을 비운다 — 이름으로 통과')
+  assert.equal(checkEcountFile(f('DY.XLSX', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', MB)), null)
+  assert.ok(checkEcountFile(f('DY.xls', 'application/vnd.ms-excel', MB))?.includes('xlsx'), '.xls는 «xlsx로 저장» 안내')
+  assert.ok(checkEcountFile(f('DY.csv', 'text/csv', MB))?.includes('CSV는 받지 않습니다'))
+  assert.ok(checkEcountFile(f('증빙.pdf', 'application/pdf', MB))?.includes('.xlsx'), 'PDF는 받지 않는다')
+  const big = checkEcountFile(f('큰.xlsx', '', 21 * MB))
+  assert.ok(big?.includes('21.0MB') && big.includes('20MB까지'), `크기 거절: ${big}`)
+  assert.ok(checkEcountFile(f('빈.xlsx', '', 0))?.includes('빈 파일'))
+  // 한 장 칸 — 두 개를 놓으면 맞는 첫 장만, 틀린 형식은 거절.
+  const plan = planDrop([f('a.csv', 'text/csv', MB), f('b.xlsx', '', MB), f('c.xlsx', '', MB)], checkEcountFile, 1)
+  assert.deepEqual(plan.map((v) => v.verdict), ['reject', 'take', 'skip'])
+}
+
+const cases = { labels, attachmentRules, logoPhotoRules, order, singleFile, summary, ecountRules }
 for (const [name, run] of Object.entries(cases)) {
   run()
   console.log(`ok  ${name}`)

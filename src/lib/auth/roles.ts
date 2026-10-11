@@ -1,3 +1,4 @@
+import { ECOUNT_CODE_BUSINESSES } from '@/lib/ledger/standard-chart'
 import type { Role, SessionUser } from '@/types'
 
 /**
@@ -69,6 +70,14 @@ export function canKeepBooks(user: SessionUser | null, businessId: string): bool
   return !SYSTEM.includes(user.role) && user.finance[businessId]?.write === true
 }
 
+/**
+ * ECOUNT 엑셀 업로드 화면(/finance/<회사>/import)을 열 수 있는가(안내). ECOUNT 코드 체계를 쓰는 회사(DY) +
+ * 그 회사 재무 쓰기 권한. 판정은 0050 finance_imports_insert(can_keep_books)가 한다.
+ */
+export function canImportEcount(user: SessionUser | null, businessId: string): boolean {
+  return ECOUNT_CODE_BUSINESSES.includes(businessId) && canKeepBooks(user, businessId)
+}
+
 /** 이 회사의 월을 마감할 수 있는가(안내). 0047 can_close_books(target)와 같다 — 역할 둘 + 그 회사의 can_approve. */
 export function canCloseBooks(user: SessionUser | null, businessId: string): boolean {
   if (user === null) return false
@@ -123,4 +132,129 @@ export function canWriteNotice(user: SessionUser | null): boolean {
 }
 export function canWriteGroupNotice(user: SessionUser | null): boolean {
   return user?.role === 'Chairman' || user?.role === 'GroupCFO'
+}
+
+/**
+ * 0061 원가 엔진 · 구매 화면을 볼 수 있는가(안내). DB cost_can과 같은 문: 대표(Chairman) 또는 그 회사의
+ * '/purchasing/<biz>' · '/costing/<biz>' 줄. 시스템 계정은 줄이 있어도 false. 회사 범위(has_business)는 화면이
+ * 회사 목록(listBusinesses)으로 따로 본다. GroupCFO · 회사 대표 · 임원도 줄을 받아야 한다(설계서 3.1).
+ */
+export function canReadPurchasing(user: SessionUser | null, businessId: string): boolean {
+  if (user === null) return false
+  if (user.role === 'Chairman') return true
+  if (SYSTEM.includes(user.role)) return false
+  return !!user.cost?.purchasing[businessId] || !!user.cost?.costing[businessId]
+}
+
+/** 구매 입력(원료 · 공급처 · 시장가 · LOT · 결재 후보 · 첨부) — 대표 또는 '/purchasing/<biz>' can_write(안내, 문은 DB). */
+export function canWritePurchasing(user: SessionUser | null, businessId: string): boolean {
+  if (user === null) return false
+  if (user.role === 'Chairman') return true
+  if (SYSTEM.includes(user.role)) return false
+  return user.cost?.purchasing[businessId]?.write === true
+}
+
+/** 사이드바 «구매»를 그릴 회사들 — 대표는 null(= 회사 목록 전부, 화면이 고른다). */
+export function purchasingBusinessIds(user: SessionUser | null): string[] | null {
+  if (user === null) return []
+  if (user.role === 'Chairman') return null
+  if (SYSTEM.includes(user.role)) return []
+  return [...new Set([...Object.keys(user.cost?.purchasing ?? {}), ...Object.keys(user.cost?.costing ?? {})])].sort()
+}
+
+/** 사이드바 «구매»를 그릴까(안내). 대표는 늘, 그 밖은 '/purchasing/<biz>' · '/costing/<biz>' 줄이 하나라도 있으면. */
+export function showsPurchasingNav(user: SessionUser | null): boolean {
+  const ids = purchasingBusinessIds(user)
+  return ids === null || ids.length > 0
+}
+
+/**
+ * 영업 원가 화면(/sales/<biz>)을 볼 수 있는가(안내). DB 0062 cost_gate와 같은 문: 대표 또는 그 회사의 '/sales/<biz>' · '/costing/<biz>' 줄.
+ * 구매 입력 줄을 같이 가진 사람은 화면은 열리고 원가 칸에서 DB가 'cost_role_conflict'로 거부한다 — 화면이 그 문장을 보여 준다.
+ */
+export function canReadSales(user: SessionUser | null, businessId: string): boolean {
+  if (user === null) return false
+  if (user.role === 'Chairman') return true
+  if (SYSTEM.includes(user.role)) return false
+  return !!user.cost?.sales[businessId] || !!user.cost?.costing[businessId]
+}
+
+/** 사이드바 «영업»을 그릴 회사들 — 대표는 null(= 회사 목록 전부). */
+export function salesBusinessIds(user: SessionUser | null): string[] | null {
+  if (user === null) return []
+  if (user.role === 'Chairman') return null
+  if (SYSTEM.includes(user.role)) return []
+  return [...new Set([...Object.keys(user.cost?.sales ?? {}), ...Object.keys(user.cost?.costing ?? {})])].sort()
+}
+
+/** 사이드바 «영업»을 그릴까(안내). 대표는 늘, 그 밖은 '/sales/<biz>' · '/costing/<biz>' 줄이 하나라도 있으면. */
+export function showsSalesNav(user: SessionUser | null): boolean {
+  const ids = salesBusinessIds(user)
+  return ids === null || ids.length > 0
+}
+
+/**
+ * 생산 화면(/production/<biz>)을 볼 수 있는가(안내). DB 0064와 같은 문: 대표 또는 그 회사의 '/production/<biz>' 줄.
+ * 원가 관리 줄은 오더 머리 · 생산 LOT를 읽을 수 있지만 생산 화면은 열지 않는다(작업지시 수량 · 투입은 생산만 — RLS가 0행).
+ */
+export function canReadProduction(user: SessionUser | null, businessId: string): boolean {
+  if (user === null) return false
+  if (user.role === 'Chairman') return true
+  if (SYSTEM.includes(user.role)) return false
+  return !!user.cost?.production[businessId]
+}
+
+/** 생산 입력(생산 LOT · 투입 · 조정 · 오더 완료) — 대표 또는 '/production/<biz>' can_write(안내, 문은 DB). */
+export function canWriteProduction(user: SessionUser | null, businessId: string): boolean {
+  if (user === null) return false
+  if (user.role === 'Chairman') return true
+  if (SYSTEM.includes(user.role)) return false
+  return user.cost?.production[businessId]?.write === true
+}
+
+/** 사이드바 «생산»을 그릴 회사들 — 대표는 null(= 회사 목록 전부). */
+export function productionBusinessIds(user: SessionUser | null): string[] | null {
+  if (user === null) return []
+  if (user.role === 'Chairman') return null
+  if (SYSTEM.includes(user.role)) return []
+  return Object.keys(user.cost?.production ?? {}).sort()
+}
+
+/** 사이드바 «생산»을 그릴까(안내). 대표는 늘, 그 밖은 '/production/<biz>' 줄이 하나라도 있으면. */
+export function showsProductionNav(user: SessionUser | null): boolean {
+  const ids = productionBusinessIds(user)
+  return ids === null || ids.length > 0
+}
+
+/**
+ * 원가 관리 화면(/costs/<biz>)을 볼 수 있는가(안내). DB 0065와 같은 문: 대표 또는 그 회사의 '/costing/<biz>' 줄.
+ * 구매 입력 줄을 같이 가진 사람은 화면은 열리고 원가 칸에서 DB가 'cost_role_conflict'로 거부한다.
+ */
+export function canReadCosts(user: SessionUser | null, businessId: string): boolean {
+  if (user === null) return false
+  if (user.role === 'Chairman') return true
+  if (SYSTEM.includes(user.role)) return false
+  return !!user.cost?.costing[businessId]
+}
+
+/** 원가 관리 입력(비용 마스터 · 배부 기준) — 대표 또는 '/costing/<biz>' can_write(안내, 문은 DB). */
+export function canWriteCosts(user: SessionUser | null, businessId: string): boolean {
+  if (user === null) return false
+  if (user.role === 'Chairman') return true
+  if (SYSTEM.includes(user.role)) return false
+  return user.cost?.costing[businessId]?.write === true
+}
+
+/** 사이드바 «원가 관리»를 그릴 회사들 — 대표는 null(= 회사 목록 전부). */
+export function costsBusinessIds(user: SessionUser | null): string[] | null {
+  if (user === null) return []
+  if (user.role === 'Chairman') return null
+  if (SYSTEM.includes(user.role)) return []
+  return Object.keys(user.cost?.costing ?? {}).sort()
+}
+
+/** 사이드바 «원가 관리»를 그릴까(안내). 대표는 늘, 그 밖은 '/costing/<biz>' 줄이 하나라도 있으면. */
+export function showsCostsNav(user: SessionUser | null): boolean {
+  const ids = costsBusinessIds(user)
+  return ids === null || ids.length > 0
 }

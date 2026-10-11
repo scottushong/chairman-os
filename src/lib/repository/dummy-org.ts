@@ -146,21 +146,31 @@ export const DUMMY_PEOPLE: UserAccount[] = [
       { module: '/documents/biz_dy', can_write: true, can_approve: false },
       // 0055. «DY 사용자 관리자» — 회장이 켠 상태로 시작해 위임 초대 흐름(DUMMY_USER=support_lead)을 바로 눌러 볼 수 있게.
       { module: '/users/biz_dy', can_write: true, can_approve: false },
+      // 원가 관리(회사마다 셋까지) — 대표 화면 «원가 관리 권한자» 감시 카드와 원가 관리 쪽 영업 원가를 dummy에서 볼 자리.
+      { module: '/costing/biz_dy', can_write: true, can_approve: false },
     ],
   }),
   person(DUMMY_UID.exec, 'Executive', '영업본부장', 'Sales Executive', '본부장', DUMMY_UID.dyCeo, 'team_dy_sales', {
     max_security_class: 'Restricted',
   }),
   person(DUMMY_UID.salesLead, 'TeamLead', '영업팀장', 'Sales Team Lead', '팀장', DUMMY_UID.exec, 'team_dy_sales'),
-  person(DUMMY_UID.salesStaff, 'Member', '영업 직원', 'Sales Staff', '사원', DUMMY_UID.salesLead, 'team_dy_sales'),
+  // 0061. 영업 견적 줄 — 원가 엔진 영업 화면(요약만)을 dummy에서 볼 자리(DUMMY_USER=sales_staff).
+  person(DUMMY_UID.salesStaff, 'Member', '영업 직원', 'Sales Staff', '사원', DUMMY_UID.salesLead, 'team_dy_sales', {
+    modules: [{ module: '/sales/biz_dy', can_write: true, can_approve: false }],
+  }),
   person(DUMMY_UID.salesStaff2, 'Member', '영업 직원 2', null, '사원', DUMMY_UID.salesLead, 'team_dy_sales'),
   // 입사 5일째. 블록 B-5의 '30일 입퇴사 이력'이 이 사람을 잡는다.
   person(DUMMY_UID.salesStaff3, 'Member', '영업 직원 3', null, '사원', DUMMY_UID.salesLead, 'team_dy_sales', {
     joined_on: shift(-5),
     created_at: iso(-5),
   }),
-  person(DUMMY_UID.buyLead, 'TeamLead', '구매팀장', 'Purchasing Team Lead', '팀장', DUMMY_UID.exec, 'team_dy_purchasing'),
-  person(DUMMY_UID.buyStaff, 'Member', '구매 직원', null, '사원', DUMMY_UID.buyLead, 'team_dy_purchasing'),
+  // 0061. 구매 입력 줄 — 구매 화면(/purchasing/biz_dy)을 dummy에서 눌러 볼 자리(DUMMY_USER=buy_staff · buy_lead).
+  person(DUMMY_UID.buyLead, 'TeamLead', '구매팀장', 'Purchasing Team Lead', '팀장', DUMMY_UID.exec, 'team_dy_purchasing', {
+    modules: [{ module: '/purchasing/biz_dy', can_write: true, can_approve: false }],
+  }),
+  person(DUMMY_UID.buyStaff, 'Member', '구매 직원', null, '사원', DUMMY_UID.buyLead, 'team_dy_purchasing', {
+    modules: [{ module: '/purchasing/biz_dy', can_write: true, can_approve: false }],
+  }),
   // 경고 두 종을 한 사람이 같이 진다: 팀 미배정 + 상사 없음. 트리에 매달려 있지 않아
   // 회장 말고는 아무에게도 보이지 않는다 — 그것이 0026의 정책이 하는 일 그대로다.
   person(DUMMY_UID.newbie, 'Member', '신입 (배치 전)', null, '사원', null, null, {
@@ -183,7 +193,10 @@ export const DUMMY_PEOPLE: UserAccount[] = [
   person(DUMMY_UID.supportStaff, 'Member', '경영지원 사원', null, '사원', DUMMY_UID.chair, 'team_dy_support'),
   // 상사가 대표인 팀장과 그 팀원 — 30만은 팀장 승인으로 종결, 600만은 팀장 → 대표.
   person(DUMMY_UID.prodLead, 'TeamLead', '생산팀장', 'Production Team Lead', '팀장', DUMMY_UID.chair, 'team_dy_production'),
-  person(DUMMY_UID.prodStaff, 'Member', '생산 직원', null, '사원', DUMMY_UID.prodLead, 'team_dy_production'),
+  // 원가 엔진 0064 — 생산 입력 줄(생산 화면 /production/biz_dy, DUMMY_USER=prod_staff). 0059 결재 시나리오의 생산팀 사원과 같은 사람.
+  person(DUMMY_UID.prodStaff, 'Member', '생산 직원', 'Production Staff', '사원', DUMMY_UID.prodLead, 'team_dy_production', {
+    modules: [{ module: '/production/biz_dy', can_write: true, can_approve: false }],
+  }),
   // 2026-10-09. 운영 김병훈과 같은 조건 — 사원 · DY · 팀 없음 · 상사 = 대표. 조직도 경고 «팀 미배정»에 잡힌다.
   person(DUMMY_UID.teamless, 'Member', '팀 없는 사원', null, '사원', DUMMY_UID.chair, null),
 ]

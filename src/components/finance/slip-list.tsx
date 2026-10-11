@@ -1,12 +1,13 @@
 import { BasisTag } from '@/components/finance/figure'
-import type { SlipView } from '@/lib/ledger/journal'
+import { slipOriginLabel, type SlipView } from '@/lib/ledger/journal'
 import type { Account } from '@/types'
 
 /**
  * 한 달의 전표 목록 (Phase 2-B 블록 2). 전표 한 장 = 헤더 한 줄 + 라인들.
  *
  * 꼬리표는 그 달이 마감됐나로 정한다(lib/ledger/basis.ts ledgerBasisOf와 같은 규칙).
- * 원천: '자체'는 이 화면에서 넣은 전표(헤더 있음), 'ECOUNT'는 가져온 전표다.
+ * 원천: '자체'는 이 화면에서 넣은 전표(헤더 있음), 'ECOUNT'는 가져온 전표, 'ECOUNT 엑셀'은 월별 엑셀 업로드가 세운 전표다
+ * (헤더는 있지만 0050 finance_import_slips에 잡힌 전표와 그 역분개 — lib/ledger/journal.ts slipOriginLabel).
  */
 export function SlipList({
   slips,
@@ -110,7 +111,9 @@ function SlipTags({ slip: s }: { slip: SlipView }) {
     <span className="flex flex-wrap items-center gap-1.5">
       <span className="font-semibold">{s.memo || '(적요 없음)'}</span>
       <BasisTag basis={s.closed ? 'confirmed' : 'provisional'} />
-      <span className="rounded border border-line px-1 text-t9h text-ink-muted">{s.own ? '자체' : 'ECOUNT'}</span>
+      <span className="rounded border border-line px-1 text-t9h text-ink-muted" title="출처">
+        {slipOriginLabel(s)}
+      </span>
       {s.correction ? (
         <span className="rounded border border-warning/40 px-1 text-t9h text-warning">
           {s.correction.kind === 'reversal' ? '역분개' : '정정'} ← <span className="tnum">{s.correction.corrects_id}</span>

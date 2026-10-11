@@ -1,10 +1,18 @@
 import type { ActivityEvent, ActivityKind } from '@/lib/activity'
 import type { EntityAuditRecord } from '@/lib/audit-log'
+import type { MonthlyBasis } from '@/lib/ecount/excel/mapping'
+import type { MonthlyLedgerMonth } from '@/lib/ecount/excel/monthly-import'
 import type { AccountFields } from '@/lib/ledger/accounts'
 import type { CorrectionResult, NewCorrection, NewJournalEntry } from '@/lib/ledger/journal'
 import type { DecisionAuditRecord, DecisionAction } from '@/lib/decision-log'
 import type { SearchHit } from '@/lib/search'
 import type {
+  IntakePatch,
+  IntakeRow,
+  IntakeSameFile,
+  NewIntake,
+  Quote,
+  QuoteInput,
   ModuleGrant,
   AbsenceDays,
   AbsenceResult,
@@ -43,6 +51,9 @@ import type {
   ExceptionRecord,
   ExceptionRule,
   ExceptionTriage,
+  FinanceImport,
+  FinanceImportKind,
+  FinanceImportPreviewPatch,
   FinanceKpi,
   FinanceLedger,
   Initiative,
@@ -57,6 +68,7 @@ import type {
   NotificationInbox,
   NewOfficialStatement,
   OfficialStatement,
+  OfficialStatementBasis,
   ProcessChart,
   ProcessChartInput,
   CityLayout,
@@ -98,7 +110,153 @@ import type {
   WorkPriority,
   StaffAdminInviteInput,
   StaffAdminOptions,
+  CostMaterial,
+  CostMaterialInput,
+  CostSupplier,
+  CostSupplierInput,
+  MarketPrice,
+  MarketPriceInput,
+  NewPurchaseDoc,
+  PurchaseCandidate,
+  PurchaseDoc,
+  PurchaseDocDownload,
+  PurchaseLot,
+  PurchaseLotInput,
+  CostingWatchRow,
+  SalesCostRow,
+  PriceCheck,
+  SalesCostView,
+  AllocBasis,
+  AllocSettings,
+  BomCurrent,
+  BomStatus,
+  BomVersionRow,
+  CostingRow,
+  CostProduct,
+  LotAdjustment,
+  LotAdjustmentInput,
+  LotBalance,
+  Overhead,
+  OverheadInput,
+  OverheadSummaryRow,
+  ProdActualBreakdownRow,
+  ProdActualRow,
+  ProdInput,
+  ProdInputInput,
+  ProdLot,
+  ProdLotInput,
+  ProductBreakdownRow,
+  ProductionOrder,
+  ProductionOrderLine,
 } from '@/types'
+
+/**
+ * 0061 원가 엔진 1차 — 구매(Purchase Intelligence). 판정은 DB(cost_can · RLS)다. 회사마다 부른다.
+ * 고치지 않는 기록(시장가 · LOT · 첨부)은 넣기와 무효만 있다. Landed Cost · 원화 환산은 DB가 계산해서 돌려준다.
+ * 권한이 없거나 없는 줄이면 'cost_not_found'로 던진다(있는지 없는지 말하지 않는다 — 0061 6절).
+ * dummy는 lib/repository/dummy-purchasing.ts, live는 supabase-purchasing.ts.
+ */
+export interface PurchasingMethods {
+  listCostMaterials(businessId: string): Promise<CostMaterial[]>
+  /** materialId가 있으면 고치기(이름 · 규격 · 분류 · 사용 · 메모), 없으면 새로. */
+  saveCostMaterial(businessId: string, input: CostMaterialInput, materialId?: string): Promise<CostMaterial>
+  listCostSuppliers(businessId: string): Promise<CostSupplier[]>
+  saveCostSupplier(businessId: string, input: CostSupplierInput, supplierId?: string): Promise<CostSupplier>
+  /** 무효 줄도 함께(화면이 가린다). 최근 sinceDays일. */
+  listMarketPrices(businessId: string, sinceDays: number): Promise<MarketPrice[]>
+  addMarketPrice(businessId: string, input: MarketPriceInput): Promise<MarketPrice>
+  voidMarketPrice(businessId: string, priceId: number, reason: string): Promise<void>
+  listPurchaseLots(businessId: string): Promise<PurchaseLot[]>
+  addPurchaseLot(businessId: string, input: PurchaseLotInput): Promise<PurchaseLot>
+  voidPurchaseLot(businessId: string, lotId: string, reason: string): Promise<void>
+  /** 통화 → 원화 환율(그 날짜 이하 최신, 0061 cost_fx). KRW는 1. 없으면 null. */
+  lookupCostFx(currency: string, onDate: IsoDate): Promise<number | null>
+  /** 0061 cost_purchase_candidates — 구매 입력 권한자만. */
+  listPurchaseCandidates(businessId: string): Promise<PurchaseCandidate[]>
+  dismissPurchaseCandidate(businessId: string, decisionId: string): Promise<void>
+  listPurchaseDocs(businessId: string): Promise<PurchaseDoc[]>
+  /** 줄이 먼저(0061 5절) — 그다음 putPurchaseDocObject. 경로는 '<biz>/<doc_id>/<이름>'. */
+  createPurchaseDoc(businessId: string, input: NewPurchaseDoc): Promise<PurchaseDoc>
+  putPurchaseDocObject(path: string, bytes: ArrayBuffer, contentType: string): Promise<void>
+  voidPurchaseDoc(businessId: string, docId: string, reason: string): Promise<void>
+  downloadPurchaseDoc(businessId: string, docId: string): Promise<PurchaseDocDownload | null>
+}
+
+/**
+ * 원가 엔진 — 영업 원가(회장 결정 2026-10-09 «영업은 제품 총액만») · 대표의 원가 관리 감시. 판정은 DB(0062 cost_gate · 0061 cost_costing_watch).
+ * **원료 이름 · 원료별 값을 돌려주는 메서드가 없다** — 영업 화면 코드는 PurchasingMethods(원료 · 시세 · LOT)를 부르지 않는다(check:sales-cost).
+ * dummy는 lib/repository/dummy-sales-cost.ts, live는 supabase-sales-cost.ts.
+ */
+export interface SalesCostMethods {
+  /** 0062 cost_sales_list — 그 회사 사용 중 제품 전부의 영업 원가(이름 포함). 하루 한도에 한 번만 센다. 0062 전 DB면 빈 목록. */
+  costSalesList(businessId: string): Promise<SalesCostRow[]>
+  /** 0062 cost_sales_view. 'cost_not_found' · 'cost_role_conflict' · 'cost_rate_limited'로 던진다. 0062 전 DB면 null. */
+  costSalesView(productId: string): Promise<SalesCostView | null>
+  /** 0062 cost_price_check. 'cost_price_invalid' · 'cost_price_too_low'(0066 — 대표 외 총원가 절반 미만)도 던진다. */
+  costPriceCheck(productId: string, priceKrwPerKg: number): Promise<PriceCheck>
+  /** 0061 cost_costing_watch — 대표만(그 밖은 'cost_not_found'). 0061 전 DB면 빈 목록. */
+  costingWatch(businessId: string): Promise<CostingWatchRow[]>
+}
+
+/**
+ * 원가 엔진 — 생산(0064). 판정은 DB(RLS cost_can · 트리거 · 함수)다. 회사마다 부른다.
+ * 생산 LOT · 투입 · 조정은 넣기와 무효만, 오더는 상태만(open → done · cancelled). 잔량을 넘는 투입 · 조정은 'cost_lot_short'.
+ * **비율 · 수율을 돌려주는 메서드가 없다** — 작업지시는 원료 · kg뿐이다. Actual 분해(prodActualBreakdown)는 대표만.
+ * dummy는 lib/repository/dummy-sales-cost.ts(가짜 BOM 옆), live는 supabase-production.ts.
+ */
+export interface ProductionMethods {
+  /** 오더 머리(무효 없음 — 상태만). 0064 전 DB면 빈 목록. */
+  listProductionOrders(businessId: string): Promise<ProductionOrder[]>
+  /** 작업지시 수량 — 대표 · 생산만(그 밖은 RLS로 빈 목록). */
+  listProductionOrderLines(orderIds: string[]): Promise<ProductionOrderLine[]>
+  /** 0064 cost_production_issue — 대표만. 오더 id. */
+  issueProductionOrder(productId: string, plannedOn: IsoDate, plannedKg: number, note: string): Promise<string>
+  /** done = 생산 입력 · 대표, cancelled = 대표. */
+  closeProductionOrder(businessId: string, orderId: string, status: 'done' | 'cancelled'): Promise<void>
+  /** 무효 줄도 함께(화면이 가린다). */
+  listProdLots(businessId: string): Promise<ProdLot[]>
+  addProdLot(businessId: string, input: ProdLotInput): Promise<ProdLot>
+  voidProdLot(businessId: string, prodLotId: string, reason: string): Promise<void>
+  listProdInputs(businessId: string): Promise<ProdInput[]>
+  addProdInput(businessId: string, input: ProdInputInput): Promise<ProdInput>
+  voidProdInput(businessId: string, inputId: number, reason: string): Promise<void>
+  listLotAdjustments(businessId: string): Promise<LotAdjustment[]>
+  addLotAdjustment(businessId: string, input: LotAdjustmentInput): Promise<LotAdjustment>
+  voidLotAdjustment(businessId: string, adjId: number, reason: string): Promise<void>
+  /** 0064 cost_lot_balances — 입고 오래된 순. all = false면 남은 것만. */
+  lotBalances(businessId: string, all?: boolean): Promise<LotBalance[]>
+  /** 0064 cost_prod_actual — 대표 · 원가 관리(1원 · 호출마다 감사). */
+  prodActual(businessId: string, from?: IsoDate | null, to?: IsoDate | null): Promise<ProdActualRow[]>
+  /** 0064 cost_prod_actual_breakdown — 대표만. */
+  prodActualBreakdown(prodLotId: string): Promise<ProdActualBreakdownRow[]>
+}
+
+/**
+ * 원가 엔진 — 원가 관리(0065 비용 마스터 · 배부 · 제품 원가 목록)와 대표 BOM(0063). 판정은 DB.
+ * BOM 메서드(bom*) · 분해(productBreakdown)는 대표만 — 원가 관리 · 생산 화면 코드는 부르지 않는다(check:sales-cost 정적 검사).
+ * dummy는 lib/repository/dummy-sales-cost.ts, live는 supabase-costs.ts.
+ */
+export interface CostsMethods {
+  /** 0061 cost_products — 이름만(구매 · 생산 · 영업 · 원가 관리 · 대표). */
+  listCostProducts(businessId: string): Promise<CostProduct[]>
+  /** 0065 cost_costing_list — 대표 · 원가 관리. 하루 20번 · 호출마다 감사. 0065 전 DB면 빈 목록. */
+  costingList(businessId: string): Promise<CostingRow[]>
+  /** 무효 줄도 함께. */
+  listOverheads(businessId: string): Promise<Overhead[]>
+  addOverhead(businessId: string, input: OverheadInput): Promise<Overhead>
+  voidOverhead(businessId: string, overheadId: number, reason: string): Promise<void>
+  overheadSummary(businessId: string): Promise<OverheadSummaryRow[]>
+  /** 줄이 없으면 null(기본 trailing · 28일). */
+  allocSettings(businessId: string): Promise<AllocSettings | null>
+  setAllocSettings(businessId: string, basis: AllocBasis, windowDays: number, plannedKgMonth: number | null): Promise<void>
+  bomStatus(): Promise<BomStatus | null>
+  bomVersions(businessId: string): Promise<BomVersionRow[]>
+  bomGet(productId: string, asOf?: IsoDate | null): Promise<BomCurrent | null>
+  bomSave(productId: string, validFrom: IsoDate, yieldPct: number, lines: { material_id: string; kg_per_kg: number }[], note: string, isFake: boolean): Promise<number>
+  bomVoid(versionId: number, reason: string): Promise<void>
+  bomRealAllow(on: boolean): Promise<boolean>
+  productBreakdown(productId: string, kind: 'market' | 'current'): Promise<ProductBreakdownRow[]>
+}
 
 /**
  * 화면과 데이터 사이의 유일한 계약(Port).
@@ -110,7 +268,26 @@ import type {
  * 전부 async다. dummy 어댑터는 동기로 끝나지만 시그니처까지 동기로 두면
  * live로 바꾸는 날 호출부를 전부 다시 써야 한다.
  */
-export interface ChairmanRepository {
+/**
+ * 0066 견적 · 가격 예외 결재. 판정 · 스냅숏 · 결재선은 DB(quote_* 정의자 함수)다. 원가 스냅숏 칸은 견적을 읽을 수 있는 사람
+ * (본인 · 영업 팀장 · 대표)에게만 RLS가 돌려준다. dummy는 lib/repository/dummy-quotes.ts, live는 supabase-quotes.ts.
+ */
+export interface QuoteMethods {
+  /** 그 회사의 보이는 견적(최근 순). 0066 전 DB면 빈 목록. */
+  listQuotes(businessId: string): Promise<Quote[]>
+  /** 보이는 견적 하나와 같은 뿌리의 판 전부(판 순). 없거나 못 보면 null. */
+  getQuote(quoteId: string): Promise<{ quote: Quote; versions: Quote[] } | null>
+  /** 0066 quote_create — 새 견적 id. 'quote_invalid' · 'quote_cost_unavailable' · 'cost_*'로 던진다. */
+  createQuote(input: QuoteInput): Promise<string>
+  /** 0066 quote_request_approval — 결재 id. */
+  requestQuoteApproval(quoteId: string): Promise<string>
+  confirmQuote(quoteId: string): Promise<void>
+  cancelQuote(quoteId: string): Promise<void>
+  /** 0066 quote_download_log — 확정 견적만. 내려받기 전에 부른다(감사가 먼저). */
+  logQuoteDownload(quoteId: string, format: 'xlsx' | 'pdf'): Promise<void>
+}
+
+export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods, ProductionMethods, CostsMethods, QuoteMethods {
   /** 어느 쪽을 보고 있는지. 화면이 아니라 DUMMY DATA 뱃지와 로그가 쓴다. */
   readonly mode: 'dummy' | 'live'
 
@@ -161,8 +338,68 @@ export interface ChairmanRepository {
    */
   saveOfficialStatement(input: NewOfficialStatement, actor: AuditActor): Promise<number>
 
-  /** 그 회사의 **활성** 공식 재무제표 목록(정정으로 밀려난 것은 뺀다). 월별 화면의 잠금 판정이 쓴다. */
-  listOfficialStatements(businessId: string): Promise<OfficialStatement[]>
+  /**
+   * 그 회사의 **활성** 공식 재무제표 목록(정정으로 밀려난 것은 뺀다). 월별 화면의 잠금 판정이 쓴다.
+   * 기본은 **세무사 확정(accountant)만** — 월별 잠금 · «기준» 문구는 확정만 센다(0050 리뷰 M-5). ECOUNT 엑셀(잠정)이
+   * 필요하면 basis를 준다. 0050 전 DB(basis 칸 없음)의 행은 accountant로 읽는다.
+   */
+  listOfficialStatements(businessId: string, basis?: OfficialStatementBasis | 'all'): Promise<OfficialStatement[]>
+
+  /**
+   * ECOUNT 엑셀 업로드 한 건(0050 finance_imports). 읽기는 can_read_books, 넣기는 can_keep_books 본인 draft,
+   * 고치기는 만든 사람의 draft에서만 — 권한은 여기서 보지 않는다(DB가 본다 · dummy는 옮겨 적는다).
+   * 읽기는 0050이 없는 DB를 견딘다(master push = production 배포가 DB보다 먼저 나간다). 쓰기는 견디지 않는다.
+   * 지우기는 없다 — 취소는 cancelled다. committed 전이는 대상별 등록 RPC(0051)만 한다 — 사람은 못 한다.
+   */
+  createFinanceImport(input: { business_id: string; kind: FinanceImportKind; file_name: string }, actor: AuditActor): Promise<FinanceImport>
+  getFinanceImport(importId: string): Promise<FinanceImport | null>
+  /** 그 회사의 업로드(최근 것부터). status를 주면 그 상태만. */
+  listFinanceImports(businessId: string, status?: FinanceImport['status']): Promise<FinanceImport[]>
+  /** 미리보기 결과(sha256 · 개요)를 적는다. **draft에서만** — 끝난 업로드면 던진다. 바뀐 줄을 돌려준다. */
+  recordFinanceImportPreview(importId: string, patch: FinanceImportPreviewPatch, actor: AuditActor): Promise<FinanceImport>
+  /** draft → cancelled. **draft에서만** — 끝난 업로드면 던진다. 원본 첨부는 호출자가 먼저 지운다(0050 머리 주석 :25). */
+  cancelFinanceImport(importId: string, actor: AuditActor): Promise<FinanceImport>
+  /**
+   * 열 지정 다시 쓰기 — 이 회사 · 이 종류의 업로드 중 summary.mapping(사람이 확정한 열 지정)이 있는 **가장 최근** 것.
+   * 취소된 업로드와 exceptImportId(지금 업로드)는 뺀다. 없으면 null. 읽기는 RLS(can_read_books) 안이다 —
+   * 같은 회사의 다른 담당자가 확정한 지정도 다시 쓴다(새 표 없이 summary에 둔다).
+   */
+  findLatestFinanceImportMapping(businessId: string, kind: FinanceImportKind, exceptImportId: string): Promise<FinanceImport | null>
+  /**
+   * ① ECOUNT 계정과목 등록 — live는 0051 ecount_accounts_import() **한 트랜잭션**: 감사(새 코드 묶음 한 줄 + 이름 바꿈마다)
+   * → 새 코드(source='ecount') → 이름(사람이 체크한 코드만) → 업로드 committed. 하나라도 어긋나면 아무것도 남지 않는다.
+   * **있는 계정의 분류는 건드리지 않는다** · 지우지 않는다. 판정(본인 · draft · 종류 · sha256 · 장부 권한 · ECOUNT 회사)과
+   * 감사 문구는 DB가 한다. 거부 낱말은 lib/ecount/import-errors.ts(dummy도 같은 낱말). 넣은 수 · 이름 바꾼 수를 돌려준다.
+   */
+  registerEcountAccounts(importId: string, input: { file_sha256: string } & EcountAccountMerge, actor: AuditActor): Promise<{ added: number; renamed: number }>
+  /**
+   * ② ECOUNT 연간 재무제표 등록 — live는 0051 official_statement_import_ecount() 한 트랜잭션: 세무사 확정 해 거부 · 균형 ·
+   * 같은 해 ECOUNT 활성 결산 supersede · 감사 먼저 · 헤더(basis='ecount_excel') · 줄 · 업로드 committed. 새 결산 id를 돌려준다.
+   * lines의 amount는 원장 규약(차변 − 대변 — annualLedgerLines).
+   */
+  registerEcountAnnual(
+    importId: string,
+    /** period_key: 미리보기 때 사람이 본 해 — 업로드 줄의 해와 다르면 import_changed(0051 리뷰 m-2) */
+    input: { file_sha256: string; period_key: string; lines: { account_code: string; amount: number }[] },
+    actor: AuditActor,
+  ): Promise<number>
+  /**
+   * ③ ECOUNT 월별 손익 등록 — live는 0052 ecount_monthly_import() 한 트랜잭션: 판정 · 원본 첨부 확인 · 마감 달 · 세무사 확정 달 ·
+   * 손익 계정만 → 달마다 요약 전표(손익 줄 + «ECOUNT 월별손익 대응» 한 줄, 대응 계정이 없으면 만든다) · 감사 먼저 → committed.
+   * **같은 달을 다시 올리면** 그 달 활성 업로드 전표를 역분개 + 정정분개(post_correction)하고 옛 줄을 내린다 — 두 번 세지 않는다.
+   * 내용이 같으면 건너뛴다. 활성 업로드 전표가 이미 역분개됐으면 ecount_month_reversed로 멈춘다.
+   * months의 amount는 당월 금액 · 원장 규약(차변 − 대변 — monthlyLedgerMonths). basis는 미리보기에서 확정한 당월/누계.
+   */
+  /**
+   * 0050 finance_import_slips — 월별 업로드가 세운 전표 ↔ (회사, 달). 활성 · 내려간 줄 전부(읽기는 can_read_books).
+   * 전표 화면의 출처 꼬리표 «ECOUNT 엑셀»과 미리보기의 «지난 업로드 전표가 있는 달»이 이것을 본다. 0050 전 DB면 빈 목록.
+   */
+  listFinanceImportSlips(businessId: string): Promise<FinanceImportSlip[]>
+  registerEcountMonthly(
+    importId: string,
+    input: { file_sha256: string; period_key: string; basis: MonthlyBasis; months: MonthlyLedgerMonth[] },
+    actor: AuditActor,
+  ): Promise<EcountMonthlyResult>
 
   /**
    * Phase 5-D — 프로세스차트(0021). 읽기는 Executive 이상 + 자기 회사(DB가 판정).
@@ -312,6 +549,25 @@ export interface ChairmanRepository {
   setAttachmentViewer(attachmentId: string, userId: string, on: boolean, actor: AuditActor): Promise<void>
   /** AI 호출 한 번의 사용량(0045 ai_usage_log). 실패해도 요약은 살린다 — 호출자가 삼킨다. */
   logAiUsage(input: AiUsageInput): Promise<void>
+
+  /**
+   * 자료 받는 입구(0058 intake_items). 보이는 범위는 DB가 정한다 — 회사 AND 등급, 적재된 줄은 그 문서가 보이는 사람 ·
+   * 올린 사람 · 회장. 0058이 없는 DB에서는 읽기가 빈 목록이다(첨부와 같은 이유 — 앱이 DB보다 먼저 나갈 수 있다).
+   */
+  listIntakeItems(businessId: string): Promise<IntakeRow[]>
+  getIntakeItem(itemId: string): Promise<IntakeRow | null>
+  /** 이 첨부가 입구 원본인가(적재 뒤 문서 첨부가 된 것 포함) — 요약 길이 배합비 감지를 건너뛰지 않게. */
+  getIntakeByAttachment(attachmentId: string): Promise<IntakeRow | null>
+  /** 입구 줄 + 원본 첨부 줄을 한 트랜잭션으로(0058 intake_begin). 바이트는 따로 올린다(첨부와 같은 길). */
+  beginIntake(input: NewIntake, actor: AuditActor): Promise<{ item_id: string; attachment_id: string; storage_path: string }>
+  /** 앱이 고치는 칸 다섯(0058 grant). 도장 · 이력 · 적재 칸은 DB가 적는다. 못 고치면 던진다(RLS · stamp). */
+  updateIntakeItem(itemId: string, patch: IntakePatch, actor: AuditActor): Promise<void>
+  /** 확인 → 문서(0058 intake_move_to_document). 새 document_id. */
+  moveIntakeToDocument(itemId: string, input: { title: string; doc_type: string; folder_id?: number | null; tags?: string[] }, actor: AuditActor): Promise<string>
+  /** 같은 회사 입구의 같은 sha256 파일(0058 intake_same_file — 보이는 줄만). */
+  intakeSameFile(itemId: string): Promise<IntakeSameFile[]>
+  /** 문서 지우기 = soft delete(0042 soft_delete — 0048 고치기 규칙). 입구에서 온 문서면 0058 트리거가 입구로 되돌린다. */
+  deleteDocument(documentId: string, actor: AuditActor): Promise<void>
 
   listProjects(): Promise<Project[]>
   listTasks(): Promise<Task[]>
@@ -857,6 +1113,41 @@ export interface BriefTimezoneSettings {
 /** CH-024 키맨 폼이 보내는 한 행. keyman_id가 없으면 새 사람이다. */
 export type NewAccount = { business_id: string; account_code: string } & AccountFields
 export type AccountPatch = Partial<AccountFields & { active: boolean }>
+
+/** ECOUNT 계정과목 업로드의 병합 한 벌(lib/ecount/excel/accounts-import.ts planAccounts가 만든다). 회사는 업로드 줄에서 온다. */
+export interface EcountAccountMerge {
+  creates: ({ account_code: string; active: boolean } & AccountFields)[]
+  renames: { account_code: string; from: string; to: string }[]
+}
+
+/** 0050 finance_import_slips 한 줄 — 월별 업로드가 세운 전표(원 전표 또는 정정분개). superseded_at이 있으면 내려간 줄. */
+export interface FinanceImportSlip {
+  business_id: string
+  month: string
+  slip_no: string
+  import_id: string
+  superseded_at: string | null
+}
+
+/**
+ * 0052 ecount_monthly_import의 결과 — 달마다 무엇을 했나(새 전표 · 정정 전표 · 같아서 건너뜀).
+ * 0056: 파일이 말하는데 금액이 없는 달 — 지난 업로드 전표를 역분개(reversed, slip_no 없음 · reversal · previous) ·
+ * (empty는 0056 리뷰 I-2 뒤 DB가 내지 않는다 — 되돌릴 전표가 미리보기와 다르면 import_changed.)
+ */
+export interface EcountMonthlyResult {
+  posted: number
+  corrected: number
+  unchanged: number
+  /** 0056 — 0056 전 DB의 결과에는 없다(0으로 읽는다) */
+  reversed: number
+  months: {
+    month: string
+    action: 'posted' | 'corrected' | 'unchanged' | 'reversed' | 'empty'
+    slip_no?: string
+    reversal?: string
+    previous?: string
+  }[]
+}
 
 /** 같은 회사에 같은 계정코드가 이미 있을 때. 사용자가 코드를 고쳐야 풀린다(DUPLICATE_BUSINESS_ID와 같은 이유). */
 export const DUPLICATE_ACCOUNT_CODE = 'DUPLICATE_ACCOUNT_CODE'

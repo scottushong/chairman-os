@@ -2,6 +2,7 @@
 import { bundleTitle, formAmount } from './approval-line'
 import { boss, bossText } from './boss'
 import { decisionStatusLabel } from './decision-status'
+import { TEMPLATE_NAME_KO, type AnyTemplateKey } from '../types/groupware'
 import type { ApprovalStepState, ApprovalStepStatus, ApprovalTemplate, Decision, DecisionStatus, Role } from '@/types'
 
 /**
@@ -380,7 +381,7 @@ export function buildLedgerRows(
         day: kstDay(d.created_at),
         created_at: d.created_at ?? null,
         template_key: d.template_key as string,
-        template_name: t?.name_ko ?? (d.template_key as string),
+        template_name: t?.name_ko ?? TEMPLATE_NAME_KO[d.template_key as AnyTemplateKey] ?? (d.template_key as string),
         title: bundleTitle(d.title, viewer),
         requester: d.requester_name?.trim() || d.created_by || '—',
         team: d.requester_team_name?.trim() ?? '',

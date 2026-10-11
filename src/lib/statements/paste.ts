@@ -20,12 +20,14 @@ export interface PasteResult {
 }
 
 /**
- * 한 칸을 숫자로. 못 읽으면 undefined, 빈 칸이면 null.
+ * 회계 표기 한 칸을 숫자로 — **반올림 전**. 못 읽으면 undefined, 빈 칸이면 null.
+ * ECOUNT 엑셀 업로드(lib/ecount/excel/cells.ts)가 같은 규칙을 쓴다 — 단위(천원)를 곱한 뒤에 반올림해야 해서
+ * 반올림을 parseCell로 뺐다.
  *
  * 괄호는 회계에서 음수다 — (1,200)은 -1200이다. 이걸 1200으로 읽으면
  * 비용이 이익으로 뒤집힌다.
  */
-function parseCell(raw: string): number | null | undefined {
+export function parseAccountingNumber(raw: string): number | null | undefined {
   const text = raw.trim()
   if (text === '') return null
 
@@ -39,8 +41,13 @@ function parseCell(raw: string): number | null | undefined {
 
   const value = Number(bare)
   if (!Number.isFinite(value)) return undefined
-  // 원 단위로 반올림한다. 장부에 전 단위는 없다.
-  return Math.round(negative ? -value : value)
+  return negative ? -value : value
+}
+
+/** 한 칸을 원 단위 숫자로. 못 읽으면 undefined, 빈 칸이면 null. 장부에 전 단위는 없다 — 반올림한다. */
+export function parseCell(raw: string): number | null | undefined {
+  const value = parseAccountingNumber(raw)
+  return value === null || value === undefined ? value : Math.round(value)
 }
 
 export function parsePastedColumn(text: string, slots: number): PasteResult {

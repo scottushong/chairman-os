@@ -11,7 +11,7 @@ import { boss, bossEn, bossText } from '@/lib/boss'
 import { kstToday } from '@/lib/chairman-project'
 import { tr, type Lang } from '@/lib/i18n'
 import { getRepository } from '@/lib/repository'
-import { TASK_STATUS_LABEL_KO, type ApprovalStepState, type Decision, type Role } from '@/types'
+import { draftableTemplates, TASK_STATUS_LABEL_KO, type ApprovalStepState, type Decision, type Role } from '@/types'
 
 /**
  * `/me` — 직원 홈 (Phase 6-2 블록 1). Member · TeamLead가 로그인하면 여기로 온다.
@@ -56,7 +56,7 @@ export default async function MePage({ searchParams }: PageProps<'/me'>) {
     repo.listTasks(),
     repo.listDecisions(),
     repo.listNotices(me),
-    composing ? repo.listApprovalTemplates() : Promise.resolve([]),
+    composing ? repo.listApprovalTemplates().then(draftableTemplates) : Promise.resolve([]),
     composing ? repo.myApprovalLead() : Promise.resolve(null),
     repo.listBusinesses(),
     raw === 'team' ? repo.listDocuments().catch(() => []) : Promise.resolve([]),

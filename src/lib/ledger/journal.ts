@@ -174,6 +174,11 @@ export interface SlipView {
   evidence_url: string | null
   /** 자체 장부(헤더 있음)인가 */
   own: boolean
+  /**
+   * ECOUNT 엑셀 월별 업로드가 세운 전표인가(0050 finance_import_slips의 원 전표 · 정정분개 + 그것을 뒤집은 역분개).
+   * 자체 장부 전표(own)지만 출처 꼬리표는 «ECOUNT 엑셀»이다. 판정은 적요가 아니라 업로드 전표 줄로 한다(적요는 흉내 낼 수 있다).
+   */
+  ecountExcel: boolean
   /** 그 달이 마감됐나 */
   closed: boolean
   lines: JournalLine[]
@@ -185,8 +190,22 @@ export interface SlipView {
   corrected_by: string[]
 }
 
-/** 한 회사 한 달의 전표. 날짜 → 전표번호 순. */
-export function slipsOf(ledger: FinanceLedger, businessId: BusinessId, period: PeriodKey): SlipView[] {
+/** 출처 꼬리표 — 화면이 그리는 글자. ECOUNT 원천 전표(헤더 없음) · ECOUNT 엑셀 업로드 전표 · 이 화면에서 넣은 전표. */
+export function slipOriginLabel(slip: Pick<SlipView, 'own' | 'ecountExcel'>): 'ECOUNT' | 'ECOUNT 엑셀' | '자체' {
+  if (!slip.own) return 'ECOUNT'
+  return slip.ecountExcel ? 'ECOUNT 엑셀' : '자체'
+}
+
+/**
+ * 한 회사 한 달의 전표. 날짜 → 전표번호 순.
+ * importSlipNos: 그 회사의 업로드 전표 번호(finance_import_slips — 활성 · 내려간 줄 모두). 주지 않으면 업로드 전표도 «자체»로 그린다.
+ */
+export function slipsOf(
+  ledger: FinanceLedger,
+  businessId: BusinessId,
+  period: PeriodKey,
+  importSlipNos: ReadonlySet<string> = new Set(),
+): SlipView[] {
   const headers = new Map<string, JournalEntry>(
     ledger.entries.filter((e) => e.business_id === businessId).map((e) => [e.slip_no, e]),
   )
@@ -209,6 +228,9 @@ export function slipsOf(ledger: FinanceLedger, businessId: BusinessId, period: P
         memo: h?.memo ?? sorted[0].memo,
         evidence_url: h?.evidence_url ?? null,
         own: h !== undefined,
+        ecountExcel:
+          h !== undefined &&
+          (importSlipNos.has(slip_no) || (h.correction_kind === 'reversal' && !!h.corrects_id && importSlipNos.has(h.corrects_id))),
         closed: locked,
         lines: sorted,
         debit,

@@ -12,6 +12,7 @@ import { formatDateTime } from '@/lib/format'
 import { businessName } from '@/lib/lookup'
 import { currentUser } from '@/lib/auth/session'
 import { isChairman } from '@/lib/boss'
+import { isInAppDocLink } from '@/lib/intake/rules'
 import { getRepository } from '@/lib/repository'
 import { SECURITY_CLASS_LABEL_KO } from '@/types'
 
@@ -80,16 +81,24 @@ export default async function DocumentDetailPage(props: PageProps<'/documents/[i
         >
           문서 목록
         </Link>
-        <a
-          href={doc.storage_url}
-          target="_blank"
-          rel="noreferrer noopener"
-          title={doc.storage_url}
-          className="flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
-        >
-          <Icon name="file-text" className="size-3.5" />
-          열기
-        </a>
+        {/* 0058 — 입구에서 온 문서는 링크가 이 화면 자신이다(파일은 아래 «첨부»). 바깥 링크 버튼 대신 안내만. */}
+        {isInAppDocLink(doc.storage_url) ? (
+          <span className="flex items-center gap-1 rounded-lg border border-line-soft px-2.5 py-1.5 text-t11h text-ink-muted">
+            <Icon name="file-text" className="size-3.5" />
+            자료 받는 입구에서 온 문서 · 원본은 아래 첨부
+          </span>
+        ) : (
+          <a
+            href={doc.storage_url}
+            target="_blank"
+            rel="noreferrer noopener"
+            title={doc.storage_url}
+            className="flex items-center gap-1 rounded-lg border border-line px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          >
+            <Icon name="file-text" className="size-3.5" />
+            열기
+          </a>
+        )}
       </PageHeader>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">

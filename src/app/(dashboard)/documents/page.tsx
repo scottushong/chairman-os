@@ -13,6 +13,7 @@ import { companyTree, descendantIds, folderPaths, type FolderNode } from '@/lib/
 import { formatDateTime } from '@/lib/format'
 import { businessName } from '@/lib/lookup'
 import { firstParam, oneOf, withParams } from '@/lib/query'
+import { isInAppDocLink } from '@/lib/intake/rules'
 import { getRepository } from '@/lib/repository'
 import {
   SECURITY_CLASS,
@@ -372,18 +373,29 @@ function DocumentRow({
         </span>
       </td>
       <td className="px-3 py-2 text-center" data-label="링크">
-        {/* 바깥으로 나가는 링크다. noreferrer를 붙이는 이유는 사내 스토리지 주소에
-            Chairman OS의 화면 주소가 Referer로 따라 나가지 않게 하기 위해서다. */}
-        <a
-          href={doc.storage_url}
-          target="_blank"
-          rel="noreferrer noopener"
-          title={doc.storage_url}
-          className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-t11 text-ink-dim transition-colors hover:border-accent hover:text-ink"
-        >
-          <Icon name="file-text" className="size-3.5" />
-          열기
-        </a>
+        {/* 0058 — 입구에서 온 문서의 링크는 앱 안 문서 화면(/documents/<id> — 파일은 그 문서의 첨부)이다. 같은 탭으로 연다. */}
+        {isInAppDocLink(doc.storage_url) ? (
+          <Link
+            href={doc.storage_url}
+            className="inline-flex min-h-11 items-center gap-1 rounded-md border border-line px-2 py-1 text-t11 text-ink-dim transition-colors hover:border-accent hover:text-ink lg:min-h-0"
+          >
+            <Icon name="file-text" className="size-3.5" />
+            열기
+          </Link>
+        ) : (
+          /* 바깥으로 나가는 링크다. noreferrer를 붙이는 이유는 사내 스토리지 주소에
+             Chairman OS의 화면 주소가 Referer로 따라 나가지 않게 하기 위해서다. */
+          <a
+            href={doc.storage_url}
+            target="_blank"
+            rel="noreferrer noopener"
+            title={doc.storage_url}
+            className="inline-flex items-center gap-1 rounded-md border border-line px-2 py-1 text-t11 text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          >
+            <Icon name="file-text" className="size-3.5" />
+            열기
+          </a>
+        )}
       </td>
     </tr>
   )

@@ -74,6 +74,7 @@ import type {
   MonthlyPriority,
   NewOfficialStatement,
   OfficialStatement,
+  OfficialStatementBasis,
   ProcessChart,
   ProcessChartInput,
   CityLayout,
@@ -87,7 +88,7 @@ import type {
   ChatMessageInput,
   ChatRead,
   ApprovalTemplate,
-  ApprovalTemplateKey,
+  AnyTemplateKey,
   DocFolder,
   Notice,
   NoticeInput,
@@ -145,6 +146,13 @@ import {
 } from './types'
 import { assistantMethods } from './supabase-assistant'
 import { attachmentMethods } from './supabase-attachments'
+import { financeImportMethods } from './supabase-finance-imports'
+import { intakeMethods } from './supabase-intake'
+import { purchasingMethods } from './supabase-purchasing'
+import { quoteMethods } from './supabase-quotes'
+import { salesCostMethods } from './supabase-sales-cost'
+import { productionMethods } from './supabase-production'
+import { costsMethods } from './supabase-costs'
 
 /**
  * Supabase 어댑터.
@@ -290,7 +298,7 @@ interface DecisionRow {
   status: DecisionStatus
   ai_confidence: number | string | null
   attachment_url: string | null
-  template_key: ApprovalTemplateKey | null
+  template_key: AnyTemplateKey | null
   form: Record<string, string> | null
   approval_line: ApprovalStep[] | null
   created_by?: string | null
@@ -808,6 +816,19 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     ...attachmentMethods(sb),
     // Phase 11 AI 어시스턴트(0046) — 대화 · 제안 · 사용량. 0046 전 DB를 견딘다(supabase-assistant.ts 머리 주석).
     ...assistantMethods(sb),
+    // ECOUNT 엑셀 업로드(0050 finance_imports) — 읽기는 0050 전 DB를 견딘다(supabase-finance-imports.ts 머리 주석).
+    ...financeImportMethods(sb),
+    // 0058 자료 받는 입구.
+    ...intakeMethods(sb),
+    // 0061 원가 엔진 · 구매 — 판정은 RLS(cost_can). 읽기는 0061 전 DB를 견딘다(supabase-purchasing.ts 머리 주석).
+    ...purchasingMethods(sb),
+    // 원가 엔진 · 영업 원가(0062 cost_sales_view · cost_price_check) · 원가 관리 감시(0061 cost_costing_watch). 원료 표는 읽지 않는다.
+    ...salesCostMethods(sb),
+    ...quoteMethods(sb),
+    // 원가 엔진 · 생산(0064 오더 · 생산 LOT · 투입 · 잔량 · Actual) — 판정은 RLS · 함수. 0064 전 DB를 견딘다.
+    ...productionMethods(sb),
+    // 원가 엔진 · 원가 관리(0065 비용 · 배부 · 제품 원가 목록) · 대표 BOM(0063). 0063 · 0065 전 DB를 견딘다.
+    ...costsMethods(sb),
 
     async listBusinesses(): Promise<Business[]> {
       const { data, error } = await fetchAll('businesses', ['business_id'], (from, to) =>
@@ -1125,8 +1146,12 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       return id
     },
 
-    /** 활성 행만 읽는다. 정정으로 밀려난 결산이 잠금 판정에 끼면 이미 고친 기간이 계속 잠긴다. */
-    async listOfficialStatements(businessId: string): Promise<OfficialStatement[]> {
+    /**
+     * 활성 행만 읽는다. 정정으로 밀려난 결산이 잠금 판정에 끼면 이미 고친 기간이 계속 잠긴다.
+     * basis는 앱에서 거른다 — 0050 전 DB에는 basis 칸이 없어서 .eq('basis')가 오류다(master push = production 앱이
+     * DB보다 먼저 나간다). 칸이 없는 행은 세무사 확정(accountant)이다.
+     */
+    async listOfficialStatements(businessId: string, basis: OfficialStatementBasis | 'all' = 'accountant'): Promise<OfficialStatement[]> {
       const { data, error } = await sb
         .from('official_statements')
         .select('*')
@@ -1134,7 +1159,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         .is('superseded_at', null)
         .order('period_key', { ascending: true })
       if (error) throw new Error(`Supabase official_statements ${error.code ?? '?'}: ${error.message}`)
-      return (data ?? []) as OfficialStatement[]
+      const rows = (data ?? []) as OfficialStatement[]
+      return basis === 'all' ? rows : rows.filter((r) => (r.basis ?? 'accountant') === basis)
     },
 
     /**

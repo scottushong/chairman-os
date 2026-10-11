@@ -36,7 +36,12 @@ import {
   dummyDecisionRows,
   dummyInterventions,
 } from './dummy-succession'
-import { attachmentSearchText, dummyAttachments } from './dummy-attachments'
+import { attachmentSearchText, dummyAttachmentRaw, dummyAttachments, dummySeedAttachment } from './dummy-attachments'
+import { dummyCanDeleteDocument, dummyIntake, dummyIntakeEntity, seedDummyIntake } from './dummy-intake'
+import { dummyFinanceImportEntity, dummyFinanceImports } from './dummy-finance-imports'
+import { dummyPurchasing } from './dummy-purchasing'
+import { dummyQuotes } from './dummy-quotes'
+import { dummyCostProduct, dummyCostReadAudit, dummyCosts, dummyGrantedAt, dummyProduction, dummySalesCost, noteDummyGrant } from './dummy-sales-cost'
 import * as books from './dummy-books'
 import { dummyAssistant } from './dummy-assistant'
 import * as chat from './dummy-chat'
@@ -67,7 +72,7 @@ import {
 } from './dummy-org'
 import { emptyStrategy } from '@/lib/strategy-fields'
 import { attachmentHitId, type SearchHit } from '@/lib/search'
-import { MONITOR_DAYS, STAFF_ADMIN_PREFIX, STAFF_ADMIN_ROLES, needsChairmanApproval } from '@/types'
+import { MONITOR_DAYS, QUOTE_TEMPLATE_KEY, STAFF_ADMIN_PREFIX, STAFF_ADMIN_ROLES, needsChairmanApproval } from '@/types'
 import { businessOfModule, DRAFT_DECISION_MODULE } from '@/lib/module-grants'
 import type {
   AppNotification,
@@ -215,6 +220,8 @@ const memoryLogos = new Map<string, string>()
 const memoryPhotos = new Map<string, string>()
 const memoryEvents: ChairmanEvent[] = []
 let initiativeSeq = 0
+/** 0066 — dummy-quotes가 «가격 예외»를 올리는 동안만 켠다(chairman.quote_approval 거울). */
+let quoteApprovalOn = false
 
 /**
  * CH-024 키맨(0015). 시드가 없다 — 실제 사람 이름이 git에 들어가면 안 된다(0014 회장 루틴과 같은 이유).
@@ -235,7 +242,11 @@ const memoryTaskPatches = new Map<string, TaskPatch & { blocked_since?: string }
  * CH-042로 등록한 문서. 시드 JSON이 없는 표라(0003의 '넣지 않는 테이블') 처음에는 비어 있다.
  * 여기도 서버가 살아 있는 동안만이다.
  */
-const memoryDocuments: DocumentRecord[] = []
+// globalThis에 둔다 — webpack dev는 Server Action 층과 화면 층이 이 모듈을 따로 읽는다. 입구에서 넣은 문서가 화면에 안 보였다(2026-10-07).
+const documentStore = globalThis as unknown as { __chairmanDummyDocuments?: DocumentRecord[]; __chairmanDummyDeletedDocuments?: Set<string> }
+const memoryDocuments: DocumentRecord[] = (documentStore.__chairmanDummyDocuments ??= [])
+/** 0042 soft delete — 지운 문서(dummy). 0058 되돌리기가 이 길을 탄다. */
+const memoryDeletedDocuments: Set<string> = (documentStore.__chairmanDummyDeletedDocuments ??= new Set<string>())
 
 /**
  * CH-024로 고친 좌표. businessCoordinates(시드)는 읽기 전용이라 바뀐 칸만 따로 들고 있다가
@@ -593,8 +604,89 @@ const memoryActivityWeek = (() => {
  * src/data는 읽기 전용이라 여기서도 원본을 그대로 내보내지 않고 복사본을 준다 —
  * 화면에서 sort()를 한 번만 잘못 불러도 시드 배열 순서가 영구히 바뀐다.
  */
+/** 0058 자료 받는 입구(dummy-intake.ts) — 첨부 · 문서는 이 어댑터의 메서드를 그대로 탄다(권한 거울이 한 벌이게). */
+const intake = dummyIntake({
+  createAttachment: (input, actor) => dummyRepository.createAttachment(input, actor),
+  getAttachmentRaw: dummyAttachmentRaw,
+  createDocument: (input, actor) => dummyRepository.createDocument(input, actor),
+  listDocuments: () => dummyRepository.listDocuments(),
+  softDeleteDocument: (id) => memoryDeletedDocuments.add(id),
+})
+seedDummyIntake(dummySeedAttachment, { salesStaff: DUMMY_UID.salesStaff, supportLead: DUMMY_UID.supportLead, buyStaff: DUMMY_UID.buyStaff })
+
 export const dummyRepository: ChairmanRepository = {
   mode: 'dummy',
+
+  listIntakeItems: intake.listIntakeItems,
+  getIntakeItem: intake.getIntakeItem,
+  getIntakeByAttachment: intake.getIntakeByAttachment,
+  beginIntake: intake.beginIntake,
+  updateIntakeItem: intake.updateIntakeItem,
+  moveIntakeToDocument: intake.moveIntakeToDocument,
+  intakeSameFile: intake.intakeSameFile,
+  /** 0042 soft_delete('documents') + 0058 되돌리기 트리거의 거울. 회장 · 입구에서 그 문서를 적재한 사람만(0048 고치기). */
+  async deleteDocument(documentId, actor) {
+    const d = (await dummyRepository.listDocuments()).find((x) => x.document_id === documentId)
+    if (!d || !dummyCanDeleteDocument(documentId)) throw new Error('row-level security: 문서를 지울 권한이 없다(등록한 사람 · 대표만) 또는 이미 지운 문서')
+    memoryDeletedDocuments.add(documentId)
+    intake.onDocumentDeleted(documentId, actor)
+  },
+  // 0061 원가 엔진 · 구매 — cost_can · 무효 한 번 · Landed를 옮겨 적은 것(dummy-purchasing.ts).
+  ...dummyPurchasing(),
+  // 원가 엔진 · 영업 원가(0062 cost_sales_list · cost_sales_view · cost_price_check) — 가짜 BOM은 dummy-sales-cost.ts 안에만.
+  ...dummySalesCost(),
+  // 0066 견적 — 결재 · 사람 거울은 이 파일의 것을 빌려 쓴다(함수 안에서 늦게 읽는다).
+  ...dummyQuotes({
+    priceCheck: (productId, price) => dummySalesCost().costPriceCheck(productId, price),
+    productOf: dummyCostProduct,
+    createDecision: async (input, actor) => {
+      quoteApprovalOn = true
+      try {
+        const d = await dummyRepository.createDecision(input, actor)
+        return { decision_id: d.decision_id, status: d.status }
+      } finally {
+        quoteApprovalOn = false
+      }
+    },
+    decisionStatus: (id) => {
+      const d = memoryDecisions.find((x) => x.decision_id === id)
+      return d ? (memoryDecisionStatuses.get(id) ?? d.status) : null
+    },
+    inSubtree: (viewerId, targetId) => inMemorySubtree(viewerId, targetId),
+  }),
+  // 원가 엔진 · 생산(0064) · 원가 관리(0065) · 대표 BOM(0063) — 작업지시 수량 · BOM이 가짜 BOM 옆이라 같은 파일.
+  ...dummyProduction(),
+  ...dummyCosts(),
+
+  /** 0061 cost_costing_watch의 거울 — 대표만. 원가 관리 권한자 · 줄 생긴 시각 · 최근 7일 원가 조회 · 구매 · 영업 화면 열람 · 마지막 조회(그 회사). */
+  async costingWatch(businessId: string) {
+    const viewer = dummyViewer()
+    if (viewer.revoked_at || viewer.role !== 'Chairman' || !dummyHasBusiness(viewer, businessId)) throw new Error('cost_not_found')
+    const key = `/costing/${businessId}`
+    const since = Date.now() - 7 * 86_400_000
+    const audit = dummyCostReadAudit()
+    return memoryPeople
+      .filter((p) => dummyModuleGrants(p.user_id).some((m) => m.module === key))
+      .sort((a, b) => a.display_name.localeCompare(b.display_name, 'ko'))
+      .map((p) => {
+        const costReads = audit.filter((a) => a.user_id === p.user_id && a.business_id === businessId)
+        const screens = memoryActivity.filter(
+          (e) =>
+            e.actor_user_id === p.user_id &&
+            e.action === 'read' &&
+            [`/purchasing/${businessId}`, `/sales/${businessId}`].some((b) => e.path === b || (e.path ?? '').startsWith(`${b}/`)),
+        )
+        const times = [...costReads.map((a) => a.at), ...screens.map((e) => e.occurred_at)].sort()
+        return {
+          user_id: p.user_id,
+          display_name: p.display_name,
+          granted_at: dummyGrantedAt(p.user_id, key),
+          cost_reads_7d: costReads.filter((a) => Date.parse(a.at) > since).length,
+          screen_reads_7d: screens.filter((e) => Date.parse(e.occurred_at) > since).length,
+          last_read_at: times.length ? times[times.length - 1] : null,
+        }
+      })
+  },
 
   /**
    * Phase 10 첨부(0045). 대상 판정은 이 어댑터의 목록(각각 RLS를 옮겨 적은 것)으로 한다 —
@@ -615,9 +707,15 @@ export const dummyRepository: ChairmanRepository = {
       const d = (await dummyRepository.listDocuments()).find((x) => x.document_id === id)
       return { visible: !!d, business_id: d && d.business_id !== 'group' ? d.business_id : null }
     }
+    // 0050 — ECOUNT 업로드 원본. 업로드가 보이는가(finance_imports_read = can_read_books).
+    if (table === 'finance_imports') return dummyFinanceImportEntity(id)
+    // 0058 — 자료 받는 입구 원본. 입구 줄이 보이는가(회사 AND 등급).
+    if (table === 'intake_items') return dummyIntakeEntity(id)
     const d = (await dummyRepository.listDecisions()).find((x) => x.decision_id === id)
     return { visible: !!d && dummyHasBusiness(viewer, d.business_id), business_id: d?.business_id ?? null }
   }),
+  // ECOUNT 엑셀 업로드(0050 finance_imports) — 권한을 옮겨 적었다(dummy-finance-imports.ts).
+  ...dummyFinanceImports,
 
   /**
    * 0002 businesses_read = has_business(). 0047 전까지 dummy는 회사를 가르지 않았다 — 그래서 dummy의 DY 팀장이
@@ -790,7 +888,7 @@ export const dummyRepository: ChairmanRepository = {
           dummySharedWithMe(memoryShares, viewer.user_id, 'documents', d.document.document_id) ||
           dummyOwnerUnknown(d.owner_user_id)),
     ).map((d) => ({ ...d.document, uploaded_by: ownerLabel(d.owner_user_id) }))
-    return [...seeded, ...memoryDocuments]
+    return [...seeded, ...memoryDocuments].filter((d) => !memoryDeletedDocuments.has(d.document_id))
   },
 
   /**
@@ -1203,6 +1301,8 @@ export const dummyRepository: ChairmanRepository = {
 
   /** CH-041 기안. id는 live에서 0010의 시퀀스가 준다. 여기서는 같은 모양(dec_005)을 흉내 낸다. */
   async createDecision(input: NewDecision, actor: AuditActor): Promise<Decision> {
+    // 0066 decisions_price_exception_guard 거울 — «가격 예외»는 견적(dummy-quotes)만 올린다.
+    if ((input.template_key as string | undefined) === QUOTE_TEMPLATE_KEY && !quoteApprovalOn) throw new Error('price_exception_use_quote')
     // 0038 트리거의 거울 — 필수 항목 · 첨부를 본다(화면 값은 안 믿는다). 결재선은 0059 상사 사슬로 새로 만든다.
     if (input.template_key) await groupware.draftApprovalLine(input)
     const requester = memoryPeople.find((p) => p.user_id === actor.user_id)
@@ -1561,7 +1661,14 @@ export const dummyRepository: ChairmanRepository = {
     if (process.env.DUMMY_FAIL_MODULE && process.env.DUMMY_FAIL_MODULE === grant.module) {
       throw new Error('new row violates row-level security policy for table "user_module_access"')
     }
+    // 0061 cost_costing_cap 거울 — '/costing/<biz>' 줄은 회사마다 셋까지(이 사람 말고 셋이 있으면 거부).
+    const on = grant.can_write || grant.can_approve
+    if (on && grant.module.startsWith('/costing/')) {
+      const others = memoryPeople.filter((p) => p.user_id !== userId && dummyModuleGrants(p.user_id).some((m) => m.module === grant.module))
+      if (others.length >= 3) throw new Error('cost_costing_cap')
+    }
     setDummyModuleGrant(userId, grant)
+    if (grant.module.startsWith('/costing/')) noteDummyGrant(userId, grant.module, on)
     // 0055 리뷰 I5 — '/users/<biz>'를 끄면 그 관리자의 그 회사 대기 위임 초대를 취소(staff_admin_capability_revoked 거울).
     const adminBiz = businessOfModule(STAFF_ADMIN_PREFIX, grant.module)
     if (adminBiz && !grant.can_write) dummyRevokePendingStaffAdmin(userId, adminBiz)

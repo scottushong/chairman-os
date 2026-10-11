@@ -112,6 +112,14 @@ export const NAV: readonly NavGroup[] = [
         ready: true,
       },
       {
+        // 0061 원가 엔진 1차 — 구매(원료 · 공급처 · 시장가 · 구매 LOT). 그 회사 '/purchasing/<biz>' · '/costing/<biz>' 줄이 있는 사람과
+        // 대표에게만 선다(navFor의 purchasing). 이 항목이 서면 옛 자리표 «구매 / SCM»(준비 중)은 뺀다 — 같은 영역이 둘로 보이지 않게.
+        key: 'nav_purchasing', label: '구매',
+        href: '/purchasing',
+        icon: 'cart',
+        ready: true,
+      },
+      {
         key: 'nav_hr', label: '인사 / 조직',
         href: '/hr',
         icon: 'users',
@@ -122,6 +130,14 @@ export const NAV: readonly NavGroup[] = [
       // Phase 6-1 블록 C-2. 문서·업무·프로젝트에 걸쳐 '나에게 지금 무엇이 열려 있나'를
       // 한 화면에서 답한다. 셋에 흩어 두면 그 질문에 아무 데서도 답할 수 없다.
       { key: 'nav_shared', label: '공유받은 것', href: '/shared', icon: 'eye', ready: true },
+      {
+        // 원가 엔진 — 영업(제품 총원가 · 원가 우위 · 제시가 · 등급, 회장 결정 2026-10-09 «영업은 제품 총액만»). 그 회사 '/sales/<biz>' ·
+        // '/costing/<biz>' 줄이 있는 사람과 대표에게만 선다(navFor의 sales). 이 항목이 서면 옛 자리표 «영업 / CRM»(준비 중)은 뺀다.
+        key: 'nav_sales', label: '영업',
+        href: '/sales',
+        icon: 'target',
+        ready: true,
+      },
       {
         key: 'nav_crm', label: '영업 / CRM',
         href: '/crm',
@@ -135,6 +151,21 @@ export const NAV: readonly NavGroup[] = [
         icon: 'cart',
         ready: false,
         waitingFor: 'CH-052 DY ECOUNT 엑셀 업로드가 선행되어야 합니다.',
+      },
+      {
+        // 원가 엔진 0064 — 생산(작업지시 · 생산 LOT · 투입 · LOT 잔량). 그 회사 '/production/<biz>' 줄이 있는 사람과 대표에게만 선다
+        // (navFor의 production). 이 항목이 서면 옛 자리표 «생산 / MES»(준비 중)은 뺀다.
+        key: 'nav_production', label: '생산',
+        href: '/production',
+        icon: 'factory',
+        ready: true,
+      },
+      {
+        // 원가 엔진 0065 — 원가 관리(제품 원가 · 비용 마스터 · 배부 기준 · Actual). 그 회사 '/costing/<biz>' 줄이 있는 사람과 대표에게만(navFor의 costs).
+        key: 'nav_costs', label: '원가 관리',
+        href: '/costs',
+        icon: 'layers',
+        ready: true,
       },
       {
         key: 'nav_mes', label: '생산 / MES',
@@ -255,18 +286,45 @@ const STAFF_NAV_OVERRIDE: Readonly<Record<string, Partial<NavItem>>> = {
 }
 
 /**
+ * 역할 말고 사람 단위 권한으로 갈리는 메뉴(0061). 세션(SessionUser.cost)에서 레이아웃이 계산해 넘긴다 — 안내일 뿐 판정은 각 화면 · DB.
+ *   purchasing  그 사람이 구매 화면을 볼 회사가 하나라도 있는가(lib/auth/roles.ts purchasingBusinessIds). 대표는 늘 참.
+ */
+export interface NavOptions {
+  purchasing?: boolean
+  /** 0059 «결재 대장 열람» 줄이 있는 회사들(SessionUser.ledger). 비면 대장 메뉴를 뺀다. */
+  ledger?: readonly string[]
+  /** 영업 원가 화면을 볼 회사가 하나라도 있는가(lib/auth/roles.ts salesBusinessIds). 대표는 늘 참. */
+  sales?: boolean
+  /** 생산 화면을 볼 회사가 하나라도 있는가(lib/auth/roles.ts productionBusinessIds). 대표는 늘 참. */
+  production?: boolean
+  /** 원가 관리 화면을 볼 회사가 하나라도 있는가(lib/auth/roles.ts costsBusinessIds). 대표는 늘 참. */
+  costs?: boolean
+}
+
+/**
  * 이 역할이 보는 메뉴 한 벌. 회장은 NAV 그대로, 나머지(세션이 없을 때 포함)는 회장 전용을 빼고,
  * 이니셔티브를 못 읽는 역할에게서는 «이니셔티브»도 뺀다.
  */
-export function navFor(role: Role | null | undefined, ledger?: readonly string[]): readonly NavGroup[] {
-  if (role === 'Chairman') return NAV
+export function navFor(role: Role | null | undefined, opts: NavOptions = {}): readonly NavGroup[] {
+  const purchasing = role === 'Chairman' || opts.purchasing === true
+  const sales = role === 'Chairman' || opts.sales === true
+  const production = role === 'Chairman' || opts.production === true
+  const costs = role === 'Chairman' || opts.costs === true
+  // «구매»가 서면 옛 자리표 «구매 / SCM»을 뺀다. 못 보는 사람에게는 «구매»를 빼고 자리표만 남는다(지금까지와 같다). «영업»도 같다.
+  const purchasingFilter = (item: NavItem) =>
+    (purchasing ? item.key !== 'nav_scm' : item.key !== 'nav_purchasing') &&
+    (sales ? item.key !== 'nav_crm' : item.key !== 'nav_sales') &&
+    (production ? item.key !== 'nav_mes' : item.key !== 'nav_production') &&
+    (costs || item.key !== 'nav_costs')
+  if (role === 'Chairman') return NAV.map((group) => ({ ...group, items: group.items.filter(purchasingFilter) }))
   const initiatives = canReadInitiatives(role)
   // 0059 «결재 대장 열람» 줄(SessionUser.ledger)이 없으면 대장 메뉴를 뺀다. 화면은 누구나 열 수 있다(본인 · 결재선 줄만 보인다).
-  const ledgerMenu = (ledger?.length ?? 0) > 0
+  const ledgerMenu = (opts.ledger?.length ?? 0) > 0
   return NAV.map((group) => ({
     ...group,
     items: group.items
       .filter((item) => !CHAIRMAN_ONLY_NAV.has(item.key) && (initiatives || item.key !== 'nav_initiatives') && (ledgerMenu || item.key !== 'nav_ledger'))
+      .filter(purchasingFilter)
       .map((item) => (STAFF_NAV_OVERRIDE[item.key] ? { ...item, ...STAFF_NAV_OVERRIDE[item.key] } : item)),
   })).filter((group) => group.items.length > 0)
 }

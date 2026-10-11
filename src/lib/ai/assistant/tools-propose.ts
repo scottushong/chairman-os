@@ -336,6 +336,9 @@ export const proposeSummaryTool: AssistantTool = {
     const a = await ctx.repo.getAttachment(str(input.attachment_id, 64)).catch(() => null)
     if (!a) return { error: 'not_found', message: '첨부를 찾지 못했습니다(없거나 볼 권한이 없습니다).' }
     if (a.security_class === 'Vault') return { error: 'vault', message: 'Vault 첨부는 AI로 보내지 않습니다.' }
+    if (a.entity_table === 'finance_imports') return { error: 'finance_import', message: 'ECOUNT 업로드 원본은 AI로 보내지 않습니다.' }
+    // 0058 — 입구 원본은 입구 칸에서만 읽는다(배합비 감지 · «배합비 아님» 확인이 먼저다).
+    if (a.entity_table === 'intake_items') return { error: 'intake', message: '자료 받는 입구의 파일은 그 회사 화면의 입구 칸에서 읽습니다.' }
     return propose(ctx, 'attachment_summary', { attachment_id: a.attachment_id }, {
       title: `첨부 요약 — ${a.file_name}`,
       lines: [{ label: '파일', before: `요약 상태: ${a.status}`, after: `${a.file_name} (${Math.max(1, Math.round(a.size_bytes / 1024)).toLocaleString('ko-KR')}KB · ${a.security_class})` }],

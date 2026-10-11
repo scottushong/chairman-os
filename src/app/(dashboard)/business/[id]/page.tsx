@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
-import { AttachmentsSection } from '@/components/attachments/attachments-section'
+import { IntakeSection } from '@/components/intake/intake-section'
 import { CoordinatesPanel } from '@/components/business/coordinates-panel'
 import { KeymenPanel } from '@/components/business/keymen-panel'
 import { FinanceTrend } from '@/components/dashboard/finance-trend'
@@ -153,8 +153,8 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
           canEdit={canEditStrategy(user)}
           chair={chair}
         />
-        {/* Phase 10 — 회사에 붙인 파일 + AI 요약(0045: 회사가 보이고 AND 등급). */}
-        <AttachmentsSection entityTable="businesses" entityId={id} />
+        {/* 0058 — «첨부» 칸이 «자료 받는 입구»가 됐다(설계서 F9). 입구 전에 붙인 회사 첨부는 그 아래 «이전 첨부»로 남는다. */}
+        <IntakeSection businessId={id} />
       </div>
 
       <div className="mt-3.5 grid grid-cols-12 gap-3.5 pb-6">

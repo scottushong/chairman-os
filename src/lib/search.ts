@@ -75,6 +75,9 @@ export function attachmentEntityHref(hitId: string): string {
       return `/documents/${e}`
     case 'decisions':
       return `/approvals?id=${e}`
+    // 0050 ECOUNT 업로드 원본 — hit id에 회사가 없다(업로드 id뿐). 그룹 재무에서 회사를 고른다.
+    case 'finance_imports':
+      return '/finance'
     default:
       return '/documents'
   }
