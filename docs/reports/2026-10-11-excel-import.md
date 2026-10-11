@@ -77,7 +77,11 @@ Critical 0 · Important 3 + 확인 1 → 전부 고침(`b6cbdc4`):
 
 - `npm run check:cost-import`(`scripts/check-cost-import.ts`) PASS — ① PGlite 전 마이그레이션: 대상 7종 등록 · 같은 파일 두 번 · 동시 변경 · 권한 없는 사람(영업 · 남의 회사 · 시스템 · 구매 읽기만 · 생산 · anon) · 바꾸기 이유 없음 거부 · 무효 + 새 줄(이력) · 알림 · 이상치 한 줄이면 파일 전체 되돌림 · 잔량 초과 · 숫자 모양 오류에 값 없음 · BOM 대표만 · 같은 날 판 조용히 갈지 않음 · 진짜 스위치 · 하루 20번 · 직접 넣기 · 가짜 감사 거부 · 첨부 대표만 · 영업은 엑셀 감사 못 봄 ② 계획 ③ 빈 양식 ④ 빼기 경로 0.
 - staging 시험 SQL `C:\Users\Edison Hong\projects\chairman-os-excel\docs\onboarding\staging-tests\0068_staging_test.sql` — `check:staging-sql-cost`가 PGlite에서 먼저 돌린다.
-- 검사 결과(하나씩): 아래 «검사 결과» 절.
+- 검사 결과(하나씩 · 동시에 둘 안 돌림):
+  - feat/excel-import `2a1e893`: typecheck · lint · check 27종(db-safety ~ staging-sql-cost) · check:migrations · build(--webpack) **전부 PASS**.
+  - release/excel-rehearsal(0067 + 0068): typecheck · lint · check:migrations + check 27종 · build(--webpack) **전부 PASS**(19:36 · 빌드 뒤).
+  - 고친 기존 검사 둘: check:cost-engine(원가 관리가 구매 첨부 파일을 읽던 단언 → 0068부터 대표만 + 올린 사람 1시간), check:sales-cost(dummy 엑셀 넣기가 가짜 BOM 저장소를 직접 import → dummy.ts가 넘김).
+  - check:mobile은 돌리지 않았다(dummy 서버 + 120화면 — 메모리). 엑셀 넣기 폰 화면은 스크린숏 07 · 07b(가로 넘침 0px).
 - 스크린숏 `C:\Users\Edison Hong\projects\chairman-os-excel\docs\reports\2026-10-11-excel-import-shots\` (dummy · 대표 세션):
   01 칸 맞추기 · 02 상태(새 1 · 같은 1 · 충돌 3 · 오류 1) · 03 고친 칸 색 + 잠김 이유 · 04 이유 적음 · 05 등록(4줄 · 바꾼 1 · 건너뜀 2) · 06 같은 파일 잠김 · 07/07b 폰(가로 넘침 0px) · 08 LOT 중복 의심 · 09 비용 줄 · 10 BOM(R2 모양 — 제목 줄 + 머리글 2행 짐작).
   직원 세션 스크린숏은 못 찍었다(dummy 서버 하나 = 사용자 하나) — 권한 없는 사람 거부는 DB 시험 ①로 갈음.
@@ -94,6 +98,12 @@ Critical 0 · Important 3 + 확인 1 → 전부 고침(`b6cbdc4`):
 
 **0067(DB만)과 0068을 함께** 낸다. 0068을 먼저 내면 나중 0067이 «순서 뒤바뀜»(`--include-all`)이 되고, 0067은 리뷰 · 검사가 끝났다(화면은 아직 — 표는 비어 있어도 무해). 순서: feat/cost-engine(0067 + 대표만 고침) → release/cost-rehearsal 합침 → feat/excel-import 합침 → staging `db:push:staging`(0067 · 0068) → staging 시험 SQL 0066 · 0068 + 직원 업로드 한 번 → 운영 `release-production.sh 0067 0068`. 원가 권한자가 0명이라 운영에 넣어도 당장 쓰는 사람은 대표뿐이다.
 
+## 1-10. staging 리허설
+
+- 브랜치 `release/excel-rehearsal`(워크트리 `C:\Users\Edison Hong\projects\chairman-os-rel68`) = master `4073eb5` + feat/cost-engine `7dbf0ba`(0067 · 마진 내려받기 대표만) + feat/excel-import. 충돌 1(`src/lib/version.ts` LATEST_MIGRATION → 0068).
+- staging은 0066까지. 이 브랜치에서 `db:push:staging`하면 **0067 · 0068 둘**이 들어간다(dry-run에서 숫자 확인).
+- staging 시험 SQL 0068은 PGlite에서 PASS(`check:staging-sql-cost`). 리허설 검사 결과는 아래.
+
 ## 미결
 
 1. 화면 글자 선택 복사는 막지 않음(CSS로 막아도 개발자 도구로 뚫림 — 의미 없음 판단). 회장 결정 필요하면 `user-select: none`만 가능.
@@ -101,3 +111,40 @@ Critical 0 · Important 3 + 확인 1 → 전부 고침(`b6cbdc4`):
 3. 리뷰 V1 — staging에서 구매 직원 첨부 올리기 한 번 확인.
 4. 원료 · 공급처 «둘 다 맞음» 없음(이름 유일). R2 BOM이 «%» 비율로만 나오면 kg/kg로 바꾼 칸이 필요(지금은 kg/kg만).
 5. dummy 등록은 한 트랜잭션을 흉내 내지 못함(계획이 같은 검사를 먼저 다 돌림).
+6. 0067 화면(deals · margins)은 여전히 미착수 — 마진 엑셀을 만들면 대표 세션에서만 그리고 `cost_margins_download_log`를 먼저 부를 것.
+
+## 회장이 할 일
+
+| 순서 | 담당 | 상태 | 방법 |
+|---|---|---|---|
+| 1 | 회장 | 대기 | 이 보고와 스크린숏 확인 — `C:\Users\Edison Hong\projects\chairman-os-excel\docs\reports\2026-10-11-excel-import-shots\` |
+| 2 | 회장 | 대기 | 권장안(0067 DB + 0068 함께) 승인 여부 |
+| 3 | 회장 | 승인 뒤 | staging 반영(0067 · 0068 — dry-run에서 둘인지 확인): 아래 명령 상자 ①② |
+| 4 | 회장 | 3 뒤 | staging 시험 SQL 0068: 상자 ③④⑤ — 기대 `ERROR 0068 STAGING PASS a(…) … f(anon 거부)` |
+| 5 | 회장 | 3 뒤 | staging Preview에서 구매 직원(리허설 계정)으로 구매 첨부 하나 올리기 → 올라가는지(리뷰 V1). Preview를 띄우려면 브랜치 push가 필요 — 상자 ⑥ |
+| 6 | 회장 | 4 · 5 뒤 | 운영 반영 — OPERATIONS §9 순서(`release-production.sh`), 대기 번호 0067 0068 |
+
+① 
+```
+cd ~/projects/chairman-os-rel68
+```
+② 
+```
+npm run db:push:staging
+```
+③ 
+```
+cp docs/onboarding/staging-tests/0068_staging_test.sql supabase/.temp/
+```
+④ 
+```
+SUPABASE_DB_PASSWORD="$(grep ^SUPABASE_DB_PASSWORD .env.staging.local | cut -d= -f2-)" npx supabase db query --linked -f "supabase/.temp/0068_staging_test.sql"
+```
+⑤ 
+```
+rm -f supabase/.temp/0068_staging_test.sql
+```
+⑥ 
+```
+git push origin release/excel-rehearsal
+```
