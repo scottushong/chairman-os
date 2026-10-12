@@ -642,7 +642,7 @@ begin
          -coalesce(sum(c.amount) filter (where c.section = 'revenue'), 0) as revenue,
          coalesce(sum(c.amount) filter (where c.section = 'cogs' and c.category = 'raw_material' and c.account_code <> '4610'), 0) as raw,
          coalesce(sum(c.amount) filter (where c.section = 'cogs' and c.account_code = '4610'), 0) as merch,
-         coalesce(sum(c.amount) filter (where c.section = 'cogs' and c.category = 'labor'), 0) as labor,
+         coalesce(sum(c.amount) filter (where c.section = 'cogs' and c.category = 'labor' and c.account_code <> '4610'), 0) as labor,
          coalesce(sum(c.amount) filter (where c.section = 'cogs' and c.category not in ('raw_material', 'labor') and c.account_code <> '4610'), 0) as overhead,
          coalesce(sum(c.amount) filter (where c.section in ('sga', 'd_and_a')), 0) as sga,
          -coalesce(sum(c.amount) filter (where c.section in ('revenue', 'cogs', 'sga', 'd_and_a')), 0) as op
@@ -856,6 +856,8 @@ begin
     raise exception 'fin_pl_denied' using errcode = '42501';
   end if;
   perform pg_advisory_xact_lock(hashtext('fin_pl:' || p_business || ':' || p_period));
+  -- 앞 달 잠금도 (공유로) 잡는다 — 순서는 늘 이 달 → 앞 달(교착 없음). 앞 달의 기록 · 다시 열기 · 조정과 줄을 선다(리뷰 고침 2 I1).
+  perform pg_advisory_xact_lock_shared(hashtext('fin_pl:' || p_business || ':' || fin_prev_period(p_period)));
   select * into v_live from fin_pl_closes where business_id = p_business and period = p_period and superseded_at is null for update;
   -- 기초로 읽는 앞 달 확정본을 잠근다(같은 때 앞 달을 다시 열면 그쪽이 기다린다 — 내려간 확정본을 기초로 쓰지 않게).
   perform 1 from fin_pl_closes where business_id = p_business and period = fin_prev_period(p_period) and status = 'final' and superseded_at is null for share;

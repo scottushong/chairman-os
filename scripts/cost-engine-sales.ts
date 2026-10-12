@@ -218,7 +218,7 @@ async function sales0077(x: { as: SalesCtx['as']; run: SalesCtx['run']; owner: S
   const mineRows = await D(U.sales)
   assert.ok(mineRows.length > 0 && mineRows.every((r) => r.mine === true), '0077: 영업 본인 실적')
   const cols = Object.keys(mineRows[0]).sort()
-  assert.deepEqual(cols, ['currency', 'customer_company', 'customer_name', 'grade', 'grade_as_of', 'kg', 'mine', 'price_krw_per_kg', 'product_name', 'quote_id', 'revenue_krw', 'sale_id', 'shipped_on'], '0077: 영업 칸에 원가 · 마진이 섞였다')
+  assert.deepEqual(cols, ['currency', 'customer_company', 'customer_name', 'grade', 'grade_as_of', 'grade_basis', 'kg', 'mine', 'price_krw_per_kg', 'product_name', 'quote_id', 'revenue_krw', 'sale_id', 'shipped_on'], '0077: 영업 칸에 원가 · 마진이 섞였다')
   assert.ok(mineRows.every((r) => Number.isInteger(Number(r.revenue_krw))), '0077: 영업 매출이 1원이 아니다')
   assert.ok((await D(lead)).length >= mineRows.length, '0077: 영업 팀장이 팀 실적을 못 본다')
   for (const uid of [other, U.buy, U.prod, U.cost]) assert.equal((await D(uid)).length, 0, `0077: ${uid.slice(-2)}가 남의 판매 실적을 읽는다`)
@@ -232,7 +232,7 @@ async function sales0077(x: { as: SalesCtx['as']; run: SalesCtx['run']; owner: S
   assert.ok(tot.every((r) => Number.isInteger(Number(r.revenue_krw))), '0077: 원가 관리 매출이 1원이 아니다')
   const aud = await owner<{ n: number }>(`select count(*)::int as n from audit_log where entity_table = 'cost_products' and entity_id = 'margins:biz_dy' and actor_user_id = '${U.cost}'`)
 
-  // 이 달을 0075 내부 마감 확정으로(가짜 저장본) → 월 묶음의 이 달 줄은 «확정 매출원가 기준», 지난 달 줄은 잠정.
+  // 이 달을 0075 내부 마감 확정으로(가짜 저장본) → 월 묶음의 이 달 줄은 «월 마감 확정 달», 지난 달 줄은 잠정.
   const ym = T.slice(0, 7)
   await owner(`insert into fin_pl_closes (business_id, period, status, calc_version, method, tolerance_krw, input_hash, totals, detail, recorded_by, closed_by, closed_at)
     values ('biz_dy', '${ym}', 'final', 'pl-test', 'monthly_wa', 1000, '${'0'.repeat(32)}', '{}', '{}', '${U.chair}', '${U.chair}', now())`)
@@ -243,7 +243,7 @@ async function sales0077(x: { as: SalesCtx['as']; run: SalesCtx['run']; owner: S
     assert.equal(r.cost_basis, closed ? 'closed_month' : 'provisional', `0077: ${String(r.ps)} 월 마감 표시`)
   }
   const yr = await MG(U.cost, 'product', 'year')
-  assert.ok(yr.every((r) => r.cost_basis === 'provisional'), '0077: 해 묶음은 모든 달이 마감돼야 «확정 매출원가 기준»')
+  assert.ok(yr.every((r) => r.cost_basis === 'provisional'), '0077: 해 묶음은 모든 달이 마감돼야 «월 마감 확정 달»')
   const aud2 = await owner<{ n: number }>(`select count(*)::int as n from audit_log where entity_table = 'cost_products' and entity_id = 'margins:biz_dy' and actor_user_id = '${U.cost}'`)
   assert.equal(aud2[0].n, aud[0].n + 2, '0077: sales_margins 호출마다 감사 한 줄이 아니다')
   await db.exec(`set session_replication_role = replica; delete from fin_pl_closes where input_hash = '${'0'.repeat(32)}'; set session_replication_role = origin;`)

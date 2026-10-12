@@ -14,7 +14,8 @@ import type { MarginBy, MarginGrain, SalesMarginRow } from '@/types'
 /**
  * PHASE 5 견적 마진 vs 실제 마진(0077 sales_margins → 0067 cost_margins). 대표(원래 값) · 원가 관리(1원)만 — openCosts가 404로 거른다.
  * 화면을 열 때마다 RPC 한 번 = 문 한 건(하루 20번 · 호출마다 감사 · 겸직 거부 — 0067 cost_gate_biz). 합산은 원래 값끼리 더한 뒤 1원.
- * 실제 마진의 원가가 «잠정 대체원가»인지 «확정 매출원가 기준»(그 달 0075 내부 마감 확정)인지 줄마다 적는다.
+ * 줄마다 그 묶음의 달이 «월 마감 확정 달»(0075 내부 마감 확정 · 열린 재마감 표시 없음)인지 «월 마감 전»인지 적는다(원가 기준이 아니라 월 마감 상태).
+ * 판매 한 줄 원가가 출고일 Current면 «잠정 대체원가»(costSourceKo).
  * 내려받기는 없다(원가 엔진 빼기 금지 — 대표 예외는 0067 cost_margins_download_log, 이 화면은 붙이지 않음).
  * 스위치 'sales_margins'(기본 대표만)가 꺼지면 404. RPC도 같은 스위치를 본다.
  */
@@ -114,7 +115,7 @@ export default async function MarginsPage(props: PageProps<'/costs/[business_id]
               <th className="px-3 py-2 text-right font-normal">실제 원가(원)</th>
               <th className="px-3 py-2 text-right font-normal">실제 마진</th>
               <th className="px-3 py-2 text-right font-normal">견적 마진</th>
-              <th className="px-3 py-2 font-normal">원가 기준</th>
+              <th className="px-3 py-2 font-normal">월 마감</th>
             </tr>
           </thead>
           <tbody>
@@ -154,7 +155,7 @@ export default async function MarginsPage(props: PageProps<'/costs/[business_id]
                       </>
                     )}
                   </td>
-                  <td className="px-3 py-2" data-label="원가 기준" title={COST_BASIS_NOTE[r.cost_basis]}>
+                  <td className="px-3 py-2" data-label="월 마감" title={COST_BASIS_NOTE[r.cost_basis]}>
                     <span className={r.cost_basis === 'closed_month' ? 'font-semibold text-ok' : 'text-warn'}>{COST_BASIS_KO[r.cost_basis]}</span>
                   </td>
                 </tr>

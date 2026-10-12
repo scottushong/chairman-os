@@ -95,7 +95,7 @@ function Body({ businessId, period, view, settings, canKeep, canClose, isTop }: 
   const rawUp = sub(b.raw_closing, b.raw_opening)
   const wipUp = sub(b.wip_closing, b.wip_opening)
   const finUp = sub(b.finished_closing, b.finished_opening)
-  const bridge = [rawUp, wipUp, finUp, p.inventory_other, b.mfg_labor, b.mfg_overhead, p.cogs].every((x) => x !== null)
+  const bridge = [rawUp, wipUp, finUp, p.inventory_other, b.mfg_labor, b.mfg_overhead, b.merchandise_cogs, p.cogs].every((x) => x !== null)
   const profitButCashDown = (p.operating_income ?? 0) > 0 && (r.cash.net ?? 0) < 0
   return (
     <div className="grid gap-3 lg:grid-cols-2">
@@ -135,11 +135,12 @@ function Body({ businessId, period, view, settings, canKeep, canClose, isTop }: 
           <Row label="기초 · 기말 재공품" value={b.wip_opening} note={`→ ${wonOrMissing(b.wip_closing)}`} />
           <Row label="완성품 제조원가" value={b.cogm} />
           <Row label="기초 · 기말 완제품" value={b.finished_opening} note={`→ ${wonOrMissing(b.finished_closing)}`} />
+          <Row label="상품매출원가(장부 4610 — 그대로 더함)" value={b.merchandise_cogs} note="입고명세서에 없는 상품" />
         </dl>
         {bridge ? (
           <p className="mt-2 rounded-md bg-raised px-2 py-1.5 text-t10h text-ink-dim">
             <span className="font-semibold text-ink">매입액과 매출원가가 다른 까닭(계산식)</span> — 매입 {wonOrMissing(b.raw_purchases)} − 원료 재고 증가 {wonOrMissing(rawUp)} − 재고 변동 {wonOrMissing(p.inventory_other)} + 제조 인건비 · 경비{' '}
-            {wonOrMissing((b.mfg_labor ?? 0) + (b.mfg_overhead ?? 0))} − 재공품 증가 {wonOrMissing(wipUp)} − 완제품 증가 {wonOrMissing(finUp)} = 매출원가 {wonOrMissing(p.cogs)}. 상세 자료가 없는 원인은 단정하지 않습니다.
+            {wonOrMissing((b.mfg_labor ?? 0) + (b.mfg_overhead ?? 0))} − 재공품 증가 {wonOrMissing(wipUp)} − 완제품 증가 {wonOrMissing(finUp)} + 상품매출원가 {wonOrMissing(b.merchandise_cogs)} = 매출원가 {wonOrMissing(p.cogs)}. 상세 자료가 없는 원인은 단정하지 않습니다.
           </p>
         ) : null}
         {r.materials.length ? (

@@ -10,6 +10,9 @@ import { marginRange, SALE_GRADE_KO } from '@/lib/sales/margins'
 import { openSales } from '@/lib/sales/page'
 import type { SaleDeal, SaleGrade } from '@/types'
 
+/** 0077 sales_deals limit — 이만큼 오면 잘렸을 수 있다. */
+const DEALS_LIMIT = 2000
+
 const GRADE_CLASS: Record<SaleGrade, string> = {
   green: 'border-ok/40 bg-ok/10 text-ok',
   yellow: 'border-warn/40 bg-warn/10 text-warn',
@@ -43,6 +46,7 @@ export default async function SaleDealsPage(props: PageProps<'/sales/[business_i
   }
   const totalKg = deals.reduce((t, d) => t + d.kg, 0)
   const totalRevenue = deals.reduce((t, d) => t + d.revenue_krw, 0)
+  const allMidnight = deals.length > 0 && deals.every((d) => d.grade_basis === 'midnight')
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-4 px-4 py-5 sm:px-6">
@@ -71,6 +75,7 @@ export default async function SaleDealsPage(props: PageProps<'/sales/[business_i
         </button>
         <span className="ml-auto text-ink-muted tnum">
           {deals.length}건 · {totalKg.toLocaleString('ko-KR')}kg · 매출 {krw(totalRevenue)}원
+          {deals.length >= DEALS_LIMIT ? <span className="ml-2 text-warn">2,000건에서 잘렸을 수 있음 — 기간을 줄이세요</span> : null}
         </span>
       </form>
       {error ? (
@@ -88,7 +93,7 @@ export default async function SaleDealsPage(props: PageProps<'/sales/[business_i
               <th className="px-3 py-2 text-right font-normal">kg</th>
               <th className="px-3 py-2 text-right font-normal">판매가(원/kg)</th>
               <th className="px-3 py-2 text-right font-normal">매출(원)</th>
-              <th className="px-3 py-2 font-normal">등급(0시 기준)</th>
+              <th className="px-3 py-2 font-normal">{allMidnight ? '등급(0시 기준)' : '등급'}</th>
               <th className="px-3 py-2 font-normal">구분</th>
             </tr>
           </thead>
@@ -125,7 +130,7 @@ export default async function SaleDealsPage(props: PageProps<'/sales/[business_i
                   </td>
                   <td className="px-3 py-2" data-label="등급">
                     <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-t11h font-semibold ${GRADE_CLASS[d.grade]}`}>{SALE_GRADE_KO[d.grade]}</span>
-                    <span className="ml-1 text-ink-muted tnum">{d.grade_as_of}</span>
+                    <span className="ml-1 text-ink-muted tnum">{d.grade_as_of}{!allMidnight && d.grade_basis === 'midnight' ? ' 0시 기준' : ''}</span>
                   </td>
                   <td className="px-3 py-2" data-label="구분">
                     {d.mine ? '본인' : '팀'}

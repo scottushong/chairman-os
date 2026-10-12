@@ -84,7 +84,7 @@ export function dummySalesMargins(d: DummySalesMarginsDeps): Pick<ChairmanReposi
           (s): SaleDeal => ({
             sale_id: s.sale_id, shipped_on: s.shipped_on, customer_company: s.customer_company, customer_name: s.customer_name, product_name: s.product_name,
             kg: s.kg, price_krw_per_kg: s.price_krw_per_kg, currency: s.currency, revenue_krw: Math.round(s.kg * s.price_krw_per_kg),
-            grade: s.grade, grade_as_of: s.grade_as_of, quote_id: s.quote_id, mine: s.created_by === me,
+            grade: s.grade, grade_as_of: s.grade_as_of, grade_basis: s.created_by === DUMMY_UID.salesStaff ? 'midnight' : 'now', quote_id: s.quote_id, mine: s.created_by === me,
           }),
         )
     },

@@ -39,6 +39,7 @@ export function salesMarginsMethods(sb: SupabaseClient): Pick<ChairmanRepository
           revenue_krw: Number(r.revenue_krw),
           grade: r.grade as SaleDeal['grade'],
           grade_as_of: String(r.grade_as_of),
+          grade_basis: r.grade_basis === 'now' ? 'now' : 'midnight',
           quote_id: (r.quote_id as string | null) ?? null,
           mine: r.mine === true,
         }),

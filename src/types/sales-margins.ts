@@ -23,6 +23,8 @@ export interface SaleDeal {
   revenue_krw: number
   grade: SaleGrade
   grade_as_of: string
+  /** 0067 snap_basis — 'midnight' = 그날 0시 기준(영업) · 'now' = 기록 순간 값(대표 · 원가 관리). */
+  grade_basis: 'midnight' | 'now'
   quote_id: string | null
   mine: boolean
 }
