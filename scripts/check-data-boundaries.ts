@@ -170,7 +170,8 @@ async function checkPagination() {
   assert.deepEqual(tasks.map((t) => t.task_id), Array.from({ length: SIZE }, (_, i) => id(i)))
   assert.equal(tasks.at(-1)?.owner, `Owner ${SIZE - 1}`, 'Name cache must also paginate')
   assert.equal(tasks[0].deadline, null)
-  const taskRequests = requests.filter((u) => u.pathname.endsWith('/tasks'))
+  // 0072/0076 «예시» 꼬리표의 id 읽기(is_example=eq.true · limit 1000 — 시드 줄만)는 목록 페이지 넘기기와 따로다.
+  const taskRequests = requests.filter((u) => u.pathname.endsWith('/tasks') && !u.searchParams.has('is_example'))
   assert.deepEqual(taskRequests.map((u) => Number(u.searchParams.get('offset'))),
     Array.from({ length: Math.ceil(SIZE / 137) }, (_, i) => i * 137))
   assert.equal(new Set(tasks.map((t) => t.task_id)).size, SIZE)
