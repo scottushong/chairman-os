@@ -119,6 +119,17 @@ async function main() {
     const left = (await db.query<{ n: number }>(`select (select count(*) from cost_imports) + (select count(*) from cost_materials where name like '스테이징 엑셀%') as n`)).rows[0].n
     assert.equal(Number(left), 0, '0068 staging 시험 SQL이 엑셀 기록 · 원료를 남겼다')
   }
+  // 0071(프로세스 차트 동기화)이 있는 브랜치에서만. staging처럼 AI Agent 계정이 하나 있다.
+  if (files.includes('0071_process_chart_sync.sql')) {
+    const agent = '00000000-0000-0000-0000-00000061c005'
+    await db.exec(`insert into auth.users (id, email) values ('${agent}', 'agent@x');
+      insert into user_profiles (user_id, role, display_name, max_security_class) values ('${agent}', 'AIAgent', 'AI Agent', 'Restricted');`)
+    const m71 = await runFile('0071_staging_test.sql')
+    assert.match(m71, /^0071 STAGING PASS a\(.*b\(.*c\(.*d\(.*e\(.*f\(.*g\(anon 거부\)$/, '0071 staging 시험 SQL이 PASS로 끝나지 않는다')
+    const left = (await db.query<{ n: number }>(`select (select count(*) from process_chart_items) + (select count(*) from process_chart_syncs)
+      + (select count(*) from tasks where source_label is not null) + (select count(*) from teams where team_id = 'team_dy_stg71') as n`)).rows[0].n
+    assert.equal(Number(left), 0, '0071 staging 시험 SQL이 시트 줄 · 기록 · 업무 · 팀을 남겼다')
+  }
   await db.close()
 }
 
