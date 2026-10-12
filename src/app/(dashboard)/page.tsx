@@ -5,6 +5,7 @@ import { CityStrip } from '@/components/city/city-strip'
 import { AiNightPanel } from '@/components/dashboard/ai-night-panel'
 import { AlertPanel } from '@/components/dashboard/alert-panel'
 import { AttentionCard } from '@/components/dashboard/attention-card'
+import { ChairDashboard } from '@/components/dashboard/chair-dashboard'
 import { ClockWeatherCard } from '@/components/dashboard/clock-weather-card'
 import { CriticalBanner } from '@/components/dashboard/critical-banner'
 import { DashboardBoard } from '@/components/dashboard/dashboard-board'
@@ -58,7 +59,8 @@ export default async function DashboardPage(props: PageProps<'/'>) {
   // 위치는 요청 헤더 조회라 왕복이 없다. 날씨·프로세스차트는 나머지와 나란히 기다린다.
   const location = await resolveLocation()
   // 0072 시드 정리 A안 — «예시 숨기기»(보는 사람마다 · URL 칸 ?examples=hide). 예시 줄은 대표 세션에만 온다(지우지 않는다).
-  const hideExamples = firstParam((await props.searchParams).examples) === 'hide'
+  const sp = await props.searchParams
+  const hideExamples = firstParam(sp.examples) === 'hide'
   const [loaded, user, chairmanProjects, initiatives, weather, processCharts] = await Promise.all([
     loadDashboard(repo),
     currentUser(),
@@ -280,6 +282,9 @@ export default async function DashboardPage(props: PageProps<'/'>) {
       <div className="mt-5">
         <CityStrip sky={sky} items={cityItems} live={cityLive} flow={uiPrefs.app.city_motion} />
       </div>
+
+      {/* PHASE 8 대표 대시보드(스위치 chairman_dashboard — 서버에서 판정, 꺼지면 아무것도 그리지 않는다). */}
+      <ChairDashboard repo={repo} user={user} businesses={data.businesses} businessId={firstParam(sp.dbiz)} grain={firstParam(sp.dgrain)} />
 
       {/* 3줄 — 이니셔티브. 도시 띠 아래로 내려왔다(G-2b). */}
       <div className="mt-5">

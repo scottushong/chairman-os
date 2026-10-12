@@ -97,9 +97,9 @@ export const FEATURES = [
   {
     key: 'chairman_dashboard',
     label: '대표 대시보드',
-    description: '대표용 대시보드 보강. 다음 단계에서 붙는다.',
+    description: '대표 홈의 손익 · 매출 · 현금 추이(월 · 분기 · 년, 월별 손익 값만 · 잠정/확정) · 14가지 자료 받은 것/없는 것 달력.',
     defaultAudience: 'chairman',
-    from: '다음 단계(미정)',
+    from: 'feat/chair-dashboard',
   },
 ] as const satisfies readonly FeatureDef[]
 
