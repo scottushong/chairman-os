@@ -235,7 +235,7 @@ function ValuationForm({ businessId, businessName, month, viewerName }: { busine
 
 /* ───────────────────────── 기초재고 연결 ───────────────────────── */
 
-export function RollSection({ businessId, month, rows }: { businessId: string; month: string; rows: FinInventoryRollRow[] }) {
+export function RollSection({ businessId, month, rows, canConfirm = false }: { businessId: string; month: string; rows: FinInventoryRollRow[]; canConfirm?: boolean }) {
   const needsOpening = rows.some((r) => r.opening_source !== 'prev_close')
   return (
     <section className="rounded-xl border border-line-soft bg-panel p-3" aria-labelledby="roll-h">
@@ -260,7 +260,7 @@ export function RollSection({ businessId, month, rows }: { businessId: string; m
                   <td className="px-2 py-1">
                     <Amount amount={r.opening_amount} state={r.opening_state} />
                     {r.opening_state === 'partial' ? <span className="block text-t10 text-gold">앞 달 빈칸 {r.prev_missing_lines}줄은 더하지 않았습니다 — 온전한 기초가 아닙니다.</span> : null}
-                    {r.opening_id ? <OpeningConfirm businessId={businessId} openingId={r.opening_id} confirmed={!!r.opening_confirmed} missing={r.opening_state === 'missing'} /> : null}
+                    {r.opening_id && canConfirm ? <OpeningConfirm businessId={businessId} openingId={r.opening_id} confirmed={!!r.opening_confirmed} missing={r.opening_state === 'missing'} /> : null}
                   </td>
                   <td className="px-2 py-1">
                     <span className={`rounded px-1.5 py-0.5 text-t10 font-semibold ${r.opening_source === 'unlinked' ? 'bg-critical/10 text-critical' : r.opening_source === 'prev_close' ? 'bg-ok/15 text-ok' : 'bg-gold/15 text-gold'}`}>{OPENING_SOURCE_KO[r.opening_source]}</span>

@@ -30,6 +30,13 @@ begin
   delete from public.user_module_access where user_id = v_staff and module = '/finance/biz_dy';
   insert into public.user_module_access (user_id, module, can_write, can_approve) values (v_staff, '/finance/biz_dy', true, false);
 
+  -- 스위치 'finance_upload'를 이 회사 전원으로 직접 켠다(0075 시험과 같은 모양 — 그룹 줄 상태에 기대지 않는다 · 끝에서 rollback).
+  perform set_config('request.jwt.claims', json_build_object('sub', v_chair, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_chair::text, true);
+  set local role authenticated;
+  perform public.feature_switch_set('finance_upload', 'biz_dy', true, 'all', '0076 staging 시험');
+  reset role;
+
   -- ── a. 직원: 첫 달 기초(완제품) 입력 → 본인 확인은 거부 ──
   perform set_config('request.jwt.claims', json_build_object('sub', v_staff, 'role', 'authenticated')::text, true);
   perform set_config('request.jwt.claim.sub', v_staff::text, true);

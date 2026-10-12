@@ -411,7 +411,8 @@ export async function countDupSuspects(repo: ChairmanRepository, businessId: str
     const mine = groups.filter((g) => g.status === 'suspect' && g.refs.some((r) => r.startsWith('new:')))
     // PHASE 4: 달 경계 ±3일 줄은 앞 · 뒤 달 줄과도 맞춰 본다 — 짝이 있으면 자동 넣기를 멈춘다(닫힌 쪽 · 저장은 하지 않음).
     const cross = await crossMonthFor(repo, businessId, period, fresh)
-    const crossRows = [...new Set(cross.map((c) => c.ref))]
+    // PHASE 11(0076 리뷰 Minor): 달 넘김 짝은 «같은 거래»(same)만 자동 넣기를 멈춘다 — «의심»은 메모로만(달 넘김 짝은 무시할 손잡이가 없다).
+    const crossRows = [...new Set(cross.filter((c) => c.kind === 'same').map((c) => c.ref))]
     const notes = [
       ...mine.slice(0, 10).map((g) => `${g.refs.filter((r) => r.startsWith('new:')).map((r) => r.slice(4) + '행').join(' · ')} — ${describeGroup(g)}`),
       ...cross.slice(0, 5).map((c) => `${c.ref.slice(4)}행 — ${c.other_period} 줄과 달 넘김 의심(${describeGroup(c)})`),
