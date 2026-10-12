@@ -27,6 +27,8 @@ export interface AssistantThread {
   actions: AiActionView[]
   /** 회장 세션에만: 회장 전용 화면의 «지금 화면» 이름. 직원에게는 싣지 않는다(직원 화면 용어 원칙, CLAUDE.md). */
   screenLabels?: Partial<Record<ScreenKind, string>>
+  /** 0069 «이어서 물어볼 만한 질문» 3개 — 방금 답(messageId) 아래에만. 저장하지 않는다(다시 열면 없다). */
+  followups?: { messageId: number; items: string[] }
 }
 
 const text = (v: unknown) => (typeof v === 'string' ? v.trim() : '')
@@ -74,7 +76,9 @@ export async function askAssistant(input: { chatId?: unknown; question: unknown;
     await repo.appendAiMessage(chatId, 'user', question, [], actor)
     await repo.appendAiMessage(chatId, 'assistant', result.answer, result.sources, actor, { tokens: result.tokens, action_ids: result.actionIds })
     revalidatePath('/chat')
-    return await thread(chatId)
+    const t = await thread(chatId)
+    const last = [...t.messages].reverse().find((m) => m.role === 'assistant')
+    return last && result.followups.length ? { ...t, followups: { messageId: last.id, items: result.followups } } : t
   } catch (e) {
     console.error('[askAssistant]', e)
     const base = chatId ? await thread(chatId).catch(() => empty) : empty

@@ -119,6 +119,14 @@ async function main() {
     const left = (await db.query<{ n: number }>(`select (select count(*) from cost_imports) + (select count(*) from cost_materials where name like '스테이징 엑셀%') as n`)).rows[0].n
     assert.equal(Number(left), 0, '0068 staging 시험 SQL이 엑셀 기록 · 원료를 남겼다')
   }
+  // 0069(AI 어시스턴트 — 권한 조회 · 보완 의견)가 있는 브랜치에서만.
+  if (files.includes('0069_ai_feedback.sql')) {
+    const m69 = await runFile('0069_staging_test.sql')
+    assert.match(m69, /^0069 STAGING PASS a\(.*b\(.*c\(.*d\(.*e\(.*f\(anon 거부\)$/, '0069 staging 시험 SQL이 PASS로 끝나지 않는다')
+    const left = (await db.query<{ n: number }>(`select (select count(*) from ai_feedback) + (select count(*) from ai_feedback_bundles)
+      + (select count(*) from ai_chats where title = '0069 시험') + (select count(*) from user_module_access where module = '/users/biz_dy') as n`)).rows[0].n
+    assert.equal(Number(left), 0, '0069 staging 시험 SQL이 의견 · 대화 · 권한 줄을 남겼다')
+  }
   await db.close()
 }
 
