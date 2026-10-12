@@ -230,7 +230,7 @@ async function gather(d: DummyMonthlyPlDeps, business: string, period: string): 
     if (a.section === 'revenue') sums.revenue -= v
     if (a.section === 'cogs' && a.account_code === '4610') sums.merch += v
     else if (a.section === 'cogs' && a.category === 'raw_material') sums.raw += v
-    if (a.section === 'cogs' && a.category === 'labor') sums.labor += v
+    if (a.section === 'cogs' && a.category === 'labor' && a.account_code !== '4610') sums.labor += v
     if (a.section === 'cogs' && a.category !== 'raw_material' && a.category !== 'labor' && a.account_code !== '4610') sums.overhead += v
     if (a.section === 'sga' || a.section === 'd_and_a') sums.sga += v
     if (['revenue', 'cogs', 'sga', 'd_and_a'].includes(a.section)) sums.op -= v

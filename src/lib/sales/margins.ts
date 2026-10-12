@@ -8,7 +8,7 @@ import { costGrade, pgRound } from './cost'
  *   · 합산은 원래 값끼리(매출 = Σ kg × 판매가 · 원가 = Σ kg × 실제 원가 원래 값) 더한 뒤 대표 외 1원(0.5는 0에서 먼 쪽).
  *   · 마진 % = 원래 값 비율(소수 1자리) — 실제 원가가 있는 판매의 매출로 나눈다. 원가 없는 판매는 n_uncomputed.
  *   · 견적 마진은 견적이 이어진 판매만.
- *   · 월 마감 표시: 묶음이 걸치는 모든 달이 0075 내부 마감 확정이면 «확정 매출원가 기준», 아니면 «잠정 대체원가».
+ *   · 월 마감 표시: 묶음이 걸치는 모든 달이 0075 내부 마감 확정(열린 재마감 표시 없음)이면 «월 마감 확정 달», 아니면 «월 마감 전».
  */
 
 export const MARGIN_GRAINS: readonly MarginGrain[] = ['day', 'week', 'month', 'quarter', 'year']
@@ -19,12 +19,12 @@ export const BY_KO: Record<MarginBy, string> = { product: '제품별', customer:
 export const MARGIN_ROW_LIMIT = 5000
 
 export const COST_BASIS_KO: Record<MarginCostBasis, string> = {
-  closed_month: '확정 매출원가 기준',
-  provisional: '잠정 대체원가',
+  closed_month: '월 마감 확정 달',
+  provisional: '월 마감 전',
 }
 export const COST_BASIS_NOTE: Record<MarginCostBasis, string> = {
-  closed_month: '이 묶음의 달은 월별 손익이 내부 마감 확정됨(월 매출원가 확정). 판매 한 줄 원가는 생산 LOT Actual · 출고일 Current 그대로 — 월 매출원가와 섞지 않음',
-  provisional: '월별 손익이 아직 마감 전 — 판매 한 줄 원가(생산 LOT가 없으면 출고일 Current)는 조회할 때 계산하는 값이고 저장하지 않음',
+  closed_month: '이 묶음의 달은 모두 월별 손익이 내부 마감 확정됨(열린 재마감 표시 없음). 월 마감 상태일 뿐 — 판매 한 줄 원가는 생산 LOT Actual · 출고일 Current(잠정 대체원가) 그대로, 월 매출원가와 섞지 않음',
+  provisional: '월별 손익이 아직 마감 전이거나 재마감 대상 — 판매 한 줄 원가(생산 LOT가 없으면 출고일 Current = 잠정 대체원가)는 조회할 때 계산하는 값이고 저장하지 않음',
 }
 
 export const SALE_GRADE_KO: Record<SaleGrade, string> = { green: 'Green', yellow: 'Yellow', red: 'Red', too_low: '하한 미만', unknown: '계산 안 됨' }

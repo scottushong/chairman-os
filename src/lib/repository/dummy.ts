@@ -879,7 +879,10 @@ export const dummyRepository: ChairmanRepository = {
   ...dummySalesMargins({
     featureOn: async (b) => featureOnFor(await dummyRepository.listFeatureSwitches(), 'sales_margins', dummyViewer().role, b),
     inSubtree: (viewer, target) => inMemorySubtree(viewer, target),
-    closedMonths: (b) => new Set(dummyPlCloses().filter((c) => c.business_id === b && c.status === 'final' && !c.superseded_at).map((c) => c.period)),
+    closedMonths: (b) => {
+      const open = new Set(dummyFinStore().flags.filter((f) => f.business_id === b && !f.cleared_at).map((f) => f.period))
+      return new Set(dummyPlCloses().filter((c) => c.business_id === b && c.status === 'final' && !c.superseded_at && !open.has(c.period)).map((c) => c.period))
+    },
   }),
   // 0078 — 원가 후보 승인(dummy-cost-candidates.ts). 문은 스위치 'cost_candidates' · 대표 · 원가 관리 쓰기. 넣기는 dummy 구매 LOT 길.
   ...dummyCostCandidates({

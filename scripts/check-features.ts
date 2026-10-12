@@ -11,6 +11,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
 import { closedFeatureRows, defaultFeatureRows, FEATURES, FEATURE_KEYS, featureOnFor, hiddenNavKeys, inAudience, type FeatureSwitchRow } from '../src/lib/features'
+import { FOURTEEN, lastMonths, rollTrend } from '../src/lib/chair-dashboard'
 import { intakeOpenFor } from '../src/lib/intake/switch'
 import { navFor } from '../src/lib/nav'
 
@@ -105,6 +106,22 @@ ok('프로세스 차트를 끄면 메뉴가 빠진다(대표 · 직원 모두)',
 })
 ok('목록 문구에 «회장» · «ECOUNT 올리기»가 없다', () => {
   for (const f of FEATURES) for (const t of [f.label, f.description]) assert.doesNotMatch(t, /회장|ECOUNT 올리기|Chairman/, f.key)
+})
+
+console.log('대표 대시보드(PHASE 8)')
+ok('대표 대시보드 — 서버 스위치 · 월별 손익 값만 · 분기 · 년 합산 · 잠정/확정 · 14가지', () => {
+  const comp = readFileSync('src/components/dashboard/chair-dashboard.tsx', 'utf8')
+  assert.match(comp, /featureOn\(user, 'chairman_dashboard', biz\.business_id\)\)\) return null/, '스위치를 서버에서 보지 않는다')
+  const lib = readFileSync('src/lib/chair-dashboard.ts', 'utf8')
+  assert.doesNotMatch(lib, /salesMargins|listSaleDeals|cost_margins/, '대시보드 추이가 월별 손익 밖 값을 쓴다')
+  assert.deepEqual(lastMonths('2026-02-15', 3), ['2025-12', '2026-01', '2026-02'])
+  const m = (period: string, status: 'final' | 'provisional' | null, rev: number | null) => ({ period, status, revenue: rev, operating_income: rev === null ? null : rev / 10, cash_net: rev === null ? null : 1 })
+  const q = rollTrend([m('2026-01', 'final', 100), m('2026-02', 'final', 200), m('2026-03', 'provisional', 300), m('2026-04', null, null)], 'quarter')
+  assert.deepEqual(q.map((r) => [r.key, r.revenue, r.basis, r.missing]), [['2026-Q1', 600, 'provisional', 0], ['2026-Q2', null, 'provisional', 1]])
+  const y = rollTrend([m('2026-01', 'final', 100), m('2026-02', 'final', 200)], 'year')
+  assert.deepEqual(y.map((r) => [r.key, r.revenue, r.operating_income, r.basis]), [['2026', 300, 30, 'final']])
+  assert.equal(FOURTEEN.length, 14)
+  assert.equal(FOURTEEN[13].no, '⑭')
 })
 
 console.log(`PASS: ${passed} feature-switch checks (목록 = 0073 기본 줄 · 판정 기본값/회사 덮어쓰기/끄기/범위 셋 · intakeOpenFor 그대로 · 메뉴 빼기 · 문구)`)
