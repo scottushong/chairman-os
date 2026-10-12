@@ -2818,3 +2818,11 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - (미룸) 0078 · 0079 리뷰 Minor M2 · M3 · M5~M9 — 리뷰 메모(이 블록 지시 fix0078-79) 원문 그대로 다음 블록에서. 이번에는 Critical 2 · Important 3 · M1 · M4만(시간 상자 · 장부 정확성 먼저).
 - (미룸) 0079 staging 시험에 새 트리거 두 개(ledger_post_upload_guard · ledger_post_import_guard) · 월별 업로드 전표 길 시험을 더하지 않음 — PGlite check:ledger-post가 본다(staging에 가짜 finance_imports를 세우면 지우기 어렵다).
 - (미룸) 0078 ⑦ approval 출처 유지(I4)는 PGlite 시험이 없음(시험 LOT가 결재 출처가 아니다) — 코드만.
+
+## 2026-10-13 PHASE 8 — 대표 대시보드 — 고른 것 · 미룬 것
+- 고른 것은 docs/decisions/2026-10-12-autonomous.md 71~73.
+- (잘라냄) 제품 하나를 누르면 그 제품의 과거 전부(판매 kg · 매출 · 등급 · 견적 마진 vs 실제) 화면 — 지금은 0077 «판매 실적 · 마진»(제품별) 링크. 이유: 0078 · 0079 Critical 고침을 먼저(장부 정확성 > 대시보드), 시간 상자.
+- (잘라냄) 일 · 주 손익 — 0075가 달 단위라 만들지 않음(결정 72).
+- (미룸) 추이 그래프(지금은 표) · 회사 합계(그룹) — 회사 하나씩.
+- (미룸) 12달 × fin_pl_month 12번 부름(홈을 열 때마다) — 느리면 fin_pl_closes 저장본만 읽는 RPC 하나로. 지금은 대표만 · 스위치로 끌 수 있음.
+- (미룸) 브라우저로 화면을 열어 보지 않음(build만).

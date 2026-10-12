@@ -25,7 +25,8 @@
 | 0074 | feat/finance-pdf-rest | 0072 · 0073 | 없음(0075는 0074 트리거를 쓰지 않는다 — 번호만 이어짐) |
 | 0075 | feat/monthly-pl | **0072**(평가금액 · 기초 · 출고 · 같은 거래 · 재마감 대상 표) · **0073**(feature_on) · 0016/0047(장부 · can_*_books) | 없음(PHASE 7 · 8이 이 값을 쓰게 되면 그 줄에 적는다) |
 | 0076 | feat/b-rest | **0072**(fin_inventory_openings · fin_inventory_roll · fin_closed_gate · fin_reclose_mark · fin_audit) · **0073**(feature_on) · 0061(cost_purchase_candidates · cost_can) | 없음 |
-| 0077~ | (다음 단계 — 미정) | 0073 | (적어 넣기) |
+| 0077~0079 | feat/sales-margins · feat/cost-candidates · feat/ledger-post | 0073 · 0067 · 0075 · 0070/0072 | 각 절 참고 |
+| (마이그레이션 없음) | feat/chair-dashboard | 0073(chairman_dashboard 기본 줄) · 0075(fin_pl_month) · 0070(fin_uploads) | 없음 |
 
 번호를 건너뛰어 올리면 안 된다: Supabase는 번호 순서로 올린다. 가운데를 빼려면 그 뒤 번호의 파일 이름을 다시 매기는 작업이 필요하다 — 그 일은 이 안내서 밖(반영 담당이 브랜치를 다시 짠다).
 
@@ -94,11 +95,15 @@
 - 빼면 사라지는 것: 원장 줄을 장부 전표로 넣는 2단계 화면. 이미 넣은 전표는 장부(journal_entries · journal_lines)에 그대로 남는다 — 되돌리려면 빼기 전에 «무효 처리»(역분개)로.
 - 남는 데이터: fin_ledger_posts · fin_ledger_post_lines(지우지 않는다) · 반영 · 역분개 전표 · audit_log 줄.
 
-### 다음 단계 기능(스위치 줄만 먼저 있음 — 화면은 아직 없다)
+### chairman_dashboard — 대표 대시보드 (feat/chair-dashboard · 마이그레이션 없음)
+- 끄는 법: /settings/features → «대표 대시보드» 끄기(기본 대표만). 대표 홈(/)의 «대표 대시보드 — 손익 · 매출 · 현금 추이» 칸이 사라진다(서버에서 판정 — 꺼지면 월별 손익 · 자료 올리기를 읽지도 않는다).
+- 직원에게 열기: 의미 없음 — 대표 홈(/)은 대표만 들어온다(다른 역할은 /me로).
+- 반영에서 빼는 법: feat/chair-dashboard의 대시보드 커밋을 합치지 않는다(`src\components\dashboard\chair-dashboard.tsx` · `src\lib\chair-dashboard.ts` · 홈 한 줄). 같은 브랜치 첫 두 커밋(0075 · 0077 · 0078 · 0079 리뷰 고침)은 따로 합칠 수 있다.
+- 빼면 사라지는 것: 월 · 분기 · 년 추이 표 · 14가지 자료 달력. 월별 손익 · 판매 마진 화면은 그대로.
+- 남는 데이터: 없음(읽기만).
 
-| 키 | 이름 | 기본 범위 | 단계 · 브랜치 · 번호 | 끄면 | 빼면 |
-|---|---|---|---|---|---|
-| chairman_dashboard | 대표 대시보드 | 대표만 | (미정) | | |
+### 다음 단계 기능(스위치 줄만 먼저 있음 — 화면은 아직 없다)
+- 없음.
 
 새 기능을 만들 때: ① `src/lib/features.ts` FEATURES에 한 줄 ② 새 마이그레이션에 그룹 기본 줄 insert(0073 3절 모양, `on conflict do nothing`) ③ 새 RPC 첫 줄 `if not feature_on('키', 회사) then raise exception 'feature_off' using errcode = '42501'; end if;` ④ 화면 `featureOn(user, '키', 회사)` → notFound · 메뉴는 `FEATURE_NAV` ⑤ 이 안내서 표에 줄.
 
