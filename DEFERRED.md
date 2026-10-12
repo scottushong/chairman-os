@@ -2701,3 +2701,5 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - 새벽 cron은 vercel.json(0 18 * * * = 03:00 KST). 저장소의 첫 Vercel cron 재등장 — 야간 브리핑은 GitHub Actions 틱 그대로. Hobby cron 한도 · 시각 오차(±59분)는 배포 전에 Vercel 화면에서 확인.
 - 시트 줄의 담당자 이메일은 탭을 보는 사람에게 보인다(같은 팀 시트에 이미 있는 값).
 - 리뷰 반영(2026-10-12): A 프로젝트 id 회사 확인(process_sync_project_conflict) · B tasks_external_scope(시트 업무 = 담당자 본인 또는 탭을 보는 사람, AI Agent 0) · C process_chart_visible_to를 authenticated에서 회수 · 빈 시트(넣을 줄 0)는 거부하고 실패 기록(경고)만 — 시트를 통째로 비우면 업무가 «사라짐»이 되지 않는다(다른 선택지: 빈 시트 = 전부 사라짐).
+- (2026-10-12 고침) 위 «FORCE를 내렸다»는 대표 지시로 되돌렸다 — 0071은 FORCE를 유지하고 동기화 함수 넷만 통로(process_chart_sync_ctx, 함수 SET 절)로 지나간다(cbb3e14). 다른 선택지: FORCE 내리기(처음 판) · 소유자 통과 정책(FORCE를 무의미하게 만듦).
+- 0071 FORCE 리뷰 Minor(미룸): ① 다시 만든 restrictive 셋(ai_agent_no_insert/update · process_charts_ai_no_write)이 PUBLIC → to authenticated(규칙 «정책은 to authenticated») — authenticated에 속하지 않고 BYPASSRLS도 아닌 소유자에서만 차이. ② 통로는 함수 하나에 묶이지 않는다(설정값을 켤 길이 사람에게 없어서 안전). ③ check-force-rls.mjs는 disable row level security · 동적 execute · «if exists only» 순서 · 글자 안의 주석 기호를 보지 않는다.
