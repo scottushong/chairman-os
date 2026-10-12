@@ -34,7 +34,9 @@ async function apply(taskId: unknown, patch: TaskPatch): Promise<TaskActionState
     console.error('[tasks]', e)
     return {
       error:
-        e instanceof Error && /tasks_write|42501|PGRST301/.test(e.message)
+        e instanceof Error && /tasks_external_readonly/.test(e.message)
+          ? '시트에서 온 업무입니다. 시트에서 고치세요.'
+          : e instanceof Error && /tasks_write|42501|PGRST301/.test(e.message)
           ? '이 업무를 바꿀 권한이 없습니다.'
           : '변경하지 못했습니다. 잠시 후 다시 시도하세요.',
     }

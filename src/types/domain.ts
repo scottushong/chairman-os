@@ -107,6 +107,10 @@ export interface Task {
   blocked_since: IsoDate
   deadline: IsoDate | null
   chairman_needed: boolean
+  /** 0071. 바깥 원천(«프로세스 차트 · 영업»). 있으면 시트가 원천이라 앱에서 고치지 않는다. 없으면 앱 업무. */
+  source_label?: string | null
+  /** 0071. 원천(시트)에서 그 줄이 사라진 때 — «시트에서 사라짐». */
+  source_gone_at?: string | null
 }
 
 export const DECISION_STATUS = ['Open', 'Approved', 'Rejected', 'Modified', 'Delegated'] as const

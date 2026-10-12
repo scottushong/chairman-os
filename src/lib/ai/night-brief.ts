@@ -683,7 +683,8 @@ async function readAll(repo: ReturnType<typeof createSupabaseRepository>) {
     repo.listBusinesses(),
     repo.listFinanceKpis(),
     repo.listProjects(),
-    repo.listTasks(),
+    // 0071 시트에서 온 업무(source_label)는 AI 경로에 넣지 않는다.
+    repo.listTasks().then((ts) => ts.filter((t) => !t.source_label)),
     repo.listDecisions(),
     repo.listAlerts(),
   ])

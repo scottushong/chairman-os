@@ -123,13 +123,14 @@ export interface ChairmanEvent {
   attendee_ids?: string[]
 }
 
-export const CALENDAR_ITEM_KIND = ['event', 'next_action', 'milestone', 'decision'] as const
+export const CALENDAR_ITEM_KIND = ['event', 'next_action', 'milestone', 'decision', 'process'] as const
 export type CalendarItemKind = (typeof CALENDAR_ITEM_KIND)[number]
 export const CALENDAR_ITEM_LABEL_KO: Record<CalendarItemKind, string> = {
   event: '일정',
   next_action: '다음 행동',
   milestone: '마일스톤',
   decision: '결재 마감',
+  process: '프로세스',
 }
 
 /** 0017 calendar_items 뷰 한 줄. href는 뷰가 만든다 — 화면이 kind별 분기를 다시 쓰지 않게. */

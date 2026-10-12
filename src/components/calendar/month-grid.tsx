@@ -15,6 +15,8 @@ export const KIND_MARK: Record<CalendarItemKind, string> = {
   next_action: '○',
   milestone: '◆',
   decision: '!',
+  // 0071 프로세스 차트(시트의 시작일 · 마감일). 업무라 네모로 — 이벤트(●)와 겹치지 않게.
+  process: '■',
 }
 
 /** 색이 오르는 유일한 경우: 지난(오늘보다 이전) next_action·decision. 지나간 이벤트는 위험이 아니다. */

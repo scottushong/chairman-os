@@ -68,6 +68,8 @@ export const NAV: readonly NavGroup[] = [
       { key: 'nav_morning', label: '아침 루틴', href: '/ai', icon: 'sparkles', badge: 'NEW', ready: true },
       { key: 'nav_calendar', label: '캘린더', href: '/calendar', icon: 'calendar', ready: true },
       { key: 'nav_tasks', label: '업무 관리', href: '/tasks', icon: 'clipboard', ready: true },
+      // 0071 프로세스 차트 — 팀별 업무 시트 + 업무 관리 · 캘린더 동기화. 탭은 0071 정책이 거른다(팀장 · 팀원은 자기 팀만).
+      { key: 'nav_process_charts', label: '프로세스 차트', href: '/process-charts', icon: 'grid', ready: true },
       // Phase 4-A. 회사 다섯 곳 밖에서 회장이 직접 굴리는 건(딜·신사업·투자유치 등).
       { key: 'nav_initiatives', label: '이니셔티브', href: '/initiatives', icon: 'target', ready: true },
       // Phase 7 블록 A. §7 Founder Dependency. 관제 그룹(제목 없는 맨 위 묶음)에 들어간다 —

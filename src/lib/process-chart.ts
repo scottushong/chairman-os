@@ -57,3 +57,26 @@ export function embedSrc(url: string): string {
   const joiner = url.includes('?') ? '&' : '?'
   return `${url}${joiner}widget=true&headers=false`
 }
+
+/**
+ * 0071. 시트 파일 ID를 받는다 — ID 그대로, 또는 편집 주소(.../spreadsheets/d/<ID>/edit…)를 붙여 넣어도 ID만 뽑는다.
+ * 주소 전체를 저장하지 않는다(편집 주소가 언젠가 iframe에 걸리는 사고 — 위 머리 주석). 빈 값 = 연결 안 함(null).
+ * 모양이 틀리면 undefined. 0071의 check 제약(^[A-Za-z0-9_-]{20,100}$)과 같은 모양이다.
+ */
+export const SHEET_ID_PATTERN = /^[A-Za-z0-9_-]{20,100}$/
+
+export function parseSheetId(raw: string): string | null | undefined {
+  const v = raw.trim()
+  if (v === '') return null
+  const fromUrl = /^https:\/\/docs\.google\.com\/spreadsheets\/d\/([A-Za-z0-9_-]+)/.exec(v)
+  const id = fromUrl ? fromUrl[1] : v
+  if (id === 'e') return undefined // «웹에 게시» 주소(/d/e/2PACX-…)는 파일 ID가 아니다
+  return SHEET_ID_PATTERN.test(id) ? id : undefined
+}
+
+/** 0071. 탭 이름 — 비우면 첫 탭(null). 작은따옴표 · 느낌표는 범위 문법과 부딪혀 받지 않는다(DB check와 같다). */
+export function parseSheetTab(raw: string): string | null | undefined {
+  const v = raw.trim()
+  if (v === '') return null
+  return v.length <= 100 && !/['!]/.test(v) ? v : undefined
+}

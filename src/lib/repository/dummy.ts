@@ -40,6 +40,7 @@ import { attachmentSearchText, dummyAttachmentRaw, dummyAttachments, dummySeedAt
 import { dummyCanDeleteDocument, dummyIntake, dummyIntakeEntity, seedDummyIntake } from './dummy-intake'
 import { dummyFinanceImportEntity, dummyFinanceImports } from './dummy-finance-imports'
 import { dummyCostImport } from './dummy-cost-import'
+import { dummyListProcessChartItems, dummyListProcessChartSyncs, dummyProcessCalendarItems, dummyProcessTaskVisible, dummyProcessTasks } from './dummy-process-sync'
 import { dummyPurchasing } from './dummy-purchasing'
 import { dummyQuotes } from './dummy-quotes'
 import { dummyCostProduct, dummyCostReadAudit, dummyCosts, dummyGrantedAt, dummyProduction, dummySalesCost, noteDummyGrant } from './dummy-sales-cost'
@@ -671,6 +672,13 @@ export const dummyRepository: ChairmanRepository = {
   ...dummyProduction(),
   ...dummyCosts(),
   ...dummyCostImport({ purchasing: dummyPurchasing(), production: dummyProduction(), costs: dummyCosts() }),
+  // 0071 프로세스 차트 동기화 — 읽기만(쓰기는 lib/process-sync가 dummy 흉내 writer로).
+  async listProcessChartItems() {
+    return dummyListProcessChartItems(dummyViewer())
+  },
+  async listProcessChartSyncs(limit = 50) {
+    return dummyListProcessChartSyncs(dummyViewer()).slice(0, limit)
+  },
 
   /** 0061 cost_costing_watch의 거울 — 대표만. 원가 관리 권한자 · 줄 생긴 시각 · 최근 7일 원가 조회 · 구매 · 영업 화면 열람 · 마지막 조회(그 회사). */
   async costingWatch(businessId: string) {
@@ -891,7 +899,11 @@ export const dummyRepository: ChairmanRepository = {
       owner: ownerLabel(t.owner_user_id),
       ...memoryTaskPatches.get(t.task.task_id),
     }))
-    return [...seeded, ...owned]
+    // 0071 시트에서 온 업무 — tasks_read(0026 식) AND tasks_external_scope(담당자 본인 또는 그 탭을 보는 사람).
+    const synced = dummyProcessTasks()
+      .filter((t) => (canSeeRow(t.business_id, t.owner_user_id) || dummySharedWithMe(memoryShares, viewer.user_id, 'tasks', t.task.task_id)) && dummyProcessTaskVisible(viewer, t))
+      .map((t) => ({ ...t.task }))
+    return [...seeded, ...owned, ...synced]
   },
   async listDecisions() {
     await seedApprovalDemo()
@@ -1115,6 +1127,8 @@ export const dummyRepository: ChairmanRepository = {
 
   /** CH-040. live에서는 0002의 tasks_write가 거를 일이지만, dummy에는 RLS가 없다. */
   async updateTask(taskId: string, patch: TaskPatch, actor: AuditActor): Promise<void> {
+    // 0071 tasks_external_readonly — 시트에서 온 업무는 앱에서 고치지 않는다(live는 0행 → 같은 문장으로 던진다).
+    if (dummyProcessTasks().some((t) => t.task.task_id === taskId)) throw new Error('Dummy tasks: tasks_external_readonly(0071) — 시트에서 온 업무는 앱에서 고치지 않는다.')
     const seeded = tasks.find((t) => t.task_id === taskId)
     if (!seeded) throw new Error('Dummy tasks: mutation affected 0 rows.')
 
@@ -2210,6 +2224,11 @@ export const dummyRepository: ChairmanRepository = {
         initiative_id: null,
         href: '/approvals',
       })
+    }
+    // 0071 프로세스 차트 — 탭을 보고 그 업무도 보는 줄(뷰가 security_invoker라 두 표의 RLS가 다 걸린다).
+    const visibleTasks = new Set((await this.listTasks()).map((t) => t.task_id))
+    for (const p of dummyProcessCalendarItems(dummyViewer(), visibleTasks)) {
+      if (within(p.on_date, p.ends_on)) items.push(p)
     }
     // live(supabase.ts)의 listCalendarItems와 같은 순서다 — on_date, kind, source_id.
     // 월 그리드가 3개에서 접어 '+N'을 붙이므로, 정렬이 다르면 dummy와 live에서 보이는

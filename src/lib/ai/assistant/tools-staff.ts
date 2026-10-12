@@ -387,7 +387,8 @@ export const myTasksTool: AssistantTool = {
   async run(input, ctx) {
     const today = kstToday()
     const filter = str(input.filter) || 'open'
-    const mine = (await ctx.repo.listTasks()).filter((t) => t.owner === ctx.user.user_id)
+    // 0071 시트에서 온 업무(source_label)는 AI 경로에 넣지 않는다.
+    const mine = (await ctx.repo.listTasks()).filter((t) => t.owner === ctx.user.user_id && !t.source_label)
     const rows = mine
       .filter((t) => filter === 'all' || t.status !== 'Done')
       .filter((t) => filter !== 'overdue' || (!!t.deadline && t.deadline < today))

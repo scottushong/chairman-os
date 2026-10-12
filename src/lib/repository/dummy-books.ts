@@ -20,6 +20,7 @@ import {
   type NewJournalEntry,
 } from '@/lib/ledger/journal'
 import { embedProblem } from '@/lib/process-chart'
+import { DUMMY_SHEET_IDS } from '@/lib/process-sync/fake'
 import { BALANCE_SHEET_SECTIONS } from '@/lib/statements/balance'
 import type {
   Account,
@@ -36,6 +37,7 @@ import type {
 } from '@/types'
 
 import { dummyFinanceGrant, dummyHasBusiness, dummyViewer } from './dummy-org'
+import { dummyProcessVisible } from './dummy-process-sync'
 import {
   DUPLICATE_ACCOUNT_CODE,
   type AccountPatch,
@@ -742,6 +744,9 @@ const processCharts: ProcessChart[] = [
     sort_order: 5,
     updated_by: 'dummy',
     updated_at: MOCK_FETCHED_AT,
+    // 0071 — dummy는 가짜 시트(lib/process-sync/fake.ts)를 읽는다. 연구소는 비워 «연결 전» 모습을 남긴다.
+    sheet_id: DUMMY_SHEET_IDS.sales,
+    sheet_tab: null,
   },
   {
     id: 1,
@@ -753,6 +758,8 @@ const processCharts: ProcessChart[] = [
     sort_order: 10,
     updated_by: 'dummy',
     updated_at: MOCK_FETCHED_AT,
+    sheet_id: DUMMY_SHEET_IDS.support,
+    sheet_tab: null,
   },
   {
     id: 2,
@@ -764,14 +771,21 @@ const processCharts: ProcessChart[] = [
     sort_order: 20,
     updated_by: 'dummy',
     updated_at: MOCK_FETCHED_AT,
+    sheet_id: null,
+    sheet_tab: null,
   },
 ]
 let processSeq = processCharts.length
 
-/** 0021 can_read_process_charts(target). Executive 이상 + 자기 회사 — TeamLead 이하는 0행. */
-function canReadProcessCharts(businessId: string): boolean {
-  const viewer = dummyViewer()
-  return !viewer.revoked_at && RESTRICTED_READER.includes(viewer.role) && dummyHasBusiness(viewer, businessId)
+/** 0071 can_read_process_chart(biz, team). 임원 이상 = 자기 회사 전부, 팀장 · 팀원 = 자기 팀 탭만. */
+function canReadProcessCharts(businessId: string, teamName: string): boolean {
+  return dummyProcessVisible(dummyViewer(), businessId, teamName)
+}
+
+/** 0071 정의자 흉내 — 동기화(AI Agent 자리)가 RLS 없이 탭을 찾는다. */
+export function dummyProcessChartById(id: number): ProcessChart | undefined {
+  const c = processCharts.find((x) => x.id === id)
+  return c ? { ...c } : undefined
 }
 
 /** 0021 can_write_process_charts(). Chairman · GroupCFO뿐(회사 범위를 보지 않는다). */
@@ -782,7 +796,7 @@ function canWriteProcessCharts(): boolean {
 
 export async function listProcessCharts(): Promise<ProcessChart[]> {
   return processCharts
-    .filter((c) => canReadProcessCharts(c.business_id))
+    .filter((c) => canReadProcessCharts(c.business_id, c.team_name))
     .map((c) => ({ ...c }))
     .sort((a, b) => a.business_id.localeCompare(b.business_id) || a.sort_order - b.sort_order)
 }
@@ -802,6 +816,8 @@ export async function saveProcessChart(input: ProcessChartInput, actor: AuditAct
       title: input.title.trim(),
       embed_url: input.embed_url.trim(),
       sort_order: input.sort_order,
+      sheet_id: input.sheet_id ?? null,
+      sheet_tab: input.sheet_tab ?? null,
       updated_by: actor.user_id,
       updated_at: now,
     })
@@ -817,6 +833,8 @@ export async function saveProcessChart(input: ProcessChartInput, actor: AuditAct
     title: input.title.trim(),
     embed_url: input.embed_url.trim(),
     sort_order: input.sort_order,
+    sheet_id: input.sheet_id ?? null,
+    sheet_tab: input.sheet_tab ?? null,
     updated_by: actor.user_id,
     updated_at: now,
   })
