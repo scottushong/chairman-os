@@ -35,6 +35,8 @@ export interface FinUploadPending {
   people?: FinRow[]
   /** 버리기 뒤의 시트 칸(글 · 숫자) — 사람이 종류 · 칸을 고르면 서버가 이것으로 다시 읽는다(원본 파일은 두지 않는다). 3,000줄 · 40칸까지. */
   grid?: (string | number | null)[][]
+  /** 0080: 원료 숫자(입고 · 재고 · OFFER · 모름)가 가려진 대기 — 줄 숫자 칸 · 칸 격자 없음. 이 사람은 넣지 못한다(파일을 다시 올린다). */
+  masked?: boolean
   /** 분류 · 검증 결과(화면이 다시 그린다) */
   meta?: {
     reason?: string
@@ -194,6 +196,18 @@ export interface FinOpeningSaveInput {
 }
 
 /** 0072 fin_issue_summary — 이것만 온다(원료별 kg 없음). */
+/** 0080 fin_material_totals — 입고 · 재고 · OFFER의 회사 · 월 합계 금액(원). 수량 · kg · 원료별 값 없음. 줄은 있는데 값이 없으면 null. */
+export interface FinMaterialTotals {
+  purchase_lines: number
+  purchase_amount: number | null
+  inventory_lines: number
+  inventory_closing: number | null
+  inventory_opening: number | null
+  import_lines: number
+  import_krw: number | null
+  import_extra: number | null
+}
+
 export interface FinIssueSummary {
   production_input_kg: number | null
   input_withheld: 'needs_review_open' | 'too_few_materials' | null
@@ -238,6 +252,8 @@ export interface FinTxLine {
   row_no: number
   /** 이미 살아 있는 묶음에 든 줄이면 그 묶음 */
   group_id: string | null
+  /** 0080: 원료 숫자가 가려진 줄(입고 — 올린 사람 1시간 · 대표 · CFO · 원가 관리 밖). amount · vat · qty는 null. */
+  hidden?: boolean
 }
 
 export interface FinTxGroup {

@@ -16,6 +16,7 @@ import type { FinRow, FinUpload } from '@/types'
 
 /** 0073 기능 스위치로 꺼진 기능의 문장. */
 const OFF = '지금은 쓸 수 없는 기능입니다.'
+const MATERIAL_HIDDEN = '원료 단가 · 수량은 올린 사람(올린 뒤 1시간) · 대표 · CFO · 원가 관리만 봅니다 — 이 미리보기는 넣을 수 없습니다. 파일을 다시 올려 주세요.'
 
 /**
  * «회계 · 재무 자료 올리기» v2 서버 액션 — 올리기(여러 파일) · 미리보기 넣기(종류 · 칸 · 기간 · 겹침 · 이유) · 되돌리기 · 취소.
@@ -110,6 +111,8 @@ export async function applyPendingUpload(input: ApplyInput): Promise<{ ok?: true
     const repo = await getRepository()
     const pending = await repo.finUploadPending(id)
     if (!pending) return { error: '이미 처리했거나 볼 수 없는 올리기입니다.' }
+    // 0080: 원료 숫자가 가려진 대기는 숫자 없는 줄만 돌려받는다 — 넣지 않는다(DB 트리거도 거부한다).
+    if (pending.masked) return { error: MATERIAL_HIDDEN }
     const meta = pending.meta ?? {}
     const cols = input.columns && typeof input.columns === 'object' ? (input.columns as Record<string, unknown>) : null
     const chosen: Record<string, number> = {}
@@ -158,6 +161,7 @@ export async function applyPendingUpload(input: ApplyInput): Promise<{ ok?: true
     if (m.includes('fin_upload_closed')) return { error: '마감된 달입니다 — 대표 · CFO가 이유를 적어야 넣을 수 있습니다.' }
     if (m.includes('ledger_post_live') || m.includes('cost_candidate_live')) return { error: '이 자료의 줄이 장부 반영 · 원가 LOT로 이미 쓰였습니다 — 그쪽을 먼저 무효로 하세요.' }
     if (m.includes('fin_replace_restricted')) return { error: '원료 출고 · 재고 자료의 «바꾸기»는 대표 · CFO만 합니다 — «기존 값 두기»를 고르거나 대표 · CFO에게 요청하세요.' }
+    if (m.includes('fin_material_hidden')) return { error: MATERIAL_HIDDEN }
     if (m.includes('fin_valuation_final_exists')) return { error: '그 구분의 확정된 평가금액이 이미 있습니다 — «재고 · 평가» 화면에서 이유를 적고 바꾸세요.' }
     if (m.includes('fin_value_state')) return { error: '빈칸 · 0 표시가 맞지 않는 칸이 있습니다(빈칸은 0이 아닙니다).' }
     return { error: finUploadError(e) }

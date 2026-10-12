@@ -170,6 +170,7 @@ import type {
   FinInventoryRollRow,
   FinOpeningSaveInput,
   FinIssueSummary,
+  FinMaterialTotals,
   FinIssueBulkInput,
   FinTxLine,
   FinTxGroup,
@@ -806,6 +807,8 @@ export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods,
   /** 원료 출고 요약(합계 kg 둘 · 줄 수 · 원료별 «확인 필요» 줄 수만). */
   finIssueSummary(businessId: string, period: string): Promise<FinIssueSummary | null>
   finIssueBulkDecide(input: FinIssueBulkInput): Promise<number>
+  /** 0080 입고 · 재고 · OFFER 회사 · 월 합계 금액(장부 읽기). 0080 전 DB는 null. */
+  finMaterialTotals(businessId: string, period: string): Promise<FinMaterialTotals | null>
   /** 같은 거래 맞추기 줄(판매 · 입고 · 세금계산서 · 원장 거래 줄 — 살아 있는 줄). */
   listFinTxLines(businessId: string, period: string): Promise<FinTxLine[]>
   listFinTxGroups(businessId: string, period: string): Promise<FinTxGroup[]>

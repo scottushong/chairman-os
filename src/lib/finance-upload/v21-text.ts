@@ -67,6 +67,7 @@ const ERR: Record<string, string> = {
   fin_upload_closed: '마감된 달입니다 — 대표 · CFO가 이유를 적어야 합니다.',
   fin_replace_restricted: '원료 출고 · 재고 자료의 «바꾸기»는 대표 · CFO만 합니다.',
   fin_upload_denied: '이 회사의 재무를 넣을 권한이 없습니다.',
+  fin_material_hidden: '원료 단가 · 수량이 가려진 미리보기는 넣을 수 없습니다 — 파일을 다시 올려 주세요.',
   fin_upload_period: '월(YYYY-MM)을 확인하세요.',
   fin_upload_unavailable: '아직 준비 중입니다(0072 반영 전).',
 }

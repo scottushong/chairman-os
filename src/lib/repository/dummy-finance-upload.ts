@@ -41,6 +41,8 @@ export interface DummyFinUploadDeps {
   name(userId: string): string | null
   /** 0076 fin_opening_confirm 거울 — 스위치 'finance_upload'(PHASE 11). 없으면 켜짐으로 본다(옛 시험). */
   featureOn?(businessId: string): Promise<boolean>
+  /** 0080 fin_material_viewer 거울 — 대표 · 그룹 CFO · '/costing/<회사>' 줄. 없으면 대표 · CFO만으로 본다. */
+  materialViewer?(businessId: string): boolean
 }
 
 type Methods = Pick<
@@ -64,6 +66,7 @@ type Methods = Pick<
   | 'finOpeningConfirm'
   | 'finIssueSummary'
   | 'finIssueBulkDecide'
+  | 'finMaterialTotals'
   | 'listFinTxLines'
   | 'listFinTxGroups'
   | 'finTxGroupSave'
@@ -173,6 +176,15 @@ export function dummyPlOpenFlags(business: string, period: string): number {
 
 const live = (s: FinUpload['status']) => s === 'applied' || s === 'needs_review'
 const chairOrCfo = (r: Role) => r === 'Chairman' || r === 'GroupCFO'
+/** 0080 — 원료 숫자를 가리는 종류(모름은 원료 파일일 수 있다) · 줄마다 가리는 숫자 칸. */
+const MATERIAL_KINDS = new Set<string>(['purchase_in', 'inventory', 'import', 'unknown'])
+const MATERIAL_KEYS: Record<string, string[]> = {
+  purchase_in: ['qty', 'amount', 'amount_vat'],
+  inventory: ['used_qty', 'stock_qty', 'amount', 'opening_amount'],
+  import: ['amount', 'fx_rate', 'amount_krw', 'extra_cost'],
+  unknown: ['qty', 'amount', 'amount_vat', 'used_qty', 'stock_qty', 'opening_amount', 'fx_rate', 'amount_krw', 'extra_cost'],
+}
+const HOUR_MS = 60 * 60 * 1000
 const PERIOD = /^\d{4}-(0[1-9]|1[0-2])$/
 const TABLE_OF: Record<string, TxSourceTable> = { sales: 'fin_sales_lines', purchase_in: 'fin_purchase_in_lines', tax_invoice: 'fin_tax_invoice_lines', ledger_lines: 'fin_ledger_lines' }
 const KIND_OF: Record<TxSourceTable, string> = { fin_sales_lines: 'sales', fin_purchase_in_lines: 'purchase_in', fin_tax_invoice_lines: 'tax_invoice', fin_ledger_lines: 'ledger_lines' }
@@ -248,6 +260,13 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
     if ((await d.closed(business, period)) && !(chairOrCfo(d.viewer().role) && reasonOk(reason))) throw new Error('fin_upload_closed')
   }
   const named = (v: Valuation): FinValuation => ({ ...v, entered_by_name: d.name(v.entered_by), confirmed_by_name: v.confirmed_by ? d.name(v.confirmed_by) : null })
+  // 0080 fin_material_line_ok 거울 — 대표 · CFO · 원가 관리, 또는 그 올리기를 만든 본인(1시간 · 지금 장부 쓰기).
+  const materialViewer = (b: string) => (d.materialViewer ? d.materialViewer(b) : chairOrCfo(d.viewer().role))
+  const lineOk = (b: string, uploadId: string | null) => {
+    if (materialViewer(b)) return true
+    const u = uploadId ? store.uploads.find((x) => x.upload_id === uploadId && x.business_id === b) : undefined
+    return !!u && d.canKeep(b) && u.created_by === d.viewer().user_id && Date.now() - Date.parse(u.created_at) < HOUR_MS
+  }
   const liveLine = (table: TxSourceTable, lineId: number, business: string, period: string) =>
     store.lines.find((l) => l.line_id === lineId && l.kind === KIND_OF[table] && l.business_id === business && l.period === period && !l.voided_at && !l.people)
 
@@ -267,11 +286,22 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
         void _g
         return structuredClone({ ...rest, rows: rest.rows.map(({ qty_kg: _k, qty_state: _s, ...r }) => (void _k, void _s, r as FinRow)) })
       }
-      if (chairOrCfo(d.viewer().role)) return structuredClone(u.pending)
-      const { people: _drop, grid, ...rest } = u.pending
-      void _drop
-      // 급여는 칸 격자에도 사람별 줄이 있다 — 대표 · CFO 밖에는 뺀다(0070 fin_upload_pending과 같다).
-      return structuredClone(u.kind === 'payroll' ? rest : { ...rest, grid })
+      let out: FinUploadPending
+      if (chairOrCfo(d.viewer().role)) out = structuredClone(u.pending)
+      else {
+        const { people: _drop, grid, ...rest } = u.pending
+        void _drop
+        // 급여는 칸 격자에도 사람별 줄이 있다 — 대표 · CFO 밖에는 뺀다(0070 fin_upload_pending과 같다).
+        out = structuredClone(u.kind === 'payroll' ? rest : { ...rest, grid })
+      }
+      // 0080: 입고 · 재고 · OFFER · 모름은 원료 숫자를 볼 수 없는 사람에게 줄 숫자 칸 · 칸 격자 없이.
+      if (MATERIAL_KINDS.has(u.kind) && !lineOk(u.business_id, u.upload_id)) {
+        const keys = MATERIAL_KEYS[u.kind]
+        const { grid: _g, ...rest } = out
+        void _g
+        out = { ...rest, masked: true, rows: rest.rows.map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => !keys.includes(k))) as FinRow) }
+      }
+      return out
     },
     async finUploadRecord(x) {
       if (!d.canKeep(x.business_id)) throw new Error('fin_upload_denied')
@@ -325,6 +355,10 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
       if (id) {
         const u = store.uploads.find((v) => v.upload_id === id && v.business_id === x.business_id)
         if (!u || u.status !== 'needs_review') throw new Error('fin_upload_not_pending')
+        // 0080 넣기 지킴 거울: 가려진 미리보기(입고 · 재고 · OFFER · 모름)는 숫자를 볼 수 있는 사람만 넣는다.
+        if (status === 'applied' && (MATERIAL_KINDS.has(u.kind) || (MATERIAL_KINDS.has(x.kind) && x.kind !== 'unknown')) && !lineOk(u.business_id, u.upload_id)) {
+          throw new Error('fin_material_hidden')
+        }
         // 0072 리뷰 C1: 출고 kg는 저장해 둔 대기 줄에서 줄 번호로 붙인다(앱이 돌려보내는 줄에는 kg가 없다).
         if (x.kind === 'material_issue' && u.pending?.rows) {
           const byNo = new Map(u.pending.rows.map((r) => [r.row_no, r]))
@@ -620,6 +654,25 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
       if (n > 0) await reclose(x.business_id, x.period, null, 'upload', x.reason)
       return n
     },
+    async finMaterialTotals(businessId, period) {
+      ensureDemo()
+      if (!d.canRead(businessId)) throw new Error('fin_upload_denied')
+      if (!PERIOD.test(period)) throw new Error('fin_upload_period')
+      const of = (kind: string) => store.lines.filter((l) => l.kind === kind && l.business_id === businessId && l.period === period && !l.voided_at && !l.people)
+      // 빈칸은 0으로 더하지 않는다 — 값 있는 줄이 하나도 없으면 null(0080 sum과 같다).
+      const sum = (ls: { row: FinRow }[], key: string, skip?: (r: FinRow) => boolean) => {
+        const vals = ls.filter((l) => !skip?.(l.row)).map((l) => numOrNull(l.row[key])).filter((v): v is number => v !== null)
+        return vals.length ? vals.reduce((a, b) => a + b, 0) : null
+      }
+      const p = of('purchase_in')
+      const i = of('inventory')
+      const m = of('import')
+      return {
+        purchase_lines: p.length, purchase_amount: sum(p, 'amount'),
+        inventory_lines: i.length, inventory_closing: sum(i, 'amount', (r) => r.amount_state === 'missing'), inventory_opening: sum(i, 'opening_amount', (r) => r.opening_state === 'missing'),
+        import_lines: m.length, import_krw: sum(m, 'amount_krw'), import_extra: sum(m, 'extra_cost'),
+      }
+    },
     async listFinTxLines(businessId, period) {
       ensureDemo()
       if (!d.canRead(businessId)) return []
@@ -631,9 +684,11 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
         const ref = `${TABLE_OF[l.kind]}:${l.line_id}`
         const base = { ref, upload_id: l.upload_id, row_no: r.row_no, group_id: grouped.get(ref) ?? null }
         if (l.kind === 'sales' || l.kind === 'purchase_in') {
-          const amount = numOrNull(r.amount)
-          const vat = numOrNull(r.amount_vat)
-          out.push({ ...base, source: (r.source_system as FinTxLine['source']) ?? 'other', direction: l.kind === 'sales' ? 'sales' : 'purchase', date: (r.tx_date as string) ?? null, counterparty: ((r.counterparty ?? (l.kind === 'sales' ? r.customer : r.supplier)) as string) ?? null, item: ((r.item_or_account ?? (l.kind === 'sales' ? r.product : r.material)) as string) ?? null, account: null, amount, vat, total: amount !== null && vat !== null ? amount + vat : null, qty: numOrNull(r.qty) })
+          // 0080 fin_material_lines 거울: 입고 줄 숫자는 줄마다 문(올린 사람 1시간 · 대표 · CFO · 원가 관리).
+          const hidden = l.kind === 'purchase_in' && !lineOk(businessId, l.upload_id)
+          const amount = hidden ? null : numOrNull(r.amount)
+          const vat = hidden ? null : numOrNull(r.amount_vat)
+          out.push({ ...base, source: (r.source_system as FinTxLine['source']) ?? 'other', direction: l.kind === 'sales' ? 'sales' : 'purchase', date: (r.tx_date as string) ?? null, counterparty: ((r.counterparty ?? (l.kind === 'sales' ? r.customer : r.supplier)) as string) ?? null, item: ((r.item_or_account ?? (l.kind === 'sales' ? r.product : r.material)) as string) ?? null, account: null, amount, vat, total: amount !== null && vat !== null ? amount + vat : null, qty: hidden ? null : numOrNull(r.qty), ...(hidden ? { hidden: true } : {}) })
         } else if (l.kind === 'tax_invoice') {
           out.push({ ...base, source: 'tax_invoice', direction: r.direction === 'sales' ? 'sales' : 'purchase', date: (r.issued_on as string) ?? null, counterparty: (r.counterparty as string) ?? null, item: (r.item as string) ?? null, account: null, amount: numOrNull(r.supply_amount), vat: numOrNull(r.vat), total: numOrNull(r.total), qty: null })
         } else {

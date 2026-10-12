@@ -600,11 +600,21 @@ export function autoDecision(x: AutoInput): { auto: boolean; why: string[] } {
 
 export const CONF_KO: Record<Confidence, string> = { high: '높음', medium: '보통', low: '낮음', none: '없음' }
 
-/** AI에 보내는 시트 견본 — 시트명 · 머리글 · 앞 20줄 · 합계 줄(버리기 뒤). 전체 숫자를 보내지 않는다. */
+/** 0080: 숫자 모양 칸(금액 · 수량 · 단가 · 환율 · kg) — AI 견본에서는 «<숫자>»로 바꾼다. */
+const NUMBER_CELL = /^[\s(+-]*[₩$€¥]?\s*[\d][\d,.\s]*(%|kg|원|개|ea)?\)?$/i
+
+/**
+ * AI에 보내는 시트 견본 — 시트명 · 머리글 · 앞 20줄 · 합계 줄(버리기 뒤). 전체 숫자를 보내지 않는다.
+ * 0080: 머리글 줄 아래 칸의 숫자는 «<숫자>»로 바꾼다(원료 단가 · kg가 AI 쪽으로 나가지 않게 — 종류 · 칸은 머리글 · 글자 칸 · 숫자 자리로 안다).
+ */
 export function aiSample(sheet: EcountSheet, headerRow: number): { sheet: string; rows: string[][] } {
   const start = Math.max(0, headerRow - 3)
-  const take = sheet.rows.slice(start, start + 23)
-  const totals = sheet.rows.filter((r) => r.slice(0, 4).some((c) => TOTAL_LABEL.test(normalizeLabel(cellText(c))))).slice(0, 3)
-  const asText = (r: EcountCell[]) => r.map((c) => cellText(c).slice(0, 60))
+  const take = sheet.rows.slice(start, start + 23).map((r, i) => ({ r, body: start + i > headerRow }))
+  const totals = sheet.rows.filter((r) => r.slice(0, 4).some((c) => TOTAL_LABEL.test(normalizeLabel(cellText(c))))).slice(0, 3).map((r) => ({ r, body: true }))
+  const asText = ({ r, body }: { r: EcountCell[]; body: boolean }) =>
+    r.map((c) => {
+      const t = cellText(c).slice(0, 60)
+      return body && (c.t === 'number' || NUMBER_CELL.test(t.trim())) && /\d/.test(t) ? '<숫자>' : t
+    })
   return { sheet: sheet.name.slice(0, 80), rows: [...take, ...totals].map(asText) }
 }

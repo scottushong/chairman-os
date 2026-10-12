@@ -51,7 +51,7 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
     const p = await repo.finUploadPending(u.upload_id).catch(() => null)
     if (p) {
       const overlap = !!u.period && uploads.some((o) => o.kind === u.kind && o.period === u.period && o.status === 'applied')
-      pendings.push({ upload: u, rows: p.rows.slice(0, 30), rowCount: p.rows.length, peopleCount: p.people?.length ?? null, hasGrid: !!p.grid, meta: p.meta ?? {}, overlap })
+      pendings.push({ upload: u, rows: p.rows.slice(0, 30), rowCount: p.rows.length, peopleCount: p.people?.length ?? null, hasGrid: !!p.grid, meta: p.meta ?? {}, overlap, masked: !!p.masked })
     }
   }
   const received = Object.fromEntries(KIND_SPECS.map((k) => [k.kind, uploads.find((u) => u.kind === k.kind && u.period === month && u.status === 'applied') ?? null]))
@@ -92,12 +92,14 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
         repo.listFinRecloseFlags(business_id).catch(() => []),
       ])
     : [[], [], { amount_base: 'ledger' as const, qty_base: 'r2_ecount' as const }, []]
+  // 0080 — 입고 · 재고 · OFFER 회사 · 월 합계 금액(원료별 숫자는 올린 사람 1시간 · 대표 · CFO · 원가 관리만).
+  const matTotals = canKeep ? await repo.finMaterialTotals(business_id, month).catch(() => null) : null
   // PHASE 4 — 달 경계 ±3일 줄과 앞 · 뒤 달 줄의 «달 넘김 의심»(보여 주기만 · 저장 없음).
   const cross = canKeep ? await crossMonthFor(repo, business_id, month, txLines).catch(() => []) : []
   const lineLabels = Object.fromEntries(
     txLines.map((l) => {
       const table = l.ref.slice(0, l.ref.indexOf(':')) as keyof typeof TX_SOURCE_KO
-      return [l.ref, `${TX_SOURCE_KO[table] ?? table} ${l.row_no}행 · ${l.counterparty ?? '거래처 없음'} · ${l.date ?? '날짜 없음'} · ${won(l.amount)}`]
+      return [l.ref, `${TX_SOURCE_KO[table] ?? table} ${l.row_no}행 · ${l.counterparty ?? '거래처 없음'} · ${l.date ?? '날짜 없음'} · ${l.hidden ? '금액 가림' : won(l.amount)}`]
     }),
   )
 
@@ -143,6 +145,15 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
             docsOpen={docsOpen}
             accounts={accounts}
           />
+          {matTotals && matTotals.purchase_lines + matTotals.inventory_lines + matTotals.import_lines > 0 ? (
+            <p className="mt-4 rounded-md border border-line-soft bg-panel px-3 py-2 text-t11h text-ink-dim" data-testid="material-totals">
+              <span className="font-semibold text-ink">{month} 원료 자료 합계</span>
+              {' · '}입고 {won(matTotals.purchase_amount)}({matTotals.purchase_lines}줄)
+              {' · '}재고 기말 {won(matTotals.inventory_closing)}({matTotals.inventory_lines}줄)
+              {' · '}OFFER 원화 {won(matTotals.import_krw)} · 부대비 {won(matTotals.import_extra)}({matTotals.import_lines}줄)
+              <span className="block text-t10h text-ink-muted">원료별 단가 · 수량은 올린 사람(올린 뒤 1시간) · 대표 · CFO · 원가 관리만 봅니다.</span>
+            </p>
+          ) : null}
           <div className="mt-4">
             <FinanceTxPanel businessId={business_id} month={month} groups={txGroups} lines={lineLabels} setting={dedupe} />
           </div>

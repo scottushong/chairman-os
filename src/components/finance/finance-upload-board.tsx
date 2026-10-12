@@ -38,6 +38,8 @@ export interface PendingView {
   hasGrid: boolean
   meta: NonNullable<FinUploadPending['meta']>
   overlap: boolean
+  /** 0080: 원료 숫자가 가려진 대기(이 사람은 넣지 못한다) */
+  masked?: boolean
 }
 
 const ACCEPT = '.xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png'
@@ -402,12 +404,17 @@ function PendingPanel({ businessId, p, role }: { businessId: string; p: PendingV
       ) : null}
       {p.rowCount > p.rows.length ? <p className="mt-1 text-t10h text-ink-muted">앞 {p.rows.length}줄만 보입니다(전체 {p.rowCount}줄).</p> : null}
 
+      {p.masked ? (
+        <p className="mt-1 rounded-md bg-gold/10 px-2 py-1 text-t11h text-ink-dim" data-testid="pending-masked">
+          원료 단가 · 수량은 올린 사람(올린 뒤 1시간) · 대표 · CFO · 원가 관리만 봅니다. 이 미리보기는 숫자 없이 보이며 여기서 넣을 수 없습니다 — 넣으려면 파일을 다시 올려 주세요.
+        </p>
+      ) : null}
       {problems.length ? <ul className="mt-1 list-disc pl-4 text-t11h text-critical">{problems.map((x) => <li key={x}>{x}</li>)}</ul> : null}
       {msg ? <p role="status" className="mt-1 text-t11h">{msg}</p> : null}
       <div className="mt-2 flex flex-wrap gap-2">
         <button
           type="button"
-          disabled={busy || !kind || !period}
+          disabled={busy || !kind || !period || !!p.masked}
           onClick={() =>
             start(async () => {
               setProblems([])

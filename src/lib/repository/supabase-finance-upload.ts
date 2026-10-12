@@ -54,6 +54,7 @@ type Methods = Pick<
   | 'finOpeningSave'
   | 'finOpeningConfirm'
   | 'finIssueSummary'
+  | 'finMaterialTotals'
   | 'finIssueBulkDecide'
   | 'listFinTxLines'
   | 'listFinTxGroups'
@@ -232,6 +233,18 @@ export function financeUploadMethods(sb: SupabaseClient): Methods {
       if (error) fail('fin_opening_confirm', error)
       return data === true
     },
+    async finMaterialTotals(businessId, period) {
+      const { data, error } = await sb.rpc('fin_material_totals', { p_business: businessId, p_period: period })
+      if (error && MISSING.has(error.code ?? '')) return null
+      if (error) fail('fin_material_totals', error)
+      if (!data || typeof data !== 'object') return null
+      const d = data as Record<string, unknown>
+      return {
+        purchase_lines: Number(d.purchase_lines ?? 0), purchase_amount: n(d.purchase_amount),
+        inventory_lines: Number(d.inventory_lines ?? 0), inventory_closing: n(d.inventory_closing), inventory_opening: n(d.inventory_opening),
+        import_lines: Number(d.import_lines ?? 0), import_krw: n(d.import_krw), import_extra: n(d.import_extra),
+      }
+    },
     async finIssueSummary(businessId, period) {
       const { data, error } = await sb.rpc('fin_issue_summary', { p_business: businessId, p_period: period })
       if (error && MISSING.has(error.code ?? '')) return null
@@ -256,7 +269,15 @@ export function financeUploadMethods(sb: SupabaseClient): Methods {
       }
       const [sales, purchase, tax, ledger, members] = await Promise.all([
         take('fin_sales_lines', 'line_id,upload_id,row_no,customer,product,qty,amount,tx_date,counterparty,source_system,amount_vat,item_or_account'),
-        take('fin_purchase_in_lines', 'line_id,upload_id,row_no,material,supplier,qty,amount,tx_date,counterparty,source_system,amount_vat,item_or_account'),
+        // 0080: 입고 줄의 수량 · 금액은 열 grant가 없다 — fin_material_lines(줄마다 문)로 읽는다. 0080 전 DB는 표를 직접.
+        (async () => {
+          const { data, error } = await sb.rpc('fin_material_lines', { p_business: businessId, p_period: period, p_kind: 'purchase_in' })
+          if (error && MISSING.has(error.code ?? '')) {
+            return take('fin_purchase_in_lines', 'line_id,upload_id,row_no,material,supplier,qty,amount,tx_date,counterparty,source_system,amount_vat,item_or_account')
+          }
+          if (error) fail('fin_material_lines', error)
+          return (Array.isArray(data) ? data : []) as Record<string, unknown>[]
+        })(),
         take('fin_tax_invoice_lines', 'line_id,upload_id,row_no,issued_on,counterparty,item,supply_amount,vat,total,direction'),
         take('fin_ledger_lines', 'line_id,upload_id,row_no,tx_date,account_name,counterparty,debit,credit'),
         sb.from('fin_tx_group_members').select('group_id,source_table,line_id').eq('business_id', businessId).is('released_at', null).limit(10000),
@@ -275,6 +296,7 @@ export function financeUploadMethods(sb: SupabaseClient): Methods {
             counterparty: ((r.counterparty ?? (dir === 'sales' ? r.customer : r.supplier)) as string) ?? null,
             item: ((r.item_or_account ?? (dir === 'sales' ? r.product : r.material)) as string) ?? null, account: null,
             amount, vat, total: amount !== null && vat !== null ? amount + vat : null, qty: n(r.qty), row_no: Number(r.row_no), group_id: grouped.get(ref) ?? null,
+            ...(r.hidden === true ? { hidden: true } : {}),
           })
         }
       }
