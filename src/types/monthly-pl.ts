@@ -76,6 +76,8 @@ export interface MonthlyPlInput {
   statement_uploaded: boolean
   /** 첫 달 기초 직접 입력(0072 fin_inventory_openings 원재료 합) — 원료별 수량이 없어 평균단가에는 못 쓴다(표시만). */
   raw_opening_manual: number | null
+  /** 이 달 첫 달 기초(0072 fin_inventory_openings) 중 0076 확인 전 줄 수 — 0보다 크면 경고(PHASE 11). */
+  openings_unconfirmed?: number
   /** 이 달 명세서의 기초 금액 합(0072 opening_amount) — 대조만. */
   raw_statement_opening: number | null
   wip: PlStockInput

@@ -68,7 +68,7 @@ export default async function FinanceValuationPage(props: PageProps<'/finance/[b
           </div>
           <RecloseBadges businessId={business_id} flags={reclose} canClear={canCloseBooks(user, business_id)} />
           <ValuationSection businessId={business_id} businessName={business.name} month={month} rows={valuations} warnings={warnings} viewerId={user.user_id} viewerName={user.name} />
-          <RollSection businessId={business_id} month={month} rows={roll} />
+          <RollSection businessId={business_id} month={month} rows={roll} canConfirm={canKeep} />
           <IssueSection businessId={business_id} month={month} summary={issue} />
         </div>
       ) : (

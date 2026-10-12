@@ -221,6 +221,7 @@ export function computeMonthlyPl(x: MonthlyPlInput): MonthlyPlResult {
   }
   if (x.raw_opening_manual !== null && raw_opening === null) warn('raw_opening_manual_only', '첫 달 원재료 기초 합만 있고 원료별 수량이 없음 — 평균단가를 내려면 앞 달 재고금액명세서가 필요')
   if (mats.some((m) => m.opening_source === 'statement_absent')) warn('opening_absent', '앞 달 명세서에 없는 원료는 기초 0으로 봄 — 확인')
+  if ((x.openings_unconfirmed ?? 0) > 0) warn('opening_unconfirmed', '이 달 기초(직접 입력) 중 아직 확인 전인 줄이 있음 — 확정 전에 재고 · 평가 화면에서 확인')
   if (x.materials.some((m) => m.closing_absent)) warn('closing_absent', '이 달 명세서에 없는 원료는 기말 0으로 봄 — 확인')
   if (!x.cash.uploaded) warn('cash_not_uploaded', '자금흐름표 미입력 · 연결 필요 — 원료대금 실제 지급액을 모름(손익으로 추정하지 않음)')
   warn('product_margin_unavailable', '제품별 실제 마진: 계산 불가 — 원료 LOT ↔ 제품 LOT 연결 근거가 없음(kg 비율 배분을 실제 원가로 쓰지 않음)')

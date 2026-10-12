@@ -385,6 +385,10 @@ begin
   if any_open_absent then
     w := w || jsonb_build_array(jsonb_build_object('code', 'opening_absent', 'message', '앞 달 명세서에 없는 원료는 기초 0으로 봄 — 확인'));
   end if;
+  -- PHASE 11(0076 리뷰 Minor): 첫 달 기초(0072 fin_inventory_openings)가 0076 확인 전이면 경고(막지는 않음).
+  if coalesce((p ->> 'openings_unconfirmed')::int, 0) > 0 then
+    w := w || jsonb_build_array(jsonb_build_object('code', 'opening_unconfirmed', 'message', '이 달 기초(직접 입력) 중 아직 확인 전인 줄이 있음 — 확정 전에 재고 · 평가 화면에서 확인'));
+  end if;
   if exists (select 1 from jsonb_array_elements(coalesce(p -> 'materials', '[]'::jsonb)) x where coalesce((x ->> 'closing_absent')::boolean, false)) then
     w := w || jsonb_build_array(jsonb_build_object('code', 'closing_absent', 'message', '이 달 명세서에 없는 원료는 기말 0으로 봄 — 확인'));
   end if;
@@ -679,6 +683,9 @@ begin
     'issues_uploaded', v_issues,
     'statement_uploaded', v_cur_stmt > 0,
     'raw_opening_manual', v_rawman,
+    'openings_unconfirmed', (select count(*) from fin_inventory_openings o
+                              where o.business_id = p_business and o.period = p_period and o.voided_at is null
+                                and o.value_state <> 'missing' and o.confirmed_at is null),
     'raw_statement_opening', v_stmt_open,
     'wip', st -> 'wip',
     'finished', st -> 'finished',

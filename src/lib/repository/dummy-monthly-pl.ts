@@ -259,6 +259,7 @@ async function gather(d: DummyMonthlyPlDeps, business: string, period: string): 
     issues_uploaded: iss.length > 0,
     statement_uploaded: cur.length > 0,
     raw_opening_manual: rawOpen?.amount ?? null,
+    openings_unconfirmed: fin.openings.filter((o) => o.business_id === business && o.period === period && !o.voided_at && o.value_state !== 'missing' && !o.confirmed_at).length,
     raw_statement_opening: stmtOpen.length ? stmtOpen.reduce((t, l) => t + (num(l.row.opening_amount) ?? 0), 0) : null,
     wip,
     finished,

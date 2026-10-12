@@ -837,6 +837,7 @@ export const dummyRepository: ChairmanRepository = {
   // 0070 — 회계 · 재무 자료 올리기(dummy-finance-upload.ts). 판정은 0070 거울(장부 쓰기 = can_keep_books 거울).
   ...dummyFinanceUpload({
     viewer: () => dummyViewer(),
+    featureOn: async (b) => featureOnFor(await dummyRepository.listFeatureSwitches(), 'finance_upload', dummyViewer().role, b),
     canKeep: (b) => dummyCanKeepBooks(b),
     canRead: (b) => dummyCanKeepBooks(b) || ['Chairman', 'GroupCFO', 'BusinessCEO', 'Executive'].includes(dummyViewer().role),
     // 0072 재마감 대상 풀기 = can_close_books 거울(역할 둘 또는 그 회사 재무 마감 줄).

@@ -39,6 +39,8 @@ export interface DummyFinUploadDeps {
   closed(businessId: string, period: string): Promise<boolean>
   notify(userId: string, title: string, body: string, link: string): void
   name(userId: string): string | null
+  /** 0076 fin_opening_confirm 거울 — 스위치 'finance_upload'(PHASE 11). 없으면 켜짐으로 본다(옛 시험). */
+  featureOn?(businessId: string): Promise<boolean>
 }
 
 type Methods = Pick<
@@ -573,7 +575,7 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
     // 0076 거울 — 첫 달 기초 확인(입력자 ≠ 확인자 · 미입력 거부 · 마감 달은 대표 · CFO + 이유).
     async finOpeningConfirm(id, reason) {
       const o = store.openings.find((x) => x.opening_id === id)
-      if (!o || !d.canKeep(o.business_id)) throw new Error('fin_upload_denied')
+      if (!o || !d.canKeep(o.business_id) || (d.featureOn && !(await d.featureOn(o.business_id)))) throw new Error('fin_upload_denied')
       if (o.voided_at || o.confirmed_at) return false
       if (o.entered_by === d.viewer().user_id) throw new Error('fin_opening_self_confirm')
       if (o.value_state === 'missing') throw new Error('fin_opening_missing')

@@ -23,6 +23,9 @@ import { TASK_STATUS, TASK_STATUS_LABEL_KO, type Task } from '@/types'
 
 const BASE = '/tasks'
 
+type TaskOrigin = 'app' | 'sheet' | 'example'
+const TASK_ORIGIN_KO: Record<TaskOrigin, string> = { app: '앱', sheet: '프로세스 차트', example: '예시' }
+
 export default async function TasksPage(props: PageProps<'/tasks'>) {
   const params = await props.searchParams
   const businessFilter = firstParam(params.business)
@@ -31,7 +34,7 @@ export default async function TasksPage(props: PageProps<'/tasks'>) {
   const needMine = firstParam(params.needed) === '1' ? '1' : undefined
 
   const repo = await getRepository()
-  const [tasks, projects, businesses, user] = await Promise.all([
+  const [allTasks, projects, businesses, user] = await Promise.all([
     repo.listTasks(),
     repo.listProjects(),
     repo.listBusinesses(),
@@ -39,6 +42,15 @@ export default async function TasksPage(props: PageProps<'/tasks'>) {
   ])
   // 호칭은 보는 사람에 맞춘다 — 직원 화면 용어 원칙(CLAUDE.md).
   const viewerRole = user?.role ?? null
+
+  /**
+   * PHASE 10 «출처» 거르기 — 앱 · 프로세스 차트(0071 source_label) · 예시(0072 is_example). 예시는 대표만 고를 수 있다
+   * (직원 세션에는 DB가 예시 줄을 아예 내주지 않는다 — 여기서는 칩만 숨긴다).
+   */
+  const originOf = (t: Task): TaskOrigin => (t.is_example ? 'example' : t.source_label ? 'sheet' : 'app')
+  const originsShown: readonly TaskOrigin[] = viewerRole === 'Chairman' ? ['app', 'sheet', 'example'] : ['app', 'sheet']
+  const origin = oneOf(firstParam(params.origin), originsShown)
+  const tasks = origin ? allTasks.filter((t) => originOf(t) === origin) : allTasks
 
   // Task는 회사를 직접 들고 있지 않다. project를 거쳐야 회사가 나온다.
   const projectOf = new Map(projects.map((p) => [p.project_id, p]))
@@ -60,13 +72,13 @@ export default async function TasksPage(props: PageProps<'/tasks'>) {
   const scopeOptions: FilterOption[] = [
     {
       label: '전체 업무',
-      href: withParams(BASE, { business: businessFilter, status: statusFilter }),
+      href: withParams(BASE, { origin, business: businessFilter, status: statusFilter }),
       active: !needMine,
       count: tasks.length,
     },
     {
       label: `${boss(viewerRole)} 확인 대기`,
-      href: withParams(BASE, { business: businessFilter, status: statusFilter, needed: '1' }),
+      href: withParams(BASE, { origin, business: businessFilter, status: statusFilter, needed: '1' }),
       active: Boolean(needMine),
       count: tasks.filter(waitsOnChairman).length,
     },
@@ -75,13 +87,13 @@ export default async function TasksPage(props: PageProps<'/tasks'>) {
   const statusOptions: FilterOption[] = [
     {
       label: '전체',
-      href: withParams(BASE, { business: businessFilter, needed: needMine }),
+      href: withParams(BASE, { origin, business: businessFilter, needed: needMine }),
       active: !statusFilter,
       count: byBusiness.length,
     },
     ...TASK_STATUS.map((s) => ({
       label: TASK_STATUS_LABEL_KO[s],
-      href: withParams(BASE, { business: businessFilter, status: s, needed: needMine }),
+      href: withParams(BASE, { origin, business: businessFilter, status: s, needed: needMine }),
       active: statusFilter === s,
       count: byBusiness.filter((t) => t.status === s).length,
     })),
@@ -90,15 +102,25 @@ export default async function TasksPage(props: PageProps<'/tasks'>) {
   const businessOptions: FilterOption[] = [
     {
       label: '전체',
-      href: withParams(BASE, { status: statusFilter, needed: needMine }),
+      href: withParams(BASE, { origin, status: statusFilter, needed: needMine }),
       active: !businessFilter,
       count: byStatus.length,
     },
     ...businesses.map((b) => ({
       label: b.name,
-      href: withParams(BASE, { business: b.business_id, status: statusFilter, needed: needMine }),
+      href: withParams(BASE, { origin, business: b.business_id, status: statusFilter, needed: needMine }),
       active: businessFilter === b.business_id,
       count: byStatus.filter((t) => scopeOf(t) === b.business_id).length,
+    })),
+  ]
+
+  const originOptions: FilterOption[] = [
+    { label: '전체', href: withParams(BASE, { business: businessFilter, status: statusFilter, needed: needMine }), active: !origin, count: allTasks.length },
+    ...originsShown.map((o) => ({
+      label: TASK_ORIGIN_KO[o],
+      href: withParams(BASE, { origin: o, business: businessFilter, status: statusFilter, needed: needMine }),
+      active: origin === o,
+      count: allTasks.filter((t) => originOf(t) === o).length,
     })),
   ]
 
@@ -145,6 +167,7 @@ export default async function TasksPage(props: PageProps<'/tasks'>) {
         <FilterChips label="범위" options={scopeOptions} />
         <FilterChips label="상태" options={statusOptions} />
         <FilterChips label="회사" options={businessOptions} />
+        <FilterChips label="출처" options={originOptions} />
       </div>
 
       <TaskTable items={items} viewerRole={viewerRole} />

@@ -452,6 +452,8 @@ export const PARITY_INPUTS: MonthlyPlInput[] = [
   { ...t1Month('2099-01', { opening_qty: 0, opening_amount: 0, opening_source: 'statement' }, 900_000, 600_000, 9 * 억, false), books_merchandise_cogs: 4000 * 만 },
   base({ materials: [mat({ purchase_qty: 10, purchase_amount: 1000, production_qty: 10, closing_qty: 0, issue_transfer: 1 }), mat({ name: '가짜 원료 나', purchase_qty: 5, purchase_amount: 500, production_qty: 5, closing_qty: 0 })] }),
   base({ issues_uploaded: false, materials: [mat({ opening_qty: 10, opening_amount: 1000, production_qty: null, closing_qty: 5, non_production: { sample: 1 } })], purchase_suspects: 1, purchase_dupes_excluded: 2, link: { prev_final: false, earlier_final: true }, wip: { ...base().wip, opening_scope: 'material_only', duplicate_suspect: true } }),
+  // PHASE 11 — 첫 달 기초 확인 전 경고(opening_unconfirmed)
+  base({ materials: [t3Mat()], openings_unconfirmed: 2 }),
 ]
 
 /** 순서와 상관없이 같은 까닭들인가(SQL은 같은 순서로 쌓지만, 대조는 내용으로). */

@@ -77,3 +77,9 @@
 | 71 | 8 | 대표 대시보드 = 대표 홈(/) 안 한 칸(ChairDashboard 서버 컴포넌트가 스위치를 보고 스스로 읽는다) · 새 마이그레이션 없음(0073에 chairman_dashboard 기본 줄이 이미 있음) | 별도 앱 금지 · 홈 한 번 읽기 묶음(loadDashboard)을 건드리지 않는다 | 홈 loadDashboard에 넣기 · 새 화면 | 홈 page.tsx 한 줄 |
 | 72 | 8 | 일 · 주 손익은 만들지 않는다(«월별 손익은 달 단위 — 지어내지 않음» 문구) · 월 → 분기 → 년은 0075 fin_pl_month 값을 더한다 · 한 달이라도 확정 아니면 «잠정» · 없는 달은 더하지 않고 «n/m달 없음» | PHASE 3 값만 쓰라는 지시 — 0075는 달 단위 | 판매 실적(0077)으로 일 · 주 매출 | chair-dashboard.ts rollTrend |
 | 73 | 8 | 제품 하나의 과거 전부는 새 화면 대신 0077 «판매 실적 · 마진»(제품별) 링크로 — 하루 20번 문 · 권한은 그 화면이 그대로 | 시간 상자(장부 리뷰 고침 먼저) · 노출이 적은 쪽 | 대시보드 안 제품 화면 | DEFERRED PHASE 8 |
+| 74 | 9 | 프로세스 차트 새벽 동기화는 Vercel cron `0 18 * * *`(하루 1번 — Hobby 한도 안, 03:00~03:59 KST) 그대로. 막히면(요금제 · 슬롯) GitHub Actions 예약 작업으로 옮긴다 — `.github/workflows/chairman-tick.yml`처럼 `Authorization: Bearer ${CRON_SECRET}`로 `/api/cron/process-sync`를 부르면 코드는 그대로 동작(lib/cron-auth.ts) | 2026-10-13 Vercel 문서 확인(Hobby 100개 · 하루 1번 · ±59분) · 지금 구조를 덜 바꾸는 쪽 | 지금 Actions로 옮기기 | vercel.json 한 줄 지우고 workflow 하나 |
+| 75 | 10 | 밤의 «보완 의견 정리»(0069 triageNight)는 환경변수 FEEDBACK_NIGHT_TRIAGE=on일 때만 돈다(기본 꺼짐) — 지금까지는 야간 브리핑 cron이 돌면 함께 돌았다 | 켜지 말라는 지시 · 노출이 적은 쪽(AI 호출 · 비용) · 되돌리기 쉬움(변수 하나) | 스위치 ai_assist에 묶기 | src/lib/ai/night-brief.ts 한 줄 |
+| 76 | 10 | /tasks «출처» 거르기: 앱 · 프로세스 차트(source_label) · 예시(is_example — 대표에게만 칩). 직원이 ?origin=example을 쳐도 무시(전체) | 예시 줄은 DB가 직원에게 내주지 않는다 — 칩만 숨기면 된다 | 새 RPC | tasks/page.tsx |
+| 77 | 11 | 달 넘김 짝(±3일)은 «같은 거래»(same)만 자동 넣기를 멈춘다 · «의심»은 메모로만 | 달 넘김 짝은 무시할 손잡이가 없어 의심만으로 늘 멈췄다(0076 리뷰 Minor) | 무시 손잡이 만들기 | process.ts countDupSuspects |
+| 78 | 11 | 첫 달 기초(0072 openings)가 확인 전이면 월별 손익에 경고 «opening_unconfirmed»(막지 않음 · SQL · TS 같이 · 입력에 openings_unconfirmed 수) | 확정 전에 알려 주기만 — 지금 구조를 덜 바꾸는 쪽 | 확정 막기 | 0075 fin_pl_compute · calc.ts |
+| 79 | 11 | 0067 · 0071 리뷰 Minor(머리 주석 · 만료 견적 · 내려받기 인자 · FORCE 검사 스크립트 · 팀 이름 바꾸기)는 고치지 않는다 — 앞 마이그레이션을 고치지 않는 규칙 · 코드 안전 범위 밖 | 앞 마이그레이션 고치지 않기(지시) | 새 마이그레이션으로 덮기 | DEFERRED PHASE 11 |
