@@ -78,10 +78,16 @@ revoke all on table fin_ledger_post_lines from public, anon, authenticated;
 -- =====================================================================
 -- 2절. 내부 판정
 -- =====================================================================
-/** 그 회사 그 달이 마감인가 — 0016 closings 확정 또는 0075 fin_pl_closes 내부 마감 확정(살아 있는 것). */
+/** 0016 장부 규칙 그대로(journal_lines_manual_guard): 그 달 또는 그 뒤 달에 closings 줄(가마감 포함)이 있으면 손 전표가 못 들어간다(다시 리뷰 I-A). */
+create or replace function ledger_post_blocked(p_business text, p_month text) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $fn$
+  select exists (select 1 from closings c where c.business_id = p_business and c.period >= p_month);
+$fn$;
+
+/** 그 회사 그 달이 마감인가 — 0016 closings(그 달 · 뒤 달 · 가마감 포함 — 장부가 막는 달) 또는 0075 fin_pl_closes 내부 마감 확정(살아 있는 것). */
 create or replace function ledger_post_closed(p_business text, p_period text) returns boolean
 language sql stable security definer set search_path = public, pg_temp as $fn$
-  select fin_month_closed(p_business, p_period)
+  select fin_month_closed(p_business, p_period) or ledger_post_blocked(p_business, p_period)
       or exists (select 1 from fin_pl_closes c where c.business_id = p_business and c.period = p_period
                     and c.status = 'final' and c.superseded_at is null);
 $fn$;
@@ -118,14 +124,17 @@ begin
 end;
 $fn$;
 
-/** 전표 날짜 규칙(리뷰 고침 I2) — 전표 날짜의 달 = 원장 달. 예외는 원장 달이 0016 마감일 때 뒤의 열린 달. */
+/** 전표 날짜 규칙(리뷰 고침 I2 · 다시 리뷰 I-A) — 전표 날짜의 달 = 원장 달(장부가 막지 않을 때).
+ *   원장 달을 장부가 막으면(0016: 그 달 · 뒤 달 closings) 뒤의 막히지 않은 달 — 단 이번 달(KST)까지만. */
 create or replace function ledger_post_date_ok(p_business text, p_period text, p_date date) returns void
 language plpgsql stable security definer set search_path = public, pg_temp as $fn$
 declare
-  v_m text := to_char(p_date, 'YYYY-MM');
+  v_m   text := to_char(p_date, 'YYYY-MM');
+  v_now text := to_char(now() at time zone 'Asia/Seoul', 'YYYY-MM');
 begin
-  if v_m = p_period then return; end if;
-  if fin_month_closed(p_business, p_period) and v_m > p_period and not fin_month_closed(p_business, v_m) then return; end if;
+  if v_m = p_period and not ledger_post_blocked(p_business, p_period) then return; end if;
+  if ledger_post_blocked(p_business, p_period) and v_m > p_period and v_m <= v_now
+     and not ledger_post_blocked(p_business, v_m) then return; end if;
   raise exception 'ledger_entry_date' using errcode = '22023';
 end;
 $fn$;
@@ -187,7 +196,6 @@ begin
     raise exception 'ledger_already_staged' using errcode = '23505';
   end if;
   v_date := coalesce(p_entry_date, v_date, (to_date(v_period || '-01', 'YYYY-MM-DD') + interval '1 month - 1 day')::date);
-  perform ledger_post_date_ok(p_business, v_period, v_date);
   if v_dr <> v_cr and nullif(btrim(coalesce(p_counter_account, '')), '') is null then
     raise exception 'ledger_unbalanced' using errcode = '22023';
   end if;
@@ -195,6 +203,8 @@ begin
   if v_closed and (not v_top or v_reason is null) then
     raise exception 'ledger_closed_month' using errcode = '42501';
   end if;
+  -- 날짜 규칙은 마감 · 권한 문 뒤(다시 리뷰 Minor 3 — 회사 대표에게 «마감 달»을 먼저 알린다).
+  perform ledger_post_date_ok(p_business, v_period, v_date);
   perform ledger_post_books_check(p_business, v_period, v_top, v_reason);
   if to_char(v_date, 'YYYY-MM') <> v_period then
     perform ledger_post_books_check(p_business, to_char(v_date, 'YYYY-MM'), v_top, v_reason);
@@ -376,6 +386,7 @@ create trigger ledger_post_import_guard_trigger before insert on finance_import_
 -- =====================================================================
 -- 7절. 함수 권한
 -- =====================================================================
+revoke all on function ledger_post_blocked(text, text) from public, anon, authenticated;
 revoke all on function ledger_post_closed(text, text) from public, anon, authenticated;
 revoke all on function ledger_post_gate(text) from public, anon, authenticated;
 revoke all on function ledger_post_books_check(text, text, boolean, text) from public, anon, authenticated;

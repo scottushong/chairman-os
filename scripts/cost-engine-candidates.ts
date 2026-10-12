@@ -99,6 +99,9 @@ export async function candidates({ as, run, owner, p1, U }: CandidatesCtx) {
   }
   // 감사 — 결정마다 한 줄(나중에 · 무시 · LOT · Landed · 판매 = 5)
   assert.equal(await audits(), a0 + 5, '0078: 결정마다 감사 한 줄이 아니다')
+  // 다시 리뷰 I-B — 만든 판매를 무효로 하면 지킴이 풀린다(되돌리기 됨)
+  await owner(`update cost_sales set voided_at = now(), voided_by = '${U.chair}', void_reason = '0078 시험 무효' where sale_id = '${sale}'`)
+  await owner(`update fin_uploads set status = 'reverted' where upload_id = (select upload_id from fin_sales_lines where line_id = ${sal})`)
 
   // 끄면 대표도 꺼진다 · 되돌림
   await run(U.chair, `select feature_switch_set('cost_candidates', 'biz_dy', false, 'all', '0078 시험 끄기')`)

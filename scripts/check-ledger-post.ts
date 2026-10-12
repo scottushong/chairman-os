@@ -146,11 +146,10 @@ async function db79() {
   await owner(`insert into closings (business_id, period, account_code, amount, closed_on, source, fetched_at, closed) values ('biz_dy', '${pm2}', '1530', 0, '${today}', 'manual', now(), true)`)
   await refuses(stage(U.ceo, [e1], '2010', null, '이유'), /ledger_closed_month/, '0079: 마감 달에 회사 대표가 반영 대기')
   await refuses(stage(U.chair, [e1], '2010'), /ledger_closed_month/, '0079: 마감 달에 이유 없이')
-  const [{ v: pc }] = await stage(U.cfo, [e1], '2010', null, '마감 뒤 받은 원장')
-  await refuses(apply(U.cfo, pc), /ledger_closed_month/, '0079: 마감 달 반영에 반영하는 사람 이유가 없다(대기 이유로 대신 — M4)')
-  await refuses(apply(U.cfo, pc, '마감 뒤 반영'), /closed_period/, '0079: 마감 달 날짜로 전표가 들어갔다(0016)')
-  await voidp(U.cfo, pc, '날짜 바꿔 다시')
+  // 다시 리뷰 I-A: 장부가 막는 달(0016 closings)의 날짜는 대기에서 거부 — 뒤의 열린 달(이번 달까지)만
+  await refuses(stage(U.cfo, [e1], '2010', null, '마감 뒤 받은 원장'), /ledger_entry_date/, '0079: 마감 달 날짜로 반영 대기')
   const [{ v: pc2 }] = await stage(U.cfo, [e1], '2010', today, '마감 뒤 받은 원장 — 당월')
+  await refuses(apply(U.cfo, pc2), /ledger_closed_month/, '0079: 마감 달 반영에 반영하는 사람 이유가 없다(대기 이유로 대신 — M4)')
   const [{ v: sc }] = await apply(U.cfo, pc2, '당월 반영')
   assert.ok(sc.startsWith('M'), '0079: 당월 날짜 반영')
 

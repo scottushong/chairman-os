@@ -83,3 +83,5 @@
 | 77 | 11 | 달 넘김 짝(±3일)은 «같은 거래»(same)만 자동 넣기를 멈춘다 · «의심»은 메모로만 | 달 넘김 짝은 무시할 손잡이가 없어 의심만으로 늘 멈췄다(0076 리뷰 Minor) | 무시 손잡이 만들기 | process.ts countDupSuspects |
 | 78 | 11 | 첫 달 기초(0072 openings)가 확인 전이면 월별 손익에 경고 «opening_unconfirmed»(막지 않음 · SQL · TS 같이 · 입력에 openings_unconfirmed 수) | 확정 전에 알려 주기만 — 지금 구조를 덜 바꾸는 쪽 | 확정 막기 | 0075 fin_pl_compute · calc.ts |
 | 79 | 11 | 0067 · 0071 리뷰 Minor(머리 주석 · 만료 견적 · 내려받기 인자 · FORCE 검사 스크립트 · 팀 이름 바꾸기)는 고치지 않는다 — 앞 마이그레이션을 고치지 않는 규칙 · 코드 안전 범위 밖 | 앞 마이그레이션 고치지 않기(지시) | 새 마이그레이션으로 덮기 | DEFERRED PHASE 11 |
+| 80 | 12 | 0079 «장부가 막는 달» = 0016 규칙 그대로(그 달 · 뒤 달 closings 줄 — 가마감 포함, ledger_post_blocked). 그런 달의 원장은 뒤의 막히지 않은 달 · 이번 달(KST)까지 날짜로만 · 대표 · CFO + 이유 | 0016 트리거와 판정이 달라 영영 못 넣는 달이 생겼다(다시 리뷰 I-A) | fin_month_closed(그 달 확정만) 유지 | 0079 ledger_post_blocked · ledger_post_date_ok |
+| 81 | 12 | 0078 올리기 지킴(I5)은 만든 LOT · 판매가 살아 있을 때만 막는다 — 원가 쪽을 무효로 하면 풀림 | 'lot' 결정을 풀 길이 없어 영영 못 되돌렸다(다시 리뷰 I-B) | 결정 풀기 RPC 추가 | 0078 cost_candidate_upload_guard 조건 두 줄 |

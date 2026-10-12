@@ -2834,3 +2834,8 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - (미룸) 0067 M5(머리 주석 «복합 FK» 틀림) · M6(만료 · 다른 고객 견적에 출고 묶기) · M7(마진 내려받기 기록 인자 검사). 이유: 0067을 고치지 않는다 — 새 마이그레이션 번호(0080~)로 덮을 일.
 - (미룸) 달 넘김 짝을 사람이 «다름»으로 무시하는 손잡이 — 지금은 same만 멈춤.
 - (미룸) OPERATIONS §9 0067 · 0068 복원 지점의 정확한 시각 — 기록이 저장소에 없음(대표가 Supabase Backups 화면에서 확인해 적는다).
+
+## 2026-10-13 PHASE 12 — 0078 · 0079 다시 리뷰 Minor
+- 0079 apply와 ECOUNT 월별 업로드가 같은 달에 동시에 커밋되면 서로 못 볼 수 있다(apply · import 지킴에 회사 자문 잠금 없음). 둘 다 사람이 누르는 드문 일 — 다음 번호에서 `pg_advisory_xact_lock(hashtext('ledger_post:'||회사))`.
+- ledger_post_books_check는 대체 · 역분개로 0이 된 옛 전표도 «다른 전표»로 센다 — 대표 · CFO + 이유로 지나간다(보수적, 틀리게 막지는 않음).
+

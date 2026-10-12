@@ -233,6 +233,16 @@ begin
   if old.status = 'applied' and new.status in ('replaced', 'reverted')
      and exists (select 1 from cost_fin_candidate_decisions d
                   where d.action = 'lot' and d.superseded_at is null and d.business_id = old.business_id
+                    -- 다시 리뷰 I-B: 만든 LOT · 판매가 아직 살아 있을 때만 막는다(원가 쪽을 무효로 하면 풀린다).
+                    and ((d.source_table = 'fin_sales_lines' and exists (select 1 from cost_sales s where s.sale_id = d.target_ref and s.voided_at is null))
+                      -- LOT는 ⑦ 부대비로 «무효 + 새 줄»이 될 수 있다 — 메모 «앞 LOT <id>»의 사슬을 따라 살아 있는 줄이 하나라도 있으면 막는다.
+                      or (d.source_table <> 'fin_sales_lines' and exists (
+                            with recursive chain(id, depth) as (
+                              select d.target_ref, 0
+                              union all
+                              select l.lot_id, c.depth + 1 from cost_purchase_lots l join chain c
+                                on l.business_id = d.business_id and l.note like '%앞 LOT ' || c.id and c.depth < 20)
+                            select 1 from chain c join cost_purchase_lots l on l.lot_id = c.id where l.voided_at is null)))
                     and ((d.source_table = 'fin_purchase_in_lines' and exists (select 1 from fin_purchase_in_lines x where x.line_id = d.line_id and x.upload_id = old.upload_id))
                       or (d.source_table = 'fin_import_lines' and exists (select 1 from fin_import_lines x where x.line_id = d.line_id and x.upload_id = old.upload_id))
                       or (d.source_table = 'fin_sales_lines' and exists (select 1 from fin_sales_lines x where x.line_id = d.line_id and x.upload_id = old.upload_id)))) then
