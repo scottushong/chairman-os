@@ -83,9 +83,9 @@ export const FEATURES = [
   {
     key: 'cost_candidates',
     label: '원가 후보 승인',
-    description: '원가 후보를 승인해 원가로 쓰는 흐름. 다음 단계에서 붙는다.',
+    description: '자료 올리기의 ② 입고 · ⑦ OFFER SHEET · ① 판매현황 줄을 원가 후보로 보여 주고 «LOT로 넣기 · 무시 · 나중에»(이유 필수 · 감사) — /costs/<회사>/candidates. 대표 · 원가 관리 쓰기만. 꺼지면 화면이 사라지고 RPC(cost_fin_candidates · cost_fin_candidate_decide)도 거부.',
     defaultAudience: 'chairman',
-    from: '다음 단계(미정)',
+    from: 'feat/cost-candidates · 0078',
   },
   {
     key: 'ledger_post',

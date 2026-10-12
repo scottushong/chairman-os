@@ -29,6 +29,7 @@ export default async function CostsPage(props: PageProps<'/costs/[business_id]'>
   await recordScreenRead({ path: `/costs/${business_id}`, kind: 'page', business_id })
   const chairman = user.role === 'Chairman'
   const marginsOn = await featureOn(user, 'sales_margins', business_id)
+  const candidatesOn = canWrite && (await featureOn(user, 'cost_candidates', business_id))
   const today = kstToday()
 
   const settle = <T,>(p: Promise<T>, fallback: T, where: string, msg: string) =>
@@ -69,6 +70,14 @@ export default async function CostsPage(props: PageProps<'/costs/[business_id]'>
             className="inline-flex min-h-11 items-center rounded-md border border-line bg-panel px-2.5 text-t11h text-ink-dim hover:border-accent hover:text-ink lg:min-h-0 lg:py-1.5"
           >
             견적 마진 vs 실제 마진
+          </Link>
+        ) : null}
+        {candidatesOn ? (
+          <Link
+            href={`/costs/${encodeURIComponent(business_id)}/candidates`}
+            className="inline-flex min-h-11 items-center rounded-md border border-line bg-panel px-2.5 text-t11h text-ink-dim hover:border-accent hover:text-ink lg:min-h-0 lg:py-1.5"
+          >
+            원가 후보 승인
           </Link>
         ) : null}
         {chairman ? (

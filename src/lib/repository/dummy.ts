@@ -42,14 +42,15 @@ import { dummyCanDeleteDocument, dummyIntake, dummyIntakeEntity, seedDummyIntake
 import { dummyFinanceImportEntity, dummyFinanceImports } from './dummy-finance-imports'
 import { dummyCostImport } from './dummy-cost-import'
 import { dummyListProcessChartItems, dummyListProcessChartSyncs, dummyProcessCalendarItems, dummyProcessTaskVisible, dummyProcessTasks } from './dummy-process-sync'
-import { dummyPurchasing } from './dummy-purchasing'
+import { dummyCostLedger, dummyPurchasing } from './dummy-purchasing'
+import { dummyCostCandidates } from './dummy-cost-candidates'
 import { dummyQuotes } from './dummy-quotes'
 import { dummyCostProduct, dummyCostReadAudit, dummyCosts, dummyGrantedAt, dummyProduction, dummySalesCost, noteDummyGrant } from './dummy-sales-cost'
 import * as books from './dummy-books'
 import { dummyAssistant } from './dummy-assistant'
 import { dummyFeatures } from './dummy-features'
 import { dummyFeedback } from './dummy-feedback'
-import { dummyFinanceUpload } from './dummy-finance-upload'
+import { dummyFinanceUpload, dummyFinLines, dummyFinStore } from './dummy-finance-upload'
 import { dummyMonthlyPl, dummyPlCloses } from './dummy-monthly-pl'
 import { dummySalesMargins } from './dummy-sales-margins'
 import * as chat from './dummy-chat'
@@ -878,6 +879,23 @@ export const dummyRepository: ChairmanRepository = {
     featureOn: async (b) => featureOnFor(await dummyRepository.listFeatureSwitches(), 'sales_margins', dummyViewer().role, b),
     inSubtree: (viewer, target) => inMemorySubtree(viewer, target),
     closedMonths: (b) => new Set(dummyPlCloses().filter((c) => c.business_id === b && c.status === 'final' && !c.superseded_at).map((c) => c.period)),
+  }),
+  // 0078 — 원가 후보 승인(dummy-cost-candidates.ts). 문은 스위치 'cost_candidates' · 대표 · 원가 관리 쓰기. 넣기는 dummy 구매 LOT 길.
+  ...dummyCostCandidates({
+    featureOn: async (b) => featureOnFor(await dummyRepository.listFeatureSwitches(), 'cost_candidates', dummyViewer().role, b),
+    purchaseInLines: (b) => {
+      dummyFinStore()
+      return dummyFinLines()
+        .filter((l) => l.business_id === b && l.kind === 'purchase_in' && !l.voided_at)
+        .map((l) => ({
+          line_id: l.line_id, period: l.period, tx_date: (l.row.tx_date as string | null) ?? null, material: (l.row.material as string | null) ?? null,
+          supplier: (l.row.supplier as string | null) ?? null, qty: l.row.qty === null || l.row.qty === undefined ? null : Number(l.row.qty),
+          amount: l.row.amount === null || l.row.amount === undefined ? null : Number(l.row.amount),
+        }))
+    },
+    addLot: (b, input) => dummyPurchasing().addPurchaseLot(b, input as unknown as Parameters<ReturnType<typeof dummyPurchasing>['addPurchaseLot']>[1]),
+    voidLot: (b, id, reason) => dummyPurchasing().voidPurchaseLot(b, id, reason),
+    lot: (b, id) => (dummyCostLedger().lots.find((l) => l.lot_id === id && l.business_id === b) as unknown as Record<string, unknown>) ?? null,
   }),
   // Phase 11 — 대화 · 제안 · 사용량(dummy-assistant.ts). 확인 감사는 이 파일의 이력 저장소로 온다.
   ...dummyAssistant((e) => {

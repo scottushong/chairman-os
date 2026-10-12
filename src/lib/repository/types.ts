@@ -181,6 +181,8 @@ import type {
   MarginGrain,
   SaleDeal,
   SalesMarginRow,
+  CandidateDecision,
+  CostCandidate,
   PlAdjustmentKind,
   PlSettings,
   PlYearRow,
@@ -359,7 +361,16 @@ export interface SalesMarginsMethods {
   salesMargins(businessId: string, from: string, to: string, grain: MarginGrain, by: MarginBy): Promise<SalesMarginRow[]>
 }
 
-export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods, ProductionMethods, CostsMethods, QuoteMethods, CostImportMethods, ProcessSyncMethods, SalesMarginsMethods {
+/**
+ * PHASE 6 원가 후보 승인(0078). 판정은 DB(cost_candidate_gate — 스위치 'cost_candidates' · 대표 · 원가 관리 쓰기)다.
+ * 넣기는 원래 입력 길(0061 LOT insert · 0067 sale_record)을 DB가 부른다. 0078 전 DB면 'cost_candidates_unavailable'.
+ */
+export interface CostCandidatesMethods {
+  listCostCandidates(businessId: string, includeDone: boolean): Promise<CostCandidate[]>
+  decideCostCandidate(businessId: string, d: CandidateDecision): Promise<string>
+}
+
+export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods, ProductionMethods, CostsMethods, QuoteMethods, CostImportMethods, ProcessSyncMethods, SalesMarginsMethods, CostCandidatesMethods {
   /** 어느 쪽을 보고 있는지. 화면이 아니라 DUMMY DATA 뱃지와 로그가 쓴다. */
   readonly mode: 'dummy' | 'live'
 
