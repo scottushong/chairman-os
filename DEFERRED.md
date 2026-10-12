@@ -2691,3 +2691,15 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - M7 cost_margins_download_log 인자 검사 · has_business(대표 경로) · 한도 없음.
 - M8 원가 관리 겸 영업의 'now' 스냅숏을 영업 팀장이 읽는다(0066 M4와 같은 선례).
 - M9 생산 LOT가 판매 뒤 무효가 되면 source 'actual' · 원가 null(계산 안 됨) — Current로 내려가지 않는다. 화면에 «LOT 무효» 표시 후보.
+
+## 2026-10-12 0071 프로세스 차트 동기화 — 고른 것 · 다른 선택지
+- 쓰기(동기화 RPC)는 **AI Agent 세션만**. 사람 세션이 부를 수 있으면 같은 팀 사람이 PostgREST로 가짜 줄(남의 이름 업무)을 넣는다. 앱 서버가 «이 사람이 이 탭을 보는가»를 그 사람 세션으로 확인한 뒤 AI Agent 로그인으로 부른다(누른 사람은 p_requested_by — DB가 다시 확인). 다른 선택지: 사람 세션 RPC + 역할 검사(가짜 줄 막을 수 없음).
+- 캘린더는 0017 calendar_items 뷰라 새 일정 표를 만들지 않고 'process' 갈래를 더했다(security_invoker — 탭 보기 AND 업무 보기). 탭은 못 보고 업무만 보는 담당자(다른 팀 사람이 담당)는 캘린더에 안 뜬다 — 업무 관리에는 뜬다. 다른 선택지: tasks에 시작일 칸을 더하고 tasks만으로 그리기.
+- 팀 판정은 process_charts.team_id(저장 트리거가 같은 회사 · 같은 이름 팀에서 채움) = user_profiles.team_id. teams는 FORCE라 판정 중에 읽지 않는다. 팀 이름을 바꾸면 그 탭을 한 번 다시 저장해야 팀원에게 보인다. 팀장은 user_profiles.team_id로만(teams.lead_user_id는 보지 않음).
+- process_charts · tasks의 FORCE를 내렸다(정의자 0행 함정 — 0023/0027/0029/0034와 같은 판단).
+- «댓글만» — 업무에 댓글 기능이 아직 없다. 시트 업무는 화면에서 상태 · 대표 확인 손잡이를 끄고 «시트에서 고치세요»를 보인다(DB restrictive 정책 tasks_external_readonly). 댓글은 다음 블록.
+- 새벽 cron은 vercel.json(0 18 * * * = 03:00 KST). 저장소의 첫 Vercel cron 재등장 — 야간 브리핑은 GitHub Actions 틱 그대로. Hobby cron 한도 · 시각 오차(±59분)는 배포 전에 Vercel 화면에서 확인.
+- 시트 줄의 담당자 이메일은 탭을 보는 사람에게 보인다(같은 팀 시트에 이미 있는 값).
+- 리뷰 반영(2026-10-12): A 프로젝트 id 회사 확인(process_sync_project_conflict) · B tasks_external_scope(시트 업무 = 담당자 본인 또는 탭을 보는 사람, AI Agent 0) · C process_chart_visible_to를 authenticated에서 회수 · 빈 시트(넣을 줄 0)는 거부하고 실패 기록(경고)만 — 시트를 통째로 비우면 업무가 «사라짐»이 되지 않는다(다른 선택지: 빈 시트 = 전부 사라짐).
+- (2026-10-12 고침) 위 «FORCE를 내렸다»는 대표 지시로 되돌렸다 — 0071은 FORCE를 유지하고 동기화 함수 넷만 통로(process_chart_sync_ctx, 함수 SET 절)로 지나간다(cbb3e14). 다른 선택지: FORCE 내리기(처음 판) · 소유자 통과 정책(FORCE를 무의미하게 만듦).
+- 0071 FORCE 리뷰 Minor(미룸): ① 다시 만든 restrictive 셋(ai_agent_no_insert/update · process_charts_ai_no_write)이 PUBLIC → to authenticated(규칙 «정책은 to authenticated») — authenticated에 속하지 않고 BYPASSRLS도 아닌 소유자에서만 차이. ② 통로는 함수 하나에 묶이지 않는다(설정값을 켤 길이 사람에게 없어서 안전). ③ check-force-rls.mjs는 disable row level security · 동적 execute · «if exists only» 순서 · 글자 안의 주석 기호를 보지 않는다.

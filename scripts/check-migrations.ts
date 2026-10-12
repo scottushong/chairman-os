@@ -4385,6 +4385,24 @@ async function documentGrants() {
  * version.ts를 import 하지 않고 **글자로 읽는다.** 그 파일은 'server-only'를 달고 있어서
  * RSC 바깥에서 import 하면 던진다.
  */
+/**
+ * 0071 리뷰: process_chart* 표를 만지거나 시트 업무(tasks.source_label)를 쓰는 security definer 함수는 허용 목록뿐이다.
+ * 새 정의자가 생기면 RLS 밖에서 시트 줄 · 시트 업무를 읽고 쓰는 길이 하나 더 생긴다 — 그때 이 목록을 일부러 고친다.
+ * process_chart_visible_to(사람 id 판정)는 authenticated가 부르지 못한다(리뷰 C).
+ */
+async function processChartDefiners(db: PGlite) {
+  // 본문에 표 이름이 나오는 것만 잡힌다(0021 can_read/can_write_process_charts · 0071 team_fill은 표를 읽지 않아 목록 밖).
+  const allow = [
+    'can_read_process_chart', 'can_read_process_chart_row', 'process_chart_sync_apply', 'process_chart_sync_fail', 'process_chart_sync_gate',
+    'process_chart_sync_targets', 'process_chart_visible_to', 'process_charts_audit',
+  ]
+  const rows = (await db.query<{ f: string }>(`select distinct p.proname as f from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+     where n.nspname = 'public' and p.prosecdef and (p.prosrc ~ 'process_chart' or p.prosrc ~ 'source_label') order by 1`)).rows.map((r) => r.f)
+  assert.deepEqual(rows, allow, `0071: process_chart* · 시트 업무를 만지는 정의자 함수가 허용 목록과 다르다 (${rows.join(', ')})`)
+  const priv = (await db.query<{ ok: boolean }>(`select has_function_privilege('authenticated', 'process_chart_visible_to(uuid, text, text)', 'execute') as ok`)).rows[0]
+  assert.equal(priv.ok, false, '0071: authenticated가 process_chart_visible_to(사람 id 판정)를 부른다')
+}
+
 function latestMigrationConstant(files: string[]) {
   const src = readFileSync(join(__dirname, '..', 'src', 'lib', 'version.ts'), 'utf8')
   const found = src.match(/LATEST_MIGRATION\s*=\s*'([^']+)'/)
@@ -7229,6 +7247,7 @@ async function main() {
   const db = new PGlite({ extensions: { pg_trgm } })
   const files = await applyAll(db)
   latestMigrationConstant(files)
+  await processChartDefiners(db)
   // rls()의 일괄 grant보다 **먼저**. 이유는 함수 주석에 있다.
   await kakaoRevokeSurvives(db)
   await standardChartSeed(db)

@@ -40,11 +40,14 @@ import { attachmentSearchText, dummyAttachmentRaw, dummyAttachments, dummySeedAt
 import { dummyCanDeleteDocument, dummyIntake, dummyIntakeEntity, seedDummyIntake } from './dummy-intake'
 import { dummyFinanceImportEntity, dummyFinanceImports } from './dummy-finance-imports'
 import { dummyCostImport } from './dummy-cost-import'
+import { dummyListProcessChartItems, dummyListProcessChartSyncs, dummyProcessCalendarItems, dummyProcessTaskVisible, dummyProcessTasks } from './dummy-process-sync'
 import { dummyPurchasing } from './dummy-purchasing'
 import { dummyQuotes } from './dummy-quotes'
 import { dummyCostProduct, dummyCostReadAudit, dummyCosts, dummyGrantedAt, dummyProduction, dummySalesCost, noteDummyGrant } from './dummy-sales-cost'
 import * as books from './dummy-books'
 import { dummyAssistant } from './dummy-assistant'
+import { dummyFeedback } from './dummy-feedback'
+import { dummyFinanceUpload } from './dummy-finance-upload'
 import * as chat from './dummy-chat'
 import * as city from './dummy-city'
 import * as groupware from './dummy-groupware'
@@ -479,6 +482,16 @@ function dummyRevokePendingStaffAdmin(adminId: string, businessId: string | null
   }
 }
 
+/** 0070 거울 — can_keep_books(장부 쓰기): 대표 · CFO · 회사 대표(그 회사) · '/finance/<회사>' 쓰기 줄. */
+function dummyCanKeepBooks(businessId: string): boolean {
+  const v = dummyViewer()
+  if (v.revoked_at || ['AIAgent', 'Integration'].includes(v.role)) return false
+  if (v.role === 'Chairman' || v.role === 'GroupCFO') return true
+  if (!v.business_ids.includes(businessId)) return false
+  if (v.role === 'BusinessCEO') return true
+  return dummyModuleGrants(v.user_id).some((m) => m.module === `/finance/${businessId}` && m.can_write)
+}
+
 function memoryPerson(userId: string): UserAccount {
   return memoryPeople.find((p) => p.user_id === userId) ?? dummyViewer()
 }
@@ -659,6 +672,13 @@ export const dummyRepository: ChairmanRepository = {
   ...dummyProduction(),
   ...dummyCosts(),
   ...dummyCostImport({ purchasing: dummyPurchasing(), production: dummyProduction(), costs: dummyCosts() }),
+  // 0071 프로세스 차트 동기화 — 읽기만(쓰기는 lib/process-sync가 dummy 흉내 writer로).
+  async listProcessChartItems() {
+    return dummyListProcessChartItems(dummyViewer())
+  },
+  async listProcessChartSyncs(limit = 50) {
+    return dummyListProcessChartSyncs(dummyViewer()).slice(0, limit)
+  },
 
   /** 0061 cost_costing_watch의 거울 — 대표만. 원가 관리 권한자 · 줄 생긴 시각 · 최근 7일 원가 조회 · 구매 · 영업 화면 열람 · 마지막 조회(그 회사). */
   async costingWatch(businessId: string) {
@@ -782,6 +802,28 @@ export const dummyRepository: ChairmanRepository = {
   markChannelRead: chat.markChannelRead,
   listChannelReads: chat.listChannelReads,
   openDm: chat.openDm,
+  // 0069 — 권한 · 조직 조회 · AI 보완 의견 · 보완함(dummy-feedback.ts). 감사는 콘솔(dummy 감사 표는 이력 대상만 받는다).
+  ...dummyFeedback({
+    viewer: () => memoryPerson(dummyViewer().user_id),
+    people: () => memoryPeople,
+    teams: () => memoryTeams,
+    grants: (id) => dummyModuleGrants(id),
+    staffAdmin: (v, b) => dummyStaffAdmin(v, b),
+    businesses: () => [...businesses, ...memoryBusinesses].map((b) => b.business_id),
+    audit: (e) => {
+      if (process.env.NODE_ENV !== 'production') console.warn(`[dummy] audit ${e.entity_table} ${e.entity_id} ${e.note}`)
+    },
+  }),
+  // 0070 — 회계 · 재무 자료 올리기(dummy-finance-upload.ts). 판정은 0070 거울(장부 쓰기 = can_keep_books 거울).
+  ...dummyFinanceUpload({
+    viewer: () => dummyViewer(),
+    canKeep: (b) => dummyCanKeepBooks(b),
+    canRead: (b) => dummyCanKeepBooks(b) || ['Chairman', 'GroupCFO', 'BusinessCEO', 'Executive'].includes(dummyViewer().role),
+    closed: async (b, p) => (await dummyRepository.loadFinanceLedger()).closings.some((c) => c.business_id === b && c.period === p && c.closed),
+    notify: (_u, title, body, link) => {
+      memoryNotifications.push({ notification_id: `ntf_${memoryNotifications.length + 1}`, kind: 'system', title, body, link, read_at: null, created_at: new Date().toISOString() })
+    },
+  }),
   // Phase 11 — 대화 · 제안 · 사용량(dummy-assistant.ts). 확인 감사는 이 파일의 이력 저장소로 온다.
   ...dummyAssistant((e) => {
     memoryEntityAudit.push({
@@ -857,7 +899,11 @@ export const dummyRepository: ChairmanRepository = {
       owner: ownerLabel(t.owner_user_id),
       ...memoryTaskPatches.get(t.task.task_id),
     }))
-    return [...seeded, ...owned]
+    // 0071 시트에서 온 업무 — tasks_read(0026 식) AND tasks_external_scope(담당자 본인 또는 그 탭을 보는 사람).
+    const synced = dummyProcessTasks()
+      .filter((t) => (canSeeRow(t.business_id, t.owner_user_id) || dummySharedWithMe(memoryShares, viewer.user_id, 'tasks', t.task.task_id)) && dummyProcessTaskVisible(viewer, t))
+      .map((t) => ({ ...t.task }))
+    return [...seeded, ...owned, ...synced]
   },
   async listDecisions() {
     await seedApprovalDemo()
@@ -1081,6 +1127,8 @@ export const dummyRepository: ChairmanRepository = {
 
   /** CH-040. live에서는 0002의 tasks_write가 거를 일이지만, dummy에는 RLS가 없다. */
   async updateTask(taskId: string, patch: TaskPatch, actor: AuditActor): Promise<void> {
+    // 0071 tasks_external_readonly — 시트에서 온 업무는 앱에서 고치지 않는다(live는 0행 → 같은 문장으로 던진다).
+    if (dummyProcessTasks().some((t) => t.task.task_id === taskId)) throw new Error('Dummy tasks: tasks_external_readonly(0071) — 시트에서 온 업무는 앱에서 고치지 않는다.')
     const seeded = tasks.find((t) => t.task_id === taskId)
     if (!seeded) throw new Error('Dummy tasks: mutation affected 0 rows.')
 
@@ -2176,6 +2224,11 @@ export const dummyRepository: ChairmanRepository = {
         initiative_id: null,
         href: '/approvals',
       })
+    }
+    // 0071 프로세스 차트 — 탭을 보고 그 업무도 보는 줄(뷰가 security_invoker라 두 표의 RLS가 다 걸린다).
+    const visibleTasks = new Set((await this.listTasks()).map((t) => t.task_id))
+    for (const p of dummyProcessCalendarItems(dummyViewer(), visibleTasks)) {
+      if (within(p.on_date, p.ends_on)) items.push(p)
     }
     // live(supabase.ts)의 listCalendarItems와 같은 순서다 — on_date, kind, source_id.
     // 월 그리드가 3개에서 접어 '+N'을 붙이므로, 정렬이 다르면 dummy와 live에서 보이는

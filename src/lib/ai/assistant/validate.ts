@@ -59,7 +59,7 @@ async function run(ctx: ToolContext) {
 
   // ── 업무 · 결재: 마감 지남 · 빈 필수 칸 ──
   if (!initiativeScope) {
-    const [tasks, decisions] = await Promise.all([ctx.repo.listTasks().catch(() => []), ctx.repo.listDecisions().catch(() => [])])
+    const [tasks, decisions] = await Promise.all([ctx.repo.listTasks().then((ts) => ts.filter((t) => !t.source_label)).catch(() => []), ctx.repo.listDecisions().catch(() => [])])
     for (const t of tasks) {
       if (t.status !== 'Done' && t.deadline && t.deadline < today) {
         push({ check: 'overdue', what: `업무 «${t.title}»`, detail: `마감 ${t.deadline} 지남 · 상태 ${t.status}`, link: `/tasks/${t.task_id}` })

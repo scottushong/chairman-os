@@ -1,0 +1,385 @@
+'use client'
+
+import { useRouter } from 'next/navigation'
+import { useRef, useState, useTransition } from 'react'
+
+import { applyPendingUpload, cancelUpload, revertUpload, uploadFinanceFiles } from '@/app/actions/finance-upload'
+import { KIND_SPECS, type UploadKind } from '@/lib/finance-upload/kinds'
+import type { FileCard } from '@/lib/finance-upload/process'
+import type { FinRow, FinUpload, FinUploadPending, Role } from '@/types'
+
+/**
+ * «회계 · 재무 자료 올리기» v2 화면 몸통 — 체크표 · 놓는 칸 하나 · 파일 카드 · 미리보기 대기 · 최근 올리기(되돌리기 7일).
+ * 직원 화면에도 선다 — «회장»이 들어가지 않는다(대표 · CFO).
+ */
+
+export interface PendingView {
+  upload: FinUpload
+  rows: FinRow[]
+  rowCount: number
+  peopleCount: number | null
+  hasGrid: boolean
+  meta: NonNullable<FinUploadPending['meta']>
+  overlap: boolean
+}
+
+const ACCEPT = '.xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png'
+const STATUS_KO: Record<string, string> = {
+  applied: '자동 넣음',
+  needs_review: '확인 필요',
+  failed: '실패',
+  duplicate: '이미 올림',
+  reverted: '되돌림',
+  cancelled: '취소',
+  replaced: '새 값으로 바뀜',
+  skipped: '기존 값 둠',
+}
+const STATUS_TONE: Record<string, string> = {
+  applied: 'bg-ok/15 text-ok',
+  needs_review: 'bg-gold/15 text-gold',
+  failed: 'bg-critical/10 text-critical',
+  duplicate: 'bg-raised text-ink-dim',
+  reverted: 'bg-raised text-ink-dim',
+  cancelled: 'bg-raised text-ink-dim',
+  replaced: 'bg-raised text-ink-dim',
+  skipped: 'bg-raised text-ink-dim',
+}
+const kindLabel = (k: string) => {
+  const s = KIND_SPECS.find((x) => x.kind === k)
+  return s ? `${s.no} ${s.label}` : '종류 모름'
+}
+
+export function FinanceUploadBoard({
+  businessId,
+  month,
+  uploads,
+  pendings,
+  received,
+  role,
+  ai,
+  revertable,
+}: {
+  businessId: string
+  month: string
+  uploads: FinUpload[]
+  pendings: PendingView[]
+  received: Record<string, FinUpload | null>
+  role: Role
+  ai: { on: boolean; perFile: number; perDay: number }
+  /** 되돌릴 수 있는 올리기(넣은 지 7일 안) — 서버가 정한다(화면은 시계를 읽지 않는다). */
+  revertable: string[]
+}) {
+  const router = useRouter()
+  const input = useRef<HTMLInputElement>(null)
+  const [cards, setCards] = useState<FileCard[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const [over, setOver] = useState(false)
+  const [busy, start] = useTransition()
+
+  function send(files: FileList | File[]) {
+    const list = [...files]
+    if (!list.length) return
+    setError(null)
+    const form = new FormData()
+    form.set('business_id', businessId)
+    for (const f of list.slice(0, 10)) form.append('files', f)
+    start(async () => {
+      const r = await uploadFinanceFiles(form)
+      if (r.error) setError(r.error)
+      setCards(r.cards)
+      router.refresh()
+    })
+  }
+
+  const got = Object.values(received).filter(Boolean).length
+  const recent = uploads.filter((u) => u.status !== 'needs_review').slice(0, 30)
+
+  return (
+    <div className="mt-4 space-y-4">
+      {/* 14가지 체크표 */}
+      <section className="rounded-xl border border-line-soft bg-panel p-3">
+        <div className="flex flex-wrap items-baseline gap-2">
+          <h2 className="text-t13 font-semibold">이번 달 자료 · {month}</h2>
+          <span className="text-t11h text-ink-muted tnum">받은 것 {got} / 14</span>
+          <form className="ml-auto flex items-center gap-1 text-t11h" action="">
+            <label className="text-ink-muted" htmlFor="month">달</label>
+            <input id="month" name="month" type="month" defaultValue={month} className="rounded-md border border-line bg-panel px-2 py-1 text-t11h" />
+            <button className="min-h-8 rounded-md border border-line px-2 text-ink-dim hover:border-accent">보기</button>
+          </form>
+        </div>
+        <ul className="mt-2 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
+          {KIND_SPECS.map((k) => {
+            const u = received[k.kind]
+            return (
+              <li key={k.kind} className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-t11h ${u ? 'border-ok/30 bg-ok/5' : 'border-line-soft'}`}>
+                <span aria-hidden className={`grid size-5 shrink-0 place-items-center rounded-full text-t10 font-bold ${u ? 'bg-ok text-white' : 'bg-raised text-ink-muted'}`}>{u ? '✓' : ''}</span>
+                <span className="min-w-0 truncate">{k.no} {k.label}</span>
+                <span className="ml-auto shrink-0 text-t10 text-ink-muted">{u ? `${u.row_count}줄${u.auto ? ' · 자동' : ''}` : '아직 없음'}</span>
+              </li>
+            )
+          })}
+        </ul>
+      </section>
+
+      {/* 놓는 칸 하나 */}
+      <section
+        onDragOver={(e) => {
+          e.preventDefault()
+          setOver(true)
+        }}
+        onDragLeave={() => setOver(false)}
+        onDrop={(e) => {
+          e.preventDefault()
+          setOver(false)
+          send(e.dataTransfer.files)
+        }}
+        className={`rounded-xl border-2 border-dashed p-5 text-center transition-colors ${over ? 'border-accent bg-accent/5' : 'border-line bg-panel'}`}
+      >
+        <p className="text-t13 font-semibold">파일을 여기에 놓으세요 — 여러 개 한 번에</p>
+        <p className="mt-1 text-t11h text-ink-dim">엑셀(xlsx · xls · csv) · PDF · jpg · png, 파일당 20MB · 10개까지. 종류 · 기간 · 칸을 알아내 넣고, 확실하지 않으면 아래 «확인 필요»로 멈춥니다.</p>
+        <p className="mt-1 text-t10h text-ink-muted">
+          {ai.on ? `AI 분류: 파일당 ${ai.perFile}번 · 하루 ${ai.perDay}번까지(엑셀은 앞 20줄 · 합계 줄만 보냅니다).` : 'AI 분류 꺼짐 — 낱말로만 분류합니다(한도 미설정).'} 이름 · 주민번호 · 계좌 · 카드번호 · 원료 투입 줄은 열 때 먼저 지웁니다.
+        </p>
+        <input ref={input} type="file" multiple accept={ACCEPT} className="hidden" onChange={(e) => e.target.files && send(e.target.files)} />
+        <button type="button" disabled={busy} onClick={() => input.current?.click()} className="mt-3 min-h-11 rounded-md bg-accent px-4 text-t12 font-semibold text-white disabled:opacity-50">
+          {busy ? '읽는 중…' : '파일 고르기'}
+        </button>
+        {error ? <p role="alert" className="mt-2 text-t11h text-critical">{error}</p> : null}
+      </section>
+
+      {cards.length ? (
+        <section className="space-y-1.5">
+          <h2 className="text-t13 font-semibold">방금 올린 파일</h2>
+          {cards.map((c, i) => (
+            <article key={`${c.file_name}-${c.sheet}-${i}`} className="rounded-lg border border-line bg-panel px-3 py-2">
+              <div className="flex flex-wrap items-center gap-2 text-t11h">
+                <span className={`rounded px-1.5 py-0.5 text-t10 font-semibold ${STATUS_TONE[c.status]}`}>{STATUS_KO[c.status]}</span>
+                <span className="font-semibold">{c.file_name}</span>
+                {c.sheet ? <span className="text-ink-muted">«{c.sheet}»</span> : null}
+                <span>{kindLabel(c.kind)}</span>
+                {c.period ? <span className="tnum">{c.period}</span> : null}
+                {c.rows ? <span className="text-ink-muted tnum">{c.rows}줄</span> : null}
+              </div>
+              <p className="mt-0.5 text-t11h text-ink-dim">{c.message}</p>
+              {c.why.length ? <ul className="mt-0.5 list-disc pl-4 text-t10h text-ink-muted">{c.why.map((w) => <li key={w}>{w}</li>)}</ul> : null}
+            </article>
+          ))}
+        </section>
+      ) : null}
+
+      {pendings.length ? (
+        <section className="space-y-2">
+          <h2 className="text-t13 font-semibold">확인 필요 · {pendings.length}</h2>
+          {pendings.map((p) => (
+            <PendingPanel key={p.upload.upload_id} businessId={businessId} p={p} role={role} />
+          ))}
+        </section>
+      ) : null}
+
+      <section className="rounded-xl border border-line-soft bg-panel p-3">
+        <h2 className="text-t13 font-semibold">최근 올리기</h2>
+        {recent.length === 0 ? <p className="mt-2 text-t11h text-ink-muted">아직 없습니다.</p> : null}
+        <ul className="mt-2 divide-y divide-line-soft">
+          {recent.map((u) => (
+            <RecentRow key={u.upload_id} u={u} businessId={businessId} canRevert={revertable.includes(u.upload_id)} />
+          ))}
+        </ul>
+      </section>
+    </div>
+  )
+}
+
+function RecentRow({ u, businessId, canRevert }: { u: FinUpload; businessId: string; canRevert: boolean }) {
+  const router = useRouter()
+  const [busy, start] = useTransition()
+  const [msg, setMsg] = useState<string | null>(null)
+  return (
+    <li className="flex flex-wrap items-center gap-2 py-1.5 text-t11h">
+      <span className={`rounded px-1.5 py-0.5 text-t10 font-semibold ${STATUS_TONE[u.status] ?? 'bg-raised'}`}>{u.status === 'applied' && !u.auto ? '넣음' : STATUS_KO[u.status]}</span>
+      <span className="min-w-0 truncate font-semibold">{u.file_name}</span>
+      <span>{kindLabel(u.kind)}</span>
+      <span className="tnum">{u.period ?? '—'}</span>
+      <span className="text-ink-muted tnum">{u.row_count}줄 · AI {u.ai_confidence === 'none' ? '안 씀' : u.ai_confidence}</span>
+      {u.error ? <span className="text-critical">{u.error}</span> : null}
+      <span className="text-ink-muted">{u.created_at.slice(0, 16).replace('T', ' ')}</span>
+      {canRevert ? (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            start(async () => {
+              const r = await revertUpload(u.upload_id, businessId, '화면에서 되돌림')
+              setMsg(r.error ?? '되돌렸습니다(지우지 않고 무효 처리).')
+              router.refresh()
+            })
+          }
+          className="ml-auto min-h-8 rounded-md border border-line px-2 text-ink-dim hover:border-critical hover:text-critical disabled:opacity-50"
+        >
+          되돌리기
+        </button>
+      ) : null}
+      {msg ? <span className="w-full text-t10h text-ink-muted">{msg}</span> : null}
+    </li>
+  )
+}
+
+function PendingPanel({ businessId, p, role }: { businessId: string; p: PendingView; role: Role }) {
+  const router = useRouter()
+  const [kind, setKind] = useState<string>(p.upload.kind === 'unknown' ? '' : p.upload.kind)
+  const [period, setPeriod] = useState(p.upload.period ?? '')
+  const [overlap, setOverlap] = useState<'none' | 'replace' | 'keep_old'>(p.overlap ? 'replace' : 'none')
+  const [reason, setReason] = useState('')
+  const [cols, setCols] = useState<Record<string, number>>(p.meta.columns ?? {})
+  const [msg, setMsg] = useState<string | null>(null)
+  const [problems, setProblems] = useState<string[]>([])
+  const [busy, start] = useTransition()
+  const spec = KIND_SPECS.find((k) => k.kind === kind)
+  const header = p.meta.header ?? []
+  const shownFields = spec?.fields ?? []
+  return (
+    <article className="rounded-xl border border-gold/40 bg-panel p-3">
+      <div className="flex flex-wrap items-center gap-2 text-t11h">
+        <span className="rounded bg-gold/15 px-1.5 py-0.5 text-t10 font-semibold text-gold">확인 필요</span>
+        <span className="font-semibold">{p.upload.file_name}</span>
+        {p.upload.sheet_name ? <span className="text-ink-muted">«{p.upload.sheet_name}»</span> : null}
+        <span className="text-ink-muted">{p.rowCount}줄{p.peopleCount !== null ? ` · 개인 줄 ${p.peopleCount}(대표 · CFO만)` : ''}</span>
+      </div>
+      {p.meta.reason ? <p className="mt-1 text-t10h text-ink-muted">분류 근거: {p.meta.reason}{p.meta.period_how ? ` · 기간: ${p.meta.period_how}` : ''}</p> : null}
+      {p.meta.why_not_auto?.length ? <ul className="mt-1 list-disc pl-4 text-t11h text-ink-dim">{p.meta.why_not_auto.map((w) => <li key={w}>{w}</li>)}</ul> : null}
+      {[...(p.meta.errors ?? []), ...(p.meta.warnings ?? [])].length ? (
+        <ul className="mt-1 list-disc pl-4 text-t11h">
+          {(p.meta.errors ?? []).map((e) => <li key={e} className="text-critical">{e}</li>)}
+          {(p.meta.warnings ?? []).map((w) => <li key={w} className="text-gold">{w}</li>)}
+        </ul>
+      ) : null}
+
+      <div className="mt-2 grid gap-2 sm:grid-cols-4">
+        <label className="text-t10h text-ink-muted">
+          종류
+          <select value={kind} onChange={(e) => setKind(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line bg-panel px-2 py-1.5 text-t12h text-ink">
+            <option value="">고르세요</option>
+            {KIND_SPECS.map((k) => (
+              <option key={k.kind} value={k.kind}>
+                {k.no} {k.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-t10h text-ink-muted">
+          기간(달)
+          <input type="month" value={period} onChange={(e) => setPeriod(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line bg-panel px-2 py-1.5 text-t12h text-ink" />
+        </label>
+        {p.overlap ? (
+          <label className="text-t10h text-ink-muted">
+            같은 달 자료가 이미 있음
+            <select value={overlap} onChange={(e) => setOverlap(e.target.value as typeof overlap)} className="mt-0.5 block w-full rounded-md border border-line bg-panel px-2 py-1.5 text-t12h text-ink">
+              <option value="replace">새 값으로 바꾸기(기존 줄 무효)</option>
+              <option value="keep_old">기존 값 두기(이 파일 버림)</option>
+            </select>
+          </label>
+        ) : null}
+        <label className="text-t10h text-ink-muted">
+          이유{role === 'Chairman' || role === 'GroupCFO' ? '(마감 달은 필수)' : ''}
+          <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} className="mt-0.5 block w-full rounded-md border border-line bg-panel px-2 py-1.5 text-t12h text-ink" />
+        </label>
+      </div>
+
+      {spec && p.hasGrid && header.length ? (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-t11h text-ink-dim">칸 바꾸기(머리글 «{header.filter(Boolean).slice(0, 5).join(' · ')}…»)</summary>
+          <div className="mt-1 grid gap-1.5 sm:grid-cols-4">
+            {shownFields.map((f) => (
+              <label key={f.key} className="text-t10h text-ink-muted">
+                {f.label}
+                <select
+                  value={cols[f.key] ?? ''}
+                  onChange={(e) => setCols((c) => {
+                    const n = { ...c }
+                    if (e.target.value === '') delete n[f.key]
+                    else n[f.key] = Number(e.target.value)
+                    return n
+                  })}
+                  className="mt-0.5 block w-full rounded-md border border-line bg-panel px-1.5 py-1 text-t11h text-ink"
+                >
+                  <option value="">없음</option>
+                  {header.map((h, i) => (
+                    <option key={i} value={i}>
+                      {i + 1}열 {h || '(빈 칸)'}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
+        </details>
+      ) : null}
+
+      {p.rows.length && spec ? (
+        <div className="mt-2 max-h-64 overflow-auto rounded-md border border-line-soft">
+          <table className="w-full text-t11">
+            <thead className="sticky top-0 bg-raised">
+              <tr>
+                <th className="px-2 py-1 text-left font-medium text-ink-muted">원본 줄</th>
+                {shownFields.map((f) => <th key={f.key} className="px-2 py-1 text-left font-medium text-ink-muted">{f.label}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {p.rows.map((r, i) => (
+                <tr key={i} className="border-t border-line-soft">
+                  <td className="px-2 py-1 tnum text-ink-muted">{r.row_no}행</td>
+                  {shownFields.map((f) => (
+                    <td key={f.key} className={`px-2 py-1 ${f.type === 'number' ? 'text-right tnum' : ''}`}>
+                      {typeof r[f.key] === 'number' ? (r[f.key] as number).toLocaleString('ko-KR') : (r[f.key] ?? '')}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      {p.rowCount > p.rows.length ? <p className="mt-1 text-t10h text-ink-muted">앞 {p.rows.length}줄만 보입니다(전체 {p.rowCount}줄).</p> : null}
+
+      {problems.length ? <ul className="mt-1 list-disc pl-4 text-t11h text-critical">{problems.map((x) => <li key={x}>{x}</li>)}</ul> : null}
+      {msg ? <p role="status" className="mt-1 text-t11h">{msg}</p> : null}
+      <div className="mt-2 flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={busy || !kind || !period}
+          onClick={() =>
+            start(async () => {
+              setProblems([])
+              const r = await applyPendingUpload({ uploadId: p.upload.upload_id, businessId, kind, period, columns: p.hasGrid ? cols : undefined, overlap: p.overlap ? overlap : 'none', reason })
+              if (r.error) {
+                setMsg(r.error)
+                setProblems(r.problems ?? [])
+              } else {
+                setMsg('넣었습니다.')
+                router.refresh()
+              }
+            })
+          }
+          className="min-h-10 rounded-md bg-accent px-4 text-t12 font-semibold text-white disabled:opacity-40"
+        >
+          {busy ? '넣는 중…' : '확인하고 넣기'}
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            start(async () => {
+              const r = await cancelUpload(p.upload.upload_id, businessId)
+              setMsg(r.error ?? '취소했습니다.')
+              router.refresh()
+            })
+          }
+          className="min-h-10 rounded-md border border-line px-3 text-t12 text-ink-dim hover:border-critical hover:text-critical"
+        >
+          취소
+        </button>
+      </div>
+    </article>
+  )
+}
+
+export type { UploadKind }

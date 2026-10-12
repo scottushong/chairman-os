@@ -260,6 +260,14 @@ export default async function SettingsHubPage() {
             ) : null}
             {isChairman ? (
               <Row
+                title="시스템 보완함"
+                note="AI 어시스턴트 답마다 남긴 보완 의견 — AI 정리 · Claude Code 지시문 복사 · 상태."
+                href="/settings/feedback"
+                cta="열기"
+              />
+            ) : null}
+            {isChairman ? (
+              <Row
                 title="결재 양식 · 규칙"
                 note="양식 다섯의 항목과 회장까지 올라가는 기준 금액."
                 href="/settings/approvals"
@@ -274,8 +282,8 @@ export default async function SettingsHubPage() {
             />
             <Row
               title="프로세스 차트"
-              note="대시보드에 띄울 게시된 시트 링크를 등록합니다."
-              href="/settings/process-charts"
+              note="팀별 시트 링크와 동기화할 시트 파일을 연결합니다."
+              href="/process-charts"
               cta="열기"
             />
           </div>

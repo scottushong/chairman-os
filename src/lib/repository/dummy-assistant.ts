@@ -161,3 +161,14 @@ export function dummyAssistant(audit: AssistantAuditSink): Methods {
     },
   }
 }
+
+/**
+ * 0069 거울용 — 그 사람(userId) 본인의 답 하나와 바로 앞 질문. ai_feedback_submit이 DB에서 하는 복사와 같다
+ * (남의 답 · 질문이면 null). dummy-feedback.ts만 부른다.
+ */
+export function dummyOwnAnswer(userId: string, messageId: number): { chat_id: string; question: string; answer: string } | null {
+  const a = store.messages.find((m) => m.id === messageId && m.role === 'assistant' && m.user_id === userId)
+  if (!a || !store.chats.some((c) => c.chat_id === a.chat_id && c.user_id === userId)) return null
+  const q = store.messages.filter((m) => m.chat_id === a.chat_id && m.role === 'user' && m.id < a.id).at(-1)
+  return { chat_id: a.chat_id, question: (q?.content ?? '').slice(0, 2000), answer: a.content }
+}

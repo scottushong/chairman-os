@@ -69,4 +69,16 @@ assert.match(config, /\[db.seed\][\s\S]*?enabled = false/)
 ${soft.stdout}${soft.stderr}`)
 }
 
-console.log('PASS: soft delete(DELETE 정책은 허용 목록만), local target, production/unknown/remote rejection, Docker isolation, secret stripping, CLI argument rejection, SQL guards, config invariants, staging env file and link guards')
+// 2026-10-12 대표 지시 — FORCE RLS가 있던 표가 꺼지면 FAIL(일부러 내린 표는 scripts/check-force-rls.mjs의 목록만).
+{
+  const { forceViolations } = await import('./check-force-rls.mjs')
+  // 검사가 살아 있는가 — 거는 파일 뒤에 내리는 파일이 오면 잡고, 같은 파일 안의 춤(내렸다 다시 걸기)은 통과한다.
+  assert.deepEqual(forceViolations([{ name: 'a.sql', sql: 'alter table tasks force row level security;' },
+    { name: 'b.sql', sql: '-- alter table tasks force row level security\nalter table tasks no force row level security;' }]),
+    ['tasks: a.sql에서 FORCE를 걸었는데 b.sql이 내렸다'])
+  assert.deepEqual(forceViolations([{ name: 'a.sql', sql: 'alter table teams force row level security; alter table public.teams no force row level security; alter table teams force row level security;' }]), [])
+  const force = spawnSync(process.execPath, ['scripts/check-force-rls.mjs'], { encoding: 'utf8' })
+  assert.equal(force.status, 0, `FORCE RLS 검사 실패:\n${force.stdout}${force.stderr}`)
+}
+
+console.log('PASS: FORCE RLS(있던 표가 꺼지지 않음), soft delete(DELETE 정책은 허용 목록만), local target, production/unknown/remote rejection, Docker isolation, secret stripping, CLI argument rejection, SQL guards, config invariants, staging env file and link guards')

@@ -19,6 +19,7 @@
     "check:weather": "tsx scripts/check-weather.ts",
     "check:statements": "tsx scripts/check-statements.ts",
     "check:process-charts": "tsx scripts/check-process-charts.ts",
+    "check:process-sync": "tsx --conditions=react-server scripts/check-process-sync.ts",
     "check:kakao": "tsx scripts/check-kakao.ts",
     "check:schedule": "tsx scripts/check-brief-schedule.ts",
     "check:migrations": "tsx scripts/check-migrations.ts",
@@ -41,7 +42,8 @@
     "check:cost-import": "tsx scripts/check-cost-import.ts",
     "check:purchasing": "tsx scripts/check-purchasing.ts",
     "check:sales-cost": "tsx scripts/check-sales-cost.ts",
-    "check:staging-sql-cost": "tsx scripts/check-staging-sql-0061.ts"
+    "check:staging-sql-cost": "tsx scripts/check-staging-sql-0061.ts",
+    "check:finance-upload": "tsx --conditions=react-server scripts/check-finance-upload.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",
