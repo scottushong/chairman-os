@@ -19,7 +19,7 @@ import type {
  *      제조로 간 원료비 = ① − 비생산 출고(성격별) − 승인된 재고 조정        ← 재고 차이를 전부 생산 원료비로 넣지 않는다
  *   ② 제조비용 = 제조로 간 원료비 + 제조 인건비 + 제조경비
  *   ③ 완성품 제조원가 = 기초 재공품 + ② − 기말 재공품
- *   ④ 매출원가 = 기초 완제품 + ③ − 기말 완제품
+ *   ④ 매출원가 = 기초 완제품 + ③ − 기말 완제품 + 장부 4610 상품매출원가(입고명세서에 없는 상품 — 교체하지 않고 더한다)
  *   ⑤ 매출총이익 = 매출 − ④
  *   ⑥ 영업이익 = ⑤ − 판관비 − 재고 변동(비생산 출고 + 승인된 조정 — 처리 기준 확인 전 별도 줄)
  *   ①의 모든 원은 ②(→ ④) 또는 «재고 변동» 중 **한 곳에만** 간다 — 조정을 더해도 영업이익은 그대로, 줄만 옮긴다(이중 반영 금지).
@@ -33,7 +33,7 @@ import type {
  *   합계는 반올림한 원료별 금액의 합. 차이(감모)는 남은 값으로 계산해 합계가 원 단위로 정확히 맞물린다.
  */
 
-export const PL_CALC_VERSION = 'pl-2026-10-12.1'
+export const PL_CALC_VERSION = 'pl-2026-10-12.2'
 
 /** 1원 — 0.5는 0에서 먼 쪽(Postgres round(numeric)과 같다). */
 export function roundWon(x: number): number {
@@ -58,7 +58,7 @@ export function normalizeMaterial(name: string | null | undefined): string {
 }
 
 const NP_KINDS: readonly PlNonProductionKind[] = ['sample', 'scrap', 'return', 'adjust']
-const ADJ_KINDS: readonly PlAdjustmentKind[] = ['shrinkage', 'scrap', 'valuation_loss', 'other']
+const ADJ_KINDS: readonly PlAdjustmentKind[] = ['shrinkage', 'scrap', 'other']
 
 const MAT_MSG: Record<string, string> = {
   opening_missing: '원료 기초(수량 · 금액)가 없음 — 앞 달 재고금액명세서를 올리거나 앞 달을 마감하세요(0으로 채우지 않음)',
@@ -71,6 +71,7 @@ const MAT_MSG: Record<string, string> = {
   needs_review: '원료 출고 구분 «확인 필요» 줄이 남음',
   missing_qty: '원료 출고 kg 빈칸 줄이 있음',
   purchase_missing: '입고 줄에 수량 또는 금액 빈칸이 있음 — 0으로 채우지 않음',
+  transfer_kind: '이동 출고 — 처리 기준 필요(회사 안 창고 이동인지 정하기 전에는 마감하지 않음)',
 }
 
 const add = (a: number | null, b: number | null): number | null => (a === null || b === null ? null : a + b)
@@ -92,6 +93,7 @@ function material(m: MonthlyPlInput['materials'][number], method: PlMethod): PlM
   if (m.issue_needs_review > 0) errors.push('needs_review')
   if (m.issue_missing_qty > 0) errors.push('missing_qty')
   if ((m.purchase_missing ?? 0) > 0) errors.push('purchase_missing')
+  if ((m.issue_transfer ?? 0) > 0) errors.push('transfer_kind')
   const openKnown = m.opening_qty !== null && m.opening_amount !== null
   if (!openKnown) errors.push('opening_missing')
   if (m.closing_qty === null) errors.push('closing_missing')
@@ -204,7 +206,7 @@ export function computeMonthlyPl(x: MonthlyPlInput): MonthlyPlResult {
 
   const mfg_cost = add(add(raw_to_production, x.mfg_labor), x.mfg_overhead)
   const cogm = sub(add(x.wip.opening_amount, mfg_cost), x.wip.closing_amount)
-  const cogs = sub(add(x.finished.opening_amount, cogm), x.finished.closing_amount)
+  const cogs = add(sub(add(x.finished.opening_amount, cogm), x.finished.closing_amount), x.books_merchandise_cogs)
   const gross_profit = sub(x.revenue, cogs)
   const operating_income = sub(sub(gross_profit, x.sga), inventory_other)
 
@@ -212,7 +214,7 @@ export function computeMonthlyPl(x: MonthlyPlInput): MonthlyPlResult {
   if (!x.method_confirmed) warn('method_provisional', `평가방법: ${methodLabel(x.method, false)} — 세무사 확인 뒤 설정에서 바꿀 수 있음`)
   if (inventory_other !== 0) warn('inventory_other_policy', '재고 변동(비생산 출고 · 승인된 조정)을 별도 줄로 둠 — 매출원가 · 판관비 · 영업외 중 처리 기준 확인 전')
   if (x.books_raw_material !== null && Math.abs(x.books_raw_material - raw_purchases) > x.tolerance_krw) {
-    warn('purchase_vs_books_diff', '장부 원재료비(교체됨)와 입고명세서 순매입이 다름 — 부가세 · 선급금 · 외상 · 시점 차이 · 상품매출원가 여부 확인')
+    warn('purchase_vs_books_diff', '장부 원재료비(교체됨 — 4610 상품매출원가 제외)와 입고명세서 순매입이 다름 — 부가세 · 선급금 · 외상 · 시점 차이 확인')
   }
   if (x.raw_statement_opening !== null && raw_opening !== null && Math.abs(x.raw_statement_opening - raw_opening) > x.tolerance_krw) {
     warn('statement_opening_diff', '이 달 재고금액명세서의 기초와 연결한 기초(전월 기말)가 다름 — 고치지 않고 보여 주기만')
@@ -259,6 +261,7 @@ export function computeMonthlyPl(x: MonthlyPlInput): MonthlyPlResult {
       cogm,
       finished_opening: x.finished.opening_amount,
       finished_closing: x.finished.closing_amount,
+      merchandise_cogs: x.books_merchandise_cogs,
     },
     cash: {
       state: x.cash.uploaded ? 'value' : 'not_uploaded',
@@ -329,7 +332,8 @@ export function dedupeLines(
     if (mine.length < 2) continue
     if (g.status === 'suspect') suspects += 1
     if (g.status !== 'same') continue
-    const base = g.amount_base_ref?.startsWith(`${table}:`) ? Number(g.amount_base_ref.slice(table.length + 1)) : NaN
+    const ref = g.amount_base_ref ?? ''
+    const base = ref.startsWith(`${table}:`) && /^[0-9]{1,18}$/.test(ref.slice(table.length + 1)) ? Number(ref.slice(table.length + 1)) : NaN
     const keep = mine.includes(base) ? base : Math.min(...mine)
     for (const id of mine) if (id !== keep) excluded.add(id)
   }

@@ -76,9 +76,9 @@ export const FEATURES = [
   {
     key: 'sales_margins',
     label: '판매 실적 · 마진 화면',
-    description: '판매 실적 · 마진. 다음 단계에서 붙는다.',
+    description: '판매 실적(/sales/<회사>/deals — 영업 본인 · 팀의 판매가 · kg · 등급만)과 견적 마진 vs 실제 마진(/costs/<회사>/margins — 대표 · 원가 관리, 하루 20번 · 부를 때마다 기록). 꺼지면 두 화면이 사라지고 RPC(sales_deals · sales_margins)도 거부.',
     defaultAudience: 'chairman',
-    from: '다음 단계(미정)',
+    from: 'feat/sales-margins · 0077',
   },
   {
     key: 'cost_candidates',

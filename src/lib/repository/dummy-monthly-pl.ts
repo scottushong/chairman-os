@@ -168,6 +168,7 @@ async function gather(d: DummyMonthlyPlDeps, business: string, period: string): 
       non_production,
       issue_needs_review: is.filter((l) => l.row.class === 'needs_review').length,
       issue_missing_qty: is.filter((l) => l.row.class !== 'needs_review' && l.row.qty_state === 'missing').length,
+      issue_transfer: is.filter((l) => l.row.class === 'non_production' && l.row.non_production_kind === 'transfer').length,
       closing_qty: cur.length > 0 ? (c ? c.q : 0) : null,
       closing_statement_amount: cur.length > 0 ? (c ? c.a : 0) : null,
       ...(cur.length > 0 && !c ? { closing_absent: true } : {}),
@@ -220,16 +221,17 @@ async function gather(d: DummyMonthlyPlDeps, business: string, period: string): 
   const cells = buildCells(ledger, business).get(period)?.cells
   const accts = accountMap(ledger, business)
   let has = false
-  const sums = { revenue: 0, raw: 0, labor: 0, overhead: 0, sga: 0, op: 0 }
+  const sums = { revenue: 0, raw: 0, merch: 0, labor: 0, overhead: 0, sga: 0, op: 0 }
   for (const c of cells?.values() ?? []) {
     const a = accts.get(c.account_code)
     if (!a || !['revenue', 'cogs', 'sga', 'd_and_a', 'non_operating', 'tax'].includes(a.section)) continue
     has = true
     const v = c.amount.value
     if (a.section === 'revenue') sums.revenue -= v
-    if (a.section === 'cogs' && a.category === 'raw_material') sums.raw += v
+    if (a.section === 'cogs' && a.account_code === '4610') sums.merch += v
+    else if (a.section === 'cogs' && a.category === 'raw_material') sums.raw += v
     if (a.section === 'cogs' && a.category === 'labor') sums.labor += v
-    if (a.section === 'cogs' && a.category !== 'raw_material' && a.category !== 'labor') sums.overhead += v
+    if (a.section === 'cogs' && a.category !== 'raw_material' && a.category !== 'labor' && a.account_code !== '4610') sums.overhead += v
     if (a.section === 'sga' || a.section === 'd_and_a') sums.sga += v
     if (['revenue', 'cogs', 'sga', 'd_and_a'].includes(a.section)) sums.op -= v
   }
@@ -264,6 +266,7 @@ async function gather(d: DummyMonthlyPlDeps, business: string, period: string): 
     revenue_source: s.revenue_source,
     books_has_lines: has,
     books_raw_material: has ? sums.raw : null,
+    books_merchandise_cogs: has ? sums.merch : null,
     mfg_labor: has ? sums.labor : null,
     mfg_overhead: has ? sums.overhead : null,
     sga: has ? sums.sga : null,
@@ -389,7 +392,12 @@ export function dummyMonthlyPl(d: DummyMonthlyPlDeps): Methods {
         detail: { input, materials }, recorded_by: d.viewer().user_id, recorded_at: now,
         closed_by: final ? d.viewer().user_id : null, closed_at: final ? now : null, reopened_at: null, superseded_at: null,
       })
-      if (final) dummyPlRecloseClear(business, period)
+      if (final) {
+        dummyPlRecloseClear(business, period)
+        for (const c of store.closes.filter((x) => x.business_id === business && x.period > period && x.status === 'final' && !x.superseded_at)) {
+          dummyPlRecloseMark(business, c.period, `앞 달(${period}) 월별 손익을 다시 확정했다 — 기초 확인 · 재마감 필요`)
+        }
+      }
       void reason
       return id
     },
@@ -411,7 +419,7 @@ export function dummyMonthlyPl(d: DummyMonthlyPlDeps): Methods {
     async finPlAdjustPropose(x) {
       await gate(x.business_id, x.period)
       if (!d.canKeep(x.business_id)) throw new Error('fin_pl_denied')
-      if (!['shrinkage', 'scrap', 'valuation_loss', 'other'].includes(x.kind) || !Number.isInteger(x.amount) || x.amount === 0) throw new Error('fin_pl_adjust_value')
+      if (!['shrinkage', 'scrap', 'other'].includes(x.kind) || !Number.isInteger(x.amount) || x.amount === 0) throw new Error('fin_pl_adjust_value')
       if (!reasonOk(x.reason)) throw new Error('fin_pl_reason')
       if (isFinal(x.business_id, x.period)) throw new Error('fin_pl_final')
       const reason = x.reason.trim().slice(0, 500)
@@ -430,6 +438,7 @@ export function dummyMonthlyPl(d: DummyMonthlyPlDeps): Methods {
       if (action === 'void' && !reasonOk(reason)) throw new Error('fin_pl_reason')
       if (isFinal(a.business_id, a.period)) throw new Error('fin_pl_final')
       if ((action === 'approve' && a.status !== 'proposed') || (action === 'void' && a.status === 'voided')) return false
+      if (action === 'void' && a.status === 'approved' && !d.canClose(a.business_id)) throw new Error('fin_pl_denied')
       if (action === 'approve') Object.assign(a, { status: 'approved', approved_by: d.viewer().user_id })
       else a.status = 'voided'
       return true
@@ -439,7 +448,7 @@ export function dummyMonthlyPl(d: DummyMonthlyPlDeps): Methods {
       if (!chairOrCfo() || !d.canRead(business)) throw new Error('fin_pl_denied')
       if (!reasonOk(reason)) throw new Error('fin_pl_reason')
       const cats = s.payment_categories.map((x) => x.trim())
-      if (!['monthly_wa', 'statement'].includes(s.method) || !Number.isInteger(s.tolerance_krw) || s.tolerance_krw < 0 || !['books', 'sales_upload'].includes(s.revenue_source)
+      if (!['monthly_wa', 'statement'].includes(s.method) || !Number.isInteger(s.tolerance_krw) || s.tolerance_krw < 0 || s.tolerance_krw > 1_000_000 || !['books', 'sales_upload'].includes(s.revenue_source)
         || cats.length < 1 || cats.length > 20 || cats.some((x) => x.length < 1 || x.length > 40)) {
         throw new Error('fin_pl_setting_value')
       }

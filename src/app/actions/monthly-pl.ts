@@ -72,7 +72,7 @@ export async function reopenMonthlyPl(x: { businessId: unknown; period: unknown;
   }
 }
 
-const KINDS: readonly PlAdjustmentKind[] = ['shrinkage', 'scrap', 'valuation_loss', 'other']
+const KINDS: readonly PlAdjustmentKind[] = ['shrinkage', 'scrap', 'other']
 
 /** 재고 조정 제안(보정값 · 사유) — 장부 쓰기. 승인은 다른 마감 권한자. */
 export async function proposePlAdjustment(x: { businessId: unknown; period: unknown; kind: unknown; amount: unknown; reason: unknown }): Promise<Result> {
@@ -137,7 +137,7 @@ export async function savePlSettings(x: {
   const payment_categories = text(x.categories, 500).split(/[,·]/).map((c) => c.trim()).filter(Boolean)
   const reason = text(x.reason)
   if (!['monthly_wa', 'statement'].includes(method) || !['books', 'sales_upload'].includes(revenue_source)) return { error: '평가방법 · 매출 원천을 고르세요.' }
-  if (!Number.isSafeInteger(tolerance_krw)) return { error: '허용오차는 0 이상의 원 단위로 적어 주세요.' }
+  if (!Number.isSafeInteger(tolerance_krw) || tolerance_krw > 1_000_000) return { error: '허용오차는 0원부터 1,000,000원까지 원 단위로 적어 주세요.' }
   if (payment_categories.length < 1 || payment_categories.length > 20) return { error: '원료 대금 항목 규칙을 쉼표로 1~20개 적어 주세요.' }
   if (reason.length < 2) return { error: '이유를 2자 이상 적어 주세요.' }
   try {

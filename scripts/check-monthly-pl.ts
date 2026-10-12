@@ -70,6 +70,7 @@ function base(over: Partial<MonthlyPlInput> = {}): MonthlyPlInput {
     revenue_source: 'books',
     books_has_lines: true,
     books_raw_material: null,
+    books_merchandise_cogs: 0,
     mfg_labor: 0,
     mfg_overhead: 0,
     sga: 0,
@@ -366,6 +367,38 @@ ok('T9 매입 9억 · 장부 원재료비 9억 — 검산 칸은 차이(장부 v
   assert.equal(r.pl.cogs, 3 * 억)
 })
 
+/* ─────────────── 0075 리뷰 고침 ─────────────── */
+ok('T9b 4610 상품매출원가 4천만은 교체되지 않고 매출원가에 남는다(입고명세서에 없는 상품)', () => {
+  const plain = t1[0]
+  const r = computeMonthlyPl({ ...t1Month('2099-01', { opening_qty: 0, opening_amount: 0, opening_source: 'statement' }, 900_000, 600_000, 0, false), books_merchandise_cogs: 4000 * 만 })
+  assert.equal(r.pl.cogs, 3 * 억 + 4000 * 만, '상품매출원가가 매출원가에서 빠졌다')
+  assert.equal(r.basis.merchandise_cogs, 4000 * 만)
+  assert.equal(r.pl.operating_income, plain.pl.operating_income! - 4000 * 만)
+  // 장부 원재료비(4510 — 교체되는 줄)와 따로다: 교체되는 쪽 9억은 그대로 검산 칸에만.
+  assert.equal(r.check.books_raw_material, 9 * 억)
+  assert.ok(!r.warnings.some((w) => w.code === 'purchase_vs_books_diff'), '4610이 장부 원재료비 대조에 섞였다')
+  // 장부 줄이 없으면(미입력) 상품매출원가도 미입력 — 매출원가를 0으로 채우지 않는다.
+  assert.equal(computeMonthlyPl(base({ books_merchandise_cogs: null })).pl.cogs, null)
+})
+ok('이동 출고(transfer) 줄 → «이동 출고 — 처리 기준 필요»로 막는다(kg에 넣지 않는다)', () => {
+  const r = computeMonthlyPl(base({ materials: [mat({ purchase_qty: 10, purchase_amount: 1000, production_qty: 10, closing_qty: 0, issue_transfer: 2 })] }))
+  assert.ok(codes(r).includes('material_transfer_kind'))
+  assert.equal(r.closable, false)
+  assert.ok(r.blockers.find((b) => b.code === 'material_transfer_kind')!.message.startsWith('이동 출고 — 처리 기준 필요'))
+  assert.ok(maskPlResult(r, false).blockers.some((b) => b.code === 'material_transfer_kind' && b.message.includes('(원료 1가지)')))
+})
+ok('평가손실 조정은 받지 않는다 — 조정 종류는 감모 · 폐기 · 기타', () => {
+  const r = computeMonthlyPl(base({ adjustments: [{ kind: 'shrinkage', amount: 10, status: 'approved' }] }))
+  assert.deepEqual(Object.keys(r.basis.adjustments_by_kind), ['shrinkage'])
+})
+ok('같은 거래 금액 기준 줄(amount_base_ref)은 «표:숫자» 꼴만 — 아니면 가장 작은 줄 번호', () => {
+  const g = (ref: string) => [{ status: 'same' as const, amount_base_ref: ref, members: [1, 2, 3].map((id) => ({ source_table: 'fin_purchase_in_lines', line_id: id, released: false })) }]
+  assert.deepEqual([...dedupeLines('fin_purchase_in_lines', [1, 2, 3], g('fin_purchase_in_lines:3')).excluded].sort(), [1, 2])
+  for (const bad of ['fin_purchase_in_lines:3x', 'fin_purchase_in_lines:1e0', 'fin_purchase_in_lines: 3', 'fin_purchase_in_lines:', 'fin_sales_lines:3']) {
+    assert.deepEqual([...dedupeLines('fin_purchase_in_lines', [1, 2, 3], g(bad)).excluded].sort(), [2, 3], bad)
+  }
+})
+
 /* ─────────────── 시험 10. 권한 및 재마감 ─────────────── */
 ok('T10 원가 권한 밖: 원료별 줄 · 원료 이름 · 원료별 단가가 없다(화면 · API · 내보내기 모두 이 모양만 받는다)', () => {
   const r = computeMonthlyPl(base({ materials: [t3Mat(), mat({ name: '가짜 원료 나', opening_qty: null, opening_amount: null, opening_source: 'missing' })] }))
@@ -415,7 +448,9 @@ export const PARITY_INPUTS: MonthlyPlInput[] = [
   base({ materials: [mat({ opening_qty: null, opening_amount: null, opening_source: 'missing', purchase_qty: 100, purchase_amount: 10 * 만, production_qty: 50, closing_qty: 50 })] }),
   base({ materials: [mat({ opening_qty: 1000, opening_amount: 200 * 만, purchase_qty: 1000, purchase_amount: 300 * 만, production_qty: 800, closing_qty: 1160 })], revenue: 1000 * 만, adjustments: [{ kind: 'shrinkage', amount: 10 * 만, status: 'approved' }, { kind: 'other', amount: 1, status: 'proposed' }] }),
   base({ materials: [mat({ purchase_qty: 100, purchase_amount: 10 * 만, production_qty: 50, closing_qty: -5 }), mat({ name: '가짜 원료 나', opening_qty: -500, opening_amount: 100 * 만, purchase_qty: 500, purchase_amount: 150 * 만, production_qty: 0, closing_qty: 0 })] }),
-  base({ method: 'statement', method_confirmed: true, materials: [mat({ opening_qty: 1000, opening_amount: 200 * 만, purchase_qty: 1000, purchase_amount: 300 * 만, production_qty: 800, closing_qty: 1200, closing_statement_amount: 290 * 만 })], cash: { uploaded: false, material_payments: null, inflow: null, outflow: null }, books_has_lines: false, revenue: null, mfg_labor: null, mfg_overhead: null, sga: null }),
+  base({ method: 'statement', method_confirmed: true, materials: [mat({ opening_qty: 1000, opening_amount: 200 * 만, purchase_qty: 1000, purchase_amount: 300 * 만, production_qty: 800, closing_qty: 1200, closing_statement_amount: 290 * 만 })], cash: { uploaded: false, material_payments: null, inflow: null, outflow: null }, books_has_lines: false, revenue: null, books_merchandise_cogs: null, mfg_labor: null, mfg_overhead: null, sga: null }),
+  { ...t1Month('2099-01', { opening_qty: 0, opening_amount: 0, opening_source: 'statement' }, 900_000, 600_000, 9 * 억, false), books_merchandise_cogs: 4000 * 만 },
+  base({ materials: [mat({ purchase_qty: 10, purchase_amount: 1000, production_qty: 10, closing_qty: 0, issue_transfer: 1 }), mat({ name: '가짜 원료 나', purchase_qty: 5, purchase_amount: 500, production_qty: 5, closing_qty: 0 })] }),
   base({ issues_uploaded: false, materials: [mat({ opening_qty: 10, opening_amount: 1000, production_qty: null, closing_qty: 5, non_production: { sample: 1 } })], purchase_suspects: 1, purchase_dupes_excluded: 2, link: { prev_final: false, earlier_final: true }, wip: { ...base().wip, opening_scope: 'material_only', duplicate_suspect: true } }),
 ]
 
@@ -572,6 +607,24 @@ async function dummyFlow() {
   assert.equal(await repo.finPlAdjustPropose({ business_id: BIZ, period: '2099-07', kind: 'scrap', amount: 50_000, reason: '시험 폐기' }), a2, '같은 제안이 줄을 늘렸다')
   as('chairman')
   assert.equal(await repo.finPlAdjustDecide(a2, 'approve', null), true)
+  // 승인된 조정의 무효는 마감 권한만(DY 대표 = 장부 쓰기만 → 거부) · 승인 전 제안의 무효는 장부 쓰기로 된다.
+  as('dy_ceo')
+  await assert.rejects(repo.finPlAdjustDecide(a2, 'void', '승인된 것 무효 시험'), /fin_pl_denied/)
+  assert.equal(await repo.finPlAdjustDecide(a1, 'void', '제안 무효 시험'), true)
+  await assert.rejects(repo.finPlAdjustPropose({ business_id: BIZ, period: '2099-07', kind: 'valuation_loss' as never, amount: 1000, reason: '평가손실 시험' }), /fin_pl_adjust_value/)
+  as('chairman')
+  assert.equal(await repo.finPlAdjustDecide(a2, 'void', '승인된 것 무효 시험'), true)
+  await assert.rejects(
+    repo.finPlSettingsSave(BIZ, { method: 'monthly_wa', method_confirmed: false, tolerance_krw: 1_000_001, revenue_source: 'books', payment_categories: ['원재료'] }, '허용오차 상한 시험'),
+    /fin_pl_setting_value/,
+  )
+  // 4610 상품매출원가 전표 — 교체되는 장부 원재료비에 섞이지 않고 상품매출원가 칸으로.
+  if (!ledger.accounts.some((a) => a.business_id === BIZ && a.account_code === '4610')) {
+    await repo.createAccount({ business_id: BIZ, account_code: '4610', name: '상품매출원가', category: 'raw_material', section: 'cogs', cash_flow: null }, actor)
+  }
+  await slip('2099-07-10', '4610', pay, 4000 * 만, '가짜 상품 매입원가')
+  const jul = (await repo.finPlMonth(BIZ, '2099-07'))!
+  assert.deepEqual([jul.result.basis.merchandise_cogs, jul.result.check.books_raw_material], [4000 * 만, 0], '4610이 장부 원재료비로 읽혔다')
   await assert.rejects(repo.finPlRecord(BIZ, '2099-07', true, null), /fin_pl_entering|fin_pl_blocked/)
 
   // 스위치를 끄면 대표에게도 꺼진다(화면 · 액션 · RPC 모두 같은 문).

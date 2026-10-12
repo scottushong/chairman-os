@@ -7,7 +7,7 @@
 --   rm -f supabase/.temp/0075_staging_test.sql
 -- 기대: ERROR  0075 STAGING PASS a(직원 스위치 꺼짐) b(1월 매출원가 3억 · 영업이익 1억 · 원료 기말 6억 · 지급 9억) c(직원 원료별 없음 · 확정 거부 · 잠정 한 줄)
 --        d(대표 마감 · 다시 눌러도 한 줄) e(마감 뒤 원천 바뀜 — 숫자 그대로 · 조정 거부) f(2월 기초 = 1월 확정 기말) g(다시 열기 — 2월 재마감 대상 · 확정 그대로)
---        h(1월 다시 마감 — 2월 기초 차이 표시) i(조정 — 본인 승인 거부 · 다른 사람 승인) j(자료 없는 달 마감 거부) k(anon 거부)
+--        h(1월 다시 마감 — 2월 기초 차이 표시) i(조정 — 본인 승인 거부 · 다른 사람 승인 · 평가손실 거부 · 허용오차 상한 · 승인된 조정 무효는 마감 권한) j(자료 없는 달 마감 거부) k(anon 거부)
 -- 사람: 회장 · rehearsal.staff@example.com(이 시험 안에서만 VANA 재무 입력 · 원가 권한 없음). 기간 2098-12 ~ 2099-03(먼 달). 가짜 원료 · 가짜 금액만.
 -- 금액 단위 원. 1월: 기초 0 · 매입 9억(900,000kg) · 생산 투입 300,000kg · 기말 600,000kg · 매출 5억 · 판관비 1억 · 원재료비 전표 9억(지금 장부 A 방식).
 -- =====================================================================
@@ -272,7 +272,35 @@ begin
   perform set_config('request.jwt.claim.sub', v_chair::text, true);
   set local role authenticated;
   if not public.fin_pl_adjust_decide(v_adj, 'approve', null) then raise exception 'FAIL i: 대표가 직원 제안을 승인하지 못했다'; end if;
-  v_out := v_out || 'i(조정 — 본인 승인 거부 · 다른 사람 승인) ';
+  -- 리뷰 고침: 평가손실 조정 거부 · 허용오차 100만 원 넘게 거부 · 승인된 조정의 무효는 마감 권한만.
+  begin
+    perform public.fin_pl_adjust_propose(biz, '2099-03', 'valuation_loss', 1000, '시험 평가손실');
+    raise exception 'FAIL i: 평가손실 조정을 받았다';
+  exception when others then
+    if sqlerrm not like '%fin_pl_adjust_value%' then raise exception 'FAIL i: 거부 문장이 다르다(%)', sqlerrm; end if;
+  end;
+  begin
+    perform public.fin_pl_setting_save(biz, 'monthly_wa', false, 1000001, 'books', array['원재료'], '시험 상한');
+    raise exception 'FAIL i: 허용오차 1,000,001원을 받았다';
+  exception when others then
+    if sqlerrm not like '%fin_pl_setting_value%' then raise exception 'FAIL i: 거부 문장이 다르다(%)', sqlerrm; end if;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', json_build_object('sub', v_staff, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_staff::text, true);
+  set local role authenticated;
+  begin
+    perform public.fin_pl_adjust_decide(v_adj, 'void', '승인된 것 무효 시험');
+    raise exception 'FAIL i: 마감 권한 없는 직원이 승인된 조정을 무효로 했다';
+  exception when others then
+    if sqlerrm not like '%fin_pl_denied%' then raise exception 'FAIL i: 거부 문장이 다르다(%)', sqlerrm; end if;
+  end;
+  reset role;
+  perform set_config('request.jwt.claims', json_build_object('sub', v_chair, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_chair::text, true);
+  set local role authenticated;
+  if not public.fin_pl_adjust_decide(v_adj, 'void', '승인된 것 무효 시험') then raise exception 'FAIL i: 대표가 승인된 조정을 무효로 못 했다'; end if;
+  v_out := v_out || 'i(조정 — 본인 승인 거부 · 다른 사람 승인 · 평가손실 거부 · 허용오차 상한 · 승인된 조정 무효는 마감 권한) ';
 
   -- ── j. 자료 없는 3월 — 내부 마감 거부(입력 중) ──
   begin

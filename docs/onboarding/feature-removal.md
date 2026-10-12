@@ -73,11 +73,17 @@
 - 빼면 사라지는 것: 첫 달 기초 확인(입력자 ≠ 확인자), 원재료 기초 «일부 미입력», cost_purchase_candidates의 예시 거름(0061 본문으로 돌아간다), 달 넘김 의심(자동 넣기 멈춤 포함).
 - 남는 데이터: (끄기) fin_inventory_openings.confirmed_by · confirmed_at 값이 그대로 남는다. (빼기) 0076 전에는 그 칸이 늘 비어 있다(0072가 만든 칸 — 표는 바뀌지 않는다). 0076 뒤에 빼려면 fin_inventory_roll을 0072 모양으로 다시 만드는 새 마이그레이션(drop + create)이 필요하다.
 
+### sales_margins — 판매 실적 · 마진 화면 (0077 · feat/sales-margins)
+- 끄는 법: /settings/features → «판매 실적 · 마진 화면» 끄기(기본 대표만). /sales/<회사>/deals · /costs/<회사>/margins가 404가 되고 /sales/<회사> · /costs/<회사>의 링크가 사라진다. RPC sales_deals · sales_margins도 첫 줄 feature_on으로 거부한다('feature_off' — 대표 포함).
+- 직원에게 열기: «보는 범위»를 «전원»(또는 회사 줄)으로. 판매 실적은 '/sales/<회사>' 줄이 있는 영업 본인 · 영업 팀장(팀)에게, 마진은 '/costing/<회사>' 줄(원가 관리 — 1원 · 하루 20번 · 부를 때마다 기록)에게만 보인다.
+- 반영에서 빼는 법: feat/sales-margins를 합치지 않고 0077을 올리지 않는다. 0077은 0067(판매 표 · cost_margins) · 0073(feature_on) · 0075(fin_pl_closes)에 기댄다. 0077 없이 앱만 나가면 두 화면은 «준비 중»(sales_margins_unavailable).
+- 빼면 사라지는 것: 영업 판매 실적 목록(판매가 · kg · 등급) · 견적 마진 vs 실제 마진(일 · 주 · 월 · 분기 · 년 · 제품 · 고객 · 전체 · 판매 한 줄) · «잠정 대체원가 / 확정 매출원가 기준» 표시. 0067 표 · 함수는 그대로 남는다(0067 cost_margins를 직접 부르는 길도 그대로).
+- 남는 데이터: 없음(0077은 표를 만들지 않는다). 부를 때마다 남긴 감사 줄(audit_log 'margins:<회사>')과 하루 셈(cost_secret.cost_reads)은 0067 것과 같은 자리에 남는다.
+
 ### 다음 단계 기능(스위치 줄만 먼저 있음 — 화면은 아직 없다)
 
 | 키 | 이름 | 기본 범위 | 단계 · 브랜치 · 번호 | 끄면 | 빼면 |
 |---|---|---|---|---|---|
-| sales_margins | 판매 실적 · 마진 화면 | 대표만 | (미정) | | |
 | cost_candidates | 원가 후보 승인 | 대표만 | (미정) | | |
 | ledger_post | 원장 → 장부 반영 | 대표만 | (미정) | | |
 | chairman_dashboard | 대표 대시보드 | 대표만 | (미정) | | |
