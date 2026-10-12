@@ -87,11 +87,17 @@
 - 빼면 사라지는 것: 자료 올리기 ② · ⑦ · ① 줄을 원가 엔진으로 옮기는 화면. 원가 엔진의 원래 입력(구매 LOT 화면 · 엑셀 넣기)은 그대로.
 - 남는 데이터: 결정 표 cost_fin_candidate_decisions(빼려면 표를 그대로 두거나 보관 — 지우지 않는다) · 그 결정으로 만든 LOT(source 'import' · source_ref 'fin_*:<줄>') · 판매 실적(0067) · audit_log 줄.
 
+### ledger_post — 원장 → 장부 반영 (0079 · feat/ledger-post)
+- 끄는 법: /settings/features → «원장 → 장부 반영» 끄기(기본 대표만). /finance/<회사>/ledger-post가 404가 되고 자료 올리기 화면의 링크가 사라진다. RPC ledger_post_stage · apply · void · queue도 첫 줄 feature_on으로 거부한다('feature_off' — 대표 포함).
+- 직원에게 열기: «보는 범위»를 «전원»(또는 회사 줄)으로. 그래도 장부 쓰기(can_keep_books — 대표 · CFO · 회사 대표 · 재무 쓰기 줄)만 보인다. 마감 달은 대표 · 그룹 CFO만.
+- 반영에서 빼는 법: feat/ledger-post를 합치지 않고 0079를 올리지 않는다. 0079는 0016(전표 · 정정) · 0070 · 0072(원장 줄 · 같은 거래 묶음) · 0073(feature_on) · 0075(fin_pl_closes)에 기댄다. 0079 없이 앱만 나가면 화면은 «준비 중»(ledger_post_unavailable).
+- 빼면 사라지는 것: 원장 줄을 장부 전표로 넣는 2단계 화면. 이미 넣은 전표는 장부(journal_entries · journal_lines)에 그대로 남는다 — 되돌리려면 빼기 전에 «무효 처리»(역분개)로.
+- 남는 데이터: fin_ledger_posts · fin_ledger_post_lines(지우지 않는다) · 반영 · 역분개 전표 · audit_log 줄.
+
 ### 다음 단계 기능(스위치 줄만 먼저 있음 — 화면은 아직 없다)
 
 | 키 | 이름 | 기본 범위 | 단계 · 브랜치 · 번호 | 끄면 | 빼면 |
 |---|---|---|---|---|---|
-| ledger_post | 원장 → 장부 반영 | 대표만 | (미정) | | |
 | chairman_dashboard | 대표 대시보드 | 대표만 | (미정) | | |
 
 새 기능을 만들 때: ① `src/lib/features.ts` FEATURES에 한 줄 ② 새 마이그레이션에 그룹 기본 줄 insert(0073 3절 모양, `on conflict do nothing`) ③ 새 RPC 첫 줄 `if not feature_on('키', 회사) then raise exception 'feature_off' using errcode = '42501'; end if;` ④ 화면 `featureOn(user, '키', 회사)` → notFound · 메뉴는 `FEATURE_NAV` ⑤ 이 안내서 표에 줄.

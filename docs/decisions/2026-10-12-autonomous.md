@@ -59,3 +59,10 @@
 | 53 | 6 | ② 입고 → LOT: 단가 = 금액 ÷ 수량(KRW · 부대비 0) · 입고일 = 고른 날 → 거래일 → 그 달 말일 · 원료 · 공급처는 사람이 원가 엔진 마스터에서 고른다(이름 자동 대응 없음) · source 'import' · source_ref 'fin_purchase_in_lines:<줄>'. 0061 트리거(Landed · 이상치 · 감사) 그대로 | 이름으로 자동 대응 · 새 원료 자동 생성 | 화면 · RPC 인자만 |
 | 54 | 6 | ⑦ OFFER 부대비 → 고른 LOT를 무효(0061 cost_void_update — 이유에 후보 줄)하고 같은 값 + other_krw(기타 부대비)에 부대비를 더한 새 LOT. 생산에 쓴 LOT는 0064 guard가 막는다(그대로 오류). ⑦ 수량 칸이 없어서 새 LOT를 만들지 않는다 | 부대비만 따로 표 · 운송/관세로 나누기 | 새 마이그레이션에서 나누기 칸 |
 | 55 | 6 | 결정 lot · ignore는 한 줄에 하나(유일 색인 — 다시 열기 없음) · later는 여러 번(다음 결정이 앞 later를 superseded로 덮음 · 지우지 않음). 감사 = audit_log(출처 · 줄 · 결정 · 이유 · 만든 id — 금액 없음) | ignore 되돌리기 | 결정 RPC에 'reopen' 추가 |
+| 56 | 7 | 마이그레이션 0079 하나 — 표 둘(fin_ledger_posts · fin_ledger_post_lines, RPC만) + RPC 넷(stage · apply · void · queue) · 내부 둘(closed · gate). 전표는 0016 post_journal_entry · 무효는 0016 post_correction(역분개) 그대로 | 전표 줄을 직접 insert | 0079를 올리지 않으면 화면 «준비 중» |
+| 57 | 7 | 문 = 스위치 'ledger_post' → can_keep_books(0016 — 대표 · CFO · 회사 대표 · 재무 쓰기 줄). 대기 · 반영 · 무효 모두 같은 문(두 사람 나누기 없음 — 2단계는 «보고 나서 넣기») | 반영은 마감 권한자만 | gate · apply 조건 바꾸는 마이그레이션 |
+| 58 | 7 | 같은 거래: 0072 'same' 묶음의 원장 줄은 함께 대기(한 번만) · 'suspect'는 거부(fin_tx_group_decide 뒤) · 입고 · 세금계산서 줄은 장부 원천이 아니라 따라 넣지 않는다 | suspect도 경고만 | stage의 suspect 거부 줄 |
+| 59 | 7 | 이중 반영 막기: 그 달 장부에 ECOUNT 전표(journal_lines.source = 'ecount')가 있으면 거부 — ECOUNT 업로드가 그 달 장부 원천 | 경고만 · 계정별로 비교 | stage · apply의 ecount 검사 |
+| 60 | 7 | 마감 달 = 0016 closings 확정 또는 0075 fin_pl_closes 내부 마감 확정 → 대표 · 그룹 CFO + 이유. 0016 마감 달은 전표 날짜를 열린 달로 줘야 한다(0016 closed_period 그대로 — 당월 정정 원칙) | 마감 달 막기만 | ledger_post_closed 한 함수 |
+| 61 | 7 | 4510 원재료비 줄은 계정을 바꾸지 않고 그대로 장부에 넣는다. 0075는 장부 원재료비(cogs · raw_material · 4610 제외)를 재고 반영 매출원가로 교체하므로 두 번 잡히지 않는다(0075 확정 달은 입력 해시가 바뀌어 «자료 바뀜»). 1530 원재료(자산) 줄은 손익에 안 닿는다 | 4510을 1530으로 돌려 넣기 · 4510 줄 막기 | 새 마이그레이션에서 계정 바꾸기 규칙 |
+| 62 | 7 | 차대가 안 맞는 묶음은 상대 계정 한 줄(사람이 적음)로 맞춘다 · 한 번에 한 달 · 200줄까지 · 대기 뒤 원장 줄이 되돌려지면 반영 거부(ledger_source_changed) | 상대 계정 자동 추정 | 화면 · RPC 인자 |
