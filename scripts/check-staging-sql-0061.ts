@@ -127,6 +127,14 @@ async function main() {
       + (select count(*) from ai_chats where title = '0069 시험') + (select count(*) from user_module_access where module = '/users/biz_dy') as n`)).rows[0].n
     assert.equal(Number(left), 0, '0069 staging 시험 SQL이 의견 · 대화 · 권한 줄을 남겼다')
   }
+  // 0070(회계 · 재무 자료 올리기 v2)이 있는 브랜치에서만.
+  if (files.includes('0070_finance_upload.sql')) {
+    const m70 = await runFile('0070_staging_test.sql')
+    assert.match(m70, /^0070 STAGING PASS a\(.*b\(.*c\(.*d\(.*e\(.*f\(anon 거부\)$/, '0070 staging 시험 SQL이 PASS로 끝나지 않는다')
+    const left = (await db.query<{ n: number }>(`select (select count(*) from fin_uploads) + (select count(*) from fin_sales_lines)
+      + (select count(*) from closings where period = '2099-02') as n`)).rows[0].n
+    assert.equal(Number(left), 0, '0070 staging 시험 SQL이 올리기 · 줄 · 마감 줄을 남겼다')
+  }
   await db.close()
 }
 

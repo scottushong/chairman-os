@@ -46,6 +46,7 @@ import { dummyCostProduct, dummyCostReadAudit, dummyCosts, dummyGrantedAt, dummy
 import * as books from './dummy-books'
 import { dummyAssistant } from './dummy-assistant'
 import { dummyFeedback } from './dummy-feedback'
+import { dummyFinanceUpload } from './dummy-finance-upload'
 import * as chat from './dummy-chat'
 import * as city from './dummy-city'
 import * as groupware from './dummy-groupware'
@@ -480,6 +481,16 @@ function dummyRevokePendingStaffAdmin(adminId: string, businessId: string | null
   }
 }
 
+/** 0070 거울 — can_keep_books(장부 쓰기): 대표 · CFO · 회사 대표(그 회사) · '/finance/<회사>' 쓰기 줄. */
+function dummyCanKeepBooks(businessId: string): boolean {
+  const v = dummyViewer()
+  if (v.revoked_at || ['AIAgent', 'Integration'].includes(v.role)) return false
+  if (v.role === 'Chairman' || v.role === 'GroupCFO') return true
+  if (!v.business_ids.includes(businessId)) return false
+  if (v.role === 'BusinessCEO') return true
+  return dummyModuleGrants(v.user_id).some((m) => m.module === `/finance/${businessId}` && m.can_write)
+}
+
 function memoryPerson(userId: string): UserAccount {
   return memoryPeople.find((p) => p.user_id === userId) ?? dummyViewer()
 }
@@ -793,6 +804,16 @@ export const dummyRepository: ChairmanRepository = {
     businesses: () => [...businesses, ...memoryBusinesses].map((b) => b.business_id),
     audit: (e) => {
       if (process.env.NODE_ENV !== 'production') console.warn(`[dummy] audit ${e.entity_table} ${e.entity_id} ${e.note}`)
+    },
+  }),
+  // 0070 — 회계 · 재무 자료 올리기(dummy-finance-upload.ts). 판정은 0070 거울(장부 쓰기 = can_keep_books 거울).
+  ...dummyFinanceUpload({
+    viewer: () => dummyViewer(),
+    canKeep: (b) => dummyCanKeepBooks(b),
+    canRead: (b) => dummyCanKeepBooks(b) || ['Chairman', 'GroupCFO', 'BusinessCEO', 'Executive'].includes(dummyViewer().role),
+    closed: async (b, p) => (await dummyRepository.loadFinanceLedger()).closings.some((c) => c.business_id === b && c.period === p && c.closed),
+    notify: (_u, title, body, link) => {
+      memoryNotifications.push({ notification_id: `ntf_${memoryNotifications.length + 1}`, kind: 'system', title, body, link, read_at: null, created_at: new Date().toISOString() })
     },
   }),
   // Phase 11 — 대화 · 제안 · 사용량(dummy-assistant.ts). 확인 감사는 이 파일의 이력 저장소로 온다.

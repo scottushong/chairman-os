@@ -28,7 +28,7 @@ export function ecountUploadShortcuts(
     .filter((b) => canImportEcount(user, b.business_id))
     .map((b) => ({
       business_id: b.business_id,
-      label: opts.withName ? `${b.name} ECOUNT 업로드` : 'ECOUNT 업로드',
-      href: `/finance/${encodeURIComponent(b.business_id)}/import`,
+      label: opts.withName ? `${b.name} 회계 · 재무 자료 올리기` : '회계 · 재무 자료 올리기',
+      href: `/finance/${encodeURIComponent(b.business_id)}/upload`,
     }))
 }

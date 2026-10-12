@@ -146,6 +146,7 @@ import {
 } from './types'
 import { assistantMethods } from './supabase-assistant'
 import { feedbackMethods } from './supabase-feedback'
+import { financeUploadMethods } from './supabase-finance-upload'
 import { attachmentMethods } from './supabase-attachments'
 import { financeImportMethods } from './supabase-finance-imports'
 import { intakeMethods } from './supabase-intake'
@@ -820,6 +821,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     ...assistantMethods(sb),
     // 0069 권한 · 조직 조회 · AI 보완 의견 · 보완함. 0069 전 DB를 견딘다(supabase-feedback.ts 머리 주석).
     ...feedbackMethods(sb),
+    // 0070 회계 · 재무 자료 올리기. 0070 전 DB를 견딘다(supabase-finance-upload.ts 머리 주석).
+    ...financeUploadMethods(sb),
     // ECOUNT 엑셀 업로드(0050 finance_imports) — 읽기는 0050 전 DB를 견딘다(supabase-finance-imports.ts 머리 주석).
     ...financeImportMethods(sb),
     // 0058 자료 받는 입구.

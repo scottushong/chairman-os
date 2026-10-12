@@ -156,6 +156,11 @@ import type {
   AiFeedbackBundle,
   FeedbackStatus,
   FeedbackTriage,
+  FinUpload,
+  FinUploadPending,
+  FinUploadRecordInput,
+  FinUploadApplyInput,
+  FinUploadShape,
 } from '@/types'
 
 /**
@@ -699,6 +704,18 @@ export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods,
   setAiFeedbackBundleStatus(bundleId: string, status: Exclude<FeedbackStatus, 'triaged'>): Promise<boolean>
   saveAiFeedbackTriage(feedbackId: string, triage: FeedbackTriage): Promise<boolean>
   saveAiFeedbackBundle(ids: string[], title: string, triage: FeedbackTriage): Promise<string>
+  /** 0070 회계 · 재무 자료 올리기 — 그 회사의 올리기 기록(최근 300). 0070 전 DB는 빈 목록. */
+  listFinUploads(businessId: string): Promise<FinUpload[]>
+  /** 0070 fin_upload_pending — 미리보기 대기 줄(급여 개인 줄은 대표 · CFO에게만). */
+  finUploadPending(uploadId: string): Promise<FinUploadPending | null>
+  finUploadRecord(input: FinUploadRecordInput): Promise<string>
+  /** 넣기 — 오류 키(fin_upload_*)를 그대로 던진다. */
+  finUploadApply(input: FinUploadApplyInput): Promise<string>
+  finUploadRevert(uploadId: string, reason: string | null): Promise<boolean>
+  finUploadCancel(uploadId: string): Promise<boolean>
+  finMonthClosed(businessId: string, period: string): Promise<boolean>
+  listFinUploadShapes(businessId: string): Promise<FinUploadShape[]>
+  saveFinUploadShape(shape: FinUploadShape): Promise<void>
   /** 0055 staff_admin_invite — 감사 · 회장 알림까지 DB가 한 트랜잭션으로 한다. 오류는 'staff_admin_*' 키로 던진다. */
   staffAdminInvite(input: StaffAdminInviteInput): Promise<UserInvitation>
   /** 0055 staff_admin_revoke_invitation — 본인이 넣은 미수락 위임 초대만. */
