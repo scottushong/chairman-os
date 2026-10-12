@@ -9,7 +9,7 @@ import { DEFAULT_AI_MODEL } from '@/lib/ai/anthropic'
 import { estimateCostUsd } from '@/lib/ai/pricing'
 import type { ChairmanRepository } from '@/lib/repository'
 
-import { KIND_SPECS } from './kinds'
+import { AI_KIND_SPECS } from './kinds'
 import type { AiClassify } from './process'
 
 /**
@@ -30,7 +30,7 @@ export function aiLimits(): { perFile: number; perDay: number } {
 const SCHEMA = {
   type: 'object',
   properties: {
-    kind: { type: 'string', enum: [...KIND_SPECS.map((k) => k.kind), 'unknown'] },
+    kind: { type: 'string', enum: [...AI_KIND_SPECS.map((k) => k.kind), 'unknown'] },
     header_row: { type: 'integer' },
     columns: { type: 'object', additionalProperties: { type: 'integer' } },
     confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
@@ -52,7 +52,7 @@ export function realClassifier(repo: ChairmanRepository, businessId: string): Ai
     promptCache ??= readFile(join(process.cwd(), 'src', 'lib', 'ai', 'prompts', 'finance-upload-classify.md'), 'utf8')
     const model = process.env.AI_MODEL?.trim() || DEFAULT_AI_MODEL
     const client = new Anthropic({ apiKey: key, timeout: 45_000, maxRetries: 1 })
-    const kinds = KIND_SPECS.map((k) => `${k.kind}: ${k.label} — 칸 ${k.fields.map((f) => `${f.key}(${f.label})`).join(', ')}`).join('\n')
+    const kinds = AI_KIND_SPECS.map((k) => `${k.kind}: ${k.label} — 칸 ${k.fields.map((f) => `${f.key}(${f.label})`).join(', ')}`).join('\n')
     const res = await client.messages.create({
       model,
       max_tokens: 800,

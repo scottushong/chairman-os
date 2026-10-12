@@ -483,6 +483,15 @@ function dummyRevokePendingStaffAdmin(adminId: string, businessId: string | null
 }
 
 /** 0070 거울 — can_keep_books(장부 쓰기): 대표 · CFO · 회사 대표(그 회사) · '/finance/<회사>' 쓰기 줄. */
+/**
+ * 0072 시드 정리 A안 거울 — 0003 시드(src/data JSON) 줄은 «예시»(is_example). 대표 세션에서만 보인다
+ * (DB: restrictive 정책 *_not_example — 대표 아닌 세션에는 줄이 오지 않는다). 지우지 않는다.
+ */
+function examples<T extends object>(rows: readonly T[]): (T & { is_example: true })[] {
+  if (dummyViewer().role !== 'Chairman') return []
+  return rows.map((r) => ({ ...r, is_example: true as const }))
+}
+
 function dummyCanKeepBooks(businessId: string): boolean {
   const v = dummyViewer()
   if (v.revoked_at || ['AIAgent', 'Integration'].includes(v.role)) return false
@@ -819,6 +828,14 @@ export const dummyRepository: ChairmanRepository = {
     viewer: () => dummyViewer(),
     canKeep: (b) => dummyCanKeepBooks(b),
     canRead: (b) => dummyCanKeepBooks(b) || ['Chairman', 'GroupCFO', 'BusinessCEO', 'Executive'].includes(dummyViewer().role),
+    // 0072 재마감 대상 풀기 = can_close_books 거울(역할 둘 또는 그 회사 재무 마감 줄).
+    canClose: (b) => {
+      const v = dummyViewer()
+      if (v.revoked_at) return false
+      if (v.role === 'Chairman' || v.role === 'GroupCFO') return true
+      return v.business_ids.includes(b) && dummyModuleGrants(v.user_id).some((m) => m.module === `/finance/${b}` && m.can_approve)
+    },
+    name: (u) => dummyPerson(u)?.display_name ?? null,
     closed: async (b, p) => (await dummyRepository.loadFinanceLedger()).closings.some((c) => c.business_id === b && c.period === p && c.closed),
     notify: (_u, title, body, link) => {
       memoryNotifications.push({ notification_id: `ntf_${memoryNotifications.length + 1}`, kind: 'system', title, body, link, read_at: null, created_at: new Date().toISOString() })
@@ -877,7 +894,7 @@ export const dummyRepository: ChairmanRepository = {
   async listProjects() {
     const viewer = dummyViewer()
     return [
-      ...projects.filter((p) => canSeeRow(p.business_id, null)),
+      ...examples(projects).filter((p) => canSeeRow(p.business_id, null)),
       ...DUMMY_PROJECTS.filter(
         (p) =>
           canSeeRow(p.project.business_id, p.owner_user_id) ||
@@ -887,7 +904,7 @@ export const dummyRepository: ChairmanRepository = {
   },
   async listTasks(): Promise<Task[]> {
     const viewer = dummyViewer()
-    const seeded = tasks
+    const seeded = examples(tasks)
       .filter((t) => canSeeRow(businessOfDummyProject(t.project_id), null))
       .map((t) => ({ ...t, ...memoryTaskPatches.get(t.task_id) }))
     const owned = DUMMY_TASKS.filter(
@@ -907,16 +924,16 @@ export const dummyRepository: ChairmanRepository = {
   },
   async listDecisions() {
     await seedApprovalDemo()
-    return [...decisions, ...memoryDecisions].filter(seesDecision).map((decision) => ({
+    return [...examples(decisions), ...memoryDecisions].filter(seesDecision).map((decision) => ({
       ...decision,
       status: memoryDecisionStatuses.get(decision.decision_id) ?? decision.status,
     }))
   },
   async listAlerts() {
-    return alerts.filter((a) => seesBusiness(a.business_id))
+    return examples(alerts).filter((a) => seesBusiness(a.business_id))
   },
   async listAiNightOutputs() {
-    return aiNightOutputs.filter((o) => seesBusiness(o.business_id) && seesRestricted())
+    return examples(aiNightOutputs).filter((o) => seesBusiness(o.business_id) && seesRestricted())
   },
 
   /**
@@ -994,7 +1011,7 @@ export const dummyRepository: ChairmanRepository = {
             business_id: project?.business_id ?? null,
           }
         }),
-      ...[...decisions, ...memoryDecisions]
+      ...[...examples(decisions), ...memoryDecisions]
         .filter((d) => seesDecision(d) && hit(d.title, d.ai_recommendation))
         .slice(0, limitPerKind)
         .map((d): SearchHit => ({
@@ -1029,16 +1046,16 @@ export const dummyRepository: ChairmanRepository = {
   },
 
   async listTopGoals() {
-    return topGoals.filter((g) => seesBusiness(g.business_id))
+    return examples(topGoals).filter((g) => seesBusiness(g.business_id))
   },
   async listMonthlyPriorities() {
-    return monthlyPriorities.filter((m) => seesBusiness(m.business_id))
+    return examples(monthlyPriorities).filter((m) => seesBusiness(m.business_id))
   },
   async listCriticalRisks() {
-    return criticalRisks.filter((r) => seesBusiness(r.business_id))
+    return examples(criticalRisks).filter((r) => seesBusiness(r.business_id))
   },
   async listNextMilestones() {
-    return nextMilestones.filter((m) => seesBusiness(m.business_id))
+    return examples(nextMilestones).filter((m) => seesBusiness(m.business_id))
   },
 
   /**
@@ -1534,7 +1551,8 @@ export const dummyRepository: ChairmanRepository = {
    */
   async listCompanyProgress(businessIds: string[]): Promise<Record<string, number | null>> {
     const viewer = memoryPerson(dummyViewer().user_id)
-    const all = [...projects, ...DUMMY_PROJECTS.map((p) => p.project)]
+    // 0072: 예시 프로젝트는 대표 세션의 평균에만 든다(company_progress 거름과 같다).
+    const all = [...(viewer.role === 'Chairman' ? projects : []), ...DUMMY_PROJECTS.map((p) => p.project)]
     return Object.fromEntries(
       businessIds.map((id) => {
         if (!dummyHasBusiness(viewer, id)) return [id, null]
@@ -2211,7 +2229,7 @@ export const dummyRepository: ChairmanRepository = {
         href: businessId ? `/business/${businessId}` : '/calendar',
       })
     }
-    for (const d of [...decisions, ...memoryDecisions]) {
+    for (const d of [...examples(decisions), ...memoryDecisions]) {
       const status = memoryDecisionStatuses.get(d.decision_id) ?? d.status
       if (!seesDecision(d) || status !== 'Open' || !within(d.deadline)) continue
       items.push({

@@ -4,7 +4,7 @@ import { cellText, EMPTY_CELL, type EcountCell } from '@/lib/ecount/excel/cells'
 import { detectPeriod, normalizeLabel } from '@/lib/ecount/excel/detect'
 import type { EcountSheet } from '@/lib/ecount/excel/workbook'
 
-import { KIND_SPECS, kindSpec, type KindSpec, type UploadKind } from './kinds'
+import { AI_KIND_SPECS, KIND_SPECS, kindSpec, type KindSpec, type UploadKind } from './kinds'
 
 /**
  * «회계 · 재무 자료 올리기» v2 — 파일 한 장의 처리(2b ~ 2f). **AI 없이 도는 부분 전부**가 여기 있다(순수 함수 — check:finance-upload가 잰다).
@@ -13,7 +13,7 @@ import { KIND_SPECS, kindSpec, type KindSpec, type UploadKind } from './kinds'
  *   c 분류     학습(시트 모양) → 코드 낱말 점수 → (모자라면) AI(ai.ts — 칸 대응 JSON만 받는다). 여기는 앞의 둘과 합치기.
  *   d 읽기     칸 대응대로 코드가 숫자를 읽는다(AI가 숫자를 만들지 않는다).
  *   e 검증     합계 줄 · 날짜 · 통화 · 음수 · 기간.
- *   f 넣기 판정 믿음 «높음» + 검증 통과 + 겹침 없음 + 마감 아님 → 자동. 아니면 미리보기.
+ *   f 넣기 판정 믿음 «높음» + 검증 통과 + 겹침 없음 + 마감 아님 + 자료 간 중복 의심 없음(0072) → 자동. 아니면 미리보기.
  */
 
 export type Confidence = 'high' | 'medium' | 'low' | 'none'
@@ -174,7 +174,8 @@ export function mergeAi(code: Classification, ai: { kind: string; confidence: Co
   if (code.kind === 'unknown' && ai.kind === 'unknown') {
     return { ...code, confidence: 'none', reason: `코드 · AI 모두 종류를 모릅니다(${ai.reason.slice(0, 80)}) — 종류를 골라 주세요.`, source: 'ai' }
   }
-  const kind = KIND_SPECS.some((k) => k.kind === ai.kind) ? (ai.kind as UploadKind) : 'unknown'
+  // 0072: AI가 «원료 출고명세»라고 해도 받지 않는다(그 종류는 AI 목록에 없다 — 코드만 정한다).
+  const kind = AI_KIND_SPECS.some((k) => k.kind === ai.kind) ? (ai.kind as UploadKind) : 'unknown'
   const columns: Record<string, number> = {}
   if (kind !== 'unknown') {
     const keys = new Set(kindSpec(kind).fields.map((f) => f.key))
@@ -238,6 +239,7 @@ export function readRows(sheet: EcountSheet, cls: Classification): ReadResult {
   const dates: string[] = []
   let fileTotal: number | null = null
   const firstText = spec.fields.find((f) => f.type === 'text' && f.required)?.key
+  const sheetTitle = normalizeLabel(sheetText(sheet, 5))
   const personRefCol = (sheet.rows[cls.headerRow] ?? []).findIndex((c) => /사번|사원번호|직원번호/.test(normalizeLabel(cellText(c))))
   for (let r = cls.headerRow + 1; r < sheet.rows.length; r += 1) {
     const row = sheet.rows[r]
@@ -278,6 +280,13 @@ export function readRows(sheet: EcountSheet, cls: Classification): ReadResult {
     if (firstText && !rec[firstText]) continue // 제목 · 빈 이름 줄
     if (bad) continue
     if (cls.kind === 'payroll') rec.person_ref = personRefCol >= 0 ? cellText(row[personRefCol]).slice(0, 40) || `row-${r + 1}` : `row-${r + 1}`
+    // 0072 값 상태 — 빈칸 → missing(값 null) · 0 → 0 확인 · 그 밖 → 값. 빈칸을 0으로 만들지 않는다.
+    for (const field of spec.fields) if (field.state) rec[field.state] = valueState(rec[field.key])
+    const extra = finishRow(cls.kind, rec, sheetTitle, cls.columns)
+    if (extra) {
+      problems.push(extra)
+      continue
+    }
     rows.push(rec)
   }
   if (cls.kind === 'payroll') {
@@ -293,6 +302,145 @@ export function readRows(sheet: EcountSheet, cls: Classification): ReadResult {
     return { rows: [...byDept.values()], people, fileTotal, problems, dates }
   }
   return { rows, people: [], fileTotal, problems, dates }
+}
+
+/* ───────────────────────── 0072: 값 상태 · 종류별 마무리 · 원료 출고 구분 ───────────────────────── */
+
+export type ValueStateKo = 'missing' | 'confirmed_zero' | 'value'
+
+/** 빈칸(null) → missing · 0 → confirmed_zero · 그 밖 → value. 빈칸은 0이 되지 않는다. */
+export function valueState(v: unknown): ValueStateKo {
+  if (v === null || v === undefined || v === '') return 'missing'
+  return Number(v) === 0 ? 'confirmed_zero' : 'value'
+}
+
+/** 화면 표기 — «확인된 0 / 값 있음 / 미입력». */
+export const VALUE_STATE_KO: Record<ValueStateKo, string> = { confirmed_zero: '확인된 0', value: '값 있음', missing: '미입력' }
+
+/** 시트 제목 · 이름의 출처 낱말(R2 · ECOUNT). 모르면 other. */
+export function detectSource(title: string): 'r2' | 'ecount' | 'other' {
+  if (/ecount|이카운트/i.test(title)) return 'ecount'
+  if (/(^|[^a-z0-9])r2([^a-z0-9]|$)/i.test(title)) return 'r2'
+  return 'other'
+}
+
+const NON_PROD_RULES: { kind: 'sample' | 'scrap' | 'return' | 'transfer' | 'adjust'; re: RegExp; ko: string }[] = [
+  { kind: 'sample', re: /샘플|견본|시료/, ko: '샘플' },
+  { kind: 'scrap', re: /폐기|스크랩|파손/, ko: '폐기' },
+  { kind: 'return', re: /반품|반납/, ko: '반품' },
+  { kind: 'transfer', re: /창고이동|재고이동|이동|이관|대체출고/, ko: '이동' },
+  { kind: 'adjust', re: /재고조정|조정|실사/, ko: '조정' },
+]
+const PROD_RULE = /생산투입|생산출고|제조투입|작업지시|생산|제조|투입|라인/
+const ISSUE_COLS: { key: 'issue_type' | 'memo' | 'warehouse'; ko: string }[] = [
+  { key: 'issue_type', ko: '출고 유형' },
+  { key: 'memo', ko: '적요' },
+  { key: 'warehouse', ko: '창고' },
+]
+export const NON_PROD_KO: Record<string, string> = { sample: '샘플', scrap: '폐기', return: '반품', transfer: '이동', adjust: '조정' }
+
+/**
+ * 원료 출고 한 줄의 구분(규칙 — 코드만, AI 없음). 출고 유형 · 적요 · 창고 칸을 본다.
+ *   비생산 낱말(샘플 · 폐기 · 반품 · 이동 · 조정) 하나만 → non_production · 생산 낱말만 → production.
+ *   칸이 없거나 · 낱말이 없거나 · 엇갈리면 → needs_review(이유와 함께). **생산 투입이 기본값이 아니다.**
+ */
+export function classifyIssue(
+  row: Record<string, unknown>,
+  hasColumns: boolean,
+): { class: 'production' | 'non_production' | 'needs_review'; non_production_kind: string | null; class_reason: string } {
+  if (!hasColumns) return { class: 'needs_review', non_production_kind: null, class_reason: '구분 칸(출고 유형 · 적요 · 창고)이 없습니다' }
+  const hits: { cls: 'production' | 'non_production'; kind: string | null; where: string; word: string }[] = []
+  for (const c of ISSUE_COLS) {
+    const t = normalizeLabel(String(row[c.key] ?? ''))
+    if (!t) continue
+    let nonProd = false
+    for (const r of NON_PROD_RULES) {
+      const m = r.re.exec(t)
+      if (m) {
+        hits.push({ cls: 'non_production', kind: r.kind, where: c.ko, word: m[0] })
+        nonProd = true
+        break
+      }
+    }
+    if (nonProd) continue
+    const p = PROD_RULE.exec(t)
+    if (p) hits.push({ cls: 'production', kind: null, where: c.ko, word: p[0] })
+  }
+  if (!hits.length) return { class: 'needs_review', non_production_kind: null, class_reason: '규칙에 맞는 낱말이 없습니다' }
+  const classes = new Set(hits.map((h) => `${h.cls}:${h.kind ?? ''}`))
+  if (classes.size > 1) {
+    return { class: 'needs_review', non_production_kind: null, class_reason: `규칙이 엇갈립니다(${hits.map((h) => `${h.where} «${h.word}»`).join(' · ')})` }
+  }
+  const h = hits[0]
+  return h.cls === 'production'
+    ? { class: 'production', non_production_kind: null, class_reason: `규칙: ${h.where} «${h.word}» → 생산 투입` }
+    : { class: 'non_production', non_production_kind: h.kind, class_reason: `규칙: ${h.where} «${h.word}» → 비생산(${NON_PROD_KO[h.kind!]})` }
+}
+
+/** 원료 출고명세로 보이는 시트인가(모양만 — 종류 판정이 아니다). 이런 시트는 AI에 보내지 않고 kg 칸을 기록 전에 지운다. */
+export function looksLikeMaterialIssue(sheet: EcountSheet): boolean {
+  const t = normalizeLabel(sheetText(sheet, 8))
+  return /출고|불출/.test(t) && /원료|자재|원재료|부재료/.test(t)
+}
+
+const KG_HEAD = /kg|킬로|중량/i
+const QTY_HEAD = /수량|출고량|투입량|사용량|중량|kg/i
+
+/**
+ * 칸 격자에서 kg 칸을 비운다(머리글 줄 아래만 — 머리글 글은 남긴다). 출고명세 · 모르는 시트의 대기 기록 전에(0072 리뷰 C1 남은 일).
+ * aggressive면 수량 · 출고량 칸까지(출고명세로 보이는 시트).
+ */
+export function stripKgGrid(grid: (string | number | null)[][], headerRow: number, aggressive: boolean): { grid: (string | number | null)[][]; cols: number } {
+  const colsAt = (row: number) =>
+    (grid[row] ?? [])
+      .map((v) => normalizeLabel(String(v ?? '')))
+      .map((h, i) => (h && typeof grid[row][i] === 'string' && (KG_HEAD.test(h) || (aggressive && QTY_HEAD.test(h))) ? i : -1))
+      .filter((i) => i >= 0)
+  // 머리글 줄을 모를 수 있다(«모름» 시트) — 정한 줄에 kg 칸이 없으면 앞 10줄에서 kg 머리글이 있는 첫 줄을 쓴다.
+  let head = headerRow
+  let cols = colsAt(headerRow)
+  for (let r = 0; !cols.length && r < Math.min(10, grid.length); r += 1) {
+    cols = colsAt(r)
+    head = r
+  }
+  if (!cols.length) return { grid, cols: 0 }
+  return { grid: grid.map((r, ri) => (ri <= head ? r : r.map((v, ci) => (cols.includes(ci) ? null : v)))), cols: cols.length }
+}
+
+/**
+ * 종류별 마무리(줄 하나). 문제가 있으면 문구(그 줄은 넣지 않는다). 원본 값은 바꾸지 않고 칸을 더하기만 한다.
+ */
+function finishRow(kind: UploadKind, rec: Rec, title: string, cols: Record<string, number>): string | null {
+  if (kind === 'sales' || kind === 'purchase_in') {
+    rec.counterparty = (kind === 'sales' ? rec.customer : rec.supplier) ?? null
+    rec.item_or_account = (kind === 'sales' ? rec.product : rec.material) ?? null
+    rec.source_system = detectSource(title)
+    return null
+  }
+  if (kind === 'valuation') {
+    const c = normalizeLabel(String(rec.category ?? ''))
+    rec.category = /재공/.test(c) ? 'wip' : /완제|제품/.test(c) ? 'finished' : null
+    if (!rec.category) return `${rec.row_no}행 «구분»을 모릅니다(재공품 · 완제품 중 하나).`
+    const s = normalizeLabel(String(rec.cost_scope ?? ''))
+    rec.cost_scope = /노무|경비|간접|가공/.test(s) ? 'material_labor_overhead' : /재료/.test(s) ? 'material_only' : null
+    if (!rec.cost_scope) return `${rec.row_no}행 «포함 원가 범위»가 비었거나 모르는 말입니다(재료비만 · 재료비+노무비+경비).`
+    return null
+  }
+  if (kind === 'material_issue') {
+    const has = ISSUE_COLS.some((c) => cols[c.key] !== undefined)
+    const r = classifyIssue(rec, has)
+    rec.class = r.class
+    rec.non_production_kind = r.non_production_kind
+    rec.class_reason = r.class_reason
+    return null
+  }
+  if (kind === 'tax_invoice') {
+    const d = normalizeLabel(String(rec.direction ?? ''))
+    rec.direction = /매출/.test(d) ? 'sales' : /매입/.test(d) ? 'purchase' : /매출/.test(title) && !/매입/.test(title) ? 'sales' : /매입/.test(title) && !/매출/.test(title) ? 'purchase' : null
+    if (!rec.direction) return `${rec.row_no}행 매출 · 매입 구분을 모릅니다(칸 또는 시트 제목에 «매출» · «매입»).`
+    return null
+  }
+  return null
 }
 
 /** ⑤ 계정별 원장 — 계정마다 블록: 제목 «<코드>(<계정명>)» → 머리글 → 이월잔액 → 거래 줄 → 합계. 그 달 계정별 차변 · 대변 합. */
@@ -400,10 +548,22 @@ export function validate(kind: UploadKind, read: ReadResult, period: string | nu
   } else if (spec.sumField) {
     warnings.push('파일에 합계 줄이 없어 대조하지 못했습니다.')
   }
+  // 0072: 원료 출고명세는 줄마다의 kg 문구(0 · 음수)를 만들지 않는다 — 구성표 노출 금지(합계 대조 칸도 없다).
+  const kgQuiet = kind === 'material_issue'
   for (const r of read.rows) {
+    // 0072: 수량 0 줄 · 재고 음수 줄 — 보여 주기만(값을 고치지 않는다). 빈칸은 0이 아니다(여기 오지 않는다).
+    if (!kgQuiet) {
+      for (const k of ['qty', 'stock_qty', 'used_qty'] as const) {
+        const fs = spec.fields.find((x) => x.key === k)
+        if (fs && r[k] === 0) warnings.push(`${r.row_no}행 «${fs.label}»가 0입니다(0으로 적힌 칸 — 빈칸과 다릅니다).`)
+      }
+    }
+    if (kind === 'inventory' && ((typeof r.stock_qty === 'number' && r.stock_qty < 0) || (typeof r.amount === 'number' && r.amount < 0))) {
+      warnings.push(`${r.row_no}행 재고가 음수입니다 — 차이로만 보여 주고 고치지 않습니다.`)
+    }
     for (const f of spec.fields) {
       const v = r[f.key]
-      if (f.type === 'number' && typeof v === 'number' && v < 0 && !['inflow', 'outflow', 'amount'].includes(f.key)) {
+      if (!kgQuiet && kind !== 'inventory' && f.type === 'number' && typeof v === 'number' && v < 0 && !['inflow', 'outflow', 'amount', 'debit', 'credit', 'supply_amount', 'vat', 'total', 'amount_vat'].includes(f.key)) {
         warnings.push(`${r.row_no}행 «${f.label}»가 음수입니다.`)
       }
       if (f.type === 'date' && typeof v === 'string' && v.startsWith('0000')) warnings.push(`${r.row_no}행 «${f.label}»에 해가 없습니다.`)
@@ -419,15 +579,22 @@ export interface AutoInput {
   check: Check
   overlap: boolean
   closed: boolean
+  /**
+   * 0072 다섯째 조건 — 다른 자료(판매 · 입고 · 세금계산서 · 원장)의 살아 있는 줄과 «같은 거래 의심» 묶음 수(dedupe.ts).
+   * null = 세지 못함 → 자동 아님(DB도 자동에 null을 거부한다).
+   */
+  dupSuspects: number | null
 }
 
-/** 자동으로 넣는 네 조건(대표 결정 2f). 하나라도 아니면 미리보기 — 왜인지 한 줄씩. */
+/** 자동으로 넣는 다섯 조건(대표 결정 2f + v2.1 «자료 간 중복 의심 없음»). 하나라도 아니면 미리보기 — 왜인지 한 줄씩. */
 export function autoDecision(x: AutoInput): { auto: boolean; why: string[] } {
   const why: string[] = []
   if (x.confidence !== 'high') why.push(`분류 믿음이 «높음»이 아닙니다(${CONF_KO[x.confidence]}).`)
   if (x.check.errors.length || x.check.warnings.length) why.push(`검증 ${x.check.errors.length + x.check.warnings.length}건.`)
   if (x.overlap) why.push('같은 달에 이미 넣은 자료가 있습니다(겹침 — 새 값 · 기존 값 중 고르세요).')
   if (x.closed) why.push('마감된 달입니다(대표 · CFO가 이유를 적고 넣습니다).')
+  if (x.dupSuspects === null) why.push('자료 간 중복 의심을 세지 못했습니다(같은 거래가 두 번 들어갈 수 있어 사람이 봅니다).')
+  else if (x.dupSuspects > 0) why.push(`자료 간 중복 의심 ${x.dupSuspects}건 — 다른 자료(판매 · 입고 · 세금계산서 · 원장)에 같은 거래로 보이는 줄이 있습니다.`)
   return { auto: why.length === 0, why }
 }
 

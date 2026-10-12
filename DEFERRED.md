@@ -2726,3 +2726,18 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - 시드 A안 정의자(리뷰): staging · 운영 postgres는 BYPASSRLS라 정의자 함수는 restrictive를 안 탄다. 시드 표를 읽는 정의자 19개 중 예시 내용을 대표 아닌 세션에 돌려주는 company_progress(직원 회사 카드) · founder_dependency_rows(회사 대표 의존도)만 0072에서 거름을 더해 다시 만들었다(둘 다 anon execute도 이름으로 걷음). 남긴 것: approval_attachment_ok · approval_decide · approval_ledger_log · lead_bundle · lead_decide · quote_* · staff_admin_invite · org_access_lookup · cost_purchase_candidates · cost_dismissal/lot_source_check · decisions_* 트리거 · user_profiles_draft_grant(앱이 만든 결재 id로만 움직이거나 내용을 돌려주지 않음) · project_business_id(열쇠만) · process_chart_sync_apply(AI Agent · pc_ 줄만). calendar_items 뷰는 security_invoker라 restrictive를 탄다. 아침 브리핑 · 주의 점수는 대표 전용, 직원 AI 도구는 사람 세션(RLS)이라 거름이 탄다.
 - (미룸) 원재료 기초: 앞 달 명세서에 빈칸 줄이 섞이면 아는 줄만 더한 합을 앞 달 기말로 쓴다 — 앞 달 missing_lines를 기초 쪽에도 보여 줘야 한다(B2 화면).
 - (미룸) 되돌리기(fin_upload_unvoid)는 올리기가 무효로 만든 평가금액만 되살린다 — 손으로 저장했다가 엑셀 올리기에 밀린 평가금액은 되돌려도 살아나지 않는다(사람이 다시 저장).
+
+## 2026-10-12 0072 B2(앱) — 고른 것 · 다른 선택지
+- 평가금액 · 기초재고 · 원료 출고는 하위 화면 /finance/<회사>/valuation(«재고 · 평가» 탭)으로 뺐다 — 올리기 화면이 이미 길다. 다른 선택지: 올리기 화면 안 접힘 칸.
+- 같은 거래 맞추기는 같은 달 안에서만(fin_tx_group_save가 한 달 줄만 받는다) — ±3일이 달을 넘는 짝(9/30 ↔ 10/2)은 못 잡는다. 다른 선택지: 앞 · 뒤 달 줄도 읽어 «달 넘김 의심»으로만 보이기.
+- 원장 거래 줄의 방향은 차변 = 매입 쪽 · 대변 = 매출 쪽으로 본다(차 · 대 둘 다 있는 줄은 맞추지 않음). 세액 빈칸이면 세후 = 세전 × 1.1도 맞춰 본다. 다른 선택지: 계정코드 표로 방향을 정함.
+- «다른 거래»로 푼 짝은 다음 맞추기에서 다시 묶지 않는다(rejectedPairs). 다른 선택지: 다시 «중복 의심»으로 띄움.
+- 출처(source_system)는 시트 제목 낱말(R2 · ECOUNT · 이카운트)로만 읽고 모르면 other. 다른 선택지: 올릴 때 사람이 고름.
+- 원료 출고 규칙: 비생산 낱말(샘플 · 폐기 · 반품 · 이동 · 조정)을 먼저 보고, 생산 낱말과 엇갈리면 «확인 필요». needs_review의 class_reason은 미리보기에만 보이고 DB에는 남지 않는다(0072가 null로 넣음).
+- «모름» 대기의 칸 격자는 kg · 킬로 · 중량 머리글 칸을 기록 전에 비운다(출고명세로 보이면 수량 칸까지). 그래서 «모름»으로 올린 출고명세를 손으로 출고명세로 바꾸면 kg가 비어 들어간다 — 다시 올려야 한다(이제 코드가 출고명세를 알아본다).
+- 출고명세 시트는 원료 · 자재 + 출고 · 불출 낱말이 앞 8줄에 있으면 AI에 보내지 않는다(종류 판정과 따로 — 넓게 막는다). AI 종류 목록(AI_KIND_SPECS)에도 없다.
+- 수량 0 · 재고 음수 줄은 경고(보여 주기만)로 둔다 — 경고는 자동 넣기를 막는다(0070 규칙 그대로). 출고명세는 줄마다 kg 문구를 만들지 않는다.
+- fin_upload_apply 호출은 p_dup_suspects를 보내고, 0072 전 DB(PGRST202)면 옛 14개 인자로 한 번 더 부른다(master 배포 먼저 가도 올리기가 선다).
+- 예시 표시: live는 is_example 칸을 따로 읽어(eq is_example) id 집합으로 붙인다 — 0072 전 DB(42703)는 빈 집합. «예시 숨기기»는 URL ?examples=hide(보는 사람마다, 저장 없음). 꼬리표는 대표 홈 패널 다섯(결정 · 대기 · 알림 · 전략 좌표 · 야간 브리핑)만 — /projects · /tasks 목록은 다음 블록.
+- dummy에 화면 확인용 예시(biz_dy 2026-08 · 2026-09, 가짜 값)를 처음 읽을 때 넣는다 — 재마감 대상 예시 한 줄은 마감 여부와 상관없이 넣었다(dummy 화면 확인용).
+- dummy founder_dependency는 0003 시드 결정을 쓰지 않아(고정 예시 줄) 거름을 옮기지 않았다. company_progress는 직원 세션에서 예시 프로젝트를 뺀다.

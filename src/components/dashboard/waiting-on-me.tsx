@@ -1,5 +1,6 @@
 import Link from 'next/link'
 
+import { ExampleTag } from '@/components/ui/example-tag'
 import { GlassCard } from '@/components/ui/glass-card'
 import { Icon } from '@/components/ui/icon'
 import { dDay, formatDDay, isOverdue, compareDeadlines } from '@/lib/format'
@@ -111,6 +112,7 @@ function WaitingItem({ task }: { task: Task }) {
           <p className="min-w-0 flex-1 truncate text-t12 leading-snug font-semibold">
             {task.title}
           </p>
+          <ExampleTag on={task.is_example} />
           <span
             className={`shrink-0 text-t11 font-semibold tnum ${
               stale ? 'text-critical' : days > 0 ? 'text-warning' : 'text-ink-muted'

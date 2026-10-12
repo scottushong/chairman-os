@@ -3,12 +3,16 @@
  *   SHOT_BASE=http://localhost:3102 SHOT_OUT=.screenshots/finance-upload SHOT_KIND=staff npx tsx scripts/shot-finance-upload.ts
  *   staff: 가짜 판매현황(자동) · 카드 합계 틀림(확인 필요) · 모르는 시트(종류 고르기) · 암호 걸린 파일(DRM 문구) → PC · 폰
  *   chair: 급여 합계 틀림(확인 필요 — 개인 줄 수는 대표에게만) · 체크표
+ *   v21-staff · v21-chair(0072 — dummy 예시 달 2026-09, SHOT_OUT=.screenshots/finance-v21):
+ *     v21-staff(DUMMY_USER=support_lead 서버): 올리기(중복 의심 미리보기 · 같은 거래) · 재고 · 평가(입력자 화면 — 확정 버튼 없음 ·
+ *       미연결 · 차이 · 출고 합계 보류) · 직원 홈(예시 0 · «회장» 0) — PC 1440 · 폰 390(가로 넘침 검사)
+ *     v21-chair(DUMMY_USER=chairman 서버): 재고 · 평가(확인자 화면 — 확정 버튼) · 대표 홈 «예시» 꼬리표 · «예시 숨기기»
  */
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import ExcelJS from 'exceljs'
-import { chromium } from 'playwright'
+import { chromium, type Page } from 'playwright'
 
 const BASE = process.env.SHOT_BASE ?? 'http://localhost:3102'
 const OUT = process.env.SHOT_OUT ?? '.screenshots/finance-upload'
@@ -22,7 +26,104 @@ async function xlsx(path: string, name: string, rows: Cell[][]) {
   writeFileSync(path, Buffer.from(await wb.xlsx.writeBuffer()))
 }
 
+/** 폰에서 가로로 넘치는가(390). */
+async function noOverflow(page: Page, what: string) {
+  const w = await page.evaluate(() => document.documentElement.scrollWidth)
+  if (w > 391) throw new Error(`${what}: 폰 가로 넘침 ${w}px`)
+}
+
+async function bodyText(page: Page) {
+  return page.locator('body').innerText()
+}
+
+/** 0072 — dummy 예시 달(2026-09) 화면들. 파일을 올리지 않는다(dummy 저장소의 예시 줄만 본다). */
+async function v21() {
+  mkdirSync(OUT, { recursive: true })
+  const M = '2026-09'
+  const browser = await chromium.launch()
+  const shots: string[] = []
+  const shoot = async (page: Page, name: string, full = true) => {
+    const path = join(OUT, name)
+    await page.screenshot({ path, fullPage: full })
+    shots.push(path)
+  }
+  try {
+    const pc = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
+    const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
+    const open = async (page: Page, url: string) => {
+      await page.goto(`${BASE}${url}`, { waitUntil: 'networkidle', timeout: 240_000 })
+      await page.waitForTimeout(1200)
+    }
+    if (KIND === 'v21-staff') {
+      // 1. 올리기 — 중복 의심 미리보기 · 같은 거래 칸
+      await open(pc, `/finance/biz_dy/upload?month=${M}`)
+      await pc.getByText('자료 간 중복 의심 1건').first().waitFor({ timeout: 60_000 })
+      await pc.getByText('자료 간 같은 거래 · 2026-09').waitFor({ timeout: 60_000 })
+      await shoot(pc, 'staff-1-upload-suspect-pc.png')
+      await open(phone, `/finance/biz_dy/upload?month=${M}`)
+      await noOverflow(phone, '올리기')
+      await shoot(phone, 'staff-1-upload-suspect-phone.png')
+      // 2. 재고 · 평가 — 입력자 화면(확정 버튼 없음) · 미연결 · 차이 · 출고 합계 보류
+      await open(pc, `/finance/biz_dy/valuation?month=${M}`)
+      if (await pc.getByRole('button', { name: '확정' }).count()) throw new Error('입력자 화면에 «확정» 버튼이 보인다')
+      await pc.getByTestId('self-confirm-note').first().waitFor({ timeout: 30_000 })
+      const roll = await pc.getByTestId('roll-finished').innerText()
+      if (!roll.includes('미연결')) throw new Error(`완제품 기초가 «미연결»이 아니다: ${roll}`)
+      if (!(await pc.getByTestId('roll-raw').innerText()).includes('차이')) throw new Error('원재료 명세서 기초 차이가 안 보인다')
+      const issue = await pc.getByTestId('issue-summary').innerText()
+      if (!issue.includes('보류') || !issue.includes('합계를 보이지 않습니다')) throw new Error(`출고 합계 보류 설명이 없다: ${issue}`)
+      await shoot(pc, 'staff-2-valuation-enterer-pc.png')
+      await pc.locator('#roll-h').scrollIntoViewIfNeeded()
+      await shoot(pc, 'staff-3-roll-issue-pc.png', false)
+      await open(phone, `/finance/biz_dy/valuation?month=${M}`)
+      await noOverflow(phone, '재고 · 평가')
+      await shoot(phone, 'staff-2-valuation-enterer-phone.png')
+      // 3. 직원 홈 — 예시 0 · «회장» 0
+      for (const [page, name] of [[pc, 'staff-4-home-pc.png'], [phone, 'staff-4-home-phone.png']] as const) {
+        await open(page, '/me')
+        if (await page.locator('[data-example-tag]').count()) throw new Error('직원 홈에 «예시» 줄이 보인다')
+        // 0003 시드 업무 · 프로젝트 이름(예시)이 직원 화면에 없어야 한다.
+        const t = await bodyText(page)
+        for (const seed of ['Hot-melt 가격 승인', '폴란드 통관 서류 최종 확인', 'EVA 자동화 라인', '캐나다 시장 진출']) if (t.includes(seed)) throw new Error(`직원 홈에 예시 줄 «${seed}»`)
+        await shoot(page, name)
+      }
+      await noOverflow(phone, '직원 홈')
+      for (const url of ['/me', `/finance/biz_dy/upload?month=${M}`, `/finance/biz_dy/valuation?month=${M}`]) {
+        await open(phone, url)
+        const t = await bodyText(phone)
+        if (/회장|chairman/i.test(t)) throw new Error(`직원 화면(${url})에 «회장/Chairman»`)
+        if (/ECOUNT 올리기|ECOUNT 업로드/.test(t)) throw new Error(`직원 화면(${url})에 «ECOUNT 올리기»`)
+      }
+    } else {
+      // 4. 재고 · 평가 — 확인자 화면(확정 버튼)
+      await open(pc, `/finance/biz_dy/valuation?month=${M}`)
+      await pc.getByRole('button', { name: '확정' }).first().waitFor({ timeout: 30_000 })
+      await shoot(pc, 'chair-1-valuation-confirmer-pc.png')
+      await open(phone, `/finance/biz_dy/valuation?month=${M}`)
+      await noOverflow(phone, '재고 · 평가(대표)')
+      await shoot(phone, 'chair-1-valuation-confirmer-phone.png')
+      // 5. 대표 홈 — «예시» 꼬리표 · 숨기기
+      await open(pc, '/')
+      const tags = await pc.locator('[data-example-tag]').count()
+      if (!tags) throw new Error('대표 홈에 «예시» 꼬리표가 없다')
+      await shoot(pc, 'chair-2-home-examples-pc.png')
+      await open(phone, '/')
+      await noOverflow(phone, '대표 홈')
+      await shoot(phone, 'chair-2-home-examples-phone.png')
+      await open(pc, '/?examples=hide')
+      if (await pc.locator('[data-example-tag]').count()) throw new Error('«예시 숨기기» 뒤에도 예시 꼬리표가 보인다')
+      await shoot(pc, 'chair-3-home-examples-hidden-pc.png')
+      console.log(`예시 꼬리표 ${tags}개`)
+    }
+    console.log(shots.join('\n'))
+    console.log('ok')
+  } finally {
+    await browser.close()
+  }
+}
+
 async function main() {
+  if (KIND.startsWith('v21')) return v21()
   mkdirSync(OUT, { recursive: true })
   const dir = join(OUT, 'files')
   mkdirSync(dir, { recursive: true })
