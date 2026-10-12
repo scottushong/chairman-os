@@ -50,6 +50,9 @@ export interface FinUploadPending {
     /** 0072 다섯째 조건 — 다른 자료와 «같은 거래 의심» 묶음 수(null = 세지 못함) · 한 줄 설명(금액 없음) */
     dup_suspects?: number | null
     dup_notes?: string[]
+    /** C단계 — 파일 형식(글 PDF · 스캔 PDF · 사진; 엑셀은 없음) · 사진 고친 것 */
+    source_format?: 'pdf_text' | 'pdf_scan' | 'image'
+    fixes?: string[]
   }
 }
 

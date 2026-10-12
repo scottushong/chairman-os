@@ -5,10 +5,12 @@ import { revalidatePath } from 'next/cache'
 import { canKeepBooks } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
 import { aiLimits, realClassifier } from '@/lib/finance-upload/ai'
+import { realDocReader } from '@/lib/finance-upload/ai-doc'
 import { isUploadKind, kindSpec } from '@/lib/finance-upload/kinds'
 import { UPLOAD_MAX_BYTES } from '@/lib/finance-upload/open'
 import { mapColumns, readRows, validate, type Classification } from '@/lib/finance-upload/pipeline'
-import { finUploadError, fromGrid, processUpload, saveTxGroupsFor, type FileCard } from '@/lib/finance-upload/process'
+import { finUploadError, fromGrid, processUpload, saveTxGroupsFor, type DocOptions, type FileCard } from '@/lib/finance-upload/process'
+import { intakeOpenFor } from '@/lib/intake/switch'
 import { getRepository } from '@/lib/repository'
 import type { FinRow, FinUpload } from '@/types'
 
@@ -46,6 +48,15 @@ export async function uploadFinanceFiles(form: FormData): Promise<UploadResult> 
   const usedToday = (await repo.listFinUploads(businessId).catch(() => [] as FinUpload[])).filter((u) => kstDay(u.created_at) === today).reduce((a, u) => a + u.ai_used, 0)
   let dayLeft = Math.max(0, perDay - usedToday)
   const classify = realClassifier(repo, businessId)
+  // C단계 PDF · 사진 — 입구 스위치가 꺼지면 대표만(직원은 «준비 중», 엑셀은 그대로). 한도 env가 없으면 읽기 도구 없음(→ 미리보기).
+  const allowed = intakeOpenFor(user)
+  const docs: DocOptions = { allowed, read: allowed && perFile > 0 && perDay > 0 ? realDocReader(repo, businessId) : null }
+  if (allowed && files.some((f) => /\.(pdf|jpe?g|png)$/i.test(f.name) || /^(application\/pdf|image\/)/.test(f.type))) {
+    // 회사 이름 대조 · 공식 결산 계정 맞추기 — PDF · 사진이 있을 때만 읽는다.
+    const [businesses, ledger] = await Promise.all([repo.listBusinesses().catch(() => []), repo.loadFinanceLedger().catch(() => null)])
+    docs.businessName = businesses.find((b) => b.business_id === businessId)?.name
+    docs.accounts = (ledger?.accounts ?? []).filter((a) => a.business_id === businessId && a.active).map((a) => ({ account_code: a.account_code, name: a.name, section: a.section }))
+  }
   const cards: FileCard[] = []
   for (const file of files) {
     if (file.size > UPLOAD_MAX_BYTES) {
@@ -54,7 +65,7 @@ export async function uploadFinanceFiles(form: FormData): Promise<UploadResult> 
     }
     const budget = Math.min(perFile, dayLeft)
     try {
-      const out = await processUpload({ repo, businessId, fileName: file.name.slice(0, 255), bytes: new Uint8Array(await file.arrayBuffer()), classify: budget > 0 ? classify : null, aiBudget: budget })
+      const out = await processUpload({ repo, businessId, fileName: file.name.slice(0, 255), bytes: new Uint8Array(await file.arrayBuffer()), classify: budget > 0 ? classify : null, aiBudget: budget, docs })
       dayLeft -= out.reduce((a, c) => a + c.ai_used, 0)
       cards.push(...out)
     } catch (e) {
