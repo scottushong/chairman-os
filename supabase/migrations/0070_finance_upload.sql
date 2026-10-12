@@ -795,7 +795,8 @@ begin
   if coalesce(auth_role()::text, '') in ('Chairman', 'GroupCFO') then
     return v_row.pending;
   end if;
-  return v_row.pending - 'people';
+  -- 급여는 칸 격자(grid)에도 사람별 줄이 있다 — 대표 · CFO 밖에는 둘 다 뺀다.
+  return case when v_row.kind = 'payroll' then v_row.pending - 'people' - 'grid' else v_row.pending - 'people' end;
 end;
 $fn$;
 

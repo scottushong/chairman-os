@@ -101,8 +101,8 @@ begin
   if n <> 1 then raise exception 'FAIL c: 옛 올리기가 applied로 안 돌아왔다'; end if;
   -- 리뷰 I-1: 급여 대기 줄의 개인 줄은 직원에게 싣지 않는다 · pending 칸은 직접 못 읽는다.
   v_pay := public.fin_upload_record('biz_dy', 'payroll', '2099-03', '가짜 급여 대기.xlsx', repeat('8', 64), '급여', 'medium', 1, 'needs_review',
-                                    '{"rows":[{"row_no":0,"dept":"영업","salary":1}],"people":[{"row_no":4,"dept":"영업","person_ref":"E9","salary":1}]}', null);
-  if public.fin_upload_pending(v_pay) ? 'people' then raise exception 'FAIL c: 직원에게 급여 개인 줄이 실렸다'; end if;
+                                    '{"rows":[{"row_no":0,"dept":"영업","salary":1}],"people":[{"row_no":4,"dept":"영업","person_ref":"E9","salary":1}],"grid":[["부서","사번","급여"],["영업","E9",1]]}', null);
+  if public.fin_upload_pending(v_pay) ? 'people' or public.fin_upload_pending(v_pay) ? 'grid' then raise exception 'FAIL c: 직원에게 급여 개인 줄 · 칸 격자가 실렸다'; end if;
   if not public.fin_upload_pending(v_pay) ? 'rows' then raise exception 'FAIL c: 직원이 대기 줄을 못 읽는다'; end if;
   begin
     perform pending from public.fin_uploads where upload_id = v_pay;
