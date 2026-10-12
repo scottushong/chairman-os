@@ -4,6 +4,8 @@
 --
 -- ■ 무엇을 더하나 ■
 --   1절 빈칸 ≠ 0: 값마다 상태('confirmed_zero' 0 확인 | 'value' 값 | 'missing' 빈칸). 빈칸은 null로만, 0은 «0 확인»일 때만.
+--        새 입력(0072 칸)은 상태 없는 0을 거부한다. 0070 시절 칸(재고 기말 금액)은 지금 앱이 상태 없이 보내므로 상태 없는 0 = 0 확인
+--        (앱이 0이 적힌 칸을 읽은 것 — 빈칸은 null로 온다).
 --        재고금액명세서 줄에 기초 금액(opening_amount)과 상태 칸. 0070 줄은 그대로 두고 상태만 채운다(null → missing · 0 → 0 확인).
 --   2절 재공품 · 완제품 월말 평가금액(fin_inventory_valuations) — 입력 중 · 잠정 · 확정. 확정은 입력한 사람이 아닌 사람만.
 --        지우지 않는다: 바꾸기 = 무효(voided_at) + 새 줄. 회사 · 달 · 구분마다 살아 있는 줄은 하나.
@@ -17,10 +19,10 @@
 --        같은 거래 묶음(fin_tx_groups) · 기준 설정(fin_dedupe_settings). 맞추기는 앱 코드(순수 함수)가 하고 RPC로 저장만 한다.
 --        원천 줄은 고치지 않는다.
 --   6절 넣기와 손익 확정 분리 — 마감 달에 넣거나 되돌리면 «재마감 대상»(fin_reclose_flags) 한 줄. closings · 전표 · finance_kpis는 건드리지 않는다.
---   7절 자동 넣기 다섯째 조건 — 앱이 센 «중복 의심» 수(p_dup_suspects)가 1 이상이면 자동 넣기 거부.
+--   7절 자동 넣기 다섯째 조건 — 앱이 센 «중복 의심» 수(p_dup_suspects)가 1 이상이거나 안 보냈으면(null) 자동 넣기 거부.
 --   8절 시드 정리 A안 — 시드 표 아홉에 is_example. 0003이 넣은 id 목록(seed-check.sql)만 true. 직원 세션에서는 안 보인다(restrictive).
 --
--- ■ fin_upload_apply를 다시 만든다 ■ 인자 하나(p_dup_suspects int default 0)가 늘어 옛 판(14개 인자)을 drop하고 새로 만든다.
+-- ■ fin_upload_apply를 다시 만든다 ■ 인자 하나(p_dup_suspects int default null)가 늘어 옛 판(14개 인자)을 drop하고 새로 만든다.
 --   본문은 0070과 한 줄씩 대조했다 — 권한 · 종류 · 기간 · 줄 수 · 겹침 선택 · 자문 잠금 · 옛 올리기 잠금 · 자동 거부(겹침 · 마감) ·
 --   마감 달은 대표 · CFO + 이유 · 같은 파일 거부 · replace/keep_old · 감사 · 자동 알림을 그대로 지킨다.
 --   더한 것: 새 종류 넷(valuation · material_issue · tax_invoice · ledger_lines) · 판매 · 입고 · 재고의 새 칸 · 자동 다섯째 조건 · 재마감 대상.
@@ -50,9 +52,11 @@ $fn$;
 
 /**
  * 앱이 보낸 상태가 없을 때의 상태. 빈칸(null) → missing · 0이 아닌 수 → value.
- * 0인데 상태가 없으면 거부한다(fin_value_state) — «0 확인»은 앱이 «파일에 0이 적혀 있었다»를 말해야만 된다.
+ * 0인데 상태가 없으면: 0072 새 입력(p_zero_ok = false)은 거부(fin_value_state) — 새 앱은 늘 상태를 보낸다.
+ * 0070 시절 칸(재고 기말 금액 — 지금 앱이 상태 없이 보낸다)은 p_zero_ok = true: 앱이 읽은 «0이 적힌 칸»이므로 0 확인
+ * (빈칸은 앱이 null로 보낸다 → missing).
  */
-create or replace function fin_value_state_of(p_state text, p_value numeric) returns text
+create or replace function fin_value_state_of(p_state text, p_value numeric, p_zero_ok boolean default false) returns text
 language plpgsql immutable set search_path = public, pg_temp as $fn$
 begin
   if p_state is not null then
@@ -65,6 +69,9 @@ begin
     return 'missing';
   end if;
   if p_value = 0 then
+    if p_zero_ok then
+      return 'confirmed_zero';
+    end if;
     raise exception 'fin_value_state' using errcode = '22023';
   end if;
   return 'value';
@@ -105,6 +112,11 @@ update fin_inventory_lines
 alter table fin_inventory_lines alter column amount_state set not null;
 alter table fin_inventory_lines add constraint fin_inventory_lines_amount_state check (fin_value_state_ok(amount_state, amount));
 alter table fin_inventory_lines add constraint fin_inventory_lines_opening_state check (fin_value_state_ok(opening_state, opening_amount));
+-- 0072 리뷰 I2: 사용수량(used_qty — 품목별 한 달 사용 kg)은 생산수량과 겹치면 배합비가 드러난다. 앱은 이 표를 읽지 않는다
+-- (src 확인 2026-10-12 — kinds.ts가 넣을 칸으로만 쓴다). 열 grant로 바꾸고 used_qty를 뺀다.
+revoke select on table fin_inventory_lines from authenticated;
+grant select (line_id, upload_id, business_id, period, row_no, item, stock_qty, amount, amount_state, opening_amount, opening_state, voided_at, created_at)
+  on table fin_inventory_lines to authenticated;
 comment on column fin_inventory_lines.amount_state is '0072. 기말 재고금액의 상태 — missing(빈칸, 값 null) · confirmed_zero(0 확인) · value.';
 comment on column fin_inventory_lines.opening_amount is '0072. 재고금액명세서의 기초 재고금액(표시 · 대조용 — 기초재고 연결은 앞 달 확정 기말이 먼저다).';
 
@@ -570,7 +582,9 @@ begin
          decided_by = auth.uid(), decided_at = now()
    where business_id = p_business and period = p_period and material = p_material and class = 'needs_review' and voided_at is null;
   get diagnostics v_n = row_count;
-  perform fin_reclose_mark(p_business, p_period, null, 'upload', p_reason);
+  if v_n > 0 then
+    perform fin_reclose_mark(p_business, p_period, null, 'upload', p_reason);
+  end if;
   perform fin_audit('update', 'fin_material_issues', p_business || ':' || p_period, p_business, null,
     jsonb_build_object('period', p_period, 'material', p_material, 'class', p_class, 'non_production_kind', p_non_production_kind,
                        'lines', v_n, 'reason', p_reason),
@@ -581,12 +595,15 @@ $fn$;
 
 /**
  * 원료 출고 요약 — 이것만 돌려준다(구성표 노출 금지):
- *   production_input_kg  생산 투입 줄 kg 합(빈칸은 더하지 않는다 · 빈칸 줄 수는 input_missing_lines).
- *                        생산 투입 원료가 2가지 미만이면 null(합계 = 그 원료 kg이 되어 비율이 드러난다) — suppressed = true.
+ *   production_input_kg  생산 투입 줄 kg 합을 100kg 단위로 반올림. 다음 둘이 모두일 때만 — 아니면 null과 까닭(input_withheld):
+ *                          · 그 달 «확인 필요» 줄이 0(needs_review_open) — 줄 하나를 정할 때마다 합계가 그 줄 kg만큼 움직여
+ *                            시간 차로 한 원료의 kg가 드러난다(리뷰 I2).
+ *                          · 생산 투입 원료가 3가지 이상(too_few_materials) — 하나 · 둘이면 합계에서 원료 kg가 바로 나온다.
+ *                        빈칸 kg는 더하지 않는다(빈칸 줄 수는 input_missing_lines).
  *   production_qty_kg    이 달 제조지시명세서 생산수량 합(kg로 본다).
  *   lines                구분별 줄 수.
  *   needs_review         원료별 «확인 필요» 줄 수(kg 없음).
- * 원료별 · 제품별 kg는 어디에도 없다.
+ * 원료별 · 제품별 kg는 어디에도 없다. 남은 위험(바꾸기 올리기 전후 합계 차이)은 DEFERRED.md.
  */
 create or replace function fin_issue_summary(p_business text, p_period text) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $fn$
@@ -594,9 +611,11 @@ declare
   v_in    numeric;
   v_miss  int;
   v_mats  int;
+  v_open  int;
   v_qty   numeric;
   v_lines jsonb;
   v_need  jsonb;
+  v_why   text;
 begin
   if not coalesce(can_read_books(p_business), false) then
     return null;
@@ -606,6 +625,8 @@ begin
     into v_in, v_miss, v_mats
     from fin_material_issues i
    where i.business_id = p_business and i.period = p_period and i.voided_at is null and i.class = 'production';
+  select count(*) into v_open from fin_material_issues i
+   where i.business_id = p_business and i.period = p_period and i.voided_at is null and i.class = 'needs_review';
   select sum(p.qty) into v_qty from fin_production_lines p where p.business_id = p_business and p.period = p_period and p.voided_at is null;
   select jsonb_build_object(
            'production', count(*) filter (where i.class = 'production'),
@@ -618,9 +639,10 @@ begin
     from (select i.material, count(*) as n from fin_material_issues i
            where i.business_id = p_business and i.period = p_period and i.voided_at is null and i.class = 'needs_review'
            group by i.material) m;
+  v_why := case when v_open > 0 then 'needs_review_open' when v_mats < 3 then 'too_few_materials' end;
   return jsonb_build_object(
-    'production_input_kg', case when v_mats >= 2 then v_in end,
-    'suppressed', v_mats < 2 and v_mats > 0,
+    'production_input_kg', case when v_why is null then round(v_in, -2) end,
+    'input_withheld', v_why,
     'input_missing_lines', v_miss,
     'production_qty_kg', v_qty,
     'lines', v_lines,
@@ -773,7 +795,8 @@ $fn$;
  * 줄은 살아 있는 묶음 하나에만(이미 묶인 줄이면 fin_tx_member_taken).
  */
 create or replace function fin_tx_group_save(
-  p_business text, p_period text, p_status text, p_members jsonb, p_evidence jsonb, p_amount_base_ref text, p_qty_base_ref text
+  p_business text, p_period text, p_status text, p_members jsonb, p_evidence jsonb, p_amount_base_ref text, p_qty_base_ref text,
+  p_reason text default null
 ) returns uuid
 language plpgsql security definer set search_path = public, pg_temp as $fn$
 declare
@@ -793,6 +816,7 @@ begin
   if p_members is null or jsonb_typeof(p_members) <> 'array' or jsonb_array_length(p_members) < 2 or jsonb_array_length(p_members) > 50 then
     raise exception 'fin_tx_members' using errcode = '22023';
   end if;
+  perform fin_closed_gate(p_business, p_period, p_reason);
   perform pg_advisory_xact_lock(hashtext('fin_tx:' || p_business || ':' || coalesce(p_period, '')));
   insert into fin_tx_groups (business_id, period, status, evidence, amount_base_ref, qty_base_ref)
   values (p_business, p_period, p_status, p_evidence, p_amount_base_ref, p_qty_base_ref)
@@ -807,6 +831,12 @@ begin
     insert into fin_tx_group_members (group_id, source_table, line_id, business_id) values (v_id, m.source_table, m.line_id, p_business);
     v_n := v_n + 1;
   end loop;
+  -- 기준 줄은 이 묶음의 줄이어야 한다.
+  if (p_amount_base_ref is not null and not exists (select 1 from fin_tx_group_members g where g.group_id = v_id and g.source_table || ':' || g.line_id = p_amount_base_ref))
+     or (p_qty_base_ref is not null and not exists (select 1 from fin_tx_group_members g where g.group_id = v_id and g.source_table || ':' || g.line_id = p_qty_base_ref)) then
+    raise exception 'fin_tx_base_ref' using errcode = '22023';
+  end if;
+  perform fin_reclose_mark(p_business, p_period, null, 'upload', p_reason);
   perform fin_audit('create', 'fin_tx_groups', v_id::text, p_business, null,
     jsonb_build_object('period', p_period, 'status', p_status, 'members', v_n, 'evidence', p_evidence), '같은 거래 묶음 저장(0072)');
   return v_id;
@@ -832,11 +862,13 @@ begin
   if v_row.status = 'rejected' or v_row.status = p_status and v_row.decided_by is not null then
     return false;
   end if;
+  perform fin_closed_gate(v_row.business_id, v_row.period, p_reason);
   update fin_tx_groups set status = p_status, decided_by = auth.uid(), decided_at = now(), reason = left(btrim(p_reason), 500)
    where group_id = p_group;
   if p_status = 'rejected' then
     update fin_tx_group_members set released_at = now() where group_id = p_group and released_at is null;
   end if;
+  perform fin_reclose_mark(v_row.business_id, v_row.period, null, 'upload', p_reason);
   perform fin_audit('update', 'fin_tx_groups', p_group::text, v_row.business_id, jsonb_build_object('status', v_row.status),
     jsonb_build_object('status', p_status, 'reason', p_reason), '같은 거래 결정(0072)');
   return true;
@@ -875,17 +907,18 @@ drop function fin_upload_apply(text, text, text, text, text, text, text, int, bo
  * 넣기. 0070과 같다(아래 «0072»만 더했다).
  * 0072 다섯째 조건: p_dup_suspects = 앱이 이 파일의 줄로 센 «중복 의심» 묶음 수. 자동(p_auto)인데 1 이상이면 fin_upload_auto_blocked.
  *   (넣기 전에는 이 올리기의 줄이 아직 없어 DB가 fin_tx_groups로 셀 수 없다 — 앱이 순수 함수로 센 값을 받는다.
- *    인자를 안 보내면 0 — 0070을 부르던 앱 · 시험이 그대로 돈다. B2가 이 값을 보낸다.)
+ *    자동인데 이 값을 안 보내면(null) 거부 — 잊은 호출은 닫힌 쪽으로 실패한다. 손으로 넣기(p_auto = false)는 상관없다.
+ *    0070 시절 앱의 자동 넣기는 B2가 이 값을 보낼 때까지 미리보기로 돈다.)
  * 0072 재마감 대상: 마감 달에 넣으면(대표 · CFO + 이유) fin_reclose_flags 한 줄. closings · 전표 · finance_kpis는 건드리지 않는다.
  * 0072 새 종류: valuation(평가금액 → fin_inventory_valuations 잠정 · 출처 excel/pdf · 입력자 = 부른 사람; 그 구분의 살아 있는
  *   «확정» 줄이 있으면 fin_valuation_final_exists — 확정은 화면에서 이유와 함께 바꾼다) · material_issue · tax_invoice · ledger_lines.
  * 0072 빈칸 ≠ 0: 재고 기말 · 기초, 세액, 세금계산서 공급가액 · 세액, 원료 kg, 평가금액은 상태 칸(…_state)을 함께 받는다.
- *   상태가 없으면 null → missing · 0이 아닌 수 → value · 0 → 거부(fin_value_state).
+ *   상태가 없으면 null → missing · 0이 아닌 수 → value · 0 → 거부(fin_value_state). 단 재고 기말 금액(0070 칸)의 상태 없는 0은 0 확인.
  */
 create or replace function fin_upload_apply(
   p_business text, p_kind text, p_period text, p_file_name text, p_sha text, p_sheet text,
   p_confidence text, p_ai_used int, p_auto boolean, p_rows jsonb, p_people jsonb,
-  p_overlap text, p_reason text, p_upload uuid, p_dup_suspects int default 0
+  p_overlap text, p_reason text, p_upload uuid, p_dup_suspects int default null
 ) returns uuid
 language plpgsql security definer set search_path = public, pg_temp as $fn$
 declare
@@ -926,7 +959,7 @@ begin
   v_closed := fin_month_closed(p_business, p_period);
 
   -- 0072: 다섯째 조건(중복 의심) — 자동이면 미리보기로 돌린다.
-  if coalesce(p_auto, false) and (v_old is not null or v_closed or coalesce(p_dup_suspects, 0) > 0) then
+  if coalesce(p_auto, false) and (v_old is not null or v_closed or p_dup_suspects is null or p_dup_suspects > 0) then
     raise exception 'fin_upload_auto_blocked' using errcode = '22023';
   end if;
   if v_closed and not (coalesce(auth_role()::text, '') in ('Chairman', 'GroupCFO') and length(btrim(coalesce(p_reason, ''))) >= 2) then
@@ -951,6 +984,17 @@ begin
     if exists (select 1 from fin_uploads u where u.business_id = p_business and u.kind = p_kind and u.period = p_period
                   and u.file_sha256 = v_row.file_sha256 and u.status in ('needs_review', 'applied') and u.upload_id <> p_upload) then
       raise exception 'fin_upload_duplicate' using errcode = '23505';
+    end if;
+    -- 0072 리뷰 C1: 원료 출고 kg는 미리보기 읽기(fin_upload_pending)로 나가지 않는다 — 앱이 돌려보내는 줄에는 kg가 없으므로
+    -- 저장해 둔 대기 줄(pending.rows)의 kg를 줄 번호로 붙인다. 대기 줄에 그 줄이 없으면 앱이 보낸 값을 쓴다.
+    if p_kind = 'material_issue' and jsonb_typeof(v_row.pending -> 'rows') = 'array' then
+      select jsonb_agg(case when pr.r is null then r.v
+                            else (r.v - 'qty_kg' - 'qty_state') || jsonb_strip_nulls(jsonb_build_object('qty_kg', pr.r -> 'qty_kg', 'qty_state', pr.r -> 'qty_state')) end
+                       order by r.o)
+        into p_rows
+        from jsonb_array_elements(p_rows) with ordinality as r(v, o)
+        left join lateral (select e as r from jsonb_array_elements(v_row.pending -> 'rows') e
+                            where e ->> 'row_no' = r.v ->> 'row_no' limit 1) pr on true;
     end if;
     update fin_uploads
        set kind = p_kind, period = p_period, sheet_name = coalesce(p_sheet, sheet_name), status = v_status,
@@ -993,7 +1037,7 @@ begin
                                             tx_date date, counterparty text, source_system text, amount_vat numeric, vat_state text, item_or_account text);
   elsif p_kind = 'inventory' then
     insert into fin_inventory_lines (upload_id, business_id, period, row_no, item, used_qty, stock_qty, amount, amount_state, opening_amount, opening_state)
-    select v_id, p_business, p_period, coalesce(x.row_no, 0), x.item, x.used_qty, x.stock_qty, x.amount, fin_value_state_of(x.amount_state, x.amount),
+    select v_id, p_business, p_period, coalesce(x.row_no, 0), x.item, x.used_qty, x.stock_qty, x.amount, fin_value_state_of(x.amount_state, x.amount, true),
            x.opening_amount, fin_value_state_of(x.opening_state, x.opening_amount)
       from jsonb_to_recordset(p_rows) as x(row_no int, item text, used_qty numeric, stock_qty numeric, amount numeric, amount_state text,
                                             opening_amount numeric, opening_state text);
@@ -1177,6 +1221,34 @@ end;
 $fn$;
 
 /**
+ * 미리보기 대기 줄 읽기 — 0070과 같다. 0072 리뷰 C1: 원료 출고(material_issue)는 누구에게도 kg를 싣지 않는다
+ * (줄의 qty_kg · qty_state를 빼고 칸 격자(grid)는 통째로 뺀다 — 대표 · CFO도. 표의 kg 칸 grant가 없는 것과 같은 선).
+ * 넣을 때 kg는 fin_upload_apply가 DB에 둔 대기 줄에서 붙인다.
+ */
+create or replace function fin_upload_pending(p_upload uuid) returns jsonb
+language plpgsql stable security definer set search_path = public, pg_temp as $fn$
+declare
+  v_row fin_uploads;
+begin
+  select * into v_row from fin_uploads where upload_id = p_upload;
+  if v_row.upload_id is null or not coalesce(can_keep_books(v_row.business_id), false) or v_row.status <> 'needs_review' then
+    return null;
+  end if;
+  if v_row.kind = 'material_issue' then
+    return (v_row.pending - 'people' - 'grid')
+           || jsonb_build_object('rows', coalesce((select jsonb_agg(e - 'qty_kg' - 'qty_state')
+                                                     from jsonb_array_elements(case when jsonb_typeof(v_row.pending -> 'rows') = 'array'
+                                                                                    then v_row.pending -> 'rows' else '[]'::jsonb end) e), '[]'::jsonb));
+  end if;
+  if coalesce(auth_role()::text, '') in ('Chairman', 'GroupCFO') then
+    return v_row.pending;
+  end if;
+  -- 급여는 칸 격자(grid)에도 사람별 줄이 있다 — 대표 · CFO 밖에는 둘 다 뺀다.
+  return case when v_row.kind = 'payroll' then v_row.pending - 'people' - 'grid' else v_row.pending - 'people' end;
+end;
+$fn$;
+
+/**
  * 되돌리기 — 0070과 같다. 0072: 마감 달이면 «재마감 대상»(까닭 revert) 한 줄.
  */
 create or replace function fin_upload_revert(p_upload uuid, p_reason text) returns boolean
@@ -1299,11 +1371,63 @@ create policy critical_risks_not_example on critical_risks as restrictive for se
 create policy ai_night_outputs_not_example on ai_night_outputs as restrictive for select to authenticated
   using (not is_example or coalesce(auth_role()::text, '') = 'Chairman');
 
+-- 0072 리뷰: staging · 운영의 postgres는 BYPASSRLS라 정의자 함수는 위 restrictive를 타지 않는다. 시드 표 아홉을 읽고
+-- 대표 아닌 세션이 부를 수 있는 정의자 함수 중 **예시 내용을 돌려주는 것** 둘을 같은 거름으로 다시 만든다(본문은 원본 그대로 + 거름 한 줄).
+--   company_progress(0028)        — 직원 회사 카드의 진행률 평균(예시 프로젝트가 섞였다).
+--   founder_dependency_rows(0034) — 회사 대표에게도 열리는 의존도 집계(예시 결정이 섞였다).
+-- 나머지(결재 · 견적 · 시트 동기화 · 트리거 · project_business_id 열쇠)는 앱이 만든 줄의 id로만 움직이거나 내용을 돌려주지 않는다 — DEFERRED.md.
+create or replace function company_progress(p_business_id text) returns int
+language sql stable security definer set search_path = public as $fn$
+  select case when has_business(p_business_id) then (
+    select round(avg(progress_pct))::int from projects where business_id = p_business_id
+       and (not is_example or coalesce(auth_role()::text, '') = 'Chairman')
+  ) end;
+$fn$;
+revoke all on function company_progress(text) from public, anon;
+grant execute on function company_progress(text) to authenticated;
+
+create or replace function founder_dependency_rows()
+returns table (
+  business_id     text,
+  period          text,
+  chairman_count  bigint,
+  ceo_count       bigint,
+  rule_count      bigint,
+  total_count     bigint,
+  unknown_count   bigint,
+  dependency_pct  numeric
+)
+language sql stable security definer set search_path = public as $fn$
+  select
+    d.business_id,
+    to_char(
+      coalesce(d.decided_at, d.created_at) at time zone 'Asia/Seoul', 'YYYY-MM'
+    ),
+    count(*) filter (where d.decided_by_kind = 'chairman'),
+    count(*) filter (where d.decided_by_kind = 'ceo'),
+    count(*) filter (where d.decided_by_kind = 'rule'),
+    count(*) filter (where d.decided_by_kind is not null),
+    count(*) filter (where d.decided_by_kind is null),
+    case
+      when count(*) filter (where d.decided_by_kind is not null) = 0 then null
+      else round(
+        count(*) filter (where d.decided_by_kind = 'chairman')::numeric * 100
+        / count(*) filter (where d.decided_by_kind is not null), 1)
+    end
+  from decisions d
+ where d.status <> 'Open'
+   and can_read_succession(d.business_id)
+   and (not d.is_example or coalesce(auth_role()::text, '') = 'Chairman')
+ group by 1, 2;
+$fn$;
+revoke all on function founder_dependency_rows() from public, anon;
+grant execute on function founder_dependency_rows() to authenticated;
+
 -- =====================================================================
 -- 9절. 함수 권한 — public · anon에게서 이름으로 걷는다. 부르는 RPC만 authenticated.
 -- =====================================================================
 revoke all on function fin_value_state_ok(text, numeric) from public, anon, authenticated;
-revoke all on function fin_value_state_of(text, numeric) from public, anon, authenticated;
+revoke all on function fin_value_state_of(text, numeric, boolean) from public, anon, authenticated;
 revoke all on function fin_audit(audit_action, text, text, text, jsonb, jsonb, text) from public, anon, authenticated;
 revoke all on function fin_prev_period(text) from public, anon, authenticated;
 revoke all on function fin_reclose_mark(text, text, uuid, text, text) from public, anon, authenticated;
@@ -1321,11 +1445,12 @@ revoke all on function fin_opening_save(text, text, text, numeric, text, text, u
 revoke all on function fin_inventory_roll(text, text) from public, anon;
 revoke all on function fin_issue_bulk_decide(text, text, text, text, text, text) from public, anon;
 revoke all on function fin_issue_summary(text, text) from public, anon;
-revoke all on function fin_tx_group_save(text, text, text, jsonb, jsonb, text, text) from public, anon;
+revoke all on function fin_tx_group_save(text, text, text, jsonb, jsonb, text, text, text) from public, anon;
 revoke all on function fin_tx_group_decide(uuid, text, text) from public, anon;
 revoke all on function fin_dedupe_setting_save(text, text, text, text) from public, anon;
 revoke all on function fin_upload_apply(text, text, text, text, text, text, text, int, boolean, jsonb, jsonb, text, text, uuid, int) from public, anon;
 revoke all on function fin_upload_revert(uuid, text) from public, anon;
+revoke all on function fin_upload_pending(uuid) from public, anon;
 
 grant execute on function fin_reclose_clear(uuid, text) to authenticated;
 grant execute on function fin_valuation_save(text, text, text, numeric, text, date, text, text, text, uuid, text, text, text, text) to authenticated;
@@ -1336,10 +1461,11 @@ grant execute on function fin_opening_save(text, text, text, numeric, text, text
 grant execute on function fin_inventory_roll(text, text) to authenticated;
 grant execute on function fin_issue_bulk_decide(text, text, text, text, text, text) to authenticated;
 grant execute on function fin_issue_summary(text, text) to authenticated;
-grant execute on function fin_tx_group_save(text, text, text, jsonb, jsonb, text, text) to authenticated;
+grant execute on function fin_tx_group_save(text, text, text, jsonb, jsonb, text, text, text) to authenticated;
 grant execute on function fin_tx_group_decide(uuid, text, text) to authenticated;
 grant execute on function fin_dedupe_setting_save(text, text, text, text) to authenticated;
 grant execute on function fin_upload_apply(text, text, text, text, text, text, text, int, boolean, jsonb, jsonb, text, text, uuid, int) to authenticated;
 grant execute on function fin_upload_revert(uuid, text) to authenticated;
+grant execute on function fin_upload_pending(uuid) to authenticated;
 
 commit;

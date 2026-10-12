@@ -131,11 +131,21 @@ begin
   exception when insufficient_privilege then null;
   end;
   v_s := public.fin_issue_summary('biz_dy', '2099-06');
-  if (v_s ->> 'production_input_kg')::numeric <> 17 or jsonb_array_length(v_s -> 'needs_review') <> 1
+  if v_s ->> 'production_input_kg' is not null or v_s ->> 'input_withheld' <> 'needs_review_open' or jsonb_array_length(v_s -> 'needs_review') <> 1
      or (v_s -> 'needs_review' -> 0) ? 'kg' or (v_s -> 'needs_review' -> 0 ->> 'lines')::int <> 1 then
     raise exception 'FAIL c: 요약이 다르다(%)', v_s;
   end if;
-  v_out := v_out || 'c(확인 필요 기본 · 이유 필수 · 그 원료만 · kg 칸 거부 · 요약 합계만) ';
+  -- 리뷰 C1: 미리보기 대기 줄로도 kg가 나가지 않는다(대기 → 넣기 때 DB가 붙인다).
+  v_u := public.fin_upload_record('biz_dy', 'material_issue', '2099-02', '가짜 출고 대기.xlsx', repeat('9', 64), '출고', 'medium', 0, 'needs_review',
+    '{"rows":[{"row_no":1,"material":"스테이징 가짜 원료 9","qty_kg":42}],"grid":[["원료","kg"],["스테이징 가짜 원료 9",42]]}', null);
+  v_s := public.fin_upload_pending(v_u);
+  if v_s ? 'grid' or (v_s -> 'rows' -> 0) ? 'qty_kg' then raise exception 'FAIL c: 대기 줄로 kg가 나갔다(%)', v_s; end if;
+  perform public.fin_upload_apply('biz_dy', 'material_issue', '2099-02', null, null, '출고', 'medium', 0, false, v_s -> 'rows', null, 'none', null, v_u, 0);
+  reset role;
+  select count(*) into n from public.fin_material_issues where upload_id = v_u and qty_kg = 42 and qty_state = 'value';
+  if n <> 1 then raise exception 'FAIL c: 대기 → 넣기에서 kg가 붙지 않았다(%)', n; end if;
+  set local role authenticated;
+  v_out := v_out || 'c(확인 필요 기본 · 이유 필수 · 그 원료만 · kg 칸 거부 · 요약 보류(확인 필요 남음) · 대기 줄 kg 0) ';
 
   -- ── d. 같은 거래 묶음 · 자동 다섯째 조건 ──
   perform public.fin_upload_apply('biz_dy', 'sales', '2099-08', '가짜 판매.xlsx', repeat('c', 64), '판매', 'high', 0, false,
@@ -157,7 +167,14 @@ begin
   exception when others then
     if sqlerrm not like '%fin_upload_auto_blocked%' then raise exception 'FAIL d: 자동 거부 문장이 다르다(%)', sqlerrm; end if;
   end;
-  v_out := v_out || 'd(중복 의심 저장 · 사람 결정 · 자동 다섯째 조건) ';
+  begin
+    perform public.fin_upload_apply('biz_dy', 'card', '2099-07', '가짜 카드.xlsx', repeat('e', 64), '카드', 'high', 0, true,
+      '[{"row_no":1,"amount":1}]', null, 'none', null, null);
+    raise exception 'FAIL d: 중복 의심 수 없이 자동으로 들어갔다';
+  exception when others then
+    if sqlerrm not like '%fin_upload_auto_blocked%' then raise exception 'FAIL d: 수 없는 자동 거부 문장이 다르다(%)', sqlerrm; end if;
+  end;
+  v_out := v_out || 'd(중복 의심 저장 · 사람 결정 · 자동 다섯째 조건 · 수 없으면 거부) ';
 
   -- ── e. 마감 달: 대표 넣기 → 재마감 대상 · closings 그대로 ──
   reset role;
