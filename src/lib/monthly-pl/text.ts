@@ -13,7 +13,6 @@ export const VIEW_STATUS_KO: Record<MonthlyPlView['view_status'], string> = {
 export const ADJ_KIND_KO: Record<PlAdjustmentKind, string> = {
   shrinkage: '재고 감모',
   scrap: '폐기',
-  valuation_loss: '평가손실',
   other: '기타 재고 조정',
 }
 

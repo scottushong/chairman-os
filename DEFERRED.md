@@ -2771,3 +2771,11 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - (미룸) 월별 손익(0075 fin_pl_gather)은 미확인 첫 달 기초도 그대로 쓴다 — 내부 마감 때 «기초 미확인» 경고를 더할지 다음 블록에서.
 - (미룸) 시드 예시 줄 쓰기: approval_decide(_many) · lead_decide · lead_bundle은 예시 결재 id(dec_001~004)를 아는 직원이 부르면 예시 줄의 상태를 바꿀 수 있다(내용은 돌려주지 않음). 막으려면 decisions에 «예시 줄은 대표만 바꿈» before update 트리거 — 진짜 업무가 예시 프로젝트 아래 있을 수 있어 tasks · projects에는 걸지 않는 편이 안전.
 - (미룸) 0076 staging 시험은 cost_purchase_candidates 거름을 함수 본문 글자로만 본다(예시 구매 결재를 만들려면 결재 표 준비가 길다).
+
+## 2026-10-12 PHASE 3 0075 리뷰 — 미룬 것(feat/sales-margins에서 고침 뒤)
+- **(대표 확인 필요) I2** 장부 읽기 권한자(can_read_books)는 이미 0070 · 0072 정책으로 fin_purchase_in_lines · fin_inventory_lines의 원료별 qty · amount를 직접 select할 수 있다(0075 이전부터). 0075 화면 · RPC는 원료별 줄을 대표 · 원가 관리에게만 주지만, 표 직접 읽기로는 원료별 kg · 금액이 보인다. 막으려면 두 표 열 grant를 좁히고 정의자 요약 RPC로 바꿔야 한다(올리기 · 되돌리기 화면이 이 표를 읽음 — 큰 변경). 대표가 «장부 담당이 원료별 입고 kg를 봐도 되는가»를 정해야 한다.
+- 내부 마감 확정의 maker-checker(잠정 저장한 사람 ≠ 확정한 사람) — 지금은 can_close_books면 혼자 확정 가능.
+- 첫 달 기초가 확인 전(0076 fin_opening_confirm 전)이어도 0075가 그대로 쓴다 — PHASE 4 DEFERRED 줄과 같은 일. 내부 마감 때 «기초 미확인» 막기 · 경고를 다음 블록에서.
+- 단위 kg 가정 — 입고 · 명세서 · 출고의 수량을 모두 kg로 본다(단위 칸 대조 없음).
+- TS(number, 부동소수) vs SQL(numeric) — 지금 시험 입력은 같지만, 아주 큰 금액 × kg 곱에서 1원 차이가 날 수 있다. live는 SQL이 계산(TS는 dummy · 시험).
+- (이번 고침에서 남은 것) 0075 staging 시험은 4610 상품매출원가 전표 갈래를 SQL로 돌리지 않는다(PGlite 대조는 계산 식 · dummy는 gather 거울만). 확정 시 이후 확정 달 재마감 표시도 staging에서는 «다시 열기» 뒤 이미 표시된 경우만 지난다.

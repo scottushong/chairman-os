@@ -51,7 +51,7 @@ create table fin_pl_settings (
   business_id        text primary key references businesses(business_id) on delete restrict,          -- [일반]
   method             text not null default 'monthly_wa' check (method in ('monthly_wa', 'statement')),  -- [일반]
   method_confirmed   boolean not null default false,                                                   -- [일반] 세무사 확인
-  tolerance_krw      numeric(20,0) not null default 1000 check (tolerance_krw >= 0),                   -- [일반] 대사 허용오차(원)
+  tolerance_krw      numeric(20,0) not null default 1000 check (tolerance_krw between 0 and 1000000), -- [일반] 대사 허용오차(원 · 100만 원까지)
   revenue_source     text not null default 'books' check (revenue_source in ('books', 'sales_upload')),  -- [일반]
   payment_categories text[] not null default array['원재료', '원료', '원자재']
                      check (cardinality(payment_categories) between 1 and 20),                         -- [일반] 자금흐름표 «항목» 규칙
@@ -69,7 +69,7 @@ create table fin_pl_adjustments (
   adj_id      uuid primary key default gen_random_uuid(),
   business_id text not null references businesses(business_id) on delete restrict,                     -- [일반]
   period      text not null check (period ~ '^[0-9]{4}-(0[1-9]|1[0-2])$'),                               -- [일반]
-  kind        text not null check (kind in ('shrinkage', 'scrap', 'valuation_loss', 'other')),          -- [일반] 감모 · 폐기 · 평가손실 · 기타
+  kind        text not null check (kind in ('shrinkage', 'scrap', 'other')),                            -- [일반] 감모 · 폐기 · 기타(평가손실은 승인 절차가 정해진 뒤)
   amount      numeric(20,0) not null check (amount <> 0),                                                -- [일반] 원(양수 = 손실). 회사 합계 한 값
   reason      text not null check (length(btrim(reason)) between 2 and 500),                           -- [일반]
   status      text not null default 'proposed' check (status in ('proposed', 'approved', 'voided')),    -- [일반]
@@ -171,6 +171,7 @@ language sql immutable set search_path = public, pg_temp as $fn$
     when 'needs_review' then '원료 출고 구분 «확인 필요» 줄이 남음'
     when 'missing_qty' then '원료 출고 kg 빈칸 줄이 있음'
     when 'purchase_missing' then '입고 줄에 수량 또는 금액 빈칸이 있음 — 0으로 채우지 않음'
+    when 'transfer_kind' then '이동 출고 — 처리 기준 필요(회사 안 창고 이동인지 정하기 전에는 마감하지 않음)'
     else p_code
   end;
 $fn$;
@@ -206,6 +207,7 @@ declare
   v_ovh numeric := fin_pl_n(p, 'mfg_overhead');
   v_sga numeric := fin_pl_n(p, 'sga');
   v_braw numeric := fin_pl_n(p, 'books_raw_material');
+  v_merch numeric := fin_pl_n(p, 'books_merchandise_cogs');
   v_bop numeric := fin_pl_n(p, 'books_operating_income');
   wo numeric := fin_pl_n(p -> 'wip', 'opening_amount');
   wc numeric := fin_pl_n(p -> 'wip', 'closing_amount');
@@ -230,6 +232,7 @@ begin
     if coalesce(fin_pl_n(m, 'issue_needs_review'), 0) > 0 then e := array_append(e, 'needs_review'); end if;
     if coalesce(fin_pl_n(m, 'issue_missing_qty'), 0) > 0 then e := array_append(e, 'missing_qty'); end if;
     if coalesce(fin_pl_n(m, 'purchase_missing'), 0) > 0 then e := array_append(e, 'purchase_missing'); end if;
+    if coalesce(fin_pl_n(m, 'issue_transfer'), 0) > 0 then e := array_append(e, 'transfer_kind'); end if;
     if oq is null or oa is null then e := array_append(e, 'opening_missing'); end if;
     if cq is null then e := array_append(e, 'closing_missing');
     elsif cq < 0 then e := array_append(e, 'negative_stock');
@@ -354,7 +357,7 @@ begin
 
   mfg_cost := raw_to_prod + v_lab + v_ovh;
   cogm := wo + mfg_cost - wc;
-  cogs := fo + cogm - fc;
+  cogs := fo + cogm - fc + v_merch;   -- 4610 상품매출원가는 교체하지 않고 더한다(입고명세서에 없는 상품)
   gross := v_rev - cogs;
   op := gross - v_sga - inv_other;
 
@@ -371,7 +374,7 @@ begin
     w := w || jsonb_build_array(jsonb_build_object('code', 'inventory_other_policy', 'message', '재고 변동(비생산 출고 · 승인된 조정)을 별도 줄로 둠 — 매출원가 · 판관비 · 영업외 중 처리 기준 확인 전'));
   end if;
   if v_braw is not null and abs(v_braw - t_purch) > v_tol then
-    w := w || jsonb_build_array(jsonb_build_object('code', 'purchase_vs_books_diff', 'message', '장부 원재료비(교체됨)와 입고명세서 순매입이 다름 — 부가세 · 선급금 · 외상 · 시점 차이 · 상품매출원가 여부 확인'));
+    w := w || jsonb_build_array(jsonb_build_object('code', 'purchase_vs_books_diff', 'message', '장부 원재료비(교체됨 — 4610 상품매출원가 제외)와 입고명세서 순매입이 다름 — 부가세 · 선급금 · 외상 · 시점 차이 확인'));
   end if;
   if fin_pl_n(p, 'raw_statement_opening') is not null and t_open is not null and abs(fin_pl_n(p, 'raw_statement_opening') - t_open) > v_tol then
     w := w || jsonb_build_array(jsonb_build_object('code', 'statement_opening_diff', 'message', '이 달 재고금액명세서의 기초와 연결한 기초(전월 기말)가 다름 — 고치지 않고 보여 주기만'));
@@ -398,7 +401,7 @@ begin
   v_scope := case when op is not null then 'full' when raw_usage is not null then 'raw_usage_only' else 'none' end;
 
   return jsonb_build_object(
-    'calc_version', 'pl-2026-10-12.1',
+    'calc_version', 'pl-2026-10-12.2',
     'period', p ->> 'period',
     'method', v_method,
     'method_label', v_label,
@@ -414,7 +417,7 @@ begin
       'adjustments_approved', adj_ok, 'adjustments_by_kind', adj_kind,
       'raw_to_production', raw_to_prod, 'recon_diff', recon_diff, 'recon_ok', recon_ok,
       'mfg_labor', v_lab, 'mfg_overhead', v_ovh, 'mfg_cost', mfg_cost,
-      'wip_opening', wo, 'wip_closing', wc, 'cogm', cogm, 'finished_opening', fo, 'finished_closing', fc),
+      'wip_opening', wo, 'wip_closing', wc, 'cogm', cogm, 'finished_opening', fo, 'finished_closing', fc, 'merchandise_cogs', v_merch),
     'cash', jsonb_build_object(
       'state', case when v_cash then 'value' else 'not_uploaded' end,
       'material_payments', case when v_cash then fin_pl_n(p -> 'cash', 'material_payments') end,
@@ -520,7 +523,7 @@ begin
     if g.status = 'suspect' then
       v_susp := v_susp + 1;
     elsif g.status = 'same' then
-      v_keep := case when g.amount_base_ref like 'fin_purchase_in_lines:%'
+      v_keep := case when g.amount_base_ref ~ '^fin_purchase_in_lines:[0-9]{1,18}$'
                       and substr(g.amount_base_ref, 23)::bigint = any(g.ids) then substr(g.amount_base_ref, 23)::bigint else g.ids[1] end;
       v_excl := v_excl || array_remove(g.ids, v_keep);
     end if;
@@ -535,7 +538,7 @@ begin
      group by t.group_id, t.status, t.amount_base_ref
     having count(*) >= 2
   loop
-    v_keep := case when g.amount_base_ref like 'fin_sales_lines:%' and substr(g.amount_base_ref, 17)::bigint = any(g.ids)
+    v_keep := case when g.amount_base_ref ~ '^fin_sales_lines:[0-9]{1,18}$' and substr(g.amount_base_ref, 17)::bigint = any(g.ids)
                    then substr(g.amount_base_ref, 17)::bigint else g.ids[1] end;
     v_sexcl := v_sexcl || array_remove(g.ids, v_keep);
   end loop;
@@ -575,7 +578,8 @@ begin
            sum(qty_kg) filter (where class = 'non_production' and non_production_kind = 'return' and qty_state <> 'missing') as np_return,
            sum(qty_kg) filter (where class = 'non_production' and coalesce(non_production_kind, 'adjust') = 'adjust' and qty_state <> 'missing') as np_adjust,
            count(*) filter (where class = 'needs_review') as review,
-           count(*) filter (where class <> 'needs_review' and qty_state = 'missing') as miss
+           count(*) filter (where class <> 'needs_review' and qty_state = 'missing') as miss,
+           count(*) filter (where class = 'non_production' and non_production_kind = 'transfer') as transfer
       from fin_material_issues where business_id = p_business and period = p_period and voided_at is null group by 1),
   names as (
     select m from pur union select m from cur union select m from iss
@@ -588,7 +592,7 @@ begin
            'purchase_qty', coalesce(pur.q, 0), 'purchase_amount', coalesce(pur.a, 0), 'purchase_missing', coalesce(pur.miss, 0),
            'production_qty', case when v_issues then coalesce(iss.prod, 0) end,
            'non_production', jsonb_strip_nulls(jsonb_build_object('sample', iss.np_sample, 'scrap', iss.np_scrap, 'return', iss.np_return, 'adjust', iss.np_adjust)),
-           'issue_needs_review', coalesce(iss.review, 0), 'issue_missing_qty', coalesce(iss.miss, 0),
+           'issue_needs_review', coalesce(iss.review, 0), 'issue_missing_qty', coalesce(iss.miss, 0), 'issue_transfer', coalesce(iss.transfer, 0),
            'closing_qty', case when v_cur_stmt > 0 then case when cur.m is null then 0 else cur.q end end,
            'closing_statement_amount', case when v_cur_stmt > 0 then case when cur.m is null then 0 else cur.a end end,
            'closing_absent', case when v_cur_stmt > 0 and cur.m is null then true end))
@@ -636,9 +640,10 @@ begin
   -- 장부(전표 · 결산) — 이 달 손익 줄이 하나도 없으면 전부 미입력. 줄이 있으면 없는 구역은 장부 기준 0.
   select count(*) > 0 as has,
          -coalesce(sum(c.amount) filter (where c.section = 'revenue'), 0) as revenue,
-         coalesce(sum(c.amount) filter (where c.section = 'cogs' and c.category = 'raw_material'), 0) as raw,
+         coalesce(sum(c.amount) filter (where c.section = 'cogs' and c.category = 'raw_material' and c.account_code <> '4610'), 0) as raw,
+         coalesce(sum(c.amount) filter (where c.section = 'cogs' and c.account_code = '4610'), 0) as merch,
          coalesce(sum(c.amount) filter (where c.section = 'cogs' and c.category = 'labor'), 0) as labor,
-         coalesce(sum(c.amount) filter (where c.section = 'cogs' and c.category not in ('raw_material', 'labor')), 0) as overhead,
+         coalesce(sum(c.amount) filter (where c.section = 'cogs' and c.category not in ('raw_material', 'labor') and c.account_code <> '4610'), 0) as overhead,
          coalesce(sum(c.amount) filter (where c.section in ('sga', 'd_and_a')), 0) as sga,
          -coalesce(sum(c.amount) filter (where c.section in ('revenue', 'cogs', 'sga', 'd_and_a')), 0) as op
     into v_books
@@ -681,6 +686,7 @@ begin
     'revenue_source', v_rsrc,
     'books_has_lines', v_has,
     'books_raw_material', case when v_has then v_books.raw end,
+    'books_merchandise_cogs', case when v_has then v_books.merch end,
     'mfg_labor', case when v_has then v_books.labor end,
     'mfg_overhead', case when v_has then v_books.overhead end,
     'sga', case when v_has then v_books.sga end,
@@ -840,6 +846,7 @@ declare
   v_pdiff jsonb := null;
   v_chg  jsonb := null;
   k text;
+  r record;
 begin
   perform fin_pl_gate(p_business, p_period);
   if p_period is null or p_final is null then
@@ -850,6 +857,8 @@ begin
   end if;
   perform pg_advisory_xact_lock(hashtext('fin_pl:' || p_business || ':' || p_period));
   select * into v_live from fin_pl_closes where business_id = p_business and period = p_period and superseded_at is null for update;
+  -- 기초로 읽는 앞 달 확정본을 잠근다(같은 때 앞 달을 다시 열면 그쪽이 기다린다 — 내려간 확정본을 기초로 쓰지 않게).
+  perform 1 from fin_pl_closes where business_id = p_business and period = fin_prev_period(p_period) and status = 'final' and superseded_at is null for share;
   v_in := fin_pl_gather(p_business, p_period);
   v_hash := md5(v_in::text);
   if v_live.status = 'final' then
@@ -896,6 +905,13 @@ begin
   if p_final then
     update fin_reclose_flags set cleared_at = now(), cleared_by = auth.uid()
      where business_id = p_business and period = p_period and cause = 'pl_reopen' and cleared_at is null;
+    -- 이 달을 확정하면 이후의 살아 있는 확정 달은 기초가 바뀌었을 수 있다 — 덮어쓰지 않고 재마감 대상으로만(다시 열기와 같은 까닭).
+    for r in select c.period from fin_pl_closes c where c.business_id = p_business and c.period > p_period and c.status = 'final' and c.superseded_at is null order by c.period loop
+      if not exists (select 1 from fin_reclose_flags f where f.business_id = p_business and f.period = r.period and f.cause = 'pl_reopen' and f.cleared_at is null) then
+        insert into fin_reclose_flags (business_id, period, upload_id, cause, reason)
+        values (p_business, r.period, null, 'pl_reopen', '앞 달(' || p_period || ') 월별 손익을 다시 확정했다 — 기초 확인 · 재마감 필요');
+      end if;
+    end loop;
   end if;
   perform fin_audit(case when p_final then 'approve'::audit_action else 'create'::audit_action end, 'fin_pl_closes', v_id::text, p_business,
     case when v_live.close_id is null then null else jsonb_build_object('replaced', v_live.close_id, 'status', v_live.status) end,
@@ -954,7 +970,7 @@ begin
   if p_period is null or not coalesce(can_keep_books(p_business), false) then
     raise exception 'fin_pl_denied' using errcode = '42501';
   end if;
-  if p_kind is null or p_kind not in ('shrinkage', 'scrap', 'valuation_loss', 'other') or p_amount is null or p_amount = 0 or p_amount <> trunc(p_amount)
+  if p_kind is null or p_kind not in ('shrinkage', 'scrap', 'other') or p_amount is null or p_amount = 0 or p_amount <> trunc(p_amount)
      or abs(p_amount) > 1e15 then
     raise exception 'fin_pl_adjust_value' using errcode = '22023';
   end if;
@@ -1010,6 +1026,10 @@ begin
   if (p_action = 'approve' and v.status <> 'proposed') or (p_action = 'void' and v.status = 'voided') then
     return false;
   end if;
+  -- 승인된 조정을 무효로 하면 손익이 바뀐다 — 승인과 같은 마감 권한이 있어야 한다(승인 전 제안은 장부 쓰기로 무효 가능).
+  if p_action = 'void' and v.status = 'approved' and not coalesce(can_close_books(v.business_id), false) then
+    raise exception 'fin_pl_denied' using errcode = '42501';
+  end if;
   if p_action = 'approve' then
     update fin_pl_adjustments set status = 'approved', approved_by = auth.uid(), approved_at = now() where adj_id = p_id;
   else
@@ -1037,7 +1057,7 @@ begin
     raise exception 'fin_pl_reason' using errcode = '22023';
   end if;
   if p_method is null or p_method not in ('monthly_wa', 'statement') or p_method_confirmed is null or p_tolerance is null or p_tolerance < 0
-     or p_tolerance <> trunc(p_tolerance) or p_tolerance > 1e12 or p_revenue_source is null or p_revenue_source not in ('books', 'sales_upload')
+     or p_tolerance <> trunc(p_tolerance) or p_tolerance > 1000000 or p_revenue_source is null or p_revenue_source not in ('books', 'sales_upload')
      or p_payment_categories is null or cardinality(p_payment_categories) not between 1 and 20
      or exists (select 1 from unnest(p_payment_categories) x where length(btrim(coalesce(x, ''))) not between 1 and 40) then
     raise exception 'fin_pl_setting_value' using errcode = '22023';

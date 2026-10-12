@@ -14,7 +14,8 @@ export type PlRevenueSource = 'books' | 'sales_upload'
 
 export type PlNonProductionKind = 'sample' | 'scrap' | 'return' | 'adjust'
 
-export type PlAdjustmentKind = 'shrinkage' | 'scrap' | 'valuation_loss' | 'other'
+/** 평가손실(valuation_loss)은 승인 절차가 정해지기 전이라 받지 않는다(0075 리뷰 고침). */
+export type PlAdjustmentKind = 'shrinkage' | 'scrap' | 'other'
 
 /** 원료 한 가지의 한 달(원료끼리 섞지 않는다). 수량 kg · 금액 원. */
 export interface PlMaterialInput {
@@ -29,11 +30,13 @@ export interface PlMaterialInput {
   purchase_missing?: number
   /** 확인된 생산 투입 kg(출고 구분 «생산 투입»). 출고명세가 없으면 null. */
   production_qty: number | null
-  /** 비생산 출고 kg(성격별). 창고 이동(transfer)은 회사 재고가 바뀌지 않아 넣지 않는다. */
+  /** 비생산 출고 kg(성격별). 이동 출고(transfer)는 kg에 넣지 않고 issue_transfer 줄 수로 막는다(처리 기준 필요). */
   non_production: Partial<Record<PlNonProductionKind, number>>
   /** 이 원료의 «확인 필요» 출고 줄 수 · kg 빈칸 줄 수. */
   issue_needs_review: number
   issue_missing_qty: number
+  /** 이동 출고(non_production_kind = transfer) 줄 수 — 있으면 «이동 출고 — 처리 기준 필요»로 막는다. */
+  issue_transfer?: number
   /** 이 달 재고금액명세서 기말 수량 · 금액. 명세서가 없으면 null. */
   closing_qty: number | null
   closing_statement_amount: number | null
@@ -81,8 +84,10 @@ export interface MonthlyPlInput {
   revenue_source: PlRevenueSource
   /** 장부(전표 · 결산) 이 달 손익 줄이 있나. 없으면 장부 칸은 전부 null. */
   books_has_lines: boolean
-  /** 장부 매출원가 구역 · 대분류 원재료(4510 원재료비 · 4610 상품매출원가) — 새 매출원가로 **교체**되는 줄(더하지 않는다). */
+  /** 장부 매출원가 구역 · 대분류 원재료(4510 원재료비 …, 4610은 뺀다) — 새 매출원가로 **교체**되는 줄(더하지 않는다). */
   books_raw_material: number | null
+  /** 장부 4610 상품매출원가 — 입고명세서에 없는 상품이라 교체하지 않고 매출원가에 그대로 더한다. */
+  books_merchandise_cogs: number | null
   /** 장부 매출원가 구역 · 인건비 대분류(4520 제조인건비 …). */
   mfg_labor: number | null
   /** 장부 매출원가 구역 · 그 밖(전력 · 운반 · 라이선스 · 기타제조경비 · 외주가공). */
@@ -185,6 +190,8 @@ export interface MonthlyPlResult {
     cogm: number | null
     finished_opening: number | null
     finished_closing: number | null
+    /** 장부 4610 상품매출원가(④ 매출원가에 들어간다). */
+    merchandise_cogs: number | null
   }
   cash: {
     state: 'value' | 'not_uploaded'
