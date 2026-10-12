@@ -22,6 +22,8 @@ import {
 } from '../src/lib/monthly-pl/calc'
 import type { MonthlyPlInput, MonthlyPlResult, PlIssue, PlMaterialInput } from '../src/types'
 
+import { dummyRepository as repo } from '../src/lib/repository/dummy'
+import { dummyPlCloses } from '../src/lib/repository/dummy-monthly-pl'
 import { applyAll } from './pglite'
 
 let passed = 0
@@ -450,6 +452,135 @@ async function parity() {
   return n
 }
 
+/**
+ * 3절 — dummy repo(0075 거울): 가짜 DY 2099-05 ~ 2099-07(원). 5월: 기초 0 · 매입 9억(900,000kg) · 투입 300,000kg · 기말 600,000kg ·
+ * 매출 5억 · 판관비 1억 · 장부 원재료비 9억(A 방식) · 자금흐름표 원재료 대금 9억. 재공품 · 완제품 0(DY 대표가 넣고 대표가 확정).
+ */
+async function dummyFlow() {
+  const BIZ = 'biz_dy'
+  const as = (who: string) => (process.env.DUMMY_USER = who)
+  let shaN = 0
+  const sha = () => `${'d'.repeat(60)}${String(++shaN).padStart(4, '0')}`
+  const apply = (kind: string, period: string, rows: Record<string, string | number | null>[]) =>
+    repo.finUploadApply({
+      business_id: BIZ, kind, period, file_name: `가짜 ${kind} ${period}.xlsx`, file_sha256: sha(), sheet_name: null, ai_confidence: 'high', ai_used: 0, auto: false,
+      rows: rows.map((r, i) => ({ ...r, row_no: i + 1 })), people: null, overlap: 'none', reason: null, upload_id: null, dup_suspects: 0,
+    })
+  const M = '가짜 원료 PL'
+  as('chairman')
+  const ledger = await repo.loadFinanceLedger()
+  const acct = (section: string, category?: string) => {
+    const a = ledger.accounts.find((x) => x.business_id === BIZ && x.active && x.section === section && (!category || x.category === category))
+    assert.ok(a, `dummy DY 계정 없음: ${section} ${category ?? ''}`)
+    return a.account_code
+  }
+  const [rev, sga, raw, cash, pay] = [acct('revenue'), acct('sga'), acct('cogs', 'raw_material'), acct('cash'), acct('payable')]
+  const actor = { user_id: 'dummy-chair', role: 'Chairman' } as unknown as Parameters<typeof repo.postJournalEntry>[1]
+  const slip = (date: string, debit: string, credit: string, amount: number, memo: string) =>
+    repo.postJournalEntry({ business_id: BIZ, entry_date: date, memo, evidence_url: null, lines: [{ account_code: debit, side: 'debit', amount }, { account_code: credit, side: 'credit', amount }] }, actor)
+  const valuations = async (period: string, wip = 0) => {
+    as('dy_ceo')
+    for (const [category, amount] of [['wip', wip], ['finished', 0]] as const) {
+      if (category === 'finished' && wip !== 0) continue
+      await repo.finValuationSave({
+        business_id: BIZ, period, category, amount, state: amount === 0 ? 'confirmed_zero' : 'value', valuation_date: `${period}-28`, method: '월 가중평균',
+        cost_scope: 'material_labor_overhead', source: 'manual', upload_id: null, source_ref: null, note: '가짜', status: 'provisional', reason: '재평가 시험',
+      })
+    }
+    as('chairman')
+    for (const v of (await repo.listFinValuations(BIZ, period)).filter((x) => !x.voided_at && x.status !== 'final')) await repo.finValuationConfirm(v.valuation_id, null)
+  }
+  await apply('inventory', '2099-04', [{ item: M, stock_qty: 0, amount: 0, amount_state: 'confirmed_zero' }])
+  await apply('purchase_in', '2099-05', [{ material: M, qty: 900_000, amount: 9 * 억 }])
+  // T8 — 같은 파일(같은 해시)을 다시 올리면 거부 — 입고 줄이 두 번 생기지 않는다.
+  await assert.rejects(
+    repo.finUploadApply({ business_id: BIZ, kind: 'purchase_in', period: '2099-05', file_name: '가짜 다시.xlsx', file_sha256: `${'d'.repeat(60)}0002`, sheet_name: null, ai_confidence: 'high', ai_used: 0, auto: false, rows: [{ row_no: 1, material: M, qty: 900_000, amount: 9 * 억 }], people: null, overlap: 'none', reason: null, upload_id: null, dup_suspects: 0 }),
+    /fin_upload_duplicate|fin_upload_overlap/,
+  )
+  await apply('material_issue', '2099-05', [{ material: M, qty_kg: 300_000, class: 'production', class_reason: '시험 규칙' }])
+  await apply('inventory', '2099-05', [{ item: M, stock_qty: 600_000, amount: 6 * 억 }])
+  await apply('cashflow', '2099-05', [{ flow_date: '2099-05-10', category: '원재료 대금', outflow: 9 * 억, inflow: null }, { flow_date: '2099-05-20', category: '매출 입금', inflow: 5 * 억, outflow: null }])
+  for (const c of ['wip', 'finished'] as const) await repo.finOpeningSave({ business_id: BIZ, period: '2099-05', category: c, amount: 0, state: 'confirmed_zero', source: 'manual', upload_id: null, note: '첫 달 시험' })
+  await slip('2099-05-15', cash, rev, 5 * 억, '가짜 매출')
+  await slip('2099-05-16', sga, cash, 1 * 억, '가짜 판관비')
+  await slip('2099-05-17', raw, pay, 9 * 억, '가짜 매입(A 방식)')
+  await valuations('2099-05')
+
+  const may = (await repo.finPlMonth(BIZ, '2099-05'))!
+  assert.equal(may.view_status, 'provisional')
+  assert.deepEqual([may.result.pl.cogs, may.result.pl.operating_income, may.result.basis.raw_closing, may.result.cash.material_payments], [3 * 억, 1 * 억, 6 * 억, 9 * 억], 'dummy 5월 숫자')
+  assert.equal(may.result.closable, true, may.result.blockers.map((b) => b.code).join(','))
+  assert.equal(may.result.materials.length, 1, '대표에게 원료별 줄이 없다')
+
+  // T10 — 원가 권한 없는 장부 담당(DY 대표): 스위치를 이 회사 전원으로 연 뒤에만 보이고, 원료별 줄 · 이름이 없고, 확정 못 한다.
+  as('dy_ceo')
+  await assert.rejects(repo.finPlMonth(BIZ, '2099-05'), /feature_off/, '스위치 기본(대표만)인데 DY 대표가 읽었다')
+  as('chairman')
+  await repo.setFeatureSwitch({ feature_key: 'monthly_pl', business_id: BIZ, enabled: true, audience: 'all', reason: '시험' })
+  as('dy_ceo')
+  const ceoView = (await repo.finPlMonth(BIZ, '2099-05'))!
+  assert.equal(ceoView.result.materials.length, 0)
+  assert.ok(!JSON.stringify(ceoView).includes(M), 'DY 대표에게 원료 이름이 보인다')
+  assert.equal(ceoView.result.basis.production_input, null)
+  await assert.rejects(repo.finPlRecord(BIZ, '2099-05', true, null), /fin_pl_denied/)
+  const p1 = await repo.finPlRecord(BIZ, '2099-05', false, null)
+  assert.equal(await repo.finPlRecord(BIZ, '2099-05', false, null), p1, '같은 입력의 잠정 저장이 줄을 늘렸다')
+
+  // 대표 마감 — 다시 눌러도 한 줄(같은 입력 = 같은 결과).
+  as('chairman')
+  const f1 = await repo.finPlRecord(BIZ, '2099-05', true, '시험')
+  assert.equal(await repo.finPlRecord(BIZ, '2099-05', true, '시험'), f1)
+  assert.equal(dummyPlCloses().filter((c) => c.business_id === BIZ && c.period === '2099-05').length, 2, '잠정 1 + 확정 1이 아니다')
+
+  // T7 — 마감 뒤 원천이 바뀌어도(늦은 판관비) 확정 숫자 그대로 · «자료 바뀜» · 확정 달 조정 거부.
+  await slip('2099-05-28', sga, cash, 500 * 만, '가짜 늦은 판관비')
+  const mayAfter = (await repo.finPlMonth(BIZ, '2099-05'))!
+  assert.deepEqual([mayAfter.view_status, mayAfter.result.pl.operating_income, mayAfter.stale.inputs_changed], ['final', 1 * 억, true])
+  await assert.rejects(repo.finPlAdjustPropose({ business_id: BIZ, period: '2099-05', kind: 'shrinkage', amount: 1000, reason: '확정 달' }), /fin_pl_final/)
+
+  // 6월 — 기초 = 5월 확정 기말 6억.
+  await apply('material_issue', '2099-06', [{ material: M, qty_kg: 300_000, class: 'production', class_reason: '시험 규칙' }])
+  await apply('inventory', '2099-06', [{ item: M, stock_qty: 300_000, amount: 3 * 억 }])
+  await slip('2099-06-15', cash, rev, 5 * 억, '가짜 매출 6월')
+  await slip('2099-06-16', sga, cash, 1 * 억, '가짜 판관비 6월')
+  await valuations('2099-06')
+  const jun = (await repo.finPlMonth(BIZ, '2099-06'))!
+  assert.deepEqual([jun.result.basis.raw_opening, jun.result.pl.cogs, jun.result.pl.operating_income, jun.result.closable], [6 * 억, 3 * 억, 1 * 억, true], jun.result.blockers.map((b) => b.code).join(','))
+  await repo.finPlRecord(BIZ, '2099-06', true, '시험')
+
+  // T10 — 5월 다시 열기: DY 대표 거부 · 대표 + 이유 → 6월은 확정 그대로 + 재마감 대상 1.
+  as('dy_ceo')
+  await assert.rejects(repo.finPlReopen(BIZ, '2099-05', '직원 시험'), /fin_pl_denied/)
+  as('chairman')
+  await assert.rejects(repo.finPlReopen(BIZ, '2099-05', ' '), /fin_pl_reason/)
+  assert.equal(await repo.finPlReopen(BIZ, '2099-05', '시험 다시 열기'), 1)
+  const junFlag = (await repo.finPlMonth(BIZ, '2099-06'))!
+  assert.deepEqual([junFlag.view_status, junFlag.stale.reclose_flags, junFlag.result.pl.cogs], ['final', 1, 3 * 억])
+  // 5월 재공품 기말을 100만으로 다시 평가 → 다시 마감 → 6월에 «기초 ≠ 앞 달 확정 기말»(−100만), 6월 숫자는 그대로.
+  await valuations('2099-05', 100 * 만)
+  await repo.finPlRecord(BIZ, '2099-05', true, '다시 마감')
+  const may2 = (await repo.finPlMonth(BIZ, '2099-05'))!
+  assert.deepEqual([may2.changed_vs_prev_final?.wip_closing, may2.result.pl.cogs], [100 * 만, 3 * 억 - 100 * 만])
+  const jun2 = (await repo.finPlMonth(BIZ, '2099-06'))!
+  assert.deepEqual([jun2.view_status, jun2.stale.opening_diff?.wip, jun2.result.pl.cogs], ['final', -100 * 만, 3 * 억])
+
+  // 조정 — 본인 승인 거부 · 다른 사람 승인. 자료 없는 7월 — 마감 거부.
+  const a1 = await repo.finPlAdjustPropose({ business_id: BIZ, period: '2099-07', kind: 'shrinkage', amount: 100_000, reason: '시험 감모' })
+  await assert.rejects(repo.finPlAdjustDecide(a1, 'approve', null), /fin_pl_self_approve/)
+  as('dy_ceo')
+  const a2 = await repo.finPlAdjustPropose({ business_id: BIZ, period: '2099-07', kind: 'scrap', amount: 50_000, reason: '시험 폐기' })
+  assert.equal(await repo.finPlAdjustPropose({ business_id: BIZ, period: '2099-07', kind: 'scrap', amount: 50_000, reason: '시험 폐기' }), a2, '같은 제안이 줄을 늘렸다')
+  as('chairman')
+  assert.equal(await repo.finPlAdjustDecide(a2, 'approve', null), true)
+  await assert.rejects(repo.finPlRecord(BIZ, '2099-07', true, null), /fin_pl_entering|fin_pl_blocked/)
+
+  // 스위치를 끄면 대표에게도 꺼진다(화면 · 액션 · RPC 모두 같은 문).
+  await repo.setFeatureSwitch({ feature_key: 'monthly_pl', business_id: null, enabled: false, audience: 'chairman', reason: '시험 끄기' })
+  await repo.setFeatureSwitch({ feature_key: 'monthly_pl', business_id: BIZ, enabled: false, audience: 'all', reason: '시험 끄기' })
+  await assert.rejects(repo.finPlMonth(BIZ, '2099-05'), /feature_off/)
+  await repo.setFeatureSwitch({ feature_key: 'monthly_pl', business_id: null, enabled: true, audience: 'chairman', reason: '시험 되돌림' })
+}
+
 async function main() {
   for (const t of tests) {
     await t.fn()
@@ -458,6 +589,9 @@ async function main() {
   }
   const n = await parity()
   console.log(`  ✓ 0075 fin_pl_compute · fin_pl_mask(SQL) = calc.ts — 입력 ${n}벌`)
+  passed++
+  await dummyFlow()
+  console.log('  ✓ dummy 0075 거울 — 마감 · 같은 입력 한 줄 · 확정 불변 · 기초 = 전월 확정 기말 · 다시 열기 → 재마감 대상 · 조정 승인 · 권한 · 스위치')
   passed++
   console.log(`PASS check:monthly-pl — ${passed}개`)
 }

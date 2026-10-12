@@ -15,6 +15,7 @@ import { ACTIVITY_DEDUP_MINUTES, ACTIVITY_RETENTION_DAYS, type ActivityEvent } f
 import type { EntityAuditRecord } from '@/lib/audit-log'
 import { kstToday } from '@/lib/chairman-project'
 import { founderDependency } from '@/lib/dependency'
+import { featureOnFor } from '@/lib/features'
 import { AUDIT_ACTION, DECISION_STATUS, type DecisionAuditRecord } from '@/lib/decision-log'
 import { dayKey } from '@/lib/format'
 import { logoPath } from '@/lib/initiative-logo'
@@ -49,6 +50,7 @@ import { dummyAssistant } from './dummy-assistant'
 import { dummyFeatures } from './dummy-features'
 import { dummyFeedback } from './dummy-feedback'
 import { dummyFinanceUpload } from './dummy-finance-upload'
+import { dummyMonthlyPl } from './dummy-monthly-pl'
 import * as chat from './dummy-chat'
 import * as city from './dummy-city'
 import * as groupware from './dummy-groupware'
@@ -846,6 +848,29 @@ export const dummyRepository: ChairmanRepository = {
     notify: (_u, title, body, link) => {
       memoryNotifications.push({ notification_id: `ntf_${memoryNotifications.length + 1}`, kind: 'system', title, body, link, read_at: null, created_at: new Date().toISOString() })
     },
+  }),
+  // 0075 — 월별 손익(재고 반영 · 마감)(dummy-monthly-pl.ts). 판정은 0075 거울(읽기 = 장부 읽기 · 잠정 = 장부 쓰기 · 마감 = can_close_books).
+  ...dummyMonthlyPl({
+    viewer: () => dummyViewer(),
+    canKeep: (b) => dummyCanKeepBooks(b),
+    canRead: (b) => dummyCanKeepBooks(b) || ['Chairman', 'GroupCFO', 'BusinessCEO', 'Executive'].includes(dummyViewer().role),
+    canClose: (b) => {
+      const v = dummyViewer()
+      if (v.revoked_at) return false
+      if (v.role === 'Chairman' || v.role === 'GroupCFO') return true
+      return v.business_ids.includes(b) && dummyModuleGrants(v.user_id).some((m) => m.module === `/finance/${b}` && m.can_approve)
+    },
+    // 0075 fin_pl_cost_viewer = 대표 또는 cost_can('costing', 회사)(0061 — 회사 접근 + '/costing/<회사>' 줄).
+    costViewer: (b) => {
+      const v = dummyViewer()
+      if (v.revoked_at) return false
+      if (v.role === 'Chairman') return true
+      if (['AIAgent', 'Integration'].includes(v.role)) return false
+      return (v.role === 'GroupCFO' || v.business_ids.includes(b)) && dummyModuleGrants(v.user_id).some((m) => m.module === `/costing/${b}`)
+    },
+    featureOn: async (b) => featureOnFor(await dummyRepository.listFeatureSwitches(), 'monthly_pl', dummyViewer().role, b),
+    ledger: () => dummyRepository.loadFinanceLedger(),
+    name: (u) => dummyPerson(u)?.display_name ?? null,
   }),
   // Phase 11 — 대화 · 제안 · 사용량(dummy-assistant.ts). 확인 감사는 이 파일의 이력 저장소로 온다.
   ...dummyAssistant((e) => {
