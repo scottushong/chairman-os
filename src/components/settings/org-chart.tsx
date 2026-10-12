@@ -186,6 +186,7 @@ export function OrgChart({
   businesses,
   viewer,
   photoUrls,
+  initialPersonId,
 }: {
   people: UserAccount[]
   teams: Team[]
@@ -197,9 +198,12 @@ export function OrgChart({
    * 첫 글자로 떨어진다 — 서명이 실패한 것과 사진이 없는 것을 화면은 같게 다룬다.
    */
   photoUrls: Record<string, string>
+  /** 0069 — /settings/users?person=<id>(AI 답의 «바꾸려면» 링크). 보이는 사람이면 그 사람 패널을 열고 그 회사 탭으로. */
+  initialPersonId?: string | null
 }) {
   const canManage = viewer?.role === 'Chairman'
-  const [selection, setSelection] = useState<Selection>(null)
+  const initialPerson = initialPersonId ? (people.find((p) => p.user_id === initialPersonId) ?? null) : null
+  const [selection, setSelection] = useState<Selection>(initialPerson ? { kind: 'person', id: initialPerson.user_id } : null)
 
   const humans = useMemo(() => people.filter((p) => !SYSTEM_ROLE.includes(p.role)), [people])
   const systems = useMemo(() => people.filter((p) => SYSTEM_ROLE.includes(p.role)), [people])
@@ -218,7 +222,13 @@ export function OrgChart({
     ...(groupScopePeople.length > 0 ? [{ id: GROUP_TAB, label: '전사' }] : []),
     { id: SYSTEM_TAB, label: '시스템 계정' },
   ]
-  const [tab, setTab] = useState(tabs[0]?.id ?? SYSTEM_TAB)
+  const [tab, setTab] = useState(
+    initialPerson
+      ? SYSTEM_ROLE.includes(initialPerson.role)
+        ? SYSTEM_TAB
+        : (initialPerson.business_ids[0] ?? GROUP_TAB)
+      : (tabs[0]?.id ?? SYSTEM_TAB),
+  )
   const activeTab = tabs.some((t) => t.id === tab) ? tab : (tabs[0]?.id ?? SYSTEM_TAB)
 
   // ── 경고 세 종 (블록 B-2) ────────────────────────────────────────────

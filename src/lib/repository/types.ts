@@ -149,6 +149,13 @@ import type {
   ProductBreakdownRow,
   ProductionOrder,
   ProductionOrderLine,
+  PersonAccess,
+  NewAiFeedback,
+  AiFeedback,
+  AiFeedbackMine,
+  AiFeedbackBundle,
+  FeedbackStatus,
+  FeedbackTriage,
 } from '@/types'
 
 /**
@@ -674,6 +681,24 @@ export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods,
   staffAdminBusinesses(): Promise<string[]>
   /** 0055 staff_admin_options — 위임 초대 폼의 고르기 칸(이름 · 팀 · 역할 · 줄 수 있는 권한 · 등급). 능력이 없으면 던진다. */
   staffAdminOptions(businessId: string): Promise<StaffAdminOptions>
+
+  /**
+   * 0069 org_access_lookup — 이름 · 팀 이름 · 'me' · uuid로 권한 · 조직 칸(읽기만). 보이는 사람만, 많아야 8명.
+   * 0069가 없는 DB면 null(«아직 이 조회가 없다» — 도구가 사용자 화면을 안내한다).
+   */
+  orgAccessLookup(query: string): Promise<PersonAccess[] | null>
+  /** 0069 의견 남기기 — 질문 · 답은 DB가 본인 대화에서 복사한다. 오류 키(ai_feedback_*)를 그대로 던진다. */
+  submitAiFeedback(input: NewAiFeedback): Promise<string>
+  /** 0069 ai_feedback_mine — 쓴 사람 본인 것. 0069 전 DB는 빈 목록. */
+  listMyAiFeedback(): Promise<AiFeedbackMine[]>
+  cancelAiFeedback(feedbackId: string): Promise<boolean>
+  /** 대표 보완함(0069 — 대표만 행이 온다). 0069 전 DB는 빈 목록. */
+  listAiFeedback(): Promise<AiFeedback[]>
+  listAiFeedbackBundles(): Promise<AiFeedbackBundle[]>
+  setAiFeedbackStatus(feedbackId: string, status: FeedbackStatus): Promise<boolean>
+  setAiFeedbackBundleStatus(bundleId: string, status: Exclude<FeedbackStatus, 'triaged'>): Promise<boolean>
+  saveAiFeedbackTriage(feedbackId: string, triage: FeedbackTriage): Promise<boolean>
+  saveAiFeedbackBundle(ids: string[], title: string, triage: FeedbackTriage): Promise<string>
   /** 0055 staff_admin_invite — 감사 · 회장 알림까지 DB가 한 트랜잭션으로 한다. 오류는 'staff_admin_*' 키로 던진다. */
   staffAdminInvite(input: StaffAdminInviteInput): Promise<UserInvitation>
   /** 0055 staff_admin_revoke_invitation — 본인이 넣은 미수락 위임 초대만. */

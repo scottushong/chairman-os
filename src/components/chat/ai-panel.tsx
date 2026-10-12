@@ -34,6 +34,7 @@ export function AiPanel({
   const [q, setQ] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [pending, start] = useTransition()
+  const [followups, setFollowups] = useState<{ messageId: number; items: string[] } | undefined>(undefined)
 
   function ask(question: string) {
     setError(null)
@@ -44,6 +45,7 @@ export function AiPanel({
         return
       }
       setQ('')
+      setFollowups(r.followups)
       if (r.chatId && r.chatId !== chatId) router.push(`/chat?tab=ai&ai=${r.chatId}`)
       else router.refresh()
     })
@@ -71,7 +73,17 @@ export function AiPanel({
             </div>
           </div>
         ) : null}
-        <AssistantMessages messages={messages} actions={actions} lang={lang} pending={pending} onChanged={() => router.refresh()} />
+        <AssistantMessages
+          messages={messages}
+          actions={actions}
+          lang={lang}
+          pending={pending}
+          onChanged={() => router.refresh()}
+          chatId={chatId}
+          path="/chat"
+          followups={followups}
+          onAsk={ask}
+        />
         {pending ? <p className="text-t11h text-ink-muted">{tr(lang, '생각하는 중…', 'Thinking…')}</p> : null}
       </div>
       {error ? (

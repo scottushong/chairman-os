@@ -145,6 +145,7 @@ import {
   type UserSettings,
 } from './types'
 import { assistantMethods } from './supabase-assistant'
+import { feedbackMethods } from './supabase-feedback'
 import { attachmentMethods } from './supabase-attachments'
 import { financeImportMethods } from './supabase-finance-imports'
 import { intakeMethods } from './supabase-intake'
@@ -817,6 +818,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     ...attachmentMethods(sb),
     // Phase 11 AI 어시스턴트(0046) — 대화 · 제안 · 사용량. 0046 전 DB를 견딘다(supabase-assistant.ts 머리 주석).
     ...assistantMethods(sb),
+    // 0069 권한 · 조직 조회 · AI 보완 의견 · 보완함. 0069 전 DB를 견딘다(supabase-feedback.ts 머리 주석).
+    ...feedbackMethods(sb),
     // ECOUNT 엑셀 업로드(0050 finance_imports) — 읽기는 0050 전 DB를 견딘다(supabase-finance-imports.ts 머리 주석).
     ...financeImportMethods(sb),
     // 0058 자료 받는 입구.

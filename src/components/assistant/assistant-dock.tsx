@@ -258,6 +258,10 @@ export function AssistantDock({ lang }: { lang: Lang }) {
                 onNavigate={() => {
                   if (window.matchMedia('(max-width: 1023px)').matches) setOpen(false)
                 }}
+                chatId={data.chatId}
+                path={pathname}
+                followups={data.followups}
+                onAsk={ask}
               />
               {pending ? <p className="pb-3 text-t11h text-ink-muted">{tr(lang, '읽고 계산하는 중…', 'Working…')}</p> : null}
               <div ref={endRef} />

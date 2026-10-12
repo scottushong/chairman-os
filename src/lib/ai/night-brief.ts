@@ -6,6 +6,7 @@ import { runAttentionStage, type AttentionStageResult } from '@/lib/attention/st
 import { orderProjects, projectClock } from '@/lib/chairman-project'
 import { formatEok } from '@/lib/format'
 import { initiativeClock, orderInitiatives, stalenessDays } from '@/lib/initiative'
+import { triageNight } from '@/lib/feedback/triage'
 import { sendKakaoBrief } from '@/lib/kakao/send-brief'
 import { financeBriefContext } from '@/lib/ledger/brief-context'
 import { createSupabaseRepository } from '@/lib/repository/supabase'
@@ -473,6 +474,20 @@ export async function runNightBrief(opts: {
         if (ledgerError) {
           console.error('[night-brief] brief-send ledger', ledgerError.code, ledgerError.message)
         }
+      }
+    }
+
+    /**
+     * 0069 «시스템 보완함» 밤 묶음 정리 — 맨 끝(브리핑 · 카톡보다 뒤). 대표가 버튼으로 하는 것과 같은 정리를 새 의견에만,
+     * 하룻밤 20개 상한. AIAgent 세션이라 «AI 정리 제외» · 취소 줄은 0069 정책이 아예 내주지 않는다. 실패해도 Job은 성공이다.
+     * 지시문은 저장될 뿐 어디에도 실행되지 않는다(lib/feedback/triage.ts 머리 주석).
+     */
+    if (opts.trigger === 'cron') {
+      try {
+        const fb = await triageNight(repo)
+        if (fb.triaged || fb.bundles || fb.failed) console.log('[night-brief] feedback triage', fb)
+      } catch (e) {
+        console.error('[night-brief] feedback triage', errorText(e))
       }
     }
   } catch (e) {

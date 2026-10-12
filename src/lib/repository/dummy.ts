@@ -45,6 +45,7 @@ import { dummyQuotes } from './dummy-quotes'
 import { dummyCostProduct, dummyCostReadAudit, dummyCosts, dummyGrantedAt, dummyProduction, dummySalesCost, noteDummyGrant } from './dummy-sales-cost'
 import * as books from './dummy-books'
 import { dummyAssistant } from './dummy-assistant'
+import { dummyFeedback } from './dummy-feedback'
 import * as chat from './dummy-chat'
 import * as city from './dummy-city'
 import * as groupware from './dummy-groupware'
@@ -782,6 +783,18 @@ export const dummyRepository: ChairmanRepository = {
   markChannelRead: chat.markChannelRead,
   listChannelReads: chat.listChannelReads,
   openDm: chat.openDm,
+  // 0069 — 권한 · 조직 조회 · AI 보완 의견 · 보완함(dummy-feedback.ts). 감사는 콘솔(dummy 감사 표는 이력 대상만 받는다).
+  ...dummyFeedback({
+    viewer: () => memoryPerson(dummyViewer().user_id),
+    people: () => memoryPeople,
+    teams: () => memoryTeams,
+    grants: (id) => dummyModuleGrants(id),
+    staffAdmin: (v, b) => dummyStaffAdmin(v, b),
+    businesses: () => [...businesses, ...memoryBusinesses].map((b) => b.business_id),
+    audit: (e) => {
+      if (process.env.NODE_ENV !== 'production') console.warn(`[dummy] audit ${e.entity_table} ${e.entity_id} ${e.note}`)
+    },
+  }),
   // Phase 11 — 대화 · 제안 · 사용량(dummy-assistant.ts). 확인 감사는 이 파일의 이력 저장소로 온다.
   ...dummyAssistant((e) => {
     memoryEntityAudit.push({

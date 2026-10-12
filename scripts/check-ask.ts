@@ -26,7 +26,11 @@ import {
   runAssistant,
 } from '../src/lib/ai/assistant/run'
 import { AMOUNT_INVALID_MESSAGE } from '../src/lib/approval-line'
+import { accessTarget } from '../src/lib/ai/assistant/access'
+import { followupAllowed, pickFollowups, splitFollowups } from '../src/lib/ai/assistant/followups'
 import { approvalSubmitError, submitApprovalWith } from '../src/lib/approval-submit'
+import { feedbackSensitivity, keywordReasons } from '../src/lib/feedback/sensitive'
+import { buildInstruction, scrub, sendable, triageOne } from '../src/lib/feedback/triage'
 import { kstToday } from '../src/lib/chairman-project'
 import { financeByBusiness, hasDraftGrant } from '../src/lib/module-grants'
 import { dummyRepository as repo } from '../src/lib/repository/dummy'
@@ -176,12 +180,15 @@ async function main() {
   assert.ok(ktools.every((n) => !n.startsWith('propose_')) && !ktools.includes('finance_query') && !ktools.includes('attachment_summaries'), `카카오에 쓰기 · 제한 도구가 열린다: ${ktools}`)
 
   await staffFlow()
+  await accessFlow()
+  await feedbackFlow()
 
   console.log(
     'PASS: 화면 변경 → «개발 세션에서 처리합니다»(데이터 요청은 통과) · 직원 재무 → 권한 없음 + 재무/회장 도구 없음 · 계산기(코드 · eval 없음 · 거절) · ' +
       'VANA 9월 합 = 원장 줄 합 · 없는 달 표시 · 기한 없는 이니셔티브 = 실제 줄 · VLING24 없으면 제안 없음 → 있으면 pending(미변경) → 남 확인 불가 → 주인 한 번 → 감사 «AI 제안, 회장 확인» · 검증(빈 칸 · 재무) · 카카오 읽기만 · ' +
       '오류 분류 · 대화 모양(번갈아 · 맥락 메모) · 직원 권한 밖 «권한이 없습니다 — … 대표에게» · 직원 도구(내 결재 · 마감 · 문서 · 전표 도움 · 양식 결재) · ' +
-      '양식 결재 빈 칸 · 금액 모양(0054 approval_amount_invalid 문장) → 카드 → 중복 없음 → «확인했어» = 버튼 안내 → 확인 → 결재선(상사 사슬) · 상사 결재 대기 · «첨부해줘» = «첨부» 칸 · 직원 글에 «회장» 없음',
+      '양식 결재 빈 칸 · 금액 모양(0054 approval_amount_invalid 문장) → 카드 → 중복 없음 → «확인했어» = 버튼 안내 → 확인 → 결재선(상사 사슬) · 상사 결재 대기 · «첨부해줘» = «첨부» 칸 · 직원 글에 «회장» 없음 · ' +
+      '0069 권한 조회(대표 표 + 조직도 링크 · 관리자 맡은 회사 사원 · 팀장만 · 사원 본인만 · 원가 «대표에게 문의») · 이어서 셋(서로 다름 · 권한 밖 없음 · «회장» 0) · 보완 의견(본인 답만 · 원문 · 민감 → 제외 · 정리 거부 · 지시문 형식 · SQL 낱말 같음)',
   )
 }
 
@@ -361,6 +368,144 @@ async function staffFlow() {
   for (const out of [templates, close, help, docs, denyForm, denyClose, att.answer, att2.answer, miss]) {
     assert.ok(!NO_BOSS.test(JSON.stringify(out)), `직원에게 «회장/Chairman»이 보인다: ${JSON.stringify(out).slice(0, 200)}`)
   }
+}
+
+/**
+ * 0069 — 권한 · 조직 조회(회장 결정 1 · 2) · 이어서 질문(3). 모델을 부르지 않는다: «X 권한은?»은 규칙 답(코드가 표로)이다.
+ * 대표 «경영지원팀장 권한은?» → 팀 · 상사 · 모듈 표 + 바꾸는 화면 링크 / 사용자 관리자(경영지원팀장 = DY 사용자 관리자) → 맡은 회사의
+ * 사원 · 팀장만 / 사원 → 본인만, 남은 «대표에게» / 직원에게 원가 권한 숨김 / 이어서 셋 · 서로 다름 · 권한 밖 없음 · 직원에게 «회장» 0.
+ */
+async function accessFlow() {
+  const NO_BOSS = /회장|chairman/i
+  const URL_RE = /https:\/\/chairman-os-eosin\.vercel\.app\/settings\/users\?person=[0-9a-f-]{36} → 조직도 → /
+  for (const [q, want] of [
+    ['김병훈 권한은?', '김병훈'],
+    ['김병훈 사원의 권한 알려줘', '김병훈'],
+    ['내 권한은?', 'me'],
+    ['제 권한 뭐예요?', 'me'],
+    ['경영지원팀장 권한', '경영지원팀장'],
+  ] as const) assert.equal(accessTarget(q), want, `권한 질문으로 안 읽힌다: ${q}`)
+  for (const q of ['결재 권한 누가 있어?', '재무 권한은 어디서 켜?', '원가 관리 권한자는?', '권한']) assert.equal(accessTarget(q), null, `권한 규칙이 잘못 가로챈다: ${q}`)
+
+  // ── 대표: 표 + 바꾸는 화면 링크 · 원가 줄도 ──
+  const chair = as('chairman')
+  const a = await ask(chair, '경영지원팀장 권한은?', '/settings/users')
+  assert.ok(a.ruled && a.tokens === 0, '권한 질문이 모델로 갔다')
+  assert.ok(a.answer.startsWith('경영지원팀장의 권한 · 팀 · 상사를 보시려는 것으로 이해했습니다.'), `의도 한 줄이 없다: ${a.answer.slice(0, 80)}`)
+  for (const part of ['팀: 경영지원', '직속 상사: DY 대표', '회사 범위: DY', '· 결재 올리기 — ', '· 사용자 관리자 — 있음(DY', '· 재무 입력 — 있음(DY', '· 월 마감 — 없음', '· 문서 등록 — 있음(DY', '· 결재 대장 열람 — 없음', '· 원가 관리 — 있음(DY (주) 원가 관리)', '· 구매 — 없음']) {
+    assert.ok(a.answer.includes(part), `대표 답에 «${part}»가 없다:\n${a.answer}`)
+  }
+  assert.match(a.answer, URL_RE, '대표 답에 바꾸는 화면 링크(조직도 → 그 사람)가 없다')
+  assert.ok(a.sources.some((x) => x.href.startsWith('/settings/users?person=')), '근거 카드에 조직도 링크가 없다')
+  assert.equal(a.followups.length, 3, `이어서 질문이 셋이 아니다: ${a.followups}`)
+  assert.equal(new Set(a.followups).size, 3, '이어서 질문이 겹친다')
+  const chairNone = await ask(chair, '없는사람 권한은?')
+  assert.ok(chairNone.answer.includes('찾지 못했습니다') && chairNone.answer.includes('어디서: ') && chairNone.answer.includes('대신: '), `못 찾을 때 왜 · 어디서 · 대신이 없다: ${chairNone.answer}`)
+
+  // ── 사용자 관리자(DY 경영지원팀장): 맡은 회사의 사원 · 팀장만, 원가 줄 숨김 ──
+  const admin = as('support_lead')
+  const b = await ask(admin, '영업 직원 권한은?')
+  assert.ok(b.answer.includes('영업 직원 — ') && b.answer.includes('팀: 영업'), `관리자가 맡은 회사 사원을 못 본다: ${b.answer}`)
+  assert.ok(b.answer.includes('· 원가 관련 — 원가 관련 권한은 대표에게 문의'), '관리자에게 원가 칸이 «대표에게 문의»로 안 바뀌었다')
+  assert.ok(!/영업 견적|· 영업 — |· 구매 — |원가 관리 — 있음/.test(b.answer), `관리자에게 원가 권한이 보인다: ${b.answer}`)
+  assert.ok(!b.answer.includes('https://'), '관리자에게 바꾸는 링크(대표 전용)를 줬다')
+  for (const who of ['DY 대표', '영업본부장']) {
+    const c = await ask(admin, `${who} 권한은?`)
+    assert.ok(c.answer.includes('다른 사람의 권한은 볼 수 없습니다') && c.answer.includes('대표에게 문의'), `관리자에게 ${who}가 보인다: ${c.answer}`)
+  }
+  const selfAdmin = await ask(admin, '내 권한은?')
+  assert.ok(selfAdmin.answer.includes('· 원가 관련 — 원가 관련 권한은 대표에게 문의') && !selfAdmin.answer.includes('원가 관리 — 있음'), '직원 본인의 원가 권한이 보인다')
+
+  // ── 사원: 본인만 · 남은 «대표에게» · 원가 숨김 · «회장» 0 ──
+  const staff = as('sales_staff')
+  const me = await ask(staff, '내 권한은?', '/me')
+  assert.ok(me.answer.startsWith('내 권한 · 팀 · 상사를 보시려는 것으로 이해했습니다.') && me.answer.includes('영업 직원 — '), `사원 본인 답이 아니다: ${me.answer}`)
+  assert.ok(me.answer.includes('· 원가 관련 — 원가 관련 권한은 대표에게 문의') && !/영업 견적/.test(me.answer), `사원에게 원가 권한(영업 견적)이 보인다: ${me.answer}`)
+  assert.ok(me.answer.includes('바꾸려면: 대표에게 요청하세요'), '사원에게 바꾸는 길(대표에게)이 없다')
+  const other = await ask(staff, '구매 직원 권한은?')
+  assert.ok(other.answer.includes('다른 사람의 권한은 볼 수 없습니다') && other.answer.includes('대신: '), `사원에게 남의 권한이 보이거나 대신이 없다: ${other.answer}`)
+  const staffTool = await tool('person_access').run({ query: 'me' }, makeContext({ question: '', repo, user: staff, path: '/', chatId: null, history: [] }))
+  assert.ok(!JSON.stringify(staffTool).includes('/sales') && !JSON.stringify(staffTool).includes('영업 견적'), '도구 결과에 원가 줄이 실렸다')
+
+  // ── 이어서 질문: 셋 · 서로 다름 · 권한 밖 없음 · 직원에게 «회장» 0 ──
+  for (const [ans, user] of [[me, staff], [other, staff], [b, admin], [selfAdmin, admin]] as const) {
+    assert.ok(!NO_BOSS.test(ans.answer + JSON.stringify(ans.sources) + ans.followups.join(' ')), `직원에게 «회장/Chairman»이 보인다: ${ans.answer.slice(0, 120)}`)
+    assert.equal(ans.followups.length, 3, `직원 이어서 질문이 셋이 아니다: ${ans.followups}`)
+    assert.equal(new Set(ans.followups.map((x) => x.replace(/\s/g, ''))).size, 3, '직원 이어서 질문이 겹친다')
+    const fctx = { role: user.role, financeAllowed: makeContext({ question: '', repo, user, path: '/', chatId: null, history: [] }).financeAllowed, initiativeAllowed: false, screen: 'home' as const, question: '' }
+    for (const f of ans.followups) assert.ok(followupAllowed(f, fctx), `권한 밖 이어서 질문: ${f}`)
+  }
+  // 모델이 권한 밖 질문을 권해도 코드가 버린다.
+  const staffCtx = { role: staff.role, financeAllowed: false, initiativeAllowed: false, screen: 'home' as const, question: '내 권한은?' }
+  const picked = pickFollowups(staffCtx, ['회장님 일정은?', '이 제품 원가 알려줘', 'BOM 보여줘', 'VANA 9월 손익', '기한 없는 이니셔티브', '내 권한은?', '내 업무 보여줘', '내 업무 보여 줘'])
+  assert.equal(picked.length, 3)
+  assert.ok(picked.every((x) => followupAllowed(x, staffCtx)) && !picked.some((x) => /회장|원가|BOM|손익|이니셔티브/.test(x)), `거름망이 권한 밖 질문을 통과시켰다: ${picked}`)
+  assert.equal(picked.filter((x) => x.replace(/\s/g, '') === '내업무보여줘').length, 1, '띄어쓰기만 다른 질문이 겹쳤다')
+  const split = splitFollowups('답입니다.\n\n[이어서] 내 업무 보여줘 | 결재 양식 뭐 있어? | 이번 달 마감 상태는?')
+  assert.deepEqual([split.body, split.picks.length], ['답입니다.', 3], '[이어서] 줄을 떼지 못했다')
+  // 규칙 답(개발 세션)에도 이어서 셋.
+  const dev = await ask(chair, '대시보드에 환율 그래프 추가해줘')
+  assert.equal(dev.answer, DEV_SESSION_LINE)
+  assert.equal(dev.followups.length, 3, '규칙 답에도 이어서 질문 셋이 붙어야 한다')
+  // 직원의 재무 거절도 끝내지 않는다 — 어디서 · 대신.
+  const fin = await ask(staff, 'VANA 9월 손익 합계')
+  assert.ok(fin.answer.includes('어디서: ') && fin.answer.includes('대신: '), `재무 거절에 어디서 · 대신이 없다: ${fin.answer}`)
+  ACCESS_SAMPLES.push(a.answer, me.answer)
+}
+
+/** 보고서용 실제 출력(대표 · 사원 권한 답). CHECK_ASK_PRINT=1이면 끝에 찍는다. */
+const ACCESS_SAMPLES: string[] = []
+
+/** 0069 보완 의견 — 본인 답에만 · 원문 복사 · 직원은 표를 못 읽음 · 민감 → AI 정리 제외 · 정리 거부 · 지시문 형식 · SQL 낱말 규칙과 같은 식. */
+async function feedbackFlow() {
+  const staff = as('sales_staff')
+  const actor = { user_id: staff.user_id, role: staff.role }
+  const chatId = await repo.createAiChat('0069 시험', actor, '/me')
+  await repo.appendAiMessage(chatId, 'user', '내 권한은?', [], actor)
+  await repo.appendAiMessage(chatId, 'assistant', '내 권한 · 팀 · 상사를 보시려는 것으로 이해했습니다.', [], actor)
+  await repo.appendAiMessage(chatId, 'user', '이 제품 단가는?', [], actor)
+  await repo.appendAiMessage(chatId, 'assistant', '단가 1,200원은 볼 수 없습니다.', [], actor)
+  const msgs = await repo.listAiChatMessages(chatId)
+  const [a1, a2] = msgs.filter((m) => m.role === 'assistant')
+  const s1 = feedbackSensitivity({ body: '권한 표가 더 자세했으면', question: '내 권한은?', answer: a1.content })
+  assert.ok(!s1.excluded, '평범한 의견이 제외로 잡혔다')
+  const f1 = await repo.submitAiFeedback({ message_id: a1.id, body: '권한 표가 더 자세했으면', path: '/me', business_id: 'biz_dy', ai_excluded: s1.excluded, excluded_reasons: s1.reasons })
+  await assert.rejects(repo.submitAiFeedback({ message_id: a1.id, body: '두 번', path: '/me', business_id: null, ai_excluded: false, excluded_reasons: [] }), /ai_feedback_duplicate/)
+  // 앱 판정을 false로 넘겨도 낱말 규칙이 켠다(둘째 겹 거울).
+  const f2 = await repo.submitAiFeedback({ message_id: a2.id, body: '이 답이 짧아요', path: '/me', business_id: null, ai_excluded: false, excluded_reasons: [] })
+  assert.deepEqual(await repo.listAiFeedback(), [], '직원이 보완함 표를 읽는다')
+  assert.equal((await repo.listMyAiFeedback()).length, 2, '내 의견이 둘이 아니다')
+  as('buy_staff')
+  await assert.rejects(repo.submitAiFeedback({ message_id: a1.id, body: '남의 답', path: '/', business_id: null, ai_excluded: false, excluded_reasons: [] }), /ai_feedback_message/)
+  assert.equal(await repo.cancelAiFeedback(f1), false, '남의 의견을 취소했다')
+
+  as('chairman')
+  const rows = await repo.listAiFeedback()
+  const r1 = rows.find((r) => r.feedback_id === f1)!
+  const r2 = rows.find((r) => r.feedback_id === f2)!
+  assert.ok(r1 && r1.question === '내 권한은?' && r1.answer === a1.content && r1.author_name === '영업 직원', '질문 · 답 원문 · 쓴 사람이 저장되지 않았다')
+  assert.ok(r2.ai_excluded && r2.excluded_reasons.includes('cost_number'), '«단가 1,200원»이 AI 정리 제외가 아니다')
+  assert.equal(sendable(r2)?.startsWith('AI 정리 제외'), true, '제외 줄을 AI로 보낼 수 있다')
+  assert.equal(sendable(r1), null)
+  await assert.rejects(repo.saveAiFeedbackTriage(f2, { summary: 's', expected: 'e', instruction: 'i', model: 'm' }), /ai_feedback_excluded/)
+  // 키 없이 «AI 정리»는 돈 들지 않게 멈춘다.
+  await assert.rejects(triageOne(repo, r1), /ANTHROPIC_API_KEY/)
+
+  // 지시문 형식 — 이 저장소의 블록 지시문(■ 현황 · ■ 회장 결정(회장 확인 필요) · ■ 보고 작성 규칙 · ■ 공통 규칙 · 단계 · 최종 보고).
+  const inst = buildInstruction(
+    { summary: 's', expected: 'e', situation: ['실사용 문제(2026-10-12, 사원 화면): 권한 표가 짧다'], decisions: ['권한 표에 회사별 줄을 더한다'], steps: ['현황 표', '검사 하나씩'], final_report: '답 예시' },
+    '보완 의견 · /me',
+  )
+  for (const h of ['■ 현황', '■ 회장 결정', '(회장 확인 필요)', '■ 보고 작성 규칙', '■ 공통 규칙', '최종 보고', 'git push 금지']) assert.ok(inst.includes(h), `지시문에 «${h}»가 없다`)
+  assert.deepEqual(keywordReasons(inst), [], `고정 지시문 글이 민감 낱말에 걸린다(DB가 저장을 거부한다): ${keywordReasons(inst)}`)
+  assert.equal(scrub('키 sk-ant-api03-abcdefghijklmnop 메일 a.b@x.com 전화 010-1234-5678'), '키 [지움] 메일 [이메일 지움] 전화 [전화 지움]')
+  // SQL ai_feedback_sensitive와 같은 낱말(한쪽만 고치면 겹이 어긋난다).
+  const sql = readFileSync('supabase/migrations/0069_ai_feedback.sql', 'utf8')
+  for (const w of ['배합', '처방', '레시피', 'recipe', 'formula', 'bom', '함량비', 'vault', '금고 등급', '원가', '단가', '시장가', '시세', '구매가', '매입가', '마진']) {
+    assert.ok(sql.includes(w.split(' ')[0]), `SQL 민감 낱말에 «${w}»가 없다`)
+    assert.ok(keywordReasons(`${w} 12`).length > 0, `앱 민감 낱말에 «${w}»가 없다`)
+  }
+  if (process.env.CHECK_ASK_PRINT) for (const x of ACCESS_SAMPLES) console.log(`\n----- 실제 출력 -----\n${x}`)
 }
 
 main().catch((e) => {
