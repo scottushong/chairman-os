@@ -180,12 +180,16 @@ begin
       insert into cost_purchase_lots (business_id, material_id, supplier_id, received_on, ordered_on, supplier_lot_no, qty_kg, unit_price,
                                       currency, fx_rate, freight_krw, duty_krw, other_krw, source, source_ref, note)
       values (o.business_id, o.material_id, o.supplier_id, o.received_on, o.ordered_on, o.supplier_lot_no, o.qty_kg, o.unit_price,
-              o.currency, o.fx_rate, o.freight_krw, o.duty_krw, o.other_krw + i.extra_cost, 'import', 'fin_import_lines:' || p_line,
-              left('자료 올리기 ⑦ OFFER 부대비 후보(0078) · 앞 LOT ' || o.lot_id, 500))
+              o.currency, o.fx_rate, o.freight_krw, o.duty_krw, o.other_krw + i.extra_cost,
+              -- 리뷰 고침 I4: 결재에서 온 LOT는 출처(approval · 결재 id)를 그대로 두고 ⑦ 줄은 메모에 적는다.
+              case when o.source = 'approval' then 'approval' else 'import' end,
+              case when o.source = 'approval' then o.source_ref else 'fin_import_lines:' || p_line end,
+              left('자료 올리기 ⑦ OFFER 부대비 후보(0078) · fin_import_lines:' || p_line || ' · 앞 LOT ' || o.lot_id, 500))
       returning lot_id into v_target;
     else
       select * into s from fin_sales_lines where line_id = p_line;
-      if p_product is null or coalesce(s.qty, 0) <= 0 then
+      if p_product is null or coalesce(s.qty, 0) <= 0
+         or not exists (select 1 from cost_products cp where cp.product_id = p_product and cp.business_id = p_business) then   -- 리뷰 고침 I3
         raise exception 'cost_candidate_invalid' using errcode = '22023';
       end if;
       -- 0067 sale_record가 영업 쓰기 문 · 날짜 · 값 검사 · 0시 등급 · 감사를 한다(여기서 다시 쓰지 않는다).
@@ -220,12 +224,35 @@ end;
 $fn$;
 
 -- =====================================================================
+-- 4-2절. 지킴 트리거(리뷰 고침 I5) — 0074를 고치지 않고 따로 더한다.
+--   후보 줄이 살아 있는 'lot' 결정(LOT · 판매로 넣음)에 쓰인 올리기는 바꾸기 · 되돌리기 거부(원가 쪽을 먼저 무효로).
+-- =====================================================================
+create or replace function cost_candidate_upload_guard() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $fn$
+begin
+  if old.status = 'applied' and new.status in ('replaced', 'reverted')
+     and exists (select 1 from cost_fin_candidate_decisions d
+                  where d.action = 'lot' and d.superseded_at is null and d.business_id = old.business_id
+                    and ((d.source_table = 'fin_purchase_in_lines' and exists (select 1 from fin_purchase_in_lines x where x.line_id = d.line_id and x.upload_id = old.upload_id))
+                      or (d.source_table = 'fin_import_lines' and exists (select 1 from fin_import_lines x where x.line_id = d.line_id and x.upload_id = old.upload_id))
+                      or (d.source_table = 'fin_sales_lines' and exists (select 1 from fin_sales_lines x where x.line_id = d.line_id and x.upload_id = old.upload_id)))) then
+    raise exception 'cost_candidate_live' using errcode = '23514', hint = '원가 LOT · 판매로 넣은 줄이 있습니다 — 그쪽을 먼저 무효로 하세요.';
+  end if;
+  return new;
+end;
+$fn$;
+drop trigger if exists cost_candidate_upload_guard_trigger on fin_uploads;
+create trigger cost_candidate_upload_guard_trigger before update of status on fin_uploads
+  for each row execute function cost_candidate_upload_guard();
+
+-- =====================================================================
 -- 5절. 함수 권한
 -- =====================================================================
 revoke all on function cost_candidate_gate(text) from public, anon;
 revoke all on function cost_fin_candidates(text, boolean) from public, anon;
 revoke all on function cost_fin_candidate_decide(text, text, bigint, text, text, text, text, date, text, text) from public, anon;
 revoke all on function cost_fin_candidates_line_ok(text, bigint, text) from public, anon, authenticated;
+revoke all on function cost_candidate_upload_guard() from public, anon, authenticated;
 grant execute on function cost_candidate_gate(text) to authenticated;
 grant execute on function cost_fin_candidates(text, boolean) to authenticated;
 grant execute on function cost_fin_candidate_decide(text, text, bigint, text, text, text, text, date, text, text) to authenticated;

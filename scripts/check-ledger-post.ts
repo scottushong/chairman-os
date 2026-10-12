@@ -89,6 +89,10 @@ async function db79() {
   assert.equal((await Q(U.chair)).length, 5, '0079: 대표 반영 대기 목록')
   await as(U.chair, `select feature_switch_set('ledger_post', 'biz_dy', true, 'all', '0079 시험')`)
   await refuses(Q(U.mem), /ledger_forbidden/, '0079: 장부 쓰기 없는 직원이 읽었다')
+  // 리뷰 고침 M1 · I2 — 음수 줄 거부 · 전표 날짜 달 = 원장 달(마감 달 아니면)
+  const l6 = await line(u1, pm, 10, '1530', -5, null)
+  await refuses(stage(U.chair, [l6], '2010'), /ledger_line_shape/, '0079: 음수 원장 줄이 대기에 들어갔다')
+  await refuses(stage(U.chair, [l5], '2010', `${pm2}-10`), /ledger_entry_date/, '0079: 다른 달 날짜로 대기')
   await refuses(as(null, `select * from ledger_post_queue('biz_dy', '${pm}')`), /permission denied/, '0079: anon')
   await refuses(as(U.ceo, `select * from fin_ledger_posts`), /permission denied/, '0079: 표 직접 읽기')
 
@@ -126,22 +130,42 @@ async function db79() {
     values ('biz_dy', '${pm2}-02', '1530', 1, 'debit', 'EC-1', 1, '', 'ecount', now())`)
   await refuses(stage(U.chair, [e1], '2010'), /ledger_books_has_ecount/, '0079: ECOUNT 전표가 있는 달에 반영 대기')
   await owner(`delete from journal_lines where slip_no = 'EC-1'`)
+  // 리뷰 고침 C1 — 0052 월별 업로드는 장부 줄을 'manual'로 쓰고 전표를 finance_import_slips에 남긴다. 그 길로도 거부.
+  await db.exec(`begin; set local session_replication_role = replica;
+    insert into journal_entries (business_id, slip_no, entry_date, memo, created_by) values ('biz_dy', 'EC-2', '${pm2}-03', '가짜 월별 업로드', '${U.chair}');
+    insert into finance_imports (import_id, business_id, kind, period_key, status, file_name, created_by) values ('00000000-0000-0000-0000-0000000079f1', 'biz_dy', 'monthly', '${pm2}', 'draft', '가짜.xlsx', '${U.chair}');
+    insert into finance_import_slips (business_id, month, slip_no, import_id) values ('biz_dy', '${pm2}', 'EC-2', '00000000-0000-0000-0000-0000000079f1');
+    commit;`)
+  await refuses(stage(U.chair, [e1], '2010', null, '이유'), /ledger_books_has_ecount/, '0079: 월별 업로드 전표(finance_import_slips)가 있는 달에 반영 대기')
+  await owner(`update finance_import_slips set superseded_at = now() where slip_no = 'EC-2'`)
+  // 리뷰 고침 I1 — 그 달에 0079가 아닌 다른 전표(EC-2가 남음)가 있으면 대표 · CFO + 이유만
+  await refuses(stage(U.ceo, [e1], '2010', null, '이유'), /ledger_books_has_entries/, '0079: 다른 전표가 있는 달에 회사 대표가 반영 대기')
+  await refuses(stage(U.chair, [e1], '2010'), /ledger_books_has_entries/, '0079: 다른 전표가 있는 달에 이유 없이')
 
   // 마감 달(0016 closings 확정): 회사 대표 거부 · 대표도 이유 필수 · 그 달 날짜는 0016이 거부 → 오늘 날짜로 반영
   await owner(`insert into closings (business_id, period, account_code, amount, closed_on, source, fetched_at, closed) values ('biz_dy', '${pm2}', '1530', 0, '${today}', 'manual', now(), true)`)
   await refuses(stage(U.ceo, [e1], '2010', null, '이유'), /ledger_closed_month/, '0079: 마감 달에 회사 대표가 반영 대기')
   await refuses(stage(U.chair, [e1], '2010'), /ledger_closed_month/, '0079: 마감 달에 이유 없이')
   const [{ v: pc }] = await stage(U.cfo, [e1], '2010', null, '마감 뒤 받은 원장')
-  await refuses(apply(U.cfo, pc), /closed_period/, '0079: 마감 달 날짜로 전표가 들어갔다(0016)')
+  await refuses(apply(U.cfo, pc), /ledger_closed_month/, '0079: 마감 달 반영에 반영하는 사람 이유가 없다(대기 이유로 대신 — M4)')
+  await refuses(apply(U.cfo, pc, '마감 뒤 반영'), /closed_period/, '0079: 마감 달 날짜로 전표가 들어갔다(0016)')
   await voidp(U.cfo, pc, '날짜 바꿔 다시')
   const [{ v: pc2 }] = await stage(U.cfo, [e1], '2010', today, '마감 뒤 받은 원장 — 당월')
-  const [{ v: sc }] = await apply(U.cfo, pc2)
+  const [{ v: sc }] = await apply(U.cfo, pc2, '당월 반영')
   assert.ok(sc.startsWith('M'), '0079: 당월 날짜 반영')
 
   // 원장 줄이 되돌려지면 반영 거부(대기 뒤 원천 바뀜)
   const [{ v: p5 }] = await stage(U.ceo, [l5], '2010')
   await owner(`update fin_ledger_lines set voided_at = now() where line_id = ${l5}`)
   await refuses(apply(U.ceo, p5), /ledger_source_changed/, '0079: 되돌린 원장 줄이 장부에 들어갔다')
+  assert.ok((await Q(U.ceo)).some((r) => Number(r.line_id) === l5 && r.post_id === p5), '0079: 원장 줄이 되돌려지자 반영 건이 목록에서 사라졌다(C2)')
+  // 리뷰 고침 C2 — 살아 있는 반영 건이 있는 원장 올리기는 바꾸기 · 되돌리기 거부
+  await refuses(owner(`update fin_uploads set status = 'reverted' where upload_id = '${u1}'`), /ledger_post_live/, '0079: 반영 건이 있는 원장 올리기를 되돌렸다')
+  // 반대 방향 — 반영된(posted) 원장 건이 있는 달(pm)에 월별 업로드 전표를 세우면 거부
+  await db.exec(`begin; set local session_replication_role = replica;
+    insert into journal_entries (business_id, slip_no, entry_date, memo, created_by) values ('biz_dy', 'EC-3', '${pm}-03', '가짜 월별 업로드', '${U.chair}'); commit;`)
+  await refuses(owner(`insert into finance_import_slips (business_id, month, slip_no, import_id) values ('biz_dy', '${pm}', 'EC-3', '00000000-0000-0000-0000-0000000079f1')`),
+    /ledger_post_month_posted/, '0079: 원장 반영된 달에 월별 업로드 전표가 섰다')
 
   // 감사 — 대기 · 반영 · 무효마다
   const [{ n: na }] = await owner<{ n: number }>(`select count(*)::int as n from audit_log where entity_table = 'fin_ledger_posts'`)

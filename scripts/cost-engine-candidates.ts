@@ -88,10 +88,15 @@ export async function candidates({ as, run, owner, p1, U }: CandidatesCtx) {
 
   // ① 판매 — 0067 sale_record. 원가 관리만(영업 쓰기 없음)은 거부 · 대표 됨.
   await refuses(decide(U.cost, 'fin_sales_lines', sal, 'lot', '판매 확인', `, null, null, null, null, '${p1}'`), /sale_not_found/, '0078: 영업 쓰기 없이 판매를 넣었다')
+  await refuses(decide(U.chair, 'fin_sales_lines', sal, 'lot', '판매 확인', `, null, null, null, null, 'prd_fake_nope_0078'`), /cost_candidate_invalid/, '0078: 다른 회사 · 없는 제품으로 판매를 넣었다(I3)')
   const [{ v: sale }] = await decide(U.chair, 'fin_sales_lines', sal, 'lot', '판매 확인', `, null, null, null, null, '${p1}'`)
   const [s] = await owner<{ kg: string; price: string }>(`select kg::text, price_krw_per_kg::text as price from cost_sales where sale_id = '${sale}'`)
   assert.deepEqual([Number(s.kg), Number(s.price)], [50, 9000], '0078: 판매 후보가 0067 판매 실적으로 들어가지 않았다')
 
+  // 리뷰 고침 I5 — LOT · 판매로 넣은 줄이 있는 올리기는 바꾸기 · 되돌리기 거부
+  for (const [t, id] of [['fin_purchase_in_lines', pin], ['fin_sales_lines', sal]] as const) {
+    await refuses(owner(`update fin_uploads set status = 'reverted' where upload_id = (select upload_id from ${t} where line_id = ${id})`), /cost_candidate_live/, `0078: 넣은 줄이 있는 올리기를 되돌렸다(${t})`)
+  }
   // 감사 — 결정마다 한 줄(나중에 · 무시 · LOT · Landed · 판매 = 5)
   assert.equal(await audits(), a0 + 5, '0078: 결정마다 감사 한 줄이 아니다')
 

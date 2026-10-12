@@ -2813,3 +2813,8 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 
 ## 2026-10-13 STEP 0 — 0075 · 0077 리뷰 고침 2 — 미룬 것(대표 확인)
 - (대표 확인) 상품(4610) 매입이 입고명세서(fin_purchase_in_lines)에도 들어오면 «입고 순매입 → 재고 → 매출원가»와 «장부 4610 그대로 더함»이 두 번 잡힌다. 상품을 입고명세서에 넣는지 대표가 정해 주면 0075에서 상품 품목을 빼거나 4610을 빼는 규칙을 고른다. 지금은 화면 상품매출원가 줄로 보이게만.
+
+## 2026-10-13 0078 · 0079 리뷰 고침 — 미룬 것
+- (미룸) 0078 · 0079 리뷰 Minor M2 · M3 · M5~M9 — 리뷰 메모(이 블록 지시 fix0078-79) 원문 그대로 다음 블록에서. 이번에는 Critical 2 · Important 3 · M1 · M4만(시간 상자 · 장부 정확성 먼저).
+- (미룸) 0079 staging 시험에 새 트리거 두 개(ledger_post_upload_guard · ledger_post_import_guard) · 월별 업로드 전표 길 시험을 더하지 않음 — PGlite check:ledger-post가 본다(staging에 가짜 finance_imports를 세우면 지우기 어렵다).
+- (미룸) 0078 ⑦ approval 출처 유지(I4)는 PGlite 시험이 없음(시험 LOT가 결재 출처가 아니다) — 코드만.

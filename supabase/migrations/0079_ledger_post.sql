@@ -99,6 +99,37 @@ begin
 end;
 $fn$;
 
+/** 장부 쪽 검사(리뷰 고침 C1 · I1) — 대기 · 반영 때 그 달(원장 달 · 전표 날짜 달 모두)에 부른다.
+ *   · ECOUNT 원천: 장부 줄 source 'ecount' 또는 0050/0052 월별 업로드 전표(finance_import_slips 살아 있는 줄)가 있으면 거부.
+ *   · 다른 전표(0079가 만든 전표 · 그 역분개가 아닌 것 — 예: 손으로 넣은 매입 4510)가 있으면 대표 · 그룹 CFO + 이유만. */
+create or replace function ledger_post_books_check(p_business text, p_month text, p_top boolean, p_reason text) returns void
+language plpgsql stable security definer set search_path = public, pg_temp as $fn$
+begin
+  if exists (select 1 from journal_lines j where j.business_id = p_business and to_char(j.entry_date, 'YYYY-MM') = p_month and j.source = 'ecount')
+     or exists (select 1 from finance_import_slips f where f.business_id = p_business and f.month = p_month and f.superseded_at is null) then
+    raise exception 'ledger_books_has_ecount' using errcode = '23514';
+  end if;
+  if exists (select 1 from journal_entries e where e.business_id = p_business and to_char(e.entry_date, 'YYYY-MM') = p_month
+                and not exists (select 1 from fin_ledger_posts fp where fp.business_id = p_business
+                                   and e.slip_no in (fp.slip_no, fp.reversal_slip)))
+     and (not p_top or p_reason is null) then
+    raise exception 'ledger_books_has_entries' using errcode = '42501';
+  end if;
+end;
+$fn$;
+
+/** 전표 날짜 규칙(리뷰 고침 I2) — 전표 날짜의 달 = 원장 달. 예외는 원장 달이 0016 마감일 때 뒤의 열린 달. */
+create or replace function ledger_post_date_ok(p_business text, p_period text, p_date date) returns void
+language plpgsql stable security definer set search_path = public, pg_temp as $fn$
+declare
+  v_m text := to_char(p_date, 'YYYY-MM');
+begin
+  if v_m = p_period then return; end if;
+  if fin_month_closed(p_business, p_period) and v_m > p_period and not fin_month_closed(p_business, v_m) then return; end if;
+  raise exception 'ledger_entry_date' using errcode = '22023';
+end;
+$fn$;
+
 -- =====================================================================
 -- 3절. 반영 대기
 -- =====================================================================
@@ -148,15 +179,15 @@ begin
     raise exception 'ledger_one_period' using errcode = '22023';
   end if;
   if exists (select 1 from fin_ledger_lines l where l.line_id = any(v_lines)
-              and (l.account_code is null or (coalesce(l.debit, 0) > 0) = (coalesce(l.credit, 0) > 0))) then
-    raise exception 'ledger_line_shape' using errcode = '22023';   -- 계정 없음 · 차변 · 대변 둘 다(또는 0)
+              and (l.account_code is null or (coalesce(l.debit, 0) > 0) = (coalesce(l.credit, 0) > 0)
+                   or coalesce(l.debit, 0) < 0 or coalesce(l.credit, 0) < 0)) then
+    raise exception 'ledger_line_shape' using errcode = '22023';   -- 계정 없음 · 차변 · 대변 둘 다(또는 0) · 음수(리뷰 고침 M1)
   end if;
   if exists (select 1 from fin_ledger_post_lines pl where pl.line_id = any(v_lines) and pl.released_at is null) then
     raise exception 'ledger_already_staged' using errcode = '23505';
   end if;
-  if exists (select 1 from journal_lines j where j.business_id = p_business and to_char(j.entry_date, 'YYYY-MM') = v_period and j.source = 'ecount') then
-    raise exception 'ledger_books_has_ecount' using errcode = '23514';
-  end if;
+  v_date := coalesce(p_entry_date, v_date, (to_date(v_period || '-01', 'YYYY-MM-DD') + interval '1 month - 1 day')::date);
+  perform ledger_post_date_ok(p_business, v_period, v_date);
   if v_dr <> v_cr and nullif(btrim(coalesce(p_counter_account, '')), '') is null then
     raise exception 'ledger_unbalanced' using errcode = '22023';
   end if;
@@ -164,9 +195,12 @@ begin
   if v_closed and (not v_top or v_reason is null) then
     raise exception 'ledger_closed_month' using errcode = '42501';
   end if;
+  perform ledger_post_books_check(p_business, v_period, v_top, v_reason);
+  if to_char(v_date, 'YYYY-MM') <> v_period then
+    perform ledger_post_books_check(p_business, to_char(v_date, 'YYYY-MM'), v_top, v_reason);
+  end if;
   insert into fin_ledger_posts (business_id, period, entry_date, counter_account, memo, reason, closed_month)
-  values (p_business, v_period,
-          coalesce(p_entry_date, v_date, (to_date(v_period || '-01', 'YYYY-MM-DD') + interval '1 month - 1 day')::date),
+  values (p_business, v_period, v_date,
           case when v_dr <> v_cr then btrim(p_counter_account) end,
           left('계정별 원장 반영 ' || v_period || ' · ' || cardinality(v_lines) || '줄', 200), left(v_reason, 300), v_closed)
   returning post_id into v_id;
@@ -199,11 +233,13 @@ begin
   perform ledger_post_gate(p.business_id);
   if p.status <> 'pending' then raise exception 'ledger_not_pending' using errcode = '23514'; end if;
   if (p.closed_month or ledger_post_closed(p.business_id, p.period) or ledger_post_closed(p.business_id, to_char(p.entry_date, 'YYYY-MM')))
-     and (not v_top or coalesce(v_reason, p.reason) is null) then
+     and (not v_top or v_reason is null) then   -- 반영하는 사람이 제 이유를 적는다(대기 이유로 대신하지 않음 — 리뷰 고침 M4)
     raise exception 'ledger_closed_month' using errcode = '42501';
   end if;
-  if exists (select 1 from journal_lines j where j.business_id = p.business_id and to_char(j.entry_date, 'YYYY-MM') = p.period and j.source = 'ecount') then
-    raise exception 'ledger_books_has_ecount' using errcode = '23514';
+  perform ledger_post_date_ok(p.business_id, p.period, p.entry_date);
+  perform ledger_post_books_check(p.business_id, p.period, v_top, v_reason);
+  if to_char(p.entry_date, 'YYYY-MM') <> p.period then
+    perform ledger_post_books_check(p.business_id, to_char(p.entry_date, 'YYYY-MM'), v_top, v_reason);
   end if;
   select jsonb_agg(jsonb_build_object('account_code', l.account_code,
                                       'side', case when coalesce(l.debit, 0) > 0 then 'debit' else 'credit' end,
@@ -296,17 +332,56 @@ begin
       select fp.post_id, fp.status, fp.slip_no from fin_ledger_post_lines pl join fin_ledger_posts fp on fp.post_id = pl.post_id
        where pl.line_id = l.line_id and pl.released_at is null limit 1
     ) lp on true
-   where l.business_id = p_business and l.period = p_period and l.voided_at is null
+   -- 되돌려진 원장 줄도 살아 있는 반영 건에 묶여 있으면 보인다(건이 목록에서 사라지지 않게 — 리뷰 고침 C2).
+   where l.business_id = p_business and l.period = p_period and (l.voided_at is null or lp.post_id is not null)
    order by l.tx_date nulls last, l.row_no
    limit 2000;
 end;
 $fn$;
 
 -- =====================================================================
+-- 6-2절. 지킴 트리거(리뷰 고침 C1 · C2) — 0050 · 0072 · 0074를 고치지 않고 이 파일에서 더한다.
+-- =====================================================================
+/** ⑤ 원장 올리기의 바꾸기 · 되돌리기는 그 원장 줄이 살아 있는 반영 건(대기 · 반영)에 있으면 거부 — 장부 반영을 먼저 무효로. */
+create or replace function ledger_post_upload_guard() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $fn$
+begin
+  if old.status = 'applied' and new.status in ('replaced', 'reverted')
+     and exists (select 1 from fin_ledger_lines l join fin_ledger_post_lines pl on pl.line_id = l.line_id and pl.released_at is null
+                  where l.upload_id = old.upload_id) then
+    raise exception 'ledger_post_live' using errcode = '23514', hint = '장부 반영을 먼저 무효로 하세요(장부 반영 화면).';
+  end if;
+  return new;
+end;
+$fn$;
+drop trigger if exists ledger_post_upload_guard_trigger on fin_uploads;
+create trigger ledger_post_upload_guard_trigger before update of status on fin_uploads
+  for each row execute function ledger_post_upload_guard();
+
+/** 반대 방향(C1): 월별 ECOUNT 업로드(0050/0052)가 전표를 세우려는 달에 이미 반영된(posted) 원장 건이 있으면 거부. */
+create or replace function ledger_post_import_guard() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $fn$
+begin
+  if exists (select 1 from fin_ledger_posts fp where fp.business_id = new.business_id and fp.status = 'posted'
+                and (fp.period = new.month or to_char(fp.entry_date, 'YYYY-MM') = new.month)) then
+    raise exception 'ledger_post_month_posted' using errcode = '23514', hint = '이 달은 계정별 원장이 장부에 반영돼 있습니다 — 반영을 무효로 한 뒤 올리세요.';
+  end if;
+  return new;
+end;
+$fn$;
+drop trigger if exists ledger_post_import_guard_trigger on finance_import_slips;
+create trigger ledger_post_import_guard_trigger before insert on finance_import_slips
+  for each row execute function ledger_post_import_guard();
+
+-- =====================================================================
 -- 7절. 함수 권한
 -- =====================================================================
 revoke all on function ledger_post_closed(text, text) from public, anon, authenticated;
 revoke all on function ledger_post_gate(text) from public, anon, authenticated;
+revoke all on function ledger_post_books_check(text, text, boolean, text) from public, anon, authenticated;
+revoke all on function ledger_post_date_ok(text, text, date) from public, anon, authenticated;
+revoke all on function ledger_post_upload_guard() from public, anon, authenticated;
+revoke all on function ledger_post_import_guard() from public, anon, authenticated;
 revoke all on function ledger_post_stage(text, bigint[], text, date, text) from public, anon;
 revoke all on function ledger_post_apply(uuid, text) from public, anon;
 revoke all on function ledger_post_void(uuid, text) from public, anon;
