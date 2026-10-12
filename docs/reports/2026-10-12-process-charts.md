@@ -54,7 +54,7 @@
 1. **«댓글만»**: 업무에 댓글 기능 자체가 없어서 만들지 않았다. 시트 업무는 수정 손잡이를 끄고 «시트에서 고치세요»만 보인다.
 2. 탭 이름(팀 이름)을 바꾸면 옛 줄 · 업무가 그대로 남고 새 프로젝트로 다시 생긴다(DEFERRED). cron은 1분 제한에 걸리면 그날을 거른다(재시도 없음).
 3. 진짜 구글 호출 · staging 쓰기는 하지 않았다.
-4. Vercel cron 한도(Hobby 하루 1개)는 저장소 기록 기준이다 — 지금 요금제를 Vercel 화면에서 확인해야 한다.
+4. ~~Vercel cron 한도는 저장소 기록 기준~~ → 2026-10-13 확인(PHASE 9): https://vercel.com/docs/cron-jobs/usage-and-pricing — Hobby는 cron 100개 · 최소 간격 하루 1번 · 시각 정밀도 시간 단위(±59분). `vercel.json`의 `0 18 * * *`(UTC) = 하루 1번 → 한도 안, 실제로는 03:00~03:59 KST 사이에 돈다. 막히면 GitHub Actions로(결정 74 · `docs\reports\2026-10-12-phase9.md`).
 
 ## 회장이 할 일
 

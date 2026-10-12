@@ -55,6 +55,10 @@ https://console.cloud.google.com/iam-admin/serviceaccounts
 
 같은 주소(3단계 목록)에서:
 
+```
+https://console.cloud.google.com/iam-admin/serviceaccounts
+```
+
 1. 방금 만든 `process-chart-reader` 이메일을 클릭
 2. 위 탭에서 **키** 클릭
 3. **키 추가** → **새 키 만들기**
@@ -66,7 +70,11 @@ https://console.cloud.google.com/iam-admin/serviceaccounts
 
 ## 5. 시트마다 서비스 계정에 «뷰어»로 공유
 
-팀 시트(연구소 · 영업 · 경영지원)마다 한 번씩:
+팀 시트(연구소 · 영업 · 경영지원)마다 한 번씩(시트 목록 주소 — 비용 없음):
+
+```
+https://docs.google.com/spreadsheets/
+```
 
 1. 구글 시트를 엽니다.
 2. 오른쪽 위 **공유** 클릭
