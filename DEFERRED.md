@@ -2755,3 +2755,9 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - 세무사 결산서는 fin_* 대신 «공식 결산» 미리보기(계정 맞추기 · 원장 부호 · 균형) → 사람이 기존 saveOfficialStatement(0020)로 연 결산 저장. 미리보기는 저장하지 않음(카드 상태만). fin_uploads에는 «공식 결산으로 보냄» 실패 줄(내용 없음)을 남겨 하루 AI 한도에 센다. 다른 선택지: 0073에 공식 결산 초안 표.
 - 공식 결산 부호: 매출 · 부채 · 자본 · 영업외수익(이름에 수익 · 이익) · 누계액 · 충당금은 음수, 나머지 양수. 괄호 음수로 찍힌 누계액은 그대로.
 - 직원(입구 스위치 꺼짐) PDF · 사진은 카드 상태 «준비 중»(later) + 실패 기록(MSG.pdfLater). 엑셀은 그대로.
+
+## 2026-10-12 PHASE 2 — 0074 · 0073 고침 리뷰 Minor
+- `ownsUpload`가 listFinUploads(300줄 상한)로 찾는다 — 바쁜 회사의 오래된 올리기 되돌리기를 잘못 거부할 수 있다. upload_id + business_id 직접 조회로 바꾸기.
+- `cancelIntakeAction`은 그룹 줄로 본다 — 그룹 꺼짐 · 회사 켜짐이면 취소가 조용히 안 되고 첨부 · 입구 줄이 남는다. 첨부의 회사를 먼저 읽기.
+- `whoFor`: 스위치가 꺼진 회사 줄도 «세션 만료» 문구 — 의도(존재 숨김)지만 헷갈림.
+- 0074 staging 시험은 inventory · GroupCFO 갈래를 따로 돌리지 않는다(트리거 같은 조건 한 줄).

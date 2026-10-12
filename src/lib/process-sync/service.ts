@@ -3,6 +3,7 @@ import 'server-only'
 import type { SupabaseClient } from '@supabase/supabase-js'
 
 import { DATA_MODE } from '@/lib/env'
+import { featureMethods } from '@/lib/repository/supabase-features'
 import { dummyProcessChartById } from '@/lib/repository/dummy-books'
 import { dummyProcessSyncWriter } from '@/lib/repository/dummy-process-sync'
 import { signInServiceAccount } from '@/lib/supabase/service-account'
@@ -108,6 +109,10 @@ export async function syncAllCharts(): Promise<{ chart_id: number; team: string;
   if (DATA_MODE === 'dummy') return []
   const sb = await agentSession()
   try {
+    // 0073 스위치 «프로세스 차트» — 그룹 줄이 꺼졌으면 새벽 동기화도 쉰다(0073 리뷰 I3). 표 없음 = 기본(켜짐) · 그 밖 읽기 실패 = 쉼.
+    const rows = await featureMethods(sb).listFeatureSwitches().catch(() => 'fail' as const)
+    if (rows === 'fail') return []
+    if (rows && rows.find((r) => r.feature_key === 'process_charts' && r.business_id === null)?.enabled === false) return []
     const { data, error } = await sb.rpc('process_chart_sync_targets')
     if (error) throw new Error(`process_chart_sync_targets ${error.code ?? '?'}: ${error.message}`)
     const targets = (data ?? []) as ProcessSyncTarget[]

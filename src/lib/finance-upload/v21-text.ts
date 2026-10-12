@@ -56,6 +56,7 @@ const ERR: Record<string, string> = {
   fin_tx_member_taken: '이미 다른 묶음에 든 줄입니다.',
   fin_value_state: '빈칸 · 0 표시가 금액과 맞지 않습니다(빈칸은 0이 아닙니다).',
   fin_upload_closed: '마감된 달입니다 — 대표 · CFO가 이유를 적어야 합니다.',
+  fin_replace_restricted: '원료 출고 · 재고 자료의 «바꾸기»는 대표 · CFO만 합니다.',
   fin_upload_denied: '이 회사의 재무를 넣을 권한이 없습니다.',
   fin_upload_period: '월(YYYY-MM)을 확인하세요.',
   fin_upload_unavailable: '아직 준비 중입니다(0072 반영 전).',

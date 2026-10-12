@@ -69,6 +69,7 @@ type Methods = Pick<
   | 'finDedupeSettingSave'
   | 'listFinRecloseFlags'
   | 'finRecloseClear'
+  | 'finRowBusiness'
 >
 
 interface Line {
@@ -138,6 +139,9 @@ store.groups ??= []
 store.members ??= []
 store.dedupe ??= new Map()
 store.flags ??= []
+
+/** 0074 — 바꾸기 · 되돌리기를 대표 · CFO만 하는 종류. */
+const RESTRICTED = new Set<string>(['material_issue', 'inventory'])
 
 /** 시험이 줄을 읽는다(dummy만 — live에는 표를 직접 읽는 화면이 다음 블록이다). */
 export function dummyFinLines(): readonly Line[] {
@@ -292,6 +296,8 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
       if (x.auto && (old.length || closed || x.dup_suspects === null || x.dup_suspects === undefined || x.dup_suspects > 0)) throw new Error('fin_upload_auto_blocked')
       if (closed && !(chairOrCfo(d.viewer().role) && reasonOk(x.reason))) throw new Error('fin_upload_closed')
       if (old.length && x.overlap === 'none') throw new Error('fin_upload_overlap')
+      // 0074 거울: 원료 출고 · 재고의 바꾸기는 대표 · CFO만(전후 합계 차이로 원료 하나의 양이 드러나지 않게). 무엇을 바꾸기 전에 거부한다.
+      if (old.length && x.overlap === 'replace' && old.some((u) => RESTRICTED.has(u.kind)) && !chairOrCfo(d.viewer().role)) throw new Error('fin_replace_restricted')
       const overlap = old.length ? x.overlap : 'none'
       const status: FinUpload['status'] = overlap === 'keep_old' ? 'skipped' : 'applied'
       let id = x.upload_id
@@ -362,6 +368,8 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
       if (u.status !== 'applied') return false
       if (u.applied_at && Date.parse(u.applied_at) < Date.now() - 7 * 86_400_000) throw new Error('fin_upload_revert_expired')
       if (u.period && (await d.closed(u.business_id, u.period)) && !chairOrCfo(d.viewer().role)) throw new Error('fin_upload_closed')
+      // 0074 거울: 원료 출고 · 재고의 되돌리기도 대표 · CFO만(되돌리기 뒤 다시 넣기 = 바꾸기와 같은 차분).
+      if (RESTRICTED.has(u.kind) && !chairOrCfo(d.viewer().role)) throw new Error('fin_replace_restricted')
       voidRows([id], true)
       const prev = store.uploads.filter((x) => x.replaced_by === id && x.status === 'replaced')
       voidRows(prev.map((x) => x.upload_id), false)
@@ -390,6 +398,11 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
     },
 
     /* ───── 0072 ───── */
+    async finRowBusiness(kind, id) {
+      ensureDemo()
+      const biz = kind === 'valuation' ? store.valuations.find((x) => x.valuation_id === id)?.business_id : kind === 'tx_group' ? store.groups.find((x) => x.group_id === id)?.business_id : store.flags.find((x) => x.flag_id === id)?.business_id
+      return biz && d.canRead(biz) ? biz : null
+    },
     async listFinValuations(businessId, period) {
       ensureDemo()
       if (!d.canRead(businessId)) return []

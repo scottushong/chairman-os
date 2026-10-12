@@ -143,7 +143,7 @@ export function switchFor(rows: readonly FeatureSwitchRow[] | null, key: Feature
 }
 
 /**
- * 판정(순수). rows가 null이면(0073 전 DB · 읽기 실패) 기본값 — 켜짐 + 기본 범위.
+ * 판정(순수). rows가 null이면(0073 전 DB — 표 없음) 기본값. 그 밖 읽기 실패는 features-server가 closedFeatureRows(전부 꺼짐)를 넘긴다 — 켜짐 + 기본 범위.
  * 0073이 있는데 그룹 줄이 없는 키는 0073 feature_on처럼 꺼짐이 아니라 기본값으로 둔다 — 앱이 DB보다 먼저 나가도 화면이 사라지지 않게.
  */
 export function featureOnFor(rows: readonly FeatureSwitchRow[] | null, key: FeatureKey, role: Role | null | undefined, businessId?: string | null): boolean {
@@ -163,6 +163,11 @@ export function defaultFeatureRows(): FeatureSwitchRow[] {
     updated_by: null,
     updated_at: '2026-10-12T00:00:00.000Z',
   }))
+}
+
+/** 스위치를 못 읽었을 때(표는 있는데 오류) — 모든 기능 꺼짐(features-server.ts · 0073 리뷰 I4). */
+export function closedFeatureRows(): FeatureSwitchRow[] {
+  return defaultFeatureRows().map((r) => ({ ...r, enabled: false, reason: '스위치를 못 읽음 — 꺼짐' }))
 }
 
 /** 기능 → 그 기능이 세우는 메뉴 키(lib/nav.ts). 꺼진 기능의 메뉴는 navFor가 뺀다. */

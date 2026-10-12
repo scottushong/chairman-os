@@ -62,6 +62,7 @@ type Methods = Pick<
   | 'finDedupeSettingSave'
   | 'listFinRecloseFlags'
   | 'finRecloseClear'
+  | 'finRowBusiness'
 >
 
 const DEFAULT_DEDUPE: FinDedupeSetting = { amount_base: 'ledger', qty_base: 'r2_ecount' }
@@ -150,6 +151,13 @@ export function financeUploadMethods(sb: SupabaseClient): Methods {
     },
 
     /* ───── 0072 ───── */
+    async finRowBusiness(kind, id) {
+      const [table, col] = kind === 'valuation' ? ['fin_inventory_valuations', 'valuation_id'] : kind === 'tx_group' ? ['fin_tx_groups', 'group_id'] : ['fin_reclose_flags', 'flag_id']
+      const { data, error } = await sb.from(table).select('business_id').eq(col, id).maybeSingle()
+      if (error && MISSING.has(error.code ?? '')) return null
+      if (error) fail(table, error)
+      return (data as { business_id?: string } | null)?.business_id ?? null
+    },
     async listFinValuations(businessId, period) {
       const { data, error } = await sb.from('fin_inventory_valuations').select('*').eq('business_id', businessId).eq('period', period).order('entered_at', { ascending: false }).limit(50)
       if (error && MISSING.has(error.code ?? '')) return []

@@ -2,21 +2,22 @@ import 'server-only'
 
 import { cache } from 'react'
 
-import { featureOnFor, hiddenNavKeys, type FeatureKey, type FeatureSwitchRow } from '@/lib/features'
+import { closedFeatureRows, featureOnFor, hiddenNavKeys, type FeatureKey, type FeatureSwitchRow } from '@/lib/features'
 import { getRepository } from '@/lib/repository'
 import type { Role, SessionUser } from '@/types'
 
 /**
  * 기능 스위치(0073)를 DB에서 읽는 서버 쪽. 요청당 한 번만 읽는다(React cache — 요청이 끝나면 버려진다).
- * 0073 전 DB · 읽기 실패면 null → lib/features.ts 기본값(앱이 DB보다 먼저 나가도 화면이 그대로).
+ * 0073 전 DB(표 없음)면 null → lib/features.ts 기본값(앱이 DB보다 먼저 나가도 화면이 그대로).
+ * 그 밖의 읽기 실패는 전부 꺼짐 — 대표가 끈 기능이 잠깐의 DB 오류로 다시 열리면 안 된다(0073 리뷰 I4).
  * dummy 모드는 dummy-features.ts의 메모리 줄(같은 기본값)을 읽는다.
  */
 export const loadFeatureSwitches = cache(async function loadFeatureSwitches(): Promise<FeatureSwitchRow[] | null> {
   try {
     return await (await getRepository()).listFeatureSwitches()
   } catch (e) {
-    console.error('[features] 스위치를 못 읽었다 — 기본값으로', e)
-    return null
+    console.error('[features] 스위치를 못 읽었다 — 이 요청은 전부 꺼짐으로', e)
+    return closedFeatureRows()
   }
 })
 

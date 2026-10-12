@@ -773,6 +773,8 @@ export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods,
   /** 열린 «재마감 대상»(다시 마감하면 풀린다). */
   listFinRecloseFlags(businessId: string): Promise<FinRecloseFlag[]>
   finRecloseClear(flagId: string, note: string | null): Promise<boolean>
+  /** 0073 리뷰 I1 — 줄 id(평가금액 · 묶음 · 재마감 대상)의 실제 회사. 못 보면 null(스위치를 화면이 보낸 회사가 아니라 이 회사로 본다). */
+  finRowBusiness(kind: 'valuation' | 'tx_group' | 'reclose', id: string): Promise<string | null>
   /** 0055 staff_admin_invite — 감사 · 회장 알림까지 DB가 한 트랜잭션으로 한다. 오류는 'staff_admin_*' 키로 던진다. */
   staffAdminInvite(input: StaffAdminInviteInput): Promise<UserInvitation>
   /** 0055 staff_admin_revoke_invitation — 본인이 넣은 미수락 위임 초대만. */
