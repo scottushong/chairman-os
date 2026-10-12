@@ -309,7 +309,13 @@ async function main() {
   }
   process.env.DUMMY_USER = 'support_lead'
   const ip2 = (await repo.finUploadPending(iss2[0].upload_id!))!
-  await repo.finUploadApply({ business_id: BIZ, kind: 'material_issue', period: '2099-04', file_name: 'x', file_sha256: 'x', sheet_name: null, ai_confidence: 'high', ai_used: 0, auto: false, rows: ip2.rows, people: null, overlap: 'replace', reason: '새 출고명세', upload_id: iss2[0].upload_id, dup_suspects: null })
+  const apply2 = { business_id: BIZ, kind: 'material_issue' as const, period: '2099-04', file_name: 'x', file_sha256: 'x', sheet_name: null, ai_confidence: 'high' as const, ai_used: 0, auto: false, rows: ip2.rows, people: null, overlap: 'replace' as const, reason: '새 출고명세', upload_id: iss2[0].upload_id, dup_suspects: null }
+  // 0074: 원료 출고 바꾸기는 대표 · CFO만 — 직원은 거부되고 아무것도 바뀌지 않는다(대기 줄 그대로).
+  await assert.rejects(repo.finUploadApply(apply2), /fin_replace_restricted/)
+  assert.ok((await repo.finUploadPending(iss2[0].upload_id!))?.rows.length, '거부 뒤 대기 줄이 사라졌다')
+  process.env.DUMMY_USER = 'chairman'
+  await repo.finUploadApply(apply2)
+  process.env.DUMMY_USER = 'support_lead'
   const merged = dummyFinLines().find((l) => l.kind === 'material_issue' && l.period === '2099-04' && !l.voided_at && l.row.material === '가짜 원료 마')
   assert.equal(merged?.row.qty_kg, 77, 'kg가 대기 줄에서 붙지 않았다')
   const sum = (await repo.finIssueSummary(BIZ, '2099-04'))!

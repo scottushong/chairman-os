@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 
 import { currentUser } from '@/lib/auth/session'
+import { featureOn } from '@/lib/features-server'
 import { EMBED_PROBLEM_KO, embedProblem, parseSheetId, parseSheetTab } from '@/lib/process-chart'
 import { getRepository } from '@/lib/repository'
 
@@ -54,6 +55,8 @@ export async function saveProcessChart(input: {
 
   const user = await currentUser()
   if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  // 0073 스위치 «프로세스 차트» — 관리 화면(/process-charts)이 꺼지면 이 길도 닫는다(0071 리뷰 뒤 0073 리뷰 I3).
+  if (!(await featureOn(user, 'process_charts'))) return { error: '지금은 쓸 수 없는 기능입니다.' }
 
   const rawId = Number(input.id)
   const rawOrder = Number(input.sortOrder)
@@ -99,6 +102,8 @@ export async function deleteProcessChart(id: unknown): Promise<ProcessChartState
 
   const user = await currentUser()
   if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  // 0073 스위치 «프로세스 차트» — 관리 화면(/process-charts)이 꺼지면 이 길도 닫는다(0071 리뷰 뒤 0073 리뷰 I3).
+  if (!(await featureOn(user, 'process_charts'))) return { error: '지금은 쓸 수 없는 기능입니다.' }
 
   try {
     const repo = await getRepository()

@@ -156,6 +156,13 @@ async function main() {
     const after73 = (await db.query<{ n: string }>(`select md5(string_agg(feature_key || coalesce(business_id, '') || enabled || audience || reason, ',' order by feature_key, business_id)) as n from feature_switches`)).rows[0].n
     assert.equal(after73, before73, '0073 staging 시험 SQL이 그룹 기본 줄을 바꾼 채 남겼다')
   }
+  // 0074(원료 출고 · 재고 바꾸기 대표 · CFO만)가 있는 브랜치에서만. 0071보다 먼저.
+  if (files.includes('0074_finance_replace_guard.sql')) {
+    const m74 = await runFile('0074_staging_test.sql')
+    assert.match(m74, /^0074 STAGING PASS a\(직원 바꾸기 거부\) d\(직원 되돌리기 거부\) b\(대표 바꾸기\) c\(다른 종류는 그대로\) e\(대표 되돌리기\)$/, `0074 staging 시험 SQL이 PASS로 끝나지 않는다 (${m74})`)
+    const left = (await db.query<{ n: number }>(`select count(*) as n from fin_uploads where period in ('2099-10', '2099-11')`)).rows[0].n
+    assert.equal(Number(left), 0, '0074 staging 시험 SQL이 올리기를 남겼다')
+  }
   // 0071은 맨 뒤 — 끝에서 표 · 함수 소유자를 바꾼다(아래 주석).
   // 0071(프로세스 차트 동기화)이 있는 브랜치에서만. staging처럼 AI Agent 계정이 하나 있다.
   if (files.includes('0071_process_chart_sync.sql')) {

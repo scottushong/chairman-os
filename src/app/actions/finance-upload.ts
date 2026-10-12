@@ -114,7 +114,9 @@ export async function applyPendingUpload(input: ApplyInput): Promise<{ ok?: true
     const cols = input.columns && typeof input.columns === 'object' ? (input.columns as Record<string, unknown>) : null
     const chosen: Record<string, number> = {}
     if (cols) for (const [k, v] of Object.entries(cols)) if (Number.isInteger(v) && (v as number) >= 0 && (v as number) < 200) chosen[k] = v as number
+    // 스위치는 화면이 보낸 회사로 봤다 — 그 올리기가 정말 그 회사 것이어야 한다(0073 리뷰 I1).
     const upload = (await repo.listFinUploads(businessId)).find((u) => u.upload_id === id)
+    if (!upload) return { error: '이미 처리했거나 볼 수 없는 올리기입니다.' }
     const kindChanged = upload?.kind !== kind
     const colsChanged = !!cols && JSON.stringify(chosen) !== JSON.stringify(meta.columns ?? {})
     let rows = pending.rows
@@ -154,10 +156,17 @@ export async function applyPendingUpload(input: ApplyInput): Promise<{ ok?: true
     const m = e instanceof Error ? e.message : ''
     if (m.includes('fin_upload_overlap')) return { error: '같은 달에 이미 넣은 자료가 있습니다 — «새 값으로 바꾸기» 또는 «기존 값 두기»를 고르세요.' }
     if (m.includes('fin_upload_closed')) return { error: '마감된 달입니다 — 대표 · CFO가 이유를 적어야 넣을 수 있습니다.' }
+    if (m.includes('fin_replace_restricted')) return { error: '원료 출고 · 재고 자료의 «바꾸기»는 대표 · CFO만 합니다 — «기존 값 두기»를 고르거나 대표 · CFO에게 요청하세요.' }
     if (m.includes('fin_valuation_final_exists')) return { error: '그 구분의 확정된 평가금액이 이미 있습니다 — «재고 · 평가» 화면에서 이유를 적고 바꾸세요.' }
     if (m.includes('fin_value_state')) return { error: '빈칸 · 0 표시가 맞지 않는 칸이 있습니다(빈칸은 0이 아닙니다).' }
     return { error: finUploadError(e) }
   }
+}
+
+/** 화면이 보낸 회사 id로 스위치를 봤으니 — 그 올리기가 그 회사 것인지 확인한다(0073 리뷰 I1). */
+async function ownsUpload(repo: Awaited<ReturnType<typeof getRepository>>, businessId: string, uploadId: string): Promise<boolean> {
+  if (!BIZ.test(businessId)) return false
+  return (await repo.listFinUploads(businessId)).some((u) => u.upload_id === uploadId)
 }
 
 export async function revertUpload(uploadId: unknown, businessId: unknown, reason: unknown): Promise<{ ok?: true; error?: string }> {
@@ -167,13 +176,16 @@ export async function revertUpload(uploadId: unknown, businessId: unknown, reaso
   const id = text(uploadId, 64)
   if (!UUID.test(id)) return { error: '올리기를 알 수 없습니다.' }
   try {
-    const ok = await (await getRepository()).finUploadRevert(id, text(reason, 500) || null)
+    const repo = await getRepository()
+    if (!(await ownsUpload(repo, text(businessId, 40), id))) return { error: '올리기를 알 수 없습니다.' }
+    const ok = await repo.finUploadRevert(id, text(reason, 500) || null)
     revalidatePath(`/finance/${text(businessId, 40)}/upload`)
     return ok ? { ok: true } : { error: '이미 되돌렸거나 넣은 것이 아닙니다.' }
   } catch (e) {
     const m = e instanceof Error ? e.message : ''
     if (m.includes('fin_upload_revert_expired')) return { error: '넣은 지 7일이 지나 되돌릴 수 없습니다 — 정정 자료를 올리세요.' }
     if (m.includes('fin_upload_closed')) return { error: '마감된 달은 대표 · CFO만 되돌립니다.' }
+    if (m.includes('fin_replace_restricted')) return { error: '원료 출고 · 재고 자료의 되돌리기는 대표 · CFO만 합니다 — 대표 · CFO에게 요청하세요.' }
     return { error: finUploadError(e) }
   }
 }
@@ -185,7 +197,9 @@ export async function cancelUpload(uploadId: unknown, businessId: unknown): Prom
   const id = text(uploadId, 64)
   if (!UUID.test(id)) return { error: '올리기를 알 수 없습니다.' }
   try {
-    await (await getRepository()).finUploadCancel(id)
+    const repo = await getRepository()
+    if (!(await ownsUpload(repo, text(businessId, 40), id))) return { error: '올리기를 알 수 없습니다.' }
+    await repo.finUploadCancel(id)
     revalidatePath(`/finance/${text(businessId, 40)}/upload`)
     return { ok: true }
   } catch (e) {

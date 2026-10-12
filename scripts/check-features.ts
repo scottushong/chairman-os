@@ -10,7 +10,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 
-import { defaultFeatureRows, FEATURES, FEATURE_KEYS, featureOnFor, hiddenNavKeys, inAudience, type FeatureSwitchRow } from '../src/lib/features'
+import { closedFeatureRows, defaultFeatureRows, FEATURES, FEATURE_KEYS, featureOnFor, hiddenNavKeys, inAudience, type FeatureSwitchRow } from '../src/lib/features'
 import { intakeOpenFor } from '../src/lib/intake/switch'
 import { navFor } from '../src/lib/nav'
 
@@ -76,6 +76,10 @@ ok('그룹 줄이 없는 키(0073 뒤에 더한 키)는 기본값', () => {
   const rows = defaultFeatureRows().filter((r) => r.feature_key !== 'monthly_pl')
   assert.equal(featureOnFor(rows, 'monthly_pl', 'Chairman'), true)
   assert.equal(featureOnFor(rows, 'monthly_pl', 'Member'), false)
+})
+ok('스위치를 못 읽으면 전부 꺼짐(표 없음 null만 기본값 — 0073 리뷰 I4)', () => {
+  for (const f of FEATURES) for (const r of ['Chairman', 'Member'] as const) assert.equal(featureOnFor(closedFeatureRows(), f.key, r, 'biz_dy'), false, `${f.key}/${r}`)
+  assert.deepEqual(hiddenNavKeys(closedFeatureRows(), 'Chairman'), ['nav_process_charts'])
 })
 
 console.log('옛 스위치 · 메뉴')

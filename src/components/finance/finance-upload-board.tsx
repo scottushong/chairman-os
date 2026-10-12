@@ -268,7 +268,9 @@ function PendingPanel({ businessId, p, role }: { businessId: string; p: PendingV
   const router = useRouter()
   const [kind, setKind] = useState<string>(p.upload.kind === 'unknown' ? '' : p.upload.kind)
   const [period, setPeriod] = useState(p.upload.period ?? '')
-  const [overlap, setOverlap] = useState<'none' | 'replace' | 'keep_old'>(p.overlap ? 'replace' : 'none')
+  // 0074: 원료 출고 · 재고의 바꾸기는 대표 · CFO만 — 다른 사람에게는 «기존 값 두기»만 보인다.
+  const replaceOk = (k: string) => !(k === 'material_issue' || k === 'inventory') || role === 'Chairman' || role === 'GroupCFO'
+  const [overlap, setOverlap] = useState<'none' | 'replace' | 'keep_old'>(p.overlap ? (replaceOk(p.upload.kind) ? 'replace' : 'keep_old') : 'none')
   const [reason, setReason] = useState('')
   const [cols, setCols] = useState<Record<string, number>>(p.meta.columns ?? {})
   const [msg, setMsg] = useState<string | null>(null)
@@ -307,7 +309,7 @@ function PendingPanel({ businessId, p, role }: { businessId: string; p: PendingV
       <div className="mt-2 grid gap-2 sm:grid-cols-4">
         <label className="text-t10h text-ink-muted">
           종류
-          <select value={kind} onChange={(e) => setKind(e.target.value)} className="mt-0.5 block w-full rounded-md border border-line bg-panel px-2 py-1.5 text-t12h text-ink">
+          <select value={kind} onChange={(e) => { setKind(e.target.value); if (!replaceOk(e.target.value) && overlap === 'replace') setOverlap('keep_old') }} className="mt-0.5 block w-full rounded-md border border-line bg-panel px-2 py-1.5 text-t12h text-ink">
             <option value="">고르세요</option>
             {KIND_SPECS.map((k) => (
               <option key={k.kind} value={k.kind}>
@@ -324,9 +326,10 @@ function PendingPanel({ businessId, p, role }: { businessId: string; p: PendingV
           <label className="text-t10h text-ink-muted">
             같은 달 자료가 이미 있음
             <select value={overlap} onChange={(e) => setOverlap(e.target.value as typeof overlap)} className="mt-0.5 block w-full rounded-md border border-line bg-panel px-2 py-1.5 text-t12h text-ink">
-              <option value="replace">새 값으로 바꾸기(기존 줄 무효)</option>
+              {replaceOk(kind) ? <option value="replace">새 값으로 바꾸기(기존 줄 무효)</option> : null}
               <option value="keep_old">기존 값 두기(이 파일 버림)</option>
             </select>
+            {replaceOk(kind) ? null : <span className="mt-0.5 block text-t10h text-ink-muted">원료 출고 · 재고 자료의 바꾸기는 대표 · CFO만 합니다.</span>}
           </label>
         ) : null}
         <label className="text-t10h text-ink-muted">
