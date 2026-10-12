@@ -7,7 +7,7 @@ import type { UploadKind } from './kinds'
  * 0072 «자료 간 같은 거래 한 번만» — 순수 함수(check:finance-upload가 잰다). DB는 결과를 저장만 한다(fin_tx_group_save).
  *
  * 맞추는 줄: 판매(fin_sales_lines) · 입고(fin_purchase_in_lines) · 세금계산서(fin_tax_invoice_lines) · 원장 거래 줄(fin_ledger_lines).
- * 같은 표의 줄끼리는 맞추지 않는다(같은 자료를 두 번 올린 것은 «겹침» 선택이 다룬다). 한 회사 · 한 달 안에서만(±3일이 달을 넘는 것은 DEFERRED).
+ * 같은 표의 줄끼리는 맞추지 않는다(같은 자료를 두 번 올린 것은 «겹침» 선택이 다룬다). 한 회사 · 한 달 안에서만 묶는다(±3일이 달을 넘는 짝은 crossMonthPairs가 «달 넘김 의심»으로 보이기만 — PHASE 4).
  *
  * 열쇠: 회사 · 매출/매입 방향 · 거래처 · 날짜 ±3일 · 품목 또는 계정 · 금액(세전 또는 세후 둘 다) · 수량.
  *   - 금액이 맞지 않으면 짝이 아니다.
@@ -248,4 +248,57 @@ export function countNewSuspects(groups: TxGroupDraft[]): number {
 /** 묶음 한 줄 설명(화면 · 미리보기 — 금액은 보이지 않는다, 열쇠 이름만). */
 export function describeGroup(g: { evidence: Record<string, unknown> | null }): string {
   return Object.values(g.evidence ?? {}).map(String).join(' · ')
+}
+
+/** 'YYYY-MM'의 앞 · 뒤 달. */
+export function neighborPeriods(period: string): { prev: string; next: string } | null {
+  const m = /^(\d{4})-(\d{2})$/.exec(period)
+  if (!m) return null
+  const y = Number(m[1])
+  const mo = Number(m[2])
+  const fmt = (yy: number, mm: number) => `${yy}-${String(mm).padStart(2, '0')}`
+  return { prev: mo === 1 ? fmt(y - 1, 12) : fmt(y, mo - 1), next: mo === 12 ? fmt(y + 1, 1) : fmt(y, mo + 1) }
+}
+
+/** 날짜가 달 경계 ±3일 안(1~3일 또는 말일 앞 3일)인가 — 앞 · 뒤 달 줄을 읽을지 정한다. */
+export function nearMonthEdge(date: string | null): boolean {
+  if (!date || !/^\d{4}-\d{2}-\d{2}/.test(date)) return false
+  const d = Number(date.slice(8, 10))
+  const last = new Date(Date.UTC(Number(date.slice(0, 4)), Number(date.slice(5, 7)), 0)).getUTCDate()
+  return d <= 3 || d > last - 3
+}
+
+export interface CrossMonthPair {
+  /** 이 달 줄(ref — 'new:<row_no>'이면 아직 안 넣은 줄) */
+  ref: string
+  /** 앞 · 뒤 달 줄(ref) */
+  other: string
+  other_period: string
+  other_row_no: number
+  other_date: string
+  kind: 'same' | 'suspect'
+  evidence: Record<string, string>
+}
+
+/**
+ * PHASE 4 — 달을 넘는 짝(9/30 ↔ 10/2). fin_tx_group_save는 한 달 줄만 받으므로 저장하지 않고 «달 넘김 의심»으로만 보인다.
+ * 둘 다 날짜가 있고 서로 다른 달일 때만(날짜가 없으면 어느 달인지 몰라 맞추지 않는다). 같은 출처끼리 · «다른 거래»로 푼 짝은 뺀다.
+ * same이어도 자동으로 같은 거래가 되지 않는다(사람이 본다) — 그래서 kind는 근거로만 쓴다.
+ */
+export function crossMonthPairs(cur: FinTxLine[], others: { period: string; lines: FinTxLine[] }[], rejected: ReadonlySet<string> = new Set()): CrossMonthPair[] {
+  const out: CrossMonthPair[] = []
+  for (const a of cur) {
+    if (!nearMonthEdge(a.date)) continue
+    for (const o of others) {
+      for (const b of o.lines) {
+        if (!b.date || b.date.slice(0, 7) === a.date!.slice(0, 7)) continue
+        if (famOf(a) === famOf(b)) continue
+        if (rejected.has(pairKey(a.ref, b.ref))) continue
+        const rel = relate(a, b)
+        if (!rel) continue
+        out.push({ ref: a.ref, other: b.ref, other_period: o.period, other_row_no: b.row_no, other_date: b.date, kind: rel.kind, evidence: { ...rel.evidence, month: '달 넘김' } })
+      }
+    }
+  }
+  return out
 }

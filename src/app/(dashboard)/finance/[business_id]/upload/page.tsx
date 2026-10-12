@@ -13,11 +13,11 @@ import { currentUser } from '@/lib/auth/session'
 import { parseMapping } from '@/lib/ecount/excel/mapping'
 import { outlineFromSummary } from '@/lib/ecount/excel/workbook'
 import { aiLimits } from '@/lib/finance-upload/ai'
-import { TX_SOURCE_KO } from '@/lib/finance-upload/dedupe'
+import { describeGroup, TX_SOURCE_KO } from '@/lib/finance-upload/dedupe'
 import { won } from '@/lib/finance-upload/v21-text'
 import { KIND_SPECS } from '@/lib/finance-upload/kinds'
 import { kstToday } from '@/lib/chairman-project'
-import { revertableIds } from '@/lib/finance-upload/process'
+import { crossMonthFor, revertableIds } from '@/lib/finance-upload/process'
 import { featureOn } from '@/lib/features-server'
 import { firstParam } from '@/lib/query'
 import { getRepository } from '@/lib/repository'
@@ -91,6 +91,8 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
         repo.listFinRecloseFlags(business_id).catch(() => []),
       ])
     : [[], [], { amount_base: 'ledger' as const, qty_base: 'r2_ecount' as const }, []]
+  // PHASE 4 — 달 경계 ±3일 줄과 앞 · 뒤 달 줄의 «달 넘김 의심»(보여 주기만 · 저장 없음).
+  const cross = canKeep ? await crossMonthFor(repo, business_id, month, txLines).catch(() => []) : []
   const lineLabels = Object.fromEntries(
     txLines.map((l) => {
       const table = l.ref.slice(0, l.ref.indexOf(':')) as keyof typeof TX_SOURCE_KO
@@ -138,6 +140,20 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
           <div className="mt-4">
             <FinanceTxPanel businessId={business_id} month={month} groups={txGroups} lines={lineLabels} setting={dedupe} />
           </div>
+          {cross.length ? (
+            <section className="mt-3 rounded-xl border border-line-soft bg-panel p-3" aria-labelledby="cross-h" data-testid="cross-month">
+              <h2 id="cross-h" className="text-t13 font-semibold">달 넘김 의심 · {cross.length}쌍</h2>
+              <p className="mt-0.5 text-t10h text-ink-muted">달 경계 ±3일 줄이 앞 · 뒤 달의 다른 자료 줄과 맞습니다. 묶음은 한 달 안에서만 저장되므로 여기서는 보여 주기만 합니다 — 두 달 장부에 한 번씩 들어갔는지 확인하세요.</p>
+              <ul className="mt-2 space-y-1 text-t11h">
+                {cross.slice(0, 30).map((c) => (
+                  <li key={`${c.ref}|${c.other}`} className="rounded-md bg-raised px-2 py-1">
+                    {lineLabels[c.ref] ?? c.ref} ↔ {c.other_period} {TX_SOURCE_KO[c.other.slice(0, c.other.indexOf(':')) as keyof typeof TX_SOURCE_KO] ?? ''} {c.other_row_no}행 · {c.other_date}
+                    <span className="ml-1 text-t10 text-gold">{describeGroup(c)}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
           {legacy ? (
             <details className="mt-4 rounded-xl border border-line-soft bg-panel p-3">
               <summary className="cursor-pointer text-t12 font-semibold">그 밖 — 계정과목표 · 재무제표(연간) · 월별 손익(지금까지의 흐름)</summary>

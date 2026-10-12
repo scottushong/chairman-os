@@ -30,7 +30,7 @@ function touch(businessId: string) {
 }
 
 /** 줄 id로 오는 동작 — 화면이 보낸 회사가 그 줄의 회사와 같아야 한다(0073 리뷰 I1: 다른 회사 스위치로 우회 금지). */
-async function rowGuard(kind: 'valuation' | 'tx_group' | 'reclose', id: string, businessId: string): Promise<string | null> {
+async function rowGuard(kind: 'valuation' | 'tx_group' | 'reclose' | 'opening', id: string, businessId: string): Promise<string | null> {
   if (!UUID.test(id)) return '줄을 알 수 없습니다.'
   const real = await (await getRepository()).finRowBusiness(kind, id).catch(() => null)
   return real && real === businessId ? null : '줄을 찾지 못했습니다(없거나 볼 권한이 없습니다).'
@@ -136,6 +136,23 @@ export async function saveOpening(x: { businessId: unknown; period: unknown; cat
     await (await getRepository()).finOpeningSave({ business_id: businessId, period, category, amount: v.amount, state: v.state, source, upload_id: null, note: text(x.note) })
     touch(businessId)
     return { ok: true }
+  } catch (e) {
+    return { error: finV21Error(e) }
+  }
+}
+
+/** 0076 첫 달 기초 «확인» — 입력한 사람이 아닌 장부 쓰기 권한자(판정은 DB fin_opening_confirm). */
+export async function confirmOpening(openingId: unknown, businessId: unknown, reason: unknown): Promise<Result> {
+  const biz = text(businessId, 40)
+  const denied = await guard(biz)
+  if (denied) return { error: denied }
+  const id = text(openingId, 64)
+  const wrong = await rowGuard('opening', id, biz)
+  if (wrong) return { error: wrong }
+  try {
+    const ok = await (await getRepository()).finOpeningConfirm(id, text(reason) || null)
+    touch(biz)
+    return ok ? { ok: true } : { error: '이미 확인했거나 무효인 줄입니다.' }
   } catch (e) {
     return { error: finV21Error(e) }
   }

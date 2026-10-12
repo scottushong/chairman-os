@@ -165,7 +165,8 @@ export type RollCategory = 'raw' | 'wip' | 'finished'
 export interface FinInventoryRollRow {
   category: RollCategory
   opening_amount: number | null
-  opening_state: ValueState | null
+  /** 0076: 'partial'(«일부 미입력») = 앞 달 명세서에 빈칸 줄이 섞여 아는 줄만 더한 기초(원재료). */
+  opening_state: ValueState | 'partial' | null
   /** prev_close(전월 확정 기말) · manual(직접 입력) · statement(재고금액명세서) · unlinked(미연결) */
   opening_source: 'prev_close' | 'manual' | 'statement' | 'unlinked'
   closing_amount: number | null
@@ -174,6 +175,11 @@ export interface FinInventoryRollRow {
   missing_lines: number
   statement_opening: number | null
   diff_vs_prev_close: number | null
+  /** 0076: 기초가 첫 달 직접 입력이면 그 줄(확인 단추) · 확인 여부. 0076 전 DB는 null. */
+  opening_id: string | null
+  opening_confirmed: boolean | null
+  /** 0076: 원재료 기초가 앞 달 기말일 때 앞 달 빈칸 줄 수. */
+  prev_missing_lines: number
 }
 
 export interface FinOpeningSaveInput {

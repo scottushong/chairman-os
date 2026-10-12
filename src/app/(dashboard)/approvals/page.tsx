@@ -6,6 +6,7 @@ import { AttachmentsSection } from '@/components/attachments/attachments-section
 import { DraftDecision } from '@/components/approvals/draft-decision'
 import { PageHeader } from '@/components/layout/page-header'
 import { FilterChips, type FilterOption } from '@/components/ui/filter-chips'
+import { ExampleTag } from '@/components/ui/example-tag'
 import { Icon } from '@/components/ui/icon'
 import { bundleTitle } from '@/lib/approval-line'
 import { canDraftDecision } from '@/lib/auth/roles'
@@ -255,6 +256,7 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
                     </span>
                     <span className="mt-1 block text-t13 leading-snug font-semibold">
                       {bundleTitle(d.title, user?.role)}
+                      <ExampleTag on={isChairman(user?.role) && d.is_example} />
                     </span>
                     {d.attachment_url ? (
                       <span className="mt-1 flex items-center gap-1 text-t10h text-ink-muted">

@@ -59,6 +59,7 @@ type Methods = Pick<
   | 'finValuationWarnings'
   | 'finInventoryRoll'
   | 'finOpeningSave'
+  | 'finOpeningConfirm'
   | 'finIssueSummary'
   | 'finIssueBulkDecide'
   | 'listFinTxLines'
@@ -96,6 +97,8 @@ interface Opening {
   source_upload_id: string | null
   note: string
   entered_by: string
+  confirmed_by?: string | null
+  confirmed_at?: string | null
   voided_at: string | null
   void_reason: string | null
 }
@@ -414,7 +417,7 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
     /* ───── 0072 ───── */
     async finRowBusiness(kind, id) {
       ensureDemo()
-      const biz = kind === 'valuation' ? store.valuations.find((x) => x.valuation_id === id)?.business_id : kind === 'tx_group' ? store.groups.find((x) => x.group_id === id)?.business_id : store.flags.find((x) => x.flag_id === id)?.business_id
+      const biz = kind === 'valuation' ? store.valuations.find((x) => x.valuation_id === id)?.business_id : kind === 'tx_group' ? store.groups.find((x) => x.group_id === id)?.business_id : kind === 'opening' ? store.openings.find((x) => x.opening_id === id)?.business_id : store.flags.find((x) => x.flag_id === id)?.business_id
       return biz && d.canRead(biz) ? biz : null
     },
     async listFinValuations(businessId, period) {
@@ -495,10 +498,14 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
         let cst: FinInventoryRollRow['closing_status'] = null
         let miss = 0
         let st: number | null = null
+        let pmiss = 0
+        let oid: string | null = null
+        let ocf: boolean | null = null
         if (c === 'raw') {
           const inv = (p: string) => store.lines.filter((l) => l.kind === 'inventory' && l.business_id === businessId && l.period === p && !l.voided_at)
           const known = (ls: Line[]) => ls.filter((l) => l.row.amount_state !== 'missing')
           const pk = known(inv(prev))
+          pmiss = inv(prev).length - pk.length
           if (pk.length) {
             pa = pk.reduce((a, l) => a + Number(l.row.amount), 0)
             ps = pa === 0 ? 'confirmed_zero' : 'value'
@@ -526,11 +533,12 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
           }
         }
         let oa: number | null
-        let os: ValueState | null
+        let os: FinInventoryRollRow['opening_state']
         let osrc: FinInventoryRollRow['opening_source']
         if (ps) {
           oa = pa
-          os = ps
+          // 0076 거울: 앞 달 빈칸 줄이 섞이면 «일부 미입력».
+          os = pmiss > 0 ? 'partial' : ps
           osrc = 'prev_close'
         } else {
           const o = store.openings.find((x) => x.business_id === businessId && x.period === period && x.category === c && !x.voided_at)
@@ -538,13 +546,15 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
             oa = o.amount
             os = o.value_state
             osrc = o.source
+            oid = o.opening_id
+            ocf = !!o.confirmed_at
           } else {
             oa = null
             os = 'missing'
             osrc = 'unlinked'
           }
         }
-        out.push({ category: c, opening_amount: oa, opening_state: os, opening_source: osrc, closing_amount: ca, closing_state: cs, closing_status: cst, missing_lines: miss, statement_opening: st, diff_vs_prev_close: st !== null && ps !== null && pa !== null ? st - pa : null })
+        out.push({ category: c, opening_amount: oa, opening_state: os, opening_source: osrc, closing_amount: ca, closing_state: cs, closing_status: cst, missing_lines: miss, statement_opening: st, diff_vs_prev_close: st !== null && ps !== null && pa !== null ? st - pa : null, opening_id: oid, opening_confirmed: ocf, prev_missing_lines: osrc === 'prev_close' ? pmiss : 0 })
       }
       return out
     },
@@ -559,6 +569,18 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
       store.openings.push({ opening_id: id, business_id: x.business_id, period: x.period, category: x.category, amount: x.amount, value_state: state, source: x.source, source_upload_id: x.upload_id, note: x.note.trim().slice(0, 500), entered_by: d.viewer().user_id, voided_at: null, void_reason: null })
       await reclose(x.business_id, x.period, null, 'opening', x.note)
       return id
+    },
+    // 0076 거울 — 첫 달 기초 확인(입력자 ≠ 확인자 · 미입력 거부 · 마감 달은 대표 · CFO + 이유).
+    async finOpeningConfirm(id, reason) {
+      const o = store.openings.find((x) => x.opening_id === id)
+      if (!o || !d.canKeep(o.business_id)) throw new Error('fin_upload_denied')
+      if (o.voided_at || o.confirmed_at) return false
+      if (o.entered_by === d.viewer().user_id) throw new Error('fin_opening_self_confirm')
+      if (o.value_state === 'missing') throw new Error('fin_opening_missing')
+      await closedGate(o.business_id, o.period, reason)
+      Object.assign(o, { confirmed_by: d.viewer().user_id, confirmed_at: new Date().toISOString() })
+      await reclose(o.business_id, o.period, null, 'opening', reason ?? '첫 달 기초 확인')
+      return true
     },
     async finIssueSummary(businessId, period) {
       ensureDemo()

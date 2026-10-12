@@ -14,7 +14,7 @@ import { readFileSync } from 'node:fs'
 
 import ExcelJS from 'exceljs'
 
-import { matchTx } from '../src/lib/finance-upload/dedupe'
+import { crossMonthPairs, matchTx, nearMonthEdge, neighborPeriods } from '../src/lib/finance-upload/dedupe'
 import { AI_KIND_SPECS, KIND_SPECS, PAYROLL_PEOPLE_FIELDS, type UploadKind } from '../src/lib/finance-upload/kinds'
 import { MSG } from '../src/lib/finance-upload/open'
 import { autoDecision, classifyByCode, classifyIssue, readRows, scrubSheet } from '../src/lib/finance-upload/pipeline'
@@ -285,6 +285,17 @@ async function main() {
   await assert.rejects(repo.finOpeningSave({ business_id: BIZ, period: V21b, category: 'finished', amount: 1000, state: 'value', source: 'manual', upload_id: null, note: '' }), /fin_opening_reason/, '이유 없이 첫 달 기초가 들어갔다')
   await repo.finOpeningSave({ business_id: BIZ, period: V21b, category: 'finished', amount: 1000, state: 'value', source: 'manual', upload_id: null, note: '첫 달 실사표' })
   assert.equal((await repo.finInventoryRoll(BIZ, V21b)).find((r) => r.category === 'finished')!.opening_source, 'manual')
+  // 0076 — 첫 달 기초 «확인»: 입력한 사람은 거부 · 다른 장부 담당(대표)은 확인 · 두 번째는 false.
+  {
+    const op = (await repo.finInventoryRoll(BIZ, V21b)).find((r) => r.category === 'finished')!
+    assert.ok(op.opening_id && op.opening_confirmed === false, `첫 달 기초가 미확인으로 오지 않는다: ${JSON.stringify(op)}`)
+    await assert.rejects(repo.finOpeningConfirm(op.opening_id!, null), /fin_opening_self_confirm/, '입력한 사람이 첫 달 기초를 확인했다')
+    process.env.DUMMY_USER = 'chairman'
+    assert.equal(await repo.finOpeningConfirm(op.opening_id!, null), true, '다른 사람이 첫 달 기초를 확인하지 못했다')
+    assert.equal(await repo.finOpeningConfirm(op.opening_id!, null), false, '이미 확인한 기초를 다시 확인했다')
+    assert.equal((await repo.finInventoryRoll(BIZ, V21b)).find((r) => r.category === 'finished')!.opening_confirmed, true)
+    process.env.DUMMY_USER = 'support_lead'
+  }
 
   // ── 13. 원료 출고 — 구분 칸 없음 = 확인 필요 · 규칙 · 생산 투입이 기본값이 아님 · kg는 대기 읽기 · 요약 어디에도 없음 ──
   assert.equal(classifyIssue({}, false).class, 'needs_review')
@@ -353,6 +364,23 @@ async function main() {
   assert.equal(pure[0].amount_base_ref, 'fin_ledger_lines:2', '금액 기준(기본 원장)이 아니다')
   assert.equal(pure[0].qty_base_ref, 'fin_purchase_in_lines:1', '수량 기준(기본 R2 · ECOUNT)이 아니다')
   assert.equal(matchTx(pure.length ? [L('fin_purchase_in_lines:1', { source: 'r2', date: '2099-11-05', counterparty: '가짜 공급처 갑', amount: 500_000 }), L('fin_ledger_lines:2', { source: 'ledger', date: '2099-11-05', counterparty: '가짜 공급처 갑', amount: 500_000 })] : [], { amount_base: 'r2_ecount', qty_base: 'r2_ecount' })[0].amount_base_ref, 'fin_purchase_in_lines:1', '금액 기준 설정이 먹지 않는다')
+  // PHASE 4 — 달 넘김(9/30 ↔ 10/2): 저장하지 않고 «달 넘김 의심»으로만. 경계 밖 · 같은 출처 · 4일 넘김은 짝이 아니다.
+  assert.deepEqual(neighborPeriods('2099-01'), { prev: '2098-12', next: '2099-02' })
+  assert.ok(nearMonthEdge('2099-09-30') && nearMonthEdge('2099-10-02') && nearMonthEdge('2099-02-27') && !nearMonthEdge('2099-10-04'), '달 경계 판정이 다르다')
+  {
+    const curM = [
+      L('fin_purchase_in_lines:21', { source: 'r2', date: '2099-10-02', counterparty: '가짜 공급처 정', amount: 200_000 }),
+      L('fin_purchase_in_lines:22', { source: 'r2', date: '2099-10-15', counterparty: '가짜 공급처 정', amount: 200_000 }),
+    ]
+    const prevM = [
+      L('fin_ledger_lines:31', { source: 'ledger', date: '2099-09-30', counterparty: '가짜 공급처 정', account: '원재료', amount: 200_000 }),
+      L('fin_purchase_in_lines:32', { source: 'r2', date: '2099-09-30', counterparty: '가짜 공급처 정', amount: 200_000 }),
+      L('fin_ledger_lines:33', { source: 'ledger', date: '2099-09-27', counterparty: '가짜 공급처 정', account: '원재료', amount: 200_000 }),
+    ]
+    const cm = crossMonthPairs(curM, [{ period: '2099-09', lines: prevM }])
+    assert.deepEqual(cm.map((c) => [c.ref, c.other, c.kind]), [['fin_purchase_in_lines:21', 'fin_ledger_lines:31', 'same']], `달 넘김 짝이 다르다: ${JSON.stringify(cm)}`)
+    assert.equal(cm[0].evidence.month, '달 넘김')
+  }
   // 통합: 원장 거래 줄(자동) → 입고 파일(같은 매입 하나 + 금액만 맞는 줄 하나) → 중복 의심 1 → 미리보기 → 넣으면 same 1 · suspect 1.
   const ledgerKpiBefore = JSON.stringify([(await repo.loadFinanceLedger()).closings, await repo.listFinanceKpis()])
   const led = await run('가짜 전표내역 11월.xlsx', await xlsx([{ name: '전표내역', rows: [title('일반전표 전표내역', '2099-11'), ['전표일자', '계정코드', '계정과목', '거래처명', '적요', '차변', '대변'], ['2099-11-05', '1530', '원재료', '가짜 공급처 갑', '가짜 매입', 500000, null], ['2099-11-12', '1530', '원재료', null, '가짜 매입', 300000, null]] }]))

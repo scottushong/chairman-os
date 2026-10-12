@@ -2761,3 +2761,13 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - `cancelIntakeAction`은 그룹 줄로 본다 — 그룹 꺼짐 · 회사 켜짐이면 취소가 조용히 안 되고 첨부 · 입구 줄이 남는다. 첨부의 회사를 먼저 읽기.
 - `whoFor`: 스위치가 꺼진 회사 줄도 «세션 만료» 문구 — 의도(존재 숨김)지만 헷갈림.
 - 0074 staging 시험은 inventory · GroupCFO 갈래를 따로 돌리지 않는다(트리거 같은 조건 한 줄).
+
+## 2026-10-12 PHASE 4 — B 남은 것 + 0072 DEFERRED(feat/b-rest · 0076) — 고른 것 · 미룬 것
+- 고른 것은 docs/decisions/2026-10-12-autonomous.md 33~38.
+- 위 0072 B2 «같은 거래 맞추기는 같은 달 안에서만»: 이제 «달 넘김 의심»으로 보인다(저장 없음). 남은 것: 달을 넘는 짝을 «같은 거래»로 정해 손익에서 한쪽을 빼는 길은 없다 — 두 달 묶음 표가 필요하다.
+- 위 0072 «(미룸) 원재료 기초 … missing_lines를 기초 쪽에도»: 0076 fin_inventory_roll opening_state 'partial' · prev_missing_lines로 처리.
+- 위 0072 «(미룸) 되돌리기 … 수동 평가금액»: 고치지 않고 문구로 알림(올리기 화면 REVERT_SCOPE_KO).
+- 위 0072 «첫 달 기초는 확정 RPC를 두지 않음»: 0076 fin_opening_confirm.
+- (미룸) 월별 손익(0075 fin_pl_gather)은 미확인 첫 달 기초도 그대로 쓴다 — 내부 마감 때 «기초 미확인» 경고를 더할지 다음 블록에서.
+- (미룸) 시드 예시 줄 쓰기: approval_decide(_many) · lead_decide · lead_bundle은 예시 결재 id(dec_001~004)를 아는 직원이 부르면 예시 줄의 상태를 바꿀 수 있다(내용은 돌려주지 않음). 막으려면 decisions에 «예시 줄은 대표만 바꿈» before update 트리거 — 진짜 업무가 예시 프로젝트 아래 있을 수 있어 tasks · projects에는 걸지 않는 편이 안전.
+- (미룸) 0076 staging 시험은 cost_purchase_candidates 거름을 함수 본문 글자로만 본다(예시 구매 결재를 만들려면 결재 표 준비가 길다).

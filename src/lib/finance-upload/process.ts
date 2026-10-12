@@ -1,10 +1,10 @@
 import type { ChairmanRepository } from '@/lib/repository'
-import type { Account, FinRow, FinTxGroupSaveInput, FinUpload } from '@/types'
+import type { Account, FinRow, FinTxGroupSaveInput, FinTxLine, FinUpload } from '@/types'
 
 import { cellText, EMPTY_CELL, type EcountCell } from '@/lib/ecount/excel/cells'
 import type { EcountSheet } from '@/lib/ecount/excel/workbook'
 
-import { countNewSuspects, describeGroup, matchTx, rejectedPairs, txLinesFromRows } from './dedupe'
+import { countNewSuspects, crossMonthPairs, describeGroup, matchTx, nearMonthEdge, neighborPeriods, rejectedPairs, txLinesFromRows, type CrossMonthPair } from './dedupe'
 import { looksOfficial, refuseAfterRead, refuseDoc, refuseFormula, type DocRefusal } from './doc-guard'
 import { DocOpenError, openDocument, type DocFormat, type OpenedDoc } from './doc-open'
 import {
@@ -406,13 +406,33 @@ export async function countDupSuspects(repo: ChairmanRepository, businessId: str
   if (!period) return { count: null, notes: [] }
   try {
     const [existing, setting, saved] = await Promise.all([repo.listFinTxLines(businessId, period), repo.finDedupeSetting(businessId), repo.listFinTxGroups(businessId, period)])
-    const groups = matchTx([...existing, ...txLinesFromRows(kind, rows)], setting, rejectedPairs(saved))
+    const fresh = txLinesFromRows(kind, rows)
+    const groups = matchTx([...existing, ...fresh], setting, rejectedPairs(saved))
     const mine = groups.filter((g) => g.status === 'suspect' && g.refs.some((r) => r.startsWith('new:')))
-    return { count: countNewSuspects(groups), notes: mine.slice(0, 10).map((g) => `${g.refs.filter((r) => r.startsWith('new:')).map((r) => r.slice(4) + '행').join(' · ')} — ${describeGroup(g)}`) }
+    // PHASE 4: 달 경계 ±3일 줄은 앞 · 뒤 달 줄과도 맞춰 본다 — 짝이 있으면 자동 넣기를 멈춘다(닫힌 쪽 · 저장은 하지 않음).
+    const cross = await crossMonthFor(repo, businessId, period, fresh)
+    const crossRows = [...new Set(cross.map((c) => c.ref))]
+    const notes = [
+      ...mine.slice(0, 10).map((g) => `${g.refs.filter((r) => r.startsWith('new:')).map((r) => r.slice(4) + '행').join(' · ')} — ${describeGroup(g)}`),
+      ...cross.slice(0, 5).map((c) => `${c.ref.slice(4)}행 — ${c.other_period} 줄과 달 넘김 의심(${describeGroup(c)})`),
+    ]
+    return { count: countNewSuspects(groups) + crossRows.length, notes }
   } catch (e) {
     console.error('[finance-upload] dup count', e)
     return { count: null, notes: [] }
   }
+}
+
+/**
+ * PHASE 4 — 이 달 줄 중 달 경계 ±3일인 것을 앞 · 뒤 달 살아 있는 줄과 맞춘 «달 넘김 의심»(보여 주기만 · 저장 없음).
+ * 경계 줄이 없으면 앞 · 뒤 달을 읽지 않는다. 읽기가 실패하면 그 달은 건너뛴다.
+ */
+export async function crossMonthFor(repo: ChairmanRepository, businessId: string, period: string, lines: FinTxLine[]): Promise<CrossMonthPair[]> {
+  const edge = lines.filter((l) => nearMonthEdge(l.date))
+  const nb = neighborPeriods(period)
+  if (!edge.length || !nb) return []
+  const others = await Promise.all([nb.prev, nb.next].map(async (p) => ({ period: p, lines: await repo.listFinTxLines(businessId, p).catch(() => [] as FinTxLine[]) })))
+  return crossMonthPairs(edge, others)
 }
 
 /**

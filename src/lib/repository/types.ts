@@ -764,6 +764,8 @@ export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods,
   finValuationWarnings(businessId: string, period: string): Promise<FinValuationWarning[]>
   finInventoryRoll(businessId: string, period: string): Promise<FinInventoryRollRow[]>
   finOpeningSave(input: FinOpeningSaveInput): Promise<string>
+  /** 0076 첫 달 기초 «확인» — 입력한 사람이 아닌 장부 쓰기 권한자. 이미 확인 · 무효면 false. */
+  finOpeningConfirm(openingId: string, reason: string | null): Promise<boolean>
   /** 원료 출고 요약(합계 kg 둘 · 줄 수 · 원료별 «확인 필요» 줄 수만). */
   finIssueSummary(businessId: string, period: string): Promise<FinIssueSummary | null>
   finIssueBulkDecide(input: FinIssueBulkInput): Promise<number>
@@ -778,7 +780,7 @@ export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods,
   listFinRecloseFlags(businessId: string): Promise<FinRecloseFlag[]>
   finRecloseClear(flagId: string, note: string | null): Promise<boolean>
   /** 0073 리뷰 I1 — 줄 id(평가금액 · 묶음 · 재마감 대상)의 실제 회사. 못 보면 null(스위치를 화면이 보낸 회사가 아니라 이 회사로 본다). */
-  finRowBusiness(kind: 'valuation' | 'tx_group' | 'reclose', id: string): Promise<string | null>
+  finRowBusiness(kind: 'valuation' | 'tx_group' | 'reclose' | 'opening', id: string): Promise<string | null>
   /**
    * 0075 월별 손익(재고 반영 · 마감). 판정은 DB(feature_on('monthly_pl') · can_read_books · can_keep_books · can_close_books)다.
    * 원료별 줄은 대표 · 원가 관리에게만 온다(fin_pl_mask). 0075 전 DB는 읽기 null · 빈 목록, 쓰기는 'fin_pl_unavailable'. 오류 키는 'fin_pl_*' · 'feature_off'.

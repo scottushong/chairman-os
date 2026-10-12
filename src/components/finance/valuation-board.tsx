@@ -3,8 +3,8 @@
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 
-import { bulkDecideIssue, confirmValuation, saveOpening, saveValuation, voidValuation } from '@/app/actions/finance-v21'
-import { CATEGORY_KO, ISSUE_CHOICE_KO, OPENING_SOURCE_KO, SCOPE_KO, STATE_KO, STATUS_KO, WITHHELD_KO, won } from '@/lib/finance-upload/v21-text'
+import { bulkDecideIssue, confirmOpening, confirmValuation, saveOpening, saveValuation, voidValuation } from '@/app/actions/finance-v21'
+import { CATEGORY_KO, ISSUE_CHOICE_KO, OPENING_SOURCE_KO, PARTIAL_KO, SCOPE_KO, STATE_KO, STATUS_KO, WITHHELD_KO, won } from '@/lib/finance-upload/v21-text'
 import type { FinInventoryRollRow, FinIssueSummary, FinValuation, FinValuationWarning, ValueState } from '@/types'
 
 /**
@@ -17,8 +17,14 @@ import type { FinInventoryRollRow, FinIssueSummary, FinValuation, FinValuationWa
 const inputCls = 'mt-0.5 block w-full min-w-0 rounded-md border border-line bg-panel px-2 py-1.5 text-t12h text-ink'
 const labelCls = 'min-w-0 text-t10h text-ink-muted'
 
-function Amount({ amount, state }: { amount: number | null; state: ValueState | null }) {
+function Amount({ amount, state }: { amount: number | null; state: ValueState | 'partial' | null }) {
   if (state === 'missing' || state === null) return <span className="rounded bg-raised px-1.5 py-0.5 text-t10 text-ink-muted">{STATE_KO.missing}</span>
+  if (state === 'partial')
+    return (
+      <span className="tnum">
+        {won(amount)} <span className="rounded bg-gold/15 px-1 text-t10 font-semibold text-gold">{PARTIAL_KO}</span>
+      </span>
+    )
   return (
     <span className="tnum">
       {won(amount)} <span className="text-t10 text-ink-muted">{STATE_KO[state]}</span>
@@ -251,7 +257,11 @@ export function RollSection({ businessId, month, rows }: { businessId: string; m
               {rows.map((r) => (
                 <tr key={r.category} className="border-t border-line-soft" data-testid={`roll-${r.category}`}>
                   <td className="px-2 py-1 font-semibold">{CATEGORY_KO[r.category]}</td>
-                  <td className="px-2 py-1"><Amount amount={r.opening_amount} state={r.opening_state} /></td>
+                  <td className="px-2 py-1">
+                    <Amount amount={r.opening_amount} state={r.opening_state} />
+                    {r.opening_state === 'partial' ? <span className="block text-t10 text-gold">앞 달 빈칸 {r.prev_missing_lines}줄은 더하지 않았습니다 — 온전한 기초가 아닙니다.</span> : null}
+                    {r.opening_id ? <OpeningConfirm businessId={businessId} openingId={r.opening_id} confirmed={!!r.opening_confirmed} missing={r.opening_state === 'missing'} /> : null}
+                  </td>
                   <td className="px-2 py-1">
                     <span className={`rounded px-1.5 py-0.5 text-t10 font-semibold ${r.opening_source === 'unlinked' ? 'bg-critical/10 text-critical' : r.opening_source === 'prev_close' ? 'bg-ok/15 text-ok' : 'bg-gold/15 text-gold'}`}>{OPENING_SOURCE_KO[r.opening_source]}</span>
                   </td>
@@ -278,6 +288,37 @@ export function RollSection({ businessId, month, rows }: { businessId: string; m
       )}
       {needsOpening ? <OpeningForm businessId={businessId} month={month} categories={rows.filter((r) => r.opening_source !== 'prev_close').map((r) => r.category)} /> : null}
     </section>
+  )
+}
+
+/** 0076 첫 달 기초 «확인» — 입력한 사람이 아닌 장부 담당(본인은 DB가 거부하고 문장으로 알린다). */
+function OpeningConfirm({ businessId, openingId, confirmed, missing }: { businessId: string; openingId: string; confirmed: boolean; missing: boolean }) {
+  const router = useRouter()
+  const [reason, setReason] = useState('')
+  const [msg, setMsg] = useState<string | null>(null)
+  const [busy, start] = useTransition()
+  if (confirmed) return <span className="mt-0.5 block text-t10 text-ok" data-testid="opening-confirmed">확인됨</span>
+  return (
+    <span className="mt-1 flex flex-wrap items-center gap-1" data-testid="opening-unconfirmed">
+      <span className="rounded bg-gold/15 px-1 text-t10 font-semibold text-gold">미확인</span>
+      <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} placeholder="이유(마감 달은 필수)" aria-label="확인 이유" className="w-28 min-w-0 rounded-md border border-line bg-panel px-1.5 py-0.5 text-t10h" />
+      <button
+        type="button"
+        disabled={busy || missing}
+        title={missing ? '«미입력»은 확인할 수 없습니다' : '입력한 사람이 아닌 장부 담당이 확인합니다'}
+        onClick={() =>
+          start(async () => {
+            const x = await confirmOpening(openingId, businessId, reason)
+            setMsg(x.error ?? '확인했습니다.')
+            if (x.ok) router.refresh()
+          })
+        }
+        className="min-h-7 rounded-md bg-accent px-2 text-t10h font-semibold text-white disabled:opacity-40"
+      >
+        확인
+      </button>
+      {msg ? <span role="status" className="w-full text-t10h">{msg}</span> : null}
+    </span>
   )
 }
 

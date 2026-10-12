@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useState, useTransition } from 'react'
 
 import { setChairmanNeeded, setTaskStatus } from '@/app/actions/tasks'
+import { ExampleTag } from '@/components/ui/example-tag'
 import { Icon } from '@/components/ui/icon'
 import { boss, isChairman } from '@/lib/boss'
 import { dDay, formatDDay, isOverdue } from '@/lib/format'
@@ -113,6 +114,8 @@ export function TaskRow({
             className="text-t12h leading-snug font-semibold transition-colors hover:text-accent max-lg:flex max-lg:items-center"
           >
             {task.title}
+            {/* PHASE 4 — 0072 «예시» 꼬리표는 대표만(직원 세션은 DB가 줄을 거른다 · 화면도 한 번 더 막는다) */}
+            <ExampleTag on={isChairman(viewerRole) && task.is_example} />
           </Link>
           <p className="mt-0.5 truncate text-t10h text-ink-muted">
             {businessName} · {projectName}

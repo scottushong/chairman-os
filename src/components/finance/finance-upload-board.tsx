@@ -8,7 +8,7 @@ import { applyPendingUpload, cancelUpload, revertUpload, uploadFinanceFiles } fr
 import { saveOfficialStatement } from '@/app/actions/statements'
 import { KIND_SPECS, type FieldSpec, type UploadKind } from '@/lib/finance-upload/kinds'
 import { signedAmount } from '@/lib/finance-upload/official-sign'
-import { STATE_KO } from '@/lib/finance-upload/v21-text'
+import { REVERT_SCOPE_KO, STATE_KO } from '@/lib/finance-upload/v21-text'
 import { balanceCheck } from '@/lib/statements/balance'
 import type { OfficialDraft } from '@/lib/finance-upload/doc-read'
 import type { FileCard } from '@/lib/finance-upload/process'
@@ -215,6 +215,7 @@ export function FinanceUploadBoard({
 
       <section className="rounded-xl border border-line-soft bg-panel p-3">
         <h2 className="text-t13 font-semibold">최근 올리기</h2>
+        <p className="mt-0.5 text-t10h text-ink-muted" data-testid="revert-scope">{REVERT_SCOPE_KO}</p>
         {recent.length === 0 ? <p className="mt-2 text-t11h text-ink-muted">아직 없습니다.</p> : null}
         <ul className="mt-2 divide-y divide-line-soft">
           {recent.map((u) => (
@@ -250,7 +251,7 @@ function RecentRow({ u, businessId, canRevert }: { u: FinUpload; businessId: str
           onClick={() =>
             start(async () => {
               const r = await revertUpload(u.upload_id, businessId, '화면에서 되돌림')
-              setMsg(r.error ?? '되돌렸습니다(지우지 않고 무효 처리).')
+              setMsg(r.error ?? (u.kind === 'valuation' ? '되돌렸습니다(지우지 않고 무효 처리). 손으로 저장했던 평가금액은 되살아나지 않습니다 — «재고 · 평가»에서 다시 저장하세요.' : '되돌렸습니다(지우지 않고 무효 처리).'))
               router.refresh()
             })
           }
