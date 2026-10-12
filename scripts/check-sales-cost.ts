@@ -336,7 +336,7 @@ async function main() {
   assert.deepEqual([tiny[0].cost_krw, tiny[0].margin_krw, tiny[0].revenue_krw, tiny[0].n_uncomputed, tiny[0].n_sales], [1, 19, 45, 1, 3], '0077: 합산은 원래 값끼리 더한 뒤 1원 · 원가 없는 판매는 매출에만')
   assert.equal(tiny[0].margin_pct, 96, '마진 %는 원가가 있는 매출로 나눈다(19.2 ÷ 20)')
   const chairT = aggregateMargins([ms(1, '2026-10-02', 1, 10, 0.4), ms(3, '2026-10-04', 2.5, 10.1, null)], 'month', 'total', true, new Set(['2026-10']))
-  assert.deepEqual([chairT[0].cost_krw, chairT[0].revenue_krw, chairT[0].cost_basis], [0.4, 35.25, 'closed_month'], '대표는 원래 값 · 마감된 달은 «확정 매출원가 기준»')
+  assert.deepEqual([chairT[0].cost_krw, chairT[0].revenue_krw, chairT[0].cost_basis], [0.4, 35.25, 'closed_month'], '대표는 원래 값 · 마감된 달은 «월 마감 확정 달»')
   const q = aggregateMargins([ms(1, '2026-10-02', 10, 100, 60, [110, 70]), ms(2, '2026-10-03', 5, 100, 60)], 'day', 'product', false, new Set())
   assert.deepEqual(q.map((r) => [r.period_start, r.quote_kg, r.quote_margin_krw]), [['2026-10-03', null, null], ['2026-10-02', 10, 400]], '견적 마진은 견적이 이어진 판매만')
   assert.ok(costSourceKo('actual', null).includes('LOT 무효'), 'M9: LOT 무효 표시')
@@ -353,7 +353,7 @@ async function main() {
   const own = await as('sales_staff', () => repo.listSaleDeals('biz_dy', from5, today5))
   assert.ok(own.length > 0 && own.every((d) => d.mine), '0077 dummy: 영업은 본인 실적만')
   for (const d of own) {
-    assert.deepEqual(Object.keys(d).sort(), ['currency', 'customer_company', 'customer_name', 'grade', 'grade_as_of', 'kg', 'mine', 'price_krw_per_kg', 'product_name', 'quote_id', 'revenue_krw', 'sale_id', 'shipped_on'], '0077 dummy: 영업 칸에 원가 · 마진')
+    assert.deepEqual(Object.keys(d).sort(), ['currency', 'customer_company', 'customer_name', 'grade', 'grade_as_of', 'grade_basis', 'kg', 'mine', 'price_krw_per_kg', 'product_name', 'quote_id', 'revenue_krw', 'sale_id', 'shipped_on'], '0077 dummy: 영업 칸에 원가 · 마진')
   }
   setDummyModuleGrant(DUMMY_UID.salesLead, { module: '/sales/biz_dy', can_write: true, can_approve: false })
   const team = await as('sales_lead', () => repo.listSaleDeals('biz_dy', from5, today5))
@@ -439,7 +439,8 @@ async function main() {
       assert.ok(['src/lib/repository/dummy.ts', 'src/lib/repository/dummy-sales-margins.ts'].includes(rel), `가짜 BOM 저장소를 dummy 밖에서 import: ${rel}`)
     }
     if (/\bdummyCostLedger\b/.test(code)) {
-      assert.ok(['src/lib/repository/dummy-purchasing.ts', 'src/lib/repository/dummy-sales-cost.ts'].includes(rel), `dummy 원장을 밖에서 부른다: ${rel}`)
+      // dummy.ts는 0078 dummy 원가 후보 거울이 LOT 한 줄을 읽기만 한다(dummy 어댑터 안).
+      assert.ok(['src/lib/repository/dummy-purchasing.ts', 'src/lib/repository/dummy-sales-cost.ts', 'src/lib/repository/dummy.ts'].includes(rel), `dummy 원장을 밖에서 부른다: ${rel}`)
     }
   }
   // 0077 — 판매 실적 화면은 마진 · 원가를 부르지 않는다. 마진 화면은 내려받기를 붙이지 않는다(원가 엔진 빼기 금지 — 대표 예외는 따로).
