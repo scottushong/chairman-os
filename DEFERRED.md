@@ -2826,3 +2826,11 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - (미룸) 추이 그래프(지금은 표) · 회사 합계(그룹) — 회사 하나씩.
 - (미룸) 12달 × fin_pl_month 12번 부름(홈을 열 때마다) — 느리면 fin_pl_closes 저장본만 읽는 RPC 하나로. 지금은 대표만 · 스위치로 끌 수 있음.
 - (미룸) 브라우저로 화면을 열어 보지 않음(build만).
+
+## 2026-10-13 PHASE 11 — 남은 목록 — 고른 것 · 미룬 것
+- 고른 것은 docs/decisions/2026-10-12-autonomous.md 77~79.
+- (미룸) 0071 FORCE 리뷰 Minor — 다시 만든 restrictive 셋의 PUBLIC → to authenticated 차이 · check-force-rls.mjs가 disable rls · 동적 execute · «if exists only» 순서를 못 봄. 이유: 0071 파일을 고치지 않는다 · 검사 스크립트 손보기는 따로 리뷰가 필요.
+- (미룸) 0071 팀 이름을 바꾸면 탭을 다시 저장해야 팀원에게 보임 · cron 1분 제한에 걸리면 그날 거름(재시도 없음). 이유: 동작을 바꾸는 일 — 다음 블록.
+- (미룸) 0067 M5(머리 주석 «복합 FK» 틀림) · M6(만료 · 다른 고객 견적에 출고 묶기) · M7(마진 내려받기 기록 인자 검사). 이유: 0067을 고치지 않는다 — 새 마이그레이션 번호(0080~)로 덮을 일.
+- (미룸) 달 넘김 짝을 사람이 «다름»으로 무시하는 손잡이 — 지금은 same만 멈춤.
+- (미룸) OPERATIONS §9 0067 · 0068 복원 지점의 정확한 시각 — 기록이 저장소에 없음(대표가 Supabase Backups 화면에서 확인해 적는다).
