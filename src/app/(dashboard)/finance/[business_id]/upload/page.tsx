@@ -77,6 +77,7 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
   const limits = aiLimits()
   // C단계 PDF · 사진 — 기능 스위치 «PDF · 사진 읽기»(0073, 기본 대표만). 공식 결산 계정 맞추기용 계정(그 회사 · 사용 중).
   const docsOpen = canKeep && (await featureOn(user, 'finance_docs', business_id))
+  const ledgerPostOpen = canKeep && (await featureOn(user, 'ledger_post', business_id))
   const accounts = docsOpen
     ? ((await repo.loadFinanceLedger().catch(() => null))?.accounts ?? []).filter((a) => a.business_id === business_id && a.active).map((a) => ({ account_code: a.account_code, name: a.name, section: a.section }))
     : []
@@ -110,6 +111,11 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
       >
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <BooksNav businessId={business_id} current="import" canImport={canKeep} />
+          {ledgerPostOpen ? (
+            <Link href={`/finance/${business_id}/ledger-post`} className="text-t12 text-accent hover:underline">
+              원장 → 장부 반영
+            </Link>
+          ) : null}
         </div>
       </PageHeader>
 

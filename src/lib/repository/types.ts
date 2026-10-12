@@ -183,6 +183,7 @@ import type {
   SalesMarginRow,
   CandidateDecision,
   CostCandidate,
+  LedgerQueueRow,
   PlAdjustmentKind,
   PlSettings,
   PlYearRow,
@@ -370,7 +371,18 @@ export interface CostCandidatesMethods {
   decideCostCandidate(businessId: string, d: CandidateDecision): Promise<string>
 }
 
-export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods, ProductionMethods, CostsMethods, QuoteMethods, CostImportMethods, ProcessSyncMethods, SalesMarginsMethods, CostCandidatesMethods {
+/**
+ * PHASE 7 장부 반영(0079 — ⑤ 계정별 원장 → 0016 전표). 판정은 DB(스위치 'ledger_post' · can_keep_books · 마감 달 대표 · CFO).
+ * 대기 → 반영(post_journal_entry) → 무효(대기 풀기 · 반영 역분개). 0079 전 DB면 'ledger_post_unavailable'.
+ */
+export interface LedgerPostMethods {
+  ledgerPostQueue(businessId: string, period: string): Promise<LedgerQueueRow[]>
+  ledgerPostStage(businessId: string, lineIds: number[], counterAccount: string | null, entryDate: string | null, reason: string | null): Promise<string>
+  ledgerPostApply(postId: string, reason: string | null): Promise<string>
+  ledgerPostVoid(postId: string, reason: string): Promise<string>
+}
+
+export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods, ProductionMethods, CostsMethods, QuoteMethods, CostImportMethods, ProcessSyncMethods, SalesMarginsMethods, CostCandidatesMethods, LedgerPostMethods {
   /** 어느 쪽을 보고 있는지. 화면이 아니라 DUMMY DATA 뱃지와 로그가 쓴다. */
   readonly mode: 'dummy' | 'live'
 

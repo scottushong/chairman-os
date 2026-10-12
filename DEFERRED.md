@@ -2800,3 +2800,13 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - (미룸) 같은 입고가 ② 입고와 ⑤ 원장 둘에 있을 때(0072 묶음) 후보 화면은 ②만 보여 준다 — 원장 줄은 LOT 후보가 아니다. 묶음 표시는 화면에 없다.
 - (미룸) 0078 staging 시험은 LOT 넣기를 돌리지 않는다(원료 · 공급처 준비가 길다) — 넣기 · Landed · 판매는 check:cost-engine ⑮(PGlite)에서.
 - (미룸) 읽기 전용 리뷰 에이전트 리뷰 미실행(시간 상자 — 하위 에이전트 금지 지시). 마무리 블록에서 0078 리뷰 권장.
+
+## 2026-10-13 PHASE 7 — 원장 → 장부 반영 · 0079 — 고른 것 · 미룬 것
+- 고른 것은 docs/decisions/2026-10-12-autonomous.md 56~62.
+- (잘라냄) 상대 계정 자동 추정 · 계정 코드 대응표(원장 계정명 → 장부 계정) — 지금은 원장 계정 코드 그대로(장부에 없으면 0016 inactive_account).
+- (잘라냄) 사이드바 · BooksNav 탭 — /finance/<회사>/upload 화면 안 링크만(장부 쓰기 · 스위치 켜짐일 때).
+- (잘라냄) 0075 확정 달에 반영했을 때 재마감 대상(fin_reclose_flags) 줄 — 0075 입력 해시의 «자료 바뀜» 표시만.
+- (미룸) check:ledger-post PGlite는 소유자가 superuser다 — journal_* FORCE RLS를 BYPASSRLS 없는 소유자에서 돌리는 시험은 staging 시험(0079)이 대신한다.
+- (미룸) dummy 거울은 dummy 장부(전표)에 쓰지 않는다 — 전표 번호만 흉내.
+- (미룸) 0075 «재고 반영 손익» 숫자가 반영 전후 같다는 끝까지 시험(PGlite fin_pl_month) — 교체 규칙은 0075 코드(cogs raw_material 교체)로 보장, 시험은 정적(0079가 4510 · 계정을 고치지 않음)만.
+- (미룸) 읽기 전용 리뷰 에이전트 리뷰 미실행(시간 상자 — 하위 에이전트 금지 지시). 0079는 돈 · 장부라 마무리에서 리뷰 권장.

@@ -47,6 +47,7 @@
     "check:finance-pdf": "tsx --conditions=react-server scripts/check-finance-pdf.ts",
     "check:features": "tsx scripts/check-features.ts",
     "check:cost-candidates": "tsx scripts/check-cost-candidates.ts",
+    "check:ledger-post": "tsx scripts/check-ledger-post.ts",
     "check:monthly-pl": "tsx --conditions=react-server scripts/check-monthly-pl.ts"
   },
   "dependencies": {

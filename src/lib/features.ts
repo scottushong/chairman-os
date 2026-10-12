@@ -90,9 +90,9 @@ export const FEATURES = [
   {
     key: 'ledger_post',
     label: '원장 → 장부 반영',
-    description: '올린 원장을 장부(전표)로 반영. 다음 단계에서 붙는다.',
+    description: '자료 올리기의 ⑤ 계정별 원장 줄을 «반영 대기 → 반영» 2단계로 장부 전표에 넣기(/finance/<회사>/ledger-post) · 같은 거래 묶음은 한 번만 · 마감 달은 대표 · CFO · 되돌리기는 무효 처리(역분개). 꺼지면 화면이 사라지고 RPC(ledger_post_*)도 거부.',
     defaultAudience: 'chairman',
-    from: '다음 단계(미정)',
+    from: 'feat/ledger-post · 0079',
   },
   {
     key: 'chairman_dashboard',
