@@ -171,6 +171,9 @@ export function classifyByCode(sheet: EcountSheet): Classification {
 /** AI 결과(JSON)를 코드 결과와 합친다. 같은 종류면 높음, 다르면 낮음(사람이 고른다). AI 칸 대응은 머리글 범위 안의 숫자만. */
 export function mergeAi(code: Classification, ai: { kind: string; confidence: Confidence; header_row: number; columns: Record<string, number>; reason: string } | null, colCount: number): Classification {
   if (!ai) return code
+  if (code.kind === 'unknown' && ai.kind === 'unknown') {
+    return { ...code, confidence: 'none', reason: `코드 · AI 모두 종류를 모릅니다(${ai.reason.slice(0, 80)}) — 종류를 골라 주세요.`, source: 'ai' }
+  }
   const kind = KIND_SPECS.some((k) => k.kind === ai.kind) ? (ai.kind as UploadKind) : 'unknown'
   const columns: Record<string, number> = {}
   if (kind !== 'unknown') {
