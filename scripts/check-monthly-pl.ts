@@ -8,6 +8,9 @@
  */
 import assert from 'node:assert/strict'
 
+import { PGlite } from '@electric-sql/pglite'
+import { pg_trgm } from '@electric-sql/pglite/contrib/pg_trgm'
+
 import {
   computeMonthlyPl,
   dedupeLines,
@@ -17,7 +20,9 @@ import {
   plDiff,
   roundWon,
 } from '../src/lib/monthly-pl/calc'
-import type { MonthlyPlInput, MonthlyPlResult, PlMaterialInput } from '../src/types'
+import type { MonthlyPlInput, MonthlyPlResult, PlIssue, PlMaterialInput } from '../src/types'
+
+import { applyAll } from './pglite'
 
 let passed = 0
 const tests: { name: string; fn: () => void | Promise<void> }[] = []
@@ -412,12 +417,48 @@ export const PARITY_INPUTS: MonthlyPlInput[] = [
   base({ issues_uploaded: false, materials: [mat({ opening_qty: 10, opening_amount: 1000, production_qty: null, closing_qty: 5, non_production: { sample: 1 } })], purchase_suspects: 1, purchase_dupes_excluded: 2, link: { prev_final: false, earlier_final: true }, wip: { ...base().wip, opening_scope: 'material_only', duplicate_suspect: true } }),
 ]
 
+/** 순서와 상관없이 같은 까닭들인가(SQL은 같은 순서로 쌓지만, 대조는 내용으로). */
+const issueKey = (xs: PlIssue[]) => xs.map((i) => `${i.code}|${i.target ?? ''}|${i.message}`).sort()
+
+/** 2절 — 같은 입력을 0075 fin_pl_compute · fin_pl_mask(SQL)에 넣어 TS와 같은지. */
+async function parity() {
+  const db = new PGlite({ extensions: { pg_trgm } })
+  await applyAll(db)
+  const sql = async (x: MonthlyPlInput, cost: boolean | null): Promise<MonthlyPlResult> => {
+    const q = cost === null ? `select fin_pl_compute($1::jsonb) as r` : `select fin_pl_mask(fin_pl_compute($1::jsonb), ${cost}) as r`
+    const rows = (await db.query<{ r: MonthlyPlResult }>(q, [JSON.stringify(x)])).rows
+    return JSON.parse(JSON.stringify(rows[0].r)) as MonthlyPlResult
+  }
+  let n = 0
+  for (const x of PARITY_INPUTS) {
+    const ts = computeMonthlyPl(x)
+    const db1 = await sql(x, null)
+    const { blockers: tb, warnings: tw, ...tRest } = ts
+    const { blockers: sb, warnings: sw, ...sRest } = db1
+    assert.deepEqual(sRest, tRest, `SQL ≠ TS (${x.period} ${x.materials.map((m) => m.name).join(',')})`)
+    assert.deepEqual(issueKey(sb), issueKey(tb), `SQL ≠ TS blockers (${x.period})`)
+    assert.deepEqual(issueKey(sw), issueKey(tw), `SQL ≠ TS warnings (${x.period})`)
+    for (const cost of [true, false]) {
+      const tm = maskPlResult(ts, cost)
+      const sm = await sql(x, cost)
+      // 대표 · 원가 권한(cost = true)은 두 쪽 모두 결과를 그대로 돌려준다(withheld 칸 없음).
+      assert.deepEqual({ ...sm, blockers: issueKey(sm.blockers), warnings: issueKey(sm.warnings) }, { ...tm, blockers: issueKey(tm.blockers), warnings: issueKey(tm.warnings) }, `SQL ≠ TS mask(${cost})`)
+    }
+    n++
+  }
+  await db.close()
+  return n
+}
+
 async function main() {
   for (const t of tests) {
     await t.fn()
     passed++
     console.log(`  ✓ ${t.name}`)
   }
+  const n = await parity()
+  console.log(`  ✓ 0075 fin_pl_compute · fin_pl_mask(SQL) = calc.ts — 입력 ${n}벌`)
+  passed++
   console.log(`PASS check:monthly-pl — ${passed}개`)
 }
 

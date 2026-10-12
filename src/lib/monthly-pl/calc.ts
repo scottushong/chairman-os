@@ -70,6 +70,7 @@ const MAT_MSG: Record<string, string> = {
   return_kind: '반품 출고 — 매입 환출 처리 기준 확인 필요',
   needs_review: '원료 출고 구분 «확인 필요» 줄이 남음',
   missing_qty: '원료 출고 kg 빈칸 줄이 있음',
+  purchase_missing: '입고 줄에 수량 또는 금액 빈칸이 있음 — 0으로 채우지 않음',
 }
 
 const add = (a: number | null, b: number | null): number | null => (a === null || b === null ? null : a + b)
@@ -90,10 +91,12 @@ function material(m: MonthlyPlInput['materials'][number], method: PlMethod): PlM
   if ((m.non_production.return ?? 0) > 0) errors.push('return_kind')
   if (m.issue_needs_review > 0) errors.push('needs_review')
   if (m.issue_missing_qty > 0) errors.push('missing_qty')
+  if ((m.purchase_missing ?? 0) > 0) errors.push('purchase_missing')
   const openKnown = m.opening_qty !== null && m.opening_amount !== null
   if (!openKnown) errors.push('opening_missing')
   if (m.closing_qty === null) errors.push('closing_missing')
   else if (m.closing_qty < 0) errors.push('negative_stock')
+  else if (method === 'statement' && m.closing_statement_amount === null) errors.push('closing_missing')
 
   const denQ = openKnown ? m.opening_qty! + m.purchase_qty : null
   const denA = openKnown ? m.opening_amount! + m.purchase_amount : null

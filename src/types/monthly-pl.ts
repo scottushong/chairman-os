@@ -25,6 +25,8 @@ export interface PlMaterialInput {
   opening_source: 'prev_close' | 'statement' | 'statement_absent' | 'missing'
   purchase_qty: number
   purchase_amount: number
+  /** 수량 또는 금액이 빈칸인 입고 줄 수(빈칸은 더하지 않는다 — 있으면 막는다). */
+  purchase_missing?: number
   /** 확인된 생산 투입 kg(출고 구분 «생산 투입»). 출고명세가 없으면 null. */
   production_qty: number | null
   /** 비생산 출고 kg(성격별). 창고 이동(transfer)은 회사 재고가 바뀌지 않아 넣지 않는다. */
