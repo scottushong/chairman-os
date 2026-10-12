@@ -52,6 +52,7 @@ type Methods = Pick<
   | 'finValuationWarnings'
   | 'finInventoryRoll'
   | 'finOpeningSave'
+  | 'finOpeningConfirm'
   | 'finIssueSummary'
   | 'finIssueBulkDecide'
   | 'listFinTxLines'
@@ -152,7 +153,7 @@ export function financeUploadMethods(sb: SupabaseClient): Methods {
 
     /* ───── 0072 ───── */
     async finRowBusiness(kind, id) {
-      const [table, col] = kind === 'valuation' ? ['fin_inventory_valuations', 'valuation_id'] : kind === 'tx_group' ? ['fin_tx_groups', 'group_id'] : ['fin_reclose_flags', 'flag_id']
+      const [table, col] = kind === 'valuation' ? ['fin_inventory_valuations', 'valuation_id'] : kind === 'tx_group' ? ['fin_tx_groups', 'group_id'] : kind === 'opening' ? ['fin_inventory_openings', 'opening_id'] : ['fin_reclose_flags', 'flag_id']
       const { data, error } = await sb.from(table).select('business_id').eq(col, id).maybeSingle()
       if (error && MISSING.has(error.code ?? '')) return null
       if (error) fail(table, error)
@@ -213,6 +214,10 @@ export function financeUploadMethods(sb: SupabaseClient): Methods {
         statement_opening: n(r.statement_opening),
         diff_vs_prev_close: n(r.diff_vs_prev_close),
         missing_lines: Number(r.missing_lines ?? 0),
+        // 0076 전 DB에는 칸이 없다(undefined → null · 0).
+        opening_id: r.opening_id ? String(r.opening_id) : null,
+        opening_confirmed: typeof r.opening_confirmed === 'boolean' ? r.opening_confirmed : null,
+        prev_missing_lines: Number(r.prev_missing_lines ?? 0),
       }))
     },
     async finOpeningSave(x) {
@@ -221,6 +226,11 @@ export function financeUploadMethods(sb: SupabaseClient): Methods {
       })
       if (error) fail('fin_opening_save', error)
       return String(data)
+    },
+    async finOpeningConfirm(id, reason) {
+      const { data, error } = await sb.rpc('fin_opening_confirm', { p_id: id, p_reason: reason })
+      if (error) fail('fin_opening_confirm', error)
+      return data === true
     },
     async finIssueSummary(businessId, period) {
       const { data, error } = await sb.rpc('fin_issue_summary', { p_business: businessId, p_period: period })

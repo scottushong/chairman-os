@@ -175,6 +175,14 @@ async function main() {
     assert.equal(Number(left), 0, '0075 staging 시험 SQL이 저장본 · 조정 · 설정 · 올리기 · 전표 · 재마감 대상 · 평가금액을 남겼다')
     assert.equal(await switches(), before75, '0075 staging 시험 SQL이 기능 스위치 줄을 바꾼 채 남겼다')
   }
+  // 0076(첫 달 기초 확인 · 일부 미입력 · 시드 정의자 거름)이 있는 브랜치에서만. 0071보다 먼저.
+  if (files.includes('0076_b_rest.sql')) {
+    const m76 = await runFile('0076_staging_test.sql')
+    assert.match(m76, /^0076 STAGING PASS a\(입력자 확인 거부\) b\(다른 사람 확인\) c\(두 번째 확인 false\) d\(미입력 확인 거부\) e\(일부 미입력\) f\(정의자 거름\) g\(anon 거부\)$/, `0076 staging 시험 SQL이 PASS로 끝나지 않는다 (${m76})`)
+    const left = (await db.query<{ n: number }>(`select (select count(*) from fin_inventory_openings where period like '2099-0%') + (select count(*) from fin_uploads where period in ('2099-07', '2099-08'))
+      + (select count(*) from fin_reclose_flags where period in ('2099-07', '2099-08')) + (select count(*) from audit_log where entity_table = 'fin_inventory_openings') as n`)).rows[0].n
+    assert.equal(Number(left), 0, '0076 staging 시험 SQL이 첫 달 기초 · 올리기 · 재마감 대상 · 감사를 남겼다')
+  }
   // 0071은 맨 뒤 — 끝에서 표 · 함수 소유자를 바꾼다(아래 주석).
   // 0071(프로세스 차트 동기화)이 있는 브랜치에서만. staging처럼 AI Agent 계정이 하나 있다.
   if (files.includes('0071_process_chart_sync.sql')) {

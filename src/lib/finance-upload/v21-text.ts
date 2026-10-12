@@ -17,6 +17,13 @@ export function parseValue(v: unknown): { amount: number | null; state: ValueSta
   return { amount: n, state: n === 0 ? 'confirmed_zero' : 'value' }
 }
 
+/** 0076 «일부 미입력» — 앞 달 명세서에 빈칸 줄이 섞인 원재료 기초(아는 줄의 합). */
+export const PARTIAL_KO = '일부 미입력'
+
+/** 0072 되돌리기 범위(0072 DEFERRED — 수동 평가금액은 되살리지 않는다 · 그대로 둔다). */
+export const REVERT_SCOPE_KO =
+  '되돌리기는 이 올리기가 넣은 줄을 무효로 하고, 이 올리기가 밀어낸 옛 올리기 줄만 되살립니다. 손으로 저장했다가 이 올리기에 밀린 평가금액 · 기초는 되살아나지 않습니다 — «재고 · 평가»에서 다시 저장하세요.'
+
 export const won = (n: number | null | undefined) => (n === null || n === undefined ? '—' : `${Math.round(n).toLocaleString('ko-KR')}원`)
 
 export const CATEGORY_KO: Record<string, string> = { raw: '원재료', wip: '재공품', finished: '완제품' }
@@ -49,6 +56,8 @@ const ERR: Record<string, string> = {
   fin_valuation_status: '상태를 확인하세요(입력 중 · 잠정).',
   fin_valuation_final_exists: '그 구분의 확정된 평가금액이 이미 있습니다 — 이유를 적고 바꾸세요.',
   fin_opening_reason: '출처와 이유(2자 이상)를 적어 주세요.',
+  fin_opening_self_confirm: '입력한 사람은 확인할 수 없습니다 — 다른 장부 담당이 확인합니다.',
+  fin_opening_missing: '«미입력» 기초는 확인할 수 없습니다 — 금액(또는 확인된 0)을 먼저 저장하세요.',
   fin_issue_reason: '이유를 2자 이상 적어 주세요.',
   fin_issue_class: '구분을 확인하세요.',
   fin_tx_reason: '이유를 2자 이상 적어 주세요.',

@@ -285,6 +285,17 @@ async function main() {
   await assert.rejects(repo.finOpeningSave({ business_id: BIZ, period: V21b, category: 'finished', amount: 1000, state: 'value', source: 'manual', upload_id: null, note: '' }), /fin_opening_reason/, '이유 없이 첫 달 기초가 들어갔다')
   await repo.finOpeningSave({ business_id: BIZ, period: V21b, category: 'finished', amount: 1000, state: 'value', source: 'manual', upload_id: null, note: '첫 달 실사표' })
   assert.equal((await repo.finInventoryRoll(BIZ, V21b)).find((r) => r.category === 'finished')!.opening_source, 'manual')
+  // 0076 — 첫 달 기초 «확인»: 입력한 사람은 거부 · 다른 장부 담당(대표)은 확인 · 두 번째는 false.
+  {
+    const op = (await repo.finInventoryRoll(BIZ, V21b)).find((r) => r.category === 'finished')!
+    assert.ok(op.opening_id && op.opening_confirmed === false, `첫 달 기초가 미확인으로 오지 않는다: ${JSON.stringify(op)}`)
+    await assert.rejects(repo.finOpeningConfirm(op.opening_id!, null), /fin_opening_self_confirm/, '입력한 사람이 첫 달 기초를 확인했다')
+    process.env.DUMMY_USER = 'chairman'
+    assert.equal(await repo.finOpeningConfirm(op.opening_id!, null), true, '다른 사람이 첫 달 기초를 확인하지 못했다')
+    assert.equal(await repo.finOpeningConfirm(op.opening_id!, null), false, '이미 확인한 기초를 다시 확인했다')
+    assert.equal((await repo.finInventoryRoll(BIZ, V21b)).find((r) => r.category === 'finished')!.opening_confirmed, true)
+    process.env.DUMMY_USER = 'support_lead'
+  }
 
   // ── 13. 원료 출고 — 구분 칸 없음 = 확인 필요 · 규칙 · 생산 투입이 기본값이 아님 · kg는 대기 읽기 · 요약 어디에도 없음 ──
   assert.equal(classifyIssue({}, false).class, 'needs_review')
