@@ -79,10 +79,10 @@ begin
   v_u2 := public.fin_upload_apply('biz_dy', 'sales', '2099-01', '가짜 판매현황 2.xlsx', sha2, '판매', 'medium', 1, false, rows1, null, 'replace', '새 파일이 맞음', null);
   select count(*) into n from public.fin_sales_lines where upload_id = v_u1 and voided_at is null;
   if n <> 0 then raise exception 'FAIL b: replace 뒤 옛 줄이 살아 있다(%)', n; end if;
-  select count(*) into n from public.fin_uploads where upload_id = v_u1 and status = 'replaced';
+  select count(upload_id) into n from public.fin_uploads where upload_id = v_u1 and status = 'replaced';
   if n <> 1 then raise exception 'FAIL b: 옛 올리기가 replaced가 아니다'; end if;
   v_u3 := public.fin_upload_apply('biz_dy', 'sales', '2099-01', '가짜 판매현황 3.xlsx', sha3, '판매', 'medium', 1, false, rows1, null, 'keep_old', null, null);
-  select count(*) into n from public.fin_uploads where upload_id = v_u3 and status = 'skipped';
+  select count(upload_id) into n from public.fin_uploads where upload_id = v_u3 and status = 'skipped';
   if n <> 1 then raise exception 'FAIL b: keep_old가 skipped가 아니다'; end if;
   select count(*) into n from public.fin_sales_lines where upload_id = v_u3;
   if n <> 0 then raise exception 'FAIL b: keep_old인데 줄이 들어갔다'; end if;
@@ -94,14 +94,30 @@ begin
   if n <> 0 then raise exception 'FAIL c: 되돌린 뒤 줄이 살아 있다(%)', n; end if;
   select count(*) into n from public.fin_sales_lines where upload_id = v_u2;
   if n <> 2 then raise exception 'FAIL c: 되돌리기가 줄을 지웠다(%)', n; end if;
+  -- 리뷰 I-3: 바꾸기를 되돌리면 옛 올리기(v_u1)의 줄이 되살아나고 applied로 돌아온다.
+  select count(*) into n from public.fin_sales_lines where upload_id = v_u1 and voided_at is null;
+  if n <> 2 then raise exception 'FAIL c: 바꾸기를 되돌렸는데 옛 줄이 안 살아났다(%)', n; end if;
+  select count(upload_id) into n from public.fin_uploads where upload_id = v_u1 and status = 'applied';
+  if n <> 1 then raise exception 'FAIL c: 옛 올리기가 applied로 안 돌아왔다'; end if;
+  -- 리뷰 I-1: 급여 대기 줄의 개인 줄은 직원에게 싣지 않는다 · pending 칸은 직접 못 읽는다.
+  v_pay := public.fin_upload_record('biz_dy', 'payroll', '2099-03', '가짜 급여 대기.xlsx', repeat('8', 64), '급여', 'medium', 1, 'needs_review',
+                                    '{"rows":[{"row_no":0,"dept":"영업","salary":1}],"people":[{"row_no":4,"dept":"영업","person_ref":"E9","salary":1}]}', null);
+  if public.fin_upload_pending(v_pay) ? 'people' then raise exception 'FAIL c: 직원에게 급여 개인 줄이 실렸다'; end if;
+  if not public.fin_upload_pending(v_pay) ? 'rows' then raise exception 'FAIL c: 직원이 대기 줄을 못 읽는다'; end if;
+  begin
+    perform pending from public.fin_uploads where upload_id = v_pay;
+    raise exception 'FAIL c: pending 칸을 직접 읽었다';
+  exception when insufficient_privilege then null;
+  end;
+  if not public.fin_upload_cancel(v_pay) then raise exception 'FAIL c: 급여 대기 취소 실패'; end if;
   v_u3 := public.fin_upload_record('biz_dy', 'unknown', null, '가짜 모르는 파일.xlsx', repeat('4', 64), 'Sheet1', 'low', 1, 'needs_review',
                                    jsonb_build_object('rows', '[]'::jsonb), null);
   v_u3 := public.fin_upload_apply('biz_dy', 'cashflow', '2099-02', '가짜 모르는 파일.xlsx', repeat('4', 64), 'Sheet1', 'low', 1, false,
                                   '[{"row_no":2,"flow_date":"2099-02-03","category":"가짜 매출 입금","inflow":5000,"outflow":0}]', null, 'none', '종류를 자금흐름으로 고침', v_u3);
-  select count(*) into n from public.fin_uploads where upload_id = v_u3 and status = 'applied' and kind = 'cashflow' and pending is null;
+  select count(upload_id) into n from public.fin_uploads where upload_id = v_u3 and status = 'applied' and kind = 'cashflow';
   if n <> 1 then raise exception 'FAIL c: 미리보기 대기 → 넣기가 안 됐다'; end if;
   if public.fin_upload_cancel(v_u3) then raise exception 'FAIL c: 넣은 것을 취소했다'; end if;
-  v_out := v_out || 'c(되돌리기 = 무효 · 줄 남음 · 대기 → 종류 고쳐 넣기 · 넣은 것 취소 거부) ';
+  v_out := v_out || 'c(되돌리기 = 무효 · 줄 남음 · 옛 줄 되살림 · 급여 개인 줄 직원 0 · pending 직접 읽기 거부 · 대기 → 종류 고쳐 넣기 · 넣은 것 취소 거부) ';
 
   -- ── d. 마감 달: 직원 거부 · 대표는 이유 있어야 ──
   reset role;
@@ -156,7 +172,7 @@ begin
   perform set_config('request.jwt.claims', json_build_object('sub', v_member, 'role', 'authenticated')::text, true);
   perform set_config('request.jwt.claim.sub', v_member::text, true);
   set local role authenticated;
-  select count(*) into n from public.fin_uploads where business_id = 'biz_dy' and period like '2099-%';
+  select count(upload_id) into n from public.fin_uploads where business_id = 'biz_dy' and period like '2099-%';
   if n <> 0 then raise exception 'FAIL e: 재무 권한 없는 사원이 올리기 기록을 본다(%)', n; end if;
   begin
     perform public.fin_upload_apply('biz_dy', 'sales', '2099-01', 'x.xlsx', repeat('7', 64), 's', 'high', 1, true, rows1, null, 'none', null, null);
@@ -173,7 +189,7 @@ begin
   -- ── f. anon ──
   set local role anon;
   begin
-    perform 1 from public.fin_uploads limit 1;
+    perform upload_id from public.fin_uploads limit 1;
     raise exception 'FAIL f: anon이 읽었다';
   exception when insufficient_privilege then null;
   end;

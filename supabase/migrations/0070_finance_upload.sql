@@ -61,6 +61,7 @@ create table fin_uploads (
   applied_by    uuid,
   reverted_at   timestamptz,
   reverted_by   uuid,
+  replaced_by   uuid references fin_uploads(upload_id),                                        -- [일반] 이 올리기를 바꾼 새 올리기(되돌리면 되살린다)
   constraint fin_uploads_kind_known check (kind in ('sales', 'purchase_in', 'inventory', 'production', 'ledger', 'payroll', 'import', 'cashflow', 'card', 'overseas', 'promo', 'loans', 'borrowings', 'savings', 'unknown'))
 );
 create unique index fin_uploads_same_file on fin_uploads (business_id, kind, coalesce(period, ''), file_sha256)
@@ -72,7 +73,11 @@ comment on table fin_uploads is
 
 alter table fin_uploads enable row level security;
 revoke all on table fin_uploads from public, anon, authenticated;
-grant select on table fin_uploads to authenticated;
+-- 리뷰 I-1: pending(미리보기 대기 줄 — 급여 개인 줄이 들 수 있다)은 열 grant에서 뺀다. 읽기는 fin_upload_pending()만
+-- (급여 개인 줄은 대표 · CFO에게만 싣는다).
+grant select (upload_id, business_id, kind, period, file_name, file_sha256, sheet_name, ai_confidence, ai_used, auto, status,
+              row_count, overlap, reason, error, created_by, created_at, applied_at, applied_by, reverted_at, reverted_by, replaced_by)
+  on table fin_uploads to authenticated;
 -- 기록은 그 회사 장부를 쓰는 사람(올리는 사람)과 읽는 사람이 본다. pending의 급여는 부서 합계 · 사번뿐이다(앱이 버린 뒤).
 create policy fin_uploads_read on fin_uploads for select to authenticated
   using (can_keep_books(business_id) or can_read_books(business_id));
@@ -446,6 +451,13 @@ begin
   if p_status not in ('needs_review', 'failed') then
     raise exception 'fin_upload_status' using errcode = '22023';
   end if;
+  -- 리뷰 I-1: 실패 기록은 줄을 두지 않는다 · 대기 줄은 5MB까지.
+  if p_status = 'failed' then
+    p_pending := null;
+  end if;
+  if p_pending is not null and pg_column_size(p_pending) > 5 * 1024 * 1024 then
+    raise exception 'fin_upload_rows' using errcode = '22023';
+  end if;
   if p_status = 'needs_review' and exists (
     select 1 from fin_uploads u where u.business_id = p_business and u.kind = coalesce(p_kind, 'unknown')
        and coalesce(u.period, '') = coalesce(p_period, '') and u.file_sha256 = p_sha and u.status in ('needs_review', 'applied')
@@ -501,16 +513,18 @@ begin
   end if;
   -- 같은 회사 · 종류 · 기간의 살아 있는 올리기 — 동시에 두 사람이 넣지 못하게 잠근다.
   perform pg_advisory_xact_lock(hashtext('fin_upload:' || p_business || ':' || p_kind || ':' || p_period));
-  select array_agg(u.upload_id) into v_old
-    from fin_uploads u
-   where u.business_id = p_business and u.kind = p_kind and u.period = p_period and u.status = 'applied'
-     and u.upload_id is distinct from p_upload;
+  -- 리뷰 I-2: 옛 올리기를 잠그고 읽는다(되돌리기와 엇갈리지 않게 — 되돌리기도 같은 자문 잠금을 잡는다).
+  select array_agg(x.upload_id) into v_old
+    from (select u.upload_id from fin_uploads u
+           where u.business_id = p_business and u.kind = p_kind and u.period = p_period and u.status = 'applied'
+             and u.upload_id is distinct from p_upload
+           for update) x;
   v_closed := fin_month_closed(p_business, p_period);
 
   if coalesce(p_auto, false) and (v_old is not null or v_closed) then
     raise exception 'fin_upload_auto_blocked' using errcode = '22023';
   end if;
-  if v_closed and not (auth_role()::text in ('Chairman', 'GroupCFO') and length(btrim(coalesce(p_reason, ''))) >= 2) then
+  if v_closed and not (coalesce(auth_role()::text, '') in ('Chairman', 'GroupCFO') and length(btrim(coalesce(p_reason, ''))) >= 2) then
     raise exception 'fin_upload_closed' using errcode = '42501';
   end if;
   if v_old is not null and p_overlap = 'none' then
@@ -529,9 +543,13 @@ begin
     if v_row.upload_id is null or v_row.status <> 'needs_review' then
       raise exception 'fin_upload_not_pending' using errcode = '22023';
     end if;
+    if exists (select 1 from fin_uploads u where u.business_id = p_business and u.kind = p_kind and u.period = p_period
+                  and u.file_sha256 = v_row.file_sha256 and u.status in ('needs_review', 'applied') and u.upload_id <> p_upload) then
+      raise exception 'fin_upload_duplicate' using errcode = '23505';
+    end if;
     update fin_uploads
        set kind = p_kind, period = p_period, sheet_name = coalesce(p_sheet, sheet_name), status = v_status,
-           auto = false, overlap = p_overlap, reason = nullif(btrim(coalesce(p_reason, '')), ''), pending = null,
+           auto = coalesce(p_auto, false), overlap = p_overlap, reason = nullif(btrim(coalesce(p_reason, '')), ''), pending = null,
            row_count = jsonb_array_length(p_rows), applied_at = now(), applied_by = auth.uid()
      where upload_id = p_upload;
     v_id := p_upload;
@@ -551,7 +569,7 @@ begin
   if v_status = 'applied' then
     if p_overlap = 'replace' then
       perform fin_upload_void(v_old);
-      update fin_uploads set status = 'replaced' where upload_id = any (v_old);
+      update fin_uploads set status = 'replaced', replaced_by = v_id where upload_id = any (v_old) and status = 'applied';
     end if;
   if false then null;
   elsif p_kind = 'sales' then
@@ -658,11 +676,40 @@ begin
 end;
 $fn$;
 
-/** 되돌리기 — 넣은 지 7일 안, 그 회사 장부를 쓰는 사람. 마감 달이면 대표 · CFO만. */
+/** 그 올리기들의 줄을 되살린다(바꾸기를 되돌릴 때 옛 줄). 이 파일의 RPC만 부른다. */
+create or replace function fin_upload_unvoid(p_ids uuid[]) returns void
+language plpgsql security definer set search_path = public, pg_temp as $fn$
+begin
+  if p_ids is null then
+    return;
+  end if;
+  update fin_sales_lines set voided_at = null where upload_id = any (p_ids);
+  update fin_purchase_in_lines set voided_at = null where upload_id = any (p_ids);
+  update fin_inventory_lines set voided_at = null where upload_id = any (p_ids);
+  update fin_production_lines set voided_at = null where upload_id = any (p_ids);
+  update fin_ledger_sums set voided_at = null where upload_id = any (p_ids);
+  update fin_payroll_depts set voided_at = null where upload_id = any (p_ids);
+  update fin_import_lines set voided_at = null where upload_id = any (p_ids);
+  update fin_cash_flows set voided_at = null where upload_id = any (p_ids);
+  update fin_card_lines set voided_at = null where upload_id = any (p_ids);
+  update fin_overseas_costs set voided_at = null where upload_id = any (p_ids);
+  update fin_promo_costs set voided_at = null where upload_id = any (p_ids);
+  update fin_loans set voided_at = null where upload_id = any (p_ids);
+  update fin_borrowings set voided_at = null where upload_id = any (p_ids);
+  update fin_savings_lines set voided_at = null where upload_id = any (p_ids);
+  update fin_payroll_people set voided_at = null where upload_id = any (p_ids);
+end;
+$fn$;
+
+/**
+ * 되돌리기 — 넣은 지 7일 안, 그 회사 장부를 쓰는 사람. 마감 달이면 대표 · CFO만.
+ * 리뷰 I-3: 이 올리기가 옛 올리기를 바꿨으면(replaced_by) 옛 줄을 되살리고 옛 올리기를 다시 applied로 — 그 달이 비지 않는다.
+ */
 create or replace function fin_upload_revert(p_upload uuid, p_reason text) returns boolean
 language plpgsql security definer set search_path = public, pg_temp as $fn$
 declare
-  v_row fin_uploads;
+  v_row  fin_uploads;
+  v_prev uuid[];
 begin
   select * into v_row from fin_uploads where upload_id = p_upload for update;
   if v_row.upload_id is null or not coalesce(can_keep_books(v_row.business_id), false) then
@@ -674,15 +721,22 @@ begin
   if v_row.applied_at < now() - interval '7 days' then
     raise exception 'fin_upload_revert_expired' using errcode = '22023';
   end if;
-  if fin_month_closed(v_row.business_id, v_row.period) and auth_role()::text not in ('Chairman', 'GroupCFO') then
+  if fin_month_closed(v_row.business_id, v_row.period) and coalesce(auth_role()::text, '') not in ('Chairman', 'GroupCFO') then
     raise exception 'fin_upload_closed' using errcode = '42501';
   end if;
+  -- 리뷰 I-2: 넣기와 같은 자문 잠금.
+  perform pg_advisory_xact_lock(hashtext('fin_upload:' || v_row.business_id || ':' || v_row.kind || ':' || v_row.period));
   perform fin_upload_void(array[p_upload]);
+  select array_agg(u.upload_id) into v_prev from fin_uploads u where u.replaced_by = p_upload and u.status = 'replaced';
+  if v_prev is not null then
+    perform fin_upload_unvoid(v_prev);
+    update fin_uploads set status = 'applied', replaced_by = null where upload_id = any (v_prev);
+  end if;
   update fin_uploads set status = 'reverted', reverted_at = now(), reverted_by = auth.uid(),
          reason = coalesce(nullif(btrim(coalesce(p_reason, '')), ''), reason)
    where upload_id = p_upload;
   perform fin_upload_audit('update', p_upload, v_row.business_id, jsonb_build_object('status', 'applied'),
-    jsonb_build_object('status', 'reverted', 'reason', p_reason), '회계 · 재무 자료 되돌리기(0070)');
+    jsonb_build_object('status', 'reverted', 'reason', p_reason, 'restored', to_jsonb(v_prev)), '회계 · 재무 자료 되돌리기(0070)');
   return true;
 end;
 $fn$;
@@ -715,7 +769,9 @@ begin
     raise exception 'fin_upload_denied' using errcode = '42501';
   end if;
   if p_map is null or jsonb_typeof(p_map) <> 'object'
-     or exists (select 1 from jsonb_each(p_map) e where jsonb_typeof(e.value) <> 'number' or length(e.key) > 40) then
+     or exists (select 1 from jsonb_each(p_map) e
+                 where jsonb_typeof(e.value) <> 'number' or length(e.key) > 40
+                    or (e.value)::numeric <> trunc((e.value)::numeric) or (e.value)::numeric not between 0 and 200) then
     raise exception 'fin_upload_shape' using errcode = '22023';
   end if;
   insert into fin_upload_shapes (business_id, header_sig, sheet_name, kind, column_map)
@@ -726,6 +782,26 @@ begin
 end;
 $fn$;
 
+/** 미리보기 대기 줄 읽기 — 그 회사 장부를 쓰는 사람만. 급여 개인 줄(people)은 대표 · CFO에게만 싣는다(리뷰 I-1). */
+create or replace function fin_upload_pending(p_upload uuid) returns jsonb
+language plpgsql stable security definer set search_path = public, pg_temp as $fn$
+declare
+  v_row fin_uploads;
+begin
+  select * into v_row from fin_uploads where upload_id = p_upload;
+  if v_row.upload_id is null or not coalesce(can_keep_books(v_row.business_id), false) or v_row.status <> 'needs_review' then
+    return null;
+  end if;
+  if coalesce(auth_role()::text, '') in ('Chairman', 'GroupCFO') then
+    return v_row.pending;
+  end if;
+  return v_row.pending - 'people';
+end;
+$fn$;
+
+revoke all on function fin_upload_pending(uuid) from public, anon;
+grant execute on function fin_upload_pending(uuid) to authenticated;
+revoke all on function fin_upload_unvoid(uuid[]) from public, anon, authenticated;
 revoke all on function fin_month_closed(text, text) from public, anon;
 revoke all on function fin_upload_audit(audit_action, uuid, text, jsonb, jsonb, text) from public, anon, authenticated;
 revoke all on function fin_upload_void(uuid[]) from public, anon, authenticated;
