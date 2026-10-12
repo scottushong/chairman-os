@@ -1,6 +1,7 @@
 import { cache } from 'react'
 
 import { canReadExceptions } from '@/lib/attention/screen'
+import { hiddenNavFor } from '@/lib/features-server'
 import { canReadInitiatives } from '@/lib/nav'
 import { getRepository } from '@/lib/repository'
 import type { Role } from '@/types'
@@ -37,19 +38,22 @@ export interface SidebarData {
   companies: SidebarCompany[]
   /** null = 이니셔티브를 못 읽는 역할 — 섹션을 통째로 그리지 않는다. */
   initiatives: SidebarInitiative[] | null
+  /** 꺼진 기능의 메뉴 키(0073 기능 스위치). navFor({ hidden })로 넘긴다. */
+  hiddenNav: string[]
 }
 
 /** 사이드바에 세우는 진행 중 이니셔티브 최대 건수. 나머지는 «전체 보기»로. */
 export const SIDEBAR_INITIATIVE_MAX = 8
 
 export const loadSidebarData = cache(async function loadSidebarData(role: Role | null): Promise<SidebarData> {
-  if (!role) return { companies: [], initiatives: null }
+  if (!role) return { companies: [], initiatives: null, hiddenNav: [] }
   const repo = await getRepository()
   // 사이드바 하나 때문에 화면 전체가 깨지면 안 된다 — 못 읽으면 빈 목록으로 떨어진다.
-  const [businesses, exceptions, initiatives] = await Promise.all([
+  const [businesses, exceptions, initiatives, hiddenNav] = await Promise.all([
     repo.listBusinesses().catch(() => []),
     canReadExceptions(role) ? repo.listExceptions().catch(() => []) : Promise.resolve([]),
     canReadInitiatives(role) ? repo.listInitiatives().catch(() => []) : Promise.resolve(null),
+    hiddenNavFor(role),
   ])
 
   const level = new Map<string, SidebarLevel>()
@@ -65,6 +69,7 @@ export const loadSidebarData = cache(async function loadSidebarData(role: Role |
 
   return {
     companies,
+    hiddenNav,
     initiatives:
       initiatives === null
         ? null

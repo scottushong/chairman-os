@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 
 import { safePath } from '@/lib/ai/assistant/screen'
 import { currentUser } from '@/lib/auth/session'
+import { featureOn } from '@/lib/features-server'
 import { feedbackSensitivity } from '@/lib/feedback/sensitive'
 import { triageBundle, triageOne, TriageRefused } from '@/lib/feedback/triage'
 import { getRepository } from '@/lib/repository'
@@ -47,6 +48,9 @@ function businessOf(path: string): string | null {
   return m ? m[1] : null
 }
 
+/** 0073 기능 스위치로 꺼진 기능의 문장. */
+const OFF = '지금은 쓸 수 없는 기능입니다.'
+
 export interface FeedbackResult {
   ok?: true
   error?: string
@@ -55,6 +59,8 @@ export interface FeedbackResult {
 export async function submitFeedback(input: { chatId: unknown; messageId: unknown; body: unknown; path: unknown }): Promise<FeedbackResult> {
   const user = await currentUser()
   if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  // 0073 기능 스위치 «AI 어시스턴트 보강» — 꺼져 있으면 보완 의견을 받지 않는다(어시스턴트 자체는 그대로).
+  if (!(await featureOn(user, 'ai_assist'))) return { error: OFF }
   const chatId = text(input.chatId, 64)
   const messageId = Number(input.messageId)
   const body = text(input.body)
@@ -88,6 +94,7 @@ export async function submitFeedback(input: { chatId: unknown; messageId: unknow
 export async function cancelFeedback(feedbackId: unknown): Promise<FeedbackResult> {
   const user = await currentUser()
   if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  if (!(await featureOn(user, 'ai_assist'))) return { error: OFF }
   const id = text(feedbackId, 64)
   if (!UUID.test(id)) return { error: '의견을 알 수 없습니다.' }
   try {
@@ -114,7 +121,8 @@ export async function myFeedbackMessageIds(): Promise<number[]> {
 
 async function chairman() {
   const user = await currentUser()
-  return user && user.role === 'Chairman' ? user : null
+  // 0073 — 기능 스위치 «AI 어시스턴트 보강»이 꺼져 있으면 보완함 동작도 거부.
+  return user && user.role === 'Chairman' && (await featureOn(user, 'ai_assist')) ? user : null
 }
 
 export async function setFeedbackStatus(feedbackId: unknown, status: unknown): Promise<FeedbackResult> {

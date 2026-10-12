@@ -7,6 +7,7 @@ import { IssueSection, RollSection, ValuationSection } from '@/components/financ
 import { PageHeader } from '@/components/layout/page-header'
 import { canCloseBooks, canKeepBooks } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
+import { featureOn } from '@/lib/features-server'
 import { kstToday } from '@/lib/chairman-project'
 import { firstParam } from '@/lib/query'
 import { getRepository } from '@/lib/repository'
@@ -23,6 +24,8 @@ export default async function FinanceValuationPage(props: PageProps<'/finance/[b
   const [businesses, user] = await Promise.all([repo.listBusinesses(), currentUser()])
   const business = businesses.find((b) => b.business_id === business_id)
   if (!business) notFound()
+  // 0073 기능 스위치 «자료 올리기»(0072 평가금액도 함께).
+  if (!(await featureOn(user, 'finance_upload', business_id))) notFound()
 
   const canKeep = canKeepBooks(user, business_id)
   const asked = firstParam(params.month)

@@ -1,7 +1,7 @@
 import { AttachmentsSection } from '@/components/attachments/attachments-section'
 import { currentUser } from '@/lib/auth/session'
+import { featureOn } from '@/lib/features-server'
 import { canConfirmIntake, sameFileNotice } from '@/lib/intake/rules'
-import { intakeOpenFor } from '@/lib/intake/switch'
 import { getRepository } from '@/lib/repository'
 
 import { IntakePanel } from './intake-panel'
@@ -15,8 +15,8 @@ import { IntakePanel } from './intake-panel'
 export async function IntakeSection({ businessId }: { businessId: string }) {
   const [repo, user] = await Promise.all([getRepository(), currentUser()])
   if (!user) return null
-  // 입구 스위치(lib/intake/switch.ts) — 꺼져 있으면 대표 외에는 0058 전과 같은 «첨부» 칸.
-  if (!intakeOpenFor(user)) return <AttachmentsSection entityTable="businesses" entityId={businessId} />
+  // 기능 스위치 «자료 받는 입구»(0073, 기본 대표만) — 범위 밖이면 0058 전과 같은 «첨부» 칸.
+  if (!(await featureOn(user, 'intake', businessId))) return <AttachmentsSection entityTable="businesses" entityId={businessId} />
   const [items, people, me, legacy] = await Promise.all([
     repo.listIntakeItems(businessId).catch((e) => {
       console.error('[intake] 목록을 못 읽었다', e)

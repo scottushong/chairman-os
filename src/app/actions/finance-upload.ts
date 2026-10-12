@@ -10,9 +10,12 @@ import { isUploadKind, kindSpec } from '@/lib/finance-upload/kinds'
 import { UPLOAD_MAX_BYTES } from '@/lib/finance-upload/open'
 import { mapColumns, readRows, validate, type Classification } from '@/lib/finance-upload/pipeline'
 import { finUploadError, fromGrid, processUpload, saveTxGroupsFor, type DocOptions, type FileCard } from '@/lib/finance-upload/process'
-import { intakeOpenFor } from '@/lib/intake/switch'
+import { featureOn } from '@/lib/features-server'
 import { getRepository } from '@/lib/repository'
 import type { FinRow, FinUpload } from '@/types'
+
+/** 0073 기능 스위치로 꺼진 기능의 문장. */
+const OFF = '지금은 쓸 수 없는 기능입니다.'
 
 /**
  * «회계 · 재무 자료 올리기» v2 서버 액션 — 올리기(여러 파일) · 미리보기 넣기(종류 · 칸 · 기간 · 겹침 · 이유) · 되돌리기 · 취소.
@@ -38,6 +41,8 @@ export async function uploadFinanceFiles(form: FormData): Promise<UploadResult> 
   if (!user) return { cards: [], error: '세션이 만료되었습니다. 다시 로그인하세요.' }
   const businessId = text(form.get('business_id'), 40)
   if (!BIZ.test(businessId)) return { cards: [], error: '회사를 알 수 없습니다.' }
+  // 0073 기능 스위치 «자료 올리기» — 꺼져 있으면 거부(화면도 404).
+  if (!(await featureOn(user, 'finance_upload', businessId))) return { cards: [], error: OFF }
   if (!canKeepBooks(user, businessId)) return { cards: [], error: '이 회사의 재무를 넣을 권한이 없습니다.' }
   const files = form.getAll('files').filter((f): f is File => f instanceof File).slice(0, 10)
   if (!files.length) return { cards: [], error: '파일을 놓아 주세요.' }
@@ -48,8 +53,8 @@ export async function uploadFinanceFiles(form: FormData): Promise<UploadResult> 
   const usedToday = (await repo.listFinUploads(businessId).catch(() => [] as FinUpload[])).filter((u) => kstDay(u.created_at) === today).reduce((a, u) => a + u.ai_used, 0)
   let dayLeft = Math.max(0, perDay - usedToday)
   const classify = realClassifier(repo, businessId)
-  // C단계 PDF · 사진 — 입구 스위치가 꺼지면 대표만(직원은 «준비 중», 엑셀은 그대로). 한도 env가 없으면 읽기 도구 없음(→ 미리보기).
-  const allowed = intakeOpenFor(user)
+  // C단계 PDF · 사진 — 기능 스위치 «PDF · 사진 읽기»(0073, 기본 대표만). 꺼지면 «준비 중», 엑셀은 그대로. 한도 env가 없으면 읽기 도구 없음(→ 미리보기).
+  const allowed = await featureOn(user, 'finance_docs', businessId)
   const docs: DocOptions = { allowed, read: allowed && perFile > 0 && perDay > 0 ? realDocReader(repo, businessId) : null }
   if (allowed && files.some((f) => /\.(pdf|jpe?g|png)$/i.test(f.name) || /^(application\/pdf|image\/)/.test(f.type))) {
     // 회사 이름 대조 · 공식 결산 계정 맞추기 — PDF · 사진이 있을 때만 읽는다.
@@ -93,6 +98,7 @@ export async function applyPendingUpload(input: ApplyInput): Promise<{ ok?: true
   if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
   const id = text(input.uploadId, 64)
   const businessId = text(input.businessId, 40)
+  if (!(await featureOn(user, 'finance_upload', businessId))) return { error: OFF }
   const kind = text(input.kind, 30)
   const period = text(input.period, 7)
   const overlap = text(input.overlap, 10) as 'none' | 'replace' | 'keep_old'
@@ -157,6 +163,7 @@ export async function applyPendingUpload(input: ApplyInput): Promise<{ ok?: true
 export async function revertUpload(uploadId: unknown, businessId: unknown, reason: unknown): Promise<{ ok?: true; error?: string }> {
   const user = await currentUser()
   if (!user) return { error: '세션이 만료되었습니다.' }
+  if (!(await featureOn(user, 'finance_upload', text(businessId, 40)))) return { error: OFF }
   const id = text(uploadId, 64)
   if (!UUID.test(id)) return { error: '올리기를 알 수 없습니다.' }
   try {
@@ -174,6 +181,7 @@ export async function revertUpload(uploadId: unknown, businessId: unknown, reaso
 export async function cancelUpload(uploadId: unknown, businessId: unknown): Promise<{ ok?: true; error?: string }> {
   const user = await currentUser()
   if (!user) return { error: '세션이 만료되었습니다.' }
+  if (!(await featureOn(user, 'finance_upload', text(businessId, 40)))) return { error: OFF }
   const id = text(uploadId, 64)
   if (!UUID.test(id)) return { error: '올리기를 알 수 없습니다.' }
   try {

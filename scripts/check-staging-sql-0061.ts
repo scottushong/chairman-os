@@ -145,6 +145,17 @@ async function main() {
       + (select count(*) from user_module_access where module = '/finance/biz_dy') as n`)).rows[0].n
     assert.equal(Number(left), 0, '0072 staging 시험 SQL이 평가금액 · 출고 줄 · 묶음 · 재마감 대상 · 마감 줄 · 권한 줄을 남겼다')
   }
+  // 0073(기능 스위치)이 있는 브랜치에서만. 0071보다 먼저(0071이 소유자를 바꾼다).
+  if (files.includes('0073_feature_switches.sql')) {
+    const before73 = (await db.query<{ n: string }>(`select md5(string_agg(feature_key || coalesce(business_id, '') || enabled || audience || reason, ',' order by feature_key, business_id)) as n from feature_switches`)).rows[0].n
+    const m73 = await runFile('0073_staging_test.sql')
+    assert.match(m73, /^0073 STAGING PASS a\(.*b\(.*c\(.*d\(.*e\(anon 거부\)$/, '0073 staging 시험 SQL이 PASS로 끝나지 않는다')
+    const left = (await db.query<{ n: number }>(`select (select count(*) from feature_switches where business_id is not null)
+      + (select count(*) from audit_log where entity_table = 'feature_switches') as n`)).rows[0].n
+    assert.equal(Number(left), 0, '0073 staging 시험 SQL이 회사 스위치 줄 · 감사를 남겼다')
+    const after73 = (await db.query<{ n: string }>(`select md5(string_agg(feature_key || coalesce(business_id, '') || enabled || audience || reason, ',' order by feature_key, business_id)) as n from feature_switches`)).rows[0].n
+    assert.equal(after73, before73, '0073 staging 시험 SQL이 그룹 기본 줄을 바꾼 채 남겼다')
+  }
   // 0071은 맨 뒤 — 끝에서 표 · 함수 소유자를 바꾼다(아래 주석).
   // 0071(프로세스 차트 동기화)이 있는 브랜치에서만. staging처럼 AI Agent 계정이 하나 있다.
   if (files.includes('0071_process_chart_sync.sql')) {

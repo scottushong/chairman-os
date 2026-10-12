@@ -376,7 +376,7 @@ fallback을 넣으면 화면에 시드 숫자가 뜨는데 DUMMY DATA 뱃지는 
 | master ↔ origin | origin = `8419b81`(원가 엔진 0061~0066 · ECOUNT · 입구 합침) |
 | 운영 BOM 키 | `cost_bom_key`는 반영 직전 `update_secret`로 **새 값**(staging과 다름). 키 값은 어디에도 적지 않는다 |
 | 원가 권한자 | 운영 **0명**(원가 관리 · 구매 입력 · 생산 입력 · 영업 모두). 대표만 원가 화면을 본다 |
-| 자료 입구 스위치 | `src/lib/intake/switch.ts` `INTAKE_OPEN_TO_STAFF = false` — 대표에게만. 실제 AI 시험 뒤 회장이 켠다 |
+| 자료 입구 스위치 | 0073부터 기능 스위치 «자료 받는 입구»(/settings/features, 기본 대표만). 실제 AI 시험 뒤 회장이 «전원»으로 |
 | 0067 판매 · 회계 | `feat/cost-engine`(be3b3ed)에만 — 운영 · staging 없음, 화면 미완 |
 
 ### 2026-10-07 오후 — 릴리스 A 뒤 (아래 10-07 표 위에 얹어 읽는다)

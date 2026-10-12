@@ -1,3 +1,4 @@
+import type { FeatureAudience, FeatureSwitchRow } from '@/lib/features'
 import type { CostImportApply, ImportTarget } from '@/lib/cost-import/payload'
 import type { ActivityEvent, ActivityKind } from '@/lib/activity'
 import type { EntityAuditRecord } from '@/lib/audit-log'
@@ -730,6 +731,10 @@ export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods,
   setAiFeedbackBundleStatus(bundleId: string, status: Exclude<FeedbackStatus, 'triaged'>): Promise<boolean>
   saveAiFeedbackTriage(feedbackId: string, triage: FeedbackTriage): Promise<boolean>
   saveAiFeedbackBundle(ids: string[], title: string, triage: FeedbackTriage): Promise<string>
+  /** 0073 기능 스위치 — 전 줄(그룹 기본 + 회사 덮어쓰기). 0073 전 DB는 null(→ lib/features.ts 기본값). */
+  listFeatureSwitches(): Promise<FeatureSwitchRow[] | null>
+  /** 0073 feature_switch_set — 대표만 · 이유 필수 · 감사. 오류 키(feature_switch_*)를 그대로 던진다. */
+  setFeatureSwitch(input: { feature_key: string; business_id: string | null; enabled: boolean; audience: FeatureAudience; reason: string }): Promise<void>
   /** 0070 회계 · 재무 자료 올리기 — 그 회사의 올리기 기록(최근 300). 0070 전 DB는 빈 목록. */
   listFinUploads(businessId: string): Promise<FinUpload[]>
   /** 0070 fin_upload_pending — 미리보기 대기 줄(급여 개인 줄은 대표 · CFO에게만). */

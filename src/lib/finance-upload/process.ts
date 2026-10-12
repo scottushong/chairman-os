@@ -72,7 +72,7 @@ export interface FileCard {
 
 /** C단계 PDF · 사진 설정 — 없으면(검사 · 옛 호출) PDF · 사진은 «준비 중». */
 export interface DocOptions {
-  /** 이 사람에게 PDF · 사진을 여는가(입구 스위치 INTAKE_OPEN_TO_STAFF — 꺼지면 대표만) */
+  /** 이 사람에게 PDF · 사진을 여는가(기능 스위치 «PDF · 사진 읽기» finance_docs — 0073, 기본 대표만) */
   allowed: boolean
   /** 읽기 도구(진짜 · 가짜 · 없음). 없거나 한도 0이면 AI 없이(글 PDF는 칸 위치로 미리보기 · 사진 · 스캔은 못 읽음) */
   read: AiDocReader | null

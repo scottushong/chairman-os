@@ -44,7 +44,8 @@
     "check:sales-cost": "tsx scripts/check-sales-cost.ts",
     "check:staging-sql-cost": "tsx scripts/check-staging-sql-0061.ts",
     "check:finance-upload": "tsx --conditions=react-server scripts/check-finance-upload.ts",
-    "check:finance-pdf": "tsx --conditions=react-server scripts/check-finance-pdf.ts"
+    "check:finance-pdf": "tsx --conditions=react-server scripts/check-finance-pdf.ts",
+    "check:features": "tsx scripts/check-features.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.126.0",

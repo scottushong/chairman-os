@@ -46,6 +46,7 @@ import { dummyQuotes } from './dummy-quotes'
 import { dummyCostProduct, dummyCostReadAudit, dummyCosts, dummyGrantedAt, dummyProduction, dummySalesCost, noteDummyGrant } from './dummy-sales-cost'
 import * as books from './dummy-books'
 import { dummyAssistant } from './dummy-assistant'
+import { dummyFeatures } from './dummy-features'
 import { dummyFeedback } from './dummy-feedback'
 import { dummyFinanceUpload } from './dummy-finance-upload'
 import * as chat from './dummy-chat'
@@ -822,6 +823,11 @@ export const dummyRepository: ChairmanRepository = {
     audit: (e) => {
       if (process.env.NODE_ENV !== 'production') console.warn(`[dummy] audit ${e.entity_table} ${e.entity_id} ${e.note}`)
     },
+  }),
+  // 0073 — 기능 스위치(dummy-features.ts). 대표만 · 이유 · 아는 기능만(0073 거울).
+  ...dummyFeatures({
+    viewer: () => dummyViewer(),
+    businesses: () => [...businesses, ...memoryBusinesses].map((b) => b.business_id),
   }),
   // 0070 — 회계 · 재무 자료 올리기(dummy-finance-upload.ts). 판정은 0070 거울(장부 쓰기 = can_keep_books 거울).
   ...dummyFinanceUpload({
