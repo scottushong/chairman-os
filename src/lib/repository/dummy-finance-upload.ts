@@ -147,9 +147,23 @@ const RESTRICTED = new Set<string>(['material_issue', 'inventory'])
 export function dummyFinLines(): readonly Line[] {
   return store.lines
 }
-/** 시험이 평가금액 · 재마감 대상을 읽는다(dummy만). */
-export function dummyFinStore(): Readonly<Pick<Store, 'valuations' | 'flags' | 'groups' | 'members'>> {
+/** 시험이 평가금액 · 재마감 대상을 읽는다(dummy만). 0075 dummy(월별 손익)도 같은 저장소를 읽는다. */
+export function dummyFinStore(): Readonly<Pick<Store, 'valuations' | 'flags' | 'groups' | 'members' | 'openings'>> {
+  ensureDemo()
   return store
+}
+
+/** 0075 거울 — 다시 열기가 이후 확정 달에 «재마감 대상»('pl_reopen')을 한 줄(열린 줄이 있으면 늘리지 않는다) · 다시 마감하면 푼다. */
+export function dummyPlRecloseMark(business: string, period: string, reason: string): boolean {
+  if (store.flags.some((f) => f.business_id === business && f.period === period && f.cause === 'pl_reopen' && !f.cleared_at)) return false
+  store.flags.push({ flag_id: crypto.randomUUID(), business_id: business, period, upload_id: null, cause: 'pl_reopen', reason, created_at: new Date().toISOString(), cleared_at: null })
+  return true
+}
+export function dummyPlRecloseClear(business: string, period: string): void {
+  for (const f of store.flags) if (f.business_id === business && f.period === period && f.cause === 'pl_reopen' && !f.cleared_at) f.cleared_at = new Date().toISOString()
+}
+export function dummyPlOpenFlags(business: string, period: string): number {
+  return store.flags.filter((f) => f.business_id === business && f.period === period && f.cause === 'pl_reopen' && !f.cleared_at).length
 }
 
 const live = (s: FinUpload['status']) => s === 'applied' || s === 'needs_review'

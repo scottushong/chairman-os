@@ -176,6 +176,10 @@ import type {
   FinTxGroupSaveInput,
   FinDedupeSetting,
   FinRecloseFlag,
+  MonthlyPlView,
+  PlAdjustmentKind,
+  PlSettings,
+  PlYearRow,
 } from '@/types'
 
 /**
@@ -775,6 +779,22 @@ export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods,
   finRecloseClear(flagId: string, note: string | null): Promise<boolean>
   /** 0073 리뷰 I1 — 줄 id(평가금액 · 묶음 · 재마감 대상)의 실제 회사. 못 보면 null(스위치를 화면이 보낸 회사가 아니라 이 회사로 본다). */
   finRowBusiness(kind: 'valuation' | 'tx_group' | 'reclose', id: string): Promise<string | null>
+  /**
+   * 0075 월별 손익(재고 반영 · 마감). 판정은 DB(feature_on('monthly_pl') · can_read_books · can_keep_books · can_close_books)다.
+   * 원료별 줄은 대표 · 원가 관리에게만 온다(fin_pl_mask). 0075 전 DB는 읽기 null · 빈 목록, 쓰기는 'fin_pl_unavailable'. 오류 키는 'fin_pl_*' · 'feature_off'.
+   */
+  finPlMonth(businessId: string, period: string): Promise<MonthlyPlView | null>
+  finPlYear(businessId: string, year: string): Promise<PlYearRow[]>
+  finPlSettings(businessId: string): Promise<PlSettings | null>
+  /** 잠정 저장(final = false) · 내부 마감 확정(final = true). 같은 입력이면 같은 줄 id. */
+  finPlRecord(businessId: string, period: string, final: boolean, reason: string | null): Promise<string>
+  /** 다시 열기 — 돌려주는 값 = 재마감 대상으로 표시한 이후 확정 달 수. */
+  finPlReopen(businessId: string, period: string, reason: string): Promise<number>
+  finPlAdjustPropose(input: { business_id: string; period: string; kind: PlAdjustmentKind; amount: number; reason: string }): Promise<string>
+  finPlAdjustDecide(adjId: string, action: 'approve' | 'void', reason: string | null): Promise<boolean>
+  finPlSettingsSave(businessId: string, settings: Omit<PlSettings, 'updated_at'>, reason: string): Promise<void>
+  /** 조정 줄의 실제 회사 · 달(못 보면 null) — 액션이 화면이 보낸 회사와 대조한다. */
+  finPlAdjustRow(adjId: string): Promise<{ business_id: string; period: string } | null>
   /** 0055 staff_admin_invite — 감사 · 회장 알림까지 DB가 한 트랜잭션으로 한다. 오류는 'staff_admin_*' 키로 던진다. */
   staffAdminInvite(input: StaffAdminInviteInput): Promise<UserInvitation>
   /** 0055 staff_admin_revoke_invitation — 본인이 넣은 미수락 위임 초대만. */

@@ -269,7 +269,7 @@ export interface FinRecloseFlag {
   business_id: string
   period: string
   upload_id: string | null
-  cause: 'upload' | 'revert' | 'valuation' | 'opening'
+  cause: 'upload' | 'revert' | 'valuation' | 'opening' | 'pl_reopen'
   reason: string | null
   created_at: string
 }

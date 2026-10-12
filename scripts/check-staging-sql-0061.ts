@@ -163,6 +163,18 @@ async function main() {
     const left = (await db.query<{ n: number }>(`select count(*) as n from fin_uploads where period in ('2099-10', '2099-11')`)).rows[0].n
     assert.equal(Number(left), 0, '0074 staging 시험 SQL이 올리기를 남겼다')
   }
+  // 0075(월별 손익 — 재고 반영 · 마감)가 있는 브랜치에서만. 0071보다 먼저.
+  if (files.includes('0075_monthly_pl.sql')) {
+    const switches = async () => (await db.query<{ s: string }>(`select string_agg(feature_key || ':' || coalesce(business_id, '-') || ':' || enabled || ':' || audience, ',' order by feature_key, business_id) as s from feature_switches`)).rows[0].s
+    const before75 = await switches()
+    const m75 = await runFile('0075_staging_test.sql')
+    assert.match(m75, /^0075 STAGING PASS a\(.*b\(.*c\(.*d\(.*e\(.*f\(.*g\(.*h\(.*i\(.*j\(.*k\(anon 거부\)$/, `0075 staging 시험 SQL이 PASS로 끝나지 않는다 (${m75})`)
+    const left = (await db.query<{ n: number }>(`select (select count(*) from fin_pl_closes) + (select count(*) from fin_pl_adjustments) + (select count(*) from fin_pl_settings)
+      + (select count(*) from fin_uploads where period in ('2098-12', '2099-01', '2099-02', '2099-03')) + (select count(*) from journal_entries where entry_date >= '2099-01-01')
+      + (select count(*) from fin_reclose_flags where cause = 'pl_reopen') + (select count(*) from fin_inventory_valuations where period like '2099-0%') as n`)).rows[0].n
+    assert.equal(Number(left), 0, '0075 staging 시험 SQL이 저장본 · 조정 · 설정 · 올리기 · 전표 · 재마감 대상 · 평가금액을 남겼다')
+    assert.equal(await switches(), before75, '0075 staging 시험 SQL이 기능 스위치 줄을 바꾼 채 남겼다')
+  }
   // 0071은 맨 뒤 — 끝에서 표 · 함수 소유자를 바꾼다(아래 주석).
   // 0071(프로세스 차트 동기화)이 있는 브랜치에서만. staging처럼 AI Agent 계정이 하나 있다.
   if (files.includes('0071_process_chart_sync.sql')) {

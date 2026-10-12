@@ -40,7 +40,7 @@ export const WITHHELD_KO: Record<string, string> = {
   needs_review_open: '«확인 필요» 줄이 남아 있어 합계를 보이지 않습니다 — 줄 하나를 정할 때마다 합계가 그 줄만큼 움직여 원료 하나의 양이 드러나기 때문입니다. 아래에서 모두 정하면 보입니다.',
   too_few_materials: '생산 투입 원료가 세 가지보다 적어 합계를 보이지 않습니다 — 합계에서 원료 하나의 양이 바로 나오기 때문입니다.',
 }
-export const RECLOSE_CAUSE_KO: Record<string, string> = { upload: '자료 넣기 · 결정', revert: '되돌리기', valuation: '평가금액', opening: '기초재고' }
+export const RECLOSE_CAUSE_KO: Record<string, string> = { upload: '자료 넣기 · 결정', revert: '되돌리기', valuation: '평가금액', opening: '기초재고', pl_reopen: '앞 달 월별 손익을 다시 열었음' }
 
 const ERR: Record<string, string> = {
   fin_valuation_self_confirm: '입력한 사람은 확정할 수 없습니다 — 다른 장부 담당이 확정합니다.',

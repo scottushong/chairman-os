@@ -69,9 +69,9 @@ export const FEATURES = [
   {
     key: 'monthly_pl',
     label: '월별 손익 재고 반영',
-    description: '월별 손익에 재고(기초 · 기말) 반영. 다음 단계에서 붙는다.',
+    description: '월별 간이 손익 화면(/finance/<회사>/monthly) 아래 «월별 손익 — 재고 반영»: 재고 반영 매출원가 · 원료별 월 가중평균 · 손익과 현금 분리 · 재고 조정 · 내부 마감 · 다시 열기. 꺼지면 화면이 예전 그대로.',
     defaultAudience: 'chairman',
-    from: '다음 단계(미정)',
+    from: 'feat/monthly-pl · 0075',
   },
   {
     key: 'sales_margins',
