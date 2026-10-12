@@ -44,6 +44,7 @@ import { dummyCostImport } from './dummy-cost-import'
 import { dummyListProcessChartItems, dummyListProcessChartSyncs, dummyProcessCalendarItems, dummyProcessTaskVisible, dummyProcessTasks } from './dummy-process-sync'
 import { dummyCostLedger, dummyPurchasing } from './dummy-purchasing'
 import { dummyCostCandidates } from './dummy-cost-candidates'
+import { dummyLedgerPost } from './dummy-ledger-post'
 import { dummyQuotes } from './dummy-quotes'
 import { dummyCostProduct, dummyCostReadAudit, dummyCosts, dummyGrantedAt, dummyProduction, dummySalesCost, noteDummyGrant } from './dummy-sales-cost'
 import * as books from './dummy-books'
@@ -896,6 +897,32 @@ export const dummyRepository: ChairmanRepository = {
     addLot: (b, input) => dummyPurchasing().addPurchaseLot(b, input as unknown as Parameters<ReturnType<typeof dummyPurchasing>['addPurchaseLot']>[1]),
     voidLot: (b, id, reason) => dummyPurchasing().voidPurchaseLot(b, id, reason),
     lot: (b, id) => (dummyCostLedger().lots.find((l) => l.lot_id === id && l.business_id === b) as unknown as Record<string, unknown>) ?? null,
+  }),
+  // 0079 — 원장 → 장부 반영(dummy-ledger-post.ts). 문은 스위치 'ledger_post' · 장부 쓰기(0016 can_keep_books 거울) · 마감 달 대표 · CFO.
+  ...dummyLedgerPost({
+    featureOn: async (b) => featureOnFor(await dummyRepository.listFeatureSwitches(), 'ledger_post', dummyViewer().role, b),
+    canKeep: (b) => {
+      const v = dummyViewer()
+      if (v.revoked_at || v.role === 'AIAgent' || v.role === 'Integration') return false
+      if (v.role === 'Chairman' || v.role === 'GroupCFO') return true
+      if (v.role === 'BusinessCEO') return dummyHasBusiness(v, b)
+      return dummyModuleGrants(v.user_id).some((m) => m.module === `/finance/${b}` && m.can_write)
+    },
+    top: () => ['Chairman', 'GroupCFO'].includes(dummyViewer().role),
+    lines: () => {
+      dummyFinStore()
+      return dummyFinLines()
+        .filter((l) => l.kind === 'ledger_lines')
+        .map((l) => ({ line_id: l.line_id, business_id: l.business_id, period: l.period, voided: !!l.voided_at, row: l.row }))
+    },
+    groupOf: (lineId) => {
+      const st = dummyFinStore()
+      const m = st.members.find((x) => x.source_table === 'fin_ledger_lines' && x.line_id === lineId && !x.released_at)
+      const g = m ? st.groups.find((x) => x.group_id === m.group_id) : undefined
+      if (!m || !g) return null
+      return { status: g.status, ledgerLines: st.members.filter((x) => x.group_id === g.group_id && x.source_table === 'fin_ledger_lines' && !x.released_at).map((x) => x.line_id) }
+    },
+    closed: (b, period) => dummyPlCloses().some((c) => c.business_id === b && c.period === period && c.status === 'final' && !c.superseded_at),
   }),
   // Phase 11 — 대화 · 제안 · 사용량(dummy-assistant.ts). 확인 감사는 이 파일의 이력 저장소로 온다.
   ...dummyAssistant((e) => {

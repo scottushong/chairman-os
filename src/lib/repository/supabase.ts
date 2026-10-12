@@ -151,6 +151,7 @@ import { financeUploadMethods } from './supabase-finance-upload'
 import { monthlyPlMethods } from './supabase-monthly-pl'
 import { salesMarginsMethods } from './supabase-sales-margins'
 import { costCandidatesMethods } from './supabase-cost-candidates'
+import { ledgerPostMethods } from './supabase-ledger-post'
 import { attachmentMethods } from './supabase-attachments'
 import { financeImportMethods } from './supabase-finance-imports'
 import { intakeMethods } from './supabase-intake'
@@ -848,6 +849,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     ...monthlyPlMethods(sb),
     ...salesMarginsMethods(sb),
     ...costCandidatesMethods(sb),
+    ...ledgerPostMethods(sb),
     // ECOUNT 엑셀 업로드(0050 finance_imports) — 읽기는 0050 전 DB를 견딘다(supabase-finance-imports.ts 머리 주석).
     ...financeImportMethods(sb),
     // 0058 자료 받는 입구.
