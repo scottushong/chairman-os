@@ -15,7 +15,7 @@ const TABS: { tab: BooksTab; label: string; suffix: string }[] = [
   { tab: 'journal', label: '전표', suffix: '/journal' },
   { tab: 'accounts', label: '계정과목', suffix: '/accounts' },
   // ECOUNT 엑셀 업로드(0050). ECOUNT 코드 회사(DY) + 그 회사 재무 쓰기 권한일 때만 — canImport(lib/auth/roles canImportEcount).
-  { tab: 'import', label: 'ECOUNT 업로드', suffix: '/import' },
+  { tab: 'import', label: '회계 · 재무 자료 올리기', suffix: '/upload' },
 ]
 
 export function BooksNav({ businessId, current, canImport }: { businessId: string; current: BooksTab; canImport: boolean }) {

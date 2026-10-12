@@ -185,10 +185,10 @@ export function AccountsManager({
                 <>
                   {' '}
                   <Link
-                    href={`/finance/${encodeURIComponent(businessId)}/import`}
+                    href={`/finance/${encodeURIComponent(businessId)}/upload`}
                     className="font-semibold text-accent underline underline-offset-2"
                   >
-                    ECOUNT 업로드로 가기
+                    회계 · 재무 자료 올리기로 가기
                   </Link>
                 </>
               ) : null}

@@ -81,7 +81,7 @@ export const ATTACHMENT_CLASS_HINT: Record<AttachmentClass, string> = {
 export function entityPath(table: AttachmentEntity, id: string, businessId?: string | null): string {
   switch (table) {
     case 'finance_imports':
-      return businessId ? `/finance/${encodeURIComponent(businessId)}/import` : '/finance'
+      return businessId ? `/finance/${encodeURIComponent(businessId)}/upload` : '/finance'
     case 'initiatives':
       return `/initiatives/${id}`
     case 'businesses':

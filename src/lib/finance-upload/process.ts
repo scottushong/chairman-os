@@ -193,3 +193,8 @@ export function fromGrid(name: string, grid: (string | number | null)[][]): Ecou
   })
   return { name, rows, colCount }
 }
+
+/** 넣은 지 7일 안이라 되돌릴 수 있는 올리기(0070 fin_upload_revert와 같은 기준 — 판정은 DB). */
+export function revertableIds(uploads: FinUpload[], now = Date.now()): string[] {
+  return uploads.filter((u) => u.status === 'applied' && !!u.applied_at && Date.parse(u.applied_at) > now - 7 * 86_400_000).map((u) => u.upload_id)
+}
