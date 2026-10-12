@@ -129,6 +129,53 @@ async function main() {
     const left = (await db.query<{ n: number }>(`select (select count(*) from process_chart_items) + (select count(*) from process_chart_syncs)
       + (select count(*) from tasks where source_label is not null) + (select count(*) from teams where team_id like 'team_dy_stg71%') + (select count(*) from projects where project_id like 'pc_%') as n`)).rows[0].n
     assert.equal(Number(left), 0, '0071 staging 시험 SQL이 시트 줄 · 기록 · 업무 · 팀을 남겼다')
+
+    // 0071 FORCE(2026-10-12 고침): 같은 시험을 **BYPASSRLS 아닌 소유자**로 한 번 더. PGlite의 postgres는 superuser라
+    // FORCE를 우회한다 — 위 통과는 «FORCE 아래에서도 동기화가 된다»를 재지 못한다. Supabase처럼 소유자가
+    // authenticated에 속하게 두고(staging 2026-10-12: pg_has_role('postgres','authenticated') = true) public의 표 · 뷰 ·
+    // 함수를 전부 넘긴다. 이 뒤로는 이 DB에서 다른 시험을 돌리지 않는다(소유자가 바뀌었다).
+    const forced = (await db.query<{ relname: string; f: boolean }>(`select relname, relforcerowsecurity as f from pg_class
+      where relname in ('tasks', 'process_charts', 'teams') and relnamespace = 'public'::regnamespace order by 1`)).rows
+    assert.deepEqual(forced.map((r) => `${r.relname}:${r.f}`), ['process_charts:true', 'tasks:true', 'teams:true'],
+      '0071: tasks · process_charts · teams 중 FORCE가 꺼진 표가 있다(대표 지시 2026-10-12 — 0071은 FORCE를 내리지 않는다)')
+    await db.exec(`
+      create role app_owner nosuperuser nobypassrls nologin;
+      grant authenticated to app_owner;
+      grant usage on schema public, auth to app_owner;
+      grant select on auth.users to app_owner;  -- Supabase의 postgres도 auth.users를 읽는다(담당자 이메일 찾기)
+      do $o$
+      declare r record;
+      begin
+        for r in select c.oid::regclass::text as n, c.relkind from pg_class c
+                  where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'v', 'm')
+                    and not exists (select 1 from pg_depend d where d.objid = c.oid and d.deptype = 'e') loop
+          execute format('alter %s %s owner to app_owner',
+            case r.relkind when 'v' then 'view' when 'm' then 'materialized view' else 'table' end, r.n);
+        end loop;
+        for r in select p.oid::regprocedure::text as n from pg_proc p
+                  where p.pronamespace = 'public'::regnamespace and p.prokind = 'f'
+                    and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e') loop
+          execute format('alter function %s owner to app_owner', r.n);
+        end loop;
+      end $o$;
+    `)
+    const ow = (await db.query<{ b: boolean; s: boolean; o: string }>(`select rolbypassrls as b, rolsuper as s,
+      (select relowner::regrole::text from pg_class where oid = 'public.tasks'::regclass) as o from pg_roles where rolname = 'app_owner'`)).rows[0]
+    assert.deepEqual([ow.b, ow.s, ow.o], [false, false, 'app_owner'], '실험 설정이 깨졌다 — app_owner가 bypassrls · superuser이거나 tasks 소유자가 아니다')
+    const m71b = await runFile('0071_staging_test.sql')
+    assert.match(m71b, /^0071 STAGING PASS a\(.*b\(.*c\(.*d\(.*e\(.*f\(.*h\(.*i\(.*j\(.*k\(.*g\(anon 거부\)$/,
+      `0071: BYPASSRLS 아닌 소유자 + FORCE에서 동기화 시험이 깨진다 — 통로(process_chart_sync_ctx)가 모자라다 (${m71b})`)
+    // 통로는 PostgREST 세션에서 켤 수 없다 — 값을 켜도 거짓이고, 시트 업무를 넣지 못한다.
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${member}', true); set local role authenticated;
+      select set_config('chairman.process_chart_sync', 'on', true);`)
+    try {
+      const ctx = (await db.query<{ c: boolean }>(`select process_chart_sync_ctx() as c`)).rows[0].c
+      assert.equal(ctx, false, '0071: 사람 세션이 설정값을 켜서 동기화 통로를 연다')
+      await assert.rejects(db.query(`insert into tasks (task_id, project_id, title, source_label) values ('tsk_fake71', 'prj_001', '가짜', '프로세스 차트 · 가짜')`),
+        /row-level security|permission denied/, '0071: 사람 세션이 설정값을 켜고 시트 업무를 넣었다')
+    } finally {
+      await db.exec('rollback')
+    }
   }
   await db.close()
 }

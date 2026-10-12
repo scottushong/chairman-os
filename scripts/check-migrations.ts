@@ -4393,7 +4393,7 @@ async function documentGrants() {
 async function processChartDefiners(db: PGlite) {
   // 본문에 표 이름이 나오는 것만 잡힌다(0021 can_read/can_write_process_charts · 0071 team_fill은 표를 읽지 않아 목록 밖).
   const allow = [
-    'can_read_process_chart', 'process_chart_sync_apply', 'process_chart_sync_fail', 'process_chart_sync_gate',
+    'can_read_process_chart', 'can_read_process_chart_row', 'process_chart_sync_apply', 'process_chart_sync_fail', 'process_chart_sync_gate',
     'process_chart_sync_targets', 'process_chart_visible_to', 'process_charts_audit',
   ]
   const rows = (await db.query<{ f: string }>(`select distinct p.proname as f from pg_proc p join pg_namespace n on n.oid = p.pronamespace

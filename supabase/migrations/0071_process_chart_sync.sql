@@ -26,10 +26,20 @@
 --   그 사람 세션으로 확인한 뒤 AI Agent 계정(야간 브리핑과 같은 로그인 — service_role 아님)으로 부른다.
 --   누가 눌렀는지는 p_requested_by로 받고, 함수가 그 사람이 정말 그 탭을 보는지 다시 확인한다.
 --
--- ■ FORCE를 내리는 표 둘 ■
---   process_charts · tasks. 0002/0021이 FORCE를 걸어 두어 정의자 함수(소유자 postgres, Supabase에서 BYPASSRLS 아님)가
---   정책 아래로 내려간다 — AI Agent에게는 process_charts 읽기 정책도 tasks 넣기 정책도 없어 동기화가 0행이 된다.
---   0023 · 0027 · 0029 · 0034와 같은 판단: 이 저장소의 자물쇠는 revoke와 정책이지 FORCE가 아니다. 새 FORCE는 걸지 않는다.
+-- ■ FORCE는 내리지 않는다 (2026-10-12 대표 지시로 고침) ■
+--   process_charts · tasks에는 0002/0021의 FORCE가 걸려 있고 **그대로 둔다**(맨 끝 9절에서 다시 한 번 건다).
+--   처음 판(ff14103까지)은 둘의 FORCE를 내렸다 — 소유자가 BYPASSRLS가 아니면 정의자 함수가 정책 아래로 내려가
+--   동기화가 0행이 되기 때문이었다. FORCE를 내리면 postgres가 소유한 **모든** 정의자 함수가 tasks를 정책 없이 본다.
+--   그래서 대신 «동기화 통로»를 좁게 낸다:
+--     · process_chart_sync_ctx() — 동기화 함수 네 개만 함수 SET 절로 chairman.process_chart_sync = 'on'을 켜고
+--       (함수가 끝나면 Postgres가 원래 값으로 되돌린다), 그 안(current_user = 소유자)에서만 참이다.
+--       PostgREST 세션(current_user = authenticated)에서는 그 값을 켜도 거짓이다.
+--     · 그 통로로 열리는 것: process_charts 읽기 · 줄 잡기(for update), tasks 중 **시트 업무(source_label 있음)**의
+--       읽기 · 넣기 · 고치기. 앱 업무(source_label null)는 통로로도 못 고친다.
+--     · process_charts_read는 표를 다시 읽지 않는 판정(team_id 칸)으로 바꾼다 — FORCE 아래에서 정책이
+--       process_charts를 다시 읽으면 정책이 자기를 부른다.
+--   staging(2026-10-12 확인)에서 postgres는 BYPASSRLS라 통로 없이도 돈다. 통로는 BYPASSRLS가 아닌 소유자에서도
+--   돌게 하는 대비이고, check:migrations의 processChartForceUnderNonBypassOwner()가 그 조건에서 잰다.
 --
 -- ■ 지키는 것 ■
 --   · 지우기 없음 — 사라진 줄은 gone_at, 업무는 그대로(«시트에서 사라짐» 표시).
@@ -43,10 +53,17 @@
 begin;
 
 -- =====================================================================
--- 1절. FORCE 내리기 (머리 주석 «FORCE를 내리는 표 둘»)
+-- 1절. 동기화 통로 (머리 주석 «FORCE는 내리지 않는다»)
+--   정의자 함수 안에서만 참. 정책에서 부르므로 authenticated가 실행할 수 있어야 한다 — 읽는 것은 설정값 하나뿐이다.
 -- =====================================================================
-alter table process_charts no force row level security;
-alter table tasks no force row level security;
+create or replace function process_chart_sync_ctx() returns boolean
+language sql stable set search_path = public as $fn$
+  select coalesce(current_setting('chairman.process_chart_sync', true), '') = 'on'
+     and current_user not in ('authenticated', 'anon', 'authenticator');
+$fn$;
+
+comment on function process_chart_sync_ctx() is
+  '0071. 프로세스 차트 동기화 함수(targets · gate · apply · fail) 안에서만 참. 함수 SET 절이 켜고 함수가 끝나면 꺼진다. PostgREST 세션에서는 값을 켜도 거짓(current_user = authenticated).';
 
 -- =====================================================================
 -- 2절. process_charts — 시트 파일 ID · 탭 이름
@@ -140,7 +157,9 @@ update process_charts c set team_id = t.team_id
 alter table process_charts enable trigger process_charts_audit_trigger;
 alter table teams force row level security;
 
-create or replace function process_chart_visible_to(p_user uuid, p_business text, p_team text) returns boolean
+-- 3-2. 판정 본체 — process_charts를 읽지 않는다(팀은 team_id로 받는다). process_charts_read가 이것을 쓴다:
+--   FORCE 아래에서 정책이 process_charts를 다시 읽으면 정책이 자기를 부른다(머리 주석).
+create or replace function process_chart_visible_to_team(p_user uuid, p_business text, p_team_id text) returns boolean
 language sql stable security definer set search_path = public as $fn$
   select p_user is not null and p_business is not null and exists (
     select 1 from user_profiles p
@@ -151,17 +170,38 @@ language sql stable security definer set search_path = public as $fn$
            exists (select 1 from user_business_access a where a.user_id = p_user and a.business_id = p_business)
            and (
              p.role in ('BusinessCEO', 'Executive')
-             or (p.role in ('TeamLead', 'Member') and p.team_id is not null and exists (
-                   select 1 from process_charts c
-                    where c.business_id = p_business and c.team_name = p_team and c.team_id = p.team_id))
+             or (p.role in ('TeamLead', 'Member') and p.team_id is not null and p.team_id = p_team_id)
            )
          )
        )
   );
 $fn$;
 
+comment on function process_chart_visible_to_team(uuid, text, text) is
+  '0071. 이 사람이 이 회사 · 팀(team_id)의 탭을 보는가. 임원 이상 = 자기 회사 전부, 팀장 · 팀원 = user_profiles.team_id가 같을 때만. process_charts를 읽지 않는다.';
+
+-- 3-3. 팀 이름 판 — 시트 줄 · 기록(process_chart_items · syncs)과 동기화 입구가 쓴다. 팀 이름 → team_id는
+--   process_charts에서 찾는다. 이 읽기는 부른 사람의 process_charts_read(3-2, 표를 다시 읽지 않음)를 타고,
+--   동기화 함수 안에서는 통로 정책(1절)을 탄다.
+create or replace function process_chart_visible_to(p_user uuid, p_business text, p_team text) returns boolean
+language sql stable security definer set search_path = public as $fn$
+  select process_chart_visible_to_team(p_user, p_business, null)          -- 임원 이상(팀 칸 없이 참)
+      or exists (
+           select 1 from process_charts c
+            where c.business_id = p_business and c.team_name = p_team and c.team_id is not null
+              and process_chart_visible_to_team(p_user, p_business, c.team_id));
+$fn$;
+
 comment on function process_chart_visible_to(uuid, text, text) is
-  '0071. 이 사람이 이 회사 · 팀의 프로세스 차트 탭을 보는가. 임원 이상 = 자기 회사 전부, 팀장 · 팀원 = 자기 팀만.';
+  '0071. 이 사람이 이 회사 · 팀(이름)의 프로세스 차트 탭을 보는가. 임원 이상 = 자기 회사 전부, 팀장 · 팀원 = 자기 팀만.';
+
+create or replace function can_read_process_chart_row(p_business text, p_team_id text) returns boolean
+language sql stable security definer set search_path = public as $fn$
+  select is_active() and process_chart_visible_to_team(auth.uid(), p_business, p_team_id);
+$fn$;
+
+comment on function can_read_process_chart_row(text, text) is
+  '0071. process_charts_read 정책용 — auth.uid()가 이 탭 줄(회사, team_id)을 보는가. 표를 다시 읽지 않는다.';
 
 create or replace function can_read_process_chart(p_business text, p_team text) returns boolean
 language sql stable security definer set search_path = public as $fn$
@@ -174,7 +214,21 @@ comment on function can_read_process_chart(text, text) is
 -- 0021 정책 교체. 쓰기 정책(대표 · CFO)은 그대로다.
 drop policy if exists process_charts_read on process_charts;
 create policy process_charts_read on process_charts
-  for select to authenticated using (can_read_process_chart(business_id, team_name));
+  for select to authenticated using (can_read_process_chart_row(business_id, team_id));
+
+-- 동기화 통로(1절). 읽기와 줄 잡기(gate의 select … for update는 update 정책의 using도 본다)만 — 고치기는 막는다.
+create policy process_charts_sync_read on process_charts
+  for select to authenticated using (process_chart_sync_ctx());
+create policy process_charts_sync_lock on process_charts
+  for update to authenticated using (process_chart_sync_ctx()) with check (false);
+
+-- 0021의 «AI Agent는 링크를 넣지 않는다»(restrictive, for all)는 읽기에도 걸린다. FORCE 아래에서는 동기화 함수
+-- (AI Agent 세션)도 그 아래로 내려가므로, **using(읽기 · 줄 잡기)에만** 통로를 낸다. with check(넣기 · 고치기)는 그대로 —
+-- 통로로도 링크를 넣거나 바꾸지 못한다.
+drop policy if exists process_charts_ai_no_write on process_charts;
+create policy process_charts_ai_no_write on process_charts as restrictive for all to authenticated
+  using (auth_role() is distinct from 'AIAgent' or process_chart_sync_ctx())
+  with check (auth_role() is distinct from 'AIAgent');
 
 comment on function can_read_process_charts(text) is
   '0021. 0071부터 정책은 can_read_process_chart(biz, team)을 쓴다. 이 함수는 남겨 둔다(지우지 않는다).';
@@ -259,20 +313,41 @@ comment on column tasks.source_label is
 comment on column tasks.source_gone_at is
   '0071. 원천(시트)에서 그 줄이 사라진 때. 업무는 지우지 않고 «시트에서 사라짐»으로 보인다.';
 
--- 사람 세션은 시트에서 온 업무를 고치지 못한다. 동기화 함수는 정의자(소유자 — FORCE를 내렸으므로 정책 밖)라 지나간다.
+-- 사람 세션은 시트에서 온 업무를 고치지 못한다. 동기화 함수는 통로(1절)로 지나간다 — tasks의 FORCE는 그대로다.
 create policy tasks_external_readonly on tasks as restrictive
   for update to authenticated
-  using (source_label is null)
-  with check (source_label is null);
+  using (source_label is null or process_chart_sync_ctx())
+  with check (source_label is null or process_chart_sync_ctx());
+
+-- 동기화 통로(1절) — 시트 업무(source_label 있음)만. 앱 업무는 통로로도 읽거나 고치지 못한다.
+create policy tasks_process_sync_read on tasks
+  for select to authenticated using (process_chart_sync_ctx() and source_label is not null);
+create policy tasks_process_sync_insert on tasks
+  for insert to authenticated with check (process_chart_sync_ctx() and source_label is not null);
+create policy tasks_process_sync_update on tasks
+  for update to authenticated
+  using (process_chart_sync_ctx() and source_label is not null)
+  with check (process_chart_sync_ctx() and source_label is not null);
+
+-- 0013의 «AI Agent는 업무를 넣거나 고치지 않는다»(restrictive). FORCE 아래에서는 동기화 함수도 그 아래로 내려가므로
+-- 시트 업무에만 통로를 낸다. 지우기(ai_agent_no_delete)는 그대로 — 동기화는 지우지 않는다.
+drop policy if exists ai_agent_no_insert on tasks;
+create policy ai_agent_no_insert on tasks as restrictive for insert to authenticated
+  with check (auth_role() is distinct from 'AIAgent' or (process_chart_sync_ctx() and source_label is not null));
+drop policy if exists ai_agent_no_update on tasks;
+create policy ai_agent_no_update on tasks as restrictive for update to authenticated
+  using (auth_role() is distinct from 'AIAgent' or (process_chart_sync_ctx() and source_label is not null))
+  with check (auth_role() is distinct from 'AIAgent' or (process_chart_sync_ctx() and source_label is not null));
 
 -- 리뷰 B: 담당자를 못 찾은 시트 업무는 owner_user_id가 null이라 0026 owner_unknown(null) = true — 회사 사람 전부가
 -- 다른 팀 시트 업무를 /tasks에서 본다. 시트 업무는 «담당자 본인 또는 그 탭을 보는 사람»으로 좁힌다
 -- (process_chart_items의 RLS가 can_read_process_chart로 탭 보기를 판정한다). AI Agent는 시트 업무를 아예 못 읽는다 —
--- 시트 내용은 AI 경로에 넣지 않는다(동기화 함수는 정의자 = 소유자라 이 정책 밖이다).
+-- 시트 내용은 AI 경로에 넣지 않는다(동기화 함수만 통로(1절)로 읽는다 — AI Agent 세션이 그 안에서 돈다).
 create policy tasks_external_scope on tasks as restrictive
   for select to authenticated
   using (
     source_label is null
+    or process_chart_sync_ctx()
     or (
       auth_role() is distinct from 'AIAgent'
       and (owner_user_id = auth.uid()
@@ -363,7 +438,8 @@ comment on view calendar_items is
 -- 시트가 연결된 탭 목록(새벽 cron). AI Agent는 process_charts 읽기 정책이 없으므로 이 함수로만 본다.
 create or replace function process_chart_sync_targets()
 returns table (chart_id bigint, business_id text, team_name text, sheet_id text, sheet_tab text)
-language plpgsql stable security definer set search_path = public as $fn$
+language plpgsql stable security definer set search_path = public
+  set chairman.process_chart_sync = 'on' as $fn$
 begin
   if not is_active() or auth_role() is distinct from 'AIAgent' then
     raise exception 'process_sync_forbidden' using errcode = '42501';
@@ -379,7 +455,8 @@ $fn$;
 -- 공통 입구 판정: AI Agent · 탭 있음 · 시트 연결됨 · 누른 사람이 그 탭을 봄 · 1분 간격. 탭 줄을 잡아 둔다.
 create or replace function process_chart_sync_gate(p_chart_id bigint, p_trigger text, p_requested_by uuid)
 returns process_charts
-language plpgsql volatile security definer set search_path = public as $fn$
+language plpgsql volatile security definer set search_path = public
+  set chairman.process_chart_sync = 'on' as $fn$
 declare
   v_chart process_charts;
 begin
@@ -429,7 +506,8 @@ create or replace function process_chart_sync_apply(
   p_chart_id bigint, p_trigger text, p_requested_by uuid,
   p_read int, p_skipped int, p_warnings jsonb, p_rows jsonb
 ) returns jsonb
-language plpgsql volatile security definer set search_path = public as $fn$
+language plpgsql volatile security definer set search_path = public
+  set chairman.process_chart_sync = 'on' as $fn$
 declare
   v_chart    process_charts;
   v_label    text;
@@ -598,7 +676,8 @@ $fn$;
 create or replace function process_chart_sync_fail(
   p_chart_id bigint, p_trigger text, p_requested_by uuid, p_error text
 ) returns bigint
-language plpgsql volatile security definer set search_path = public as $fn$
+language plpgsql volatile security definer set search_path = public
+  set chairman.process_chart_sync = 'on' as $fn$
 declare
   v_chart process_charts;
   v_id    bigint;
@@ -618,14 +697,27 @@ $fn$;
 revoke all on function process_charts_team_fill() from public, anon, authenticated;
 -- 리뷰 C: 사람 id를 받는 판이라 직원이 «X가 대표 · CFO인가»를 캐 볼 수 있다 — 정의자만 부른다(authenticated에도 안 준다).
 revoke all on function process_chart_visible_to(uuid, text, text) from public, anon, authenticated;
+revoke all on function process_chart_visible_to_team(uuid, text, text) from public, anon, authenticated;
+revoke all on function can_read_process_chart_row(text, text) from public, anon;
+revoke all on function process_chart_sync_ctx() from public, anon;
 revoke all on function can_read_process_chart(text, text) from public, anon;
 revoke all on function process_chart_sync_targets() from public, anon;
 revoke all on function process_chart_sync_gate(bigint, text, uuid) from public, anon, authenticated;
 revoke all on function process_chart_sync_apply(bigint, text, uuid, int, int, jsonb, jsonb) from public, anon;
 revoke all on function process_chart_sync_fail(bigint, text, uuid, text) from public, anon;
 grant execute on function can_read_process_chart(text, text) to authenticated;
+grant execute on function can_read_process_chart_row(text, text) to authenticated;
+grant execute on function process_chart_sync_ctx() to authenticated;
 grant execute on function process_chart_sync_targets() to authenticated;
 grant execute on function process_chart_sync_apply(bigint, text, uuid, int, int, jsonb, jsonb) to authenticated;
 grant execute on function process_chart_sync_fail(bigint, text, uuid, text) to authenticated;
+
+-- =====================================================================
+-- 9절. FORCE 그대로 (머리 주석 «FORCE는 내리지 않는다»)
+--   이 파일은 FORCE를 내리지 않는다. 이미 걸려 있지만 한 번 더 건다 — 누가 위에서 내리는 줄을 되살려도
+--   커밋되는 상태는 FORCE다. check:db-safety가 «FORCE가 있던 표가 꺼지면 FAIL»로 지킨다.
+-- =====================================================================
+alter table process_charts force row level security;
+alter table tasks force row level security;
 
 commit;
