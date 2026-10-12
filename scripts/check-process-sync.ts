@@ -25,6 +25,7 @@ import {
   dummyListProcessChartSyncs,
   dummyProcessStore,
   dummyProcessSyncWriter,
+  dummyProcessTaskVisible,
   dummyProcessTasks,
   resetDummyProcessStore,
 } from '../src/lib/repository/dummy-process-sync'
@@ -138,6 +139,34 @@ async function syncing() {
   assert.ok(r4.ok && r4.result.changed === 1 && r4.result.gone === 0)
   assert.equal(store.items.find((i) => i.sheet_row_id === 'S-2')!.gone_at, null)
 
+  // 리뷰 B: 담당 미정 시트 업무(S-2 · S-3)는 다른 팀 사람에게 안 보인다 · 같은 팀 · 담당자 본인은 본다 · AI Agent 0
+  {
+    const who = (id: string) => DUMMY_PEOPLE.find((p) => p.user_id === id)!
+    const nullOwner = dummyProcessTasks().find((t) => t.task.title === '업무 3')!
+    assert.equal(nullOwner.owner_user_id, null)
+    assert.equal(dummyProcessTaskVisible(who(DUMMY_UID.buyStaff), nullOwner), false, '다른 팀(구매) 사람이 담당 미정 시트 업무를 본다')
+    assert.equal(dummyProcessTaskVisible(who(DUMMY_UID.salesStaff2), nullOwner), true, '같은 팀(영업) 사람이 못 본다')
+    assert.equal(dummyProcessTaskVisible(who(DUMMY_UID.chair), nullOwner), true, '대표가 못 본다')
+    assert.equal(dummyProcessTaskVisible(who(DUMMY_UID.aiAgent), nullOwner), false, 'AI Agent가 시트 업무를 읽는다')
+  }
+
+  // 빈 시트(넣을 줄 0) — 아무것도 «사라짐»으로 만들지 않고 실패 기록(경고)만 남긴다
+  sheet = [H]
+  tick()
+  const empty = await run()
+  assert.ok(!empty.ok && /0줄/.test(empty.error), JSON.stringify(empty))
+  assert.equal(store.items.filter((i) => i.gone_at === null).length, 3, '빈 시트가 업무를 사라짐으로 만들었다')
+  assert.equal(store.syncs[0].ok, false)
+  // 줄이 모두 건너뛴 줄이어도 같다
+  sheet = [H, row({ id: '', title: 'ID 없음' })]
+  tick()
+  const allSkipped = await run()
+  assert.ok(!allSkipped.ok && /0줄/.test(allSkipped.error) && /모두 건너뜀/.test(allSkipped.error))
+  assert.equal(store.items.filter((i) => i.gone_at === null).length, 3)
+  // writer도 빈 줄을 거부한다(DB process_sync_empty와 같다)
+  tick()
+  await assert.rejects(writer.apply({ chartId: 3, trigger: 'cron', requestedBy: null, read: 0, skipped: 0, warnings: [], rows: [] }), /process_sync_empty/)
+
   // 제목 줄 없는 시트 → 실패 기록
   sheet = [['아무 제목'], ['x']]
   tick()
@@ -209,7 +238,7 @@ async function main() {
   jwt()
   await syncing()
   sheetIdInput()
-  console.log('check:process-sync PASS — 제목 줄 · ID 없음 · 날짜 틀림 · 상태 · 새 줄 · 담당 미정 · 두 번 안 늘어남 · 바뀜 · 사라짐 · 1분 · 팀 보기 · 시트 ID')
+  console.log('check:process-sync PASS — 제목 줄 · ID 없음 · 날짜 틀림 · 상태 · 새 줄 · 담당 미정 · 두 번 안 늘어남 · 바뀜 · 사라짐 · 담당 미정 업무 범위(리뷰 B) · 빈 시트 거부 · 1분 · 팀 보기 · 시트 ID')
 }
 
 main().catch((e) => {

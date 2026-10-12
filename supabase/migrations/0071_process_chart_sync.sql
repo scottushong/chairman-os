@@ -265,6 +265,21 @@ create policy tasks_external_readonly on tasks as restrictive
   using (source_label is null)
   with check (source_label is null);
 
+-- 리뷰 B: 담당자를 못 찾은 시트 업무는 owner_user_id가 null이라 0026 owner_unknown(null) = true — 회사 사람 전부가
+-- 다른 팀 시트 업무를 /tasks에서 본다. 시트 업무는 «담당자 본인 또는 그 탭을 보는 사람»으로 좁힌다
+-- (process_chart_items의 RLS가 can_read_process_chart로 탭 보기를 판정한다). AI Agent는 시트 업무를 아예 못 읽는다 —
+-- 시트 내용은 AI 경로에 넣지 않는다(동기화 함수는 정의자 = 소유자라 이 정책 밖이다).
+create policy tasks_external_scope on tasks as restrictive
+  for select to authenticated
+  using (
+    source_label is null
+    or (
+      auth_role() is distinct from 'AIAgent'
+      and (owner_user_id = auth.uid()
+           or exists (select 1 from process_chart_items i where i.task_id = tasks.task_id))
+    )
+  );
+
 -- =====================================================================
 -- 6절. 캘린더 — calendar_items에 'process' 갈래
 --   0017 본문 그대로 + 맨 아래 한 갈래. security_invoker라 process_chart_items(탭 보기)와 tasks(업무 보기)의
@@ -451,6 +466,11 @@ begin
   if coalesce(p_read, -1) < 0 or coalesce(p_skipped, -1) < 0 or p_read < jsonb_array_length(p_rows) then
     raise exception 'process_sync_invalid: counts';
   end if;
+  -- 넣을 줄이 0이면 넣지 않는다 — 탭을 잘못 고르거나 시트를 잠깐 비운 순간에 팀 업무 전부가 «시트에서 사라짐»이 되지 않게.
+  -- 앱은 이 경우 apply 대신 process_chart_sync_fail로 경고를 남긴다(lib/process-sync/run.ts).
+  if jsonb_array_length(p_rows) = 0 then
+    raise exception 'process_sync_empty';
+  end if;
 
   v_label := '프로세스 차트 · ' || v_chart.team_name;
   -- 팀마다 업무를 매달 프로젝트 하나. 키는 (회사, 팀 이름)에서 나온다 — 링크를 지웠다 다시 만들어도 같은 자리.
@@ -458,6 +478,11 @@ begin
   insert into projects (project_id, business_id, name, owner_user_id, status)
   values (v_project, v_chart.business_id, v_label, null, 'Doing')
   on conflict (project_id) do nothing;
+  -- 리뷰 A: 키가 예측 가능하다(pc_<회사>_<md5(팀)>). 누가 같은 id로 **다른 회사** 프로젝트를 먼저 만들어 두면
+  -- 시트 업무가 그 회사로 들어간다(tasks_read는 project_business_id로 회사를 본다). 회사가 다르면 멈춘다.
+  if (select p.business_id from projects p where p.project_id = v_project) is distinct from v_chart.business_id then
+    raise exception 'process_sync_project_conflict';
+  end if;
 
   for v_row in select value from jsonb_array_elements(p_rows) loop
     if jsonb_typeof(v_row) <> 'object' then raise exception 'process_sync_invalid: row'; end if;
@@ -591,13 +616,13 @@ $fn$;
 -- 8절. 권한 — 이름으로 회수(Supabase가 anon에게 execute를 이름으로 준다)
 -- =====================================================================
 revoke all on function process_charts_team_fill() from public, anon, authenticated;
-revoke all on function process_chart_visible_to(uuid, text, text) from public, anon;
+-- 리뷰 C: 사람 id를 받는 판이라 직원이 «X가 대표 · CFO인가»를 캐 볼 수 있다 — 정의자만 부른다(authenticated에도 안 준다).
+revoke all on function process_chart_visible_to(uuid, text, text) from public, anon, authenticated;
 revoke all on function can_read_process_chart(text, text) from public, anon;
 revoke all on function process_chart_sync_targets() from public, anon;
 revoke all on function process_chart_sync_gate(bigint, text, uuid) from public, anon, authenticated;
 revoke all on function process_chart_sync_apply(bigint, text, uuid, int, int, jsonb, jsonb) from public, anon;
 revoke all on function process_chart_sync_fail(bigint, text, uuid, text) from public, anon;
-grant execute on function process_chart_visible_to(uuid, text, text) to authenticated;
 grant execute on function can_read_process_chart(text, text) to authenticated;
 grant execute on function process_chart_sync_targets() to authenticated;
 grant execute on function process_chart_sync_apply(bigint, text, uuid, int, int, jsonb, jsonb) to authenticated;

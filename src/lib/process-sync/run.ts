@@ -52,6 +52,10 @@ export type ProcessSyncOutcome =
   | { ok: true; result: ProcessSyncResult }
   | { ok: false; error: string }
 
+/** 넣을 줄이 0이면 아무것도 바꾸지 않는다 — 팀 업무 전부가 «시트에서 사라짐»이 되는 사고를 막는다(0071 process_sync_empty). */
+export const EMPTY_SHEET_KO =
+  '시트에서 넣을 줄이 0줄이라 아무것도 바꾸지 않았습니다(기존 업무를 «시트에서 사라짐»으로 만들지 않음). 탭 이름 · 시트 내용을 확인하세요.'
+
 /** DB가 던진 낱말 → 사람 말. 낱말이 없으면 null(호출자가 일반 문장을 고른다). */
 export function processSyncErrorKo(message: string): string | null {
   if (/process_sync_too_soon/.test(message)) return '같은 팀은 1분에 한 번만 동기화합니다. 잠시 뒤에 다시 누르세요.'
@@ -59,6 +63,8 @@ export function processSyncErrorKo(message: string): string | null {
   if (/process_sync_not_found/.test(message)) return '이 탭을 볼 수 없습니다.'
   if (/process_sync_forbidden/.test(message)) return '동기화 계정 설정이 틀렸습니다. 관리자에게 알려 주세요.'
   if (/process_sync_invalid/.test(message)) return '시트에서 읽은 줄의 모양이 틀려 넣지 않았습니다.'
+  if (/process_sync_empty/.test(message)) return EMPTY_SHEET_KO
+  if (/process_sync_project_conflict/.test(message)) return '이 팀의 업무 프로젝트 자리가 다른 회사 것으로 잡혀 있어 넣지 않았습니다. 관리자에게 알려 주세요.'
   return null
 }
 
@@ -87,6 +93,13 @@ export async function runProcessSync(opts: {
   if (parsed.headerProblem) {
     await recordFailure(writer, target.chart_id, trigger, requestedBy, parsed.headerProblem)
     return { ok: false, error: parsed.headerProblem }
+  }
+
+  if (parsed.rows.length === 0) {
+    const skippedNote = parsed.skipped > 0 ? ` (읽은 줄 ${parsed.read} · 모두 건너뜀 — 경고: ${parsed.warnings.slice(0, 3).map((w) => w.message).join(' / ')})` : ''
+    const text = `${EMPTY_SHEET_KO}${skippedNote}`.slice(0, 500)
+    await recordFailure(writer, target.chart_id, trigger, requestedBy, text)
+    return { ok: false, error: text }
   }
 
   try {

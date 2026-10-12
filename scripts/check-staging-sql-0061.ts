@@ -125,9 +125,9 @@ async function main() {
     await db.exec(`insert into auth.users (id, email) values ('${agent}', 'agent@x');
       insert into user_profiles (user_id, role, display_name, max_security_class) values ('${agent}', 'AIAgent', 'AI Agent', 'Restricted');`)
     const m71 = await runFile('0071_staging_test.sql')
-    assert.match(m71, /^0071 STAGING PASS a\(.*b\(.*c\(.*d\(.*e\(.*f\(.*g\(anon 거부\)$/, '0071 staging 시험 SQL이 PASS로 끝나지 않는다')
+    assert.match(m71, /^0071 STAGING PASS a\(.*b\(.*c\(.*d\(.*e\(.*f\(.*h\(.*i\(.*j\(.*k\(.*g\(anon 거부\)$/, '0071 staging 시험 SQL이 PASS로 끝나지 않는다')
     const left = (await db.query<{ n: number }>(`select (select count(*) from process_chart_items) + (select count(*) from process_chart_syncs)
-      + (select count(*) from tasks where source_label is not null) + (select count(*) from teams where team_id = 'team_dy_stg71') as n`)).rows[0].n
+      + (select count(*) from tasks where source_label is not null) + (select count(*) from teams where team_id like 'team_dy_stg71%') + (select count(*) from projects where project_id like 'pc_%') as n`)).rows[0].n
     assert.equal(Number(left), 0, '0071 staging 시험 SQL이 시트 줄 · 기록 · 업무 · 팀을 남겼다')
   }
   await db.close()

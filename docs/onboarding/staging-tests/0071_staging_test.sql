@@ -10,7 +10,7 @@
 --   cp docs/onboarding/staging-tests/0071_staging_test.sql supabase/.temp/
 --   SUPABASE_DB_PASSWORD="$(grep ^SUPABASE_DB_PASSWORD .env.staging.local | cut -d= -f2-)" npx supabase db query --linked -f "supabase/.temp/0071_staging_test.sql"
 --   rm -f supabase/.temp/0071_staging_test.sql
--- 기대: ERROR  0071 STAGING PASS a(…) b(…) c(…) d(…) e(…) f(…) g(…)  — «FAIL»로 시작하면 그 줄이 깨진 것.
+-- 기대: ERROR  0071 STAGING PASS a(…) b(…) c(…) d(…) e(…) f(…) h(…) i(…) j(…) k(…) g(…)  — «FAIL»로 시작하면 그 줄이 깨진 것.
 --
 -- 사람(id를 박지 않는다): 회장 · AI Agent(역할로 찾는다) · rehearsal.member@example.com(시험 팀 팀원) ·
 -- rehearsal.staff@example.com(다른 팀 팀원).
@@ -27,6 +27,8 @@ declare
   v_res    jsonb;
   v_rows   jsonb;
   v_task   text;
+  v_chart_b bigint;
+  v_other  text;
   v_out    text := '';
   n int;
 begin
@@ -175,6 +177,102 @@ begin
   reset role;
   if n <> 0 then raise exception 'FAIL f: 담당자가 시트 업무를 앱에서 고쳤다'; end if;
   v_out := v_out || 'f(앱 수정 0행) ';
+
+  -- ── h. 리뷰 B: 담당 미정 시트 업무는 다른 팀 사람에게 안 보인다 · 같은 팀은 본다 · AI Agent는 0 ──
+  update public.user_profiles set team_id = 'team_dy_sales' where user_id = v_staff;
+  select i.task_id into v_task from public.process_chart_items i where i.chart_id = v_chart and i.sheet_row_id = 'S71-3';
+  perform set_config('request.jwt.claims', json_build_object('sub', v_staff, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_staff::text, true);
+  set local role authenticated;
+  select count(*) into n from public.tasks where task_id = v_task;
+  reset role;
+  if n <> 0 then raise exception 'FAIL h: 다른 팀 사람이 담당 미정 시트 업무를 본다'; end if;
+  perform set_config('request.jwt.claims', json_build_object('sub', v_member, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_member::text, true);
+  set local role authenticated;
+  select count(*) into n from public.tasks where task_id = v_task;
+  reset role;
+  if n <> 1 then raise exception 'FAIL h: 같은 팀 사람이 담당 미정 시트 업무를 못 본다'; end if;
+  perform set_config('request.jwt.claims', json_build_object('sub', v_agent, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_agent::text, true);
+  set local role authenticated;
+  select count(*) into n from public.tasks where source_label = '프로세스 차트 · 스테이징시험71';
+  reset role;
+  if n <> 0 then raise exception 'FAIL h: AI Agent가 시트 업무 %건을 읽는다', n; end if;
+  perform set_config('request.jwt.claims', json_build_object('sub', v_chair, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_chair::text, true);
+  set local role authenticated;
+  select count(*) into n from public.tasks where source_label = '프로세스 차트 · 스테이징시험71';
+  reset role;
+  if n <> 3 then raise exception 'FAIL h: 대표가 시트 업무 %건을 본다(3이어야)', n; end if;
+  v_out := v_out || 'h(담당 미정 업무 = 같은 팀만 · 대표 3 · AI Agent 0) ';
+
+  -- ── i. 리뷰 C: 사람은 process_chart_visible_to(사람 id)를 못 부른다 ──
+  perform set_config('request.jwt.claims', json_build_object('sub', v_member, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_member::text, true);
+  set local role authenticated;
+  begin
+    perform public.process_chart_visible_to(v_chair, 'biz_dy', '영업');
+    raise exception 'FAIL i: 팀원이 process_chart_visible_to를 불렀다';
+  exception
+    when insufficient_privilege then null;
+    when others then
+      if sqlerrm like 'FAIL%' then raise; end if;
+      raise exception 'FAIL i: 권한 거부가 아니라 %', sqlerrm;
+  end;
+  reset role;
+  v_out := v_out || 'i(사람 id 판정 함수 거부) ';
+
+  -- 준비: 두 번째 시험 탭(리뷰 A · 빈 시트용)
+  perform set_config('request.jwt.claims', json_build_object('sub', v_chair, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_chair::text, true);
+  set local role authenticated;
+  insert into public.teams (team_id, business_id, name, name_en) values ('team_dy_stg71b', 'biz_dy', '스테이징시험71B', 'Staging 71B');
+  insert into public.process_charts (business_id, team_name, title, embed_url, sort_order, updated_by, sheet_id)
+  values ('biz_dy', '스테이징시험71B', '스테이징 시험 탭 B',
+          'https://docs.google.com/spreadsheets/d/e/2PACX-staging71testb/pubhtml', 998, v_chair, repeat('t', 30))
+  returning id into v_chart_b;
+  reset role;
+
+  -- ── j. 리뷰 A: 같은 프로젝트 id가 다른 회사로 먼저 잡혀 있으면 넣지 않는다 ──
+  select b.business_id into v_other from public.businesses b where b.business_id <> 'biz_dy' order by b.business_id limit 1;
+  if v_other is null then raise exception 'FAIL 준비 j: biz_dy 말고 회사가 없다'; end if;
+  insert into public.projects (project_id, business_id, name, status)
+  values ('pc_biz_dy_' || substr(md5('스테이징시험71B'), 1, 10), v_other, '가로챈 프로젝트', 'Doing');
+  perform set_config('request.jwt.claims', json_build_object('sub', v_agent, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_agent::text, true);
+  set local role authenticated;
+  begin
+    perform public.process_chart_sync_apply(v_chart_b, 'cron', null, 1, 0, '[]'::jsonb,
+      '[{"id":"B-1","title":"가로채기 시험","status":"예정"}]'::jsonb);
+    raise exception 'FAIL j: 다른 회사 프로젝트로 시트 업무가 들어갔다';
+  exception when others then
+    if sqlerrm not like '%process_sync_project_conflict%' then raise exception 'FAIL j: %', sqlerrm; end if;
+  end;
+  reset role;
+  select count(*) into n from public.tasks where project_id = 'pc_biz_dy_' || substr(md5('스테이징시험71B'), 1, 10);
+  if n <> 0 then raise exception 'FAIL j: 업무 %건이 남았다', n; end if;
+  delete from public.projects where project_id = 'pc_biz_dy_' || substr(md5('스테이징시험71B'), 1, 10);
+  v_out := v_out || 'j(다른 회사 프로젝트 거부) ';
+
+  -- ── k. 빈 시트(넣을 줄 0)는 거부 — 업무를 «사라짐»으로 만들지 않는다 ──
+  update public.process_chart_syncs set synced_at = synced_at - interval '2 minutes' where chart_id = v_chart;
+  perform set_config('request.jwt.claims', json_build_object('sub', v_agent, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_agent::text, true);
+  set local role authenticated;
+  begin
+    perform public.process_chart_sync_apply(v_chart, 'cron', null, 0, 0, '[]'::jsonb, '[]'::jsonb);
+    raise exception 'FAIL k: 빈 시트로 동기화가 됐다';
+  exception when others then
+    if sqlerrm not like '%process_sync_empty%' then raise exception 'FAIL k: %', sqlerrm; end if;
+  end;
+  perform public.process_chart_sync_fail(v_chart, 'cron', null, '빈 시트 경고(시험)');
+  reset role;
+  select count(*) into n from public.process_chart_items where chart_id = v_chart and gone_at is null;
+  if n <> 2 then raise exception 'FAIL k: 빈 시트 뒤 시트에 있는 줄이 %개(2여야)', n; end if;
+  select count(*) into n from public.process_chart_syncs where chart_id = v_chart and not ok and error like '빈 시트%';
+  if n <> 1 then raise exception 'FAIL k: 빈 시트 경고 기록이 %줄', n; end if;
+  v_out := v_out || 'k(빈 시트 거부 · 경고 기록) ';
 
   -- ── g. anon ──
   set local role anon;

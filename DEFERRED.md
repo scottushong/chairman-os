@@ -2700,3 +2700,4 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - «댓글만» — 업무에 댓글 기능이 아직 없다. 시트 업무는 화면에서 상태 · 대표 확인 손잡이를 끄고 «시트에서 고치세요»를 보인다(DB restrictive 정책 tasks_external_readonly). 댓글은 다음 블록.
 - 새벽 cron은 vercel.json(0 18 * * * = 03:00 KST). 저장소의 첫 Vercel cron 재등장 — 야간 브리핑은 GitHub Actions 틱 그대로. Hobby cron 한도 · 시각 오차(±59분)는 배포 전에 Vercel 화면에서 확인.
 - 시트 줄의 담당자 이메일은 탭을 보는 사람에게 보인다(같은 팀 시트에 이미 있는 값).
+- 리뷰 반영(2026-10-12): A 프로젝트 id 회사 확인(process_sync_project_conflict) · B tasks_external_scope(시트 업무 = 담당자 본인 또는 탭을 보는 사람, AI Agent 0) · C process_chart_visible_to를 authenticated에서 회수 · 빈 시트(넣을 줄 0)는 거부하고 실패 기록(경고)만 — 시트를 통째로 비우면 업무가 «사라짐»이 되지 않는다(다른 선택지: 빈 시트 = 전부 사라짐).

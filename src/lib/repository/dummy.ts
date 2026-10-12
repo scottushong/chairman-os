@@ -40,7 +40,7 @@ import { attachmentSearchText, dummyAttachmentRaw, dummyAttachments, dummySeedAt
 import { dummyCanDeleteDocument, dummyIntake, dummyIntakeEntity, seedDummyIntake } from './dummy-intake'
 import { dummyFinanceImportEntity, dummyFinanceImports } from './dummy-finance-imports'
 import { dummyCostImport } from './dummy-cost-import'
-import { dummyListProcessChartItems, dummyListProcessChartSyncs, dummyProcessCalendarItems, dummyProcessTasks } from './dummy-process-sync'
+import { dummyListProcessChartItems, dummyListProcessChartSyncs, dummyProcessCalendarItems, dummyProcessTaskVisible, dummyProcessTasks } from './dummy-process-sync'
 import { dummyPurchasing } from './dummy-purchasing'
 import { dummyQuotes } from './dummy-quotes'
 import { dummyCostProduct, dummyCostReadAudit, dummyCosts, dummyGrantedAt, dummyProduction, dummySalesCost, noteDummyGrant } from './dummy-sales-cost'
@@ -865,9 +865,9 @@ export const dummyRepository: ChairmanRepository = {
       owner: ownerLabel(t.owner_user_id),
       ...memoryTaskPatches.get(t.task.task_id),
     }))
-    // 0071 시트에서 온 업무 — tasks_read(0026 식)와 같은 판정으로 거른다.
+    // 0071 시트에서 온 업무 — tasks_read(0026 식) AND tasks_external_scope(담당자 본인 또는 그 탭을 보는 사람).
     const synced = dummyProcessTasks()
-      .filter((t) => canSeeRow(t.business_id, t.owner_user_id) || dummySharedWithMe(memoryShares, viewer.user_id, 'tasks', t.task.task_id))
+      .filter((t) => (canSeeRow(t.business_id, t.owner_user_id) || dummySharedWithMe(memoryShares, viewer.user_id, 'tasks', t.task.task_id)) && dummyProcessTaskVisible(viewer, t))
       .map((t) => ({ ...t.task }))
     return [...seeded, ...owned, ...synced]
   },

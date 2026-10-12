@@ -42,6 +42,7 @@ interface ChartRef {
 interface DummyProcessTask {
   task: Task
   business_id: string
+  team_name: string
   owner_user_id: string | null
 }
 
@@ -134,6 +135,7 @@ export function dummyProcessSyncWriter(opts: {
   return {
     async apply(input: ProcessSyncApplyInput): Promise<ProcessSyncResult> {
       const chart = gate(input.chartId, input.trigger, input.requestedBy)
+      if (input.rows.length === 0) throw new Error('process_sync_empty')
       const store = dummyProcessStore()
       const at = new Date(now()).toISOString()
       const label = `프로세스 차트 · ${chart.team_name}`
@@ -198,6 +200,7 @@ export function dummyProcessSyncWriter(opts: {
         const status = STATUS_TO_TASK[row.status]
         store.tasks.set(item.task_id!, {
           business_id: chart.business_id,
+          team_name: chart.team_name,
           owner_user_id,
           task: {
             task_id: item.task_id!,
@@ -257,7 +260,16 @@ export function dummyListProcessChartSyncs(viewer: UserAccount): ProcessChartSyn
     .map((s) => ({ ...s, warnings: [...s.warnings] }))
 }
 
-/** dummy listTasks가 덧붙이는 시트 업무(가시성은 호출자가 0026 식으로 거른다). */
+/**
+ * 0071 tasks_external_scope(리뷰 B) — 시트 업무는 담당자 본인 또는 그 탭을 보는 사람만. AI Agent는 0.
+ * dummy listTasks가 0026 식(canSeeRow)과 **함께**(AND) 건다.
+ */
+export function dummyProcessTaskVisible(viewer: UserAccount, t: DummyProcessTask): boolean {
+  if (viewer.role === 'AIAgent') return false
+  return t.owner_user_id === viewer.user_id || dummyProcessVisible(viewer, t.business_id, t.team_name)
+}
+
+/** dummy listTasks가 덧붙이는 시트 업무(가시성은 호출자가 0026 식 + dummyProcessTaskVisible로 거른다). */
 export function dummyProcessTasks(): DummyProcessTask[] {
   return [...dummyProcessStore().tasks.values()]
 }
