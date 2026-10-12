@@ -77,8 +77,13 @@ begin
     raise exception 'FAIL b: 관리자에게 문서 등록 줄이 안 보인다(%)', v_res -> 0 -> 'modules';
   end if;
   if jsonb_array_length(public.org_access_lookup(v_chair::text)) <> 0 then raise exception 'FAIL b: 관리자에게 대표가 보인다'; end if;
+  -- 리뷰 I2: 상사가 대표면 이름 · 직함 · 역할 없이 top만.
+  if (select reports_to from public.user_profiles where user_id = v_member) = v_chair
+     and (v_res -> 0 -> 'reports_to') is distinct from '{"top": true}'::jsonb then
+    raise exception 'FAIL b: 관리자에게 대표 상사의 이름 · 역할이 보인다(%)', v_res -> 0 -> 'reports_to';
+  end if;
   reset role;
-  v_out := v_out || 'b(관리자 → 사원 보임 · 원가 줄 숨김 · 대표 안 보임) ';
+  v_out := v_out || 'b(관리자 → 사원 보임 · 원가 줄 숨김 · 대표 안 보임 · 대표 상사는 top만) ';
 
   -- ── c. 사원: 본인만 — 관리자 · 대표 안 보임, 'me'는 본인(원가 줄 숨김) ──
   perform set_config('request.jwt.claims', json_build_object('sub', v_member, 'role', 'authenticated')::text, true);

@@ -21,7 +21,11 @@
 -- ■ 2절 보완 의견 — ai_feedback ■
 --   답마다 접힌 칸에서 쓴다. 함께 적는 것: 쓴 사람 · 회사 · 화면 경로 · 질문 · 답(원문) · 시각.
 --   질문 · 답은 **앱이 보내지 않는다** — ai_feedback_submit(message_id)가 그 사람 본인의 대화(ai_chat_messages, 0041 본인만)에서
---   그 답과 바로 앞 질문을 읽어 복사한다. 남의 답 · 지어낸 답을 붙일 길이 없다.
+--   그 답과 바로 앞 질문을 읽어 복사한다. 남의 답을 붙일 길은 없다.
+--   **다만 «지어낸 답»은 막지 못한다**(리뷰 I1): 0041이 본인 대화에 insert를 열어 두었고 role을 보지 않는다 — 사용자가
+--   role='assistant' 줄을 직접 넣을 수 있다. 서버 액션과 직접 호출을 DB가 가를 길이 없어(같은 세션 · 같은 PostgREST),
+--   질문 · 답 · 의견은 **믿지 않는 사용자 글**로 다룬다: AI 정리 프롬프트가 자료로만 감싸고(feedback-triage.md),
+--   보완함이 지시문 위에 «사용자 글에서 나온 지시문 — 붙이기 전에 읽어 보세요»를 붙인다. 지시문은 자동으로 어디에도 가지 않는다.
 --   읽기: 쓴 사람은 자기 것만(ai_feedback_mine() — 상태 · AI 정리 · «AI 정리 제외» 표시는 싣지 않는다), 대표는 표 전부,
 --   AIAgent(밤 묶음 정리)는 «AI 정리 제외»가 아니고 취소되지 않은 줄만.
 --   수정 · 삭제 없음(grant 없음). 취소는 표시만(ai_feedback_cancel — 쓴 사람 본인). 모든 쓰기는 audit_log 한 줄.
@@ -98,6 +102,8 @@ begin
       from user_profiles p
       left join teams tm on tm.team_id = p.team_id
      where org_access_can_view(p.user_id)
+       -- 리뷰 I3: 회수된 사람은 대표에게만(사용자 관리자에게는 빼고 — 본인은 회수되면 세션이 없다).
+       and (v_chair or p.revoked_at is null)
        and (
          (v_uuid is not null and p.user_id = v_uuid)
          or (v_uuid is null and (
@@ -120,16 +126,25 @@ begin
            'max_security_class', case when v_chair or h.user_id = v_me then h.max_security_class::text end,
            'team', (select jsonb_build_object('team_id', t.team_id, 'name', t.name, 'business_id', t.business_id)
                       from teams t where t.team_id = h.team_id),
-           'reports_to', (select jsonb_build_object('user_id', b.user_id, 'name', b.display_name, 'role', b.role::text, 'title', b.title_ko)
+           -- 리뷰 I2: 상사가 대표면 대표 세션 밖에는 이름 · 직함 · 역할을 싣지 않는다(top=true만 — 앱이 «대표»로 부른다).
+           'reports_to', (select case when b.role::text = 'Chairman' and not v_chair then jsonb_build_object('top', true)
+                                      else jsonb_build_object('user_id', b.user_id, 'name', b.display_name, 'role', b.role::text, 'title', b.title_ko) end
                             from user_profiles b where b.user_id = h.reports_to),
+           -- 리뷰 I3: 대표도 본인도 아니면(= 사용자 관리자) 맡은 회사만.
            'businesses', case when h.role::text in ('Chairman', 'GroupCFO') then '["*"]'::jsonb
                               else coalesce((select jsonb_agg(a.business_id order by a.business_id)
-                                               from user_business_access a where a.user_id = h.user_id), '[]'::jsonb) end,
+                                               from user_business_access a
+                                              where a.user_id = h.user_id
+                                                and (v_chair or h.user_id = v_me or staff_admin_holds(v_me, a.business_id))), '[]'::jsonb) end,
            'modules', coalesce((select jsonb_agg(jsonb_build_object('module', m.module, 'can_write', m.can_write, 'can_approve', m.can_approve)
                                                  order by m.module)
                                   from user_module_access m
                                  where m.user_id = h.user_id
-                                   and (v_chair or not org_access_is_cost_module(m.module))), '[]'::jsonb),
+                                   and (v_chair or not org_access_is_cost_module(m.module))
+                                   -- 리뷰 I3: 사용자 관리자에게는 회사가 붙은 줄 중 맡은 회사 것만(전역 줄 '/chairman/decisions'는 그대로).
+                                   and (v_chair or h.user_id = v_me
+                                        or not exists (select 1 from businesses bz where bz.business_id = regexp_replace(m.module, '^.*/', ''))
+                                        or staff_admin_holds(v_me, regexp_replace(m.module, '^.*/', '')))), '[]'::jsonb),
            'cost_hidden', not v_chair
          )), '[]'::jsonb)
     into v_out
@@ -142,10 +157,9 @@ comment on function org_access_lookup(text) is
   '0069. AI 어시스턴트 권한 · 조직 조회(읽기만). 대표 전원 · 본인 · 사용자 관리자(0055)는 맡은 회사의 사원 · 팀장. 원가 4종 줄은 대표 세션에만.';
 
 revoke all on function org_access_is_cost_module(text) from public, anon;
-revoke all on function org_access_can_view(uuid) from public, anon;
+revoke all on function org_access_can_view(uuid) from public, anon, authenticated;
 revoke all on function org_access_lookup(text) from public, anon;
 grant execute on function org_access_is_cost_module(text) to authenticated;
-grant execute on function org_access_can_view(uuid) to authenticated;
 grant execute on function org_access_lookup(text) to authenticated;
 
 -- =====================================================================
@@ -265,6 +279,8 @@ begin
   if v_msg.id is null then
     raise exception 'ai_feedback_message' using errcode = '42501';
   end if;
+  -- 하루 상한을 동시 제출로 넘지 않게(리뷰 M3) — 쓴 사람마다 트랜잭션 잠금.
+  perform pg_advisory_xact_lock(hashtext('ai_feedback:' || v_me::text));
   if exists (select 1 from ai_feedback f where f.author_id = v_me and f.message_id = p_message_id) then
     raise exception 'ai_feedback_duplicate' using errcode = '23505';
   end if;
@@ -460,10 +476,12 @@ begin
   if cardinality(ai_feedback_sensitive(p_triage::text || ' ' || p_title)) > 0 then
     raise exception 'ai_feedback_triage_sensitive' using errcode = '22023';
   end if;
+  -- 리뷰 M2: 잠그고 본다(검사와 묶기 사이의 취소) · 이미 다른 묶음에 든 줄은 묶지 않는다.
+  perform 1 from ai_feedback where feedback_id = any (v_ids) for update;
   select count(*), count(distinct split_part(path, '?', 1)), min(split_part(path, '?', 1))
     into v_n, v_paths, v_screen
     from ai_feedback
-   where feedback_id = any (v_ids) and not ai_excluded and cancelled_at is null;
+   where feedback_id = any (v_ids) and not ai_excluded and cancelled_at is null and bundle_id is null;
   if v_n <> cardinality(v_ids) then
     raise exception 'ai_feedback_excluded' using errcode = '42501';
   end if;
