@@ -12,7 +12,7 @@ import 'server-only'
  */
 
 /** 마지막으로 만든 마이그레이션. 새 번호를 더할 때 이 줄도 같이 고친다. */
-export const LATEST_MIGRATION = '0079_ledger_post'
+export const LATEST_MIGRATION = '0080_material_price_lock'
 
 export interface AppVersion {
   /** 배포된 커밋. 짧은 해시로 자른다 — 전체 40자는 읽을 사람이 없다. */
