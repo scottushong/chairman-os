@@ -183,6 +183,16 @@ async function main() {
       + (select count(*) from fin_reclose_flags where period in ('2099-07', '2099-08')) + (select count(*) from audit_log where entity_table = 'fin_inventory_openings') as n`)).rows[0].n
     assert.equal(Number(left), 0, '0076 staging 시험 SQL이 첫 달 기초 · 올리기 · 재마감 대상 · 감사를 남겼다')
   }
+  // 0077(판매 실적 · 마진 스위치 문)이 있는 브랜치에서만. 0071보다 먼저.
+  if (files.includes('0077_sales_margins.sql')) {
+    const switches77 = async () => (await db.query<{ s: string }>(`select string_agg(feature_key || ':' || coalesce(business_id, '-') || ':' || enabled || ':' || audience, ',' order by feature_key, business_id) as s from feature_switches`)).rows[0].s
+    const before77 = await switches77()
+    const m77 = await runFile('0077_staging_test.sql')
+    assert.match(m77, /^0077 STAGING PASS a\(직원 스위치 꺼짐\) b\(대표 마진 · 칸 모양\) c\(직원 마진 거부\) d\(끄면 대표도 꺼짐\) e\(anon 거부\)$/, `0077 staging 시험 SQL이 PASS로 끝나지 않는다 (${m77})`)
+    assert.equal(await switches77(), before77, '0077 staging 시험 SQL이 기능 스위치 줄을 바꾼 채 남겼다')
+    const left = (await db.query<{ n: number }>(`select count(*) as n from audit_log where entity_id = 'margins:biz_dy'`)).rows[0].n
+    assert.equal(Number(left), 0, '0077 staging 시험 SQL이 마진 감사 줄을 남겼다')
+  }
   // 0071은 맨 뒤 — 끝에서 표 · 함수 소유자를 바꾼다(아래 주석).
   // 0071(프로세스 차트 동기화)이 있는 브랜치에서만. staging처럼 AI Agent 계정이 하나 있다.
   if (files.includes('0071_process_chart_sync.sql')) {
