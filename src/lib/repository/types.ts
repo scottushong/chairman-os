@@ -72,6 +72,8 @@ import type {
   OfficialStatementBasis,
   ProcessChart,
   ProcessChartInput,
+  ProcessChartItem,
+  ProcessChartSync,
   CityLayout,
   CityLayoutInput,
   ApprovalChainBoss,
@@ -302,7 +304,19 @@ export interface CostImportMethods {
   applyCostImport(input: CostImportApply): Promise<{ importId: string; inserted: number; replaced: number }>
 }
 
-export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods, ProductionMethods, CostsMethods, QuoteMethods, CostImportMethods {
+/**
+ * 0071 프로세스 차트 동기화 — **읽기만.** 쓰기(동기화)는 저장소가 아니라 lib/process-sync(AI Agent 세션 RPC · dummy 흉내)가 한다.
+ * 사람 세션이 쓰는 길을 저장소에 두지 않는다 — 0071 머리 주석 «쓰기는 왜 AI Agent 세션만인가».
+ * 0071 전 DB(표 없음)면 빈 목록이다.
+ */
+export interface ProcessSyncMethods {
+  /** 이 사람이 보는 탭의 시트 줄(0071 process_chart_items_read). */
+  listProcessChartItems(): Promise<ProcessChartItem[]>
+  /** 이 사람이 보는 탭의 동기화 기록, 최근 것부터 limit줄. */
+  listProcessChartSyncs(limit?: number): Promise<ProcessChartSync[]>
+}
+
+export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods, ProductionMethods, CostsMethods, QuoteMethods, CostImportMethods, ProcessSyncMethods {
   /** 어느 쪽을 보고 있는지. 화면이 아니라 DUMMY DATA 뱃지와 로그가 쓴다. */
   readonly mode: 'dummy' | 'live'
 

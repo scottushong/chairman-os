@@ -148,7 +148,8 @@ export const calendarTool: AssistantTool = {
     const from = DATE.test(str(input.from)) ? str(input.from) : today
     const toRaw = str(input.to)
     const to = DATE.test(toRaw) ? toRaw : new Date(Date.parse(`${from}T00:00:00Z`) + 13 * 86_400_000).toISOString().slice(0, 10)
-    const items = await ctx.repo.listCalendarItems(from, to)
+    // 0071 프로세스 차트(시트 내용)는 AI 경로에 넣지 않는다(대표 결정 2026-10-12).
+    const items = (await ctx.repo.listCalendarItems(from, to)).filter((i) => i.kind !== 'process')
     for (const i of items.slice(0, 6)) addEvidence(ctx, { label: i.title, href: i.href || '/calendar', detail: `${i.on_date} · ${i.kind}` })
     if (!items.length) addEvidence(ctx, { label: '캘린더', href: '/calendar', detail: `${from}~${to} 0건` })
     return { from, to, count: items.length, items: items.slice(0, 60) }

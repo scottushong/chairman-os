@@ -274,8 +274,8 @@ export default async function SettingsHubPage() {
             />
             <Row
               title="프로세스 차트"
-              note="대시보드에 띄울 게시된 시트 링크를 등록합니다."
-              href="/settings/process-charts"
+              note="팀별 시트 링크와 동기화할 시트 파일을 연결합니다."
+              href="/process-charts"
               cta="열기"
             />
           </div>

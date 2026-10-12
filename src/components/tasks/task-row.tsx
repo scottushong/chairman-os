@@ -98,6 +98,9 @@ export function TaskRow({
     })
   }
 
+  // 0071 시트에서 온 업무는 앱에서 고치지 않는다(DB의 tasks_external_readonly가 막는다 — 화면은 손잡이를 끈다).
+  const external = !!task.source_label
+
   return (
     <tr className={`border-t border-line-soft transition-opacity ${pending ? 'opacity-50' : ''}`}>
       <td className="px-3 py-2">
@@ -114,6 +117,13 @@ export function TaskRow({
           <p className="mt-0.5 truncate text-t10h text-ink-muted">
             {businessName} · {projectName}
           </p>
+          {/* 0071 시트에서 온 업무 — 출처와 «시트에서 사라짐»을 적는다. 고칠 곳은 시트다. */}
+          {task.source_label ? (
+            <p className="mt-0.5 truncate text-t10h text-ink-muted">
+              출처 {task.source_label}
+              {task.source_gone_at ? <span className="ml-1 text-warning">· 시트에서 사라짐</span> : null}
+            </p>
+          ) : null}
         </div>
       </td>
 
@@ -131,7 +141,8 @@ export function TaskRow({
         {/* 06_상태코드의 4개만 고를 수 있다. 자유 입력을 두면 임의 상태명이 생긴다. */}
         <select
           value={status}
-          disabled={pending}
+          disabled={pending || external}
+          title={external ? '시트에서 고치세요' : undefined}
           aria-label={`${task.title} 상태`}
           onChange={(e) => changeStatus(e.target.value as TaskStatus)}
           className={`rounded-md border border-line bg-raised px-1.5 py-1 text-t11h outline-none focus:border-accent disabled:opacity-50 ${STATUS_TONE[status]}`}
@@ -162,7 +173,7 @@ export function TaskRow({
         <button
           type="button"
           onClick={toggleNeeded}
-          disabled={pending}
+          disabled={pending || external}
           aria-pressed={needed}
           title={needed ? `${b} 확인 대기에서 내린다` : `${b} 확인 대기로 올린다`}
           aria-label={`${task.title} ${b} 확인`}

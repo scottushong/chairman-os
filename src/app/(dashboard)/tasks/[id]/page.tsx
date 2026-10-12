@@ -179,7 +179,23 @@ export default async function TaskDetailPage(props: PageProps<'/tasks/[id]'>) {
             <SpecCode code="CH-040" className="text-t9 font-normal text-ink-muted tnum" />
           </h2>
           <div className="mt-3">
-            <TaskControls task={task} viewerRole={viewer?.role ?? null} />
+            {task.source_label ? (
+              // 0071 시트에서 온 업무 — 내용은 시트가 원천이다. 앱에서 고치면 다음 동기화가 되돌린다(DB도 막는다).
+              <div className="space-y-1.5 rounded-lg bg-raised px-3 py-2.5 text-t12 text-ink-dim">
+                <p className="font-semibold text-ink">시트에서 고치세요</p>
+                <p className="text-t11h">
+                  이 업무는 {task.source_label}에서 왔습니다. 상태 · 담당 · 마감은 시트에서 고치면 다음 동기화 때 바뀝니다.
+                </p>
+                {task.source_gone_at ? (
+                  <p className="text-t11h text-warning">시트에서 사라짐 — 시트에 이 줄이 더 이상 없습니다(지우지 않고 남겨 둡니다).</p>
+                ) : null}
+                <Link href="/process-charts" className="inline-block text-t11h text-accent underline">
+                  프로세스 차트로
+                </Link>
+              </div>
+            ) : (
+              <TaskControls task={task} viewerRole={viewer?.role ?? null} />
+            )}
           </div>
 
           {/*

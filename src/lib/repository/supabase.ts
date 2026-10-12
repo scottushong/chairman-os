@@ -153,6 +153,7 @@ import { quoteMethods } from './supabase-quotes'
 import { salesCostMethods } from './supabase-sales-cost'
 import { productionMethods } from './supabase-production'
 import { costImportMethods } from './supabase-cost-import'
+import { processSyncMethods } from './supabase-process-sync'
 import { costsMethods } from './supabase-costs'
 
 /**
@@ -273,6 +274,8 @@ interface TaskRow {
   blocked_since: string
   deadline: string | null
   chairman_needed: boolean
+  source_label?: string | null
+  source_gone_at?: string | null
 }
 
 /**
@@ -285,6 +288,7 @@ interface TaskAuditRow {
   status: TaskStatus
   chairman_needed: boolean
   blocked_since: string
+  source_label?: string | null
   projects: { business_id: string } | null
 }
 
@@ -831,6 +835,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     // 원가 엔진 · 원가 관리(0065 비용 · 배부 · 제품 원가 목록) · 대표 BOM(0063). 0063 · 0065 전 DB를 견딘다.
     ...costsMethods(sb),
     ...costImportMethods(sb),
+    ...processSyncMethods(sb),
 
     async listBusinesses(): Promise<Business[]> {
       const { data, error } = await fetchAll('businesses', ['business_id'], (from, to) =>
@@ -1188,6 +1193,9 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         title: input.title.trim(),
         embed_url: input.embed_url.trim(),
         sort_order: input.sort_order,
+        // 0071 칸은 값을 받았을 때만 보낸다(0071 전 DB에서도 링크 저장이 되게).
+        ...(input.sheet_id !== undefined ? { sheet_id: input.sheet_id } : {}),
+        ...(input.sheet_tab !== undefined ? { sheet_tab: input.sheet_tab } : {}),
       }
       const query = input.id
         ? sb.from('process_charts').update(row).eq('id', input.id).select('id').single()
@@ -1752,21 +1760,21 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     },
 
     async listTasks(): Promise<Task[]> {
-      const [{ data, error }, names] = await Promise.all([
+      // 0071 출처 칸(source_label · source_gone_at)을 같이 읽는다. 0071 전 DB면 그 칸이 없어(42703) 옛 칸만 다시 읽는다 —
+      // master 배포가 마이그레이션보다 먼저 가도 업무 화면이 서게.
+      const read = (cols: string) =>
         fetchAll('tasks', ['task_id'], (from, to) =>
-          sb
-            .from('tasks')
-            .select(
-              'task_id,project_id,title,owner_user_id,priority,status,blocked_since,deadline,chairman_needed',
-              { count: 'exact' },
-            )
-            .order('task_id')
-            .range(from, to)
-            .returns<TaskRow[]>(),
-        ),
+          sb.from('tasks').select(cols, { count: 'exact' }).order('task_id').range(from, to).returns<TaskRow[]>(),
+        )
+      const base = 'task_id,project_id,title,owner_user_id,priority,status,blocked_since,deadline,chairman_needed'
+      const [{ data }, names] = await Promise.all([
+        read(`${base},source_label,source_gone_at`).catch((e: unknown) => {
+          if (e instanceof Error && /42703/.test(e.message)) return read(base)
+          throw e
+        }),
         ownerNames(),
       ])
-      const rows = unwrap('tasks', data, error)
+      const rows = data
       return rows.map((r) => ({
         task_id: r.task_id,
         project_id: r.project_id,
@@ -1777,6 +1785,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         blocked_since: r.blocked_since,
         deadline: r.deadline,
         chairman_needed: r.chairman_needed,
+        source_label: r.source_label ?? null,
+        source_gone_at: r.source_gone_at ?? null,
       }))
     },
 
@@ -2388,15 +2398,17 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     async updateTask(taskId: string, patch: TaskPatch, actor: AuditActor): Promise<void> {
       if (patch.status === undefined && patch.chairman_needed === undefined) return
 
-      const { data: before, error: readError } = await sb
-        .from('tasks')
-        .select('task_id,status,chairman_needed,blocked_since,projects(business_id)')
-        .eq('task_id', taskId)
-        .maybeSingle<TaskAuditRow>()
+      // 0071 source_label을 같이 읽어 시트 업무면 감사 기록을 남기기 전에 멈춘다(정책이 0행으로 막아도 기록이 먼저 남는 순서라).
+      // 0071 전 DB면 그 칸이 없어(42703) 옛 칸만 다시 읽는다.
+      const readBefore = (cols: string) =>
+        sb.from('tasks').select(cols).eq('task_id', taskId).maybeSingle<TaskAuditRow>()
+      let { data: before, error: readError } = await readBefore('task_id,status,chairman_needed,blocked_since,source_label,projects(business_id)')
+      if (readError?.code === '42703') ({ data: before, error: readError } = await readBefore('task_id,status,chairman_needed,blocked_since,projects(business_id)'))
 
       if (readError) throw new Error(`Supabase tasks ${readError.code ?? '?'}: ${readError.message}`)
       // RLS가 가린 행도 여기로 온다. '없다'와 '못 본다'를 화면에서 구분할 필요는 없다 — 둘 다 못 고친다.
       if (!before) throw new Error('Supabase tasks: 그 업무가 없거나 볼 수 없다.')
+      if (before.source_label) throw new Error('Supabase tasks: tasks_external_readonly(0071) — 시트에서 온 업무는 앱에서 고치지 않는다.')
 
       const after: Record<string, string | boolean> = {}
       if (patch.status !== undefined) {
