@@ -199,6 +199,9 @@ export function accessTarget(q: string): string | null {
   if (/^(내|나|저|제|나의|저의|본인|내\s*계정)$/.test(who)) return 'me'
   // «결재 권한» · «원가 관리 권한»처럼 사람이 아니라 권한 종류를 묻는 말은 모델로(이름에 «영업» 등이 든 «영업 직원»은 사람이다).
   if (/^(결재|결재 올리기|재무|재무 입력|문서|문서 등록|원가|원가 관리|구매|생산|영업|마감|월 마감|관리|관리자|사용자 관리|사용자 관리자|결재 대장)(\s*관련)?$/.test(who)) return null
+  // «영업팀 사람들» · «영업팀원들» → 팀으로 찾는다(org_access_lookup이 팀 이름도 받는다).
+  const team = /^(.+?팀)\s*(사람들|팀원들?|원들)$/.exec(who)
+  if (team) return team[1]
   if (/누가|어떤|무슨|모든|전체|팀원들|사람들/.test(who)) return null
   return norm(who).length >= 2 ? who : null
 }
@@ -212,7 +215,16 @@ export interface AccessAnswer {
 export function composeAccessAnswer(target: string, people: PersonAccess[] | null, viewer: Role, bizName: (id: string) => string): string {
   const chair = isChairman(viewer)
   const me = target === 'me'
-  const intent = me ? '내 권한 · 팀 · 상사를 보시려는 것으로 이해했습니다.' : `${target}의 권한 · 팀 · 상사를 보시려는 것으로 이해했습니다.`
+  // 의도 한 줄 — 한 사람이 걸리면 그 사람의 이름 · 직함으로(«김병훈 사원의 …»), 팀이면 «영업팀 사람들의 …».
+  const one = people && people.length === 1 && !me ? people[0] : null
+  const subject = me
+    ? '내'
+    : one
+      ? `${one.name}${one.title && !one.name.endsWith(one.title) ? ` ${one.title}` : ''}의`
+      : /팀$/.test(target) && people && people.length > 1
+        ? `${target} 사람들의`
+        : `${target}의`
+  const intent = `${subject} 권한 · 팀 · 상사를 보시려는 것으로 이해했습니다.`
   if (people === null) {
     return [
       intent,
@@ -249,7 +261,7 @@ export function composeAccessAnswer(target: string, people: PersonAccess[] | nul
     )
     return lines.join('\n')
   })
-  const more = people.length > 3 ? `\n같은 이름으로 ${people.length}명이 걸려 앞의 3명만 보였습니다 — 팀이나 직함을 붙여 다시 물어 주세요.` : ''
+  const more = people.length > 3 ? `\n${people.length}명이 걸려 앞의 3명만 보였습니다 — 이름으로 한 명씩 물어 주세요.` : ''
   return `${intent}\n\n${blocks.join('\n\n')}${more}`
 }
 

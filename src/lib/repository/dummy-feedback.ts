@@ -1,7 +1,9 @@
 import { keywordReasons } from '@/lib/feedback/sensitive'
+import { buildInstruction } from '@/lib/feedback/triage'
 import { COST_AREAS, type AiFeedback, type AiFeedbackBundle, type ModuleGrant, type PersonAccess, type Team, type UserAccount } from '@/types'
 
 import { dummyOwnAnswer } from './dummy-assistant'
+import { DUMMY_UID } from './dummy-org'
 import type { ChairmanRepository } from './types'
 
 /**
@@ -42,7 +44,78 @@ interface Store {
   bundles: AiFeedbackBundle[]
 }
 const g = globalThis as unknown as { __chairmanDummyFeedback?: Store }
-const store: Store = (g.__chairmanDummyFeedback ??= { feedback: [], bundles: [] })
+const store: Store = (g.__chairmanDummyFeedback ??= { feedback: seed(), bundles: [] })
+
+/**
+ * 보완함 화면을 dummy에서 눈으로 보려는 시드 셋 — 새것 · AI 정리됨(예시) · AI 정리 제외. 대화 줄은 없다(message_id는 가짜).
+ * **«AI 정리됨»의 요약 · 지시문은 모델 출력이 아니라 손으로 쓴 예시다**(model 'dummy-seed') — dummy는 AI를 부르지 않는다.
+ */
+function seed(): AiFeedback[] {
+  const at = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
+  const base = { business_id: 'biz_dy', cancelled_at: null, bundle_id: null, triaged_at: null } as const
+  const draft = {
+    summary: '대표 화면의 AI 어시스턴트가 «사원의 권한은?»에 이름 · id만 답하고 끝났다 — 권한 · 팀 · 상사 칸과 바꾸는 곳이 없다.',
+    expected: '«(사원) 권한은?»을 물으면 팀 · 직속 상사 · 회사 범위 · 모듈 권한 표와 «바꾸려면: 사용자 화면 → 조직도 → 그 사람» 링크가 한 번에 보인다.',
+    situation: ['실사용 문제(2026-10-12, 대표 화면): «(사원) 권한은?» → «이름과 id만 조회되고 권한은 볼 수 없습니다»로 끝남', 'org_lookup 도구가 이름 · id만 돌려준다'],
+    decisions: ['권한 · 조직 조회 도구(읽기만)를 더한다 — 대표 전원 · 그 밖 본인만', '답할 수 없을 때도 어디서 · 대신을 붙인다'],
+    steps: ['현황 표: 지금 도구 목록 · 조직 도구가 돌려주는 칸', '조회 도구 + 프롬프트 보강 — check:ask 시나리오', '검사 하나씩(typecheck → lint → check 전부 → build) · 스크린샷'],
+    final_report: '고친 AI 답 예시(대표 · 사원)를 실제 출력 그대로',
+  }
+  return [
+    {
+      ...base,
+      feedback_id: '00000000-0000-4000-8000-0000000f0001',
+      created_at: at(30),
+      author_id: DUMMY_UID.chair,
+      author_name: '홍석현',
+      author_role: 'Chairman',
+      path: '/settings/users',
+      message_id: -1,
+      question: '김병훈 사원의 권한은?',
+      answer: '김병훈 사원은 이름과 id만 조회되고 권한은 볼 수 없습니다.',
+      body: '권한을 못 보면 어디서 보는지라도 알려 줘야 한다. 링크가 없다.',
+      ai_excluded: false,
+      excluded_reasons: [],
+      status: 'triaged',
+      triage: { summary: draft.summary, expected: draft.expected, instruction: buildInstruction(draft, '보완 의견 · /settings/users'), model: 'dummy-seed(손으로 쓴 예시)', by: 'Chairman' },
+      triaged_at: at(29),
+    },
+    {
+      ...base,
+      feedback_id: '00000000-0000-4000-8000-0000000f0002',
+      created_at: at(5),
+      author_id: DUMMY_UID.supportStaff,
+      author_name: '경영지원 사원',
+      author_role: 'Member',
+      path: '/approvals',
+      message_id: -2,
+      question: '지난주 올린 지출 결재 어디까지 갔어?',
+      answer: '지출 결재 1건이 대표 결재 대기입니다.',
+      body: '누가 언제 승인했는지 순서가 보였으면 좋겠습니다.',
+      ai_excluded: false,
+      excluded_reasons: [],
+      status: 'new',
+      triage: null,
+    },
+    {
+      ...base,
+      feedback_id: '00000000-0000-4000-8000-0000000f0003',
+      created_at: at(2),
+      author_id: DUMMY_UID.buyStaff,
+      author_name: '구매 직원',
+      author_role: 'Member',
+      path: '/purchasing/biz_dy',
+      message_id: -3,
+      question: '이 원료 단가 얼마야?',
+      answer: '원가 관련 숫자는 이 대화창에서 보여 드리지 않습니다.',
+      body: '단가 3,200원짜리 원료 비교가 안 됩니다.',
+      ai_excluded: true,
+      excluded_reasons: ['cost_number'],
+      status: 'new',
+      triage: null,
+    },
+  ]
+}
 
 const COST_PREFIX = new RegExp(`^/(${COST_AREAS.join('|')})(/|$)`)
 const nospace = (s: string) => s.replace(/\s/g, '').toLowerCase()

@@ -72,8 +72,8 @@ export function accessFollowups(people: PersonAccess[], role: Role): string[] {
   if (p.team) out.push(`${p.team.name}팀 사람들 권한은?`)
   const r = p.reports_to
   if (chair && r && !('top' in r) && r.role !== 'Chairman') out.push(`${r.name} 권한은?`)
-  out.push(chair ? `${p.name}이 올린 결재 보여줘` : '내 권한은?')
-  out.push(chair ? '대기 중인 결재 보여줘' : '결재 양식 뭐 있어?')
+  out.push(chair ? '대기 중인 결재 보여줘' : '내 권한은?')
+  out.push(chair ? '내가 처리할 결재 있어?' : '결재 양식 뭐 있어?')
   return out
 }
 
