@@ -1,5 +1,6 @@
 'use client'
 
+import { ExampleTag } from '@/components/ui/example-tag'
 import Link from 'next/link'
 import { useState, useTransition } from 'react'
 
@@ -163,7 +164,7 @@ function DecisionItem({
         </span>
       </div>
 
-      <p className="mt-0.5 text-t12 leading-snug font-semibold">{decision.title}</p>
+      <p className="mt-0.5 text-t12 leading-snug font-semibold">{decision.title}<ExampleTag on={decision.is_example} /></p>
 
       {/* 선택안과 AI 추천을 한 줄에 둔다. 추천안만 테두리를 줘서 어느 쪽인지 바로 보이게. */}
       <p className="mt-1 flex flex-wrap items-center gap-1 text-t10 text-ink-muted">

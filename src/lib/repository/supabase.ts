@@ -782,6 +782,17 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
   const businessNames = createBusinessNames(sb)
 
   /**
+   * 0072 시드 정리 A안 — 예시 줄 id. 대표 세션에서만 줄이 온다(직원 세션은 restrictive 정책이 예시 줄을 통째로 거른다).
+   * 0072 전 DB(칸 없음 42703)는 빈 집합 — 칸 목록을 바꾸지 않아 master 배포가 마이그레이션보다 먼저 가도 화면이 선다.
+   */
+  async function exampleIds(table: string, idCol: string): Promise<Set<string>> {
+    const { data, error } = await sb.from(table).select(idCol).eq('is_example', true).limit(1000)
+    if (error) return new Set()
+    return new Set(((data ?? []) as unknown as Record<string, unknown>[]).map((r) => String(r[idCol])))
+  }
+  const exampleOf = (r: unknown) => (r as { is_example?: boolean }).is_example === true
+
+  /**
    * 0042 soft delete의 유일한 길. 한 줄도 안 바뀌면(없거나 · 이미 지웠거나 · 권한 밖) 던진다 —
    * 예전의 oneAffectedRow와 같은 약속이다(조용히 성공한 척하지 않는다).
    */
@@ -1752,8 +1763,10 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         ),
         ownerNames(),
       ])
+      const ex = await exampleIds('projects', 'project_id')
       const rows = unwrap('projects', data, error)
       return rows.map((r) => ({
+        is_example: ex.has(r.project_id),
         project_id: r.project_id,
         business_id: r.business_id,
         name: r.name,
@@ -1781,7 +1794,9 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         ownerNames(),
       ])
       const rows = data
+      const ex = await exampleIds('tasks', 'task_id')
       return rows.map((r) => ({
+        is_example: ex.has(r.task_id),
         task_id: r.task_id,
         project_id: r.project_id,
         title: r.title,
@@ -1807,7 +1822,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
           .returns<DecisionRow[]>(),
       )
       const rows = unwrap('decisions', data, error)
-      return rows.map(toDecision)
+      const ex = await exampleIds('decisions', 'decision_id')
+      return rows.map((r) => ({ ...toDecision(r), is_example: ex.has(r.decision_id) }))
     },
 
     async listAlerts(): Promise<Alert[]> {
@@ -1821,6 +1837,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       )
       const rows = unwrap('alerts', data, error)
       return rows.map((r) => ({
+        is_example: exampleOf(r),
         alert_id: r.alert_id,
         business_id: r.business_id,
         category: r.category,
@@ -1846,7 +1863,9 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
           .returns<NightOutputRow[]>(),
       )
       const rows = unwrap('ai_night_outputs', data, error)
+      const ex = await exampleIds('ai_night_outputs', 'output_id')
       return rows.map((r) => ({
+        is_example: ex.has(r.output_id),
         output_id: r.output_id,
         completed_at: r.completed_at,
         business_id: r.business_id,
@@ -1914,6 +1933,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       )
       const rows = unwrap('goals', data, error)
       return rows.map((r) => ({
+        is_example: exampleOf(r),
         goal_id: r.goal_id,
         business_id: toScope(r.business_id),
         title: r.title,
@@ -1938,6 +1958,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       ])
       const rows = unwrap('monthly_priorities', data, error)
       return rows.map((r) => ({
+        is_example: exampleOf(r),
         priority_id: r.priority_id,
         business_id: toScope(r.business_id),
         title: r.title,
@@ -1958,6 +1979,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       )
       const rows = unwrap('critical_risks', data, error)
       return rows.map((r) => ({
+        is_example: exampleOf(r),
         risk_id: r.risk_id,
         business_id: toScope(r.business_id),
         title: r.title,
@@ -1982,6 +2004,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       ])
       const rows = unwrap('milestones', data, error)
       return rows.map((r) => ({
+        is_example: exampleOf(r),
         milestone_id: r.milestone_id,
         business_id: toScope(r.business_id),
         title: r.title,

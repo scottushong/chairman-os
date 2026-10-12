@@ -1,5 +1,6 @@
 import Link from 'next/link'
 
+import { ExampleTag } from '@/components/ui/example-tag'
 import { GlassCard } from '@/components/ui/glass-card'
 import { Icon } from '@/components/ui/icon'
 import {
@@ -117,6 +118,7 @@ function NightItem({ item, businesses }: { item: AiNightOutput; businesses: Busi
         }`}
       >
         {item.result_summary}
+        <ExampleTag on={item.is_example} />
       </p>
 
       <p className="mt-0.5 flex items-center gap-1 text-t10 text-ink-muted tnum">

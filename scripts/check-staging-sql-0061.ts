@@ -135,6 +135,16 @@ async function main() {
       + (select count(*) from closings where period = '2099-02') as n`)).rows[0].n
     assert.equal(Number(left), 0, '0070 staging 시험 SQL이 올리기 · 줄 · 마감 줄을 남겼다')
   }
+  // 0072(회계 · 재무 자료 올리기 v2.1 차이분 · 시드 정리 A안)가 있는 브랜치에서만. 0071보다 먼저(0071이 소유자를 바꾼다).
+  if (files.includes('0072_finance_v21.sql')) {
+    const m72 = await runFile('0072_staging_test.sql')
+    assert.match(m72, /^0072 STAGING PASS a\(.*b\(.*c\(.*d\(.*e\(.*f\(.*g\(anon 거부\)$/, '0072 staging 시험 SQL이 PASS로 끝나지 않는다')
+    const left = (await db.query<{ n: number }>(`select (select count(*) from fin_uploads) + (select count(*) from fin_inventory_valuations)
+      + (select count(*) from fin_inventory_openings) + (select count(*) from fin_material_issues) + (select count(*) from fin_tx_groups)
+      + (select count(*) from fin_reclose_flags) + (select count(*) from closings where period = '2099-09')
+      + (select count(*) from user_module_access where module = '/finance/biz_dy') as n`)).rows[0].n
+    assert.equal(Number(left), 0, '0072 staging 시험 SQL이 평가금액 · 출고 줄 · 묶음 · 재마감 대상 · 마감 줄 · 권한 줄을 남겼다')
+  }
   // 0071은 맨 뒤 — 끝에서 표 · 함수 소유자를 바꾼다(아래 주석).
   // 0071(프로세스 차트 동기화)이 있는 브랜치에서만. staging처럼 AI Agent 계정이 하나 있다.
   if (files.includes('0071_process_chart_sync.sql')) {

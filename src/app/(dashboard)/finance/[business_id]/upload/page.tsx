@@ -1,15 +1,20 @@
+import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { BooksNav } from '@/components/finance/books-nav'
 import { EcountImportDrafts, type EcountDraftRow } from '@/components/finance/ecount-import-drafts'
 import { EcountImportPanel } from '@/components/finance/ecount-import-panel'
+import { FinanceTxPanel } from '@/components/finance/finance-tx-panel'
 import { FinanceUploadBoard, type PendingView } from '@/components/finance/finance-upload-board'
+import { RecloseBadges } from '@/components/finance/reclose-badges'
 import { PageHeader } from '@/components/layout/page-header'
-import { canImportEcount, canKeepBooks } from '@/lib/auth/roles'
+import { canCloseBooks, canImportEcount, canKeepBooks } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
 import { parseMapping } from '@/lib/ecount/excel/mapping'
 import { outlineFromSummary } from '@/lib/ecount/excel/workbook'
 import { aiLimits } from '@/lib/finance-upload/ai'
+import { TX_SOURCE_KO } from '@/lib/finance-upload/dedupe'
+import { won } from '@/lib/finance-upload/v21-text'
 import { KIND_SPECS } from '@/lib/finance-upload/kinds'
 import { kstToday } from '@/lib/chairman-project'
 import { revertableIds } from '@/lib/finance-upload/process'
@@ -69,6 +74,22 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
   const limits = aiLimits()
   const revertable = revertableIds(uploads)
 
+  // 0072 — 같은 거래 묶음 · 기준 출처 · 재마감 대상(0072 전 DB는 빈 목록).
+  const [txGroups, txLines, dedupe, reclose] = canKeep
+    ? await Promise.all([
+        repo.listFinTxGroups(business_id, month).catch(() => []),
+        repo.listFinTxLines(business_id, month).catch(() => []),
+        repo.finDedupeSetting(business_id).catch(() => ({ amount_base: 'ledger' as const, qty_base: 'r2_ecount' as const })),
+        repo.listFinRecloseFlags(business_id).catch(() => []),
+      ])
+    : [[], [], { amount_base: 'ledger' as const, qty_base: 'r2_ecount' as const }, []]
+  const lineLabels = Object.fromEntries(
+    txLines.map((l) => {
+      const table = l.ref.slice(0, l.ref.indexOf(':')) as keyof typeof TX_SOURCE_KO
+      return [l.ref, `${TX_SOURCE_KO[table] ?? table} ${l.row_no}행 · ${l.counterparty ?? '거래처 없음'} · ${l.date ?? '날짜 없음'} · ${won(l.amount)}`]
+    }),
+  )
+
   return (
     <div className="mx-auto max-w-[1400px] px-4 py-5 sm:px-6">
       <PageHeader
@@ -84,6 +105,16 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
 
       {canKeep ? (
         <>
+          <div className="mt-4 space-y-3">
+            <RecloseBadges businessId={business_id} flags={reclose} canClear={canCloseBooks(user, business_id)} />
+            <p className="text-t11h text-ink-dim">
+              재공품 · 완제품 평가금액 · 기초재고 연결 · 원료 출고 구분은{' '}
+              <Link href={`/finance/${business_id}/valuation?month=${month}`} className="font-semibold text-accent underline-offset-2 hover:underline">
+                재고 · 평가
+              </Link>
+              에서 봅니다.
+            </p>
+          </div>
           <FinanceUploadBoard
             businessId={business_id}
             month={month}
@@ -94,6 +125,9 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
             ai={{ on: limits.perFile > 0 && limits.perDay > 0, perFile: limits.perFile, perDay: limits.perDay }}
             revertable={revertable}
           />
+          <div className="mt-4">
+            <FinanceTxPanel businessId={business_id} month={month} groups={txGroups} lines={lineLabels} setting={dedupe} />
+          </div>
           {legacy ? (
             <details className="mt-4 rounded-xl border border-line-soft bg-panel p-3">
               <summary className="cursor-pointer text-t12 font-semibold">그 밖 — 계정과목표 · 재무제표(연간) · 월별 손익(지금까지의 흐름)</summary>

@@ -163,6 +163,18 @@ import type {
   FinUploadRecordInput,
   FinUploadApplyInput,
   FinUploadShape,
+  FinValuation,
+  FinValuationSaveInput,
+  FinValuationWarning,
+  FinInventoryRollRow,
+  FinOpeningSaveInput,
+  FinIssueSummary,
+  FinIssueBulkInput,
+  FinTxLine,
+  FinTxGroup,
+  FinTxGroupSaveInput,
+  FinDedupeSetting,
+  FinRecloseFlag,
 } from '@/types'
 
 /**
@@ -730,6 +742,32 @@ export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods,
   finMonthClosed(businessId: string, period: string): Promise<boolean>
   listFinUploadShapes(businessId: string): Promise<FinUploadShape[]>
   saveFinUploadShape(shape: FinUploadShape): Promise<void>
+  /**
+   * 0072 회계 · 재무 v2.1 차이분. 0072 전 DB는 읽기가 빈 목록 · null, 쓰기는 'fin_upload_unavailable'.
+   * 판정은 DB(can_keep_books · can_read_books · can_close_books · 마감 문 · 확정자 ≠ 입력자)다 — dummy는 그 거울.
+   */
+  /** 그 회사 · 달의 평가금액(살아 있는 줄 + 무효 이력). 입력자 · 확인자 이름을 붙인다. */
+  listFinValuations(businessId: string, period: string): Promise<FinValuation[]>
+  finValuationSave(input: FinValuationSaveInput): Promise<string>
+  /** 확정 — 입력한 사람이면 'fin_valuation_self_confirm'을 던진다. */
+  finValuationConfirm(valuationId: string, reason: string | null): Promise<boolean>
+  finValuationVoid(valuationId: string, reason: string): Promise<boolean>
+  finValuationWarnings(businessId: string, period: string): Promise<FinValuationWarning[]>
+  finInventoryRoll(businessId: string, period: string): Promise<FinInventoryRollRow[]>
+  finOpeningSave(input: FinOpeningSaveInput): Promise<string>
+  /** 원료 출고 요약(합계 kg 둘 · 줄 수 · 원료별 «확인 필요» 줄 수만). */
+  finIssueSummary(businessId: string, period: string): Promise<FinIssueSummary | null>
+  finIssueBulkDecide(input: FinIssueBulkInput): Promise<number>
+  /** 같은 거래 맞추기 줄(판매 · 입고 · 세금계산서 · 원장 거래 줄 — 살아 있는 줄). */
+  listFinTxLines(businessId: string, period: string): Promise<FinTxLine[]>
+  listFinTxGroups(businessId: string, period: string): Promise<FinTxGroup[]>
+  finTxGroupSave(input: FinTxGroupSaveInput): Promise<string>
+  finTxGroupDecide(groupId: string, status: 'same' | 'rejected', reason: string): Promise<boolean>
+  finDedupeSetting(businessId: string): Promise<FinDedupeSetting>
+  finDedupeSettingSave(businessId: string, setting: FinDedupeSetting, reason: string): Promise<void>
+  /** 열린 «재마감 대상»(다시 마감하면 풀린다). */
+  listFinRecloseFlags(businessId: string): Promise<FinRecloseFlag[]>
+  finRecloseClear(flagId: string, note: string | null): Promise<boolean>
   /** 0055 staff_admin_invite — 감사 · 회장 알림까지 DB가 한 트랜잭션으로 한다. 오류는 'staff_admin_*' 키로 던진다. */
   staffAdminInvite(input: StaffAdminInviteInput): Promise<UserInvitation>
   /** 0055 staff_admin_revoke_invitation — 본인이 넣은 미수락 위임 초대만. */

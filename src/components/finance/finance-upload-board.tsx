@@ -4,7 +4,8 @@ import { useRouter } from 'next/navigation'
 import { useRef, useState, useTransition } from 'react'
 
 import { applyPendingUpload, cancelUpload, revertUpload, uploadFinanceFiles } from '@/app/actions/finance-upload'
-import { KIND_SPECS, type UploadKind } from '@/lib/finance-upload/kinds'
+import { KIND_SPECS, type FieldSpec, type UploadKind } from '@/lib/finance-upload/kinds'
+import { STATE_KO } from '@/lib/finance-upload/v21-text'
 import type { FileCard } from '@/lib/finance-upload/process'
 import type { FinRow, FinUpload, FinUploadPending, Role } from '@/types'
 
@@ -96,11 +97,11 @@ export function FinanceUploadBoard({
 
   return (
     <div className="mt-4 space-y-4">
-      {/* 14가지 체크표 */}
+      {/* 14가지 + 0072 넷 체크표 */}
       <section className="rounded-xl border border-line-soft bg-panel p-3">
         <div className="flex flex-wrap items-baseline gap-2">
           <h2 className="text-t13 font-semibold">이번 달 자료 · {month}</h2>
-          <span className="text-t11h text-ink-muted tnum">받은 것 {got} / 14</span>
+          <span className="text-t11h text-ink-muted tnum">받은 것 {got} / {KIND_SPECS.length}</span>
           <form className="ml-auto flex items-center gap-1 text-t11h" action="">
             <label className="text-ink-muted" htmlFor="month">달</label>
             <input id="month" name="month" type="month" defaultValue={month} className="rounded-md border border-line bg-panel px-2 py-1 text-t11h" />
@@ -235,7 +236,9 @@ function PendingPanel({ businessId, p, role }: { businessId: string; p: PendingV
   const [busy, start] = useTransition()
   const spec = KIND_SPECS.find((k) => k.kind === kind)
   const header = p.meta.header ?? []
-  const shownFields = spec?.fields ?? []
+  // 0072 구성표 노출 금지: 원료 출고는 kg 칸을 보이지 않는다(대기 줄에도 kg가 오지 않는다) — 대신 규칙 구분을 보인다.
+  const issue = kind === 'material_issue'
+  const shownFields = (spec?.fields ?? []).filter((f) => !(issue && f.key === 'qty_kg'))
   return (
     <article className="rounded-xl border border-gold/40 bg-panel p-3">
       <div className="flex flex-wrap items-center gap-2 text-t11h">
@@ -246,6 +249,12 @@ function PendingPanel({ businessId, p, role }: { businessId: string; p: PendingV
       </div>
       {p.meta.reason ? <p className="mt-1 text-t10h text-ink-muted">분류 근거: {p.meta.reason}{p.meta.period_how ? ` · 기간: ${p.meta.period_how}` : ''}</p> : null}
       {p.meta.why_not_auto?.length ? <ul className="mt-1 list-disc pl-4 text-t11h text-ink-dim">{p.meta.why_not_auto.map((w) => <li key={w}>{w}</li>)}</ul> : null}
+      {p.meta.dup_notes?.length ? (
+        <div className="mt-1 rounded-md bg-gold/10 px-2 py-1 text-t10h text-ink-dim">
+          <span className="font-semibold">자료 간 중복 의심</span> — 넣으면 «자료 간 같은 거래» 칸에 «중복 의심»으로 남고, 사람이 정할 때까지 같은 거래로 치지 않습니다.
+          <ul className="list-disc pl-4">{p.meta.dup_notes.map((w) => <li key={w}>{w}</li>)}</ul>
+        </div>
+      ) : null}
       {[...(p.meta.errors ?? []), ...(p.meta.warnings ?? [])].length ? (
         <ul className="mt-1 list-disc pl-4 text-t11h">
           {(p.meta.errors ?? []).map((e) => <li key={e} className="text-critical">{e}</li>)}
@@ -321,6 +330,7 @@ function PendingPanel({ businessId, p, role }: { businessId: string; p: PendingV
               <tr>
                 <th className="px-2 py-1 text-left font-medium text-ink-muted">원본 줄</th>
                 {shownFields.map((f) => <th key={f.key} className="px-2 py-1 text-left font-medium text-ink-muted">{f.label}</th>)}
+                {issue ? <th className="px-2 py-1 text-left font-medium text-ink-muted">구분(규칙)</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -329,9 +339,15 @@ function PendingPanel({ businessId, p, role }: { businessId: string; p: PendingV
                   <td className="px-2 py-1 tnum text-ink-muted">{r.row_no}행</td>
                   {shownFields.map((f) => (
                     <td key={f.key} className={`px-2 py-1 ${f.type === 'number' ? 'text-right tnum' : ''}`}>
-                      {typeof r[f.key] === 'number' ? (r[f.key] as number).toLocaleString('ko-KR') : (r[f.key] ?? '')}
+                      <Cell r={r} f={f} />
                     </td>
                   ))}
+                  {issue ? (
+                    <td className="px-2 py-1">
+                      <span className={r.class === 'needs_review' ? 'font-semibold text-gold' : ''}>{ISSUE_CLASS_KO[String(r.class)] ?? '확인 필요'}</span>
+                      {r.class_reason ? <span className="block text-t10 text-ink-muted">{String(r.class_reason)}</span> : null}
+                    </td>
+                  ) : null}
                 </tr>
               ))}
             </tbody>
@@ -383,3 +399,16 @@ function PendingPanel({ businessId, p, role }: { businessId: string; p: PendingV
 }
 
 export type { UploadKind }
+
+const ISSUE_CLASS_KO: Record<string, string> = { production: '생산 투입', non_production: '비생산', needs_review: '확인 필요' }
+
+/** 미리보기 칸 — 0072 상태 칸이 있는 숫자는 «확인된 0 / 미입력»을 보인다(빈칸은 0이 아니다). */
+function Cell({ r, f }: { r: FinRow; f: FieldSpec }) {
+  const v = r[f.key]
+  if (f.type === 'number' && f.state) {
+    if (v === null || v === undefined) return <span className="text-t10 text-ink-muted">{STATE_KO.missing}</span>
+    if (v === 0) return <span>0 <span className="text-t10 text-ink-muted">{STATE_KO.confirmed_zero}</span></span>
+  }
+  if (typeof v === 'number') return <>{v.toLocaleString('ko-KR')}</>
+  return <>{v ?? ''}</>
+}

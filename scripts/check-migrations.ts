@@ -2422,10 +2422,18 @@ async function subtreeRls(db: Db) {
   //   같은 규칙(owner_unknown)이다. prj_002는 0003 시드 — 담당자 칸이 비어 있지 않고
   //   거기 박힌 uuid가 auth.users에 없다. prj_null은 칸 자체가 null인 경우다.
   //   `owner_user_id is null`만 보면 prj_002가 사라지고 적용 당일 목록이 빈다.
+  //   0072: prj_002는 이제 «예시»(시드 정리 A안)라 직원 세션에서 숨는다 — 0027 규칙을 재려고 잠깐 «예시 아님»으로 돌린다.
+  await db.exec(`update projects set is_example = false where project_id = 'prj_002'`)
   assert.deepEqual(
     await ids(H.staff, `select project_id from projects where project_id in ('prj_002','prj_null')`),
     ['prj_002', 'prj_null'],
     '0027: 주인 없는 프로젝트가 사라졌다 — owner_unknown() 분기를 빠뜨렸다(0003 시드의 가상 담당자 uuid까지 같은 규칙이다)',
+  )
+  await db.exec(`update projects set is_example = true where project_id = 'prj_002'`)
+  assert.deepEqual(
+    await ids(H.staff, `select project_id from projects where project_id in ('prj_002','prj_null')`),
+    ['prj_null'],
+    '0072: 예시 프로젝트(prj_002)가 직원에게 보인다 — projects_not_example(restrictive)',
   )
   // 공유는 subtree를 가로지른다. 구매팀장이 영업팀장에게 자기 프로젝트를 연다.
   //   행은 superuser로 심는다 — 여기서 재는 것은 '읽기'이고, 공유를 만들 수 있는가는
@@ -2442,11 +2450,16 @@ async function subtreeRls(db: Db) {
   //   없어서 user_profiles 행을 만들 수조차 없다(supabase.ts UNKNOWN_OWNER 주석 1번).
   //   owner_unknown()이 이것을 '회사 공통'으로 읽지 못하면 CH-017 '내 결정 대기'가
   //   0026 적용 당일 통째로 빈다.
+  //   0072: tsk_002는 이제 «예시»(시드 정리 A안) — 0026 규칙을 재려고 잠깐 «예시 아님»으로 돌린다.
+  await db.exec(`update tasks set is_example = false where task_id = 'tsk_002'`)
   assert.deepEqual(
     await ids(H.lead, `select task_id from tasks where task_id = 'tsk_002'`),
     ['tsk_002'],
     '0026: 주인 없는 시드 업무가 사라졌다 — owner_unknown()이 0003 시드의 가상 담당자를 회사 공통으로 읽지 못한다(적용 당일 업무 화면이 빈다)',
   )
+  await db.exec(`update tasks set is_example = true where task_id = 'tsk_002'`)
+  assert.deepEqual(await ids(H.lead, `select task_id from tasks where task_id = 'tsk_002'`), [],
+    '0072: 예시 업무(tsk_002)가 팀장에게 보인다 — tasks_not_example(restrictive)')
 
   // ── a. 영업팀장 세션: 조직도가 영업팀만 준다 ───────────────────────
   assert.deepEqual(
@@ -2506,11 +2519,16 @@ async function subtreeRls(db: Db) {
     [],
     '0026: 남의 회사(biz_vana) 결재가 열린다 — decisions_read의 has_business를 잃었다',
   )
+  //   0072: dec_002는 이제 «예시» — 0026 규칙을 재려고 잠깐 «예시 아님»으로 돌린다(트리거 없이 — 결재선 트리거를 건드리지 않게).
+  await db.exec(`alter table decisions disable trigger user; update decisions set is_example = false where decision_id = 'dec_002'; alter table decisions enable trigger user;`)
   assert.deepEqual(
     await ids(H.lead, `select decision_id from decisions where decision_id = 'dec_002'`),
     ['dec_002'],
     '0026: 주인 없는 시드 결재가 사라졌다 — 0026 이전 행은 회사 공통으로 남아야 한다(화면이 그대로 서야 한다)',
   )
+  await db.exec(`alter table decisions disable trigger user; update decisions set is_example = true where decision_id = 'dec_002'; alter table decisions enable trigger user;`)
+  assert.deepEqual(await ids(H.lead, `select decision_id from decisions where decision_id = 'dec_002'`), [],
+    '0072: 예시 결재(dec_002)가 팀장에게 보인다 — decisions_not_example(restrictive)')
 
   // ── e. 공개 등급은 subtree 밖에도 보인다 ───────────────────────────
   assert.deepEqual(
@@ -2724,7 +2742,8 @@ async function orgScreen(db: Db) {
     update projects set progress_pct = 80 where project_id = 'prj_buy';
   `)
   const whole = (await db.query<{ v: number }>(
-    `select round(avg(progress_pct))::int as v from projects where business_id = 'biz_dy'`,
+    // 0072: 직원 카드의 «회사 전체»는 예시(시드) 프로젝트를 뺀 전체다(시드 정리 A안).
+    `select round(avg(progress_pct))::int as v from projects where business_id = 'biz_dy' and not is_example`,
   )).rows[0].v
 
   const progressFor = (uid: string) => one<number>(uid, `select company_progress('biz_dy') as v`)
@@ -7243,6 +7262,270 @@ async function approvalChain() {
   await db.close()
 }
 
+/**
+ * 0072 회계 · 재무 자료 올리기 v2.1 차이분 + 시드 정리 A안.
+ *   평가금액(확정은 다른 사람 · 권한 · 경고 둘) · 빈칸 ≠ 0 · 기초재고 연결(앞 달 확정 · 미연결 · 첫 달 직접 · 명세서 차이 표시만) ·
+ *   원료 출고(기본 확인 필요 · 일괄 결정 이유 · 그 원료 · 그 달만 · 감사 · kg 칸 못 읽음 · 요약에 원료별 kg 없음) ·
+ *   같은 거래 묶음(저장 · 결정 · 기준 설정) · 자동 다섯째 조건 · 마감 달 재마감 대상(closings · 전표 그대로) · 예시 줄 숨김 · anon.
+ * 공용 일괄 grant를 하지 않는다 — 열 grant(qty_kg 뺌)를 그대로 재야 한다(Supabase 기본 GRANT는 STUBS의 default privileges가 흉내 낸다).
+ */
+const V72 = {
+  chair: '00000000-0000-0000-0000-0000000072a1',
+  cfo: '00000000-0000-0000-0000-0000000072a2',
+  lead: '00000000-0000-0000-0000-0000000072a3', // DY 경영지원 팀장 — 재무 입력 줄
+  ceo: '00000000-0000-0000-0000-0000000072a4', // DY 회사 대표 — 장부 담당(둘째 사람)
+  member: '00000000-0000-0000-0000-0000000072a5', // DY 직원 — 재무 줄 없음
+}
+
+async function financeV21() {
+  const db = new PGlite({ extensions: { pg_trgm } })
+  await applyAll(db)
+  await db.exec(`alter table user_profiles disable trigger user_profiles_draft_grant`)
+  await db.exec(`
+    grant usage on schema public, auth to authenticated, anon;
+    insert into auth.users values ('${V72.chair}', 'v1@x'), ('${V72.cfo}', 'v2@x'), ('${V72.lead}', 'v3@x'), ('${V72.ceo}', 'v4@x'), ('${V72.member}', 'v5@x');
+    insert into user_profiles (user_id, role, display_name, max_security_class, team_id) values
+      ('${V72.chair}', 'Chairman', 'ch', 'Vault', null), ('${V72.cfo}', 'GroupCFO', 'cfo', 'Restricted', null),
+      ('${V72.lead}', 'TeamLead', '경영지원팀장', 'Normal', 'team_dy_support'), ('${V72.ceo}', 'BusinessCEO', 'dy대표', 'Restricted', null),
+      ('${V72.member}', 'Member', '직원', 'Normal', 'team_dy_production');
+    insert into user_business_access values ('${V72.lead}', 'biz_dy'), ('${V72.ceo}', 'biz_dy'), ('${V72.member}', 'biz_dy');
+    insert into user_business_access select '${V72.member}', business_id from businesses where business_id <> 'biz_dy';
+    insert into user_module_access (user_id, module, can_write, can_approve) values ('${V72.lead}', '/finance/biz_dy', true, false);
+  `)
+  const q = async <T = Record<string, unknown>>(uid: string | null, sql: string): Promise<T[]> => {
+    await db.exec(uid === null ? 'begin; set local role anon;' : `begin; select set_config('request.jwt.claim.sub', '${uid}', true); set local role authenticated;`)
+    try {
+      const rows = (await db.query<T>(sql)).rows
+      await db.exec('commit')
+      return rows
+    } catch (e) {
+      await db.exec('rollback')
+      throw e
+    }
+  }
+  const one = async <T = Record<string, unknown>>(uid: string | null, sql: string) => (await q<T>(uid, sql))[0]
+  const rej = (uid: string | null, sql: string, re: RegExp, msg: string) => assert.rejects(q(uid, sql), re, msg)
+  const owner = async <T = Record<string, unknown>>(sql: string) => (await db.query<T>(sql)).rows
+  const save = (cat: string, period: string, amount: string, state: string, scope = 'material_only', reason = 'null') =>
+    `select fin_valuation_save('biz_dy', '${period}', '${cat}', ${amount}, ${state}, null, '월 가중평균', '${scope}', 'manual', null, null, null, 'provisional', ${reason})::text as id`
+  const apply = (kind: string, period: string, sha: string, rows: object[], auto = false, dup = 0, reason = 'null') =>
+    `select fin_upload_apply('biz_dy', '${kind}', '${period}', '가짜 ${kind}.xlsx', '${sha.repeat(64).slice(0, 64)}', 's', 'high', 0, ${auto},
+       '${JSON.stringify(rows)}'::jsonb, null, 'none', ${reason}, null, ${dup})::text as id`
+
+  // ── 1. 평가금액: 확정은 다른 장부 담당만 · 권한 없는 직원 거부 ──
+  const w3 = (await one<{ id: string }>(V72.lead, save('wip', '2099-03', '1000', 'null'))).id
+  await rej(V72.lead, `select fin_valuation_confirm('${w3}', null)`, /fin_valuation_self_confirm/, '0072: 입력한 사람이 스스로 확정했다')
+  await rej(V72.member, `select fin_valuation_confirm('${w3}', null)`, /fin_upload_denied/, '0072: 장부 권한 없는 직원이 확정했다')
+  await rej(V72.member, save('wip', '2099-03', '5', 'null'), /fin_upload_denied/, '0072: 장부 권한 없는 직원이 평가금액을 넣었다')
+  assert.equal((await one<{ ok: boolean }>(V72.ceo, `select fin_valuation_confirm('${w3}', null) as ok`)).ok, true, '0072: 다른 장부 담당의 확정이 안 된다')
+  const w3row = await one<{ status: string; confirmed_by: string; entered_by: string }>(V72.member, `select status, confirmed_by::text, entered_by::text from fin_inventory_valuations where valuation_id = '${w3}'`)
+  assert.equal(w3row, undefined, '0072: 재무 줄 없는 직원이 평가금액을 읽는다')
+  const w3c = await one<{ status: string; confirmed_by: string }>(V72.lead, `select status, confirmed_by::text from fin_inventory_valuations where valuation_id = '${w3}'`)
+  assert.deepEqual([w3c.status, w3c.confirmed_by], ['final', V72.ceo], '0072: 확정 상태 · 확정자')
+  // 확정된 줄 바꾸기는 이유 필수 · 무효는 이유 필수
+  await rej(V72.lead, save('wip', '2099-03', '1100', 'null'), /fin_valuation_reason/, '0072: 확정 줄을 이유 없이 바꿨다')
+  await rej(V72.lead, `select fin_valuation_void('${w3}', '')`, /fin_valuation_reason/, '0072: 이유 없이 무효')
+
+  // ── 2. 빈칸 ≠ 0 ──
+  const f3 = (await one<{ id: string }>(V72.lead, save('finished', '2099-03', 'null', 'null'))).id
+  const f3r = await one<{ amount: string | null; value_state: string }>(V72.lead, `select amount, value_state from fin_inventory_valuations where valuation_id = '${f3}'`)
+  assert.deepEqual([f3r.amount, f3r.value_state], [null, 'missing'], '0072: 빈칸이 null · missing으로 남지 않았다')
+  await rej(V72.ceo, `select fin_valuation_confirm('${f3}', null)`, /fin_valuation_missing/, '0072: 빈칸을 확정했다')
+  await rej(V72.lead, save('finished', '2099-03', '0', 'null'), /fin_value_state/, '0072: 상태 없는 0이 들어갔다')
+  await rej(V72.lead, save('finished', '2099-03', '0', `'value'`), /fin_value_state/, '0072: 0이 «값»으로 들어갔다')
+  const z = (await one<{ id: string }>(V72.lead, save('finished', '2099-03', '0', `'confirmed_zero'`))).id
+  assert.equal((await one<{ s: string }>(V72.lead, `select value_state as s from fin_inventory_valuations where valuation_id = '${z}'`)).s, 'confirmed_zero')
+  assert.equal(Number((await one<{ n: number }>(V72.lead, `select count(*)::int as n from fin_inventory_valuations where period = '2099-03' and category = 'finished' and voided_at is null`)).n), 1,
+    '0072: 바꾸기 뒤 살아 있는 줄이 하나가 아니다')
+  assert.equal(Number((await one<{ n: number }>(V72.lead, `select count(*)::int as n from fin_inventory_valuations where period = '2099-03' and category = 'finished'`)).n), 2,
+    '0072: 바꾸기가 옛 줄을 지웠다(무효 + 새 줄이어야)')
+
+  // ── 3. 경고: 포함 범위 다름 · 재공품 · 완제품 중복 의심 ──
+  await q(V72.lead, save('wip', '2099-04', '1200', 'null', 'material_labor_overhead'))
+  const warn4 = await q<{ kind: string; message: string }>(V72.lead, `select kind, message from fin_valuation_warnings('biz_dy', '2099-04')`)
+  assert.ok(warn4.some((w) => w.kind === 'scope_mismatch' && w.message === '기초 · 기말 포함 범위가 다름'), `0072: 포함 범위 경고가 없다 ${JSON.stringify(warn4)}`)
+  const vu = (await one<{ id: string }>(V72.lead, apply('valuation', '2099-05', 'a', [
+    { row_no: 3, category: 'wip', amount: 500, cost_scope: 'material_only' }, { row_no: 4, category: 'finished', amount: 500, cost_scope: 'material_only' }]))).id
+  const imp = await q<{ status: string; source: string; entered_by: string }>(V72.lead, `select status, source, entered_by::text from fin_inventory_valuations where source_upload_id = '${vu}'`)
+  assert.deepEqual(imp.map((r) => [r.status, r.source, r.entered_by]), [['provisional', 'excel', V72.lead], ['provisional', 'excel', V72.lead]], '0072: 엑셀 평가금액은 잠정 · excel · 입력자 = 부른 사람')
+  const warn5 = await q<{ kind: string; message: string }>(V72.lead, `select kind, message from fin_valuation_warnings('biz_dy', '2099-05')`)
+  assert.ok(warn5.some((w) => w.kind === 'wip_finished_duplicate' && w.message === '재공품 · 완제품 중복 의심'), `0072: 중복 의심 경고가 없다 ${JSON.stringify(warn5)}`)
+  assert.equal((await q(V72.member, `select * from fin_valuation_warnings('biz_dy', '2099-05')`)).length, 0, '0072: 권한 없는 직원에게 경고가 보인다')
+
+  // ── 4. 기초재고 연결 ──
+  await q(V72.lead, apply('inventory', '2099-03', 'b', [{ row_no: 2, item: '가짜 원재료 1', amount: 100 }, { row_no: 3, item: '가짜 원재료 2', amount: 200 }]))
+  await q(V72.lead, apply('inventory', '2099-04', 'c', [{ row_no: 2, item: '가짜 원재료 1', amount: 120, opening_amount: 250 },
+    { row_no: 3, item: '가짜 원재료 2', amount: null, opening_amount: 60 }]))
+  type Roll = { category: string; opening_amount: string | null; opening_state: string; opening_source: string; closing_amount: string | null; closing_state: string; missing_lines: number; statement_opening: string | null; diff_vs_prev_close: string | null }
+  const roll = async (p: string) => new Map((await q<Roll>(V72.lead, `select * from fin_inventory_roll('biz_dy', '${p}')`)).map((r) => [r.category, r]))
+  const r3 = await roll('2099-03')
+  assert.equal(r3.get('raw')!.opening_source, 'unlinked', '0072: 앞 달이 없는 원재료가 «미연결»이 아니다')
+  assert.equal(r3.get('raw')!.opening_amount, null, '0072: 미연결 기초가 0으로 채워졌다')
+  const r4 = await roll('2099-04')
+  assert.deepEqual([r4.get('wip')!.opening_source, Number(r4.get('wip')!.opening_amount)], ['prev_close', 1000], '0072: 재공품 기초 = 앞 달 확정 기말이 아니다')
+  assert.equal(r4.get('finished')!.opening_source, 'unlinked', '0072: 앞 달 완제품이 확정이 아닌데 연결됐다')
+  assert.deepEqual([r4.get('raw')!.opening_source, Number(r4.get('raw')!.opening_amount)], ['prev_close', 300], '0072: 원재료 기초 = 앞 달 명세서 기말 합이 아니다')
+  assert.deepEqual([Number(r4.get('raw')!.statement_opening), Number(r4.get('raw')!.diff_vs_prev_close)], [310, 10], '0072: 명세서 기초 ≠ 앞 달 기말 차이가 보이지 않는다')
+  assert.deepEqual([Number(r4.get('raw')!.closing_amount), r4.get('raw')!.missing_lines], [120, 1], '0072: 기말 빈칸 줄을 0으로 더했거나 세지 않았다')
+  const inv4 = await q<{ amount: string | null; amount_state: string; opening_amount: string }>(V72.lead, `select amount, amount_state, opening_amount from fin_inventory_lines where period = '2099-04' order by row_no`)
+  assert.deepEqual(inv4.map((r) => [r.amount === null ? null : Number(r.amount), r.amount_state, Number(r.opening_amount)]), [[120, 'value', 250], [null, 'missing', 60]],
+    '0072: 차이를 보여 주면서 원천 줄이 바뀌었다(또는 빈칸이 0이 됐다)')
+  await rej(V72.lead, `select fin_opening_save('biz_dy', '2099-04', 'finished', 300, null, 'manual', null, '')`, /fin_opening_reason/, '0072: 이유 없는 첫 달 기초')
+  await rej(V72.lead, `select fin_opening_save('biz_dy', '2099-04', 'finished', 300, null, null, null, '첫 달 실사')`, /fin_opening_reason/, '0072: 출처 없는 첫 달 기초')
+  await q(V72.lead, `select fin_opening_save('biz_dy', '2099-04', 'finished', 300, null, 'manual', null, '첫 달 실사')`)
+  const r4b = await roll('2099-04')
+  assert.deepEqual([r4b.get('finished')!.opening_source, Number(r4b.get('finished')!.opening_amount)], ['manual', 300], '0072: 첫 달 직접 입력 기초가 출처와 함께 안 나온다')
+  assert.ok(Number((await owner<{ n: number }>(`select count(*)::int as n from audit_log where entity_table = 'fin_inventory_openings'`))[0].n) >= 1, '0072: 첫 달 기초 감사가 없다')
+
+  // ── 5. 원료 출고 ──
+  await q(V72.lead, apply('material_issue', '2099-06', 'd', [
+    { row_no: 1, material: '가짜 원료 M1', qty_kg: 10 }, { row_no: 2, material: '가짜 원료 M1', qty_kg: 5 },
+    { row_no: 3, material: '가짜 원료 M2', qty_kg: 7, class: 'production', class_reason: '규칙: 생산 출고 유형' },
+    { row_no: 4, material: '가짜 원료 M3', qty_kg: 1 }]))
+  await q(V72.lead, apply('material_issue', '2099-07', 'e', [{ row_no: 1, material: '가짜 원료 M1', qty_kg: 9 }, { row_no: 2, material: '가짜 원료 M4', qty_kg: 4, class: 'production', class_reason: '규칙: 생산 출고 유형' }]))
+  await q(V72.lead, apply('production', '2099-06', 'f', [{ row_no: 1, product: '가짜 제품 1', qty: 100 }]))
+  const cls = await q<{ material: string; class: string; class_source: string }>(V72.lead, `select material, class, class_source from fin_material_issues where period = '2099-06' order by row_no`)
+  assert.deepEqual(cls.map((r) => r.class), ['needs_review', 'needs_review', 'production', 'needs_review'], '0072: 구분 없는 출고가 «확인 필요»가 아니다')
+  await rej(V72.lead, apply('material_issue', '2099-08', '1', [{ row_no: 1, material: 'x', qty_kg: 1, class: 'production' }]), /fin_material_issues_class/, '0072: 이유 없는 «생산 투입» 규칙')
+  await rej(V72.lead, `select fin_issue_bulk_decide('biz_dy', '2099-06', '가짜 원료 M1', 'production', null, '')`, /fin_issue_reason/, '0072: 이유 없는 일괄 결정')
+  await rej(V72.member, `select fin_issue_bulk_decide('biz_dy', '2099-06', '가짜 원료 M1', 'production', null, '생산 확인')`, /fin_upload_denied/, '0072: 권한 없는 일괄 결정')
+  assert.equal(Number((await one<{ n: number }>(V72.lead, `select fin_issue_bulk_decide('biz_dy', '2099-06', '가짜 원료 M1', 'production', null, '생산 투입 확인') as n`)).n), 2)
+  const after = await q<{ period: string; material: string; class: string; class_source: string }>(V72.lead, `select period, material, class, class_source from fin_material_issues order by period, row_no`)
+  assert.deepEqual(after.map((r) => `${r.period}|${r.material}|${r.class}|${r.class_source}`), [
+    '2099-06|가짜 원료 M1|production|bulk', '2099-06|가짜 원료 M1|production|bulk', '2099-06|가짜 원료 M2|production|rule', '2099-06|가짜 원료 M3|needs_review|none',
+    '2099-07|가짜 원료 M1|needs_review|none', '2099-07|가짜 원료 M4|production|rule'], '0072: 일괄 결정이 그 원료 · 그 달의 «확인 필요» 줄만 바꾸지 않았다')
+  const bulkAudit = await owner<{ after: { lines: number; reason: string } }>(`select after from audit_log where entity_table = 'fin_material_issues'`)
+  assert.equal(bulkAudit.length, 1, '0072: 일괄 결정 감사가 한 줄이 아니다')
+  assert.equal(bulkAudit[0].after.lines, 2, '0072: 일괄 결정 감사에 줄 수가 없다')
+  await rej(V72.lead, `select qty_kg from fin_material_issues limit 1`, /permission denied/, '0072: authenticated가 원료 kg 칸을 읽는다')
+  await rej(V72.chair, `select qty_kg from fin_material_issues limit 1`, /permission denied/, '0072: 대표 세션도 표로는 원료 kg 칸을 못 읽어야 한다(요약만)')
+  const summary = async (p: string) => (await one<{ s: Record<string, unknown> }>(V72.lead, `select fin_issue_summary('biz_dy', '${p}') as s`)).s
+  const sum = await summary('2099-06')
+  assert.deepEqual(Object.keys(sum).sort(), ['input_missing_lines', 'input_withheld', 'lines', 'needs_review', 'production_input_kg', 'production_qty_kg'], '0072: 요약 칸이 다르다')
+  assert.deepEqual([sum.production_input_kg, sum.input_withheld, Number(sum.production_qty_kg)], [null, 'needs_review_open', 100],
+    '0072 리뷰 I2: «확인 필요»가 남은 달에 합계 kg를 보였다(정할 때마다 합계가 움직여 한 원료 kg가 드러난다)')
+  assert.deepEqual(sum.needs_review, [{ material: '가짜 원료 M3', lines: 1 }], '0072: 원료별 «확인 필요»는 줄 수만')
+  await q(V72.lead, `select fin_issue_bulk_decide('biz_dy', '2099-06', '가짜 원료 M3', 'non_production', 'sample', '샘플 출고')`)
+  const s6 = await summary('2099-06')
+  assert.deepEqual([s6.production_input_kg, s6.input_withheld], [null, 'too_few_materials'], '0072 리뷰 I2: 생산 투입 원료 둘인데 합계 kg를 보였다')
+  await q(V72.lead, apply('material_issue', '2099-11', '6', [
+    { row_no: 1, material: '가짜 원료 A', qty_kg: 120, class: 'production', class_reason: '규칙: 생산 출고 유형' },
+    { row_no: 2, material: '가짜 원료 B', qty_kg: 130, class: 'production', class_reason: '규칙: 생산 출고 유형' },
+    { row_no: 3, material: '가짜 원료 C', qty_kg: 160, class: 'production', class_reason: '규칙: 생산 출고 유형' }]))
+  const s11 = await summary('2099-11')
+  assert.deepEqual([Number(s11.production_input_kg), s11.input_withheld], [400, null], '0072 리뷰 I2: 셋 이상 · 확인 필요 0이면 100kg 반올림 합계(410 → 400)')
+  assert.ok(!/120|130|160|410/.test(JSON.stringify(s11)), '0072: 요약에 원료 kg · 반올림 전 합계가 있다')
+  const sum7 = await summary('2099-07')
+  assert.deepEqual([sum7.production_input_kg, sum7.input_withheld], [null, 'needs_review_open'], '0072: 확인 필요가 남은 달에 합계 kg')
+  assert.equal((await one<{ s: unknown }>(V72.member, `select fin_issue_summary('biz_dy', '2099-06') as s`)).s, null, '0072: 권한 없는 직원에게 요약')
+
+  // ── 6. 같은 거래 묶음 · 자동 다섯째 조건 ──
+  await q(V72.lead, apply('sales', '2099-08', '2', [{ row_no: 1, customer: '가짜 거래처', amount: 1000, tx_date: '2099-08-03', counterparty: '가짜 거래처', source_system: 'r2', amount_vat: 100 }]))
+  await q(V72.lead, apply('tax_invoice', '2099-08', '3', [{ row_no: 1, issued_on: '2099-08-03', counterparty: '가짜 거래처', supply_amount: 1000, vat: 100, total: 1100, direction: 'sales' },
+    { row_no: 2, issued_on: '2099-08-04', counterparty: '가짜 영세율', supply_amount: 500, vat: 0, vat_state: 'confirmed_zero', total: 500, direction: 'sales' }]))
+  const [sl] = await owner<{ id: number }>(`select line_id::int as id from fin_sales_lines where period = '2099-08'`)
+  const [tl] = await owner<{ id: number }>(`select line_id::int as id from fin_tax_invoice_lines where period = '2099-08' and row_no = 1`)
+  const members = JSON.stringify([{ source_table: 'fin_sales_lines', line_id: sl.id }, { source_table: 'fin_tax_invoice_lines', line_id: tl.id }])
+  await rej(V72.lead, `select fin_tx_group_save('biz_dy', '2099-08', 'same', '${members}', '{}', null, null)`, /fin_tx_evidence/, '0072: 증거 없는 «같은 거래»')
+  const g1 = (await one<{ id: string }>(V72.lead, `select fin_tx_group_save('biz_dy', '2099-08', 'suspect', '${members}', null, null, null)::text as id`)).id
+  assert.equal((await one<{ s: string }>(V72.lead, `select status as s from fin_tx_groups where group_id = '${g1}'`)).s, 'suspect', '0072: 중복 의심이 저장 때 바뀌었다')
+  await rej(V72.lead, `select fin_tx_group_save('biz_dy', '2099-08', 'same', '${members}', '{"tx_date":true,"amount":true}', null, null)`, /fin_tx_member_taken/, '0072: 한 줄이 살아 있는 묶음 둘에 들었다')
+  await rej(V72.lead, `select fin_tx_group_decide('${g1}', 'same', '')`, /fin_tx_reason/, '0072: 이유 없는 결정')
+  assert.equal((await one<{ ok: boolean }>(V72.lead, `select fin_tx_group_decide('${g1}', 'rejected', '다른 거래 확인') as ok`)).ok, true)
+  const g2 = (await one<{ id: string }>(V72.lead, `select fin_tx_group_save('biz_dy', '2099-08', 'same', '${members}', '{"tx_date":true,"counterparty":true,"amount":true}', 'fin_tax_invoice_lines:${tl.id}', 'fin_sales_lines:${sl.id}')::text as id`)).id
+  assert.equal((await one<{ s: string }>(V72.lead, `select status as s from fin_tx_groups where group_id = '${g2}'`)).s, 'same')
+  const src = await owner<{ amount: string; vat_state: string }>(`select amount, vat_state from fin_sales_lines where line_id = ${sl.id}`)
+  assert.deepEqual([Number(src[0].amount), src[0].vat_state], [1000, 'value'], '0072: 묶음이 원천 줄을 고쳤다')
+  await rej(V72.lead, `select fin_dedupe_setting_save('biz_dy', 'tax_invoice', 'r2_ecount', '')`, /fin_tx_reason/, '0072: 이유 없는 기준 바꾸기')
+  await q(V72.lead, `select fin_dedupe_setting_save('biz_dy', 'tax_invoice', 'r2_ecount', '원장 늦게 옴')`)
+  assert.equal((await owner<{ n: number }>(`select count(*)::int as n from audit_log where entity_table in ('fin_tx_groups', 'fin_dedupe_settings')`))[0].n, 4, '0072: 묶음 · 기준 감사')
+  await rej(V72.lead, apply('card', '2099-10', '4', [{ row_no: 1, amount: 1 }], true, 1), /fin_upload_auto_blocked/, '0072: 중복 의심이 있는데 자동으로 넣었다')
+  await q(V72.lead, apply('card', '2099-10', '4', [{ row_no: 1, amount: 1 }], true, 0))
+
+  // ── 7. 마감 달: 재마감 대상 · closings · 전표 그대로 ──
+  await db.exec(`set session_replication_role = replica;
+    insert into closings (business_id, period, account_code, amount, closed_on, source, fetched_at, closed) values ('biz_dy', '2099-09', 'TEST0072', 0, current_date, 'manual', now(), true);
+    set session_replication_role = origin;`)
+  const books = `select (select count(*) from closings)::int + (select count(*) from journal_lines)::int as n, (select coalesce(sum(amount), 0) from closings)::text as s`
+  const before = (await owner<{ n: number; s: string }>(books))[0]
+  await rej(V72.lead, apply('card', '2099-09', '5', [{ row_no: 1, amount: 5 }], false, 0, `'이유'`), /fin_upload_closed/, '0072: 직원이 마감 달에 넣었다')
+  const cu = (await one<{ id: string }>(V72.chair, apply('card', '2099-09', '5', [{ row_no: 1, amount: 5 }], false, 0, `'세무사 수정분'`))).id
+  const flags = await q<{ upload_id: string; cause: string }>(V72.lead, `select upload_id::text, cause from fin_reclose_flags where period = '2099-09' and cleared_at is null`)
+  assert.deepEqual(flags.map((f) => [f.upload_id, f.cause]), [[cu, 'upload']], '0072: 마감 달 넣기가 «재마감 대상»을 남기지 않았다')
+  assert.deepEqual((await owner<{ n: number; s: string }>(books))[0], before, '0072: 넣기가 closings · 전표를 건드렸다')
+  assert.equal((await q(V72.member, `select * from fin_reclose_flags`)).length, 0, '0072: 권한 없는 직원이 재마감 대상을 본다')
+
+  // ── 7b. 리뷰 반영: 대기 줄 kg(C1) · used_qty 칸(I2) · 0070 칸의 0(I3) · 수 없는 자동 · 빈 일괄 결정 · 묶음 기준 줄 · 마감 달 묶음 ──
+  const pend = (await one<{ id: string }>(V72.lead, `select fin_upload_record('biz_dy', 'material_issue', '2099-02', '가짜 출고 대기.xlsx', '${'8'.repeat(64)}', '출고', 'medium', 0, 'needs_review',
+    '{"rows":[{"row_no":1,"material":"가짜 원료 P","qty_kg":42}],"grid":[["원료","kg"],["가짜 원료 P",42]]}', null)::text as id`)).id
+  for (const who of [V72.lead, V72.chair]) {
+    const pv = (await one<{ p: { rows: Record<string, unknown>[]; grid?: unknown } }>(who, `select fin_upload_pending('${pend}') as p`)).p
+    assert.ok(!('grid' in pv) && pv.rows.length === 1 && !('qty_kg' in pv.rows[0]) && pv.rows[0].material === '가짜 원료 P',
+      `0072 리뷰 C1: 원료 출고 대기 줄로 kg가 나간다(${who.slice(-4)}) ${JSON.stringify(pv)}`)
+  }
+  const pv = (await one<{ p: { rows: object[] } }>(V72.lead, `select fin_upload_pending('${pend}') as p`)).p
+  await q(V72.lead, `select fin_upload_apply('biz_dy', 'material_issue', '2099-02', null, null, '출고', 'medium', 0, false, '${JSON.stringify(pv.rows)}'::jsonb, null, 'none', null, '${pend}', 0)`)
+  assert.deepEqual((await owner<{ k: string; st: string }>(`select qty_kg::text as k, qty_state as st from fin_material_issues where upload_id = '${pend}'`)).map((r) => [Number(r.k), r.st]),
+    [[42, 'value']], '0072 리뷰 C1: 대기 → 넣기에서 kg가 DB의 대기 줄에서 붙지 않았다')
+  await rej(V72.lead, `select used_qty from fin_inventory_lines limit 1`, /permission denied/, '0072 리뷰 I2: authenticated가 품목별 사용수량(used_qty)을 읽는다')
+  assert.ok((await q(V72.lead, `select item, stock_qty, amount from fin_inventory_lines limit 1`)).length === 1, '0072: 사용수량 말고 다른 재고 칸을 못 읽는다')
+  await q(V72.lead, apply('inventory', '2099-12', '7', [{ row_no: 1, item: '가짜 원재료 0', amount: 0 }, { row_no: 2, item: '가짜 원재료 빈칸', amount: null }]))
+  assert.deepEqual((await q<{ a: string | null; st: string }>(V72.lead, `select amount::text as a, amount_state as st from fin_inventory_lines where period = '2099-12' order by row_no`)).map((r) => [r.a === null ? null : Number(r.a), r.st]),
+    [[0, 'confirmed_zero'], [null, 'missing']], '0072 리뷰 I3: 0070 시절 재고 금액의 상태 없는 0이 0 확인이 아니다(또는 빈칸이 0이 됐다)')
+  await rej(V72.lead, `select fin_upload_apply('biz_dy', 'card', '2099-12', 'x.xlsx', '${'9'.repeat(64)}', 's', 'high', 0, true, '[{"row_no":1,"amount":1}]', null, 'none', null, null)`,
+    /fin_upload_auto_blocked/, '0072: 중복 의심 수를 안 보낸 자동 넣기가 들어갔다(닫힌 쪽으로 실패해야)')
+  assert.equal(Number((await one<{ n: number }>(V72.chair, `select fin_issue_bulk_decide('biz_dy', '2099-09', '없는 원료', 'production', null, '마감 달 확인') as n`)).n), 0)
+  assert.equal(Number((await owner<{ n: number }>(`select count(*)::int as n from fin_reclose_flags where period = '2099-09' and upload_id is null`))[0].n), 0,
+    '0072: 0줄 일괄 결정이 «재마감 대상»을 남겼다')
+  const m2 = JSON.stringify([{ source_table: 'fin_sales_lines', line_id: 999999 }, { source_table: 'fin_tax_invoice_lines', line_id: 999998 }])
+  await rej(V72.lead, `select fin_tx_group_save('biz_dy', '2099-09', 'suspect', '${m2}', null, null, null)`, /fin_upload_closed/, '0072: 마감 달 묶음 저장이 문을 지나갔다')
+  await q(V72.lead, apply('sales', '2099-12', 'a', [{ row_no: 1, customer: 'x', amount: 5 }]))
+  await q(V72.lead, apply('tax_invoice', '2099-12', 'b', [{ row_no: 1, supply_amount: 5, vat: 1, direction: 'sales' }]))
+  const [s12] = await owner<{ id: number }>(`select line_id::int as id from fin_sales_lines where period = '2099-12'`)
+  const [t12] = await owner<{ id: number }>(`select line_id::int as id from fin_tax_invoice_lines where period = '2099-12'`)
+  const m12 = JSON.stringify([{ source_table: 'fin_sales_lines', line_id: s12.id }, { source_table: 'fin_tax_invoice_lines', line_id: t12.id }])
+  await rej(V72.lead, `select fin_tx_group_save('biz_dy', '2099-12', 'suspect', '${m12}', null, 'fin_ledger_lines:1', null)`, /fin_tx_base_ref/, '0072: 묶음 밖의 줄을 기준 줄로 적었다')
+
+  // ── 7c. 시드 정의자 거름: company_progress(직원 카드)에 예시 프로젝트가 섞이지 않는다 ──
+  const avg = async (where: string) => (await owner<{ v: number | null }>(`select round(avg(progress_pct))::int as v from projects where business_id = 'biz_dy' ${where}`))[0].v
+  const staffWant = await avg('and not is_example')
+  const chairWant = await avg('')
+  assert.notEqual(staffWant, chairWant, '0072 시험 설정: biz_dy 예시 프로젝트가 평균을 바꾸지 않는다 — 대조가 안 된다')
+  assert.equal((await one<{ v: number | null }>(V72.member, `select company_progress('biz_dy') as v`)).v, staffWant, '0072: 직원 회사 카드 진행률에 예시 프로젝트가 섞였다')
+  assert.equal((await one<{ v: number | null }>(V72.chair, `select company_progress('biz_dy') as v`)).v, chairWant, '0072: 대표의 회사 진행률에서 예시가 빠졌다')
+
+  // ── 8. 시드 예시 줄: 직원 0 · 대표 전부 · 대조군 ──
+  const seedTables: [string, string][] = [['tasks', 'task_id'], ['projects', 'project_id'], ['decisions', 'decision_id'], ['alerts', 'alert_id'], ['goals', 'goal_id'],
+    ['milestones', 'milestone_id'], ['monthly_priorities', 'priority_id'], ['critical_risks', 'risk_id'], ['ai_night_outputs', 'output_id']]
+  for (const [t] of seedTables) {
+    const total = Number((await owner<{ n: number }>(`select count(*)::int as n from ${t} where is_example`))[0].n)
+    assert.ok(total > 0, `0072: ${t}에 예시 표시가 없다`)
+    assert.equal(Number((await one<{ n: number }>(V72.chair, `select count(*)::int as n from ${t} where is_example`)).n), total, `0072: 대표가 ${t} 예시 줄을 다 못 본다`)
+    for (const who of [V72.member, V72.lead, V72.ceo]) {
+      assert.equal(Number((await one<{ n: number }>(who, `select count(*)::int as n from ${t} where is_example`)).n), 0, `0072: 직원(${who.slice(-4)})이 ${t} 예시 줄을 본다`)
+    }
+    const anon = await q<{ n: number }>(null, `select count(*)::int as n from ${t} where is_example`).catch(() => [{ n: 0 }])
+    assert.equal(Number(anon[0].n), 0, `0072: anon이 ${t} 예시 줄을 본다`)
+  }
+  const ids = await owner<{ n: number }>(`select (select count(*) from tasks where is_example)::int * 1000 + (select count(*) from decisions where is_example)::int as n`)
+  assert.equal(ids[0].n, 5 * 1000 + 4, '0072: 표시한 시드 줄 수가 seed-check.sql 목록과 다르다(업무 5 · 결정 4)')
+  // 대조군: 같은 줄을 «예시 아님»으로 돌리면 직원이 본다 — 숨김의 까닭이 이 정책이다.
+  await db.exec(`update goals set is_example = false where goal_id = 'goal_dy_2026'`)
+  assert.equal(Number((await one<{ n: number }>(V72.member, `select count(*)::int as n from goals where goal_id = 'goal_dy_2026'`)).n), 1, '0072 대조군: 예시가 아닌 목표를 직원이 못 본다')
+  await db.exec(`update goals set is_example = true where goal_id = 'goal_dy_2026'`)
+  assert.equal(Number((await owner<{ n: number }>(`select count(*)::int as n from audit_log where entity_table = 'seed_examples'`))[0].n), 1, '0072: 시드 표시 감사가 한 줄이 아니다')
+
+  // ── 9. anon ──
+  await rej(null, `select * from fin_inventory_valuations`, /permission denied/, '0072: anon이 평가금액을 읽는다')
+  await rej(null, `select * from fin_material_issues`, /permission denied/, '0072: anon이 원료 출고를 읽는다')
+  await rej(null, save('wip', '2099-11', '1', 'null'), /permission denied/, '0072: anon이 평가금액 RPC를 부른다')
+  await rej(null, `select fin_issue_summary('biz_dy', '2099-06')`, /permission denied/, '0072: anon이 출고 요약을 부른다')
+  for (const f of ['fin_value_state_of(text, numeric, boolean)', 'fin_reclose_mark(text, text, uuid, text, text)', 'fin_audit(audit_action, text, text, text, jsonb, jsonb, text)', 'fin_upload_void(uuid[])']) {
+    assert.equal((await owner<{ ok: boolean }>(`select has_function_privilege('authenticated', '${f}', 'execute') as ok`))[0].ok, false, `0072: authenticated가 ${f}를 부른다`)
+  }
+  await db.close()
+}
+
 async function main() {
   const db = new PGlite({ extensions: { pg_trgm } })
   const files = await applyAll(db)
@@ -7278,9 +7561,10 @@ async function main() {
   await intake()
   await intake(true)
   await approvalChain()
+  await financeV21()
   const healthTables = await anonHealth()
   console.log(
-    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단), 0048 문서 모듈 권한(사람 × 회사 · 문서 · 폴더 쓰기 · 줄 없는 팀장 거부 · 회사 접근과 줄 둘 다 · 열람 등급 위 insert/update 차단 · 등록자는 본인 · 고치기 · 지우기는 자기 것만(회장 전부) · 주인 칸은 회장만 · 폴더는 만든 사람만 · 시스템 계정 불변 · 옛 /core/search 회귀 · 회수 감사 · hard delete 닫힘), 0049 직원 화면 용어(결재선 · 취합 제목 «회장»→«대표» 백필 — 사람 · 단계 · updated_at 그대로 · 얼림 재가동 · 새 결재선 · 감사 메모도 «대표»), 0050 ECOUNT 업로드(업로드 표 — 쓰기 권한자 본인 draft만 · 남의 draft/끝난 업로드 못 고침 · 지우기 없음 · 칸 단위 update · 해시 한 번 · 재무 읽기 없으면 0행 · 시스템 계정 restrictive · anon 잠금 · 업로드 전표 활성 (회사, 달) 하나 · 이 트랜잭션에 본인이 세운 그 달 전표만 잇고(수기 · 남의 · 역분개 거부) 본인이 세운 정확한 반대 역분개 뒤에만 내림(가짜 역분개 거부) · 첨부 원본은 재무 권한자만 보고 본인만 올림 · committed/cancelled 원본은 줄 · 객체 삭제와 재업로드 거부 · 사람의 ECOUNT 계정 + source 불변 · 공식 재무제표 basis/증빙/활성 unique basis별 · update는 supersede만 · 세무사 저장이 ECOUNT 잠정을 안 밈), 0051 ECOUNT 등록 RPC(계정과목 · 연간 한 트랜잭션 · 감사 먼저 · 본인 draft · 종류 · 해시 · 장부 권한 · ECOUNT 회사 · 시스템 계정 거부 · 이미 있는 코드 · 바뀐 이름 · 세무사 확정 해 · 균형 · ECOUNT 재업로드 supersede · 헤더/줄 직접 쓰기 닫힘 · 복합 FK · 사람의 committed 닫힘 · 세무사 저장 definer · BYPASSRLS 없는 소유자에서도 등록 + force 대조군), 0052 ECOUNT 월별 RPC(달마다 전표 + 대응 계정 · 누계 → 당월 · 재업로드 = 역분개 + 정정분개 + 옛 줄 내림 — 두 번 세지 않음 · 같은 내용 건너뜀 · 이미 역분개된 달 멈춤 · 마감 달 · 세무사 확정 달 · 재무상태표/비활성/모르는 계정 · 원본 첨부 · 권한 · 전부 아니면 전무 · BYPASSRLS 없는 소유자 + force 대조군), 0054 첫 직원 결재(대표는 팀장 칸에 서지 않음 · 400만 «기록 완료» · 600만 대표 칸 Open · 대표 열람 · 비승인권자 insert는 Open · 새 직원/회장 되살림 «결재 올리기»(초대 이행 재부여는 PGlite 전용) · 금액 모양 · insert/update 처리자 고정 · dummy 거울), 0055 온보딩 위임(«DY 사용자 관리자» 줄 · 사원 · 팀장만 · Executive 거부 · 권한 ⊆ 관리자 · 마감 없음 · 상사 필수 · subtree 밖 상사 · 등급 · 다른 회사 · 가드 · 회장 알림 · 감사 · 가입 권한 재확인 · 남의 결재 못 봄 · 취소 · 능력 회수 · 아침 숫자 · BYPASSRLS 없는 소유자), 0056 ECOUNT 마무리(첫 등록 전표 감사 · 금액 없는 달 = 미리보기 때 본 전표만 역분개(다르면 import_changed · 정정분개도 · 전부 아니면 전무 · summary.result.reversed) · 빈 달 마감/확정 판정은 손댈 달만 · 월 마감과 월별 등록이 같은 회사 잠금(0052 열쇠 그대로) · 릴리스 전 확인 SQL은 select만 · 0049 DB와 전부 올린 DB에서 읽기 전용으로 돈다), 0058 자료 받는 입구(칸 다섯만 update · 적재 칸 · 도장 · 이력 grant 없음 · 회사 AND 등급 읽기 · intake_begin 한 트랜잭션 · 남의 첨부 · 첨부 없는 줄 커밋 거부 · 올린 사람 · 문서 쓰기 권한자 · 회장만 고침 · «배합비 아님»은 올린 사람만 · 차단 풀기는 대표만 · ECOUNT 원본 · AI 안 보냄 · 확인 없는 사진은 ai_excluded(감사 없음) · finance_imports 첨부 회귀 · 문서 적재(경로 그대로 · 감사 «AI 제안, 팀장 확인» · «대표») · 권한 · 다른 회사 · 시스템 계정 · 종류 없음 · 이중 적재 거부 · 입구 밖 재지정 거부 · 적재 원본 삭제 거부 · 문서 soft delete 되돌리기 · 다시 적재 · 읽은 뒤 재업로드 거부 · 같은 파일 알림 · BYPASSRLS 없는 소유자 + 대조군 · 리뷰 1차: AI 차단 끈적(이유 무관 대표만 풀기 · 적재/되돌리기 뒤에도) · 못 보는/지운 문서 판 사슬 거부 · 적재 줄은 문서 보는 사람만 · uploaded 되돌림 거부 · storage_path 위조 덮음 · not_attested는 올린 사람의 확인이 푼다(배합비 · 제외 자료는 대표만) · 조이기는 고칠 수 있는 사람 누구나 · 풀지 못한 확인은 감사 없음), 0060 anon health(${healthTables}개 표 오류 없이 0행 · 직원/대표/대장 결재 경로 · BYPASSRLS 없는 소유자 · 0059 대조군)`,
+    `PASS: ${files.length} migrations (${files[0]} → ${files.at(-1)}), standard chart seed, sheet-only view, SQL view = TS ledger, RLS by role, books, kakao revoke + definer under non-bypassrls owner, hierarchy (class_rank/cycle/subtree/shares), subtree RLS (a~f + 회사 격리 회귀) + 0026 backfill, 0027 projects subtree (직원 자기 업무 회귀 + project_business_id keyhole), 0028 org screen (company_progress/company_people keyhole + 초대 칸 + Integration 이름), 0029 아침 알림 현지 시간(시간대 keyhole + 현지 날짜 장부 + user_settings force 해제), 0030 알림함·프로필·사이드바 주머니(revoke + 칸 단위 update + 개인 우편함 + update_own_profile + 이름 교정), 0032 프로필 사진(비공개 버킷 + 본인만 쓰기 — 회장도 남의 얼굴은 못 바꾼다 + 이름 가시성과 같은 읽기 범위 + 어긋난 이름 차단 + update_own_photo), 0045 첨부(대상 규칙 AND 등급 · Vault 회장+지정자 · anon 표/버킷/함수 잠금 · AIAgent/Integration restrictive · 올림/요약/삭제/내려받기/외부 AI 전송 감사 · 칸 단위 update · 모양 제약 · 버킷 정책 · ai_usage_log), 0046 AI 어시스턴트(제안은 늘 pending · 15분 · 확인은 주인만 한 번 만료 전 — 남 · 회장 · 상사 · 시스템 계정이 고정 id로 확인해도 그대로 · 감사 «AI 제안, <역할> 확인»은 본인+회장만 · update/delete grant 없음 · 시스템 계정 restrictive · anon 잠금), 0047 재무 모듈 권한(경영지원 팀장 기본 입력 · 자기 회사만 읽기/전표/공식 재무제표 · 마감은 can_approve만 · 줄 없는 TeamLead 0행 · 시스템 계정 불변 · 쓰기는 회장만 · 트리거 감사 · Vault 첨부 insert 차단), 0048 문서 모듈 권한(사람 × 회사 · 문서 · 폴더 쓰기 · 줄 없는 팀장 거부 · 회사 접근과 줄 둘 다 · 열람 등급 위 insert/update 차단 · 등록자는 본인 · 고치기 · 지우기는 자기 것만(회장 전부) · 주인 칸은 회장만 · 폴더는 만든 사람만 · 시스템 계정 불변 · 옛 /core/search 회귀 · 회수 감사 · hard delete 닫힘), 0049 직원 화면 용어(결재선 · 취합 제목 «회장»→«대표» 백필 — 사람 · 단계 · updated_at 그대로 · 얼림 재가동 · 새 결재선 · 감사 메모도 «대표»), 0050 ECOUNT 업로드(업로드 표 — 쓰기 권한자 본인 draft만 · 남의 draft/끝난 업로드 못 고침 · 지우기 없음 · 칸 단위 update · 해시 한 번 · 재무 읽기 없으면 0행 · 시스템 계정 restrictive · anon 잠금 · 업로드 전표 활성 (회사, 달) 하나 · 이 트랜잭션에 본인이 세운 그 달 전표만 잇고(수기 · 남의 · 역분개 거부) 본인이 세운 정확한 반대 역분개 뒤에만 내림(가짜 역분개 거부) · 첨부 원본은 재무 권한자만 보고 본인만 올림 · committed/cancelled 원본은 줄 · 객체 삭제와 재업로드 거부 · 사람의 ECOUNT 계정 + source 불변 · 공식 재무제표 basis/증빙/활성 unique basis별 · update는 supersede만 · 세무사 저장이 ECOUNT 잠정을 안 밈), 0051 ECOUNT 등록 RPC(계정과목 · 연간 한 트랜잭션 · 감사 먼저 · 본인 draft · 종류 · 해시 · 장부 권한 · ECOUNT 회사 · 시스템 계정 거부 · 이미 있는 코드 · 바뀐 이름 · 세무사 확정 해 · 균형 · ECOUNT 재업로드 supersede · 헤더/줄 직접 쓰기 닫힘 · 복합 FK · 사람의 committed 닫힘 · 세무사 저장 definer · BYPASSRLS 없는 소유자에서도 등록 + force 대조군), 0052 ECOUNT 월별 RPC(달마다 전표 + 대응 계정 · 누계 → 당월 · 재업로드 = 역분개 + 정정분개 + 옛 줄 내림 — 두 번 세지 않음 · 같은 내용 건너뜀 · 이미 역분개된 달 멈춤 · 마감 달 · 세무사 확정 달 · 재무상태표/비활성/모르는 계정 · 원본 첨부 · 권한 · 전부 아니면 전무 · BYPASSRLS 없는 소유자 + force 대조군), 0054 첫 직원 결재(대표는 팀장 칸에 서지 않음 · 400만 «기록 완료» · 600만 대표 칸 Open · 대표 열람 · 비승인권자 insert는 Open · 새 직원/회장 되살림 «결재 올리기»(초대 이행 재부여는 PGlite 전용) · 금액 모양 · insert/update 처리자 고정 · dummy 거울), 0055 온보딩 위임(«DY 사용자 관리자» 줄 · 사원 · 팀장만 · Executive 거부 · 권한 ⊆ 관리자 · 마감 없음 · 상사 필수 · subtree 밖 상사 · 등급 · 다른 회사 · 가드 · 회장 알림 · 감사 · 가입 권한 재확인 · 남의 결재 못 봄 · 취소 · 능력 회수 · 아침 숫자 · BYPASSRLS 없는 소유자), 0056 ECOUNT 마무리(첫 등록 전표 감사 · 금액 없는 달 = 미리보기 때 본 전표만 역분개(다르면 import_changed · 정정분개도 · 전부 아니면 전무 · summary.result.reversed) · 빈 달 마감/확정 판정은 손댈 달만 · 월 마감과 월별 등록이 같은 회사 잠금(0052 열쇠 그대로) · 릴리스 전 확인 SQL은 select만 · 0049 DB와 전부 올린 DB에서 읽기 전용으로 돈다), 0058 자료 받는 입구(칸 다섯만 update · 적재 칸 · 도장 · 이력 grant 없음 · 회사 AND 등급 읽기 · intake_begin 한 트랜잭션 · 남의 첨부 · 첨부 없는 줄 커밋 거부 · 올린 사람 · 문서 쓰기 권한자 · 회장만 고침 · «배합비 아님»은 올린 사람만 · 차단 풀기는 대표만 · ECOUNT 원본 · AI 안 보냄 · 확인 없는 사진은 ai_excluded(감사 없음) · finance_imports 첨부 회귀 · 문서 적재(경로 그대로 · 감사 «AI 제안, 팀장 확인» · «대표») · 권한 · 다른 회사 · 시스템 계정 · 종류 없음 · 이중 적재 거부 · 입구 밖 재지정 거부 · 적재 원본 삭제 거부 · 문서 soft delete 되돌리기 · 다시 적재 · 읽은 뒤 재업로드 거부 · 같은 파일 알림 · BYPASSRLS 없는 소유자 + 대조군 · 리뷰 1차: AI 차단 끈적(이유 무관 대표만 풀기 · 적재/되돌리기 뒤에도) · 못 보는/지운 문서 판 사슬 거부 · 적재 줄은 문서 보는 사람만 · uploaded 되돌림 거부 · storage_path 위조 덮음 · not_attested는 올린 사람의 확인이 푼다(배합비 · 제외 자료는 대표만) · 조이기는 고칠 수 있는 사람 누구나 · 풀지 못한 확인은 감사 없음), 0060 anon health(${healthTables}개 표 오류 없이 0행 · 직원/대표/대장 결재 경로 · BYPASSRLS 없는 소유자 · 0059 대조군), 0072 재무 v2.1(평가금액 확정은 다른 사람 · 권한 · 범위 다름 · 중복 의심 · 빈칸 ≠ 0 · 기초 = 앞 달 확정 · 미연결 · 첫 달 직접 · 명세서 차이 표시만 · 원료 출고 확인 필요 기본 · 일괄 결정 이유 · 그 원료 그 달만 · 감사 · kg 칸 못 읽음 · 요약 원료별 kg 없음 · 같은 거래 묶음 · 자동 다섯째 조건 · 재마감 대상 · closings 그대로 · 예시 줄 직원 0 · 대표 전부 · anon)`,
   )
 }
 

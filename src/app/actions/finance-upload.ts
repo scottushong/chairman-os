@@ -8,7 +8,7 @@ import { aiLimits, realClassifier } from '@/lib/finance-upload/ai'
 import { isUploadKind, kindSpec } from '@/lib/finance-upload/kinds'
 import { UPLOAD_MAX_BYTES } from '@/lib/finance-upload/open'
 import { mapColumns, readRows, validate, type Classification } from '@/lib/finance-upload/pipeline'
-import { finUploadError, fromGrid, processUpload, type FileCard } from '@/lib/finance-upload/process'
+import { finUploadError, fromGrid, processUpload, saveTxGroupsFor, type FileCard } from '@/lib/finance-upload/process'
 import { getRepository } from '@/lib/repository'
 import type { FinRow, FinUpload } from '@/types'
 
@@ -121,17 +121,24 @@ export async function applyPendingUpload(input: ApplyInput): Promise<{ ok?: true
       return { error: '검증을 통과하지 못한 자료는 넣지 않습니다 — 칸을 고르거나 파일을 고쳐 다시 올리세요.', problems: meta.errors }
     }
     if (kind === 'payroll' && !people && !['Chairman', 'GroupCFO'].includes(user.role)) people = null
+    // 0072: 손으로 넣기는 다섯째 조건이 없다(사람이 미리보기에서 «중복 의심»을 보고 넣는다 — dup_suspects null).
+    // 원료 출고(material_issue)는 돌려받은 줄에 kg가 없다 — DB가 저장해 둔 대기 줄에서 줄 번호로 붙인다(0072 리뷰 C1).
     await repo.finUploadApply({
       business_id: businessId, kind, period, file_name: upload?.file_name ?? '', file_sha256: upload?.file_sha256 ?? '', sheet_name: upload?.sheet_name ?? null,
-      ai_confidence: upload?.ai_confidence ?? 'none', ai_used: upload?.ai_used ?? 0, auto: false, rows, people, overlap, reason, upload_id: id,
+      ai_confidence: upload?.ai_confidence ?? 'none', ai_used: upload?.ai_used ?? 0, auto: false, rows, people, overlap, reason, upload_id: id, dup_suspects: null,
     })
+    // 같은 거래 묶음(same · suspect) 저장 — suspect는 «같은 거래» 칸에서 사람이 정한다. 실패해도 넣기는 그대로.
+    await saveTxGroupsFor(repo, businessId, kind, period, id, reason).catch((e) => console.error('[applyPendingUpload] tx groups', e))
     revalidatePath(`/finance/${businessId}/upload`)
+    revalidatePath(`/finance/${businessId}/valuation`)
     return { ok: true }
   } catch (e) {
     console.error('[applyPendingUpload]', e)
     const m = e instanceof Error ? e.message : ''
     if (m.includes('fin_upload_overlap')) return { error: '같은 달에 이미 넣은 자료가 있습니다 — «새 값으로 바꾸기» 또는 «기존 값 두기»를 고르세요.' }
     if (m.includes('fin_upload_closed')) return { error: '마감된 달입니다 — 대표 · CFO가 이유를 적어야 넣을 수 있습니다.' }
+    if (m.includes('fin_valuation_final_exists')) return { error: '그 구분의 확정된 평가금액이 이미 있습니다 — «재고 · 평가» 화면에서 이유를 적고 바꾸세요.' }
+    if (m.includes('fin_value_state')) return { error: '빈칸 · 0 표시가 맞지 않는 칸이 있습니다(빈칸은 0이 아닙니다).' }
     return { error: finUploadError(e) }
   }
 }

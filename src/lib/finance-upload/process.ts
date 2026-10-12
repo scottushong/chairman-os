@@ -1,21 +1,24 @@
 import type { ChairmanRepository } from '@/lib/repository'
-import type { FinRow, FinUpload } from '@/types'
+import type { FinRow, FinTxGroupSaveInput, FinUpload } from '@/types'
 
 import { cellText, EMPTY_CELL, type EcountCell } from '@/lib/ecount/excel/cells'
 import type { EcountSheet } from '@/lib/ecount/excel/workbook'
 
-import { kindSpec, type UploadKind } from './kinds'
+import { countNewSuspects, describeGroup, matchTx, rejectedPairs, txLinesFromRows } from './dedupe'
+import { kindSpec, TX_KINDS, type UploadKind } from './kinds'
 import { openUpload } from './open'
 import {
   aiSample,
   autoDecision,
   classifyByCode,
   detectMonth,
+  looksLikeMaterialIssue,
   mapColumns,
   mergeAi,
   readRows,
   scrubSheet,
   shapeSignature,
+  stripKgGrid,
   validate,
   type Classification,
   type Confidence,
@@ -61,6 +64,9 @@ const ERR_KO: Record<string, string> = {
   fin_upload_duplicate: '같은 파일을 이미 올렸습니다 — 늘지 않았습니다.',
   fin_upload_denied: '이 회사의 재무를 넣을 권한이 없습니다.',
   fin_upload_unavailable: '아직 준비 중입니다(0070 반영 전).',
+  fin_upload_auto_blocked: '자동으로 넣지 못했습니다(겹침 · 마감 · 중복 의심) — 확인 필요로 다시 올려 주세요.',
+  fin_valuation_final_exists: '그 구분의 확정된 평가금액이 이미 있습니다 — «재고 · 평가» 화면에서 이유를 적고 바꾸세요.',
+  fin_value_state: '빈칸 · 0 표시가 맞지 않는 칸이 있습니다(빈칸은 0이 아닙니다).',
 }
 
 export function finUploadError(e: unknown): string {
@@ -92,8 +98,12 @@ export async function processUpload(o: ProcessOptions): Promise<FileCard[]> {
     const sig = shapeSignature(o.businessId, sheet, cls.headerRow)
     const learned = shapes.find((s) => s.header_sig === sig)
     let aiUsed = 0
+    // 0072 구성표 노출 금지: 원료 출고명세(로 보이는) 시트는 AI에 보내지 않는다 — 코드 분류만.
+    const noAi = cls.kind === 'material_issue' || looksLikeMaterialIssue(sheet)
     if (learned) {
       cls = { kind: learned.kind as UploadKind, confidence: 'high', headerRow: cls.headerRow, columns: learned.column_map, reason: '지난번에 사람이 고른 종류 · 칸(학습)', source: 'learned' }
+    } else if (cls.confidence !== 'high' && noAi) {
+      cls = { ...cls, reason: `${cls.reason} · 출고명세로 보이는 시트라 AI에 보내지 않음(코드 분류만)` }
     } else if (cls.confidence !== 'high' && o.classify && budget > 0) {
       const sample = aiSample(sheet, cls.headerRow)
       const start = Math.max(0, cls.headerRow - 3)
@@ -127,9 +137,11 @@ export async function processUpload(o: ProcessOptions): Promise<FileCard[]> {
     }
     const overlap = !!month.period && uploads.some((u) => u.kind === cls.kind && u.period === month.period && u.status === 'applied')
     const closed = month.period ? await o.repo.finMonthClosed(o.businessId, month.period).catch(() => false) : false
-    const decision = autoDecision({ confidence: cls.confidence, check, overlap, closed })
+    // 0072 다섯째 조건 — 다른 자료의 살아 있는 줄과 «같은 거래 의심»(순수 함수). 세지 못하면 null(자동 아님).
+    const dup = await countDupSuspects(o.repo, o.businessId, cls.kind, month.period, read.rows as FinRow[])
+    const decision = autoDecision({ confidence: cls.confidence, check, overlap, closed, dupSuspects: dup.count })
     const header = (sheet.rows[cls.headerRow] ?? []).map((c) => cellText(c).slice(0, 40))
-    const meta = { reason: cls.reason, period_how: month.how, errors: check.errors, warnings: check.warnings, why_not_auto: decision.why, columns: cls.columns, header_row: cls.headerRow, header, sig, dropped }
+    const meta = { reason: cls.reason, period_how: month.how, errors: check.errors, warnings: check.warnings, why_not_auto: decision.why, columns: cls.columns, header_row: cls.headerRow, header, sig, dropped, dup_suspects: dup.count, dup_notes: dup.notes }
     const confidenceDb = cls.confidence
     const base = { file_name: o.fileName, sheet: sheet.name, kind: cls.kind, period: month.period, ai_used: aiUsed, confidence: cls.confidence }
     try {
@@ -137,14 +149,17 @@ export async function processUpload(o: ProcessOptions): Promise<FileCard[]> {
         const id = await o.repo.finUploadApply({
           business_id: o.businessId, kind: cls.kind, period: month.period, file_name: o.fileName, file_sha256: opened.sha256, sheet_name: sheet.name,
           ai_confidence: confidenceDb, ai_used: aiUsed, auto: true, rows: read.rows as FinRow[], people: cls.kind === 'payroll' ? (read.people as FinRow[]) : null,
-          overlap: 'none', reason: null, upload_id: null,
+          overlap: 'none', reason: null, upload_id: null, dup_suspects: dup.count ?? 0,
         })
+        // 같은 거래(same) 묶음 저장 — 원천 줄은 고치지 않는다. 실패해도 넣기는 그대로(묶음은 화면에서 다시 맞춘다).
+        await saveTxGroupsFor(o.repo, o.businessId, cls.kind, month.period, id, null).catch((e) => console.error('[finance-upload] tx groups', e))
         cards.push({ ...base, status: 'applied', upload_id: id, rows: read.rows.length, message: `자동으로 넣었습니다 — ${read.rows.length}줄. 7일 안에 되돌릴 수 있습니다.`, why: [] })
       } else {
         const id = await o.repo.finUploadRecord({
           business_id: o.businessId, kind: cls.kind, period: month.period, file_name: o.fileName, file_sha256: opened.sha256, sheet_name: sheet.name,
           ai_confidence: confidenceDb, ai_used: aiUsed, status: 'needs_review',
-          pending: { rows: read.rows as FinRow[], people: cls.kind === 'payroll' ? (read.people as FinRow[]) : undefined, grid: toGrid(sheet), meta },
+          // 0072 리뷰 C1: 출고명세는 칸 격자의 kg · 수량 칸을 기록 전에 비운다(대기 줄의 kg는 DB가 넣을 때만 쓰고 아무에게도 돌려주지 않는다).
+          pending: { rows: read.rows as FinRow[], people: cls.kind === 'payroll' ? (read.people as FinRow[]) : undefined, grid: cls.kind === 'material_issue' ? stripKgGrid(toGrid(sheet), cls.headerRow, true).grid : toGrid(sheet), meta },
           error: null,
         })
         cards.push({ ...base, status: 'needs_review', upload_id: id, rows: read.rows.length, message: '확인이 필요합니다 — 아래 미리보기에서 종류 · 칸 · 기간을 보고 넣으세요.', why: decision.why })
@@ -162,7 +177,8 @@ export async function processUpload(o: ProcessOptions): Promise<FileCard[]> {
       const id = await o.repo.finUploadRecord({
         business_id: o.businessId, kind: 'unknown', period: null, file_name: o.fileName, file_sha256: opened.sha256, sheet_name: u.sheet.name,
         ai_confidence: u.cls.confidence, ai_used: u.aiUsed, status: 'needs_review',
-        pending: { rows: [], grid: toGrid(u.sheet), meta: { reason: u.cls.reason, header_row: u.cls.headerRow, header, sig: u.sig, columns: {} } },
+        // 0072 리뷰 C1 남은 일: «모름» 대기의 칸 격자에서 kg 칸을 비운다(출고명세로 보이면 수량 칸까지).
+        pending: { rows: [], grid: stripKgGrid(toGrid(u.sheet), u.cls.headerRow, looksLikeMaterialIssue(u.sheet)).grid, meta: { reason: u.cls.reason, header_row: u.cls.headerRow, header, sig: u.sig, columns: {} } },
         error: null,
       })
       cards.push({ file_name: o.fileName, sheet: u.sheet.name, kind: 'unknown', period: null, status: 'needs_review', upload_id: id, rows: 0, message: `종류를 모릅니다 — 종류를 골라 주세요. (${u.cls.reason})`, why: [], ai_used: u.aiUsed, confidence: u.cls.confidence })
@@ -197,4 +213,48 @@ export function fromGrid(name: string, grid: (string | number | null)[][]): Ecou
 /** 넣은 지 7일 안이라 되돌릴 수 있는 올리기(0070 fin_upload_revert와 같은 기준 — 판정은 DB). */
 export function revertableIds(uploads: FinUpload[], now = Date.now()): string[] {
   return uploads.filter((u) => u.status === 'applied' && !!u.applied_at && Date.parse(u.applied_at) > now - 7 * 86_400_000).map((u) => u.upload_id)
+}
+
+/**
+ * 0072 다섯째 조건 — 이 파일의 줄이 다른 자료(판매 · 입고 · 세금계산서 · 원장)의 살아 있는 줄과 «같은 거래 의심»인 묶음 수.
+ * 맞추기 종류가 아니면 0. 읽기가 실패하면 null(자동 아님).
+ */
+export async function countDupSuspects(repo: ChairmanRepository, businessId: string, kind: UploadKind, period: string | null, rows: FinRow[]): Promise<{ count: number | null; notes: string[] }> {
+  if (!TX_KINDS.includes(kind)) return { count: 0, notes: [] }
+  if (!period) return { count: null, notes: [] }
+  try {
+    const [existing, setting, saved] = await Promise.all([repo.listFinTxLines(businessId, period), repo.finDedupeSetting(businessId), repo.listFinTxGroups(businessId, period)])
+    const groups = matchTx([...existing, ...txLinesFromRows(kind, rows)], setting, rejectedPairs(saved))
+    const mine = groups.filter((g) => g.status === 'suspect' && g.refs.some((r) => r.startsWith('new:')))
+    return { count: countNewSuspects(groups), notes: mine.slice(0, 10).map((g) => `${g.refs.filter((r) => r.startsWith('new:')).map((r) => r.slice(4) + '행').join(' · ')} — ${describeGroup(g)}`) }
+  } catch (e) {
+    console.error('[finance-upload] dup count', e)
+    return { count: null, notes: [] }
+  }
+}
+
+/**
+ * 넣은 뒤 — 이 올리기의 줄이 든 묶음(same · suspect)을 저장한다(fin_tx_group_save). 이미 묶인 줄은 다시 묶지 않는다.
+ * 원천 줄은 고치지 않는다. 돌려주는 값: 저장한 묶음 수.
+ */
+export async function saveTxGroupsFor(repo: ChairmanRepository, businessId: string, kind: string, period: string | null, uploadId: string, reason: string | null): Promise<number> {
+  if (!period || !(TX_KINDS as readonly string[]).includes(kind)) return 0
+  const [lines, setting, saved] = await Promise.all([repo.listFinTxLines(businessId, period), repo.finDedupeSetting(businessId), repo.listFinTxGroups(businessId, period)])
+  const mineRefs = new Set(lines.filter((l) => l.upload_id === uploadId).map((l) => l.ref))
+  let n = 0
+  for (const g of matchTx(lines, setting, rejectedPairs(saved))) {
+    if (!g.refs.some((r) => mineRefs.has(r))) continue
+    await repo.finTxGroupSave({
+      business_id: businessId,
+      period,
+      status: g.status,
+      members: g.refs.map((r) => ({ source_table: r.slice(0, r.indexOf(':')) as FinTxGroupSaveInput['members'][number]['source_table'], line_id: Number(r.slice(r.indexOf(':') + 1)) })),
+      evidence: g.evidence,
+      amount_base_ref: g.amount_base_ref,
+      qty_base_ref: g.qty_base_ref,
+      reason,
+    })
+    n += 1
+  }
+  return n
 }

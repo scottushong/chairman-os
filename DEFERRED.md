@@ -2703,3 +2703,41 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - 리뷰 반영(2026-10-12): A 프로젝트 id 회사 확인(process_sync_project_conflict) · B tasks_external_scope(시트 업무 = 담당자 본인 또는 탭을 보는 사람, AI Agent 0) · C process_chart_visible_to를 authenticated에서 회수 · 빈 시트(넣을 줄 0)는 거부하고 실패 기록(경고)만 — 시트를 통째로 비우면 업무가 «사라짐»이 되지 않는다(다른 선택지: 빈 시트 = 전부 사라짐).
 - (2026-10-12 고침) 위 «FORCE를 내렸다»는 대표 지시로 되돌렸다 — 0071은 FORCE를 유지하고 동기화 함수 넷만 통로(process_chart_sync_ctx, 함수 SET 절)로 지나간다(cbb3e14). 다른 선택지: FORCE 내리기(처음 판) · 소유자 통과 정책(FORCE를 무의미하게 만듦).
 - 0071 FORCE 리뷰 Minor(미룸): ① 다시 만든 restrictive 셋(ai_agent_no_insert/update · process_charts_ai_no_write)이 PUBLIC → to authenticated(규칙 «정책은 to authenticated») — authenticated에 속하지 않고 BYPASSRLS도 아닌 소유자에서만 차이. ② 통로는 함수 하나에 묶이지 않는다(설정값을 켤 길이 사람에게 없어서 안전). ③ check-force-rls.mjs는 disable row level security · 동적 execute · «if exists only» 순서 · 글자 안의 주석 기호를 보지 않는다.
+
+## 2026-10-12 0072 회계 · 재무 v2.1 차이분(DB · B1) — 고른 것 · 다른 선택지
+- 자동 다섯째 조건은 인자 p_dup_suspects int default null(앱이 순수 함수로 센 «중복 의심» 수 > 0이거나 안 보냈으면 자동 거부 — 리뷰 반영, 잊은 호출은 닫힌 쪽). 넣기 전에는 이 올리기의 줄이 없어 DB가 fin_tx_groups로 셀 수 없다. 지금 앱(0070 시절)의 자동 넣기는 B2가 값을 보낼 때까지 미리보기로 돈다. 0070 staging 시험은 15인자 판이 있으면 0을 보낸다(to_regprocedure). 다른 선택지: 넣은 뒤 suspect 묶음을 세어 되돌림.
+- fin_upload_apply는 인자가 늘어 drop + create(0070 본문을 한 줄씩 옮기고 새 종류 · 칸 · 조건 · 재마감만 더함). fin_upload_void/unvoid/revert도 다시 만듦(revert도 마감 달이면 재마감 대상 cause=revert).
+- 평가금액 엑셀 · PDF 넣기는 별도 RPC가 아니라 fin_upload_apply의 새 종류 'valuation'(되돌리기 · 겹침 · 같은 파일이 다른 종류와 똑같이 돈다). 그 구분에 살아 있는 «확정» 줄이 있으면 fin_valuation_final_exists(확정은 화면에서 이유와 함께만 바꿈). 출처는 파일 이름이 .pdf면 pdf.
+- 원장 거래 줄은 새 종류 'ledger_lines'(0070 'ledger' = 월 합계는 그대로).
+- 상태 칸(…_state)을 단 값: 재고 기말 · 기초, 평가금액, 첫 달 기초, 원료 kg, 세금계산서 공급가액 · 세액, 판매 · 입고 세액. 원장 거래 줄의 차변 · 대변 · 세금계산서 합계는 null = 빈칸만(한쪽이 비는 것이 보통). 앱이 상태 없이 0을 보내면 거부(fin_value_state) — «0 확인»은 앱이 말해야 한다.
+- 0070 재고 줄 상태 백필: null → missing · 0 → confirmed_zero(파일에 0이 적혀 있었다) · 그 밖 → value. 리뷰 I3: 0070 시절 칸(재고 기말 금액)은 지금 앱이 상태 없이 0을 보내도 0 확인으로 받는다(빈칸은 null로 옴). 0072 새 칸만 상태 없는 0을 거부.
+- 기초재고 연결 우선순위: 앞 달 확정 기말 → 첫 달 직접 입력 → 미연결. 원재료는 «확정» 단계가 없어 앞 달 재고금액명세서 기말 합을 앞 달 기말로 본다. 명세서 기초(statement_opening)는 원재료만(재공품 · 완제품 줄 구분이 명세서에 없음).
+- 원재료 기말에 빈칸 줄이 섞이면 아는 줄만 더하고 빈칸 줄 수(missing_lines)를 함께 준다(전부 빈칸이면 null).
+- 첫 달 기초(fin_inventory_openings)는 확정 RPC를 두지 않음(confirmed_by 칸만 — B2에서 필요하면).
+- 원료 출고 요약(리뷰 I2): 합계 kg는 그 달 «확인 필요» 0 AND 생산 투입 원료 3가지 이상일 때만, 100kg 반올림. 아니면 null + 까닭(needs_review_open · too_few_materials). 대표 세션도 표의 kg 칸은 못 읽는다(요약만).
+- 남은 위험(리뷰 I2): 같은 달 출고를 «바꾸기» 올리기로 다시 넣으면 전후 합계 차이(100kg 반올림 뒤)로 바뀐 원료의 kg를 대략 짐작할 수 있다. 막으려면 합계를 마감 후에만 보이거나 대표 · CFO로 좁혀야 한다 — 다음 블록에서 결정.
+- 리뷰 I2: fin_inventory_lines.used_qty(품목별 한 달 사용 kg)는 앱이 읽지 않아(src 확인) authenticated 열 grant에서 뺐다. 필요해지면 대표 · CFO 정의자 함수로.
+- 리뷰 C1: 원료 출고 미리보기 대기 줄(fin_upload_pending)은 누구에게도 kg · 칸 격자를 싣지 않는다(대표 · CFO도). 넣을 때 kg는 DB에 둔 대기 줄에서 줄 번호로 붙인다(앱이 보낸 kg는 대기 줄에 그 줄이 없을 때만). 남은 틈: «모름(unknown)»으로 기록된 대기의 칸 격자는 그대로 나간다 — B2 앱이 출고명세로 보이는 시트의 kg 칸을 기록 전에 지워야 한다(④ 원료 투입 줄을 앱이 버리는 것과 같은 자리). 감사 · 알림 · 오류 문구에는 kg를 싣지 않는다(fin_upload_record의 오류 문구는 앱이 쓰는 글).
+- 원료 출고 구분: 앱 규칙이 production · non_production을 보낼 때 이유(class_reason, 규칙 이름) 2자 이상 필수(검사 제약). 일괄 결정은 «확인 필요» 줄의 구분 칸만 바꾼다(원천 칸은 그대로).
+- 같은 거래 묶음: «다른 거래»로 정하면 줄을 묶음에서 풀고(released_at) 기록은 남긴다 — 한 줄은 살아 있는 묶음 하나에만(부분 유일 색인). 기준 줄은 'fin_표:줄' 글자(amount_base_ref · qty_base_ref).
+- 재마감 대상 풀기 fin_reclose_clear(can_close_books). 평가금액 · 첫 달 기초 · 일괄 결정도 마감 달이면 대표 · CFO + 이유만이고 재마감 대상을 남긴다(cause valuation · opening · upload).
+- 시드 A안: 표시하는 동안 아홉 표의 사용자 트리거를 끔(updated_at · 결재선 트리거가 «사람이 손댄 시드»로 바꾸지 않게 — 0049 방식). 숨김 정책은 restrictive select to authenticated, 판정 auth_role() = 'Chairman'(정의자 경로도 부른 사람 기준). 화면의 «예시» 꼬리표 · 토글은 B2/다음 블록.
+- 리뷰: 같은 거래 묶음 저장 · 결정도 마감 달이면 대표 · CFO + 이유 · 재마감 대상(fin_tx_group_save에 p_reason default null). 기준 줄(amount_base_ref · qty_base_ref)은 그 묶음의 줄이어야 한다(fin_tx_base_ref). 0줄 일괄 결정은 재마감 대상을 남기지 않는다.
+- 시드 A안 정의자(리뷰): staging · 운영 postgres는 BYPASSRLS라 정의자 함수는 restrictive를 안 탄다. 시드 표를 읽는 정의자 19개 중 예시 내용을 대표 아닌 세션에 돌려주는 company_progress(직원 회사 카드) · founder_dependency_rows(회사 대표 의존도)만 0072에서 거름을 더해 다시 만들었다(둘 다 anon execute도 이름으로 걷음). 남긴 것: approval_attachment_ok · approval_decide · approval_ledger_log · lead_bundle · lead_decide · quote_* · staff_admin_invite · org_access_lookup · cost_purchase_candidates · cost_dismissal/lot_source_check · decisions_* 트리거 · user_profiles_draft_grant(앱이 만든 결재 id로만 움직이거나 내용을 돌려주지 않음) · project_business_id(열쇠만) · process_chart_sync_apply(AI Agent · pc_ 줄만). calendar_items 뷰는 security_invoker라 restrictive를 탄다. 아침 브리핑 · 주의 점수는 대표 전용, 직원 AI 도구는 사람 세션(RLS)이라 거름이 탄다.
+- (미룸) 원재료 기초: 앞 달 명세서에 빈칸 줄이 섞이면 아는 줄만 더한 합을 앞 달 기말로 쓴다 — 앞 달 missing_lines를 기초 쪽에도 보여 줘야 한다(B2 화면).
+- (미룸) 되돌리기(fin_upload_unvoid)는 올리기가 무효로 만든 평가금액만 되살린다 — 손으로 저장했다가 엑셀 올리기에 밀린 평가금액은 되돌려도 살아나지 않는다(사람이 다시 저장).
+
+## 2026-10-12 0072 B2(앱) — 고른 것 · 다른 선택지
+- 평가금액 · 기초재고 · 원료 출고는 하위 화면 /finance/<회사>/valuation(«재고 · 평가» 탭)으로 뺐다 — 올리기 화면이 이미 길다. 다른 선택지: 올리기 화면 안 접힘 칸.
+- 같은 거래 맞추기는 같은 달 안에서만(fin_tx_group_save가 한 달 줄만 받는다) — ±3일이 달을 넘는 짝(9/30 ↔ 10/2)은 못 잡는다. 다른 선택지: 앞 · 뒤 달 줄도 읽어 «달 넘김 의심»으로만 보이기.
+- 원장 거래 줄의 방향은 차변 = 매입 쪽 · 대변 = 매출 쪽으로 본다(차 · 대 둘 다 있는 줄은 맞추지 않음). 세액 빈칸이면 세후 = 세전 × 1.1도 맞춰 본다. 다른 선택지: 계정코드 표로 방향을 정함.
+- «다른 거래»로 푼 짝은 다음 맞추기에서 다시 묶지 않는다(rejectedPairs). 다른 선택지: 다시 «중복 의심»으로 띄움.
+- 출처(source_system)는 시트 제목 낱말(R2 · ECOUNT · 이카운트)로만 읽고 모르면 other. 다른 선택지: 올릴 때 사람이 고름.
+- 원료 출고 규칙: 비생산 낱말(샘플 · 폐기 · 반품 · 이동 · 조정)을 먼저 보고, 생산 낱말과 엇갈리면 «확인 필요». needs_review의 class_reason은 미리보기에만 보이고 DB에는 남지 않는다(0072가 null로 넣음).
+- «모름» 대기의 칸 격자는 kg · 킬로 · 중량 머리글 칸을 기록 전에 비운다(출고명세로 보이면 수량 칸까지). 그래서 «모름»으로 올린 출고명세를 손으로 출고명세로 바꾸면 kg가 비어 들어간다 — 다시 올려야 한다(이제 코드가 출고명세를 알아본다).
+- 출고명세 시트는 원료 · 자재 + 출고 · 불출 낱말이 앞 8줄에 있으면 AI에 보내지 않는다(종류 판정과 따로 — 넓게 막는다). AI 종류 목록(AI_KIND_SPECS)에도 없다.
+- 수량 0 · 재고 음수 줄은 경고(보여 주기만)로 둔다 — 경고는 자동 넣기를 막는다(0070 규칙 그대로). 출고명세는 줄마다 kg 문구를 만들지 않는다.
+- fin_upload_apply 호출은 p_dup_suspects를 보내고, 0072 전 DB(PGRST202)면 옛 14개 인자로 한 번 더 부른다(master 배포 먼저 가도 올리기가 선다).
+- 예시 표시: live는 is_example 칸을 따로 읽어(eq is_example) id 집합으로 붙인다 — 0072 전 DB(42703)는 빈 집합. «예시 숨기기»는 URL ?examples=hide(보는 사람마다, 저장 없음). 꼬리표는 대표 홈 패널 다섯(결정 · 대기 · 알림 · 전략 좌표 · 야간 브리핑)만 — /projects · /tasks 목록은 다음 블록.
+- dummy에 화면 확인용 예시(biz_dy 2026-08 · 2026-09, 가짜 값)를 처음 읽을 때 넣는다 — 재마감 대상 예시 한 줄은 마감 여부와 상관없이 넣었다(dummy 화면 확인용).
+- dummy founder_dependency는 0003 시드 결정을 쓰지 않아(고정 예시 줄) 거름을 옮기지 않았다. company_progress는 직원 세션에서 예시 프로젝트를 뺀다.

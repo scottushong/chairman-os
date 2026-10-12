@@ -15,6 +15,8 @@ export interface TopGoal {
   current_value: string
   progress_pct: Percent
   due: IsoDate
+  /** 0072 시드 정리 A안 — 0003 예시 줄. 대표 세션에서만 온다(직원 세션은 DB가 거른다). 화면은 «예시» 꼬리표. */
+  is_example?: boolean
 }
 
 /** CH-012. 이번 달 최우선 과제. Chairman이 직접 고쳐 쓰는 칸이다. */
@@ -25,6 +27,8 @@ export interface MonthlyPriority {
   detail: string
   owner: UserId
   weight: WorkPriority
+  /** 0072 시드 정리 A안 — 0003 예시 줄. 대표 세션에서만 온다(직원 세션은 DB가 거른다). 화면은 «예시» 꼬리표. */
+  is_example?: boolean
 }
 
 /** CH-013. Impact/Urgency 순으로 정렬해 상위 1~3개만 노출한다. */
@@ -35,6 +39,8 @@ export interface CriticalRisk {
   impact: Severity
   urgency: Severity
   detail: string
+  /** 0072 시드 정리 A안 — 0003 예시 줄. 대표 세션에서만 온다(직원 세션은 DB가 거른다). 화면은 «예시» 꼬리표. */
+  is_example?: boolean
 }
 
 /** CH-014. D-Day는 저장하지 않고 deadline에서 계산한다. */
@@ -44,6 +50,8 @@ export interface NextMilestone {
   title: string
   owner: UserId
   deadline: IsoDate
+  /** 0072 시드 정리 A안 — 0003 예시 줄. 대표 세션에서만 온다(직원 세션은 DB가 거른다). 화면은 «예시» 꼬리표. */
+  is_example?: boolean
 }
 
 /**

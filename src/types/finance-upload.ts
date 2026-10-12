@@ -47,6 +47,9 @@ export interface FinUploadPending {
     header?: string[]
     sig?: string
     dropped?: { materialRows: number; personCols: number; cardNumbers: number }
+    /** 0072 다섯째 조건 — 다른 자료와 «같은 거래 의심» 묶음 수(null = 세지 못함) · 한 줄 설명(금액 없음) */
+    dup_suspects?: number | null
+    dup_notes?: string[]
   }
 }
 
@@ -65,6 +68,11 @@ export interface FinUploadApplyInput {
   overlap: FinUpload['overlap']
   reason: string | null
   upload_id: string | null
+  /**
+   * 0072 다섯째 조건 — 앱이 순수 함수(dedupe.ts)로 센 «자료 간 중복 의심» 묶음 수. 자동(auto)이면 늘 수(0 이상)를 보낸다
+   * (null이면 DB가 자동을 거부한다). 손으로 넣기는 null이어도 된다.
+   */
+  dup_suspects?: number | null
 }
 
 export interface FinUploadRecordInput {
@@ -87,4 +95,178 @@ export interface FinUploadShape {
   sheet_name: string | null
   kind: string
   column_map: Record<string, number>
+}
+
+/* ───────────────────────── 0072 회계 · 재무 v2.1 차이분 ───────────────────────── */
+
+/** 값 상태 — 빈칸(missing, 값 null) · 0 확인(confirmed_zero) · 값(value). 빈칸은 0이 되지 않는다. */
+export type ValueState = 'missing' | 'confirmed_zero' | 'value'
+
+export type ValuationCategory = 'wip' | 'finished'
+export type CostScope = 'material_only' | 'material_labor_overhead'
+
+/** 0072 fin_inventory_valuations 한 줄(이름은 앱이 붙인다). */
+export interface FinValuation {
+  valuation_id: string
+  business_id: string
+  period: string
+  category: ValuationCategory
+  amount: number | null
+  value_state: ValueState
+  valuation_date: string | null
+  method: string | null
+  cost_scope: CostScope
+  source: 'manual' | 'excel' | 'pdf'
+  source_upload_id: string | null
+  source_ref: string | null
+  note: string | null
+  status: 'entering' | 'provisional' | 'final'
+  entered_by: string
+  entered_by_name: string | null
+  entered_at: string
+  confirmed_by: string | null
+  confirmed_by_name: string | null
+  confirmed_at: string | null
+  voided_at: string | null
+  void_reason: string | null
+}
+
+export interface FinValuationSaveInput {
+  business_id: string
+  period: string
+  category: ValuationCategory
+  amount: number | null
+  state: ValueState
+  valuation_date: string | null
+  method: string | null
+  cost_scope: CostScope
+  source: 'manual' | 'excel' | 'pdf'
+  upload_id: string | null
+  source_ref: string | null
+  note: string | null
+  status: 'entering' | 'provisional'
+  reason: string | null
+}
+
+/** 0072 fin_valuation_warnings — 보여 주기만(고치지 않는다). */
+export interface FinValuationWarning {
+  kind: 'scope_mismatch' | 'wip_finished_duplicate'
+  category: string
+  message: string
+  detail: Record<string, unknown> | null
+}
+
+export type RollCategory = 'raw' | 'wip' | 'finished'
+
+/** 0072 fin_inventory_roll 한 줄 — 기초 · 기말 · 명세서 기초와 차이(고치지 않는다). */
+export interface FinInventoryRollRow {
+  category: RollCategory
+  opening_amount: number | null
+  opening_state: ValueState | null
+  /** prev_close(전월 확정 기말) · manual(직접 입력) · statement(재고금액명세서) · unlinked(미연결) */
+  opening_source: 'prev_close' | 'manual' | 'statement' | 'unlinked'
+  closing_amount: number | null
+  closing_state: ValueState
+  closing_status: 'entering' | 'provisional' | 'final' | null
+  missing_lines: number
+  statement_opening: number | null
+  diff_vs_prev_close: number | null
+}
+
+export interface FinOpeningSaveInput {
+  business_id: string
+  period: string
+  category: RollCategory
+  amount: number | null
+  state: ValueState
+  source: 'manual' | 'statement'
+  upload_id: string | null
+  note: string
+}
+
+/** 0072 fin_issue_summary — 이것만 온다(원료별 kg 없음). */
+export interface FinIssueSummary {
+  production_input_kg: number | null
+  input_withheld: 'needs_review_open' | 'too_few_materials' | null
+  input_missing_lines: number
+  production_qty_kg: number | null
+  lines: { production: number; non_production: number; needs_review: number }
+  needs_review: { material: string; lines: number }[]
+}
+
+export type IssueClass = 'production' | 'non_production' | 'needs_review'
+export type NonProductionKind = 'sample' | 'scrap' | 'return' | 'transfer' | 'adjust'
+
+export interface FinIssueBulkInput {
+  business_id: string
+  period: string
+  material: string
+  class: Exclude<IssueClass, 'needs_review'>
+  non_production_kind: NonProductionKind | null
+  reason: string
+}
+
+export type TxSourceTable = 'fin_sales_lines' | 'fin_purchase_in_lines' | 'fin_tax_invoice_lines' | 'fin_ledger_lines'
+export type TxSourceSystem = 'r2' | 'ecount' | 'ledger' | 'tax_invoice' | 'other'
+
+/** 같은 거래 맞추기의 줄 하나(살아 있는 줄 — 원천 줄은 고치지 않는다). */
+export interface FinTxLine {
+  /** 'fin_purchase_in_lines:12' — 아직 안 넣은 줄은 'new:<row_no>' */
+  ref: string
+  upload_id: string | null
+  source: TxSourceSystem
+  direction: 'sales' | 'purchase'
+  date: string | null
+  counterparty: string | null
+  item: string | null
+  account: string | null
+  /** 공급가(세전). 빈칸은 null. */
+  amount: number | null
+  vat: number | null
+  /** 합계(세후)가 따로 있으면 */
+  total: number | null
+  qty: number | null
+  row_no: number
+  /** 이미 살아 있는 묶음에 든 줄이면 그 묶음 */
+  group_id: string | null
+}
+
+export interface FinTxGroup {
+  group_id: string
+  business_id: string
+  period: string
+  status: 'same' | 'suspect' | 'rejected'
+  evidence: Record<string, unknown> | null
+  amount_base_ref: string | null
+  qty_base_ref: string | null
+  saved_at: string
+  decided_at: string | null
+  reason: string | null
+  members: { source_table: TxSourceTable; line_id: number; released: boolean }[]
+}
+
+export interface FinTxGroupSaveInput {
+  business_id: string
+  period: string
+  status: 'same' | 'suspect'
+  members: { source_table: TxSourceTable; line_id: number }[]
+  evidence: Record<string, unknown> | null
+  amount_base_ref: string | null
+  qty_base_ref: string | null
+  reason: string | null
+}
+
+export interface FinDedupeSetting {
+  amount_base: 'ledger' | 'tax_invoice' | 'r2_ecount'
+  qty_base: 'r2_ecount' | 'ledger'
+}
+
+export interface FinRecloseFlag {
+  flag_id: string
+  business_id: string
+  period: string
+  upload_id: string | null
+  cause: 'upload' | 'revert' | 'valuation' | 'opening'
+  reason: string | null
+  created_at: string
 }

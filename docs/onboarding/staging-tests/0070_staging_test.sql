@@ -50,7 +50,14 @@ begin
   perform set_config('request.jwt.claims', json_build_object('sub', v_staff, 'role', 'authenticated')::text, true);
   perform set_config('request.jwt.claim.sub', v_staff::text, true);
   set local role authenticated;
-  v_u1 := public.fin_upload_apply('biz_dy', 'sales', '2099-01', '가짜 판매현황.xlsx', sha1, '판매현황', 'high', 1, true, rows1, null, 'none', null, null);
+  -- 0072부터 자동 넣기는 «중복 의심 수»(15번째 인자)를 보내야 한다(안 보내면 거부). 0070만 있는 DB에서도 돌게 둘 다 둔다.
+  if to_regprocedure('public.fin_upload_apply(text,text,text,text,text,text,text,integer,boolean,jsonb,jsonb,text,text,uuid,integer)') is not null then
+    execute 'select public.fin_upload_apply($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)' into v_u1
+      using 'biz_dy'::text, 'sales'::text, '2099-01'::text, '가짜 판매현황.xlsx'::text, sha1, '판매현황'::text, 'high'::text, 1, true, rows1,
+            null::jsonb, 'none'::text, null::text, null::uuid, 0;
+  else
+    v_u1 := public.fin_upload_apply('biz_dy', 'sales', '2099-01', '가짜 판매현황.xlsx', sha1, '판매현황', 'high', 1, true, rows1, null, 'none', null, null);
+  end if;
   select count(*) into n from public.fin_sales_lines where upload_id = v_u1 and voided_at is null;
   if n <> 2 then raise exception 'FAIL a: 판매 줄이 2가 아니다(%)', n; end if;
   select count(*) into n from public.notifications where user_id = v_staff and link = '/finance/biz_dy/upload' and created_at > now() - interval '1 minute';
