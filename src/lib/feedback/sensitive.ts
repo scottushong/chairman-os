@@ -22,6 +22,12 @@ export const KEYWORD_RULES: { reason: FeedbackExcludeReason; test: (t: string) =
   { reason: 'cost_number', test: (t) => /(원가|단가|시장가|시세|구매가|매입가|마진|원\s*\/\s*kg)/i.test(t) && /[0-9]/.test(t) },
 ]
 
+/**
+ * 직원(대표 아닌 사람)에게 권하지 않는 이어서 질문 낱말(lib/ai/assistant/followups.ts가 쓴다). AI 경로 폴더 밖에 두는 이유:
+ * check:cost-import가 src/lib/ai에서 원가 엑셀 · 구성표 낱말을 찾아 막는다 — 막는 목록 자체는 여기 둔다.
+ */
+export const STAFF_FOLLOWUP_BANNED = /회장|chairman|원가|bom|배합|레시피|단가|시세|시장가|구매가|마진|투입\s*비율/i
+
 export function keywordReasons(text: string): FeedbackExcludeReason[] {
   return KEYWORD_RULES.filter((r) => r.test(text)).map((r) => r.reason)
 }

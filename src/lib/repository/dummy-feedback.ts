@@ -1,5 +1,5 @@
 import { keywordReasons } from '@/lib/feedback/sensitive'
-import { buildInstruction } from '@/lib/feedback/triage'
+import { buildInstruction } from '@/lib/feedback/instruction'
 import { COST_AREAS, type AiFeedback, type AiFeedbackBundle, type ModuleGrant, type PersonAccess, type Team, type UserAccount } from '@/types'
 
 import { dummyOwnAnswer } from './dummy-assistant'

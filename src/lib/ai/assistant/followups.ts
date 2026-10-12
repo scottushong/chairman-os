@@ -1,6 +1,8 @@
 import { isChairman } from '@/lib/boss'
 import type { PersonAccess, Role } from '@/types'
 
+import { STAFF_FOLLOWUP_BANNED as STAFF_BANNED } from '@/lib/feedback/sensitive'
+
 import type { ScreenKind } from './screen'
 
 /**
@@ -15,7 +17,6 @@ import type { ScreenKind } from './screen'
  * ■ 셋이 서로 다르다 ■ 띄어쓰기 · 문장부호를 뺀 글이 같거나 한쪽이 다른 쪽을 품으면 겹친 것으로 본다.
  */
 
-const STAFF_BANNED = /회장|chairman|원가|bom|배합|레시피|단가|시세|시장가|구매가|마진|투입\s*비율/i
 const FINANCE_WORDS = /매출|ebitda|재무|현금|이익|원가|손익|런웨이|runway|revenue|profit|cash|finance|p&l|영업이익|순이익|비용 합계|전표|장부|결산/i
 const INITIATIVE_WORDS = /이니셔티브|initiative/i
 const CHAIRMAN_ONLY_WORDS = /주의\s*항목|의존도|아침\s*루틴|회장\s*방향|attention/i
