@@ -2703,3 +2703,19 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - 리뷰 반영(2026-10-12): A 프로젝트 id 회사 확인(process_sync_project_conflict) · B tasks_external_scope(시트 업무 = 담당자 본인 또는 탭을 보는 사람, AI Agent 0) · C process_chart_visible_to를 authenticated에서 회수 · 빈 시트(넣을 줄 0)는 거부하고 실패 기록(경고)만 — 시트를 통째로 비우면 업무가 «사라짐»이 되지 않는다(다른 선택지: 빈 시트 = 전부 사라짐).
 - (2026-10-12 고침) 위 «FORCE를 내렸다»는 대표 지시로 되돌렸다 — 0071은 FORCE를 유지하고 동기화 함수 넷만 통로(process_chart_sync_ctx, 함수 SET 절)로 지나간다(cbb3e14). 다른 선택지: FORCE 내리기(처음 판) · 소유자 통과 정책(FORCE를 무의미하게 만듦).
 - 0071 FORCE 리뷰 Minor(미룸): ① 다시 만든 restrictive 셋(ai_agent_no_insert/update · process_charts_ai_no_write)이 PUBLIC → to authenticated(규칙 «정책은 to authenticated») — authenticated에 속하지 않고 BYPASSRLS도 아닌 소유자에서만 차이. ② 통로는 함수 하나에 묶이지 않는다(설정값을 켤 길이 사람에게 없어서 안전). ③ check-force-rls.mjs는 disable row level security · 동적 execute · «if exists only» 순서 · 글자 안의 주석 기호를 보지 않는다.
+
+## 2026-10-12 0072 회계 · 재무 v2.1 차이분(DB · B1) — 고른 것 · 다른 선택지
+- 자동 다섯째 조건은 인자 p_dup_suspects int default 0(앱이 순수 함수로 센 «중복 의심» 수 > 0이면 자동 거부). 넣기 전에는 이 올리기의 줄이 없어 DB가 fin_tx_groups로 셀 수 없다. 기본값 0 — 0070 앱 · 시험이 그대로 돈다(B2가 값을 보낸다). 다른 선택지: 넣은 뒤 suspect 묶음을 세어 되돌림(두 단계 · 알림이 먼저 감).
+- fin_upload_apply는 인자가 늘어 drop + create(0070 본문을 한 줄씩 옮기고 새 종류 · 칸 · 조건 · 재마감만 더함). fin_upload_void/unvoid/revert도 다시 만듦(revert도 마감 달이면 재마감 대상 cause=revert).
+- 평가금액 엑셀 · PDF 넣기는 별도 RPC가 아니라 fin_upload_apply의 새 종류 'valuation'(되돌리기 · 겹침 · 같은 파일이 다른 종류와 똑같이 돈다). 그 구분에 살아 있는 «확정» 줄이 있으면 fin_valuation_final_exists(확정은 화면에서 이유와 함께만 바꿈). 출처는 파일 이름이 .pdf면 pdf.
+- 원장 거래 줄은 새 종류 'ledger_lines'(0070 'ledger' = 월 합계는 그대로).
+- 상태 칸(…_state)을 단 값: 재고 기말 · 기초, 평가금액, 첫 달 기초, 원료 kg, 세금계산서 공급가액 · 세액, 판매 · 입고 세액. 원장 거래 줄의 차변 · 대변 · 세금계산서 합계는 null = 빈칸만(한쪽이 비는 것이 보통). 앱이 상태 없이 0을 보내면 거부(fin_value_state) — «0 확인»은 앱이 말해야 한다.
+- 0070 재고 줄 상태 백필: null → missing · 0 → confirmed_zero(파일에 0이 적혀 있었다) · 그 밖 → value(규칙 «0은 0 확인만»과 맞추려고 0을 value로 두지 않음).
+- 기초재고 연결 우선순위: 앞 달 확정 기말 → 첫 달 직접 입력 → 미연결. 원재료는 «확정» 단계가 없어 앞 달 재고금액명세서 기말 합을 앞 달 기말로 본다. 명세서 기초(statement_opening)는 원재료만(재공품 · 완제품 줄 구분이 명세서에 없음).
+- 원재료 기말에 빈칸 줄이 섞이면 아는 줄만 더하고 빈칸 줄 수(missing_lines)를 함께 준다(전부 빈칸이면 null).
+- 첫 달 기초(fin_inventory_openings)는 확정 RPC를 두지 않음(confirmed_by 칸만 — B2에서 필요하면).
+- 원료 출고 요약: 생산 투입 원료가 2가지 미만이면 합계 kg를 null(suppressed) — 하나면 합계 = 그 원료 kg가 되어 생산량과 비율이 드러난다. 대표 세션도 표의 kg 칸은 못 읽는다(요약만).
+- 원료 출고 구분: 앱 규칙이 production · non_production을 보낼 때 이유(class_reason, 규칙 이름) 2자 이상 필수(검사 제약). 일괄 결정은 «확인 필요» 줄의 구분 칸만 바꾼다(원천 칸은 그대로).
+- 같은 거래 묶음: «다른 거래»로 정하면 줄을 묶음에서 풀고(released_at) 기록은 남긴다 — 한 줄은 살아 있는 묶음 하나에만(부분 유일 색인). 기준 줄은 'fin_표:줄' 글자(amount_base_ref · qty_base_ref).
+- 재마감 대상 풀기 fin_reclose_clear(can_close_books). 평가금액 · 첫 달 기초 · 일괄 결정도 마감 달이면 대표 · CFO + 이유만이고 재마감 대상을 남긴다(cause valuation · opening · upload).
+- 시드 A안: 표시하는 동안 아홉 표의 사용자 트리거를 끔(updated_at · 결재선 트리거가 «사람이 손댄 시드»로 바꾸지 않게 — 0049 방식). 숨김 정책은 restrictive select to authenticated, 판정 auth_role() = 'Chairman'(정의자 경로도 부른 사람 기준). 화면의 «예시» 꼬리표 · 토글은 B2/다음 블록.
