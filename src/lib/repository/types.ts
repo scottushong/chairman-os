@@ -177,6 +177,10 @@ import type {
   FinDedupeSetting,
   FinRecloseFlag,
   MonthlyPlView,
+  MarginBy,
+  MarginGrain,
+  SaleDeal,
+  SalesMarginRow,
   PlAdjustmentKind,
   PlSettings,
   PlYearRow,
@@ -345,7 +349,17 @@ export interface ProcessSyncMethods {
   listProcessChartSyncs(limit?: number): Promise<ProcessChartSync[]>
 }
 
-export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods, ProductionMethods, CostsMethods, QuoteMethods, CostImportMethods, ProcessSyncMethods {
+/**
+ * PHASE 5 판매 실적 · 마진(0077 — 0067 위). 판정은 DB(feature_on('sales_margins') · 0067 sale_visible · cost_margins 문)다.
+ * listSaleDeals는 판매가 · kg · 등급만(실제 원가 · 마진 없음). salesMargins는 대표 · 원가 관리만(하루 20번 · 호출마다 감사).
+ * 0077 전 DB면 'sales_margins_unavailable'. 오류 키는 'feature_off' · 'cost_*'. dummy는 dummy-sales-margins.ts, live는 supabase-sales-margins.ts.
+ */
+export interface SalesMarginsMethods {
+  listSaleDeals(businessId: string, from: string, to: string): Promise<SaleDeal[]>
+  salesMargins(businessId: string, from: string, to: string, grain: MarginGrain, by: MarginBy): Promise<SalesMarginRow[]>
+}
+
+export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods, ProductionMethods, CostsMethods, QuoteMethods, CostImportMethods, ProcessSyncMethods, SalesMarginsMethods {
   /** 어느 쪽을 보고 있는지. 화면이 아니라 DUMMY DATA 뱃지와 로그가 쓴다. */
   readonly mode: 'dummy' | 'live'
 

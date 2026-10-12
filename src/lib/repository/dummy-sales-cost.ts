@@ -544,6 +544,11 @@ function salesView(productId: string): SalesCostView {
 
 /** dummy 대표 감시(dummy.ts costingWatch)가 세는 원가 조회 감사 줄. */
 /** 0066 dummy 견적 — 제품의 회사 · 이름(권한 판정 없음 — 견적 함수가 한다). */
+/** 0067 cost_margins의 문(cost_gate_biz 'margins:<회사>' · 'costing_list' — 하루 20번 · 호출마다 감사 · 겸직 거부). dummy-sales-margins.ts가 부른다. */
+export function dummyMarginsGate(businessId: string): { as_of: IsoDate; chairman: boolean } {
+  return gateFor(businessId, `margins:${businessId}`, 'costing_list')
+}
+
 export function dummyCostProduct(productId: string): { business_id: string; name: string } | null {
   const p = store.products.find((x) => x.product_id === productId)
   return p ? { business_id: p.business_id, name: p.name } : null

@@ -7,6 +7,7 @@ import { CostImportPanel } from '@/components/cost-import/cost-import-panel'
 import { PageHeader } from '@/components/layout/page-header'
 import { ActualTable } from '@/components/production/actual-table'
 import { recordScreenRead } from '@/lib/activity-record'
+import { featureOn } from '@/lib/features-server'
 import { kstToday } from '@/lib/chairman-project'
 import { costEngineError } from '@/lib/costs/errors'
 import { ROUNDING_NOTE } from '@/lib/costs/format'
@@ -27,6 +28,7 @@ export default async function CostsPage(props: PageProps<'/costs/[business_id]'>
   // 404 뒤에 둔다(볼 수 없는 회사의 id를 찍어 본 것은 조회가 아니다).
   await recordScreenRead({ path: `/costs/${business_id}`, kind: 'page', business_id })
   const chairman = user.role === 'Chairman'
+  const marginsOn = await featureOn(user, 'sales_margins', business_id)
   const today = kstToday()
 
   const settle = <T,>(p: Promise<T>, fallback: T, where: string, msg: string) =>
@@ -61,6 +63,14 @@ export default async function CostsPage(props: PageProps<'/costs/[business_id]'>
         code="COST-C1"
         description={asOf ? `${asOfLabel(asOf)} · 금액은 원/kg · 1원 단위` : '제품 원가 · 비용 마스터 · 배부 기준 · Actual — 금액은 원/kg'}
       >
+        {marginsOn ? (
+          <Link
+            href={`/costs/${encodeURIComponent(business_id)}/margins`}
+            className="inline-flex min-h-11 items-center rounded-md border border-line bg-panel px-2.5 text-t11h text-ink-dim hover:border-accent hover:text-ink lg:min-h-0 lg:py-1.5"
+          >
+            견적 마진 vs 실제 마진
+          </Link>
+        ) : null}
         {chairman ? (
           <Link
             href={`/costs/${encodeURIComponent(business_id)}/bom`}

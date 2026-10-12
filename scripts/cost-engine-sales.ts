@@ -196,4 +196,60 @@ export async function sales({ db, as, run, owner, p1, U }: SalesCtx) {
   assert.deepEqual([fr.c, fr.e, fr.g, fr.t], [U.sales, U.chair, 'unknown', null], '0067 I3: 대표 대체가 실적 주인을 바꾸거나 대표 값을 영업 스냅숏에 남긴다')
   assert.equal(await n(U.sales), mine + 1, '0067 I3: 대표가 대체한 줄이 영업에게 안 보인다')
   assert.equal(await n(lead), mine + 1, '0067 I3: 대표가 대체한 줄이 팀장에게 안 보인다')
+
+  await sales0077({ as, run, owner, db, U, T, lead, other })
+}
+
+/**
+ * 0077 — 스위치 문 두 개(sales_deals · sales_margins). 기본(대표만)이면 영업 · 원가 관리 거부 · 대표 됨 → 회사 전원으로 열면
+ * 영업 = 본인 · 팀 줄의 판매가 · kg · 등급만(원가 · 마진 칸 없음) · 원가 관리 = 매출도 1원 · 월 마감(0075 fin_pl_closes 확정) 표시.
+ */
+async function sales0077(x: { as: SalesCtx['as']; run: SalesCtx['run']; owner: SalesCtx['owner']; db: PGlite; U: Record<string, string>; T: string; lead: string; other: string }) {
+  const { as, run, owner, db, U, T, lead, other } = x
+  const D = (uid: string) => as<Record<string, unknown>>(uid, `select * from sales_deals('biz_dy', '${T}'::date - 30, '${T}')`)
+  const MG = (uid: string, by = 'total', grain = 'year') => as<Record<string, unknown>>(uid, `select *, period_start::text as ps from sales_margins('biz_dy', '${T}'::date - 30, '${T}', '${grain}', '${by}')`, true)
+  await db.exec(`update cost_secret.cost_reads set calls = 0 where user_id = '${U.cost}' and product_id = 'margins:biz_dy'`)
+  await refuses(D(U.sales), /feature_off/, '0077: 스위치 기본(대표만)인데 영업이 판매 실적을 읽었다')
+  await refuses(MG(U.cost), /feature_off/, '0077: 스위치 기본(대표만)인데 원가 관리가 마진을 읽었다')
+  const chair = await MG(U.chair)
+  assert.ok(chair.length > 0 && chair.every((r) => r.cost_basis === 'provisional' && r.pl_closed === false), '0077: 대표 마진 · 잠정 대체원가 표시')
+  await run(U.chair, `select feature_switch_set('sales_margins', 'biz_dy', true, 'all', '0077 시험')`)
+
+  const mineRows = await D(U.sales)
+  assert.ok(mineRows.length > 0 && mineRows.every((r) => r.mine === true), '0077: 영업 본인 실적')
+  const cols = Object.keys(mineRows[0]).sort()
+  assert.deepEqual(cols, ['currency', 'customer_company', 'customer_name', 'grade', 'grade_as_of', 'kg', 'mine', 'price_krw_per_kg', 'product_name', 'quote_id', 'revenue_krw', 'sale_id', 'shipped_on'], '0077: 영업 칸에 원가 · 마진이 섞였다')
+  assert.ok(mineRows.every((r) => Number.isInteger(Number(r.revenue_krw))), '0077: 영업 매출이 1원이 아니다')
+  assert.ok((await D(lead)).length >= mineRows.length, '0077: 영업 팀장이 팀 실적을 못 본다')
+  for (const uid of [other, U.buy, U.prod, U.cost]) assert.equal((await D(uid)).length, 0, `0077: ${uid.slice(-2)}가 남의 판매 실적을 읽는다`)
+  await refuses(MG(U.sales), /cost_not_found/, '0077: 영업이 마진을 읽었다')
+  await refuses(as(null, `select * from sales_deals('biz_dy', '${T}', '${T}')`), /permission denied/, '0077: anon이 판매 실적을 읽었다')
+
+  const tot = await MG(U.cost)
+  const expR = (await owner<{ r: string }>(`select round(sum(kg * price_krw_per_kg), 0)::text as r from cost_sales
+     where business_id = 'biz_dy' and voided_at is null and shipped_on between '${T}'::date - 30 and '${T}'`))[0].r
+  assert.equal(tot.reduce((t, r) => t + Number(r.revenue_krw), 0), Number(expR), '0077: 원가 관리 매출이 «원래 값끼리 더한 뒤 1원»이 아니다(M2)')
+  assert.ok(tot.every((r) => Number.isInteger(Number(r.revenue_krw))), '0077: 원가 관리 매출이 1원이 아니다')
+  const aud = await owner<{ n: number }>(`select count(*)::int as n from audit_log where entity_table = 'cost_products' and entity_id = 'margins:biz_dy' and actor_user_id = '${U.cost}'`)
+
+  // 이 달을 0075 내부 마감 확정으로(가짜 저장본) → 월 묶음의 이 달 줄은 «확정 매출원가 기준», 지난 달 줄은 잠정.
+  const ym = T.slice(0, 7)
+  await owner(`insert into fin_pl_closes (business_id, period, status, calc_version, method, tolerance_krw, input_hash, totals, detail, recorded_by, closed_by, closed_at)
+    values ('biz_dy', '${ym}', 'final', 'pl-test', 'monthly_wa', 1000, '${'0'.repeat(32)}', '{}', '{}', '${U.chair}', '${U.chair}', now())`)
+  const mon = await MG(U.cost, 'product', 'month')
+  assert.ok(mon.length > 0, '0077: 월 묶음 줄이 없다')
+  for (const r of mon) {
+    const closed = String(r.ps).slice(0, 7) === ym
+    assert.equal(r.cost_basis, closed ? 'closed_month' : 'provisional', `0077: ${String(r.ps)} 월 마감 표시`)
+  }
+  const yr = await MG(U.cost, 'product', 'year')
+  assert.ok(yr.every((r) => r.cost_basis === 'provisional'), '0077: 해 묶음은 모든 달이 마감돼야 «확정 매출원가 기준»')
+  const aud2 = await owner<{ n: number }>(`select count(*)::int as n from audit_log where entity_table = 'cost_products' and entity_id = 'margins:biz_dy' and actor_user_id = '${U.cost}'`)
+  assert.equal(aud2[0].n, aud[0].n + 2, '0077: sales_margins 호출마다 감사 한 줄이 아니다')
+  await db.exec(`set session_replication_role = replica; delete from fin_pl_closes where input_hash = '${'0'.repeat(32)}'; set session_replication_role = origin;`)
+
+  // 끄면 대표도 꺼진다 · 되돌림.
+  await run(U.chair, `select feature_switch_set('sales_margins', 'biz_dy', false, 'all', '0077 시험 끄기')`)
+  await refuses(MG(U.chair), /feature_off/, '0077: 스위치를 껐는데 대표가 마진을 읽었다')
+  await run(U.chair, `select feature_switch_set('sales_margins', 'biz_dy', true, 'chairman', '0077 시험 되돌림')`)
 }

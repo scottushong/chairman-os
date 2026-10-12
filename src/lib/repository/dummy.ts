@@ -50,7 +50,8 @@ import { dummyAssistant } from './dummy-assistant'
 import { dummyFeatures } from './dummy-features'
 import { dummyFeedback } from './dummy-feedback'
 import { dummyFinanceUpload } from './dummy-finance-upload'
-import { dummyMonthlyPl } from './dummy-monthly-pl'
+import { dummyMonthlyPl, dummyPlCloses } from './dummy-monthly-pl'
+import { dummySalesMargins } from './dummy-sales-margins'
 import * as chat from './dummy-chat'
 import * as city from './dummy-city'
 import * as groupware from './dummy-groupware'
@@ -871,6 +872,12 @@ export const dummyRepository: ChairmanRepository = {
     featureOn: async (b) => featureOnFor(await dummyRepository.listFeatureSwitches(), 'monthly_pl', dummyViewer().role, b),
     ledger: () => dummyRepository.loadFinanceLedger(),
     name: (u) => dummyPerson(u)?.display_name ?? null,
+  }),
+  // 0077 — 판매 실적 · 마진(dummy-sales-margins.ts). 문은 dummy 원가 엔진 문 · 스위치 'sales_margins'.
+  ...dummySalesMargins({
+    featureOn: async (b) => featureOnFor(await dummyRepository.listFeatureSwitches(), 'sales_margins', dummyViewer().role, b),
+    inSubtree: (viewer, target) => inMemorySubtree(viewer, target),
+    closedMonths: (b) => new Set(dummyPlCloses().filter((c) => c.business_id === b && c.status === 'final' && !c.superseded_at).map((c) => c.period)),
   }),
   // Phase 11 — 대화 · 제안 · 사용량(dummy-assistant.ts). 확인 감사는 이 파일의 이력 저장소로 온다.
   ...dummyAssistant((e) => {
