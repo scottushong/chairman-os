@@ -2,7 +2,8 @@ import { cellText, EMPTY_CELL, normalizeCell, type EcountCell } from '@/lib/ecou
 import { EcountExcelError, readEcountWorkbook, sha256Hex, type EcountSheet } from '@/lib/ecount/excel/workbook'
 
 /**
- * 2a. 열기(코드) — 엑셀(xlsx · csv)은 모든 시트를 칸 격자로. PDF · 사진은 2차(이번 블록 1차는 엑셀 14가지 + 자동 넣기).
+ * 2a. 열기(코드) — 엑셀(xlsx · csv)은 모든 시트를 칸 격자로. PDF · 사진은 여기서 형식만 알아보고 C단계(process.ts processDoc ·
+ * doc-open.ts)가 연다 — 입구 스위치가 꺼진 사람에게는 «준비 중»(pdfLater).
  * 못 여는 파일은 **이유를 문구로** 돌려준다(DRM · 암호 · 옛 xls · 이름만 xlsx · 깨진 파일).
  */
 
@@ -17,7 +18,7 @@ export const MSG = {
   drm: '암호 · DRM이 걸린 파일이거나 옛 엑셀(.xls)입니다 — 엑셀에서 열어 암호 · DRM을 풀고 «다른 이름으로 저장 → Excel 통합 문서(.xlsx)»로 저장해 올려 주세요.',
   fakeXlsx: '이름은 엑셀인데 내용이 엑셀이 아닙니다(웹 표 · 텍스트일 수 있습니다) — 엑셀에서 열어 xlsx로 다시 저장해 올려 주세요.',
   broken: '파일이 깨져 열 수 없습니다 — 원본을 다시 내려받아 올려 주세요.',
-  pdfLater: 'PDF · 사진 읽기는 준비 중입니다(2차) — 같은 자료를 엑셀로 내려받아 올려 주세요.',
+  pdfLater: 'PDF · 사진은 준비 중입니다 — 같은 자료를 엑셀로 내려받아 올려 주세요(엑셀은 그대로 받습니다).',
   payrollDoc: '급여대장은 엑셀로 올려 주세요 — PDF · 사진은 이름 · 주민번호를 지울 수 없어 AI에 보내지 않습니다.',
   productionDoc: '제조지시명세서는 엑셀로 올려 주세요 — PDF · 사진은 원료 투입 줄을 지울 수 없어 AI에 보내지 않습니다.',
   tooBig: '20MB가 넘는 파일입니다 — 기간을 나눠 내려받아 올려 주세요.',

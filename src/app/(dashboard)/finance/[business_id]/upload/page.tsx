@@ -18,6 +18,7 @@ import { won } from '@/lib/finance-upload/v21-text'
 import { KIND_SPECS } from '@/lib/finance-upload/kinds'
 import { kstToday } from '@/lib/chairman-project'
 import { revertableIds } from '@/lib/finance-upload/process'
+import { intakeOpenFor } from '@/lib/intake/switch'
 import { firstParam } from '@/lib/query'
 import { getRepository } from '@/lib/repository'
 import { FINANCE_IMPORT_KIND } from '@/types'
@@ -72,6 +73,11 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
     }))
   }
   const limits = aiLimits()
+  // C단계 PDF · 사진 — 입구 스위치가 꺼지면 대표만. 공식 결산 계정 맞추기용 계정(그 회사 · 사용 중).
+  const docsOpen = canKeep && intakeOpenFor(user)
+  const accounts = docsOpen
+    ? ((await repo.loadFinanceLedger().catch(() => null))?.accounts ?? []).filter((a) => a.business_id === business_id && a.active).map((a) => ({ account_code: a.account_code, name: a.name, section: a.section }))
+    : []
   const revertable = revertableIds(uploads)
 
   // 0072 — 같은 거래 묶음 · 기준 출처 · 재마감 대상(0072 전 DB는 빈 목록).
@@ -124,6 +130,8 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
             role={user?.role ?? 'Member'}
             ai={{ on: limits.perFile > 0 && limits.perDay > 0, perFile: limits.perFile, perDay: limits.perDay }}
             revertable={revertable}
+            docsOpen={docsOpen}
+            accounts={accounts}
           />
           <div className="mt-4">
             <FinanceTxPanel businessId={business_id} month={month} groups={txGroups} lines={lineLabels} setting={dedupe} />

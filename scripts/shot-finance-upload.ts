@@ -142,8 +142,104 @@ async function v21() {
   }
 }
 
+/**
+ * C단계 PDF · 사진(SHOT_OUT=.screenshots/finance-pdf). 서버는 FINANCE_UPLOAD_AI_MOCK=1 + 한도 env(가짜 읽기 — 진짜 AI 0회).
+ *   pdf-chair(DUMMY_USER=chairman): 합계 틀린 카드 PDF → «확인 필요» 미리보기 · 급여대장 PDF · 배합비 PDF 거부 · 결산서 PDF → 공식 결산
+ *   pdf-staff(DUMMY_USER=support_lead): PDF → «PDF · 사진은 준비 중» · 엑셀은 그대로 넣힘 · «회장» 0
+ */
+async function pdfShots() {
+  const { textPdf } = await import('./fixtures/finance-pdf')
+  mkdirSync(OUT, { recursive: true })
+  const dir = join(OUT, 'files')
+  mkdirSync(dir, { recursive: true })
+  const ym = '2099-06'
+  const t = (x: string) => [`회사명 : (주)가짜산업 / 2099/06/01 ~ 2099/06/30 / ${x}`]
+  const put = (name: string, bytes: Uint8Array) => {
+    writeFileSync(join(dir, name), Buffer.from(bytes))
+    return join(dir, name)
+  }
+  const cardWrong = put('가짜 법인카드 6월.pdf', textPdf([[t('법인카드 사용내역'), ['이용일', '가맹점', '사용부서', '카드번호', '이용금액'], [`${ym}-04`, '가짜 식당', '경영지원', '1234-5678-9012-3456', 30000], [`${ym}-06`, '가짜 문구', '영업', '1234-5678-9012-3456', 12000], ['합계', null, null, null, 45000]]], 200))
+  const payroll = put('가짜 6월 자료.pdf', textPdf([[['급여대장 2099년 6월'], ['사번', '성명', '부서', '기본급'], ['E001', '가짜이름일', '경영지원', 3000000]]]))
+  const formula = put('가짜 배합비.pdf', textPdf([[['가짜 제품 배합'], ['원료', '비율'], ['가짜 원료 가', 50]]]))
+  const stmt = put('2025 표준재무제표.pdf', textPdf([[
+    ['표준재무제표'], ['제 5기 2025년 01월 01일 ~ 2025년 12월 31일'], ['재무상태표'],
+    ['현금및현금성자산', 1000000], ['외상매출금', 500000], ['유형자산', 2000000], ['감가상각누계액', '(300,000)'], ['자산총계', 3200000],
+    ['외상매입금', 400000], ['차입금', 1000000], ['부채총계', 1400000], ['자본금', 1800000], ['자본총계', 1800000],
+    ['손익계산서'], ['제품매출', 5000000], ['원재료비', 3000000], ['급여(판관)', 800000], ['영업이익', 1200000],
+  ]]))
+  const staffPdf = put('가짜 판매현황.pdf', textPdf([[t('판매현황'), ['거래처명', '품목명', '수량', '단가', '공급가액'], ['가짜 거래처 A', '가짜 제품 1', 10, 1000, 10000], ['합계', null, 10, null, 10000]]]))
+  await xlsx(join(dir, '가짜 판매현황 직원.xlsx'), '판매현황', [t('판매현황'), ['거래처명', '품목명', '수량', '단가', '공급가액'], ['가짜 거래처 S', '가짜 제품 9', 3, 1000, 3000], ['합계', null, 3, null, 3000]])
+  const staffXlsx = join(dir, '가짜 판매현황 직원.xlsx')
+
+  const browser = await chromium.launch()
+  const shots: string[] = []
+  const shoot = async (page: Page, name: string, full = true) => {
+    const path = join(OUT, name)
+    await page.screenshot({ path, fullPage: full })
+    shots.push(path)
+  }
+  const shootEl = async (page: Page, sel: string, name: string) => {
+    const el = page.locator(sel).first()
+    await el.scrollIntoViewIfNeeded()
+    const path = join(OUT, name)
+    await el.screenshot({ path })
+    shots.push(path)
+  }
+  try {
+    const pc = await browser.newPage({ viewport: { width: 1440, height: 1000 } })
+    const phone = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
+    const upload = async (page: Page, files: string[]) => {
+      await page.goto(`${BASE}/finance/biz_dy/upload`, { waitUntil: 'networkidle', timeout: 240_000 })
+      await page.waitForTimeout(2500) // 화면이 붙기(hydration) 전에 파일을 넣으면 onChange가 없다
+      await page.locator('input[type=file][multiple]').setInputFiles(files)
+      await page.getByText('방금 올린 파일').waitFor({ timeout: 180_000 })
+      await page.waitForTimeout(2000)
+    }
+    if (KIND === 'pdf-chair') {
+      // 1. 합계 틀린 PDF → «확인 필요» + 급여 · 배합비 거부 + 결산서 → 공식 결산
+      await upload(pc, [cardWrong, payroll, formula, stmt])
+      const body = await bodyText(pc)
+      for (const want of ['합계가 맞지 않습니다', '급여대장은 엑셀로 올려 주세요', '이 파일은 받을 수 없습니다', '공식 결산 미리보기']) if (!body.includes(want)) throw new Error(`PC 화면에 «${want}»가 없다`)
+      await shoot(pc, 'chair-1-upload-pdf-pc.png')
+      await shootEl(pc, 'section:has(> h2:text("방금 올린 파일"))', 'chair-2-cards-refused-official-pc.png')
+      await shootEl(pc, '[data-testid="official-panel"]', 'chair-3-official-panel-pc.png')
+      await shootEl(pc, 'section:has(> h2:has-text("확인 필요 ·")) article:has-text("가짜 법인카드 6월.pdf")', 'chair-4-pdf-preview-total-mismatch-pc.png')
+      // 폰 — 같은 거부 · 공식 결산(카드는 화면마다 새로 올린다) + 위에서 남은 «확인 필요» 미리보기
+      await upload(phone, [payroll, formula, stmt])
+      await noOverflow(phone, '올리기(PDF · 대표)')
+      const pb = await bodyText(phone)
+      for (const want of ['합계가 맞지 않습니다', '급여대장은 엑셀로 올려 주세요', '이 파일은 받을 수 없습니다', '공식 결산 미리보기']) if (!pb.includes(want)) throw new Error(`폰 화면에 «${want}»가 없다`)
+      await shoot(phone, 'chair-1-upload-pdf-phone.png')
+      await shootEl(phone, 'section:has(> h2:text("방금 올린 파일"))', 'chair-2-cards-refused-official-phone.png')
+      await shootEl(phone, 'section:has(> h2:has-text("확인 필요 ·")) article:has-text("가짜 법인카드 6월.pdf")', 'chair-4-pdf-preview-total-mismatch-phone.png')
+    } else {
+      // 2. 직원 — PDF는 «준비 중», 엑셀은 그대로
+      await upload(pc, [staffPdf, staffXlsx])
+      const body = await bodyText(pc)
+      if (!body.includes('PDF · 사진은 준비 중')) throw new Error('직원 화면에 «PDF · 사진은 준비 중»이 없다')
+      if (!body.includes('자동으로 넣었습니다')) throw new Error('직원 엑셀이 안 들어갔다')
+      await shoot(pc, 'staff-1-pdf-later-pc.png')
+      await shootEl(pc, 'section:has(> h2:text("방금 올린 파일"))', 'staff-2-cards-pc.png')
+      await upload(phone, [staffPdf])
+      await noOverflow(phone, '올리기(직원)')
+      await shoot(phone, 'staff-1-pdf-later-phone.png')
+      await shootEl(phone, 'section:has(> h2:text("방금 올린 파일"))', 'staff-2-cards-phone.png')
+      for (const page of [pc, phone]) {
+        const t2 = await bodyText(page)
+        if (/회장|chairman/i.test(t2)) throw new Error('직원 화면에 «회장/Chairman»')
+        if (/ECOUNT 올리기|ECOUNT 업로드/.test(t2)) throw new Error('직원 화면에 «ECOUNT 올리기»')
+      }
+    }
+    console.log(shots.join('\n'))
+    console.log('ok')
+  } finally {
+    await browser.close()
+  }
+}
+
 async function main() {
   if (KIND.startsWith('v21')) return v21()
+  if (KIND.startsWith('pdf-')) return pdfShots()
   mkdirSync(OUT, { recursive: true })
   const dir = join(OUT, 'files')
   mkdirSync(dir, { recursive: true })
