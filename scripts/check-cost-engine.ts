@@ -32,6 +32,7 @@ import { knownCutoff, PIN_SALES_IMMEDIATE } from './cost-engine-known'
 import { overheads } from './cost-engine-overheads'
 import { quotes } from './cost-engine-quotes'
 import { sales } from './cost-engine-sales'
+import { candidates } from './cost-engine-candidates'
 import { production } from './cost-engine-production'
 
 const U = {
@@ -649,6 +650,8 @@ async function main() {
   await quotes({ db, as, run, owner, p1, mats: [m1, m2, m3], materialNames: [...FAKE_MATERIAL_NAMES], U })
   // ── ⑭ 0067 판매 실적 · 실제 원가 · 견적 마진 vs 실제 마진
   await sales({ db, as, run, owner, p1, U })
+  // ── ⑮ 0078 원가 후보 승인(자료 올리기 → LOT · Landed · 판매)
+  if (files.includes('0078_cost_candidates.sql')) await candidates({ db, as, run, owner, p1, U })
 
   // ── ⑦ 코드 경계 — AI 도구 · 프롬프트 · 요약이 BOM · 원가 함수를 부르지 않는다 ─────────────────
   const root = join(__dirname, '..', 'src')
