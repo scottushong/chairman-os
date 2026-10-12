@@ -78,6 +78,16 @@ async function v21() {
       await open(phone, `/finance/biz_dy/valuation?month=${M}`)
       await noOverflow(phone, '재고 · 평가')
       await shoot(phone, 'staff-2-valuation-enterer-phone.png')
+      // 2b. 원료 출고 구분 칸만(확인 필요 줄 수 · 이유 필수 일괄 결정 · 합계 보류 까닭)
+      for (const [page, name] of [[phone, 'staff-3b-issue-phone.png'], [pc, 'staff-3b-issue-pc.png']] as const) {
+        if (page === pc) await open(pc, `/finance/biz_dy/valuation?month=${M}`)
+        const sec = page.locator('section[aria-labelledby="iss-h"]')
+        await sec.scrollIntoViewIfNeeded()
+        if (!(await sec.innerText()).includes('합계를 보이지 않습니다')) throw new Error('출고 칸에 보류 까닭이 없다')
+        const path = join(OUT, name)
+        await sec.screenshot({ path })
+        shots.push(path)
+      }
       // 3. 직원 홈 — 예시 0 · «회장» 0
       for (const [page, name] of [[pc, 'staff-4-home-pc.png'], [phone, 'staff-4-home-phone.png']] as const) {
         await open(page, '/me')
@@ -107,6 +117,16 @@ async function v21() {
       const tags = await pc.locator('[data-example-tag]').count()
       if (!tags) throw new Error('대표 홈에 «예시» 꼬리표가 없다')
       await shoot(pc, 'chair-2-home-examples-pc.png')
+      // 2b. «예시» 꼬리표가 붙은 패널 하나(가까이)
+      {
+        // 알림 패널(결정 · 대기 · 알림 줄의 셋째 칸) — 예시 알림에 꼬리표가 붙는다.
+        const panel = pc.locator('#alert-panel')
+        if (!(await panel.locator('[data-example-tag]').count())) throw new Error('알림 패널에 «예시» 꼬리표가 없다')
+        await panel.scrollIntoViewIfNeeded()
+        const path = join(OUT, 'chair-2b-example-tags-pc.png')
+        await panel.screenshot({ path })
+        shots.push(path)
+      }
       await open(phone, '/')
       await noOverflow(phone, '대표 홈')
       await shoot(phone, 'chair-2-home-examples-phone.png')
