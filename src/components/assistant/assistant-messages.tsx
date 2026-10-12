@@ -26,6 +26,7 @@ export function AssistantMessages({
   path,
   followups,
   onAsk,
+  feedback = true,
 }: {
   messages: AiChatMessage[]
   actions: AiActionView[]
@@ -38,6 +39,8 @@ export function AssistantMessages({
   path?: string
   followups?: { messageId: number; items: string[] }
   onAsk?: (question: string) => void
+  /** 0073 기능 스위치 «AI 어시스턴트 보강» — false면 «보완 의견 남기기» 칸을 그리지 않는다. */
+  feedback?: boolean
 }) {
   const byId = new Map(actions.map((a) => [a.action_id, a]))
   return (
@@ -89,7 +92,7 @@ export function AssistantMessages({
                 </div>
               </div>
             ) : null}
-            {chatId && m.id > 0 ? <FeedbackBox key={`fb-${m.id}`} chatId={chatId} messageId={m.id} path={path ?? '/'} lang={lang} /> : null}
+            {feedback && chatId && m.id > 0 ? <FeedbackBox key={`fb-${m.id}`} chatId={chatId} messageId={m.id} path={path ?? '/'} lang={lang} /> : null}
           </li>
         ),
       )}

@@ -293,6 +293,8 @@ const STAFF_NAV_OVERRIDE: Readonly<Record<string, Partial<NavItem>>> = {
  */
 export interface NavOptions {
   purchasing?: boolean
+  /** 꺼진 기능의 메뉴 키(0073 기능 스위치 — lib/features-server.ts hiddenNavFor). 대표에게도 뺀다. */
+  hidden?: readonly string[]
   /** 0059 «결재 대장 열람» 줄이 있는 회사들(SessionUser.ledger). 비면 대장 메뉴를 뺀다. */
   ledger?: readonly string[]
   /** 영업 원가 화면을 볼 회사가 하나라도 있는가(lib/auth/roles.ts salesBusinessIds). 대표는 늘 참. */
@@ -314,6 +316,7 @@ export function navFor(role: Role | null | undefined, opts: NavOptions = {}): re
   const costs = role === 'Chairman' || opts.costs === true
   // «구매»가 서면 옛 자리표 «구매 / SCM»을 뺀다. 못 보는 사람에게는 «구매»를 빼고 자리표만 남는다(지금까지와 같다). «영업»도 같다.
   const purchasingFilter = (item: NavItem) =>
+    !(opts.hidden ?? []).includes(item.key) &&
     (purchasing ? item.key !== 'nav_scm' : item.key !== 'nav_purchasing') &&
     (sales ? item.key !== 'nav_crm' : item.key !== 'nav_sales') &&
     (production ? item.key !== 'nav_mes' : item.key !== 'nav_production') &&

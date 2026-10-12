@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 
 import { canCloseBooks, canKeepBooks } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
+import { featureOn } from '@/lib/features-server'
 import { finV21Error, parseValue } from '@/lib/finance-upload/v21-text'
 import { getRepository } from '@/lib/repository'
 import type { CostScope, FinDedupeSetting, NonProductionKind, RollCategory, ValuationCategory } from '@/types'
@@ -20,6 +21,8 @@ const UUID = /^[0-9a-f-]{36}$/i
 const BIZ = /^[a-z0-9_]{2,40}$/
 const PERIOD = /^\d{4}-(0[1-9]|1[0-2])$/
 const DATE = /^\d{4}-\d{2}-\d{2}$/
+/** 0073 기능 스위치로 꺼진 기능의 문장. */
+const OFF = '지금은 쓸 수 없는 기능입니다.'
 
 function touch(businessId: string) {
   revalidatePath(`/finance/${businessId}/valuation`)
@@ -31,6 +34,8 @@ async function guard(businessId: string): Promise<string | null> {
   if (!user) return '세션이 만료되었습니다. 다시 로그인하세요.'
   if (!BIZ.test(businessId)) return '회사를 알 수 없습니다.'
   if (!canKeepBooks(user, businessId)) return '이 회사의 재무를 넣을 권한이 없습니다.'
+  // 0073 기능 스위치 «자료 올리기»(0070 · 0072를 함께 끈다).
+  if (!(await featureOn(user, 'finance_upload', businessId))) return OFF
   return null
 }
 
@@ -186,6 +191,7 @@ export async function clearReclose(flagId: unknown, businessId: unknown, note: u
   const id = text(flagId, 64)
   if (!BIZ.test(biz) || !UUID.test(id)) return { error: '재마감 대상을 알 수 없습니다.' }
   if (!canCloseBooks(user, biz)) return { error: '그 달을 마감할 수 있는 사람만 풉니다.' }
+  if (!(await featureOn(user, 'finance_upload', biz))) return { error: OFF }
   try {
     const ok = await (await getRepository()).finRecloseClear(id, text(note) || null)
     touch(biz)

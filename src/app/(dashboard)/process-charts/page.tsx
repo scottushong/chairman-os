@@ -1,10 +1,12 @@
 import Link from 'next/link'
+import { notFound } from 'next/navigation'
 
 import { PageHeader } from '@/components/layout/page-header'
 import { ProcessSyncPanel } from '@/components/process/process-sync-panel'
 import { ProcessChartManager } from '@/components/settings/process-chart-manager'
 import { SheetFrame } from '@/components/ui/sheet-frame'
 import { currentUser } from '@/lib/auth/session'
+import { featureOn } from '@/lib/features-server'
 import { formatDateTime } from '@/lib/format'
 import { embedSrc } from '@/lib/process-chart'
 import { sheetsConnected } from '@/lib/process-sync/service'
@@ -33,6 +35,8 @@ export default async function ProcessChartsPage(props: PageProps<'/process-chart
     repo.listProcessChartSyncs(200),
     currentUser(),
   ])
+  // 0073 기능 스위치 «프로세스 차트» — 범위 밖이면 없는 화면.
+  if (!(await featureOn(user, 'process_charts'))) notFound()
   const canEdit = user?.role === 'Chairman' || user?.role === 'GroupCFO'
   // 누른 사람 · 담당자 이름. 계정 목록은 그 사람에게 보이는 만큼만 온다(0026) — 못 찾으면 이메일 · «직원»으로.
   const names = new Map((await repo.listUserAccounts().catch(() => [])).map((p) => [p.user_id, p.display_name] as const))

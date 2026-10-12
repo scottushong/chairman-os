@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/layout/page-header'
 import { FeedbackInbox } from '@/components/settings/feedback-inbox'
 import { currentUser } from '@/lib/auth/session'
+import { featureOn } from '@/lib/features-server'
 import { kstToday } from '@/lib/chairman-project'
 import { TRIAGE_FEATURES } from '@/lib/feedback/triage'
 import { getRepository } from '@/lib/repository'
@@ -19,6 +20,8 @@ import { getRepository } from '@/lib/repository'
 export default async function FeedbackInboxPage() {
   const user = await currentUser()
   if (!user || user.role !== 'Chairman') notFound()
+  // 0073 기능 스위치 «AI 어시스턴트 보강» — 꺼져 있으면 보완함도 없는 화면.
+  if (!(await featureOn(user, 'ai_assist'))) notFound()
 
   const repo = await getRepository()
   const [rows, bundles, usage] = await Promise.all([

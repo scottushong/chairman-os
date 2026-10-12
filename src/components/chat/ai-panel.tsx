@@ -22,6 +22,7 @@ export function AiPanel({
   actions,
   role,
   lang,
+  feedback = true,
 }: {
   chatId: string | null
   messages: AiChatMessage[]
@@ -29,6 +30,8 @@ export function AiPanel({
   /** 보는 사람의 역할 — 직원 화면 용어 원칙(CLAUDE.md): 회장 외에는 «대표». */
   role: Role | null | undefined
   lang: Lang
+  /** 0073 기능 스위치 «AI 어시스턴트 보강». */
+  feedback?: boolean
 }) {
   const router = useRouter()
   const [q, setQ] = useState('')
@@ -83,6 +86,7 @@ export function AiPanel({
           path="/chat"
           followups={followups}
           onAsk={ask}
+          feedback={feedback}
         />
         {pending ? <p className="text-t11h text-ink-muted">{tr(lang, '생각하는 중…', 'Thinking…')}</p> : null}
       </div>

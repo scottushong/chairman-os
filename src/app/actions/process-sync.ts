@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 
 import { currentUser } from '@/lib/auth/session'
+import { featureOn } from '@/lib/features-server'
 import { sheetsConnected, syncChartFor } from '@/lib/process-sync/service'
 import type { ProcessSyncResult } from '@/lib/process-sync/run'
 import { getRepository } from '@/lib/repository'
@@ -31,6 +32,8 @@ export async function syncProcessChart(chartId: unknown, trigger: unknown): Prom
 
   const user = await currentUser()
   if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  // 0073 기능 스위치 «프로세스 차트» — 꺼져 있으면 동기화도 거부.
+  if (!(await featureOn(user, 'process_charts'))) return { error: '지금은 쓸 수 없는 기능입니다.' }
   if (!sheetsConnected()) return { error: '구글 시트 연결 전입니다.' }
 
   const repo = await getRepository()

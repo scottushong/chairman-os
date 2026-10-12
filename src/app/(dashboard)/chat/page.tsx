@@ -6,6 +6,7 @@ import { NewDm } from '@/components/chat/new-dm'
 import { PageHeader } from '@/components/layout/page-header'
 import { recordScreenRead } from '@/lib/activity-record'
 import { currentUser } from '@/lib/auth/session'
+import { featureOn } from '@/lib/features-server'
 import { DATA_MODE } from '@/lib/env'
 import { tr, type Lang } from '@/lib/i18n'
 import { getRepository } from '@/lib/repository'
@@ -133,7 +134,7 @@ export default async function ChatPage({ searchParams }: PageProps<'/chat'>) {
 
         <section className="glass min-w-0 rounded-glass p-3">
           {tab === 'ai' ? (
-            <AiPanel chatId={aiId} messages={aiMessages} actions={aiActions} role={user?.role} lang={lang} />
+            <AiPanel chatId={aiId} messages={aiMessages} actions={aiActions} role={user?.role} lang={lang} feedback={await featureOn(user, 'ai_assist')} />
           ) : selected ? (
             <>
               <h2 className="mb-1 text-t13h font-semibold">

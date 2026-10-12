@@ -18,7 +18,7 @@ import { won } from '@/lib/finance-upload/v21-text'
 import { KIND_SPECS } from '@/lib/finance-upload/kinds'
 import { kstToday } from '@/lib/chairman-project'
 import { revertableIds } from '@/lib/finance-upload/process'
-import { intakeOpenFor } from '@/lib/intake/switch'
+import { featureOn } from '@/lib/features-server'
 import { firstParam } from '@/lib/query'
 import { getRepository } from '@/lib/repository'
 import { FINANCE_IMPORT_KIND } from '@/types'
@@ -38,6 +38,8 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
   const [businesses, user] = await Promise.all([repo.listBusinesses(), currentUser()])
   const business = businesses.find((b) => b.business_id === business_id)
   if (!business) notFound()
+  // 0073 기능 스위치 «자료 올리기» — 범위 밖이면 없는 화면.
+  if (!(await featureOn(user, 'finance_upload', business_id))) notFound()
 
   const canKeep = canKeepBooks(user, business_id)
   const asked = firstParam(params.month)
@@ -73,8 +75,8 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
     }))
   }
   const limits = aiLimits()
-  // C단계 PDF · 사진 — 입구 스위치가 꺼지면 대표만. 공식 결산 계정 맞추기용 계정(그 회사 · 사용 중).
-  const docsOpen = canKeep && intakeOpenFor(user)
+  // C단계 PDF · 사진 — 기능 스위치 «PDF · 사진 읽기»(0073, 기본 대표만). 공식 결산 계정 맞추기용 계정(그 회사 · 사용 중).
+  const docsOpen = canKeep && (await featureOn(user, 'finance_docs', business_id))
   const accounts = docsOpen
     ? ((await repo.loadFinanceLedger().catch(() => null))?.accounts ?? []).filter((a) => a.business_id === business_id && a.active).map((a) => ({ account_code: a.account_code, name: a.name, section: a.section }))
     : []
