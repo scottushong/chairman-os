@@ -2779,3 +2779,14 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - 단위 kg 가정 — 입고 · 명세서 · 출고의 수량을 모두 kg로 본다(단위 칸 대조 없음).
 - TS(number, 부동소수) vs SQL(numeric) — 지금 시험 입력은 같지만, 아주 큰 금액 × kg 곱에서 1원 차이가 날 수 있다. live는 SQL이 계산(TS는 dummy · 시험).
 - (이번 고침에서 남은 것) 0075 staging 시험은 4610 상품매출원가 전표 갈래를 SQL로 돌리지 않는다(PGlite 대조는 계산 식 · dummy는 gather 거울만). 확정 시 이후 확정 달 재마감 표시도 staging에서는 «다시 열기» 뒤 이미 표시된 경우만 지난다.
+
+## 2026-10-13 PHASE 5 — 0067 화면(판매 실적 · 마진) · 0077 — 고른 것 · 미룬 것
+- 고른 것은 docs/decisions/2026-10-12-autonomous.md 44~49.
+- 위 «0067 판매 리뷰 Minor» 중 화면에 걸린 것: M2 → 0077 sales_margins가 매출도 대표 외 1원 · M3 → 마진 화면 «5000줄에서 잘렸을 수 있음» · M9 → «계산 안 됨 — 생산 LOT 무효 또는 비용 배부 불가». M7은 마진 화면에 내려받기를 붙이지 않아 그대로(대표 내려받기는 다음에 cost_margins_download_log → 감사 먼저). M1 · M4 · M5 · M6 · M8은 화면 밖이라 그대로 남김.
+- (잘라냄) 판매 기록 · 대체 · 무효 폼(sale_record · sale_void · sale_lot_options)이 화면에 없다 — 지금은 DB 함수만. 영업이 출고를 넣는 화면이 다음 일.
+- (잘라냄) 판매 실적의 판 사람 이름(팀장 화면은 «본인 · 팀»만) · 고객 · 제품 거르기 · 쪽 나누기(2000줄 상한).
+- (잘라냄) 사이드바 메뉴 줄 — 두 화면은 /sales/<회사> · /costs/<회사> 화면 안 링크로만 간다(스위치가 꺼지면 링크도 없다).
+- (미룸) 0067 cost_margins · cost_sales 직접 읽기는 스위치를 보지 않는다(결정 45). 막으려면 cost_margins execute를 authenticated에서 걷고 check:cost-engine ⑭를 sales_margins로 옮긴다.
+- (미룸) 마진 화면의 원가 관리 하루 20번은 0067 'margins:<회사>' 키를 같이 쓴다 — 묶음 · 기간을 바꿀 때마다 한 번씩 줄어든다(화면에 남은 횟수 표시 없음).
+- (미룸) «확정 매출원가 기준»은 달 마감 여부만 본다 — 마감 뒤 원천이 바뀌어 «자료 바뀜»(0075 stale)인 달도 확정으로 표시한다.
+- (미룸) 0077 staging 시험은 판매 줄을 만들지 않는다(원가 엔진 준비가 길다) — 계산 · 월 마감 표시 · 감사 · 칸 모양은 check:cost-engine ⑭(PGlite)에서.
