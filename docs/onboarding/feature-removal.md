@@ -80,11 +80,17 @@
 - 빼면 사라지는 것: 영업 판매 실적 목록(판매가 · kg · 등급) · 견적 마진 vs 실제 마진(일 · 주 · 월 · 분기 · 년 · 제품 · 고객 · 전체 · 판매 한 줄) · «잠정 대체원가 / 확정 매출원가 기준» 표시. 0067 표 · 함수는 그대로 남는다(0067 cost_margins를 직접 부르는 길도 그대로).
 - 남는 데이터: 없음(0077은 표를 만들지 않는다). 부를 때마다 남긴 감사 줄(audit_log 'margins:<회사>')과 하루 셈(cost_secret.cost_reads)은 0067 것과 같은 자리에 남는다.
 
+### cost_candidates — 원가 후보 승인 (0078 · feat/cost-candidates)
+- 끄는 법: /settings/features → «원가 후보 승인» 끄기(기본 대표만). /costs/<회사>/candidates가 404가 되고 /costs/<회사>의 링크가 사라진다. RPC cost_fin_candidates · cost_fin_candidate_decide도 첫 줄 feature_on으로 거부한다('feature_off' — 대표 포함).
+- 직원에게 열기: «보는 범위»를 «전원»(또는 회사 줄)으로. 그래도 '/costing/<회사>' 쓰기 줄(원가 관리)이 있는 사람만 보인다. 넣기는 구매 쓰기(② · ⑦) · 영업 쓰기(①) 줄도 필요하다.
+- 반영에서 빼는 법: feat/cost-candidates를 합치지 않고 0078을 올리지 않는다. 0078은 0061(LOT) · 0067(sale_record) · 0070 · 0072(fin_* 줄) · 0073(feature_on)에 기댄다. 0078 없이 앱만 나가면 화면은 «준비 중»(cost_candidates_unavailable).
+- 빼면 사라지는 것: 자료 올리기 ② · ⑦ · ① 줄을 원가 엔진으로 옮기는 화면. 원가 엔진의 원래 입력(구매 LOT 화면 · 엑셀 넣기)은 그대로.
+- 남는 데이터: 결정 표 cost_fin_candidate_decisions(빼려면 표를 그대로 두거나 보관 — 지우지 않는다) · 그 결정으로 만든 LOT(source 'import' · source_ref 'fin_*:<줄>') · 판매 실적(0067) · audit_log 줄.
+
 ### 다음 단계 기능(스위치 줄만 먼저 있음 — 화면은 아직 없다)
 
 | 키 | 이름 | 기본 범위 | 단계 · 브랜치 · 번호 | 끄면 | 빼면 |
 |---|---|---|---|---|---|
-| cost_candidates | 원가 후보 승인 | 대표만 | (미정) | | |
 | ledger_post | 원장 → 장부 반영 | 대표만 | (미정) | | |
 | chairman_dashboard | 대표 대시보드 | 대표만 | (미정) | | |
 
