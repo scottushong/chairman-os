@@ -61,11 +61,12 @@ export function scrubSheet(sheet: EcountSheet): Scrubbed {
   let cardNumbers = 0
   const header = findHeader(sheet.rows)
   const personCols = new Set<number>()
-  // 머리글 후보 줄들(앞 30줄) 어디든 이름 · 주민 · 계좌 칸이 있으면 그 열을 비운다 — 급여 모양이 아니어도(카드 · 판촉의 사람 이름은 남긴다).
-  for (let r = 0; r < Math.min(30, sheet.rows.length); r += 1) {
-    sheet.rows[r].forEach((c, i) => {
+  // 머리글 줄의 이름 · 주민 · 계좌 칸을 비운다 — 급여 모양이면 이름 · 연락처까지, 아니면 주민 · 계좌만(카드 · 판촉의 담당자 이름은 남긴다).
+  // 머리글 줄만 본다: 자료 줄의 «가짜 은행»(대출 금융기관)을 칸 이름으로 읽으면 금융기관 칸이 통째로 비워진다.
+  if (header) {
+    sheet.rows[header.row].forEach((c, i) => {
       const t = normalizeLabel(cellText(c))
-      if (t && PERSON_COLS.test(t) && (payrollish || /주민|계좌|은행/.test(t))) personCols.add(i)
+      if (t && t.length <= 12 && PERSON_COLS.test(t) && (payrollish || /주민|계좌번호|계좌|은행계좌/.test(t)) && !/금융기관/.test(t)) personCols.add(i)
     })
   }
   const rows: EcountCell[][] = []
@@ -103,7 +104,7 @@ export function findHeader(rows: EcountCell[][], maxRows = 30): { row: number; h
     const cells = rows[r].map((c) => normalizeLabel(cellText(c))).filter(Boolean)
     if (cells.length < 2) continue
     if (SKIP_LINE.test(cells.join(' '))) continue
-    const hits = cells.filter((t) => t.length <= 20 && words.some((w) => t.includes(normalizeLabel(w)))).length
+    const hits = cells.filter((t) => t.length <= 20 && words.some((w) => t.toLowerCase().includes(normalizeLabel(w).toLowerCase()))).length
     if (hits >= 2 && (!best || hits > best.hits)) best = { row: r, hits }
   }
   return best
@@ -111,17 +112,22 @@ export function findHeader(rows: EcountCell[][], maxRows = 30): { row: number; h
 
 /** 그 종류의 칸을 머리글 줄에서 찾는다 — 낱말 목록 앞쪽(더 구체적인 말)이 이긴다, 한 열은 한 칸만. */
 export function mapColumns(spec: KindSpec, headerCells: EcountCell[]): Record<string, number> {
-  const labels = headerCells.map((c) => normalizeLabel(cellText(c)))
+  const labels = headerCells.map((c) => normalizeLabel(cellText(c)).toLowerCase())
   const used = new Set<number>()
   const out: Record<string, number> = {}
-  for (const field of spec.fields) {
-    for (const kw of field.keywords) {
-      const k = normalizeLabel(kw)
-      const i = labels.findIndex((l, idx) => !used.has(idx) && l !== '' && (l === k || l.includes(k)))
-      if (i >= 0) {
-        out[field.key] = i
-        used.add(i)
-        break
+  // 두 번 돈다: 먼저 글이 똑같은 칸(«AMOUNT» = amount · «원화금액» = amount_krw), 그다음 포함(«공급가액» ⊃ «가액»).
+  // 한 번에 포함으로 찾으면 넓은 낱말(«금액»)이 더 구체적인 칸(«원화금액»)을 먼저 가져간다.
+  for (const exact of [true, false]) {
+    for (const field of spec.fields) {
+      if (field.key in out) continue
+      for (const kw of field.keywords) {
+        const k = normalizeLabel(kw).toLowerCase()
+        const i = labels.findIndex((l, idx) => !used.has(idx) && l !== '' && (exact ? l === k : l.includes(k)))
+        if (i >= 0) {
+          out[field.key] = i
+          used.add(i)
+          break
+        }
       }
     }
   }

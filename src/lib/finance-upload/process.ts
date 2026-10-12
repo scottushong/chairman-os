@@ -120,6 +120,11 @@ export async function processUpload(o: ProcessOptions): Promise<FileCard[]> {
     const read = readRows(sheet, cls)
     const month = detectMonth(sheet, read.dates, o.fileName, o.today)
     const check = validate(cls.kind, read, month.period)
+    // 같은 파일(해시 · 종류 · 기간)이 이미 살아 있으면 늘리지 않는다 — 겹침보다 먼저(0070 fin_uploads_same_file과 같은 판정).
+    if (uploads.some((u) => u.kind === cls.kind && u.period === month.period && u.file_sha256 === opened.sha256 && (u.status === 'applied' || u.status === 'needs_review'))) {
+      cards.push({ file_name: o.fileName, sheet: sheet.name, kind: cls.kind, period: month.period, status: 'duplicate', upload_id: null, rows: 0, message: ERR_KO.fin_upload_duplicate, why: [], ai_used: aiUsed, confidence: cls.confidence })
+      continue
+    }
     const overlap = !!month.period && uploads.some((u) => u.kind === cls.kind && u.period === month.period && u.status === 'applied')
     const closed = month.period ? await o.repo.finMonthClosed(o.businessId, month.period).catch(() => false) : false
     const decision = autoDecision({ confidence: cls.confidence, check, overlap, closed })
