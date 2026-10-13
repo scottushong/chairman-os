@@ -304,17 +304,24 @@ export function maskPlResult(r: MonthlyPlResult, costAccess: boolean): MonthlyPl
     return out
   }
   const hide = r.material_count < 3 || r.blockers.some((b) => b.code === 'material_needs_review')
-  // 0080 리뷰 I-A(fin_pl_mask와 같다): 원료 1~2가지면 원재료 기초 · 매입 · 기말 합계가 곧 원료 하나의 금액 — 보여 주는 칸만 비운다.
-  const few = r.material_count >= 1 && r.material_count <= 2
-  const basis = hide ? { ...r.basis, production_input: null, recon_diff: null } : r.basis
+  // 0080 리뷰 I-A · I-B(fin_pl_mask와 같다): 매입 · 기초 · 기말을 이루는 원료가 각각 1~2가지면 그 합계가 곧 원료 하나의 금액 — 그 칸 · 검산만 비운다.
+  const nz = (v: number | null | undefined) => (v ?? 0) !== 0
+  const one2 = (n: number) => n >= 1 && n <= 2
+  const fp = one2(r.materials.filter((m) => nz(m.purchase_amount)).length)
+  const fo = one2(r.materials.filter((m) => nz(m.opening_amount)).length)
+  const fc = one2(r.materials.filter((m) => nz(m.closing_amount) || nz(m.closing_statement_amount)).length)
+  // 하나만 비우면 원료 사용액(보이는 칸 = 기초 + 매입 − 기말)으로 풀린다 — 하나라도 걸리면 셋 다(다시 리뷰 I-C).
+  const anyFew = fp || fo || fc
+  const base0 = hide ? { ...r.basis, production_input: null, recon_diff: null } : r.basis
+  const basis = anyFew ? { ...base0, raw_opening: null, raw_purchases: null, raw_closing: null } : base0
   return {
     ...r,
     materials: [],
     blockers: fold(r.blockers),
     warnings: fold(r.warnings),
-    basis: few ? { ...basis, raw_opening: null, raw_purchases: null, raw_closing: null } : basis,
-    check: few ? { ...r.check, inventory_opening_total: null, inventory_closing_total: null, check_value: null, diff_vs_new: null, purchase_vs_books_diff: null } : r.check,
-    withheld: [...(hide ? ['production_input', 'recon_diff'] : []), ...(few ? ['raw_opening', 'raw_purchases', 'raw_closing', 'check'] : [])],
+    basis,
+    check: anyFew ? { ...r.check, inventory_opening_total: null, inventory_closing_total: null, check_value: null, diff_vs_new: null, purchase_vs_books_diff: null } : r.check,
+    withheld: [...(hide ? ['production_input', 'recon_diff'] : []), ...(anyFew ? ['raw_opening', 'raw_purchases', 'raw_closing', 'check'] : [])],
   }
 }
 

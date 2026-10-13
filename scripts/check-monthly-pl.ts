@@ -408,10 +408,19 @@ ok('T10 원가 권한 밖: 원료별 줄 · 원료 이름 · 원료별 단가가
   assert.ok(!text.includes('가짜 원료'), '원료 이름이 샜다')
   assert.ok(!text.includes('wa_unit_cost'), '원료별 단가가 샜다')
   assert.equal(masked.basis.production_input, null, '원료 3가지 미만인데 투입원가 합계가 보인다')
-  // 0080 리뷰 I-A: 원료 1~2가지면 원재료 기초 · 매입 · 기말 · 검산 칸도 감춘다(합계가 곧 원료 하나의 금액).
+  // 0080 리뷰 I-A · I-B: 매입 · 기초 · 기말을 이루는 원료가 각각 1~2가지면 그 칸 · 검산 칸도 감춘다(합계가 곧 원료 하나의 금액).
   assert.deepEqual(masked.withheld, ['production_input', 'recon_diff', 'raw_opening', 'raw_purchases', 'raw_closing', 'check'])
   assert.deepEqual([masked.basis.raw_opening, masked.basis.raw_purchases, masked.basis.raw_closing, masked.check.check_value], [null, null, null, null], '원료 1~2가지인데 원재료 합계가 보인다')
   assert.equal(masked.pl.cogs, r.pl.cogs, '감추기가 손익 계산을 바꿨다')
+  // I-B · I-C: 매입 원료 하나 + 기말 원료 넷 — 합쳐 세면 4가지라 매입이 보였다. 매입만 비우면 사용액으로 풀리므로 셋 다 감춘다.
+  const many = computeMonthlyPl(base({ materials: [
+    mat({ name: '가짜 매입 하나', purchase_qty: 100, purchase_amount: 100_000, closing_qty: 100, closing_statement_amount: 100_000 }),
+    ...['나', '다', '라'].map((n) => mat({ name: `가짜 재고 ${n}`, opening_qty: 10, opening_amount: 10_000, closing_qty: 10, closing_statement_amount: 10_000 })),
+  ] }))
+  const mm = maskPlResult(many, false)
+  assert.ok(many.material_count >= 3 && mm.basis.raw_purchases === null && mm.basis.raw_opening === null && mm.basis.raw_closing === null && mm.check.check_value === null,
+    `I-B · I-C: 매입 원료 하나인 달의 원재료 합계가 풀린다 (${JSON.stringify(mm.withheld)})`)
+  assert.equal(mm.basis.raw_usage, many.basis.raw_usage, '감추기가 원료 사용액(매출원가 줄)을 바꿨다')
   assert.ok(masked.blockers.some((b) => b.message.includes('(원료 1가지)')))
   const full = maskPlResult(r, true)
   assert.equal(full.materials.length, 2)

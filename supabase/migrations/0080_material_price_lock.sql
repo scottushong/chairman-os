@@ -396,14 +396,16 @@ comment on function fin_pl_cost_viewer(text) is
 -- 7-2절. 월별 손익 보여 주기 — 원료 1~2가지 달의 원재료 합계 칸(리뷰 I-A · 계산은 그대로)
 -- =====================================================================
 /**
- * 0075 본문 그대로 + 원료가 1~2가지인 달은 원가 권한 밖에 원재료 기초 · 매입 · 기말 · 검산 칸을 비운다(withheld에 적는다).
+ * 0075 본문 그대로 + 원가 권한 밖에서, 매입 · 기초 · 기말 중 하나라도 이루는 원료가 1~2가지면 셋 다 · 검산 칸을 비운다(withheld에 적는다).
  * calc.ts maskPlResult와 같다(check:monthly-pl이 SQL = TS를 본다).
  */
 create or replace function fin_pl_mask(r jsonb, p_cost boolean) returns jsonb
 language plpgsql immutable set search_path = public, pg_temp as $fn$
 declare
   v_hide boolean;
-  v_few boolean;
+  v_np int;   -- 매입이 있는 원료 수
+  v_no int;   -- 기초 금액이 있는 원료 수
+  v_nc int;   -- 기말 금액이 있는 원료 수
   v_b jsonb;
   v_w jsonb;
   v_basis jsonb;
@@ -427,10 +429,17 @@ begin
   v_basis := case when v_hide then (r -> 'basis') || jsonb_build_object('production_input', null, 'recon_diff', null) else r -> 'basis' end;
   v_check := r -> 'check';
   v_wh := case when v_hide then '["production_input", "recon_diff"]'::jsonb else '[]'::jsonb end;
-  -- 0080 리뷰 I-A: 원료가 1~2가지면 원재료 기초 · 매입 · 기말 합계가 곧 원료 하나의 금액이다(0080 fin_material_totals와 같은 문턱).
-  -- 보여 주는 칸만 비운다 — 손익 계산(매출원가 · 영업이익)은 그대로. 검산 칸도 그 셋으로 거꾸로 풀리므로 함께 비운다.
-  v_few := coalesce((r ->> 'material_count')::int, 0) between 1 and 2;
-  if v_few then
+  -- 0080 리뷰 I-A · I-B: 그 칸을 이루는 원료가 1~2가지면 원재료 매입 · 기초 · 기말 합계가 곧 원료 하나의 금액이다
+  -- (0080 fin_material_totals와 같은 문턱 — 칸마다 따로 센다: 매입 원료 · 기초 원료 · 기말 원료). 앞 달 기말이 이 달 기초가 되면
+  -- 기초 원료도 1~2가지로 같이 걸린다(M-h). 보여 주는 칸만 비운다 — 손익 계산(매출원가 · 영업이익)은 그대로.
+  -- 검산 칸은 그 셋으로 거꾸로 풀리므로 하나라도 비우면 함께 비운다.
+  select count(*) filter (where coalesce((x ->> 'purchase_amount')::numeric, 0) <> 0),
+         count(*) filter (where coalesce((x ->> 'opening_amount')::numeric, 0) <> 0),
+         count(*) filter (where coalesce((x ->> 'closing_amount')::numeric, 0) <> 0 or coalesce((x ->> 'closing_statement_amount')::numeric, 0) <> 0)
+    into v_np, v_no, v_nc
+    from jsonb_array_elements(coalesce(r -> 'materials', '[]'::jsonb)) x;
+  -- 다시 리뷰 I-C: 셋 중 하나만 비우면 원료 사용액(= 기초 + 매입 − 기말, 보이는 칸)으로 거꾸로 풀린다 — 하나라도 걸리면 셋 다 비운다.
+  if v_np between 1 and 2 or v_no between 1 and 2 or v_nc between 1 and 2 then
     v_basis := v_basis || jsonb_build_object('raw_opening', null, 'raw_purchases', null, 'raw_closing', null);
     v_check := coalesce(v_check, '{}'::jsonb) || jsonb_build_object('inventory_opening_total', null, 'inventory_closing_total', null,
                                                                     'check_value', null, 'diff_vs_new', null, 'purchase_vs_books_diff', null);
@@ -460,7 +469,8 @@ declare
   v_adj jsonb;
   v_rec jsonb := null;
   v_cost boolean := fin_pl_cost_viewer(p_business);
-  v_few  boolean;
+  v_m    jsonb;
+  v_wh   jsonb;
 begin
   perform fin_pl_gate(p_business, p_period);
   if not coalesce(can_read_books(p_business), false) then
@@ -497,9 +507,12 @@ begin
       'recorded_at', v_live.recorded_at, 'recorded_by_name', (select u.display_name from user_profiles u where u.user_id = v_live.recorded_by),
       'closed_at', v_live.closed_at, 'closed_by_name', (select u.display_name from user_profiles u where u.user_id = v_live.closed_by));
   end if;
-  -- 0080 리뷰 I-A: 원료 1~2가지 달은 원재료 기초 차이 · 다시 마감 차이(raw_closing)도 원료 하나의 금액이다 — 원료 숫자 문 밖에 비운다.
-  v_few := not v_cost and coalesce((v_res ->> 'material_count')::int, 0) between 1 and 2;
-  if v_few and v_diff is not null then
+  -- 0080 리뷰 I-A · I-B: fin_pl_mask가 원재료 기초 · 기말을 감춘 달은 기초 차이 · 다시 마감 차이(raw_closing)도 비운다.
+  v_m := fin_pl_mask(v_res, v_cost);
+  v_wh := coalesce(v_m -> 'withheld', '[]'::jsonb);
+  -- 다시 리뷰 M-j: 앞 달(확정)의 원재료 기말이 감춰지는 달이면 기초 차이로 그 값이 풀린다 — 그때도 비운다.
+  if v_diff is not null and (v_wh ? 'raw_closing'
+       or coalesce(fin_pl_mask(v_prevf.totals || jsonb_build_object('materials', coalesce(v_prevf.detail -> 'materials', '[]'::jsonb)), v_cost) -> 'withheld', '[]'::jsonb) ? 'raw_closing') then
     v_diff := v_diff || jsonb_build_object('raw', null);
   end if;
   return jsonb_build_object(
@@ -507,12 +520,12 @@ begin
     'period', p_period,
     'view_status', v_view,
     'record', v_rec,
-    'result', fin_pl_mask(v_res, v_cost),
+    'result', v_m,
     'stale', jsonb_build_object('inputs_changed', coalesce(v_live.status = 'final' and v_live.input_hash <> md5(v_in::text), false),
                                 'opening_diff', v_diff, 'reclose_flags', v_flags),
     'provisional_diff', case when v_live.status = 'final' then v_live.totals -> 'provisional_diff' end,
     'changed_vs_prev_final', case when v_live.status = 'final' then
-                               case when v_few and jsonb_typeof(v_live.totals -> 'changed_vs_prev_final') = 'object'
+                               case when v_wh ? 'raw_closing' and jsonb_typeof(v_live.totals -> 'changed_vs_prev_final') = 'object'
                                     then (v_live.totals -> 'changed_vs_prev_final') || jsonb_build_object('raw_closing', null)
                                     else v_live.totals -> 'changed_vs_prev_final' end end,
     'adjustments', v_adj);

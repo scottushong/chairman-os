@@ -326,8 +326,13 @@ export function dummyMonthlyPl(d: DummyMonthlyPlDeps): Methods {
         result = computeMonthlyPl(input)
         view = result.status
       }
-      // 0080 거울(리뷰 I-A): 원료 1~2가지 달의 원재료 기초 차이 · 다시 마감 차이는 원가 권한 밖에 비운다.
-      const few = !d.costViewer(business) && result.material_count >= 1 && result.material_count <= 2
+      // 0080 거울(리뷰 I-A · I-B): 감춘 원재료 기초 · 기말이 있으면 기초 차이 · 다시 마감 차이도 비운다.
+      const masked = maskPlResult(result, d.costViewer(business))
+      const wh = masked.withheld ?? []
+      // 앞 달(확정) 원재료 기말이 감춰지는 달이면 기초 차이로 풀린다 — 그때도 비운다(다시 리뷰 M-j).
+      const pfc = store.closes.find((c) => c.business_id === business && c.period === prevPeriod(period) && c.status === 'final' && !c.superseded_at)
+      const prevHidden = !!pfc && (maskPlResult({ ...pfc.totals, materials: pfc.detail.materials } as MonthlyPlResult, d.costViewer(business)).withheld ?? []).includes('raw_closing')
+      const few = wh.includes('raw_closing') || prevHidden
       return {
         business_id: business,
         period,
@@ -335,10 +340,10 @@ export function dummyMonthlyPl(d: DummyMonthlyPlDeps): Methods {
         record: live
           ? { close_id: live.close_id, status: live.status, calc_version: live.calc_version, input_hash: live.input_hash, recorded_at: live.recorded_at, recorded_by_name: d.name(live.recorded_by), closed_at: live.closed_at, closed_by_name: live.closed_by ? d.name(live.closed_by) : null }
           : null,
-        result: maskPlResult(result, d.costViewer(business)),
+        result: masked,
         stale: { inputs_changed: live?.status === 'final' && live.input_hash !== hashOf(input), opening_diff: few && opening_diff ? { ...opening_diff, raw: null } : opening_diff, reclose_flags: dummyPlOpenFlags(business, period) },
         provisional_diff: live?.status === 'final' ? live.totals.provisional_diff : null,
-        changed_vs_prev_final: live?.status === 'final' ? (few && live.totals.changed_vs_prev_final ? { ...live.totals.changed_vs_prev_final, raw_closing: null } : live.totals.changed_vs_prev_final) : null,
+        changed_vs_prev_final: live?.status === 'final' ? (wh.includes('raw_closing') && live.totals.changed_vs_prev_final ? { ...live.totals.changed_vs_prev_final, raw_closing: null } : live.totals.changed_vs_prev_final) : null,
         adjustments: store.adjustments
           .filter((a) => a.business_id === business && a.period === period)
           .map((a) => ({ adj_id: a.adj_id, kind: a.kind, amount: a.amount, reason: a.reason, status: a.status, proposed_by_name: d.name(a.proposed_by), proposed_at: a.proposed_at, approved_by_name: a.approved_by ? d.name(a.approved_by) : null })),
