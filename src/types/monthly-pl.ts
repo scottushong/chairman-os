@@ -168,7 +168,8 @@ export interface MonthlyPlResult {
   }
   basis: {
     raw_opening: number | null
-    raw_purchases: number
+    /** 0080: 원가 권한 밖 · 원료 1~2가지 달은 null(감춤). */
+    raw_purchases: number | null
     raw_closing: number | null
     /** ① 원료 사용액(재고 증감 기준) = 기초 + 순매입 − 기말. */
     raw_usage: number | null

@@ -326,6 +326,8 @@ export function dummyMonthlyPl(d: DummyMonthlyPlDeps): Methods {
         result = computeMonthlyPl(input)
         view = result.status
       }
+      // 0080 거울(리뷰 I-A): 원료 1~2가지 달의 원재료 기초 차이 · 다시 마감 차이는 원가 권한 밖에 비운다.
+      const few = !d.costViewer(business) && result.material_count >= 1 && result.material_count <= 2
       return {
         business_id: business,
         period,
@@ -334,9 +336,9 @@ export function dummyMonthlyPl(d: DummyMonthlyPlDeps): Methods {
           ? { close_id: live.close_id, status: live.status, calc_version: live.calc_version, input_hash: live.input_hash, recorded_at: live.recorded_at, recorded_by_name: d.name(live.recorded_by), closed_at: live.closed_at, closed_by_name: live.closed_by ? d.name(live.closed_by) : null }
           : null,
         result: maskPlResult(result, d.costViewer(business)),
-        stale: { inputs_changed: live?.status === 'final' && live.input_hash !== hashOf(input), opening_diff, reclose_flags: dummyPlOpenFlags(business, period) },
+        stale: { inputs_changed: live?.status === 'final' && live.input_hash !== hashOf(input), opening_diff: few && opening_diff ? { ...opening_diff, raw: null } : opening_diff, reclose_flags: dummyPlOpenFlags(business, period) },
         provisional_diff: live?.status === 'final' ? live.totals.provisional_diff : null,
-        changed_vs_prev_final: live?.status === 'final' ? live.totals.changed_vs_prev_final : null,
+        changed_vs_prev_final: live?.status === 'final' ? (few && live.totals.changed_vs_prev_final ? { ...live.totals.changed_vs_prev_final, raw_closing: null } : live.totals.changed_vs_prev_final) : null,
         adjustments: store.adjustments
           .filter((a) => a.business_id === business && a.period === period)
           .map((a) => ({ adj_id: a.adj_id, kind: a.kind, amount: a.amount, reason: a.reason, status: a.status, proposed_by_name: d.name(a.proposed_by), proposed_at: a.proposed_at, approved_by_name: a.approved_by ? d.name(a.approved_by) : null })),

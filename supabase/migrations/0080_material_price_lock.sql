@@ -24,6 +24,7 @@
 --        (가려진 줄을 받은 사람이 넣으면 앱이 숫자 없는 줄을 돌려보낸다 — 넣지 않고 «파일을 다시 올리세요».)
 --   7절 fin_pl_cost_viewer = fin_material_viewer(그룹 CFO 더함). 월별 손익 계산(fin_pl_gather · fin_pl_compute)은 그대로 —
 --        정의자 안에서 원천을 읽고, 밖에는 fin_pl_mask가 합계만 낸다.
+--   7-2절 fin_pl_mask · fin_pl_month(0075 본문) — 원료 1~2가지 달은 원가 권한 밖에 원재료 기초 · 매입 · 기말 · 검산 · 차이 칸을 비운다(리뷰 I-A).
 --
 -- ■ 정의자 함수 전수(이 세 표 · 대기 줄을 읽는 것 — 0070~0079) ■
 --   fin_upload_apply · void · unvoid · revert · cancel · record — 쓰기만 · 돌려주는 값은 id/참거짓 · 감사는 줄 수만.
@@ -280,10 +281,10 @@ begin
     opening_id := v_oid; opening_confirmed := v_ocf;
     -- 0080 리뷰 I1: 원재료 품목이 3가지 미만인 달의 합은 곧 원료 하나의 금액이다 — 원료 숫자 문 밖에는 금액만 비운다(상태는 그대로).
     if c = 'raw' and not v_all then
-      if coalesce(v_mats, 0) between 1 and 2 then
+      if coalesce(v_mats, 0) < 3 then   -- 줄이 없으면 이미 null · 이름 없는 줄만이면 0 — fin_material_totals와 같은 문턱(다시 리뷰 M-a)
         closing_amount := null; statement_opening := null; diff_vs_prev_close := null;
       end if;
-      if v_osrc = 'prev_close' and coalesce(v_pmats, 0) between 1 and 2 then
+      if v_osrc = 'prev_close' and coalesce(v_pmats, 0) < 3 then
         opening_amount := null; diff_vs_prev_close := null;
       end if;
     end if;
@@ -392,12 +393,144 @@ comment on function fin_pl_cost_viewer(text) is
   '0075 → 0080. 월별 손익 원료별 줄을 보는 사람 = fin_material_viewer(대표 · 그룹 CFO · 원가 관리, 회사 범위).';
 
 -- =====================================================================
+-- 7-2절. 월별 손익 보여 주기 — 원료 1~2가지 달의 원재료 합계 칸(리뷰 I-A · 계산은 그대로)
+-- =====================================================================
+/**
+ * 0075 본문 그대로 + 원료가 1~2가지인 달은 원가 권한 밖에 원재료 기초 · 매입 · 기말 · 검산 칸을 비운다(withheld에 적는다).
+ * calc.ts maskPlResult와 같다(check:monthly-pl이 SQL = TS를 본다).
+ */
+create or replace function fin_pl_mask(r jsonb, p_cost boolean) returns jsonb
+language plpgsql immutable set search_path = public, pg_temp as $fn$
+declare
+  v_hide boolean;
+  v_few boolean;
+  v_b jsonb;
+  v_w jsonb;
+  v_basis jsonb;
+  v_check jsonb;
+  v_wh jsonb;
+begin
+  if p_cost then
+    return r;
+  end if;
+  v_hide := coalesce((r ->> 'material_count')::int, 0) < 3
+            or exists (select 1 from jsonb_array_elements(r -> 'blockers') x where x ->> 'code' = 'material_needs_review');
+  select coalesce(jsonb_agg(z.v order by z.o), '[]'::jsonb) into v_b from (
+    select x.v, x.o from jsonb_array_elements(r -> 'blockers') with ordinality x(v, o) where not (x.v ? 'target')
+    union all
+    select jsonb_build_object('code', y.code, 'message', fin_pl_mat_msg(regexp_replace(y.code, '^material_', '')) || ' (원료 ' || y.n || '가지)'), 100000 + y.first
+      from (select x.v ->> 'code' as code, count(*) as n, min(x.o) as first
+              from jsonb_array_elements(r -> 'blockers') with ordinality x(v, o) where x.v ? 'target' group by x.v ->> 'code') y
+  ) z;
+  select coalesce(jsonb_agg(x.v order by x.o), '[]'::jsonb) into v_w
+    from jsonb_array_elements(r -> 'warnings') with ordinality x(v, o) where not (x.v ? 'target');
+  v_basis := case when v_hide then (r -> 'basis') || jsonb_build_object('production_input', null, 'recon_diff', null) else r -> 'basis' end;
+  v_check := r -> 'check';
+  v_wh := case when v_hide then '["production_input", "recon_diff"]'::jsonb else '[]'::jsonb end;
+  -- 0080 리뷰 I-A: 원료가 1~2가지면 원재료 기초 · 매입 · 기말 합계가 곧 원료 하나의 금액이다(0080 fin_material_totals와 같은 문턱).
+  -- 보여 주는 칸만 비운다 — 손익 계산(매출원가 · 영업이익)은 그대로. 검산 칸도 그 셋으로 거꾸로 풀리므로 함께 비운다.
+  v_few := coalesce((r ->> 'material_count')::int, 0) between 1 and 2;
+  if v_few then
+    v_basis := v_basis || jsonb_build_object('raw_opening', null, 'raw_purchases', null, 'raw_closing', null);
+    v_check := coalesce(v_check, '{}'::jsonb) || jsonb_build_object('inventory_opening_total', null, 'inventory_closing_total', null,
+                                                                    'check_value', null, 'diff_vs_new', null, 'purchase_vs_books_diff', null);
+    v_wh := v_wh || '["raw_opening", "raw_purchases", "raw_closing", "check"]'::jsonb;
+  end if;
+  return r || jsonb_build_object(
+    'materials', '[]'::jsonb,
+    'blockers', v_b,
+    'warnings', v_w,
+    'basis', v_basis,
+    'check', v_check,
+    'withheld', v_wh);
+end;
+$fn$;
+
+/** 0075 본문 그대로 + 원료 1~2가지 달의 원재료 기초 차이 · 다시 마감 차이(raw_closing)를 원가 권한 밖에 비운다. */
+create or replace function fin_pl_month(p_business text, p_period text) returns jsonb
+language plpgsql stable security definer set search_path = public, pg_temp as $fn$
+declare
+  v_live fin_pl_closes;
+  v_prevf fin_pl_closes;
+  v_in jsonb;
+  v_res jsonb;
+  v_view text;
+  v_diff jsonb := null;
+  v_flags int;
+  v_adj jsonb;
+  v_rec jsonb := null;
+  v_cost boolean := fin_pl_cost_viewer(p_business);
+  v_few  boolean;
+begin
+  perform fin_pl_gate(p_business, p_period);
+  if not coalesce(can_read_books(p_business), false) then
+    raise exception 'fin_pl_denied' using errcode = '42501';
+  end if;
+  select * into v_live from fin_pl_closes where business_id = p_business and period = p_period and superseded_at is null;
+  v_in := fin_pl_gather(p_business, p_period);
+  if v_live.status = 'final' then
+    v_res := v_live.totals || jsonb_build_object('materials', coalesce(v_live.detail -> 'materials', '[]'::jsonb));
+    v_view := 'final';
+    select * into v_prevf from fin_pl_closes where business_id = p_business and period = fin_prev_period(p_period) and status = 'final' and superseded_at is null;
+    if v_prevf.close_id is not null then
+      v_diff := jsonb_build_object(
+        'raw', fin_pl_n(v_live.totals -> 'basis', 'raw_opening') - fin_pl_n(v_prevf.totals -> 'basis', 'raw_closing'),
+        'wip', fin_pl_n(v_live.totals -> 'basis', 'wip_opening') - fin_pl_n(v_prevf.totals -> 'basis', 'wip_closing'),
+        'finished', fin_pl_n(v_live.totals -> 'basis', 'finished_opening') - fin_pl_n(v_prevf.totals -> 'basis', 'finished_closing'));
+      if coalesce((v_diff ->> 'raw')::numeric, 0) = 0 and coalesce((v_diff ->> 'wip')::numeric, 0) = 0 and coalesce((v_diff ->> 'finished')::numeric, 0) = 0 then
+        v_diff := null;
+      end if;
+    end if;
+  else
+    v_res := fin_pl_compute(v_in);
+    v_view := v_res ->> 'status';
+  end if;
+  select count(*) into v_flags from fin_reclose_flags f where f.business_id = p_business and f.period = p_period and f.cause = 'pl_reopen' and f.cleared_at is null;
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'adj_id', a.adj_id, 'kind', a.kind, 'amount', a.amount, 'reason', a.reason, 'status', a.status,
+           'proposed_by_name', (select u.display_name from user_profiles u where u.user_id = a.proposed_by), 'proposed_at', a.proposed_at,
+           'approved_by_name', (select u.display_name from user_profiles u where u.user_id = a.approved_by)) order by a.proposed_at), '[]'::jsonb)
+    into v_adj
+    from fin_pl_adjustments a where a.business_id = p_business and a.period = p_period;
+  if v_live.close_id is not null then
+    v_rec := jsonb_build_object('close_id', v_live.close_id, 'status', v_live.status, 'calc_version', v_live.calc_version, 'input_hash', v_live.input_hash,
+      'recorded_at', v_live.recorded_at, 'recorded_by_name', (select u.display_name from user_profiles u where u.user_id = v_live.recorded_by),
+      'closed_at', v_live.closed_at, 'closed_by_name', (select u.display_name from user_profiles u where u.user_id = v_live.closed_by));
+  end if;
+  -- 0080 리뷰 I-A: 원료 1~2가지 달은 원재료 기초 차이 · 다시 마감 차이(raw_closing)도 원료 하나의 금액이다 — 원료 숫자 문 밖에 비운다.
+  v_few := not v_cost and coalesce((v_res ->> 'material_count')::int, 0) between 1 and 2;
+  if v_few and v_diff is not null then
+    v_diff := v_diff || jsonb_build_object('raw', null);
+  end if;
+  return jsonb_build_object(
+    'business_id', p_business,
+    'period', p_period,
+    'view_status', v_view,
+    'record', v_rec,
+    'result', fin_pl_mask(v_res, v_cost),
+    'stale', jsonb_build_object('inputs_changed', coalesce(v_live.status = 'final' and v_live.input_hash <> md5(v_in::text), false),
+                                'opening_diff', v_diff, 'reclose_flags', v_flags),
+    'provisional_diff', case when v_live.status = 'final' then v_live.totals -> 'provisional_diff' end,
+    'changed_vs_prev_final', case when v_live.status = 'final' then
+                               case when v_few and jsonb_typeof(v_live.totals -> 'changed_vs_prev_final') = 'object'
+                                    then (v_live.totals -> 'changed_vs_prev_final') || jsonb_build_object('raw_closing', null)
+                                    else v_live.totals -> 'changed_vs_prev_final' end end,
+    'adjustments', v_adj);
+end;
+$fn$;
+comment on function fin_pl_month(text, text) is
+  '0075 → 0080. 월별 손익 한 달 보기. 원료별 줄은 fin_pl_cost_viewer(대표 · CFO · 원가 관리)만 · 원료 1~2가지 달은 원재료 합계 · 차이 칸도 그 밖에 비운다.';
+
+-- =====================================================================
 -- 8절. 함수 권한 — public · anon에게서 이름으로 걷는다. 부르는 RPC만 authenticated.
 -- =====================================================================
 revoke all on function fin_material_viewer(text) from public, anon, authenticated;
 revoke all on function fin_material_line_ok(text, uuid) from public, anon, authenticated;
 revoke all on function fin_material_apply_guard() from public, anon, authenticated;
 revoke all on function fin_pl_cost_viewer(text) from public, anon, authenticated;
+revoke all on function fin_pl_mask(jsonb, boolean) from public, anon, authenticated;
+revoke all on function fin_pl_month(text, text) from public, anon;
+grant execute on function fin_pl_month(text, text) to authenticated;
 revoke all on function fin_material_lines(text, text, text) from public, anon;
 revoke all on function fin_material_totals(text, text) from public, anon;
 revoke all on function fin_upload_pending(uuid) from public, anon;

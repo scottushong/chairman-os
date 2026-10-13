@@ -408,7 +408,10 @@ ok('T10 원가 권한 밖: 원료별 줄 · 원료 이름 · 원료별 단가가
   assert.ok(!text.includes('가짜 원료'), '원료 이름이 샜다')
   assert.ok(!text.includes('wa_unit_cost'), '원료별 단가가 샜다')
   assert.equal(masked.basis.production_input, null, '원료 3가지 미만인데 투입원가 합계가 보인다')
-  assert.deepEqual(masked.withheld, ['production_input', 'recon_diff'])
+  // 0080 리뷰 I-A: 원료 1~2가지면 원재료 기초 · 매입 · 기말 · 검산 칸도 감춘다(합계가 곧 원료 하나의 금액).
+  assert.deepEqual(masked.withheld, ['production_input', 'recon_diff', 'raw_opening', 'raw_purchases', 'raw_closing', 'check'])
+  assert.deepEqual([masked.basis.raw_opening, masked.basis.raw_purchases, masked.basis.raw_closing, masked.check.check_value], [null, null, null, null], '원료 1~2가지인데 원재료 합계가 보인다')
+  assert.equal(masked.pl.cogs, r.pl.cogs, '감추기가 손익 계산을 바꿨다')
   assert.ok(masked.blockers.some((b) => b.message.includes('(원료 1가지)')))
   const full = maskPlResult(r, true)
   assert.equal(full.materials.length, 2)

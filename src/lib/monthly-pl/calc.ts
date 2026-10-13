@@ -304,13 +304,17 @@ export function maskPlResult(r: MonthlyPlResult, costAccess: boolean): MonthlyPl
     return out
   }
   const hide = r.material_count < 3 || r.blockers.some((b) => b.code === 'material_needs_review')
+  // 0080 리뷰 I-A(fin_pl_mask와 같다): 원료 1~2가지면 원재료 기초 · 매입 · 기말 합계가 곧 원료 하나의 금액 — 보여 주는 칸만 비운다.
+  const few = r.material_count >= 1 && r.material_count <= 2
+  const basis = hide ? { ...r.basis, production_input: null, recon_diff: null } : r.basis
   return {
     ...r,
     materials: [],
     blockers: fold(r.blockers),
     warnings: fold(r.warnings),
-    basis: hide ? { ...r.basis, production_input: null, recon_diff: null } : r.basis,
-    withheld: hide ? ['production_input', 'recon_diff'] : [],
+    basis: few ? { ...basis, raw_opening: null, raw_purchases: null, raw_closing: null } : basis,
+    check: few ? { ...r.check, inventory_opening_total: null, inventory_closing_total: null, check_value: null, diff_vs_new: null, purchase_vs_books_diff: null } : r.check,
+    withheld: [...(hide ? ['production_input', 'recon_diff'] : []), ...(few ? ['raw_opening', 'raw_purchases', 'raw_closing', 'check'] : [])],
   }
 }
 

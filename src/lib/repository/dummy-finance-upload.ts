@@ -606,8 +606,8 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
         const row: FinInventoryRollRow = { category: c, opening_amount: oa, opening_state: os, opening_source: osrc, closing_amount: ca, closing_state: cs, closing_status: cst, missing_lines: miss, statement_opening: st, diff_vs_prev_close: st !== null && ps !== null && pa !== null ? st - pa : null, opening_id: oid, opening_confirmed: ocf, prev_missing_lines: osrc === 'prev_close' ? pmiss : 0 }
         // 0080 거울(리뷰 I1): 원재료 품목 3가지 미만인 달의 금액은 원료 숫자 문 밖에 비운다.
         if (c === 'raw' && !materialViewer(businessId)) {
-          if (mats >= 1 && mats <= 2) Object.assign(row, { closing_amount: null, statement_opening: null, diff_vs_prev_close: null })
-          if (osrc === 'prev_close' && pmats >= 1 && pmats <= 2) Object.assign(row, { opening_amount: null, diff_vs_prev_close: null })
+          if (mats < 3) Object.assign(row, { closing_amount: null, statement_opening: null, diff_vs_prev_close: null })
+          if (osrc === 'prev_close' && pmats < 3) Object.assign(row, { opening_amount: null, diff_vs_prev_close: null })
         }
         out.push(row)
       }
