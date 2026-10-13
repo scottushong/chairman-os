@@ -7357,7 +7357,9 @@ async function financeV21() {
   await q(V72.lead, apply('inventory', '2099-04', 'c', [{ row_no: 2, item: '가짜 원재료 1', amount: 120, opening_amount: 250 },
     { row_no: 3, item: '가짜 원재료 2', amount: null, opening_amount: 60 }]))
   type Roll = { category: string; opening_amount: string | null; opening_state: string; opening_source: string; closing_amount: string | null; closing_state: string; missing_lines: number; statement_opening: string | null; diff_vs_prev_close: string | null }
-  const roll = async (p: string) => new Map((await q<Roll>(V72.lead, `select * from fin_inventory_roll('biz_dy', '${p}')`)).map((r) => [r.category, r]))
+  // 0080: 원재료 품목이 3가지 미만인 달의 금액은 원료 숫자 문(대표 · CFO · 원가 관리) 밖에 비운다 — 이 시험은 품목 1~2가지라 CFO로 본다.
+  const roll = async (p: string) => new Map((await q<Roll>(V72.cfo, `select * from fin_inventory_roll('biz_dy', '${p}')`)).map((r) => [r.category, r]))
+  const rollLead = async (p: string) => new Map((await q<Roll>(V72.lead, `select * from fin_inventory_roll('biz_dy', '${p}')`)).map((r) => [r.category, r]))
   const r3 = await roll('2099-03')
   assert.equal(r3.get('raw')!.opening_source, 'unlinked', '0072: 앞 달이 없는 원재료가 «미연결»이 아니다')
   assert.equal(r3.get('raw')!.opening_amount, null, '0072: 미연결 기초가 0으로 채워졌다')
@@ -7367,7 +7369,9 @@ async function financeV21() {
   assert.deepEqual([r4.get('raw')!.opening_source, Number(r4.get('raw')!.opening_amount)], ['prev_close', 300], '0072: 원재료 기초 = 앞 달 명세서 기말 합이 아니다')
   assert.deepEqual([Number(r4.get('raw')!.statement_opening), Number(r4.get('raw')!.diff_vs_prev_close)], [310, 10], '0072: 명세서 기초 ≠ 앞 달 기말 차이가 보이지 않는다')
   assert.deepEqual([Number(r4.get('raw')!.closing_amount), r4.get('raw')!.missing_lines], [120, 1], '0072: 기말 빈칸 줄을 0으로 더했거나 세지 않았다')
-  const inv4 = await q<{ amount: string | null; amount_state: string; opening_amount: string }>(V72.lead, `select amount, amount_state, opening_amount from fin_inventory_lines where period = '2099-04' order by row_no`)
+  assert.equal((await rollLead('2099-04')).get('raw')!.closing_amount, null, '0080: 품목 1~2가지 원재료 기말 금액이 원가 관리 아닌 장부 담당에게 보인다')
+  // 0080: 재고 숫자 칸은 authenticated 열 grant가 없다 — 저장된 값은 소유자로 본다.
+  const inv4 = await owner<{ amount: string | null; amount_state: string; opening_amount: string }>(`select amount, amount_state, opening_amount from fin_inventory_lines where period = '2099-04' order by row_no`)
   assert.deepEqual(inv4.map((r) => [r.amount === null ? null : Number(r.amount), r.amount_state, Number(r.opening_amount)]), [[120, 'value', 250], [null, 'missing', 60]],
     '0072: 차이를 보여 주면서 원천 줄이 바뀌었다(또는 빈칸이 0이 됐다)')
   await rej(V72.lead, `select fin_opening_save('biz_dy', '2099-04', 'finished', 300, null, 'manual', null, '')`, /fin_opening_reason/, '0072: 이유 없는 첫 달 기초')
@@ -7468,9 +7472,11 @@ async function financeV21() {
   assert.deepEqual((await owner<{ k: string; st: string }>(`select qty_kg::text as k, qty_state as st from fin_material_issues where upload_id = '${pend}'`)).map((r) => [Number(r.k), r.st]),
     [[42, 'value']], '0072 리뷰 C1: 대기 → 넣기에서 kg가 DB의 대기 줄에서 붙지 않았다')
   await rej(V72.lead, `select used_qty from fin_inventory_lines limit 1`, /permission denied/, '0072 리뷰 I2: authenticated가 품목별 사용수량(used_qty)을 읽는다')
-  assert.ok((await q(V72.lead, `select item, stock_qty, amount from fin_inventory_lines limit 1`)).length === 1, '0072: 사용수량 말고 다른 재고 칸을 못 읽는다')
+  assert.ok((await q(V72.lead, `select item, amount_state from fin_inventory_lines limit 1`)).length === 1, '0072: 재고 품목 · 상태 칸을 못 읽는다')
+  // 0080: 재고 수량 · 금액 칸도 authenticated에서 뺐다(읽기는 fin_material_lines — check:material-lock).
+  await rej(V72.lead, `select stock_qty from fin_inventory_lines limit 1`, /permission denied/, '0080: authenticated가 재고 수량을 직접 읽는다')
   await q(V72.lead, apply('inventory', '2099-12', '7', [{ row_no: 1, item: '가짜 원재료 0', amount: 0 }, { row_no: 2, item: '가짜 원재료 빈칸', amount: null }]))
-  assert.deepEqual((await q<{ a: string | null; st: string }>(V72.lead, `select amount::text as a, amount_state as st from fin_inventory_lines where period = '2099-12' order by row_no`)).map((r) => [r.a === null ? null : Number(r.a), r.st]),
+  assert.deepEqual((await owner<{ a: string | null; st: string }>(`select amount::text as a, amount_state as st from fin_inventory_lines where period = '2099-12' order by row_no`)).map((r) => [r.a === null ? null : Number(r.a), r.st]),
     [[0, 'confirmed_zero'], [null, 'missing']], '0072 리뷰 I3: 0070 시절 재고 금액의 상태 없는 0이 0 확인이 아니다(또는 빈칸이 0이 됐다)')
   await rej(V72.lead, `select fin_upload_apply('biz_dy', 'card', '2099-12', 'x.xlsx', '${'9'.repeat(64)}', 's', 'high', 0, true, '[{"row_no":1,"amount":1}]', null, 'none', null, null)`,
     /fin_upload_auto_blocked/, '0072: 중복 의심 수를 안 보낸 자동 넣기가 들어갔다(닫힌 쪽으로 실패해야)')

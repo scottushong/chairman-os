@@ -406,6 +406,9 @@ export async function countDupSuspects(repo: ChairmanRepository, businessId: str
   if (!period) return { count: null, notes: [] }
   try {
     const [existing, setting, saved] = await Promise.all([repo.listFinTxLines(businessId, period), repo.finDedupeSetting(businessId), repo.listFinTxGroups(businessId, period)])
+    // 0080: 원료 숫자가 가려진 입고 줄(올린 사람 1시간 · 대표 · CFO · 원가 관리 밖)이 있으면 금액으로 맞춰 볼 수 없다 —
+    // 셀 수 없음(null)으로 두어 자동 넣기를 멈춘다(사람이 미리보기에서 본다).
+    if (existing.some((l) => l.hidden)) return { count: null, notes: ['원료 금액이 가려진 입고 줄이 있어 같은 거래를 맞춰 보지 못했습니다 — 대표 · CFO · 원가 관리가 «자료 간 같은 거래»에서 확인합니다.'] }
     const fresh = txLinesFromRows(kind, rows)
     const groups = matchTx([...existing, ...fresh], setting, rejectedPairs(saved))
     const mine = groups.filter((g) => g.status === 'suspect' && g.refs.some((r) => r.startsWith('new:')))

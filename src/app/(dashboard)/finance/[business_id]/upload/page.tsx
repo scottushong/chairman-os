@@ -151,7 +151,10 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
               {' · '}입고 {won(matTotals.purchase_amount)}({matTotals.purchase_lines}줄)
               {' · '}재고 기말 {won(matTotals.inventory_closing)}({matTotals.inventory_lines}줄)
               {' · '}OFFER 원화 {won(matTotals.import_krw)} · 부대비 {won(matTotals.import_extra)}({matTotals.import_lines}줄)
-              <span className="block text-t10h text-ink-muted">원료별 단가 · 수량은 올린 사람(올린 뒤 1시간) · 대표 · CFO · 원가 관리만 봅니다.</span>
+              <span className="block text-t10h text-ink-muted">
+                원료별 단가 · 수량은 올린 사람(올린 뒤 1시간) · 대표 · CFO · 원가 관리만 봅니다.
+                {matTotals.withheld?.length ? ' 원료가 3가지 미만인 자료는 합계도 «—»로 감춥니다(합계가 곧 원료 하나의 값이라서).' : ''}
+              </span>
             </p>
           ) : null}
           <div className="mt-4">

@@ -2839,3 +2839,11 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - 0079 apply와 ECOUNT 월별 업로드가 같은 달에 동시에 커밋되면 서로 못 볼 수 있다(apply · import 지킴에 회사 자문 잠금 없음). 둘 다 사람이 누르는 드문 일 — 다음 번호에서 `pg_advisory_xact_lock(hashtext('ledger_post:'||회사))`.
 - ledger_post_books_check는 대체 · 역분개로 0이 된 옛 전표도 «다른 전표»로 센다 — 대표 · CFO + 이유로 지나간다(보수적, 틀리게 막지는 않음).
 
+
+## 2026-10-13 0080 원료 단가 · kg 노출 막기 — 리뷰 Minor · 미룬 것
+- (미룸 · 리뷰 M2) 가린 줄에도 `amount_state` · `vat_state` · `opening_state`가 남는다 — «confirmed_zero»면 금액 0을 안다. 0072가 상태 칸을 열어 둔 설계 그대로 · 값이 0일 때뿐.
+- (미룸 · 리뷰 M4 일부) PDF · 사진 읽기(ai-doc.ts)는 문서 전체를 AI에 보낸다 — 올린 사람 세션 · 스위치 finance_docs(기본 대표만). 머리글을 잘못 찾으면 위 3줄은 견본에서 가리지 않는다.
+- (미룸 · 리뷰 M6) `listFinTxLines`의 «0080 전 DB» 대체 길(표 직접 읽기) — 0080이 운영까지 들어간 뒤 지운다.
+- (미룸) 문 밖 장부 담당은 남이 올린 대기(모든 종류)의 종류 · 칸을 고칠 수 없다(칸 격자 없음) — 파일을 다시 올린다. 불편하면 원료 세 종류 · 모름만 격자를 빼도록 좁힌다.
+- (미룸) 입고 · OFFER 자료의 «바꾸기» 전후 합계 차이 — 0074는 출고 · 재고만 대표 · CFO로 막았다. 합계가 원료 3가지 이상일 때만 보이므로 남은 위험은 작다.
+- (미룸) 0080 넣기 지킴 대신 0072 출고처럼 «DB 대기 줄에서 숫자 붙이기»로 하면 문 밖 장부 담당도 넣을 수 있다 — fin_upload_apply 본문 재정의가 필요(다음 번호).

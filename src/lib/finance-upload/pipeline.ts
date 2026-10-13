@@ -600,13 +600,19 @@ export function autoDecision(x: AutoInput): { auto: boolean; why: string[] } {
 
 export const CONF_KO: Record<Confidence, string> = { high: '높음', medium: '보통', low: '낮음', none: '없음' }
 
-/** 0080: 숫자 모양 칸(금액 · 수량 · 단가 · 환율 · kg) — AI 견본에서는 «<숫자>»로 바꾼다. */
-const NUMBER_CELL = /^[\s(+-]*[₩$€¥]?\s*[\d][\d,.\s]*(%|kg|원|개|ea)?\)?$/i
-
 /**
- * AI에 보내는 시트 견본 — 시트명 · 머리글 · 앞 20줄 · 합계 줄(버리기 뒤). 전체 숫자를 보내지 않는다.
- * 0080: 머리글 줄 아래 칸의 숫자는 «<숫자>»로 바꾼다(원료 단가 · kg가 AI 쪽으로 나가지 않게 — 종류 · 칸은 머리글 · 글자 칸 · 숫자 자리로 안다).
+ * 0080: 숫자 모양 칸(금액 · 수량 · 단가 · 환율 · kg) — AI 견본에서는 «<숫자>»로 바꾼다.
+ * 통화 · 단위 낱말(USD · KRW · 원 · kg · 톤 · 개 · ea · @ · % …)을 걷고 숫자 · 구두점만 남으면 숫자 칸이다(리뷰 M4 — «USD 12,000» · «1.5톤» · «@3,200»).
+ * 날짜(2099-03-04 · 2099.03.04 · 2099/3/4)는 그대로 둔다.
  */
+const UNIT_WORDS = /\b[A-Z]{3}\b|kg|톤|ton|원|개|ea|pcs|@|%|₩|\$|€|¥|£/gi
+const DATE_CELL = /^\d{4}[-./]\d{1,2}[-./]\d{1,2}$/
+const isNumberCell = (t: string) => {
+  const s = t.trim()
+  if (!/\d/.test(s) || DATE_CELL.test(s)) return false
+  return /^[\d,.\s()+\-]+$/.test(s.replace(UNIT_WORDS, '').trim() || 'x')
+}
+
 export function aiSample(sheet: EcountSheet, headerRow: number): { sheet: string; rows: string[][] } {
   const start = Math.max(0, headerRow - 3)
   const take = sheet.rows.slice(start, start + 23).map((r, i) => ({ r, body: start + i > headerRow }))
@@ -614,7 +620,7 @@ export function aiSample(sheet: EcountSheet, headerRow: number): { sheet: string
   const asText = ({ r, body }: { r: EcountCell[]; body: boolean }) =>
     r.map((c) => {
       const t = cellText(c).slice(0, 60)
-      return body && (c.t === 'number' || NUMBER_CELL.test(t.trim())) && /\d/.test(t) ? '<숫자>' : t
+      return body && ((c.t === 'number' && /\d/.test(t)) || isNumberCell(t)) ? '<숫자>' : t
     })
   return { sheet: sheet.name.slice(0, 80), rows: [...take, ...totals].map(asText) }
 }

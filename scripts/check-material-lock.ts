@@ -92,6 +92,7 @@ async function pglite() {
   const [{ id: upPur }] = await apply(U.kim, 'purchase_in', 'a', [
     { row_no: 4, material: '가짜 원료 가', supplier: '가짜 공급처', qty: 1000, amount: 1_250_000 },
     { row_no: 5, material: '가짜 원료 나', supplier: '가짜 공급처', qty: 500, amount: 900_000 },
+    { row_no: 6, material: '가짜 원료 마', supplier: '가짜 공급처', qty: 100, amount: 100_000 },
   ])
   const [{ id: upInv }] = await apply(U.kim, 'inventory', 'b', [{ row_no: 3, item: '가짜 원료 가', stock_qty: 200, amount: 250_000, amount_state: 'value' }])
   const [{ id: upImp }] = await apply(U.kim, 'import', 'c', [{ row_no: 2, ref_no: 'OF-1', material: '가짜 원료 다', supplier: '가짜 해외', currency: 'USD', amount: 1000, fx_rate: 1300, amount_krw: 1_300_000, extra_cost: 80_000 }])
@@ -121,7 +122,7 @@ async function pglite() {
     await hides(U.reader, k, '장부 읽기만')
   }
   const pur = await lines(U.chair, 'purchase_in')
-  assert.deepEqual(pur.map((l) => [l.material, Number(l.qty), Number(l.amount)]), [['가짜 원료 가', 1000, 1_250_000], ['가짜 원료 나', 500, 900_000]], '0080: 대표 입고 줄 값')
+  assert.deepEqual(pur.map((l) => [l.material, Number(l.qty), Number(l.amount)]), [['가짜 원료 가', 1000, 1_250_000], ['가짜 원료 나', 500, 900_000], ['가짜 원료 마', 100, 100_000]], '0080: 대표 입고 줄 값')
   // 올린 뒤 59분 — 아직 보인다 · 61분 — 가림(김병훈 자리도 합계만).
   await owner(`update fin_uploads set created_at = now() - interval '59 minutes' where upload_id in ('${upPur}', '${upInv}', '${upImp}')`)
   for (const k of ['purchase_in', 'inventory', 'import']) await shows(U.kim, k, '올린 사람(59분)')
@@ -138,13 +139,18 @@ async function pglite() {
 
   // ── c. 회사 · 월 합계 금액 — 장부 읽기만 · 회사 대표도. 수량 · 원료 이름 없음 ──
   const [{ v: tot }] = await as<{ v: Record<string, unknown> }>(U.reader, `select fin_material_totals('biz_dy', '${P}') as v`)
-  assert.equal(Number(tot.purchase_amount), 2_150_000, '0080: 입고 합계')
-  assert.equal(Number(tot.inventory_closing), 250_000, '0080: 재고 기말 합계')
-  assert.equal(Number(tot.import_krw), 1_300_000, '0080: OFFER 원화 합계')
-  assert.equal(Number(tot.import_extra), 80_000, '0080: OFFER 부대비 합계')
+  assert.equal(Number(tot.purchase_amount), 2_250_000, '0080: 입고 합계(원료 3가지)')
+  // 리뷰 I1: 원료 1가지인 재고 · OFFER는 합계가 곧 원료 하나의 값 — 장부 읽기만에게 감춘다.
+  assert.deepEqual([tot.inventory_closing, tot.import_krw, tot.import_extra, tot.withheld], [null, null, null, ['inventory', 'import']], '0080: 원료 3가지 미만 합계가 보인다')
   for (const k of Object.keys(tot)) assert.ok(!/qty|kg|material|unit/.test(k), `0080: 합계에 ${k}`)
+  const [{ v: totChair }] = await as<{ v: Record<string, unknown> }>(U.chair, `select fin_material_totals('biz_dy', '${P}') as v`)
+  assert.deepEqual([Number(totChair.inventory_closing), Number(totChair.import_krw), Number(totChair.import_extra), totChair.withheld], [250_000, 1_300_000, 80_000, []], '0080: 대표 합계')
+  // 기초재고 연결(fin_inventory_roll) 원재료 줄도 같은 문턱.
+  const raw = async (uid: string) => (await as<{ closing_amount: string | null }>(uid, `select closing_amount from fin_inventory_roll('biz_dy', '${P}') where category = 'raw'`))[0].closing_amount
+  assert.equal(await raw(U.reader), null, '0080: 품목 1가지 원재료 기말이 장부 읽기만에게 보인다')
+  assert.equal(Number(await raw(U.cfo)), 250_000, '0080: CFO 원재료 기말')
   // AIAgent는 0047부터 장부 읽기([제한] 열람) — 회사 · 월 합계는 읽고, 줄 숫자는 원가 관리 줄이 있어도 가림.
-  assert.equal(Number((await as<{ v: Record<string, unknown> }>(U.ai, `select fin_material_totals('biz_dy', '${P}') as v`))[0].v.purchase_amount), 2_150_000, '0080: AI 합계')
+  assert.equal(Number((await as<{ v: Record<string, unknown> }>(U.ai, `select fin_material_totals('biz_dy', '${P}') as v`))[0].v.purchase_amount), 2_250_000, '0080: AI 합계')
   for (const k of ['purchase_in', 'inventory', 'import']) await hides(U.ai, k, 'AIAgent(원가 관리 줄이 있어도)')
   await refuses(as(null, `select fin_material_totals('biz_dy', '${P}')`), /permission denied/, '0080: anon 합계')
   await refuses(as(null, `select fin_material_lines('biz_dy', '${P}', 'purchase_in')`), /permission denied/, '0080: anon 줄')
@@ -154,7 +160,7 @@ async function pglite() {
   await refuses(as(outsider, `select fin_material_lines('biz_dy', '${P}', 'purchase_in')`), /fin_upload_denied/, '0080: 장부 권한 없는 사람')
 
   // ── d. 미리보기 대기 — 올린 사람(방금)은 숫자 · 칸 격자, 회사 대표는 가림 · 칸 격자 없음, 대표는 그대로 ──
-  const pending = { rows: [{ row_no: 4, material: '가짜 원료 라', supplier: '가짜', qty: 300, amount: 450_000 }], grid: [['자재명', '공급처', '수량', '금액'], ['가짜 원료 라', '가짜', 300, 450_000]], meta: { header_row: 0 } }
+  const pending = { rows: [{ row_no: 4, material: '가짜 원료 라', supplier: '가짜', qty: 300, amount: 450_000 }], grid: [['자재명', '공급처', '수량', '금액'], ['가짜 원료 라', '가짜', 300, 450_000]], meta: { header_row: 0, errors: ['금액 칸 줄의 합 450,000 ≠ 합계 줄 450,001'], warnings: ['«원료 라 소계» 수량 칸: 줄의 합 300'] } }
   const [{ id: pend }] = await as<{ id: string }>(U.kim, `select fin_upload_record('biz_dy', 'purchase_in', '2099-04', '가짜 대기.xlsx', '${'d'.repeat(64)}', 's', 'medium', 0, 'needs_review',
     '${JSON.stringify(pending)}'::jsonb, null)::text as id`)
   const pv = async (uid: string) => (await as<{ v: Record<string, unknown> & { rows: Record<string, unknown>[] } }>(uid, `select fin_upload_pending('${pend}') as v`))[0].v
@@ -164,6 +170,14 @@ async function pglite() {
   assert.equal(ceoPv.masked, true, '0080: 회사 대표 대기가 가려지지 않았다')
   assert.equal(ceoPv.grid, undefined, '0080: 회사 대표에게 칸 격자(시트 숫자)가 갔다')
   assert.ok(ceoPv.rows[0].material === '가짜 원료 라' && ceoPv.rows[0].qty === undefined && ceoPv.rows[0].amount === undefined, '0080: 회사 대표 대기 줄 숫자')
+  const ceoMeta = ceoPv.meta as Record<string, unknown>
+  assert.ok(ceoMeta.errors === undefined && ceoMeta.warnings === undefined && ceoMeta.header_row === 0, '0080: 회사 대표 대기 검증 문구에 줄 합 · 소계 숫자가 남았다(리뷰 M1)')
+  assert.ok(Array.isArray((kimPv.meta as Record<string, unknown>).errors), '0080: 올린 사람 검증 문구')
+  // 리뷰 M3: 다른 종류(판매)로 잡힌 대기도 칸 격자는 문 밖에 가지 않는다(종류를 잘못 알아본 원료 파일).
+  const [{ id: pendS }] = await as<{ id: string }>(U.kim, `select fin_upload_record('biz_dy', 'sales', '2099-04', '가짜 판매 대기.xlsx', '${'1'.repeat(64)}', 's', 'low', 0, 'needs_review',
+    '${JSON.stringify({ rows: [{ row_no: 2, product: '가짜 제품', amount: 1000 }], grid: [['품목', '금액'], ['가짜 원료 라', 450_000]], meta: {} })}'::jsonb, null)::text as id`)
+  const [{ v: salesCeo }] = await as<{ v: Record<string, unknown> & { rows: Record<string, unknown>[] } }>(U.ceo, `select fin_upload_pending('${pendS}') as v`)
+  assert.ok(salesCeo.grid === undefined && !salesCeo.masked && salesCeo.rows[0].amount === 1000, '0080: 판매 대기 칸 격자가 회사 대표에게 갔다(줄은 그대로)')
   const cfoPv = await pv(U.cfo)
   assert.ok(!cfoPv.masked && cfoPv.grid, '0080: CFO 대기')
   // 모름(unknown) 시트도 원료 파일일 수 있다 — 칸 격자를 가린다.
@@ -176,10 +190,10 @@ async function pglite() {
   const pendRows = JSON.stringify(ceoPv.rows)
   await refuses(as(U.ceo, `select fin_upload_apply('biz_dy', 'purchase_in', '2099-04', null, null, 's', 'medium', 0, false, '${pendRows}'::jsonb, null, 'none', null, '${pend}', 0)`),
     /fin_material_hidden/, '0080: 가려진 대기를 회사 대표가 넣었다(숫자 없는 줄)')
-  await refuses(as(U.ceo, `select fin_upload_apply('biz_dy', 'sales', '2099-04', null, null, 's', 'medium', 0, false, '[{"row_no":1,"product":"x","amount":1}]'::jsonb, null, 'none', null, '${pendU}', 0)`),
-    /fin_material_hidden/, '0080: 가려진 모름 대기를 회사 대표가 다른 종류로 넣었다')
+  await refuses(as(U.ceo, `select fin_upload_apply('biz_dy', 'sales', '2099-04', null, null, 's', 'medium', 0, false, '[{"row_no":1,"product":"x","amount":1}]'::jsonb, null, 'none', null, '${pendU}', 0)`.replace(`'sales', '2099-04'`, `'purchase_in', '2099-04'`).replace('"product":"x","amount":1', '"material":"x"')),
+    /fin_material_hidden/, '0080: 가려진 모름 대기를 회사 대표가 입고로 넣었다')
   await as(U.kim, `select fin_upload_apply('biz_dy', 'purchase_in', '2099-04', null, null, 's', 'medium', 0, false, '${JSON.stringify(kimPv.rows)}'::jsonb, null, 'none', null, '${pend}', 0)`)
-  assert.equal((await lines(U.chair, 'purchase_in')).length, 2, '0080: 넣기 뒤 다른 달 줄이 섞였다')
+  assert.equal((await lines(U.chair, 'purchase_in')).length, 3, '0080: 넣기 뒤 다른 달 줄이 섞였다')
   const [{ n: n04 }] = await owner<{ n: number }>(`select count(*)::int as n from fin_purchase_in_lines where period = '2099-04' and amount = 450000`)
   assert.equal(n04, 1, '0080: 올린 사람이 넣은 대기 줄의 금액')
   // 1시간 지난 자기 대기도 넣지 못한다(가려진 줄이 돌아온다).
@@ -233,7 +247,9 @@ async function dummy() {
   const ceo = purOf(await as('dy_ceo', () => repo.listFinTxLines(B, '2026-09')))
   assert.ok(ceo.length > 0 && ceo.every((l) => l.hidden && l.amount === null && l.qty === null && l.vat === null), 'dummy: 회사 대표 입고 줄이 가려지지 않았다')
   const tot = await as('dy_ceo', () => repo.finMaterialTotals(B, '2026-09'))
-  assert.ok(tot && tot.purchase_lines > 0 && tot.purchase_amount !== null, 'dummy: 회사 대표 합계')
+  assert.ok(tot && tot.purchase_lines > 0 && (tot.purchase_amount !== null || !!tot.withheld?.includes('purchase')), 'dummy: 회사 대표 합계')
+  const totChair = await as('chairman', () => repo.finMaterialTotals(B, '2026-09'))
+  assert.ok(totChair && totChair.purchase_amount !== null && !totChair.withheld?.length, 'dummy: 대표 합계')
   // 회사 대표가 방금 올린 대기 — 본인은 숫자, 다른 장부 담당(support_lead는 원가 관리라 봄)… 회사 대표 대기를 대표가 보고, 가림은 1시간 뒤.
   const id = await as('dy_ceo', () => repo.finUploadRecord({ business_id: B, kind: 'purchase_in', period: '2099-06', file_name: '가짜.xlsx', file_sha256: 'c'.repeat(64), sheet_name: 's', ai_confidence: 'medium', ai_used: 0, status: 'needs_review', pending: { rows: [{ row_no: 2, material: '가짜 원료', qty: 10, amount: 1000 }], grid: [['자재명', '수량', '금액'], ['가짜 원료', 10, 1000]], meta: {} }, error: null }))
   const own = await as('dy_ceo', () => repo.finUploadPending(id))
@@ -260,12 +276,14 @@ async function aiSampleMask() {
       [t('2099년 3월 입고명세서')],
       [t('자재명'), t('입고일자'), t('수량'), t('단가'), t('금액')],
       [t('가짜 원료 가'), t('2099-03-04'), num(1000), t('1,250'), num(1_250_000)],
+      [t('가짜 원료 나'), t('2099.03.05'), t('1.5톤'), t('@3,200'), t('USD 12,000')],
       [t('합계'), t(''), num(1000), t(''), t('1,250,000원')],
     ],
   }
   const s = aiSample(sheet as never, 1)
   const flat = s.rows.flat().join('|')
-  assert.ok(!/1,?250|1000/.test(flat), `AI 견본에 숫자가 남았다 (${flat})`)
+  assert.ok(!/1,?250|1000|1\.5|3,200|12,000/.test(flat), `AI 견본에 숫자가 남았다 (${flat})`)
+  assert.ok(flat.includes('2099.03.05'), `AI 견본이 날짜를 가렸다 (${flat})`)
   assert.ok(flat.includes('자재명') && flat.includes('가짜 원료 가') && flat.includes('2099-03-04') && flat.includes('<숫자>'), `AI 견본이 머리글 · 글자 · 날짜를 잃었다 (${flat})`)
   console.log('③ AI 견본(머리글 아래 숫자 → <숫자> · 머리글 · 글자 · 날짜는 그대로) OK')
 }

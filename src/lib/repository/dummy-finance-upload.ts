@@ -156,7 +156,7 @@ export function dummyFinLines(): readonly Line[] {
   return store.lines
 }
 /** 시험이 평가금액 · 재마감 대상을 읽는다(dummy만). 0075 dummy(월별 손익)도 같은 저장소를 읽는다. */
-export function dummyFinStore(): Readonly<Pick<Store, 'valuations' | 'flags' | 'groups' | 'members' | 'openings'>> {
+export function dummyFinStore(): Readonly<Pick<Store, 'valuations' | 'flags' | 'groups' | 'members' | 'openings' | 'uploads'>> {
   ensureDemo()
   return store
 }
@@ -294,12 +294,20 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
         // 급여는 칸 격자에도 사람별 줄이 있다 — 대표 · CFO 밖에는 뺀다(0070 fin_upload_pending과 같다).
         out = structuredClone(u.kind === 'payroll' ? rest : { ...rest, grid })
       }
-      // 0080: 입고 · 재고 · OFFER · 모름은 원료 숫자를 볼 수 없는 사람에게 줄 숫자 칸 · 칸 격자 없이.
-      if (MATERIAL_KINDS.has(u.kind) && !lineOk(u.business_id, u.upload_id)) {
-        const keys = MATERIAL_KEYS[u.kind]
+      // 0080: 원료 숫자 문 밖에는 어느 종류든 칸 격자 없이(리뷰 M3). 입고 · 재고 · OFFER · 모름은 줄 숫자 칸 · 검증 문구도 없이(리뷰 M1).
+      if (!lineOk(u.business_id, u.upload_id)) {
         const { grid: _g, ...rest } = out
         void _g
-        out = { ...rest, masked: true, rows: rest.rows.map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => !keys.includes(k))) as FinRow) }
+        out = rest
+        if (MATERIAL_KINDS.has(u.kind)) {
+          const keys = MATERIAL_KEYS[u.kind]
+          const { errors: _e, warnings: _w, fixes: _f, dup_notes: _n, ...meta } = out.meta ?? {}
+          void _e
+          void _w
+          void _f
+          void _n
+          out = { ...out, meta, masked: true, rows: out.rows.map((r) => Object.fromEntries(Object.entries(r).filter(([k]) => !keys.includes(k))) as FinRow) }
+        }
       }
       return out
     },
@@ -356,7 +364,7 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
         const u = store.uploads.find((v) => v.upload_id === id && v.business_id === x.business_id)
         if (!u || u.status !== 'needs_review') throw new Error('fin_upload_not_pending')
         // 0080 넣기 지킴 거울: 가려진 미리보기(입고 · 재고 · OFFER · 모름)는 숫자를 볼 수 있는 사람만 넣는다.
-        if (status === 'applied' && (MATERIAL_KINDS.has(u.kind) || (MATERIAL_KINDS.has(x.kind) && x.kind !== 'unknown')) && !lineOk(u.business_id, u.upload_id)) {
+        if (status === 'applied' && ((MATERIAL_KINDS.has(u.kind) && u.kind !== 'unknown') || (MATERIAL_KINDS.has(x.kind) && x.kind !== 'unknown')) && !lineOk(u.business_id, u.upload_id)) {
           throw new Error('fin_material_hidden')
         }
         // 0072 리뷰 C1: 출고 kg는 저장해 둔 대기 줄에서 줄 번호로 붙인다(앱이 돌려보내는 줄에는 kg가 없다).
@@ -537,11 +545,16 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
         let pmiss = 0
         let oid: string | null = null
         let ocf: boolean | null = null
+        let mats = 0
+        let pmats = 0
         if (c === 'raw') {
           const inv = (p: string) => store.lines.filter((l) => l.kind === 'inventory' && l.business_id === businessId && l.period === p && !l.voided_at)
           const known = (ls: Line[]) => ls.filter((l) => l.row.amount_state !== 'missing')
           const pk = known(inv(prev))
           pmiss = inv(prev).length - pk.length
+          const items = (ls: Line[]) => new Set(ls.map((l) => String(l.row.item ?? '').trim().toLowerCase())).size
+          pmats = items(inv(prev))
+          mats = items(inv(period))
           if (pk.length) {
             pa = pk.reduce((a, l) => a + Number(l.row.amount), 0)
             ps = pa === 0 ? 'confirmed_zero' : 'value'
@@ -590,7 +603,13 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
             osrc = 'unlinked'
           }
         }
-        out.push({ category: c, opening_amount: oa, opening_state: os, opening_source: osrc, closing_amount: ca, closing_state: cs, closing_status: cst, missing_lines: miss, statement_opening: st, diff_vs_prev_close: st !== null && ps !== null && pa !== null ? st - pa : null, opening_id: oid, opening_confirmed: ocf, prev_missing_lines: osrc === 'prev_close' ? pmiss : 0 })
+        const row: FinInventoryRollRow = { category: c, opening_amount: oa, opening_state: os, opening_source: osrc, closing_amount: ca, closing_state: cs, closing_status: cst, missing_lines: miss, statement_opening: st, diff_vs_prev_close: st !== null && ps !== null && pa !== null ? st - pa : null, opening_id: oid, opening_confirmed: ocf, prev_missing_lines: osrc === 'prev_close' ? pmiss : 0 }
+        // 0080 거울(리뷰 I1): 원재료 품목 3가지 미만인 달의 금액은 원료 숫자 문 밖에 비운다.
+        if (c === 'raw' && !materialViewer(businessId)) {
+          if (mats >= 1 && mats <= 2) Object.assign(row, { closing_amount: null, statement_opening: null, diff_vs_prev_close: null })
+          if (osrc === 'prev_close' && pmats >= 1 && pmats <= 2) Object.assign(row, { opening_amount: null, diff_vs_prev_close: null })
+        }
+        out.push(row)
       }
       return out
     },
@@ -667,10 +686,16 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
       const p = of('purchase_in')
       const i = of('inventory')
       const m = of('import')
+      // 0080 리뷰 I1 거울: 원료(이름) 3가지 미만인 종류는 원료 숫자 문 밖에 금액 null.
+      const few = (ls: { row: FinRow }[], key: (r: FinRow) => unknown) => !materialViewer(businessId) && ls.length > 0 && new Set(ls.map((l) => String(key(l.row) ?? '').trim().toLowerCase())).size < 3
+      const wp = few(p, (r) => r.material ?? r.item_or_account)
+      const wi = few(i, (r) => r.item)
+      const wm = few(m, (r) => r.material)
       return {
-        purchase_lines: p.length, purchase_amount: sum(p, 'amount'),
-        inventory_lines: i.length, inventory_closing: sum(i, 'amount', (r) => r.amount_state === 'missing'), inventory_opening: sum(i, 'opening_amount', (r) => r.opening_state === 'missing'),
-        import_lines: m.length, import_krw: sum(m, 'amount_krw'), import_extra: sum(m, 'extra_cost'),
+        purchase_lines: p.length, purchase_amount: wp ? null : sum(p, 'amount'),
+        inventory_lines: i.length, inventory_closing: wi ? null : sum(i, 'amount', (r) => r.amount_state === 'missing'), inventory_opening: wi ? null : sum(i, 'opening_amount', (r) => r.opening_state === 'missing'),
+        import_lines: m.length, import_krw: wm ? null : sum(m, 'amount_krw'), import_extra: wm ? null : sum(m, 'extra_cost'),
+        withheld: [...(wp ? ['purchase' as const] : []), ...(wi ? ['inventory' as const] : []), ...(wm ? ['import' as const] : [])],
       }
     },
     async listFinTxLines(businessId, period) {

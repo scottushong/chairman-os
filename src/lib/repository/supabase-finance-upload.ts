@@ -5,6 +5,7 @@ import {
   type FinDedupeSetting,
   type FinInventoryRollRow,
   type FinIssueSummary,
+  type FinMaterialTotals,
   type FinRecloseFlag,
   type FinTxGroup,
   type FinTxLine,
@@ -243,6 +244,7 @@ export function financeUploadMethods(sb: SupabaseClient): Methods {
         purchase_lines: Number(d.purchase_lines ?? 0), purchase_amount: n(d.purchase_amount),
         inventory_lines: Number(d.inventory_lines ?? 0), inventory_closing: n(d.inventory_closing), inventory_opening: n(d.inventory_opening),
         import_lines: Number(d.import_lines ?? 0), import_krw: n(d.import_krw), import_extra: n(d.import_extra),
+        withheld: Array.isArray(d.withheld) ? (d.withheld as FinMaterialTotals['withheld']) : [],
       }
     },
     async finIssueSummary(businessId, period) {

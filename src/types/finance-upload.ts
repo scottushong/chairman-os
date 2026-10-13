@@ -206,6 +206,8 @@ export interface FinMaterialTotals {
   import_lines: number
   import_krw: number | null
   import_extra: number | null
+  /** 리뷰 I1: 원료 3가지 미만이라 금액을 감춘 종류(원료 숫자 문 밖) */
+  withheld?: ('purchase' | 'inventory' | 'import')[]
 }
 
 export interface FinIssueSummary {

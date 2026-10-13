@@ -215,6 +215,16 @@ async function main() {
       + (select count(*) from accounts where account_code in ('T7901', 'T7902')) + (select count(*) from journal_entries where entry_date >= '2099-08-01' and entry_date < '2099-09-01') as n`)).rows[0].n
     assert.equal(Number(left), 0, '0079 staging 시험 SQL이 반영 · 올리기 · 계정 · 전표를 남겼다')
   }
+  // 0080(원료 단가 · kg 노출 막기)이 있는 브랜치에서만. 0071보다 먼저.
+  if (files.includes('0080_material_price_lock.sql')) {
+    const grants80 = async () => (await db.query<{ s: string }>(`select string_agg(user_id || ':' || module || ':' || can_write, ',' order by user_id, module) as s from user_module_access`)).rows[0].s
+    const before80 = await grants80()
+    const m80 = await runFile('0080_staging_test.sql')
+    assert.match(m80, /^0080 STAGING PASS a\(숫자 칸 직접 읽기 거부\) b\(올린 사람 방금 = 숫자\) c\(장부 읽기만 = 가림 · 합계\) d\(61분 뒤 올린 사람 가림 · 대표 숫자\) e\(CFO · 원가 관리 숫자\) f\(대기 가림 · 넣기 거부\) g\(anon 거부\)$/, `0080 staging 시험 SQL이 PASS로 끝나지 않는다 (${m80})`)
+    assert.equal(await grants80(), before80, '0080 staging 시험 SQL이 모듈 줄을 바꾼 채 남겼다')
+    const left = (await db.query<{ n: number }>(`select (select count(*) from fin_uploads where period in ('2099-07', '2099-08')) + (select count(*) from fin_purchase_in_lines where period = '2099-07') as n`)).rows[0].n
+    assert.equal(Number(left), 0, '0080 staging 시험 SQL이 올리기 · 줄을 남겼다')
+  }
   // 0071은 맨 뒤 — 끝에서 표 · 함수 소유자를 바꾼다(아래 주석).
   // 0071(프로세스 차트 동기화)이 있는 브랜치에서만. staging처럼 AI Agent 계정이 하나 있다.
   if (files.includes('0071_process_chart_sync.sql')) {
