@@ -13,6 +13,15 @@ type Methods = Pick<ChairmanRepository, 'listFeatureSwitches' | 'setFeatureSwitc
 
 const memory: FeatureSwitchRow[] = defaultFeatureRows()
 
+/**
+ * 0081 청사진 뼈대 — dummy 전용 화면 확인 손잡이. DUMMY_FEATURES_OPEN=1이면 새 스위치 일곱 개를 처음부터 'all'로 연다
+ * (직원 자리 — 원가 관리 · 영업 · 구매 · 생산 — 의 화면을 찍어 보려고). live에는 이 길이 없다(운영 기본값은 0081 그대로 대표만).
+ */
+const BLUEPRINT_KEYS = ['cost_forecast', 'purchase_performance', 'customer_profit', 'margin_bridge', 'competitor_price', 'work_orders', 'product_diagnosis']
+if (process.env.DUMMY_FEATURES_OPEN === '1') {
+  for (const r of memory) if (r.business_id === null && BLUEPRINT_KEYS.includes(r.feature_key)) r.audience = 'all'
+}
+
 export function dummyFeatures(deps: { viewer(): UserAccount; businesses(): string[] }): Methods {
   return {
     async listFeatureSwitches() {

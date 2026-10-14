@@ -2861,3 +2861,12 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - (미룸) check:blueprint는 BYPASSRLS 없는 소유자 아래에서 새 RPC를 따로 부르지 않는다 — 새 표 넷은 FORCE가 없어 소유자에게 RLS가 걸리지 않고, audit_log(FORCE) 쓰기는 0061~0067 함수와 같은 길이다. check:cost-engine ⑥이 0081을 올린 DB에서 소유자를 넘긴 채 돈다(새 RPC 호출은 없음).
 - (미룸) 구매 성과 묶음 합계의 환율 효과는 기준 환율 없는 외화 LOT를 빼고 더한다(줄 단위는 null) — «기준 환율 없음 n건» 칸은 화면 단계에서.
 - (미룸) 마진 분해 대표 원료별 기여는 기간 끝 날 두 점(결정 15) — 출고일 가중 원료별 분해는 다음 단계.
+
+## 2026-10-14 0081 화면 — 미룬 것
+- (미룸) 작업지시 화면의 «지금 담당» — 0081 work_order_get이 assignee를 돌려주지 않아 대표 폼은 늘 «없음»에서 시작(저장하면 담당이 바뀐다). 다음 번호에서 대표에게만 assignee 칸.
+- (미룸) 진짜 BOM 넣기 화면(summaryOnly)에서 충돌 · 오류 줄을 고르는 손잡이 — 지금은 파일을 고치거나 /costs/<회사>/bom 넣기 칸에서.
+- (미룸) 구매 성과 KPI 합은 월 묶음의 1원 값끼리 더한다(묶음 안은 원래 값끼리) — 월이 많으면 1~2원 차이. «기준 환율 없음 n건» 칸도 아직 없음(0081 DEFERRED와 같은 줄).
+- (미룸) 견적 목록의 경쟁사 기준은 열 때마다 제품 수만큼 문을 지난다(영업 하루 200건 안) — 제품이 많아지면 접힌 칸을 열 때만 부르는 클라이언트 길로.
+- (미룸) 제품 진단 차트 hover는 점마다 SVG <title>(브라우저 기본 툴팁)만 — 십자선 툴팁은 다음 단계.
+- (미룸) check:mobile — 서버가 필요해 이 블록에서 돌리지 않았다(새 화면 6장은 m-cards · 44px 칸 · 13px 글자로 맞춤). 컨트롤러 스크린샷 단계에서.
+- (알림) lint 오류 4개는 scripts/check-blueprint.ts(9e828ce, no-explicit-any) — 이 블록이 만든 것이 아니라 그대로 둠.

@@ -46,7 +46,8 @@ import { dummyCostLedger, dummyPurchasing } from './dummy-purchasing'
 import { dummyCostCandidates } from './dummy-cost-candidates'
 import { dummyLedgerPost } from './dummy-ledger-post'
 import { dummyQuotes } from './dummy-quotes'
-import { dummyCostProduct, dummyCostReadAudit, dummyCosts, dummyGrantedAt, dummyProduction, dummySalesCost, noteDummyGrant } from './dummy-sales-cost'
+import { dummyBlueprintEngine, dummyCostProduct, dummyCostReadAudit, dummyCosts, dummyGrantedAt, dummyProduction, dummySalesCost, noteDummyGrant } from './dummy-sales-cost'
+import { dummyBlueprint } from './dummy-blueprint'
 import * as books from './dummy-books'
 import { dummyAssistant } from './dummy-assistant'
 import { dummyFeatures } from './dummy-features'
@@ -878,6 +879,12 @@ export const dummyRepository: ChairmanRepository = {
     featureOn: async (b) => featureOnFor(await dummyRepository.listFeatureSwitches(), 'monthly_pl', dummyViewer().role, b),
     ledger: () => dummyRepository.loadFinanceLedger(),
     name: (u) => dummyPerson(u)?.display_name ?? null,
+  }),
+  // 0081 — 청사진 뼈대(dummy-blueprint.ts). 문은 dummy 원가 엔진 문 · 스위치 7개. 원가 엔진 손잡이는 여기서만 넘긴다(가짜 BOM은 dummy 어댑터 안).
+  ...dummyBlueprint({
+    featureOn: async (key, b) => featureOnFor(await dummyRepository.listFeatureSwitches(), key, dummyViewer().role, b),
+    engine: dummyBlueprintEngine(),
+    ledger: () => dummyCostLedger(),
   }),
   // 0077 — 판매 실적 · 마진(dummy-sales-margins.ts). 문은 dummy 원가 엔진 문 · 스위치 'sales_margins'.
   ...dummySalesMargins({

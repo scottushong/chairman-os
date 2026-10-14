@@ -1,4 +1,24 @@
 import type { FeatureAudience, FeatureSwitchRow } from '@/lib/features'
+import type {
+  CompetitorAssumption,
+  CompetitorAssumptionInput,
+  CompetitorPrice,
+  CustomerProfitRow,
+  ForecastRow,
+  ForecastSetting,
+  MarginBridge,
+  OutlookInput,
+  OutlookRow,
+  PerfBy,
+  ProductDiagnosis,
+  ProductTrendGrain,
+  ProductTrendPoint,
+  ProfitWatchRow,
+  PurchasePerfRow,
+  WorkOrder,
+  WorkOrderListRow,
+  WorkOrderSetInput,
+} from '@/types/blueprint'
 import type { CostImportApply, ImportTarget } from '@/lib/cost-import/payload'
 import type { ActivityEvent, ActivityKind } from '@/lib/activity'
 import type { EntityAuditRecord } from '@/lib/audit-log'
@@ -383,7 +403,31 @@ export interface LedgerPostMethods {
   ledgerPostVoid(postId: string, reason: string): Promise<string>
 }
 
-export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods, ProductionMethods, CostsMethods, QuoteMethods, CostImportMethods, ProcessSyncMethods, SalesMarginsMethods, CostCandidatesMethods, LedgerPostMethods {
+/**
+ * 0081 청사진 뼈대 — 판정 · 가리기 · 한도 · 감사는 전부 DB(feature_on 7키 · cost_can · 0062 문)다. 저장소는 모양만 옮긴다.
+ * 0081 전 DB면 'blueprint_unavailable'. 오류 키는 'feature_off' · 'cost_*'. dummy는 dummy-blueprint.ts, live는 supabase-blueprint.ts.
+ */
+export interface BlueprintMethods {
+  costForecastList(businessId: string): Promise<ForecastRow[]>
+  costForecastSetting(businessId: string): Promise<ForecastSetting>
+  setCostForecastSetting(businessId: string, blendPct: number, fxMode: 'today' | 'manual', fxManual: Record<string, number>): Promise<void>
+  costOutlookList(businessId: string): Promise<OutlookRow[]>
+  setCostOutlook(input: OutlookInput): Promise<number>
+  purchasePerformance(businessId: string, from: string, to: string, by: PerfBy): Promise<PurchasePerfRow[]>
+  customerProfit(businessId: string, from: string, to: string): Promise<CustomerProfitRow[]>
+  customerProfitWatch(businessId: string, from: string, to: string): Promise<ProfitWatchRow[]>
+  marginBridge(businessId: string, fromA: string, toA: string, fromB: string, toB: string, productId?: string | null): Promise<MarginBridge>
+  competitorAssumptionList(businessId: string): Promise<CompetitorAssumption[]>
+  setCompetitorAssumption(businessId: string, input: CompetitorAssumptionInput): Promise<void>
+  competitorPrice(productId: string): Promise<CompetitorPrice | null>
+  workOrderGet(orderId: string): Promise<WorkOrder>
+  workOrderMine(businessId: string): Promise<WorkOrderListRow[]>
+  setWorkOrder(input: WorkOrderSetInput): Promise<void>
+  productDiagnosis(productId: string): Promise<ProductDiagnosis>
+  productTrend(productId: string, grain: ProductTrendGrain, from: string, to: string): Promise<ProductTrendPoint[]>
+}
+
+export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods, ProductionMethods, CostsMethods, QuoteMethods, CostImportMethods, ProcessSyncMethods, SalesMarginsMethods, CostCandidatesMethods, LedgerPostMethods, BlueprintMethods {
   /** 어느 쪽을 보고 있는지. 화면이 아니라 DUMMY DATA 뱃지와 로그가 쓴다. */
   readonly mode: 'dummy' | 'live'
 

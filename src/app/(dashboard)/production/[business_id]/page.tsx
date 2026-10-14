@@ -1,3 +1,5 @@
+import Link from 'next/link'
+
 import { CostImportPanel } from '@/components/cost-import/cost-import-panel'
 import { PageHeader } from '@/components/layout/page-header'
 import { ActualTable } from '@/components/production/actual-table'
@@ -5,16 +7,19 @@ import { LotBalances } from '@/components/production/lot-balances'
 import { ProductionBoard } from '@/components/production/production-board'
 import { recordScreenRead } from '@/lib/activity-record'
 import { kstToday } from '@/lib/chairman-project'
+import { kgText } from '@/lib/blueprint/format'
 import { costEngineError } from '@/lib/costs/errors'
 import { addDays } from '@/lib/costs/format'
+import { featureOn } from '@/lib/features-server'
 import { openProduction } from '@/lib/production/page'
-import type { LotBalance, ProdActualRow } from '@/types'
+import type { LotBalance, ProdActualRow, WorkOrderListRow } from '@/types'
 
 /**
  * 생산(0064 · 설계서 2.5 · 2.8 · 9.3절) — 작업지시 · 생산 LOT · 투입 · 구매 LOT 잔량 · 조정.
  *
  * 볼 수 있음 = 대표 또는 '/production/<biz>' 줄. 쓰기(생산 LOT · 투입 · 조정 · 완료) = '/production/<biz>' can_write · 대표.
  * **작업지시는 원료 · kg만**(비율 · 수율 없음). **대표 외에게는 원가 숫자가 없다** — 발행 폼과 Actual 원가 표(분해 포함)는 대표에게만 그린다.
+ * 0081 ⑥ 스위치 'work_orders'면 «내 작업지시»(work_order_mine — 대표는 전부, 생산은 본인 담당만)와 «작업지시 보기» 링크.
  */
 export default async function ProductionPage(props: PageProps<'/production/[business_id]'>) {
   const { business_id } = await props.params
@@ -56,6 +61,14 @@ export default async function ProductionPage(props: PageProps<'/production/[busi
     }
   }
 
+  let mine: WorkOrderListRow[] | null = null
+  if (await featureOn(user, 'work_orders', business_id)) {
+    mine = await repo.workOrderMine(business_id).catch((e: unknown) => {
+      console.error('[production] work_order_mine', e instanceof Error ? e.message : String(e))
+      return []
+    })
+  }
+
   const materialNames = Object.fromEntries(materials.map((m) => [m.material_id, m.name]))
   const open = orders.filter((o) => o.status === 'open').length
 
@@ -71,6 +84,32 @@ export default async function ProductionPage(props: PageProps<'/production/[busi
         <div className="mt-4">
           <CostImportPanel businessId={business_id} target="production" title="생산 LOT · 투입 엑셀로 넣기" />
         </div>
+      ) : null}
+      {mine ? (
+        <section className="mt-4 rounded-xl border border-line-soft bg-panel p-3" aria-label="작업지시">
+          <h2 className="mb-1 text-t13 font-semibold">{chairman ? '작업지시(전체)' : '내 작업지시'}</h2>
+          {mine.length === 0 ? (
+            <p className="text-t12 text-ink-muted">맡은 작업지시가 없습니다.</p>
+          ) : (
+            <ul className="space-y-1 text-t12">
+              {mine.slice(0, 30).map((o) => (
+                <li key={o.order_id} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span className="tnum text-ink-muted">{o.planned_on}</span>
+                  <span className="font-semibold">{o.product_name}</span>
+                  <span className="tnum">{kgText(o.planned_kg)}</span>
+                  {o.tank ? <span className="text-ink-muted">탱크 {o.tank}</span> : null}
+                  {o.seq !== null ? <span className="text-ink-muted">순서 {o.seq}</span> : null}
+                  <Link
+                    href={`/production/${encodeURIComponent(business_id)}/orders/${encodeURIComponent(o.order_id)}`}
+                    className="inline-flex min-h-11 items-center text-accent hover:underline lg:min-h-0"
+                  >
+                    작업지시 보기
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
       ) : null}
       <ProductionBoard
         businessId={business_id}

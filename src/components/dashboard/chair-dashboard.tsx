@@ -1,17 +1,22 @@
 import Link from 'next/link'
 
+import { BRIDGE_KO, bridgeSentence } from '@/lib/blueprint/bridge'
+import { monthPair } from '@/lib/blueprint/period'
 import { FOURTEEN, loadChairDashboard, rollTrend, TREND_GRAIN_KO, type TrendGrain } from '@/lib/chair-dashboard'
 import { kstToday } from '@/lib/chairman-project'
 import { featureOn } from '@/lib/features-server'
 import { formatEok } from '@/lib/format'
 import type { ChairmanRepository } from '@/lib/repository/types'
-import type { SessionUser } from '@/types'
+import { krw } from '@/lib/sales/cost'
+import { BRIDGE_KEYS, type MarginBridge, type SessionUser } from '@/types'
 
 /**
  * PHASE 8 대표 대시보드 — 대표 홈(/) 안의 한 칸(별도 앱 · 별도 화면 아님).
  * 스위치 'chairman_dashboard'(0073 · 기본 대표만)를 **서버에서** 본다 — 꺼지면 아무것도 그리지 않는다(읽기도 안 함).
  * 손익 · 매출 · 현금 = 0075 fin_pl_month 값만(그 RPC가 스위치 'monthly_pl' · 장부 읽기 권한을 다시 본다).
  * 제품 하나의 과거 전부는 0077 «판매 실적 · 마진» 화면(제품별)로 보낸다 — 하루 20번 문은 그 화면이 그대로 센다.
+ * 0081 ④ «이번 달 마진이 떨어진 이유» — 스위치 'margin_bridge' · 대표만. margin_bridge(지난달 vs 이번 달, 회사 전체) 한 번 → 문장은 코드
+ * (lib/blueprint/bridge.ts — AI 아님). 0081 ⑧ 스위치 'product_diagnosis'면 제품 이름이 제품 진단 화면 링크.
  */
 export async function ChairDashboard({
   repo,
@@ -33,6 +38,21 @@ export async function ChairDashboard({
   const rows = g === 'day' || g === 'week' ? [] : rollTrend(data.months, g).reverse()
   const eok = (v: number | null) => (v === null ? '—' : formatEok(v, 2))
   const href = (o: { biz?: string; grain?: string }) => `/?dbiz=${o.biz ?? biz.business_id}&dgrain=${o.grain ?? g}#chair-dashboard`
+  const chairman = user?.role === 'Chairman'
+  let bridge: MarginBridge | null = null
+  let bridgeError = false
+  if (chairman && (await featureOn(user, 'margin_bridge', biz.business_id))) {
+    const m = monthPair(kstToday())
+    try {
+      bridge = await repo.marginBridge(biz.business_id, m.fromA, m.toA, m.fromB, m.toB, null)
+    } catch (e) {
+      console.error('[chair-dashboard] margin_bridge', e instanceof Error ? e.message : String(e))
+      bridgeError = true
+    }
+  }
+  const products = (await featureOn(user, 'product_diagnosis', biz.business_id))
+    ? (await repo.listCostProducts(biz.business_id).catch(() => [])).filter((p) => p.active)
+    : []
 
   return (
     <section id="chair-dashboard" className="mt-5 scroll-mt-4 rounded-glass border border-line bg-panel p-4" data-testid="chair-dashboard">
@@ -91,6 +111,61 @@ export async function ChairDashboard({
         <span className="mx-2 text-ink-muted">·</span>
         <Link href={`/costs/${biz.business_id}/margins?by=product`} className="text-accent hover:underline">제품별 판매 kg · 매출 · 등급 · 견적 마진 vs 실제(권한자만)</Link>
       </p>
+
+      {bridge || bridgeError ? (
+        <div className="mt-4" data-testid="margin-bridge">
+          <h3 className="text-t12 font-semibold text-ink">이번 달 마진이 떨어진 이유</h3>
+          <p className="mt-1 text-t13">{bridge ? bridgeSentence(bridge) : '마진 분해를 불러오지 못했습니다.'}</p>
+          {bridge?.effects && bridge.a && bridge.b ? (
+            <div className="mt-1 overflow-x-auto">
+              <table className="w-full min-w-[420px] text-t12">
+                <thead className="text-ink-muted">
+                  <tr>
+                    <th className="text-left font-normal">원/kg</th>
+                    <th className="text-right font-normal">지난달</th>
+                    <th className="text-right font-normal">이번 달</th>
+                    <th className="text-right font-normal">GM 효과</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {BRIDGE_KEYS.map((k) => {
+                    const a = bridge!.a![k]
+                    const b = bridge!.b![k]
+                    const eff = bridge!.effects![k]
+                    return (
+                      <tr key={k} className="border-t border-line-soft">
+                        <td className="py-1">{BRIDGE_KO[k]}</td>
+                        <td className="py-1 text-right tnum">{krw(a)}</td>
+                        <td className="py-1 text-right tnum">{krw(b)}</td>
+                        <td className={`py-1 text-right tnum ${eff < 0 ? 'text-critical' : eff > 0 ? 'text-ok' : ''}`}>{krw(eff)}</td>
+                      </tr>
+                    )
+                  })}
+                  <tr className="border-t border-line font-semibold">
+                    <td className="py-1">GM</td>
+                    <td className="py-1 text-right tnum">{krw(bridge.a.gm)}</td>
+                    <td className="py-1 text-right tnum">{krw(bridge.b.gm)}</td>
+                    <td className="py-1 text-right tnum">{krw(bridge.total)}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <p className="mt-1 text-t10h text-ink-muted">
+                판매 kg 가중 평균 · 효과 합 = GM 변화{bridge.n_excluded ? ` · 원가를 계산 못 한 판매 ${bridge.n_excluded}건 제외` : ''}. 월별 손익과 다른 값입니다(판매 한 줄 원가).
+              </p>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      {products.length ? (
+        <p className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-t11">
+          <span className="text-ink-muted">제품 진단</span>
+          {products.map((p) => (
+            <Link key={p.product_id} href={`/costs/${encodeURIComponent(biz.business_id)}/products/${encodeURIComponent(p.product_id)}`} className="text-accent hover:underline">
+              {p.name}
+            </Link>
+          ))}
+        </p>
+      ) : null}
 
       <h3 className="mt-4 text-t12 font-semibold text-ink">14가지 자료 — 받은 것 / 없는 것</h3>
       {data.uploadsError ? (

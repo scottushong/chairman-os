@@ -57,7 +57,52 @@ function sameMapping(a: Mapping | undefined, b: Mapping | undefined): boolean {
   return true
 }
 
-export function CostImportPanel({ businessId, target, title }: { businessId: string; target: ImportTarget; title?: string }) {
+/**
+ * 0081 ⑦ «진짜 BOM 넣기» 화면용 미리보기 — 제품(파일에 적힌 이름)마다 줄 수 · 상태 수만. 원료 · 비율 칸을 그리지 않는다.
+ * 고치기 · 충돌 고르기는 이 모양에서 하지 않는다(필요하면 파일을 고쳐 다시 올리거나 BOM 화면의 넣기 칸을 쓴다).
+ */
+function BomSummary({ rows }: { rows: PreviewRow[] }) {
+  const by = new Map<string, Record<RowStatus, number>>()
+  for (const r of rows) {
+    const k = (r.values.product ?? '').trim() || '(제품 칸 비어 있음)'
+    const c = by.get(k) ?? { new: 0, same: 0, conflict: 0, duplicate: 0, error: 0 }
+    c[r.status] += 1
+    by.set(k, c)
+  }
+  if (!rows.length) return <p className="text-t11h text-ink-dim">읽은 줄이 없습니다. 시트 · 머리글 행을 확인하세요.</p>
+  return (
+    <div className="overflow-x-auto rounded-lg border border-line-soft">
+      <table className="w-full text-t12">
+        <thead>
+          <tr className="border-b border-line-soft text-left text-t10h text-ink-muted">
+            <th className="px-2 py-1.5 font-normal">제품 코드</th>
+            <th className="px-2 py-1.5 text-right font-normal">줄 수</th>
+            <th className="px-2 py-1.5 font-normal">상태</th>
+          </tr>
+        </thead>
+        <tbody>
+          {[...by.entries()].map(([k, c]) => (
+            <tr key={k} className="border-t border-line-soft">
+              <td className="px-2 py-1 font-semibold">{k}</td>
+              <td className="tnum px-2 py-1 text-right">{STATUS_ORDER.reduce((t, s) => t + c[s], 0)}</td>
+              <td className="px-2 py-1">
+                <span className="flex flex-wrap gap-1">
+                  {STATUS_ORDER.filter((s) => c[s] > 0).map((s) => (
+                    <span key={s} className={`rounded px-1.5 py-0.5 text-t10h ${STATUS_CLASS[s]}`}>
+                      {ROW_STATUS_LABEL_KO[s]} {c[s]}
+                    </span>
+                  ))}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+export function CostImportPanel({ businessId, target, title, summaryOnly = false }: { businessId: string; target: ImportTarget; title?: string; summaryOnly?: boolean }) {
   const router = useRouter()
   const label = IMPORT_TARGET_LABEL_KO[target]
   const [open, setOpen] = useState(false)
@@ -470,7 +515,9 @@ export function CostImportPanel({ businessId, target, title }: { businessId: str
                 </button>
               ) : null}
 
-              {visibleRows.length ? (
+              {summaryOnly && target === 'bom' ? (
+                <BomSummary rows={rows} />
+              ) : visibleRows.length ? (
                 <div className="overflow-x-auto rounded-lg border border-line-soft">
                   <table className="w-full min-w-[720px] text-t12">
                     <thead>

@@ -150,6 +150,7 @@ import { feedbackMethods } from './supabase-feedback'
 import { financeUploadMethods } from './supabase-finance-upload'
 import { monthlyPlMethods } from './supabase-monthly-pl'
 import { salesMarginsMethods } from './supabase-sales-margins'
+import { blueprintMethods } from './supabase-blueprint'
 import { costCandidatesMethods } from './supabase-cost-candidates'
 import { ledgerPostMethods } from './supabase-ledger-post'
 import { attachmentMethods } from './supabase-attachments'
@@ -850,6 +851,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     ...salesMarginsMethods(sb),
     ...costCandidatesMethods(sb),
     ...ledgerPostMethods(sb),
+    // 0081 청사진 뼈대(Forecast · 구매 성과 · 고객별 · 분해 · 경쟁사 · 작업지시 · 제품 진단). 0081 전 DB면 'blueprint_unavailable'.
+    ...blueprintMethods(sb),
     // ECOUNT 엑셀 업로드(0050 finance_imports) — 읽기는 0050 전 DB를 견딘다(supabase-finance-imports.ts 머리 주석).
     ...financeImportMethods(sb),
     // 0058 자료 받는 입구.

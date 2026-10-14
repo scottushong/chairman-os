@@ -2,12 +2,14 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
 import { ChainProgress } from '@/components/approvals/chain-progress'
+import { CompetitorLine } from '@/components/sales/competitor-line'
 import { PageHeader } from '@/components/layout/page-header'
 import { QuoteActions } from '@/components/sales/quote-actions'
 import { QuoteForm } from '@/components/sales/quote-form'
 import { GradeBadge } from '@/components/sales/sales-cost-board'
 import { recordScreenRead } from '@/lib/activity-record'
 import { kstToday } from '@/lib/chairman-project'
+import { featureOn } from '@/lib/features-server'
 import { krw } from '@/lib/sales/cost'
 import { openSales } from '@/lib/sales/page'
 import { QUOTE_STATUS_LABEL_KO, shownQuoteStatus } from '@/types'
@@ -35,6 +37,8 @@ export default async function QuoteDetailPage(props: PageProps<'/sales/[business
   const products = owner ? (await repo.listCostProducts(business_id)).filter((p) => p.active) : []
   const latest = versions[versions.length - 1]?.quote_id === q.quote_id
   const fx = q.currency !== 'KRW' ? ` (견적서 ${q.currency})` : ''
+  // 0081 ⑤ 경쟁사 기준 한 줄(스위치 competitor_price · 결과만).
+  const competitorOn = await featureOn(user, 'competitor_price', business_id)
 
   return (
     <div className="mx-auto max-w-[1200px] space-y-4 px-4 py-5 sm:px-6">
@@ -110,6 +114,11 @@ export default async function QuoteDetailPage(props: PageProps<'/sales/[business
           ) : null}
         </dl>
       </section>
+      {competitorOn ? (
+        <section className="rounded-xl border border-line-soft bg-panel px-4 py-3" aria-label="경쟁사 기준">
+          <CompetitorLine repo={repo} productId={q.product_id} />
+        </section>
+      ) : null}
       {steps.length > 0 ? (
         <section className="rounded-xl border border-line-soft bg-panel p-4" aria-label="가격 예외 결재 진행">
           <h2 className="mb-2 text-t13 font-semibold">가격 예외 결재 진행</h2>

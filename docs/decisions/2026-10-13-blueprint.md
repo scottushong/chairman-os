@@ -24,3 +24,9 @@
 20. 진단 카드 8(상위 고객)의 영업 = 본인 판매만 · 고객 이름 포함(자기 고객 — 새 노출 없음). 카드 11의 원가 관리 = 원료비 합계 %(오늘 · 7일 전 회사 완전성) + 비용 묶음 Δ(1원).
 21. Forecast 설정 · 경쟁사 가정 · 작업지시는 한 줄을 고친다(upsert) — 설계가 «무효 + 새 줄»을 요구한 것은 전망뿐. 이력은 감사 줄.
 22. 제품 추이는 스위치 product_diagnosis 아래(새 키 없음). 구매 성과 묶음 합계는 대표도 1원(round) — 원가가 아니라서(설계 그대로).
+23. (화면) 고객별 수익성 · 제품 진단 화면의 문 = 대표 · 원가 관리 줄 · 영업 줄(lib/blueprint/page.ts openBlueprint) — 재무 화면 문(장부 권한)과 openCosts(원가 관리만)는 영업 카드 · 본인 판매를 막는다. 진짜 판정은 0081 RPC.
+24. (화면) 구매 성과는 새 화면이 아니라 /purchasing/<회사>?tab=performance — 구매 메뉴 탭(PurchasingNav)은 고치지 않고 개요 위 칩 둘(개요 · 구매 성과). 스위치가 꺼지면 탭이 없고 개요로.
+25. (화면) 제품 진단 차트는 축 하나 원칙(dataviz) — 원/kg 세 줄(판매가 · Actual · Market) 위 칸 + GM% 아래 칸(같은 가로축). 두 눈금을 한 칸에 겹치지 않는다. 새 라이브러리 없음(인라인 SVG).
+26. (화면) 진짜 BOM 넣기 미리보기 = CostImportPanel summaryOnly(제품 칸 값 · 줄 수 · 상태 수). 충돌 · 오류 줄 고치기는 이 모양에서 안 한다 — 파일 고쳐 다시 올리거나 BOM 화면 넣기 칸.
+27. (문서) 진짜 BOM 확인 SQL은 cost_bom_versions RPC가 아니라 cost_secret.bom_versions 표를 센다 — RPC는 대표 로그인 세션만 통과해 SQL Editor(로그인 없음)에서 거부된다. 개수만(값 없음).
+28. (dummy) DUMMY_FEATURES_OPEN=1이면 0081 스위치 일곱을 dummy에서만 처음부터 'all'로 — 직원 자리 화면 찍기용. dummy 원가 엔진 손잡이는 dummy-sales-cost.ts dummyBlueprintEngine → dummy.ts만 넘긴다(가짜 BOM 저장소 import 금지 — check:sales-cost).
