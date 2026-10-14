@@ -43,3 +43,4 @@
 39. (리뷰 T1 · T2) check:blueprint — 월별 손익 전후 비교는 «결과가 오류 글자가 아님»을 먼저 단언. 영업 0시 기준은 11절 한 경우만 진짜 sales_cutoff(check:cost-engine ⑫의 REAL_CUTOFF · shiftKnown을 cost-engine-known.ts에서 export해 그대로 씀) — 나머지 절은 PIN_SALES_IMMEDIATE 그대로.
 40. (lint) check-blueprint.ts의 any 넷은 jsonb 모양 타입(BridgeJ · WorkOrderJ)으로 — 시험이 읽는 칸만.
 41. (dummy) dummy 원료 코드도 무작위(저장소 Map) · 구매 성과 제한 보기 · 담당 조건 · 한도 키 · b.gm을 0081과 같게. 회사 밖 id는 스위치보다 먼저 cost_not_found.
+42. (재검토 I1′) 구매 성과 제한 보기 — LOT 셋이어도 시장가 있는 LOT가 셋 미만이면 시장가 · 절감을, 기준 환율 있는 외화 LOT가 1~2개이거나 기준 환율 없는 외화 LOT가 있으면 환율 효과를 가린다(null 시장가 · 원화 LOT 0으로 한 LOT 몫을 떼는 길). 원화만인 묶음의 환율 효과 0은 그대로. suppressed = 어느 칸이든 가림.

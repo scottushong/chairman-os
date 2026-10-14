@@ -732,7 +732,8 @@ begin
            x.unit_price * x.fx_rate as buy,
            cost_market_on(x.material_id, x.received_on) as mkt,
            case when x.currency = 'KRW' then 0::numeric else (x.fx_rate - fb.v) * x.unit_price * x.qty_kg end as fxe,
-           (x.currency <> 'KRW' and fb.v is null) as no_fx
+           (x.currency <> 'KRW' and fb.v is null) as no_fx,
+           (x.currency <> 'KRW' and fb.v is not null) as fx_ok
       from cost_purchase_lots x
       left join lateral (
         select avg(r.rate) as v from fx_rates r
@@ -746,25 +747,28 @@ begin
            case p_by when 'lot' then l.lot_id || ' · ' || mt.name || ' · ' || to_char(l.received_on, 'YYYY-MM-DD')
                      when 'material' then mt.name when 'supplier' then sp.name
                      else to_char(l.received_on, 'YYYY-MM') end as lb,
-           l.q, l.buy, l.mkt, l.fxe, l.no_fx
+           l.q, l.buy, l.mkt, l.fxe, l.no_fx, l.fx_ok
       from l
       join cost_materials mt on mt.material_id = l.material_id
       join cost_suppliers sp on sp.supplier_id = l.supplier_id
   ), g as (
     select b.k, max(b.lb) as lb, count(*)::int as n, sum(b.q) as q, round(sum(b.buy * b.q)) as buy, round(sum(b.mkt * b.q)) as mkt,
            round(sum((b.mkt - b.buy) * b.q)) as sav, round(sum(b.fxe)) as fxe, (count(*) filter (where b.mkt is null))::int as nm,
-           (count(*) filter (where b.no_fx))::int as nf
+           (count(*) filter (where b.no_fx))::int as nf,
+           (count(*) filter (where b.fx_ok))::int as nfx
       from b
      group by b.k
   )
+  -- 재검토 I1′ — 제한 열람자: 시장가 · 절감은 시장가 있는 LOT가 셋 이상일 때만, 환율 효과는 기준 환율 있는 외화 LOT가 셋 이상일 때만
+  -- (null 시장가 · 원화 LOT 0으로 한 LOT 몫을 떼어 내는 길을 막는다).
   select g.k, g.lb, g.n,
          case when v_full or g.n >= 3 then g.q end,
          case when v_full or g.n >= 3 then g.buy end,
-         case when v_full or g.n >= 3 then g.mkt end,
-         case when v_full or g.n >= 3 then g.sav end,
-         case when v_full or g.n >= 3 then g.fxe end,
+         case when v_full or (g.n >= 3 and g.n - g.nm >= 3) then g.mkt end,
+         case when v_full or (g.n >= 3 and g.n - g.nm >= 3) then g.sav end,
+         case when v_full or (g.n >= 3 and g.nfx >= 3 and g.nf = 0) or (g.n >= 3 and g.nfx = 0 and g.nf = 0) then g.fxe end,
          g.nm,
-         not (v_full or g.n >= 3),
+         not (v_full or (g.n >= 3 and g.n - g.nm >= 3 and (g.nfx >= 3 or g.nfx = 0) and g.nf = 0)),
          g.nf
     from g
    order by g.k

@@ -473,19 +473,29 @@ async function main() {
     assert.ok(au[0].a.includes(`"from": "${PM}"`), `임원 감사 줄의 기간이 넓힌 기간이 아니다 ${au[0].a}`)
     await as(U.buy, `insert into cost_purchase_lots (business_id, material_id, supplier_id, received_on, qty_kg, unit_price) values ('biz_dy', '${m2}', '${s1}', '${D}', 1000, 1000)`)
     const day3 = await perf(U.ceo, D, D)
-    assert.deepEqual([day3[0].n_lots, day3[0].suppressed, Number(day3[0].savings_krw)], [3, false, 300_000], `LOT 3개 묶음(회사 대표) ${JSON.stringify(day3)}`)
+    // 외화 LOT가 하나뿐이라 환율 효과는 가린다(재검토 I1′ — 원화 LOT 0으로 한 LOT 몫이 그대로 나온다). 절감은 시장가 있는 LOT 셋이라 보인다.
+    assert.deepEqual([day3[0].n_lots, day3[0].suppressed, Number(day3[0].savings_krw), day3[0].fx_effect_krw], [3, true, 300_000, null], `LOT 3개 묶음(회사 대표) ${JSON.stringify(day3)}`)
     const tmOnly = (await perf(U.exec, PM, T)).find((r) => r.key === TM.slice(0, 7))!
     assert.ok(tmOnly.suppressed && tmOnly.purchase_krw === null && tmOnly.n_lots === 1, '임원 이번 달(LOT 하나) 묶음이 가려지지 않았다')
     const full = (await perf(U.buy, D, D))[0]
     assert.deepEqual([full.key, full.n_lots, full.suppressed], [PM.slice(0, 7), 3, false], '구매(전부 보기)는 기간을 넓히지 않고 가리지 않는다')
     const fullTm = (await perf(U.buy, TM, T)).find((r) => r.key === TM.slice(0, 7))!
     assert.ok(!fullTm.suppressed && fullTm.purchase_krw !== null, '구매(전부 보기)의 LOT 하나 묶음이 가려졌다')
+    // 재검토 I1′ — LOT 셋이어도 시장가 있는 LOT가 셋 미만이면 시장가 · 절감을 가린다(null 시장가로 한 LOT 몫을 떼지 못하게).
+    const { m9 } = await one<{ m9: string }>(U.buy, `insert into cost_materials (business_id, name, active) values ('biz_dy', '가짜 시세 없는 원료', false) returning material_id as m9`)
+    for (const dd of ['2025-11-03', '2025-11-04', '2025-11-05'])
+      await as(U.buy, `insert into cost_purchase_lots (business_id, material_id, supplier_id, received_on, qty_kg, unit_price) values ('biz_dy', '${m9}', '${s1}', '${dd}', 100, 1000)`)
+    const nm = (await perf(U.exec, '2025-11-04', '2025-11-04'))[0]
+    assert.ok(nm.n_lots === 3 && nm.suppressed && nm.purchase_krw !== null && nm.market_krw === null && nm.savings_krw === null,
+      `임원 시장가 없는 LOT 셋 묶음의 시장가 · 절감이 보인다 ${JSON.stringify(nm)}`)
+    const nmFull = (await perf(U.buy, '2025-11-01', '2025-11-30'))[0]
+    assert.ok(!nmFull.suppressed && nmFull.n_lots === 3, '구매(전부 보기)는 시장가 없는 묶음도 가리지 않는다')
 
     // GroupCFO + 영업 줄 = 제한 보기(I2). 줄을 빼면 다시 전부 보기.
     await db.exec(`insert into user_module_access (user_id, module, can_write, can_approve) values ('${U.cfo}', '/sales/biz_dy', false, false)`)
     for (const by of ['lot', 'material', 'supplier']) await refuses(perf(U.cfo, PM, T, by), /cost_not_found/, `CFO + 영업 줄이 ${by} 묶음을 봤다`)
     const cfoDay = await perf(U.cfo, D, D)
-    assert.deepEqual(cfoDay.map((r) => [r.key, r.n_lots, r.suppressed]), [[PM.slice(0, 7), 3, false]], 'CFO + 영업 줄 월 묶음(넓힌 기간)')
+    assert.deepEqual(cfoDay.map((r) => [r.key, r.n_lots, r.suppressed]), [[PM.slice(0, 7), 3, true]], 'CFO + 영업 줄 월 묶음(넓힌 기간 · 외화 LOT 하나라 환율 효과 가림)')
     await db.exec(`delete from user_module_access where user_id = '${U.cfo}' and module = '/sales/biz_dy'`)
     assert.ok((await perf(U.cfo, PM, T, 'lot')).length > 0, '영업 줄 없는 CFO가 LOT 묶음을 못 본다')
 

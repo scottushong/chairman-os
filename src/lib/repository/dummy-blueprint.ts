@@ -446,7 +446,7 @@ export function dummyBlueprint(d: DummyBlueprintDeps): BlueprintMethods {
       const l = d.ledger()
       const mName = new Map(l.materials.map((m) => [m.material_id, m.name]))
       const sName = new Map(l.suppliers.map((s) => [s.supplier_id, s.name]))
-      const groups = new Map<string, { label: string; xs: { q: number; buy: number; mkt: number | null; fxe: number | null; noFx: boolean }[] }>()
+      const groups = new Map<string, { label: string; xs: { q: number; buy: number; mkt: number | null; fxe: number | null; noFx: boolean; foreign: boolean }[] }>()
       for (const x of l.lots.filter((x) => x.business_id === businessId && !x.voided_at && x.received_on >= lo && x.received_on <= hi)) {
         const base = x.currency === 'KRW' ? null : fxMonthAvg(x.currency, x.received_on.slice(0, 7))
         const row = {
@@ -455,6 +455,7 @@ export function dummyBlueprint(d: DummyBlueprintDeps): BlueprintMethods {
           mkt: marketOn(x.material_id, x.received_on),
           fxe: x.currency === 'KRW' ? 0 : base === null ? null : (x.fx_rate - base) * x.unit_price * x.qty_kg,
           noFx: x.currency !== 'KRW' && base === null,
+          foreign: x.currency !== 'KRW',
         }
         const k = by === 'lot' ? x.lot_id : by === 'material' ? x.material_id : by === 'supplier' ? x.supplier_id : x.received_on.slice(0, 7)
         const label =
@@ -469,18 +470,24 @@ export function dummyBlueprint(d: DummyBlueprintDeps): BlueprintMethods {
         .map(([key, gr]): PurchasePerfRow => {
           // 리뷰 I1 — 제한 보기 · LOT 3개 미만 묶음은 값을 가린다(n_lots는 남긴다).
           const hide = !full && gr.xs.length < 3
+          // 재검토 I1′ — 시장가 있는 LOT 셋 이상 · 기준 환율 있는 외화 LOT 셋 이상(또는 외화 없음)일 때만 그 칸을 보인다.
+          const nNoMkt = gr.xs.filter((x) => x.mkt === null).length
+          const nNoFx = gr.xs.filter((x) => x.noFx).length
+          const nFxOk = gr.xs.filter((x) => x.foreign && !x.noFx).length
+          const hideMkt = hide || (!full && gr.xs.length - nNoMkt < 3)
+          const hideFx = hide || (!full && (nNoFx > 0 || (nFxOk > 0 && nFxOk < 3)))
           return {
             key,
             label: gr.label,
             n_lots: gr.xs.length,
             qty_kg: hide ? null : gr.xs.reduce((t, x) => t + x.q, 0),
             purchase_krw: hide ? null : pgRound(gr.xs.reduce((t, x) => t + x.buy * x.q, 0), 0),
-            market_krw: hide ? null : r(sumOrNull(gr.xs.map((x) => (x.mkt === null ? null : x.mkt * x.q)))),
-            savings_krw: hide ? null : r(sumOrNull(gr.xs.map((x) => (x.mkt === null ? null : (x.mkt - x.buy) * x.q)))),
-            fx_effect_krw: hide ? null : r(sumOrNull(gr.xs.map((x) => x.fxe))),
-            n_no_market: gr.xs.filter((x) => x.mkt === null).length,
-            suppressed: hide,
-            n_no_fx: gr.xs.filter((x) => x.noFx).length,
+            market_krw: hideMkt ? null : r(sumOrNull(gr.xs.map((x) => (x.mkt === null ? null : x.mkt * x.q)))),
+            savings_krw: hideMkt ? null : r(sumOrNull(gr.xs.map((x) => (x.mkt === null ? null : (x.mkt - x.buy) * x.q)))),
+            fx_effect_krw: hideFx ? null : r(sumOrNull(gr.xs.map((x) => x.fxe))),
+            n_no_market: nNoMkt,
+            suppressed: hide || hideMkt || hideFx,
+            n_no_fx: nNoFx,
           }
         })
     },
