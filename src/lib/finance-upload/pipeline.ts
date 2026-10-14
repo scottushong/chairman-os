@@ -550,7 +550,8 @@ const DATE_CELL = /^\d{4}[-./]\d{1,2}[-./]\d{1,2}$/
 const isNumberCell = (t: string) => {
   const s = t.trim()
   if (!/\d/.test(s) || DATE_CELL.test(s)) return false
-  return /^[\d,.\s()+\-]+$/.test(s.replace(UNIT_WORDS, '').trim() || 'x')
+  // △ · ▲(ECOUNT 글 칸의 음수 표시)도 숫자 칸 — 리뷰(2026-10-14): 가리지 않으면 음수 금액이 AI에 갔다.
+  return /^[\d,.\s()+\-△▲]+$/.test(s.replace(UNIT_WORDS, '').trim() || 'x')
 }
 
 /**

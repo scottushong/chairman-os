@@ -226,6 +226,29 @@ export async function runLedgerChecks(): Promise<string> {
     const s = aiSample(big, 2)
     assert.ok(s.rows.some((r) => r.includes('[ 특 별 계 ]')), '창 밖의 «…계» 줄이 견본에 없다')
     assert.equal(s.rows.length, s.row_no.length)
+    // 리뷰: ECOUNT 글 칸 음수(△ · ▲)도 가린다
+    const neg = aiSample(fromGrid('계정별원장', [['일자', '적요', '차변', '대변'], ['2098-09-01', '가짜', '△1,234,567', '▲500,000']]), 0)
+    assert.ok(!/1,234,567|500,000/.test(JSON.stringify(neg)), `△ · ▲ 금액이 AI 견본에 남았다: ${JSON.stringify(neg)}`)
+  }
+
+  // ── 리뷰: 기록이 안 남는 시트(접은 «모름» 시트)에 쓴 AI 호출도 하루 한도에 센다 ──
+  {
+    const unknownAi: AiClassify = async () => {
+      aiCalls += 1
+      return { kind: 'unknown', header_row: 0, columns: {}, row_labels: [], account_head_col: null, company: null, period: null, confidence: 'low', reason: '가짜 — 모름' }
+    }
+    const wb = new ExcelJS.Workbook()
+    for (const r of ecountLedger('2098-10')) (wb.getWorksheet('계정별원장') ?? wb.addWorksheet('계정별원장')).addRow(r)
+    const memo = wb.addWorksheet('메모')
+    memo.addRow(['가짜 메모 시트'])
+    memo.addRow(['가', '나'])
+    memo.addRow([1, 2])
+    const before = aiCalls
+    const c = await processUpload({ repo, businessId: BIZ, fileName: '가짜 10월 원장 메모.xlsx', bytes: new Uint8Array(await wb.xlsx.writeBuffer()), classify: unknownAi, aiBudget: 3, today: new Date('2098-11-10') })
+    const sha = (await repo.listFinUploads(BIZ)).find((u) => u.upload_id === c[0].upload_id)?.file_sha256
+    const used = (await repo.listFinUploads(BIZ)).filter((u) => u.file_sha256 === sha).reduce((a, u) => a + u.ai_used, 0)
+    assert.ok(aiCalls - before >= 1, '모름 시트에 AI를 부르지 않았다(시험 전제)')
+    assert.equal(used, aiCalls - before, `접은 시트의 AI 호출이 기록에 안 남았다(${used} ≠ ${aiCalls - before}) ${JSON.stringify(c)}`)
   }
   return `원장 구조: ECOUNT 모양 2배 없음 · AI 0번 자동 · 옛 규칙 2배 재현 · 잔액 ≠ 대변(AI 틀림 · 머리글 뒤바뀜 바로잡음) · AI 실패 코드 규칙 · 재해석 2번째 맞춤(차이에 금액 없음) · 학습 → 다음 달 AI 없이 · 3번에서 멈춤 + 차이 · 다시 해석(파일 없이) · 스키마 additionalProperties false · 견본 숫자 가림. 가짜 AI ${aiCalls}회`
 }

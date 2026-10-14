@@ -7,7 +7,7 @@ import { currentUser } from '@/lib/auth/session'
 import { aiLimits, realClassifier } from '@/lib/finance-upload/ai'
 import { realDocReader } from '@/lib/finance-upload/ai-doc'
 import { isUploadKind, kindSpec } from '@/lib/finance-upload/kinds'
-import { encodeShape, ROW_ROLES, type LedgerLayout, type RowLabel } from '@/lib/finance-upload/ledger'
+import { encodeShape, ledgerLayoutByCode, ROW_ROLES, type LedgerLayout, type RowLabel } from '@/lib/finance-upload/ledger'
 import { UPLOAD_MAX_BYTES } from '@/lib/finance-upload/open'
 import { mapColumns, readRows, validate, type Classification } from '@/lib/finance-upload/pipeline'
 import { finUploadError, fromGrid, processUpload, reinterpretPending, saveTxGroupsFor, type DocOptions, type FileCard } from '@/lib/finance-upload/process'
@@ -132,10 +132,11 @@ export async function applyPendingUpload(input: ApplyInput): Promise<{ ok?: true
       const columns = colsChanged ? chosen : mapColumns(kindSpec(kind), sheet.rows[headerRow] ?? [])
       // 해석이 본 요약 줄 낱말 · 원장 칸은 그대로 쓰고, 사람이 고친 칸이 이긴다.
       const labels = (meta.labels ?? []).filter((l): l is RowLabel => (ROW_ROLES as readonly string[]).includes(l.role))
+      // 리뷰(2026-10-14): 사람이 고른 원장 칸(계정 · 차변 · 대변)은 해석 · 코드 탐지보다 늘 이긴다(머리글 줄 · 날짜 · 잔액은 해석에서).
+      const base = kind === 'ledger' ? (meta.ledger && !kindChanged ? { headerRow: meta.ledger.headerRow, cols: meta.ledger.cols, headCol: meta.ledger.headCol ?? null } : ledgerLayoutByCode(sheet)) : null
+      const picked = colsChanged ? Object.fromEntries(Object.entries(chosen).filter(([k]) => ['account_code', 'account_name', 'debit', 'credit'].includes(k))) : {}
       const ledger: LedgerLayout | undefined =
-        kind === 'ledger' && meta.ledger && !kindChanged
-          ? { headerRow: meta.ledger.headerRow, cols: { ...meta.ledger.cols, ...(colsChanged ? chosen : {}) }, labels, headCol: meta.ledger.headCol ?? null }
-          : undefined
+        kind === 'ledger' ? { headerRow: base?.headerRow ?? headerRow, cols: { ...(base?.cols ?? {}), ...picked }, labels, headCol: base?.headCol ?? null } : undefined
       const cls: Classification = { kind, confidence: 'medium', headerRow, columns, reason: '사람이 고름', source: 'code', labels, ledger }
       const read = readRows(sheet, cls)
       const check = validate(kind, read, period)
@@ -220,8 +221,12 @@ export async function reinterpretUpload(uploadId: unknown, businessId: unknown):
     if (!(await ownsUpload(repo, biz, id))) return { cards: [], error: '올리기를 알 수 없습니다.' }
     const { perFile, perDay } = aiLimits()
     const today = kstDay(new Date().toISOString())
-    const usedToday = (await repo.listFinUploads(biz).catch(() => [] as FinUpload[])).filter((u) => kstDay(u.created_at) === today).reduce((a, u) => a + u.ai_used, 0)
-    const budget = Math.min(perFile, Math.max(0, perDay - usedToday))
+    const all = await repo.listFinUploads(biz).catch(() => [] as FinUpload[])
+    const usedToday = all.filter((u) => kstDay(u.created_at) === today).reduce((a, u) => a + u.ai_used, 0)
+    // 파일당 한도는 다시 해석까지 센다 — 같은 파일(해시)에 이미 쓴 호출을 뺀다(리뷰 2026-10-14).
+    const sha = all.find((u) => u.upload_id === id)?.file_sha256
+    const usedOnFile = sha ? all.filter((u) => u.file_sha256 === sha).reduce((a, u) => a + u.ai_used, 0) : 0
+    const budget = Math.max(0, Math.min(perFile - usedOnFile, perDay - usedToday))
     const out = await reinterpretPending({ repo, businessId: biz, classify: budget > 0 ? realClassifier(repo, biz) : null, aiBudget: budget }, id)
     revalidatePath(`/finance/${biz}/upload`)
     return out

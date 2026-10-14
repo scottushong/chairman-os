@@ -390,6 +390,12 @@ async function processSheets(o: ProcessOptions, sha: string, sheets: EcountSheet
     }
   }
   if (!cards.length) return [await fail('빈 파일입니다(채워진 시트가 없습니다).')]
+  // 리뷰(2026-10-14): 기록이 안 남은 시트(접은 «모름» 시트 · 같은 파일 · 기록 실패)에 쓴 AI 호출도 하루 한도에 센다 — 내용 없는 실패 줄 하나로.
+  const spent = o.aiBudget - budgetRef.left
+  const recorded = cards.filter((c) => c.upload_id).reduce((a, c) => a + c.ai_used, 0)
+  if (!doc && spent > recorded) {
+    await failRecord(o, sha, `AI 해석 기록 — 넣지 않은 시트에 쓴 호출 ${spent - recorded}번(내용 없음)`, { aiUsed: spent - recorded })
+  }
   return cards
 }
 
@@ -509,7 +515,9 @@ async function interpret(o: ProcessOptions, sheet: EcountSheet, code0: Classific
     feedback = ev.feedback
   }
   if (!ok && best.structural.length && used > 0) best = { ...best, cls: { ...best.cls, reason: `${best.cls.reason} · AI ${used}번 해석해도 요약 줄과 맞지 않음 — 차이를 보고 사람이 정합니다` } }
-  return { ev: best, aiUsed: used, save: ok && best.cls.source === 'ai' && best.cls.kind !== 'unknown' }
+  // 학습은 대조로 맞음이 확인된 해석만(원장은 요약 줄과 맞춰 본 계정이 하나 이상).
+  const checked = best.cls.kind !== 'ledger' || (best.read.ledger?.compared ?? 0) > 0
+  return { ev: best, aiUsed: used, save: ok && checked && best.cls.source === 'ai' && best.cls.kind !== 'unknown' }
 }
 
 /**
@@ -539,10 +547,15 @@ export async function reinterpretPending(o: Omit<ProcessOptions, 'bytes' | 'file
     console.error('[finance-upload] reinterpret', e)
   }
   if (!cards.some((c) => c.upload_id && (c.status === 'needs_review' || c.status === 'applied'))) {
-    await o.repo
-      .finUploadRecord({ business_id: o.businessId, kind: upload.kind, period: upload.period, file_name: upload.file_name, file_sha256: upload.file_sha256, sheet_name: upload.sheet_name, ai_confidence: upload.ai_confidence, ai_used: upload.ai_used, status: 'needs_review', pending, error: null })
-      .catch((e) => console.error('[finance-upload] reinterpret restore', e))
-    return { cards, error: '다시 해석하지 못해 예전 «확인 필요»를 그대로 두었습니다.' }
+    // 되살린 줄의 ai_used는 0 — 옛 호출은 취소된 옛 줄에, 이번 호출은 processSheets가 남긴 줄에 이미 센다(두 번 세지 않게).
+    const restored = await o.repo
+      .finUploadRecord({ business_id: o.businessId, kind: upload.kind, period: upload.period, file_name: upload.file_name, file_sha256: upload.file_sha256, sheet_name: upload.sheet_name, ai_confidence: upload.ai_confidence, ai_used: 0, status: 'needs_review', pending, error: null })
+      .then(() => true)
+      .catch((e) => {
+        console.error('[finance-upload] reinterpret restore', e)
+        return false
+      })
+    return { cards, error: restored ? '다시 해석하지 못해 예전 «확인 필요»를 그대로 두었습니다.' : '다시 해석하지 못했고 예전 «확인 필요»도 되살리지 못했습니다 — 파일을 다시 올려 주세요.' }
   }
   return { cards }
 }
