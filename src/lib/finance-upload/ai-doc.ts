@@ -26,7 +26,8 @@ import { AI_KIND_SPECS } from './kinds'
 
 const CELL = { anyOf: [{ type: 'string' }, { type: 'number' }, { type: 'null' }] } as const
 
-const SCHEMA = {
+/** check:ai-schemas가 구조 강제 규칙(모든 object에 additionalProperties: false)을 본다. */
+export const DOC_SCHEMA = {
   type: 'object',
   properties: {
     doc_kind: { type: 'string', enum: [...new Set([...AI_KIND_SPECS.map((k) => k.kind), 'payroll', 'production', 'material_issue', 'official_statement', 'unknown'])] },
@@ -79,7 +80,7 @@ export function realDocReader(repo: ChairmanRepository, businessId: string): AiD
       model,
       max_tokens: 8000,
       system: [{ type: 'text', text: `${await promptCache}\n\n종류와 칸:\n${kinds}`, cache_control: { type: 'ephemeral' } }],
-      output_config: { format: { type: 'json_schema', schema: SCHEMA } },
+      output_config: { format: { type: 'json_schema', schema: DOC_SCHEMA } },
       messages: [{ role: 'user', content }],
     } as Anthropic.MessageCreateParamsNonStreaming)
     const read = res.usage.cache_read_input_tokens ?? 0

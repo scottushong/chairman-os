@@ -5,6 +5,7 @@ import { detectPeriod, normalizeLabel } from '@/lib/ecount/excel/detect'
 import type { EcountSheet } from '@/lib/ecount/excel/workbook'
 
 import { AI_KIND_SPECS, KIND_SPECS, kindSpec, type KindSpec, type UploadKind } from './kinds'
+import { accountHead, cellDate, cellNum, ledgerLayoutByCode, readLedgerWith, rowRole, type LedgerLayout, type LedgerRead, type RowLabel } from './ledger'
 
 /**
  * «회계 · 재무 자료 올리기» v2 — 파일 한 장의 처리(2b ~ 2f). **AI 없이 도는 부분 전부**가 여기 있다(순수 함수 — check:finance-upload가 잰다).
@@ -27,6 +28,10 @@ export interface Classification {
   columns: Record<string, number>
   reason: string
   source: 'learned' | 'code' | 'ai'
+  /** 요약 줄 낱말(AI · 학습) — 거래에서 뺀다 */
+  labels?: RowLabel[]
+  /** ⑤ 계정별 원장의 구조(칸 · 머리 · 요약 줄) — 없으면 코드가 머리글에서 찾는다 */
+  ledger?: LedgerLayout
 }
 
 /* ───────────────────────── b. 버리기 ───────────────────────── */
@@ -194,31 +199,9 @@ export function mergeAi(code: Classification, ai: { kind: string; confidence: Co
 
 export type Rec = Record<string, string | number | null> & { row_no: number }
 
-const TOTAL_LABEL = /^(합계|총계|총합계|계|소계|월계|누계|total|grandtotal)$/i
-
-function num(c: EcountCell | undefined): number | null | 'bad' {
-  if (!c || c.t === 'empty') return null
-  if (c.t === 'number') return c.v
-  if (c.t === 'text') {
-    const t = c.v.replace(/[,\s원₩$]/g, '').replace(/^\((.*)\)$/, '-$1').replace(/^△/, '-').replace(/^▲/, '-')
-    if (t === '' || t === '-') return null
-    const n = Number(t)
-    return Number.isFinite(n) ? n : 'bad'
-  }
-  return 'bad'
-}
-
-function dateOf(c: EcountCell | undefined): string | null | 'bad' {
-  if (!c || c.t === 'empty') return null
-  if (c.t === 'date') return c.v
-  const t = cellText(c).trim()
-  const m = /^(\d{4})[./-](\d{1,2})[./-](\d{1,2})/.exec(t)
-  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`
-  const m2 = /^(\d{1,2})[./-](\d{1,2})$/.exec(t)
-  if (m2) return `0000-${m2[1].padStart(2, '0')}-${m2[2].padStart(2, '0')}`
-  if (c.t === 'number' && c.v > 20000 && c.v < 80000) return new Date(Date.UTC(1899, 11, 30) + c.v * 86_400_000).toISOString().slice(0, 10)
-  return 'bad'
-}
+/** 요약 줄(합계 · 월계 · 누계 · 소계 · 일계 · 이월) — 앞 4칸의 낱말로(ledger.ts 기본 규칙 + AI · 학습 낱말). */
+const num = cellNum
+const dateOf = cellDate
 
 export interface ReadResult {
   rows: Rec[]
@@ -228,11 +211,25 @@ export interface ReadResult {
   fileTotal: number | null
   problems: string[]
   dates: string[]
+  /** ⑤ 원장 — 줄 종류 · 계정 대조 결과 */
+  ledger?: LedgerRead
+}
+
+/** 원장 구조: 사람이 · AI가 · 학습이 준 것 → 없으면 코드가 머리글에서 → 그것도 없으면 칸 대응만. */
+export function ledgerLayoutOf(sheet: EcountSheet, cls: Pick<Classification, 'headerRow' | 'columns' | 'labels' | 'ledger'>): LedgerLayout {
+  if (cls.ledger) return cls.ledger
+  const byCode = ledgerLayoutByCode(sheet)
+  if (byCode) return { ...byCode, labels: cls.labels ?? [] }
+  const { account_code, account_name, debit, credit } = cls.columns
+  return { headerRow: cls.headerRow, cols: { account_code, account_name, debit, credit }, labels: cls.labels ?? [] }
 }
 
 export function readRows(sheet: EcountSheet, cls: Classification): ReadResult {
   if (cls.kind === 'unknown') return { rows: [], people: [], fileTotal: null, problems: ['종류를 모릅니다.'], dates: [] }
-  if (cls.kind === 'ledger') return readLedger(sheet)
+  if (cls.kind === 'ledger') {
+    const ledger = readLedgerWith(sheet, ledgerLayoutOf(sheet, cls))
+    return { rows: ledger.rows, people: [], fileTotal: null, problems: ledger.problems, dates: ledger.dates, ledger }
+  }
   const spec = kindSpec(cls.kind)
   const rows: Rec[] = []
   const problems: string[] = []
@@ -244,9 +241,10 @@ export function readRows(sheet: EcountSheet, cls: Classification): ReadResult {
   for (let r = cls.headerRow + 1; r < sheet.rows.length; r += 1) {
     const row = sheet.rows[r]
     if (row.every((c) => c.t === 'empty')) continue
-    const labelCells = row.slice(0, 4).map((c) => normalizeLabel(cellText(c)))
-    if (labelCells.some((l) => TOTAL_LABEL.test(l))) {
-      if (spec.sumField && cls.columns[spec.sumField] !== undefined) {
+    const role = rowRole(row.slice(0, 4), cls.labels)
+    if (role) {
+      // 합계 · 월계 · 누계만 파일 합계로 본다(소계 · 일계는 부분 합 · 이월은 잔액).
+      if ((role === 'total' || role === 'month' || role === 'cumulative') && spec.sumField && cls.columns[spec.sumField] !== undefined) {
         const v = num(row[cls.columns[spec.sumField]])
         if (typeof v === 'number') fileTotal = v
       }
@@ -443,64 +441,6 @@ function finishRow(kind: UploadKind, rec: Rec, title: string, cols: Record<strin
   return null
 }
 
-/** ⑤ 계정별 원장 — 계정마다 블록: 제목 «<코드>(<계정명>)» → 머리글 → 이월잔액 → 거래 줄 → 합계. 그 달 계정별 차변 · 대변 합. */
-export function readLedger(sheet: EcountSheet): ReadResult {
-  const rows: Rec[] = []
-  const problems: string[] = []
-  const dates: string[] = []
-  let cur: { code: string; name: string; debit: number; credit: number; total: { d: number; c: number } | null; row: number } | null = null
-  let debitCol = -1
-  let creditCol = -1
-  const flush = () => {
-    if (!cur) return
-    if (cur.total && (Math.abs(cur.total.d - cur.debit) > 1 || Math.abs(cur.total.c - cur.credit) > 1)) {
-      problems.push(`계정 ${cur.code}(${cur.name}) 거래 합이 합계 줄과 다릅니다 — 차변 ${cur.debit} ≠ ${cur.total.d} 또는 대변 ${cur.credit} ≠ ${cur.total.c}.`)
-    }
-    rows.push({ row_no: cur.row, account_code: cur.code, account_name: cur.name, debit: cur.debit, credit: cur.credit })
-    cur = null
-  }
-  sheet.rows.forEach((row, r) => {
-    const line = row.map(cellText).join(' ')
-    const head = /계정별\s*원장[^\d]*?(\d{3,6})\s*\(([^)]+)\)/.exec(line) ?? (/^\s*(\d{3,6})\s*\(([^)]+)\)\s*$/.exec(line.trim()) ? /(\d{3,6})\s*\(([^)]+)\)/.exec(line) : null)
-    if (head) {
-      flush()
-      cur = { code: head[1], name: head[2].trim(), debit: 0, credit: 0, total: null, row: r + 1 }
-      return
-    }
-    const labels = row.map((c) => normalizeLabel(cellText(c)))
-    const di = labels.findIndex((l) => l === '차변' || l === '차변금액')
-    const ci = labels.findIndex((l) => l === '대변' || l === '대변금액')
-    if (di >= 0 && ci >= 0) {
-      debitCol = di
-      creditCol = ci
-      return
-    }
-    if (!cur || debitCol < 0) return
-    if (labels.some((l) => /이월잔액|전기이월|전월이월/.test(l))) return
-    if (labels.some((l) => /^(합계|월계|누계|총계)$/.test(l))) {
-      if (labels.some((l) => l === '합계' || l === '월계')) {
-        const d = num(row[debitCol])
-        const c = num(row[creditCol])
-        cur.total = { d: typeof d === 'number' ? d : 0, c: typeof c === 'number' ? c : 0 }
-      }
-      return
-    }
-    const date = dateOf(row[0])
-    if (typeof date !== 'string') return // 출력 시각 · 빈 줄
-    const d = num(row[debitCol])
-    const c = num(row[creditCol])
-    if (d === 'bad' || c === 'bad') {
-      problems.push(`${r + 1}행 차변 · 대변이 숫자가 아닙니다.`)
-      return
-    }
-    cur.debit += d ?? 0
-    cur.credit += c ?? 0
-    dates.push(date)
-  })
-  flush()
-  return { rows, people: [], fileTotal: null, problems, dates }
-}
-
 /* ───────────────────────── 기간 ───────────────────────── */
 
 /** 제목 줄의 기간(한 달) → 날짜 칸의 가장 많은 달 → 파일 이름. 못 찾으면 null(사람이 고른다). */
@@ -610,17 +550,45 @@ const DATE_CELL = /^\d{4}[-./]\d{1,2}[-./]\d{1,2}$/
 const isNumberCell = (t: string) => {
   const s = t.trim()
   if (!/\d/.test(s) || DATE_CELL.test(s)) return false
-  return /^[\d,.\s()+\-]+$/.test(s.replace(UNIT_WORDS, '').trim() || 'x')
+  // △ · ▲(ECOUNT 글 칸의 음수 표시)도 숫자 칸 — 리뷰(2026-10-14): 가리지 않으면 음수 금액이 AI에 갔다.
+  return /^[\d,.\s()+\-△▲]+$/.test(s.replace(UNIT_WORDS, '').trim() || 'x')
 }
 
-export function aiSample(sheet: EcountSheet, headerRow: number): { sheet: string; rows: string[][] } {
+/**
+ * AI에 보내는 견본 — 머리글 근처 36줄 + 그 뒤의 요약 줄 · 계정 머리 줄로 보이는 줄(최대 20)과 각 줄의 시트 줄 번호(0부터).
+ * 머리글 아래 숫자 칸은 «<숫자>»(0080). 적요 · 구분 같은 글 칸은 그대로 — 줄 종류(거래 · 월계 · 누계 …)를 가리려면 낱말이 있어야 한다.
+ */
+export function aiSample(sheet: EcountSheet, headerRow: number): { sheet: string; rows: string[][]; row_no: number[] } {
   const start = Math.max(0, headerRow - 3)
-  const take = sheet.rows.slice(start, start + 23).map((r, i) => ({ r, body: start + i > headerRow }))
-  const totals = sheet.rows.filter((r) => r.slice(0, 4).some((c) => TOTAL_LABEL.test(normalizeLabel(cellText(c))))).slice(0, 3).map((r) => ({ r, body: true }))
-  const asText = ({ r, body }: { r: EcountCell[]; body: boolean }) =>
-    r.map((c) => {
+  const end = Math.min(sheet.rows.length, start + 36)
+  const picked = new Set<number>()
+  for (let r = start; r < end; r += 1) picked.add(r)
+  const seen = new Set<string>()
+  let extra = 0
+  const noLayout = { cols: {}, headCol: null }
+  for (let r = end; r < sheet.rows.length && extra < 20; r += 1) {
+    const row = sheet.rows[r]
+    const role = rowRole(row)
+    const head = accountHead(row, noLayout)
+    // 낱말이 «계» · «이월»로 끝나는 짧은 글 칸(아직 모르는 요약 낱말 — AI가 정한다)
+    const odd = row.find((c) => c.t === 'text' && c.v.replace(/[\s[\]()<>*]/g, '').length <= 8 && /(계|이월)$/.test(c.v.replace(/[\s[\]()<>*]/g, '')))
+    const key = role ? `r:${role}` : head ? `h:${extra < 6 ? r : 'x'}` : odd ? `o:${cellText(odd)}` : null
+    if (!key || seen.has(key)) continue
+    seen.add(key)
+    picked.add(r)
+    extra += 1
+  }
+  const rows: string[][] = []
+  const rowNo: number[] = []
+  for (const r of [...picked].sort((a, b) => a - b)) {
+    const body = r > headerRow
+    const cells = sheet.rows[r].map((c) => {
       const t = cellText(c).slice(0, 60)
       return body && ((c.t === 'number' && /\d/.test(t)) || isNumberCell(t)) ? '<숫자>' : t
     })
-  return { sheet: sheet.name.slice(0, 80), rows: [...take, ...totals].map(asText) }
+    while (cells.length && !cells[cells.length - 1]) cells.pop()
+    rows.push(cells.slice(0, 40))
+    rowNo.push(r)
+  }
+  return { sheet: sheet.name.slice(0, 80), rows, row_no: rowNo }
 }

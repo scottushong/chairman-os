@@ -21,6 +21,7 @@ import { measureSkew, normalizePhoto, openDocument } from '../src/lib/finance-up
 import { checkDocTotals, companyMismatch, docReviewUntil, forcedDocReview, mockDocReader, type AiDocReader, type DocReadInput, type DocTable } from '../src/lib/finance-upload/doc-read'
 import { MSG } from '../src/lib/finance-upload/open'
 import { OFFICIAL_RECORD_NOTE, processUpload, type DocOptions } from '../src/lib/finance-upload/process'
+import { defaultFeatureRows, featureOnFor } from '../src/lib/features'
 import { intakeOpenFor } from '../src/lib/intake/switch'
 import { dummyRepository as repo } from '../src/lib/repository/dummy'
 import { dummyFinLines } from '../src/lib/repository/dummy-finance-upload'
@@ -228,6 +229,19 @@ async function main() {
   const s9x = await run('가짜 판매현황 직원.xlsx', await xlsx('판매현황', [title('판매현황', '2099-08'), ['거래처명', '품목명', '수량', '단가', '공급가액'], ['가짜 거래처 C', '가짜 제품 3', 7, 1000, 7000], ['합계', null, 7, null, 7000]]), { docs: staffDocs })
   assert.equal(s9x[0].status, 'applied', `직원 엑셀이 안 들어갔다: ${s9x[0].message} ${s9x[0].why}`)
   assert.equal(calls.length, n, '직원 PDF가 AI에 갔다')
+  // 9b(2026-10-14). 대표가 «PDF · 사진 읽기»를 «전원»으로 켜면 장부 권한자(직원 자리)도 바로 — 업로드 길은 finance_docs 하나만 본다(자료 받는 입구 intake와 따로 막지 않는다).
+  {
+    const rowsAll = defaultFeatureRows().map((r) => (r.feature_key === 'finance_docs' ? { ...r, audience: 'all' as const } : r))
+    assert.equal(featureOnFor(rowsAll, 'finance_docs', 'TeamLead', BIZ), true, '«전원»으로 켰는데 장부 권한자에게 안 열린다')
+    assert.equal(featureOnFor(rowsAll, 'intake', 'TeamLead', BIZ), false, '시험 전제: 입구(intake)는 여전히 대표만')
+    const action = readFileSync('src/app/actions/finance-upload.ts', 'utf8')
+    assert.ok(action.includes("featureOn(user, 'finance_docs', businessId)") && !/featureOn\(user, 'intake'/.test(action), '업로드 길이 finance_docs 말고 다른 스위치(intake)로도 막는다')
+    const openDocs: DocOptions = { allowed: featureOnFor(rowsAll, 'finance_docs', 'TeamLead', BIZ), read: reader, businessName: '가짜산업', accounts }
+    const s9c = await run('2025 표준재무제표 직원.pdf', stmt, { docs: openDocs })
+    assert.equal(s9c[0].status, 'official', `스위치를 켠 직원의 결산서가 공식 결산으로 안 갔다: ${s9c[0].message}`)
+    const s9d = await run('가짜 급여대장 직원.pdf', textPdf([[title('급여대장', '2099-08'), ['사번', '부서', '기본급'], ['E001', '경영지원', 3000000]]]), { docs: openDocs })
+    assert.equal(s9d[0].status, 'refused', `스위치를 켜도 급여대장 PDF는 거부여야 한다: ${s9d[0].message}`)
+  }
   process.env.DUMMY_USER = 'chairman'
 
   // ── 10. AI 한도 넘음 · 꺼짐 → 미리보기(글 PDF) / 사진 · 스캔은 못 읽음(저장 없음) ──
