@@ -225,6 +225,16 @@ async function main() {
     const left = (await db.query<{ n: number }>(`select (select count(*) from fin_uploads where period in ('2099-07', '2099-08')) + (select count(*) from fin_purchase_in_lines where period = '2099-07') as n`)).rows[0].n
     assert.equal(Number(left), 0, '0080 staging 시험 SQL이 올리기 · 줄을 남겼다')
   }
+  // 0081(청사진 뼈대)이 있는 브랜치에서만. 0071보다 먼저.
+  if (files.includes('0081_blueprint_skeleton.sql')) {
+    const state81 = async () => (await db.query<{ s: string }>(`select coalesce((select string_agg(user_id || ':' || module || ':' || can_write, ',' order by user_id, module) from user_module_access), '')
+      || '|' || coalesce((select string_agg(feature_key || ':' || audience, ',' order by feature_key) from feature_switches), '')
+      || '|' || coalesce((select string_agg(user_id || ':' || role, ',' order by user_id) from user_profiles), '') as s`)).rows[0].s
+    const before81 = await state81()
+    const m81 = await runFile('0081_staging_test.sql')
+    assert.match(m81, /^0081 STAGING PASS a\(스위치 7개 대표만\) b\(스위치 기본 = 직원 feature_off\) c\(영업 = 원가 · 마진 함수 거부\) d\(생산 = 남의 오더 · 구매 성과 거부\) e\(임원 = 구매 성과 월만\) f\(대표 = 진짜 소유자 아래 호출\) g\(anon 거부\)$/, `0081 staging 시험 SQL이 PASS로 끝나지 않는다 (${m81})`)
+    assert.equal(await state81(), before81, '0081 staging 시험 SQL이 모듈 줄 · 스위치 · 역할을 바꾼 채 남겼다')
+  }
   // 0071은 맨 뒤 — 끝에서 표 · 함수 소유자를 바꾼다(아래 주석).
   // 0071(프로세스 차트 동기화)이 있는 브랜치에서만. staging처럼 AI Agent 계정이 하나 있다.
   if (files.includes('0071_process_chart_sync.sql')) {
