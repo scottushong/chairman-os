@@ -39,12 +39,15 @@ export default async function WorkOrderPage(props: PageProps<'/production/[busin
   }
   await recordScreenRead({ path: `/production/${business_id}/orders/${order_id}`, kind: 'page', business_id })
 
-  // 대표만 — 담당자 고르기(이 회사 생산 줄이 있는 사람).
-  // 0081 work_order_get은 지금 담당(assignee)을 돌려주지 않는다 — 폼은 늘 «없음»에서 시작(DEFERRED «0081 화면»).
+  // 대표만 — 담당자 고르기(이 회사 생산 줄이 있는 사람). 지금 담당(work_order_get assignee — 대표에게만 온다)으로 채운다.
   let staff: UserAccount[] = []
   if (chairman && wo) {
     staff = (await repo.listUserAccounts().catch(() => [])).filter((p) => !p.revoked_at && p.modules.some((m) => m.module === `/production/${business_id}`))
   }
+  // 지금 담당이 목록에 없으면(회수 · 생산 줄 빠짐) «없음»에서 시작하고 알린다 — 그 사람으로 다시 저장하면 DB가 거부한다(0081 리뷰 M5).
+  const assignee = wo?.assignee ?? null
+  const currentAssignee = assignee && staff.some((p) => p.user_id === assignee) ? assignee : ''
+  const assigneeGone = !!assignee && !currentAssignee
 
   return (
     <div className="mx-auto max-w-[1200px] space-y-4 px-4 py-5 sm:px-6">
@@ -165,7 +168,7 @@ export default async function WorkOrderPage(props: PageProps<'/production/[busin
                 </label>
                 <label className={LABEL}>
                   담당
-                  <select name="assignee" defaultValue="" className={FIELD}>
+                  <select name="assignee" defaultValue={currentAssignee} className={FIELD}>
                     <option value="">없음</option>
                     {staff.map((p) => (
                       <option key={p.user_id} value={p.user_id}>
@@ -179,7 +182,8 @@ export default async function WorkOrderPage(props: PageProps<'/production/[busin
                   원료 이름 가림
                 </label>
               </ActionForm>
-              <p className="mt-1 text-t10h text-ink-muted">담당은 저장할 때마다 다시 고릅니다(지금 담당은 화면에 따로 보이지 않습니다). 담당 직원은 자기 오더만 봅니다.</p>
+              {assigneeGone ? <p className="mt-1 text-t11 text-warning">지금 담당은 이 회사 생산 담당 목록에 없습니다 — 다시 고르세요.</p> : null}
+              <p className="mt-1 text-t10h text-ink-muted">담당 칸은 지금 담당으로 채워져 있습니다. 담당 직원은 자기 오더만 봅니다.</p>
             </section>
           ) : null}
         </>

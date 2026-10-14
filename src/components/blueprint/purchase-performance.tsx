@@ -112,6 +112,8 @@ function PerfTable({ title, rows }: { title: string; rows: PurchasePerfRow[] }) 
                 <td className={`${TD} text-right tnum`} data-label="LOT · kg">
                   {r.n_lots}건 · {kgText(r.qty_kg)}
                   {r.n_no_market ? <span className="block text-t10h text-warning">시장가 없음 {r.n_no_market}건</span> : null}
+                  {r.n_no_fx ? <span className="block text-t10h text-warning">기준 환율 없음 {r.n_no_fx}건</span> : null}
+                  {r.suppressed ? <span className="block text-t10h text-ink-muted">LOT 3건 미만 — 금액 가림</span> : null}
                 </td>
                 <td className={`${TD} text-right tnum`} data-label="구매가 합">
                   {won(r.purchase_krw)}

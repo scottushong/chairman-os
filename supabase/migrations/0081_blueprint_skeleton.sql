@@ -19,6 +19,7 @@
 --
 -- ■ 지키는 것 ■
 --   · 0001~0080을 고치지 않는다 — 기존 함수를 다시 만들지 않고(create function만) 표 · 정책도 그대로다.
+--     (예외 하나: cost_materials에 AFTER INSERT 트리거를 더한다 — 새 원료에 무작위 코드를 붙이는 것뿐, 표 모양 · 정책은 그대로.)
 --   · 새 표 넷: RLS enable · FORCE 없음(0061~0067 원가 표와 같은 결 — 정의자 소유자가 읽는다) · authenticated grant 없음(정의자 함수로만).
 --   · 원가 값은 0062 문(cost_secret.cost_gate_biz · cost_gate — 한도 · 감사 · 겸직 거부 · 영업 0시)을 지난 뒤에만. 대표 외 값은 원래 값으로 끝까지
 --     계산한 뒤 cost_secret.shown(x, false)(1원). 원료 이름 · 원료별 값 · BOM 비율은 대표 외 출력에 없다(② 구매 성과의 구매 · 원가 관리 · CFO 예외).
@@ -27,6 +28,14 @@
 --   · 감사 줄의 entity_table은 0067 audit_log_cost_private가 이미 좁히는 이름을 쓴다(전망 = cost_market_prices · 경쟁사 가정 = cost_overheads ·
 --     작업지시 = cost_production_orders · 구매 성과 = cost_purchase_lots) — 그 정책을 다시 만들지 않고도 상사 사슬에 새지 않게.
 --   · Forecast · 구매 절감 · 경쟁사 가정은 월별 손익(0075)에 들어가지 않는다 — 그 함수들을 부르지도 바꾸지도 않는다(check:blueprint가 잰다).
+--
+-- ■ 리뷰 고침(2026-10-14) ■ I1 임원 이상 구매 성과 = 달 단위로 넓힘 + LOT 3개 미만 묶음 값 가림(suppressed) · I2 GroupCFO + 영업 줄 = 임원과 같은 제한 ·
+--   I3 원료 코드 = 원료마다 무작위 코드(표 cost_secret.material_codes — md5(원료 id) 역산 막기) · I4 Forecast · 고객 · 분해 목록 한도 키를
+--   0065 원가 관리 목록('costing:<회사>')과 같이(회사 전체 스냅숏 하루 20번 합계) · M1 없는 id = 스위치보다 먼저 cost_not_found · M2 n_no_fx ·
+--   M3 대표 외 분해 b.gm = a.gm + 전체(1원) · M4 수동 환율 모양 먼저 · M5 담당 = 사용 중 · 그 회사 · 생산 줄.
+-- ■ 알려진 한계 ■ 작업지시 «원료 이름 가림»(hide_names)은 0064 cost_production_order_lines 직접 select 정책(생산 전원)을 좁힌 뒤에야
+--   진짜로 가린다 — 지금은 생산 직원이 그 표에서 material_id를 직접 읽고 0061 원료 표에서 이름을 찾을 수 있다(DEFERRED에 있음).
+--   원료 코드는 그래도 material_id에서 다시 계산되지 않는다(I3).
 --
 -- 0035 규칙: force를 새로 걸지 않는다 · 정책은 늘 to authenticated(이 파일은 정책을 만들지 않는다) · 함수는 public · anon에서 이름으로 회수 ·
 --   공개 RPC만 authenticated에 · 내부 함수는 cost_secret(execute 없음).
@@ -121,6 +130,14 @@ end;
 $do$;
 revoke all on sequence cost_market_outlook_outlook_id_seq, cost_competitor_assumptions_assumption_id_seq from public, anon, authenticated;
 
+-- 리뷰 I3 — 작업지시 원료 코드. 원료마다 무작위(원료 id에서 다시 계산할 수 없다). cost_secret 안 · 정의자 함수만 읽는다(0066 quote_raw와 같은 결).
+create table cost_secret.material_codes (
+  material_id text primary key references public.cost_materials(material_id),
+  code        text not null unique check (code ~ '^R-[0-9A-F]{6}$')
+);
+alter table cost_secret.material_codes enable row level security;
+revoke all on table cost_secret.material_codes from public, anon, authenticated;
+
 -- =====================================================================
 -- 2절. 내부 함수(cost_secret — execute 없음)
 -- =====================================================================
@@ -144,10 +161,53 @@ $fn$;
 create trigger cost_market_outlook_calc before insert or update on cost_market_outlook
   for each row execute function cost_secret.outlook_calc();
 
-/** 원료 코드 — 'R-' + md5(원료 id) 앞 6자리(원료 id에 이름이 들어 있던 때가 있어 id를 그대로 보이지 않는다 — 결정 12). */
+/**
+ * 원료 하나에 무작위 코드를 붙인다(이미 있으면 그대로). 코드가 겹치면 다시 뽑는다(최대 50번 — 16⁶ 칸이라 사실상 한 번).
+ * 리뷰 I3 — 예전 'R-' + md5(원료 id)는 생산이 0061 cost_production_materials로 원료 id를 알면 다시 계산할 수 있었다.
+ */
+create function cost_secret.material_code_ensure(p_material text) returns void
+language plpgsql volatile security definer set search_path = public, cost_secret, pg_temp as $fn$
+declare
+  i int;
+begin
+  for i in 1 .. 50 loop
+    if exists (select 1 from cost_secret.material_codes c where c.material_id = p_material) then
+      return;
+    end if;
+    insert into cost_secret.material_codes (material_id, code)
+    values (p_material, 'R-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 6)))
+    on conflict do nothing;
+  end loop;
+  raise exception 'cost_invalid' using errcode = '22023';
+end;
+$fn$;
+
+/** 새 원료 → 코드(AFTER INSERT). */
+create function cost_secret.material_code_new() returns trigger
+language plpgsql security definer set search_path = public, cost_secret, pg_temp as $fn$
+begin
+  perform cost_secret.material_code_ensure(new.material_id);
+  return null;
+end;
+$fn$;
+
+do $do$
+declare
+  m text;
+begin
+  for m in select x.material_id from public.cost_materials x order by x.material_id loop
+    perform cost_secret.material_code_ensure(m);
+  end loop;
+end;
+$do$;
+
+create trigger cost_materials_code after insert on cost_materials
+  for each row execute function cost_secret.material_code_new();
+
+/** 원료 코드 — 표에서 읽는다(없으면 'R-??????'). 결정 12 → 리뷰 I3(무작위). */
 create function cost_secret.mat_code(p_material text) returns text
-language sql immutable set search_path = pg_temp as $fn$
-  select 'R-' || upper(substr(md5(p_material), 1, 6));
+language sql stable set search_path = pg_temp as $fn$
+  select coalesce((select c.code from cost_secret.material_codes c where c.material_id = p_material), 'R-??????');
 $fn$;
 
 /** 제품 진단 카드 한 장. 값이 없으면 state 'no_data' + 필요한 것(0을 넣지 않는다). */
@@ -393,7 +453,9 @@ begin
                             'gm_pct', case when a.price > 0 then round(v_ga / a.price * 100, 1) end, 'kg', a.kg, 'n', a.n),
     'b', jsonb_build_object('price', cost_secret.shown(b.price, p_chairman), 'material', cost_secret.shown(b.mat, p_chairman),
                             'mfg', cost_secret.shown(b.mfg, p_chairman), 'logi', cost_secret.shown(b.logi, p_chairman),
-                            'other', cost_secret.shown(b.oth, p_chairman), 'gm', cost_secret.shown(v_gb, p_chairman),
+                            'other', cost_secret.shown(b.oth, p_chairman),
+                            -- 리뷰 M3 — 대표 외는 b.gm = a.gm(1원) + 전체(1원)로 표가 맞아떨어지게.
+                            'gm', case when p_chairman then v_gb else cost_secret.shown(v_ga, false) + cost_secret.shown(v_total, false) end,
                             'gm_pct', case when b.price > 0 then round(v_gb / b.price * 100, 1) end, 'kg', b.kg, 'n', b.n),
     'effects', v_eff,
     'total', cost_secret.shown(v_total, p_chairman),
@@ -457,6 +519,10 @@ declare
   v_cur text := upper(btrim(coalesce(p_currency, 'KRW')));
 begin
   select m.business_id into v_biz from cost_materials m where m.material_id = p_material;
+  -- 리뷰 M1 — 없는 id · 남의 회사 id는 스위치보다 먼저 cost_not_found(feature_off로 다른 회사 id를 떠보지 못하게).
+  if v_biz is null or not coalesce(has_business(v_biz), false) then
+    raise exception 'cost_not_found' using errcode = 'P0002';
+  end if;
   if not coalesce(feature_on('cost_forecast', v_biz), false) then
     raise exception 'feature_off' using errcode = '42501';
   end if;
@@ -521,8 +587,11 @@ begin
      or not exists (select 1 from businesses where business_id = p_business) then
     raise exception 'cost_not_found' using errcode = 'P0002';
   end if;
+  -- 리뷰 M4 — 모양을 먼저 따로 본다(배열 · 글자에 jsonb_each를 부르지 않게).
+  if jsonb_typeof(v_manual) <> 'object' then
+    raise exception 'cost_invalid' using errcode = '22023';
+  end if;
   if p_blend_pct is null or p_blend_pct < 0 or p_blend_pct > 100 or coalesce(p_fx_mode, '') not in ('today', 'manual')
-     or jsonb_typeof(v_manual) <> 'object'
      or exists (select 1 from jsonb_each(v_manual) e
                  where e.key !~ '^[A-Z]{3}$'
                     or coalesce(case when jsonb_typeof(e.value) = 'number' then (e.value #>> '{}')::numeric end, 0) not between 0.000001 and 1000000) then
@@ -559,7 +628,7 @@ end;
 $fn$;
 
 /**
- * 대표 · 원가 관리: 제품마다 Forecast 원료비 · 총원가(원/kg). 문 = cost_gate_biz('forecast:<회사>', 하루 20번 · 호출마다 감사 · 겸직 거부).
+ * 대표 · 원가 관리: 제품마다 Forecast 원료비 · 총원가(원/kg). 문 = cost_gate_biz('costing:<회사>' — 0065 원가 관리 목록과 같은 키 · 하루 20번 합계 · 호출마다 감사 · 겸직 거부).
  * 대표 = 원래 값 · 이유(no_bom · price_missing · overhead_not_ready). 원가 관리 = 1원 · 이유 not_computed 하나 ·
  * 회사 원료 전부에 Forecast 단가가 있을 때만 계산(하나라도 없으면 그 회사 전 제품 not_computed — 0062 business_complete와 같은 결).
  */
@@ -578,7 +647,8 @@ begin
   if p_business is null or not (coalesce(auth_role()::text, '') = 'Chairman' or cost_can('costing', p_business)) then
     raise exception 'cost_not_found' using errcode = 'P0002';
   end if;
-  select * into g from cost_secret.cost_gate_biz(p_business, 'forecast:' || p_business, 'costing_list', null);
+  -- 리뷰 I4 — 0065 cost_costing_list와 같은 키 · 종류(회사 전체 스냅숏은 화면이 몇 개든 하루 20번 합계).
+  select * into g from cost_secret.cost_gate_biz(p_business, 'costing:' || p_business, 'costing_list', null);
   v_ok := g.chairman or cost_secret.forecast_complete(p_business, g.as_of);
   return query
   select p.product_id, p.name, g.as_of,
@@ -611,19 +681,27 @@ $fn$;
  * LOT(입고일이 기간 안 · 살아 있는 LOT)마다: 구매가 = unit_price × LOT 환율(물건값 — 결정 5) · 그날 시장가(0061 cost_market_on — 입고일 이하 최신 ·
  * 같은 날 여러 출처 평균) · 절감액 = (시장가 − 구매가) × kg · 환율 효과 = 외화 LOT만 (LOT 환율 − 입고월 fx_rates 평균) × 물건값(통화)(결정 6).
  * 묶음 합계는 원래 값끼리 더한 뒤 1원(round — 원가가 아니다). 시장가 · 기준 환율이 없으면 그 LOT의 그 값은 null(0이 아니다).
- * 보는 사람: 대표 · 구매 · 원가 관리 · GroupCFO = 모든 묶음, BusinessCEO · Executive = 'month'만(결정 9). 그 밖 = cost_not_found.
+ * 보는 사람(리뷰 I1 · I2):
+ *   전부 보기 = 대표 · 구매 줄 · 원가 관리 줄 · 영업 줄 없는 GroupCFO — 모든 묶음.
+ *   제한 보기 = BusinessCEO · Executive · 영업 줄 있는 GroupCFO — 'month'만 · 기간은 앞뒤 달 전체로 넓힘(하루 창으로 LOT 하나를 떼지 못하게) ·
+ *              LOT 3개 미만 묶음은 금액 · kg 칸 null + suppressed = true(n_lots는 남긴다).
+ *   (영업 줄 + 구매 줄은 전부 보기 그대로 — 0062 문이 그 사람에게 영업 원가를 이미 거부하고, 원료 표는 원래 읽는다.)
+ *   그 밖 = cost_not_found.
+ * n_no_fx = 외화 LOT 중 입고월 기준 환율(fx_rates 평균)이 없는 수(리뷰 M2). 새 칸은 맨 끝.
  * 감사: 대표 외 호출마다 한 줄(값 없이).
  */
 create function purchase_performance(p_business text, p_from date, p_to date, p_by text)
 returns table (key text, label text, n_lots int, qty_kg numeric, purchase_krw numeric, market_krw numeric, savings_krw numeric,
-               fx_effect_krw numeric, n_no_market int)
+               fx_effect_krw numeric, n_no_market int, suppressed boolean, n_no_fx int)
 language plpgsql volatile security definer set search_path = public, cost_secret, pg_temp as $fn$
 #variable_conflict use_column
 declare
   v_role text := coalesce(auth_role()::text, '');
   v_in boolean;
   v_full boolean;
-  v_exec boolean;
+  v_limited boolean;
+  v_from date := p_from;
+  v_to date := p_to;
 begin
   if not coalesce(feature_on('purchase_performance', p_business), false) then
     raise exception 'feature_off' using errcode = '42501';
@@ -633,45 +711,63 @@ begin
     raise exception 'cost_invalid' using errcode = '22023';
   end if;
   v_in := coalesce(is_active(), false) and coalesce(has_business(p_business), false) and v_role not in ('AIAgent', 'Integration', '');
-  v_full := v_in and (v_role in ('Chairman', 'GroupCFO') or cost_can('purchasing', p_business) or cost_can('costing', p_business));
-  v_exec := v_in and v_role in ('BusinessCEO', 'Executive');
-  if not (v_full or (v_exec and p_by = 'month')) then
+  v_full := v_in and (v_role = 'Chairman' or cost_can('purchasing', p_business) or cost_can('costing', p_business)
+                      or (v_role = 'GroupCFO' and not coalesce(cost_grant('sales', p_business), false)));
+  v_limited := v_in and not v_full and v_role in ('BusinessCEO', 'Executive', 'GroupCFO');
+  if not (v_full or (v_limited and p_by = 'month')) then
     raise exception 'cost_not_found' using errcode = 'P0002';
+  end if;
+  if not v_full then
+    v_from := date_trunc('month', p_from::timestamp)::date;
+    v_to := (date_trunc('month', p_to::timestamp) + interval '1 month' - interval '1 day')::date;
   end if;
   if v_role <> 'Chairman' then
     insert into audit_log (action, entity_table, entity_id, business_id, actor_user_id, actor_role, before, after, note)
     values ('read', 'cost_purchase_lots', 'performance:' || p_business, p_business, auth.uid(), v_role, null,
-            jsonb_build_object('by', p_by, 'from', p_from, 'to', p_to), '구매 성과 조회(0081)');
+            jsonb_build_object('by', p_by, 'from', v_from, 'to', v_to), '구매 성과 조회(0081)');
   end if;
   return query
   with l as (
     select x.lot_id, x.material_id, x.supplier_id, x.received_on, x.qty_kg as q,
            x.unit_price * x.fx_rate as buy,
            cost_market_on(x.material_id, x.received_on) as mkt,
-           case when x.currency = 'KRW' then 0::numeric else (x.fx_rate - fb.v) * x.unit_price * x.qty_kg end as fxe
+           case when x.currency = 'KRW' then 0::numeric else (x.fx_rate - fb.v) * x.unit_price * x.qty_kg end as fxe,
+           (x.currency <> 'KRW' and fb.v is null) as no_fx
       from cost_purchase_lots x
       left join lateral (
         select avg(r.rate) as v from fx_rates r
          where r.base = x.currency::text and r.quote = 'KRW'
            and r.rate_date >= date_trunc('month', x.received_on::timestamp)::date
            and r.rate_date < (date_trunc('month', x.received_on::timestamp) + interval '1 month')::date) fb on true
-     where x.business_id = p_business and x.voided_at is null and x.received_on between p_from and p_to
+     where x.business_id = p_business and x.voided_at is null and x.received_on between v_from and v_to
   ), b as (
     select case p_by when 'lot' then l.lot_id when 'material' then l.material_id when 'supplier' then l.supplier_id
                      else to_char(l.received_on, 'YYYY-MM') end as k,
            case p_by when 'lot' then l.lot_id || ' · ' || mt.name || ' · ' || to_char(l.received_on, 'YYYY-MM-DD')
                      when 'material' then mt.name when 'supplier' then sp.name
                      else to_char(l.received_on, 'YYYY-MM') end as lb,
-           l.q, l.buy, l.mkt, l.fxe
+           l.q, l.buy, l.mkt, l.fxe, l.no_fx
       from l
       join cost_materials mt on mt.material_id = l.material_id
       join cost_suppliers sp on sp.supplier_id = l.supplier_id
+  ), g as (
+    select b.k, max(b.lb) as lb, count(*)::int as n, sum(b.q) as q, round(sum(b.buy * b.q)) as buy, round(sum(b.mkt * b.q)) as mkt,
+           round(sum((b.mkt - b.buy) * b.q)) as sav, round(sum(b.fxe)) as fxe, (count(*) filter (where b.mkt is null))::int as nm,
+           (count(*) filter (where b.no_fx))::int as nf
+      from b
+     group by b.k
   )
-  select b.k, max(b.lb), count(*)::int, sum(b.q), round(sum(b.buy * b.q)), round(sum(b.mkt * b.q)),
-         round(sum((b.mkt - b.buy) * b.q)), round(sum(b.fxe)), (count(*) filter (where b.mkt is null))::int
-    from b
-   group by b.k
-   order by b.k
+  select g.k, g.lb, g.n,
+         case when v_full or g.n >= 3 then g.q end,
+         case when v_full or g.n >= 3 then g.buy end,
+         case when v_full or g.n >= 3 then g.mkt end,
+         case when v_full or g.n >= 3 then g.sav end,
+         case when v_full or g.n >= 3 then g.fxe end,
+         g.nm,
+         not (v_full or g.n >= 3),
+         g.nf
+    from g
+   order by g.k
    limit 5000;
 end;
 $fn$;
@@ -682,7 +778,7 @@ $fn$;
 
 /**
  * 대표 · 원가 관리(GroupCFO도 원가 관리 줄이 있어야 — 결정 8): 고객(customer_company)별 판매 · kg · 매출 · 매출원가 · GM · GM% · 등급 ·
- * 원가 근거(생산 LOT Actual · Current 추정 · 계산 안 됨). 문 = cost_gate_biz('customers:<회사>'). 대표 외 금액 1원.
+ * 원가 근거(생산 LOT Actual · Current 추정 · 계산 안 됨). 문 = cost_gate_biz('costing:<회사>' — 0065와 같은 키). 대표 외 금액 1원.
  * 영업(원가 관리 줄 없음): 본인 판매만(0067 sale_visible · 만든 사람 = 나) 고객별 판매 수 · kg · 매출 · 가장 최근 판매의 기록 등급 — 원가 칸은 null.
  * 0075 월 매출원가와 섞지 않는다(결정 7).
  */
@@ -701,7 +797,7 @@ begin
     raise exception 'cost_invalid' using errcode = '22023';
   end if;
   if coalesce(auth_role()::text, '') = 'Chairman' or cost_can('costing', p_business) then
-    select * into g from cost_secret.cost_gate_biz(p_business, 'customers:' || p_business, 'costing_list', null);
+    select * into g from cost_secret.cost_gate_biz(p_business, 'costing:' || p_business, 'costing_list', null);   -- 리뷰 I4
     return query
     select c.customer, count(*)::int, sum(c.kg),
            cost_secret.shown(sum(c.kg * c.price), g.chairman),
@@ -742,7 +838,7 @@ $fn$;
 
 /**
  * 대표 · 원가 관리: «매출 큰데 마진 낮은» 상위 10 — 고객 · 제품 각각. 매출 상위 절반 중 GM%(계산된 것만) 낮은 순.
- * 문은 customer_profit과 같은 키(같은 화면에서 두 번 지나도 하루 20번 안).
+ * 문은 0065 원가 관리 목록 · customer_profit과 같은 키('costing:<회사>' — 하루 20번 합계).
  */
 create function customer_profit_watch(p_business text, p_from date, p_to date)
 returns table (kind text, key text, label text, revenue_krw numeric, gm_pct numeric, grade text)
@@ -760,7 +856,7 @@ begin
   if not (coalesce(auth_role()::text, '') = 'Chairman' or cost_can('costing', p_business)) then
     raise exception 'cost_not_found' using errcode = 'P0002';
   end if;
-  select * into g from cost_secret.cost_gate_biz(p_business, 'customers:' || p_business, 'costing_list', null);
+  select * into g from cost_secret.cost_gate_biz(p_business, 'costing:' || p_business, 'costing_list', null);   -- 리뷰 I4
   return query
   with c as (select * from cost_secret.sale_costs(p_business, p_from, p_to, null, g.chairman)),
   grp as (
@@ -792,7 +888,7 @@ $fn$;
 
 /**
  * 대표 · 원가 관리: 기간 A(앞) → B(뒤) GM 원/kg 변화를 판매가 · 원료 · 제조 · 물류 · 기타 효과로(합 = 전체 — 대표 정확히, 대표 외 1원으로 맞춰).
- * 문 = cost_gate_biz('bridge:<회사>'). 제품 지정 가능(그 회사 제품이 아니면 cost_not_found). 대시보드 문장은 앱이 이 결과로 만든다(AI 없음).
+ * 문 = cost_gate_biz('costing:<회사>' — 0065와 같은 키). 제품 지정 가능(그 회사 제품이 아니면 cost_not_found). 대시보드 문장은 앱이 이 결과로 만든다(AI 없음).
  */
 create function margin_bridge(p_business text, p_from_a date, p_to_a date, p_from_b date, p_to_b date, p_product text default null)
 returns jsonb
@@ -813,7 +909,7 @@ begin
   if p_product is not null and not exists (select 1 from cost_products p where p.product_id = p_product and p.business_id = p_business) then
     raise exception 'cost_not_found' using errcode = 'P0002';
   end if;
-  select * into g from cost_secret.cost_gate_biz(p_business, 'bridge:' || p_business, 'costing_list', null);
+  select * into g from cost_secret.cost_gate_biz(p_business, 'costing:' || p_business, 'costing_list', null);   -- 리뷰 I4
   return cost_secret.bridge_calc(p_business, p_from_a, p_to_a, p_from_b, p_to_b, p_product, g.chairman)
          || jsonb_build_object('as_of', g.as_of, 'product_id', p_product);
 end;
@@ -890,6 +986,9 @@ declare
   c record;
 begin
   select p.business_id into v_biz from cost_products p where p.product_id = p_product;
+  if v_biz is null or not coalesce(has_business(v_biz), false) then   -- 리뷰 M1
+    raise exception 'cost_not_found' using errcode = 'P0002';
+  end if;
   if not coalesce(feature_on('competitor_price', v_biz), false) then
     raise exception 'feature_off' using errcode = '42501';
   end if;
@@ -919,14 +1018,22 @@ declare
   v_biz text;
 begin
   select o.business_id into v_biz from cost_production_orders o where o.order_id = p_order;
+  if v_biz is null or not coalesce(has_business(v_biz), false) then   -- 리뷰 M1
+    raise exception 'cost_not_found' using errcode = 'P0002';
+  end if;
   if not coalesce(feature_on('work_orders', v_biz), false) then
     raise exception 'feature_off' using errcode = '42501';
   end if;
-  if v_biz is null or not coalesce(is_active(), false) or coalesce(auth_role()::text, '') <> 'Chairman' or not coalesce(has_business(v_biz), false) then
+  if not coalesce(is_active(), false) or coalesce(auth_role()::text, '') <> 'Chairman' then
     raise exception 'cost_not_found' using errcode = 'P0002';
   end if;
+  -- 리뷰 M5 — 담당 = 사용 중(회수 안 됨) · 사람 역할 · 그 회사 접근 · 그 회사 생산 줄.
   if (p_tank is not null and length(p_tank) > 40) or (p_seq is not null and (p_seq < 0 or p_seq > 1000000))
-     or (p_assignee is not null and not exists (select 1 from user_profiles u where u.user_id = p_assignee)) then
+     or (p_assignee is not null and not (
+           exists (select 1 from user_profiles u where u.user_id = p_assignee and u.revoked_at is null
+                                                   and u.role::text not in ('AIAgent', 'Integration'))
+           and exists (select 1 from user_business_access a where a.user_id = p_assignee and a.business_id = v_biz)
+           and exists (select 1 from user_module_access m where m.user_id = p_assignee and m.module = '/production/' || v_biz))) then
     raise exception 'cost_invalid' using errcode = '22023';
   end if;
   insert into cost_work_orders (order_id, tank, seq, assignee, hide_names, updated_by, updated_at)
@@ -941,7 +1048,8 @@ $fn$;
 
 /**
  * 작업지시 한 장: 머리(제품 · 계획일 · 계획 kg · 상태 · 탱크 · 순서 · 이름 가림) + 줄(원료 코드 · 이름(가림이면 null — 대표는 늘 보임) · 배치 kg)
- * + 투입(생산 LOT · 원료 코드 · kg · 시각). 대표 · 그 오더 담당 생산 직원만(남의 오더 · 담당 없는 오더 = cost_not_found).
+ * + 투입(생산 LOT · 원료 코드 · kg · 시각) + assignee(대표에게만 — 생산 직원에게는 null).
+ * 대표 · 그 오더 담당 생산 직원만(남의 오더 · 담당 없는 오더 = cost_not_found).
  * BOM 비율 · 수율 · 원료 단가 · 원료 id는 없다.
  */
 create function work_order_get(p_order text)
@@ -955,6 +1063,9 @@ declare
 begin
   select x.order_id, x.business_id, x.product_id, x.planned_on, x.planned_kg, x.status into o
     from cost_production_orders x where x.order_id = p_order;
+  if o.order_id is null or not coalesce(has_business(o.business_id), false) then   -- 리뷰 M1
+    raise exception 'cost_not_found' using errcode = 'P0002';
+  end if;
   if not coalesce(feature_on('work_orders', o.business_id), false) then
     raise exception 'feature_off' using errcode = '42501';
   end if;
@@ -971,6 +1082,7 @@ begin
     'product_name', (select p.name from cost_products p where p.product_id = o.product_id),
     'planned_on', o.planned_on, 'planned_kg', o.planned_kg, 'status', o.status,
     'tank', w.tank, 'seq', w.seq, 'hide_names', coalesce(w.hide_names, true),
+    'assignee', case when v_chair then w.assignee end,   -- 대표 폼이 지금 담당을 채운다(생산 직원에게는 null)
     'lines', coalesce((
       select jsonb_agg(jsonb_build_object('code', cost_secret.mat_code(l.material_id),
                                           'material_name', case when v_show then m.name end,
@@ -1051,6 +1163,9 @@ declare
   v_last date;
 begin
   select p.business_id, p.name into v_biz, v_name from cost_products p where p.product_id = p_product;
+  if v_biz is null or not coalesce(has_business(v_biz), false) then   -- 리뷰 M1
+    raise exception 'cost_not_found' using errcode = 'P0002';
+  end if;
   if not coalesce(feature_on('product_diagnosis', v_biz), false) then
     raise exception 'feature_off' using errcode = '42501';
   end if;
@@ -1201,6 +1316,9 @@ declare
   v_ok boolean;
 begin
   select p.business_id into v_biz from cost_products p where p.product_id = p_product;
+  if v_biz is null or not coalesce(has_business(v_biz), false) then   -- 리뷰 M1
+    raise exception 'cost_not_found' using errcode = 'P0002';
+  end if;
   if not coalesce(feature_on('product_diagnosis', v_biz), false) then
     raise exception 'feature_off' using errcode = '42501';
   end if;

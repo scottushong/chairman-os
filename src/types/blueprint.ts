@@ -57,12 +57,17 @@ export interface PurchasePerfRow {
   key: string
   label: string
   n_lots: number
-  qty_kg: number
-  purchase_krw: number
+  /** suppressed면 null(임원 이상 · LOT 3개 미만 묶음). */
+  qty_kg: number | null
+  purchase_krw: number | null
   market_krw: number | null
   savings_krw: number | null
   fx_effect_krw: number | null
   n_no_market: number
+  /** 제한 보기(임원 이상 · 영업 줄 있는 CFO)에서 LOT 3개 미만이라 값을 가린 묶음. */
+  suppressed: boolean
+  /** 외화 LOT 중 입고월 기준 환율이 없는 수. */
+  n_no_fx: number
 }
 
 /** ③ 원가 근거 — 생산 LOT Actual · 출고일 Current 추정 · 섞임 · 계산 불가. */
@@ -164,6 +169,8 @@ export interface WorkOrder {
   tank: string | null
   seq: number | null
   hide_names: boolean
+  /** 지금 담당(uuid) — 대표에게만(생산 직원에게는 null). */
+  assignee: string | null
   lines: { code: string; material_name: string | null; batch_kg: number }[]
   inputs: { prod_lot_id: string; code: string; qty_kg: number; created_at: string }[]
 }

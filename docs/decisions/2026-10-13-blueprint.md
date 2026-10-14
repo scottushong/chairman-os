@@ -30,3 +30,16 @@
 26. (화면) 진짜 BOM 넣기 미리보기 = CostImportPanel summaryOnly(제품 칸 값 · 줄 수 · 상태 수). 충돌 · 오류 줄 고치기는 이 모양에서 안 한다 — 파일 고쳐 다시 올리거나 BOM 화면 넣기 칸.
 27. (문서) 진짜 BOM 확인 SQL은 cost_bom_versions RPC가 아니라 cost_secret.bom_versions 표를 센다 — RPC는 대표 로그인 세션만 통과해 SQL Editor(로그인 없음)에서 거부된다. 개수만(값 없음).
 28. (dummy) DUMMY_FEATURES_OPEN=1이면 0081 스위치 일곱을 dummy에서만 처음부터 'all'로 — 직원 자리 화면 찍기용. dummy 원가 엔진 손잡이는 dummy-sales-cost.ts dummyBlueprintEngine → dummy.ts만 넘긴다(가짜 BOM 저장소 import 금지 — check:sales-cost).
+29. (리뷰 I1) 구매 성과 제한 보기는 p_from · p_to를 그 달 1일 · 말일로 넓히고, LOT 3개 미만 묶음은 금액 · kg를 null + suppressed = true(n_lots는 남김). 전부 보기는 suppressed = false. 새 칸은 반환 표 맨 끝(suppressed · n_no_fx) — 기존 칸 순서를 안 바꿔 되돌리기 쉽다.
+30. (리뷰 I2) 전부 보기 = 대표 · 구매 줄 · 원가 관리 줄 · 영업 줄 없는 GroupCFO. 제한 보기 = BusinessCEO · Executive · 영업 줄 있는 GroupCFO. 영업 줄 + 구매 줄은 전부 보기 그대로(0062 문이 그 사람에게 영업 원가를 이미 거부). 영업 줄 판정은 0061 cost_grant('sales') 재사용(새 함수 없음).
+31. (리뷰 I3) 원료 코드 = 원료마다 무작위('R-' + uuid 앞 6자리 대문자) — 표 cost_secret.material_codes(RLS enable · 권한 없음 · 0066 quote_raw와 같은 결) · 0081 안에서 기존 원료 채움 · cost_materials AFTER INSERT 트리거(정의자 cost_secret.material_code_new). 겹치면 다시 뽑기(최대 50번). 0061 표에 트리거 하나를 더한 것이 0001~0080 불변의 유일한 예외 — 표 모양 · 정책은 그대로.
+32. (리뷰 I3 알림) hide_names는 0064 cost_production_order_lines 직접 select 정책(생산 전원)을 좁힌 뒤에야 진짜로 이름을 가린다 — 지금은 생산이 그 표에서 material_id를 직접 읽을 수 있다(DEFERRED). 0081 머리말에도 적었다.
+33. (리뷰 I4) Forecast · 고객별(customer_profit · watch) · 분해의 문 키 = 0065 cost_costing_list와 같은 'costing:<회사>' · 'costing_list' — 원가 관리 한 사람이 회사 전체 스냅숏을 화면 수와 상관없이 하루 20번까지. 0067 cost_margins 키는 그대로(0001~0080 불변 · DEFERRED).
+34. (리뷰 M1) id를 받는 RPC(cost_outlook_set · competitor_price · work_order_set · work_order_get · product_diagnosis · product_trend)는 «없는 id 또는 내 회사 밖 id»를 스위치보다 먼저 cost_not_found — 없음만이 아니라 has_business까지 먼저 봐야 다른 회사 id의 스위치 상태로 떠보지 못한다(brief보다 한 걸음 더 · 노출 적은 쪽).
+35. (리뷰 M2 · M4) n_no_fx = 외화 LOT 중 입고월 기준 환율 없는 수(맨 끝 칸). 수동 환율 모양(jsonb object)은 따로 IF로 먼저 — jsonb_each가 배열 · 글자를 만나지 않게.
+36. (리뷰 M3) 대표 외 분해 b.gm = shown(a.gm) + shown(전체) — b.gm_pct는 원래 값으로(1원 표시와 % 계산을 섞지 않는다).
+37. (리뷰 M5) 작업지시 담당 = 사용 중(revoked_at 없음) · 사람 역할(AIAgent · Integration 아님) · user_business_access 그 회사 · user_module_access '/production/<회사>'. 아니면 cost_invalid. 지금 담당이 그 조건을 잃었으면 대표 화면은 «없음»에서 시작하고 알린다(그대로 다시 저장하면 거부되니까).
+38. (리뷰 B) work_order_get JSON에 assignee — 대표에게만 uuid, 생산 직원에게는 null(키는 늘 있다 — 모양을 역할마다 바꾸지 않는다). 대표 작업지시 폼이 지금 담당으로 채운다.
+39. (리뷰 T1 · T2) check:blueprint — 월별 손익 전후 비교는 «결과가 오류 글자가 아님»을 먼저 단언. 영업 0시 기준은 11절 한 경우만 진짜 sales_cutoff(check:cost-engine ⑫의 REAL_CUTOFF · shiftKnown을 cost-engine-known.ts에서 export해 그대로 씀) — 나머지 절은 PIN_SALES_IMMEDIATE 그대로.
+40. (lint) check-blueprint.ts의 any 넷은 jsonb 모양 타입(BridgeJ · WorkOrderJ)으로 — 시험이 읽는 칸만.
+41. (dummy) dummy 원료 코드도 무작위(저장소 Map) · 구매 성과 제한 보기 · 담당 조건 · 한도 키 · b.gm을 0081과 같게. 회사 밖 id는 스위치보다 먼저 cost_not_found.

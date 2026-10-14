@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { randomBytes } from 'node:crypto'
 
 import { addMonthsIso, nextPeriod, periodEnd, periodStarts } from '@/lib/blueprint/period'
 import { costGrade, pgRound, shown } from '@/lib/sales/cost'
@@ -26,7 +26,7 @@ import type {
   WorkOrderListRow,
 } from '@/types'
 
-import { DUMMY_PEOPLE, DUMMY_UID, dummyHasBusiness, dummyViewer } from './dummy-org'
+import { DUMMY_PEOPLE, DUMMY_UID, dummyHasBusiness, dummyModuleGrants, dummyViewer } from './dummy-org'
 import { dummyCostCan } from './dummy-purchasing'
 import { dummySaleRows } from './dummy-sales-margins'
 import type { BlueprintMethods } from './types'
@@ -100,6 +100,8 @@ interface Store {
   assumptions: (CompetitorAssumption & { business_id: string })[]
   work: Map<string, WorkOrderMeta>
   workSeeded: boolean
+  /** 원료 코드(무작위) — 옛 globalThis 저장소에는 없을 수 있어 선택 칸. */
+  codes?: Map<string, string>
 }
 
 const g = globalThis as unknown as { __chairmanDummyBlueprint?: Store }
@@ -110,6 +112,7 @@ const store: Store = (g.__chairmanDummyBlueprint ??= {
   assumptions: [],
   work: new Map(),
   workSeeded: false,
+  codes: new Map(),
 })
 
 const ISO = /^\d{4}-\d{2}-\d{2}$/
@@ -121,7 +124,19 @@ function range(from: string, to: string) {
   if (!ISO.test(from) || !ISO.test(to) || from > to || ms(to) - ms(from) > 1100 * DAY) throw new Error('cost_invalid')
 }
 
-const code = (materialId: string) => `R-${createHash('md5').update(materialId).digest('hex').slice(0, 6).toUpperCase()}`
+/** 0081 cost_secret.material_codes 거울 — 원료마다 무작위 코드(원료 id에서 다시 계산할 수 없다 · 리뷰 I3). */
+function code(materialId: string): string {
+  const codes = (store.codes ??= new Map())
+  let c = codes.get(materialId)
+  while (!c) {
+    const x = `R-${randomBytes(3).toString('hex').toUpperCase()}`
+    if (![...codes.values()].includes(x)) {
+      codes.set(materialId, x)
+      c = x
+    }
+  }
+  return c
+}
 
 /** 대표인가(회사 범위 안 · 회수 안 됨). */
 function isChair(businessId: string | null): boolean {
@@ -267,20 +282,21 @@ export function dummyBlueprint(d: DummyBlueprintDeps): BlueprintMethods {
         .sort((x, y) => Math.abs(y.delta_krw_per_kg) - Math.abs(x.delta_krw_per_kg))
         .slice(0, 10)
     }
-    const side = (s: typeof a, gm: number) => ({
+    // shownGm: 표에 보이는 GM. 리뷰 M3 — 대표 외 b.gm = a.gm(1원) + 전체(1원)(gm_pct는 원래 값으로).
+    const side = (s: typeof a, gm: number, shownGm: number) => ({
       price: shown(s.price, chairman)!,
       material: shown(s.mat, chairman)!,
       mfg: shown(s.mfg, chairman)!,
       logi: shown(s.logi, chairman)!,
       other: shown(s.oth, chairman)!,
-      gm: shown(gm, chairman)!,
+      gm: shownGm,
       gm_pct: s.price > 0 ? pgRound((gm / s.price) * 100, 1) : null,
       kg: s.kg,
       n: s.n,
     })
     return {
-      a: side(a, ga),
-      b: side(b, gb),
+      a: side(a, ga, shown(ga, chairman)!),
+      b: side(b, gb, chairman ? gb : pgRound(ga, 0) + pgRound(total, 0)),
       effects,
       total: shown(total, chairman),
       material_pct: a.mat > 0 ? pgRound((b.mat / a.mat - 1) * 100, 1) : null,
@@ -326,7 +342,7 @@ export function dummyBlueprint(d: DummyBlueprintDeps): BlueprintMethods {
     async costForecastList(businessId) {
       await need('cost_forecast', businessId)
       if (!(isChair(businessId) || canRole('costing', businessId))) throw new Error('cost_not_found')
-      const gt = e.gate(businessId, `forecast:${businessId}`, 'costing_list')
+      const gt = e.gate(businessId, `costing:${businessId}`, 'costing_list')
       const ok = gt.chairman || forecastComplete(businessId, gt.as_of)
       return e
         .products(businessId)
@@ -382,8 +398,9 @@ export function dummyBlueprint(d: DummyBlueprintDeps): BlueprintMethods {
     },
     async setCostOutlook(input) {
       const m = d.ledger().materials.find((x) => x.material_id === input.material_id)
-      await need('cost_forecast', m?.business_id ?? null)
-      if (!m || !canRole('purchasing', m.business_id, true)) throw new Error('cost_not_found')
+      if (!m || !dummyHasBusiness(dummyViewer(), m.business_id)) throw new Error('cost_not_found') // 리뷰 M1
+      await need('cost_forecast', m.business_id)
+      if (!canRole('purchasing', m.business_id, true)) throw new Error('cost_not_found')
       const cur = (input.currency || 'KRW').trim().toUpperCase()
       if (!/^\d{4}-\d{2}-01$/.test(input.month) || !(input.price > 0 && input.price <= 1e9) || !/^[A-Z]{3}$/.test(cur)) throw new Error('cost_invalid')
       if (input.fx_rate !== null && !(input.fx_rate > 0 && input.fx_rate <= 1e6)) throw new Error('cost_invalid')
@@ -416,21 +433,28 @@ export function dummyBlueprint(d: DummyBlueprintDeps): BlueprintMethods {
       if (!['lot', 'material', 'supplier', 'month'].includes(by)) throw new Error('cost_invalid')
       const v = dummyViewer()
       const inBiz = !v.revoked_at && dummyHasBusiness(v, businessId) && !['AIAgent', 'Integration'].includes(v.role)
-      const full = inBiz && (['Chairman', 'GroupCFO'].includes(v.role) || canRole('purchasing', businessId) || canRole('costing', businessId))
-      const exec = inBiz && ['BusinessCEO', 'Executive'].includes(v.role)
-      if (!(full || (exec && by === 'month'))) throw new Error('cost_not_found')
+      // 리뷰 I2 — 영업 줄 있는 GroupCFO는 임원과 같은 제한 보기.
+      const salesLine = dummyModuleGrants(v.user_id).some((m) => m.module === `/sales/${businessId}`)
+      const full =
+        inBiz && (v.role === 'Chairman' || canRole('purchasing', businessId) || canRole('costing', businessId) || (v.role === 'GroupCFO' && !salesLine))
+      const limited = inBiz && !full && ['BusinessCEO', 'Executive', 'GroupCFO'].includes(v.role)
+      if (!(full || (limited && by === 'month'))) throw new Error('cost_not_found')
+      // 리뷰 I1 — 제한 보기는 기간을 앞뒤 달 전체로 넓힌다.
+      const lo = full ? from : `${from.slice(0, 7)}-01`
+      const hi = full ? to : addDays(addMonthsIso(`${to.slice(0, 7)}-01`, 1), -1)
       if (v.role !== 'Chairman') console.info('[dummy audit] 구매 성과 조회(0081)', businessId, by)
       const l = d.ledger()
       const mName = new Map(l.materials.map((m) => [m.material_id, m.name]))
       const sName = new Map(l.suppliers.map((s) => [s.supplier_id, s.name]))
-      const groups = new Map<string, { label: string; xs: { q: number; buy: number; mkt: number | null; fxe: number | null }[] }>()
-      for (const x of l.lots.filter((x) => x.business_id === businessId && !x.voided_at && x.received_on >= from && x.received_on <= to)) {
+      const groups = new Map<string, { label: string; xs: { q: number; buy: number; mkt: number | null; fxe: number | null; noFx: boolean }[] }>()
+      for (const x of l.lots.filter((x) => x.business_id === businessId && !x.voided_at && x.received_on >= lo && x.received_on <= hi)) {
         const base = x.currency === 'KRW' ? null : fxMonthAvg(x.currency, x.received_on.slice(0, 7))
         const row = {
           q: x.qty_kg,
           buy: x.unit_price * x.fx_rate,
           mkt: marketOn(x.material_id, x.received_on),
           fxe: x.currency === 'KRW' ? 0 : base === null ? null : (x.fx_rate - base) * x.unit_price * x.qty_kg,
+          noFx: x.currency !== 'KRW' && base === null,
         }
         const k = by === 'lot' ? x.lot_id : by === 'material' ? x.material_id : by === 'supplier' ? x.supplier_id : x.received_on.slice(0, 7)
         const label =
@@ -442,19 +466,23 @@ export function dummyBlueprint(d: DummyBlueprintDeps): BlueprintMethods {
       const r = (n: number | null) => (n === null ? null : pgRound(n, 0))
       return [...groups.entries()]
         .sort(([a], [b]) => a.localeCompare(b))
-        .map(
-          ([key, gr]): PurchasePerfRow => ({
+        .map(([key, gr]): PurchasePerfRow => {
+          // 리뷰 I1 — 제한 보기 · LOT 3개 미만 묶음은 값을 가린다(n_lots는 남긴다).
+          const hide = !full && gr.xs.length < 3
+          return {
             key,
             label: gr.label,
             n_lots: gr.xs.length,
-            qty_kg: gr.xs.reduce((t, x) => t + x.q, 0),
-            purchase_krw: pgRound(gr.xs.reduce((t, x) => t + x.buy * x.q, 0), 0),
-            market_krw: r(sumOrNull(gr.xs.map((x) => (x.mkt === null ? null : x.mkt * x.q)))),
-            savings_krw: r(sumOrNull(gr.xs.map((x) => (x.mkt === null ? null : (x.mkt - x.buy) * x.q)))),
-            fx_effect_krw: r(sumOrNull(gr.xs.map((x) => x.fxe))),
+            qty_kg: hide ? null : gr.xs.reduce((t, x) => t + x.q, 0),
+            purchase_krw: hide ? null : pgRound(gr.xs.reduce((t, x) => t + x.buy * x.q, 0), 0),
+            market_krw: hide ? null : r(sumOrNull(gr.xs.map((x) => (x.mkt === null ? null : x.mkt * x.q)))),
+            savings_krw: hide ? null : r(sumOrNull(gr.xs.map((x) => (x.mkt === null ? null : (x.mkt - x.buy) * x.q)))),
+            fx_effect_krw: hide ? null : r(sumOrNull(gr.xs.map((x) => x.fxe))),
             n_no_market: gr.xs.filter((x) => x.mkt === null).length,
-          }),
-        )
+            suppressed: hide,
+            n_no_fx: gr.xs.filter((x) => x.noFx).length,
+          }
+        })
     },
 
     // ③ 고객별 수익성
@@ -462,7 +490,7 @@ export function dummyBlueprint(d: DummyBlueprintDeps): BlueprintMethods {
       await need('customer_profit', businessId)
       range(from, to)
       if (isChair(businessId) || canRole('costing', businessId)) {
-        const gt = e.gate(businessId, `customers:${businessId}`, 'costing_list')
+        const gt = e.gate(businessId, `costing:${businessId}`, 'costing_list')
         const by = new Map<string, ReturnType<typeof saleCosts>>()
         for (const c of saleCosts(businessId, from, to, null)) by.set(c.customer_company, [...(by.get(c.customer_company) ?? []), c])
         return [...by.entries()]
@@ -530,7 +558,7 @@ export function dummyBlueprint(d: DummyBlueprintDeps): BlueprintMethods {
       await need('customer_profit', businessId)
       range(from, to)
       if (!(isChair(businessId) || canRole('costing', businessId))) throw new Error('cost_not_found')
-      const gt = e.gate(businessId, `customers:${businessId}`, 'costing_list')
+      const gt = e.gate(businessId, `costing:${businessId}`, 'costing_list')
       const xs = saleCosts(businessId, from, to, null)
       const out: ProfitWatchRow[] = []
       for (const kind of ['customer', 'product'] as const) {
@@ -565,7 +593,7 @@ export function dummyBlueprint(d: DummyBlueprintDeps): BlueprintMethods {
       range(fromB, toB)
       if (!(isChair(businessId) || canRole('costing', businessId))) throw new Error('cost_not_found')
       if (productId && e.product(productId)?.business_id !== businessId) throw new Error('cost_not_found')
-      const gt = e.gate(businessId, `bridge:${businessId}`, 'costing_list')
+      const gt = e.gate(businessId, `costing:${businessId}`, 'costing_list')
       return { ...bridgeCalc(businessId, fromA, toA, fromB, toB, productId, gt.chairman), as_of: gt.as_of, product_id: productId }
     },
 
@@ -602,8 +630,8 @@ export function dummyBlueprint(d: DummyBlueprintDeps): BlueprintMethods {
     },
     async competitorPrice(productId) {
       const p = e.product(productId)
-      await need('competitor_price', p?.business_id ?? null)
-      if (!p) throw new Error('cost_not_found')
+      if (!p || !dummyHasBusiness(dummyViewer(), p.business_id)) throw new Error('cost_not_found') // 리뷰 M1
+      await need('competitor_price', p.business_id)
       const gt = e.gate(p.business_id, productId, 'competitor')
       const ok = gt.chairman || (e.businessComplete(p.business_id, 'market', gt.as_of) && e.businessComplete(p.business_id, 'current', gt.as_of))
       const c = competitorCalc(productId, p.business_id, gt.as_of, gt.chairman, ok)
@@ -620,11 +648,13 @@ export function dummyBlueprint(d: DummyBlueprintDeps): BlueprintMethods {
     // ⑥ 작업지시
     async workOrderGet(orderId) {
       const o = e.order(orderId)
-      await need('work_orders', o?.business_id ?? null)
+      // 리뷰 M1 — 없는 id · 남의 회사는 스위치보다 먼저.
+      if (!o || !dummyHasBusiness(dummyViewer(), o.business_id) || dummyViewer().revoked_at) throw new Error('cost_not_found')
+      await need('work_orders', o.business_id)
       seedWork()
       const w = store.work.get(orderId)
       const chair = !!o && isChair(o.business_id)
-      if (!o || !(chair || (canRole('production', o.business_id) && !!w?.assignee && w.assignee === dummyViewer().user_id))) throw new Error('cost_not_found')
+      if (!(chair || (canRole('production', o.business_id) && !!w?.assignee && w.assignee === dummyViewer().user_id))) throw new Error('cost_not_found')
       const show = chair || w?.hide_names === false
       const names = new Map(d.ledger().materials.map((m) => [m.material_id, m.name]))
       const lots = new Set(e.prodLots(o.business_id).filter((p) => p.order_id === orderId).map((p) => p.prod_lot_id))
@@ -637,6 +667,7 @@ export function dummyBlueprint(d: DummyBlueprintDeps): BlueprintMethods {
         tank: w?.tank ?? null,
         seq: w?.seq ?? null,
         hide_names: w?.hide_names ?? true,
+        assignee: chair ? (w?.assignee ?? null) : null,
         lines: e
           .orderLines(orderId)
           .map((l) => ({ code: code(l.material_id), material_name: show ? (names.get(l.material_id) ?? null) : null, batch_kg: l.planned_kg }))
@@ -665,11 +696,24 @@ export function dummyBlueprint(d: DummyBlueprintDeps): BlueprintMethods {
     },
     async setWorkOrder(input) {
       const o = e.order(input.order_id)
-      await need('work_orders', o?.business_id ?? null)
+      if (!o || !dummyHasBusiness(dummyViewer(), o.business_id) || dummyViewer().revoked_at) throw new Error('cost_not_found') // 리뷰 M1
+      await need('work_orders', o.business_id)
       seedWork()
-      if (!o || !isChair(o.business_id)) throw new Error('cost_not_found')
+      if (!isChair(o.business_id)) throw new Error('cost_not_found')
       if ((input.tank && input.tank.length > 40) || (input.seq !== null && !(Number.isInteger(input.seq) && input.seq >= 0 && input.seq <= 1e6))) throw new Error('cost_invalid')
-      if (input.assignee && !DUMMY_PEOPLE.some((p) => p.user_id === input.assignee)) throw new Error('cost_invalid')
+      // 리뷰 M5 — 담당 = 사용 중 · 사람 역할 · 그 회사 · 그 회사 생산 줄.
+      const who = input.assignee ? DUMMY_PEOPLE.find((p) => p.user_id === input.assignee) : null
+      if (
+        input.assignee &&
+        !(
+          who &&
+          !who.revoked_at &&
+          !['AIAgent', 'Integration'].includes(who.role) &&
+          who.business_ids.includes(o.business_id) &&
+          dummyModuleGrants(who.user_id).some((m) => m.module === `/production/${o.business_id}`)
+        )
+      )
+        throw new Error('cost_invalid')
       store.work.set(input.order_id, { tank: input.tank?.trim() || null, seq: input.seq, assignee: input.assignee, hide_names: input.hide_names })
       console.info('[dummy audit] 작업지시(0081)', input.order_id)
     },
@@ -677,8 +721,8 @@ export function dummyBlueprint(d: DummyBlueprintDeps): BlueprintMethods {
     // ⑧ 제품 진단
     async productDiagnosis(productId) {
       const p = e.product(productId)
-      await need('product_diagnosis', p?.business_id ?? null)
-      if (!p) throw new Error('cost_not_found')
+      if (!p || !dummyHasBusiness(dummyViewer(), p.business_id)) throw new Error('cost_not_found') // 리뷰 M1
+      await need('product_diagnosis', p.business_id)
       const biz = p.business_id
       const gt = e.gate(biz, productId, 'diagnosis')
       const role: 'chairman' | 'costing' | 'sales' = gt.chairman ? 'chairman' : canRole('costing', biz) ? 'costing' : 'sales'
@@ -820,9 +864,10 @@ export function dummyBlueprint(d: DummyBlueprintDeps): BlueprintMethods {
     },
     async productTrend(productId, grain, from, to) {
       const p = e.product(productId)
-      await need('product_diagnosis', p?.business_id ?? null)
+      if (!p || !dummyHasBusiness(dummyViewer(), p.business_id)) throw new Error('cost_not_found') // 리뷰 M1
+      await need('product_diagnosis', p.business_id)
       if (!['day', 'week', 'month', 'quarter', 'year'].includes(grain) || !ISO.test(from) || !ISO.test(to) || from > to) throw new Error('cost_invalid')
-      if (!p || !(isChair(p.business_id) || canRole('costing', p.business_id))) throw new Error('cost_not_found')
+      if (!(isChair(p.business_id) || canRole('costing', p.business_id))) throw new Error('cost_not_found')
       const starts = periodStarts(grain, from, to)
       if (!starts) throw new Error('cost_invalid')
       const biz = p.business_id
