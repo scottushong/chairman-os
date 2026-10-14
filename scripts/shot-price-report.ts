@@ -21,8 +21,8 @@ async function main() {
   const browser = await chromium.launch()
   for (const [tag, viewport] of [['pc', { width: 1280, height: 900 }], ['phone', { width: 390, height: 844 }]] as const) {
     const page = await browser.newPage({ viewport, deviceScaleFactor: 1 })
-    await page.goto(url, { waitUntil: 'networkidle' })
-    await page.waitForTimeout(500)
+    await page.goto(url, { waitUntil: 'load', timeout: 180_000 })
+    await page.waitForTimeout(mode === 'url' ? 3000 : 500)
     await page.screenshot({ path: join(out, `${name}-${tag}.png`), fullPage: true })
     await page.close()
   }

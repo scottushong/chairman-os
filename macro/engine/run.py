@@ -14,7 +14,7 @@ from briefing import archive, config, render, store
 
 def fail_briefing(now, slot, last, exc):
     return {"stamp": f"{now:%Y-%m-%d} {slot}", "headline": (last or {}).get("headline", ""),
-            "sub": "이번 회차 수집 실패 — 직전 데이터 표시", "missing": [f"수집 실패: {str(exc)[:200]}"]}
+            "sub": "이번 회차 수집 실패 — 직전 데이터 표시", "missing": [f"수집 실패: {str(exc)[:200]}"], "_failed": True}
 
 
 def main():

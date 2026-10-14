@@ -9,7 +9,8 @@
 #   SUPABASE_ANON_KEY   Vercel의 NEXT_PUBLIC_SUPABASE_ANON_KEY 값
 #   AI_AGENT_EMAIL      Vercel의 AI_AGENT_EMAIL(야간 브리핑 로그인) 값
 #   AI_AGENT_PASSWORD   Vercel의 AI_AGENT_PASSWORD 값
-# 선택 Variables: BRIEFING_MODEL(기본 claude-sonnet-5-5)
+# 선택 Variables: BRIEFING_MODEL(기본 claude-sonnet-5-5) · BRIEFING_MAX_SEARCHES(기본 15) · BRIEFING_FETCH_MAX_TOKENS(기본 없음)
+#                 · BRIEFING_SOURCES_OFF(te = TradingEconomics 안 열기)
 # 절차: docs/onboarding/release-price-report.md
 name: Macro briefing (08:00 / 18:00 KST)
 
@@ -63,6 +64,9 @@ jobs:
           AI_AGENT_EMAIL: ${{ secrets.AI_AGENT_EMAIL }}
           AI_AGENT_PASSWORD: ${{ secrets.AI_AGENT_PASSWORD }}
           BRIEFING_MODEL: ${{ vars.BRIEFING_MODEL }}
+          BRIEFING_MAX_SEARCHES: ${{ vars.BRIEFING_MAX_SEARCHES }}
+          BRIEFING_FETCH_MAX_TOKENS: ${{ vars.BRIEFING_FETCH_MAX_TOKENS }}
+          BRIEFING_SOURCES_OFF: ${{ vars.BRIEFING_SOURCES_OFF }}
           RUN_ID: ${{ github.event.inputs.run_id }}
           SLOT: ${{ github.event.inputs.slot }}
           TZ: Asia/Seoul

@@ -77,11 +77,13 @@ def push(sb: Supa, run_id: str, slot: str, report_date: str, briefing: dict, htm
         events.append({"kind": "memo", "date": report_date, "title": briefing.get("stamp") or f"{report_date} {slot}", "html": clean_note(briefing["note_html"])})
     new_events = sb.rpc("price_report_agent_events", {"p_business": biz, "p_run": run_id, "p_slot": slot, "p_events": events}) if events else 0
     missing = [str(m) for m in (briefing.get("missing") or [])][:30]
+    # «미확인» = 이번 회차 가격을 확인하지 못함(수집 실패 · 정산 · 오피넷 값이 하나도 없음). 못 찾은 뉴스 항목(missing)은 메모에만 보인다(채팅 리포트와 같다).
+    unconfirmed = bool(briefing.get("_failed")) or not (briefing.get("settles") or briefing.get("opinet_naphtha_bbl"))
     figures = {k: briefing.get(k) for k in ("stamp", "headline", "sub", "settles", "intraday", "naphtha_cfd", "opinet_naphtha_bbl", "mopj_monthly", "note_html", "_usage")}
     figures["cards"] = summary_cards()
     sources = list(config.SOURCES.values())
     report_id = sb.rpc("price_report_agent_save", {
-        "p_run": run_id, "p_report_date": report_date, "p_status": "unconfirmed" if missing else "ok", "p_html": html_text,
+        "p_run": run_id, "p_report_date": report_date, "p_status": "unconfirmed" if unconfirmed else "ok", "p_html": html_text,
         "p_summary": briefing.get("chat_summary"), "p_figures": figures, "p_sources": sources, "p_missing": missing,
         "p_new_events": new_events or 0, "p_points": points or 0})
     return {"report_id": report_id, "points": points, "new_events": new_events}

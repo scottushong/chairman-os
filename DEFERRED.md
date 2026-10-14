@@ -2875,3 +2875,5 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - (알림 · 리뷰 M1) 회사 단위 RPC(cost_forecast_list · purchase_performance …)는 스위치를 먼저 본다 — 회수된 사람에게는 feature_off가 나올 수 있다(어느 쪽이든 거부 · id를 떠볼 길은 아니다). id를 받는 RPC만 cost_not_found를 먼저.
 - (끝남 · 재검토 I1′) 제한 보기에서 시장가 있는 LOT 셋 미만 · 외화 LOT 1~2개면 시장가 · 절감 · 환율 효과도 가린다.
 - (미룸 · 리뷰 I1) 구매 성과 제한 보기의 «LOT 3개 미만 가림»은 묶음 단위다 — 같은 달을 두 번(넓힌 기간이 같아) 불러도 같은 답이지만, 달마다 LOT 수가 3 언저리면 달 하나씩 차이로 한 LOT를 짐작할 여지는 남는다. 더 막으려면 k를 키우거나 분기 묶음.
+
+- 2026-10-14 가격 리포트(0082): 구매팀이 가격을 손으로 넣는 칸 — TradingEconomics를 끄거나(BRIEFING_SOURCES_OFF=te) 수집이 막힐 때의 대안. 이번에는 끄는 손잡이만 두고 칸은 미룸(요청 범위 밖 · 수집이 지금 돎). 원가 관리 줄만 있는 사람의 읽기도 미룸(요청에 없음).

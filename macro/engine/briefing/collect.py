@@ -7,6 +7,7 @@
 """
 import json
 import re
+import sys
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -78,7 +79,8 @@ def _extract_json(text: str) -> dict:
 def collect(slot: str, last: dict | None = None) -> dict:
     client = anthropic.Anthropic()  # ANTHROPIC_API_KEY
     tools = [
-        {"type": config.WEB_FETCH_TOOL, "name": "web_fetch", "max_uses": config.MAX_FETCHES},
+        {"type": config.WEB_FETCH_TOOL, "name": "web_fetch", "max_uses": config.MAX_FETCHES,
+         **({"max_content_tokens": config.FETCH_MAX_TOKENS} if config.FETCH_MAX_TOKENS > 0 else {})},
         {"type": config.WEB_SEARCH_TOOL, "name": "web_search", "max_uses": config.MAX_SEARCHES},
     ]
     messages = [{"role": "user", "content": build_user_prompt(slot, last)}]
@@ -105,7 +107,12 @@ def collect(slot: str, last: dict | None = None) -> dict:
     if resp.stop_reason == "refusal":
         raise ValueError("모델이 답하지 않음(refusal)")
     text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
-    data = _extract_json(text)
+    try:
+        data = _extract_json(text)
+    except ValueError as exc:
+        # 왜 JSON이 없었는지 실행 기록 오류 한 줄에 남긴다(차례 수 · 멈춘 이유 · 사용량).
+        print("사용량(실패):", json.dumps(usage, ensure_ascii=False), file=sys.stderr)
+        raise ValueError(f"{exc}(stop_reason={resp.stop_reason}, 차례 {usage['calls']}, 글 {len(text)}자)") from exc
     validate(data)
     data["_usage"] = usage
     return data
