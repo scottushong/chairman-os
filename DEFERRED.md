@@ -2855,8 +2855,8 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 
 ## 2026-10-14 0081 청사진 뼈대 — 미룬 것
 - (미룸 · 설계 결정 4) 0064 `cost_production_order_lines` 직접 select(생산 전원)를 담당자로 좁히기 — 0001~0080 불변이라 0081은 새 함수 `work_order_get`에서만 «본인 오더». 표 정책 좁히기는 다음 번호.
-- (미룸) 화면 — 0081은 DB · RPC · 스위치만. /costs/<회사>/forecast · purchasing 성과 · 고객별 · 분해 · 경쟁사 · 작업지시 · 제품 진단 화면과 저장소(supabase · dummy) 함수는 다음 블록. ⑦ /costs/<회사>/bom/import 화면도.
-- (미룸) staging · 운영 반영 — 0069~0080 뒤에만. 반영 문서(docs/release-0081.md)는 아직 없다.
+- (끝남 8bb4cf9) 화면 8개 뼈대 — 같은 블록에서 만들었다.
+- (미룸) staging · 운영 반영 — 0069~0080 뒤에만. 반영 문서 docs/onboarding/release-0081.md.
 - (미룸) 성능 — `cost_secret.sale_costs`는 판매 한 줄마다 0067 sale_actual과 원료비를 따로 계산한다(BOM 해독 두 번). 진단 카드 9 · 분해 · 추이가 같은 판매를 다시 센다. 판매가 수천 줄이 되면 한 번 계산으로 합친다.
 - (미룸) check:blueprint는 BYPASSRLS 없는 소유자 아래에서 새 RPC를 따로 부르지 않는다 — 새 표 넷은 FORCE가 없어 소유자에게 RLS가 걸리지 않고, audit_log(FORCE) 쓰기는 0061~0067 함수와 같은 길이다. check:cost-engine ⑥이 0081을 올린 DB에서 소유자를 넘긴 채 돈다(새 RPC 호출은 없음).
 - (미룸) 구매 성과 묶음 합계의 환율 효과는 기준 환율 없는 외화 LOT를 빼고 더한다(줄 단위는 null) — 몇 건 빠졌는지는 리뷰 M2 n_no_fx 칸(화면 표에 «기준 환율 없음 n건»).
@@ -2873,4 +2873,5 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - (미룸 · 리뷰 I4) 0067 `cost_margins`의 한도 키는 그대로(0001~0080 불변) — Forecast · 고객 · 분해만 0065 'costing:<회사>' 키로 합쳤다. 마진 목록까지 합치려면 0067을 고치는 다음 번호에서.
 - (미룸 · 리뷰 I3) 작업지시 «원료 이름 가림»은 위 0064 `cost_production_order_lines` 직접 select 정책을 좁힐 때까지 진짜로 가리지 못한다(생산이 표에서 material_id → 0061 원료 이름). 원료 코드 역산만 막았다.
 - (알림 · 리뷰 M1) 회사 단위 RPC(cost_forecast_list · purchase_performance …)는 스위치를 먼저 본다 — 회수된 사람에게는 feature_off가 나올 수 있다(어느 쪽이든 거부 · id를 떠볼 길은 아니다). id를 받는 RPC만 cost_not_found를 먼저.
+- (끝남 · 재검토 I1′) 제한 보기에서 시장가 있는 LOT 셋 미만 · 외화 LOT 1~2개면 시장가 · 절감 · 환율 효과도 가린다.
 - (미룸 · 리뷰 I1) 구매 성과 제한 보기의 «LOT 3개 미만 가림»은 묶음 단위다 — 같은 달을 두 번(넓힌 기간이 같아) 불러도 같은 답이지만, 달마다 LOT 수가 3 언저리면 달 하나씩 차이로 한 LOT를 짐작할 여지는 남는다. 더 막으려면 k를 키우거나 분기 묶음.
