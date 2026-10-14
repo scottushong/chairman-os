@@ -11,6 +11,7 @@ import { basisLine } from '@/lib/statements/basis-line'
 import { Icon } from '@/components/ui/icon'
 import { currentUser } from '@/lib/auth/session'
 import { canEditStrategy } from '@/lib/auth/roles'
+import { ExampleTag } from '@/components/ui/example-tag'
 import { isChairman } from '@/lib/boss'
 import { dDay, formatDDay, formatPct, isOverdue } from '@/lib/format'
 import { getRepository } from '@/lib/repository'
@@ -166,7 +167,7 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
           empty="이 회사에 등록된 프로젝트가 없습니다."
         >
           {ownProjects.map((p) => (
-            <ProjectItem key={p.project_id} project={p} />
+            <ProjectItem key={p.project_id} project={p} chair={chair} />
           ))}
         </Card>
 
@@ -265,12 +266,12 @@ function Card({
   )
 }
 
-function ProjectItem({ project }: { project: Project }) {
+function ProjectItem({ project, chair }: { project: Project; chair: boolean }) {
   const overdue = isOverdue(project.deadline) && project.status !== 'Done'
   return (
     <li className="rounded-lg px-1.5 py-1.5 transition-colors hover:bg-raised/60">
       <div className="flex items-center gap-1.5">
-        <p className="min-w-0 flex-1 truncate text-t12h font-semibold">{project.name}</p>
+        <p className="min-w-0 flex-1 truncate text-t12h font-semibold">{project.name}<ExampleTag on={chair && project.is_example} /></p>
         <span
           className={`shrink-0 text-t11 font-semibold tnum ${
             overdue ? 'text-critical' : 'text-ink-dim'

@@ -15,7 +15,7 @@ const ENTITY_LABEL: Record<Attachment['entity_table'], string> = {
   businesses: '회사',
   documents: '문서',
   decisions: '결재',
-  finance_imports: 'ECOUNT 업로드',
+  finance_imports: '회계 · 재무 자료 올리기',
   intake_items: '자료 받는 입구',
 }
 

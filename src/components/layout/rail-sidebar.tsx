@@ -90,7 +90,7 @@ function writeExpanded(next: boolean) {
   emit()
 }
 
-export function RailSidebar({ user }: { user: SessionUser | null }) {
+export function RailSidebar({ user, hidden = [] }: { user: SessionUser | null; /** 꺼진 기능의 메뉴 키(0073). */ hidden?: readonly string[] }) {
   const pathname = usePathname()
   const expanded = useSyncExternalStore(subscribe, readExpanded, readExpandedOnServer)
 
@@ -128,9 +128,9 @@ export function RailSidebar({ user }: { user: SessionUser | null }) {
         className={`flex-1 overflow-y-auto py-3 ${expanded ? 'px-2.5' : ''}`}
       >
         {expanded ? (
-          <ExpandedMenu pathname={pathname} role={user?.role ?? null} />
+          <ExpandedMenu hidden={hidden} pathname={pathname} role={user?.role ?? null} />
         ) : (
-          <CollapsedMenu pathname={pathname} role={user?.role ?? null} />
+          <CollapsedMenu hidden={hidden} pathname={pathname} role={user?.role ?? null} />
         )}
       </nav>
 
@@ -214,10 +214,10 @@ export function RailSidebar({ user }: { user: SessionUser | null }) {
  * 확인하는 이름이고, aria-label은 스크린 리더가 읽는 이름이다. 아이콘만 있는 내비게이션은
  * 둘 중 하나만 있으면 한쪽 사용자에게는 이름 없는 그림이 된다.
  */
-function CollapsedMenu({ pathname, role }: { pathname: string; role: Role | null }) {
+function CollapsedMenu({ pathname, role, hidden }: { pathname: string; role: Role | null; hidden: readonly string[] }) {
   return (
     <ul className="space-y-1">
-      {readyItems(role).map((item) => (
+      {readyItems(role).filter((item) => !hidden.includes(item.key)).map((item) => (
         <li key={item.label}>
           <Link
             href={item.href}
@@ -244,12 +244,12 @@ function CollapsedMenu({ pathname, role }: { pathname: string; role: Role | null
 }
 
 /** 펼침 — (dashboard) Sidebar와 같은 항목·같은 그룹·같은 농도 규칙. */
-function ExpandedMenu({ pathname, role }: { pathname: string; role: Role | null }) {
+function ExpandedMenu({ pathname, role, hidden }: { pathname: string; role: Role | null; hidden: readonly string[] }) {
   const active = (item: NavItem) => item.ready && pathname === item.href
 
   return (
     <>
-      {navFor(role).map((group, i) => (
+      {navFor(role, { hidden }).map((group, i) => (
         <div key={group.title ?? i} className={i > 0 ? 'mt-4' : ''}>
           {group.title ? (
             <p className="px-2.5 pb-1.5 text-t10 font-semibold tracking-[0.12em] text-ink-muted">

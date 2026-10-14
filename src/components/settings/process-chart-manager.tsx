@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 
 import { deleteProcessChart, saveProcessChart } from '@/app/actions/process-charts'
 import { Icon } from '@/components/ui/icon'
-import { EMBED_PROBLEM_KO, embedProblem } from '@/lib/process-chart'
+import { EMBED_PROBLEM_KO, embedProblem, parseSheetId, parseSheetTab } from '@/lib/process-chart'
 import type { Business, ProcessChart } from '@/types'
 
 /**
@@ -168,7 +168,7 @@ export function ProcessChartManager({
             {charts.map((c) => {
               const business = businesses.find((b) => b.business_id === c.business_id)
               return (
-                <li key={c.id} className="flex items-center gap-3 px-3 py-2">
+                <li key={c.id} className="flex flex-wrap items-center gap-3 px-3 py-2">
                   <span className="w-24 shrink-0 truncate text-t11h text-ink-dim">
                     {business?.name ?? c.business_id}
                   </span>
@@ -184,6 +184,9 @@ export function ProcessChartManager({
                   >
                     열기
                   </a>
+                  <span className={`shrink-0 text-t11 ${c.sheet_id ? 'text-ok' : 'text-ink-muted'}`}>
+                    {c.sheet_id ? '시트 연결됨' : '연결 전'}
+                  </span>
                   {canEdit ? (
                     <button
                       type="button"
@@ -194,12 +197,76 @@ export function ProcessChartManager({
                       <Icon name="user-minus" className="size-3.5" />
                     </button>
                   ) : null}
+                  {canEdit ? <SheetLink chart={c} /> : null}
                 </li>
               )
             })}
           </ul>
         )}
       </section>
+    </div>
+  )
+}
+
+/**
+ * 0071. 탭 하나의 시트 연결(파일 ID · 탭 이름). 끼워 넣기(게시 주소)와 따로 — 동기화는 게시본이 아니라
+ * 서비스 계정으로 원본을 읽는다(docs/onboarding/process-chart-google-setup.md). 편집 주소를 붙여 넣어도 ID만 저장한다.
+ */
+function SheetLink({ chart }: { chart: ProcessChart }) {
+  const router = useRouter()
+  const [pending, startTransition] = useTransition()
+  const [sheetId, setSheetId] = useState(chart.sheet_id ?? '')
+  const [sheetTab, setSheetTab] = useState(chart.sheet_tab ?? '')
+  const [message, setMessage] = useState<string | null>(null)
+  const idProblem = parseSheetId(sheetId) === undefined
+  const tabProblem = parseSheetTab(sheetTab) === undefined
+
+  const save = () => {
+    setMessage(null)
+    startTransition(async () => {
+      const state = await saveProcessChart({
+        id: chart.id,
+        businessId: chart.business_id,
+        teamName: chart.team_name,
+        title: chart.title,
+        embedUrl: chart.embed_url,
+        sortOrder: chart.sort_order,
+        sheetId,
+        sheetTab,
+      })
+      setMessage(state.error ?? '저장했습니다.')
+      if (!state.error) router.refresh()
+    })
+  }
+
+  return (
+    <div className="flex w-full flex-wrap items-end gap-2 pl-0 sm:pl-[6.75rem]">
+      <label className="min-w-[200px] flex-1 text-t10h text-ink-muted">
+        시트 파일 ID 또는 편집 주소
+        <input
+          value={sheetId}
+          onChange={(e) => setSheetId(e.target.value)}
+          placeholder="https://docs.google.com/spreadsheets/d/…/edit"
+          className={`mt-0.5 block w-full rounded-md border bg-app px-2 py-1 text-t11h text-ink ${idProblem ? 'border-critical' : 'border-line'}`}
+        />
+      </label>
+      <label className="w-28 text-t10h text-ink-muted">
+        탭 이름(비우면 첫 탭)
+        <input
+          value={sheetTab}
+          onChange={(e) => setSheetTab(e.target.value)}
+          className={`mt-0.5 block w-full rounded-md border bg-app px-2 py-1 text-t11h text-ink ${tabProblem ? 'border-critical' : 'border-line'}`}
+        />
+      </label>
+      <button
+        type="button"
+        onClick={save}
+        disabled={pending || idProblem || tabProblem}
+        className="rounded-md border border-line px-2.5 py-1 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {pending ? '저장 중…' : '시트 연결 저장'}
+      </button>
+      {message ? <span className="text-t11 text-ink-muted">{message}</span> : null}
     </div>
   )
 }

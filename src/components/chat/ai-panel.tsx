@@ -22,6 +22,7 @@ export function AiPanel({
   actions,
   role,
   lang,
+  feedback = true,
 }: {
   chatId: string | null
   messages: AiChatMessage[]
@@ -29,11 +30,14 @@ export function AiPanel({
   /** 보는 사람의 역할 — 직원 화면 용어 원칙(CLAUDE.md): 회장 외에는 «대표». */
   role: Role | null | undefined
   lang: Lang
+  /** 0073 기능 스위치 «AI 어시스턴트 보강». */
+  feedback?: boolean
 }) {
   const router = useRouter()
   const [q, setQ] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [pending, start] = useTransition()
+  const [followups, setFollowups] = useState<{ messageId: number; items: string[] } | undefined>(undefined)
 
   function ask(question: string) {
     setError(null)
@@ -44,6 +48,7 @@ export function AiPanel({
         return
       }
       setQ('')
+      setFollowups(r.followups)
       if (r.chatId && r.chatId !== chatId) router.push(`/chat?tab=ai&ai=${r.chatId}`)
       else router.refresh()
     })
@@ -71,7 +76,18 @@ export function AiPanel({
             </div>
           </div>
         ) : null}
-        <AssistantMessages messages={messages} actions={actions} lang={lang} pending={pending} onChanged={() => router.refresh()} />
+        <AssistantMessages
+          messages={messages}
+          actions={actions}
+          lang={lang}
+          pending={pending}
+          onChanged={() => router.refresh()}
+          chatId={chatId}
+          path="/chat"
+          followups={followups}
+          onAsk={ask}
+          feedback={feedback}
+        />
         {pending ? <p className="text-t11h text-ink-muted">{tr(lang, '생각하는 중…', 'Thinking…')}</p> : null}
       </div>
       {error ? (

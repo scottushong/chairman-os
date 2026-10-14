@@ -73,7 +73,7 @@ export function ProcessChartCard({
         <h2 className="text-t13 font-semibold">프로세스차트</h2>
         <p className="mt-3 text-t12 text-ink-dim">
           등록된 프로세스차트가 없습니다.{' '}
-          <Link href="/settings/process-charts" className="text-accent underline">
+          <Link href="/process-charts" className="text-accent underline">
             등록 화면
           </Link>
           에서 팀별 시트를 연결하세요.

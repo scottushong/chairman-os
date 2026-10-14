@@ -119,6 +119,181 @@ async function main() {
     const left = (await db.query<{ n: number }>(`select (select count(*) from cost_imports) + (select count(*) from cost_materials where name like '스테이징 엑셀%') as n`)).rows[0].n
     assert.equal(Number(left), 0, '0068 staging 시험 SQL이 엑셀 기록 · 원료를 남겼다')
   }
+  // 0069(AI 어시스턴트 — 권한 조회 · 보완 의견)가 있는 브랜치에서만.
+  if (files.includes('0069_ai_feedback.sql')) {
+    const m69 = await runFile('0069_staging_test.sql')
+    assert.match(m69, /^0069 STAGING PASS a\(.*b\(.*c\(.*d\(.*e\(.*f\(anon 거부\)$/, '0069 staging 시험 SQL이 PASS로 끝나지 않는다')
+    const left = (await db.query<{ n: number }>(`select (select count(*) from ai_feedback) + (select count(*) from ai_feedback_bundles)
+      + (select count(*) from ai_chats where title = '0069 시험') + (select count(*) from user_module_access where module = '/users/biz_dy') as n`)).rows[0].n
+    assert.equal(Number(left), 0, '0069 staging 시험 SQL이 의견 · 대화 · 권한 줄을 남겼다')
+  }
+  // 0070(회계 · 재무 자료 올리기 v2)이 있는 브랜치에서만.
+  if (files.includes('0070_finance_upload.sql')) {
+    const m70 = await runFile('0070_staging_test.sql')
+    assert.match(m70, /^0070 STAGING PASS a\(.*b\(.*c\(.*d\(.*e\(.*f\(anon 거부\)$/, '0070 staging 시험 SQL이 PASS로 끝나지 않는다')
+    const left = (await db.query<{ n: number }>(`select (select count(*) from fin_uploads) + (select count(*) from fin_sales_lines)
+      + (select count(*) from closings where period = '2099-02') as n`)).rows[0].n
+    assert.equal(Number(left), 0, '0070 staging 시험 SQL이 올리기 · 줄 · 마감 줄을 남겼다')
+  }
+  // 0072(회계 · 재무 자료 올리기 v2.1 차이분 · 시드 정리 A안)가 있는 브랜치에서만. 0071보다 먼저(0071이 소유자를 바꾼다).
+  if (files.includes('0072_finance_v21.sql')) {
+    const m72 = await runFile('0072_staging_test.sql')
+    assert.match(m72, /^0072 STAGING PASS a\(.*b\(.*c\(.*d\(.*e\(.*f\(.*g\(anon 거부\)$/, '0072 staging 시험 SQL이 PASS로 끝나지 않는다')
+    const left = (await db.query<{ n: number }>(`select (select count(*) from fin_uploads) + (select count(*) from fin_inventory_valuations)
+      + (select count(*) from fin_inventory_openings) + (select count(*) from fin_material_issues) + (select count(*) from fin_tx_groups)
+      + (select count(*) from fin_reclose_flags) + (select count(*) from closings where period = '2099-09')
+      + (select count(*) from user_module_access where module = '/finance/biz_dy') as n`)).rows[0].n
+    assert.equal(Number(left), 0, '0072 staging 시험 SQL이 평가금액 · 출고 줄 · 묶음 · 재마감 대상 · 마감 줄 · 권한 줄을 남겼다')
+  }
+  // 0073(기능 스위치)이 있는 브랜치에서만. 0071보다 먼저(0071이 소유자를 바꾼다).
+  if (files.includes('0073_feature_switches.sql')) {
+    const before73 = (await db.query<{ n: string }>(`select md5(string_agg(feature_key || coalesce(business_id, '') || enabled || audience || reason, ',' order by feature_key, business_id)) as n from feature_switches`)).rows[0].n
+    const m73 = await runFile('0073_staging_test.sql')
+    assert.match(m73, /^0073 STAGING PASS a\(.*b\(.*c\(.*d\(.*e\(anon 거부\)$/, '0073 staging 시험 SQL이 PASS로 끝나지 않는다')
+    const left = (await db.query<{ n: number }>(`select (select count(*) from feature_switches where business_id is not null)
+      + (select count(*) from audit_log where entity_table = 'feature_switches') as n`)).rows[0].n
+    assert.equal(Number(left), 0, '0073 staging 시험 SQL이 회사 스위치 줄 · 감사를 남겼다')
+    const after73 = (await db.query<{ n: string }>(`select md5(string_agg(feature_key || coalesce(business_id, '') || enabled || audience || reason, ',' order by feature_key, business_id)) as n from feature_switches`)).rows[0].n
+    assert.equal(after73, before73, '0073 staging 시험 SQL이 그룹 기본 줄을 바꾼 채 남겼다')
+  }
+  // 0074(원료 출고 · 재고 바꾸기 대표 · CFO만)가 있는 브랜치에서만. 0071보다 먼저.
+  if (files.includes('0074_finance_replace_guard.sql')) {
+    const m74 = await runFile('0074_staging_test.sql')
+    assert.match(m74, /^0074 STAGING PASS a\(직원 바꾸기 거부\) d\(직원 되돌리기 거부\) b\(대표 바꾸기\) c\(다른 종류는 그대로\) e\(대표 되돌리기\)$/, `0074 staging 시험 SQL이 PASS로 끝나지 않는다 (${m74})`)
+    const left = (await db.query<{ n: number }>(`select count(*) as n from fin_uploads where period in ('2099-10', '2099-11')`)).rows[0].n
+    assert.equal(Number(left), 0, '0074 staging 시험 SQL이 올리기를 남겼다')
+  }
+  // 0075(월별 손익 — 재고 반영 · 마감)가 있는 브랜치에서만. 0071보다 먼저.
+  if (files.includes('0075_monthly_pl.sql')) {
+    const switches = async () => (await db.query<{ s: string }>(`select string_agg(feature_key || ':' || coalesce(business_id, '-') || ':' || enabled || ':' || audience, ',' order by feature_key, business_id) as s from feature_switches`)).rows[0].s
+    const before75 = await switches()
+    const m75 = await runFile('0075_staging_test.sql')
+    assert.match(m75, /^0075 STAGING PASS a\(.*b\(.*c\(.*d\(.*e\(.*f\(.*g\(.*h\(.*i\(.*j\(.*k\(anon 거부\)$/, `0075 staging 시험 SQL이 PASS로 끝나지 않는다 (${m75})`)
+    const left = (await db.query<{ n: number }>(`select (select count(*) from fin_pl_closes) + (select count(*) from fin_pl_adjustments) + (select count(*) from fin_pl_settings)
+      + (select count(*) from fin_uploads where period in ('2098-12', '2099-01', '2099-02', '2099-03')) + (select count(*) from journal_entries where entry_date >= '2099-01-01')
+      + (select count(*) from fin_reclose_flags where cause = 'pl_reopen') + (select count(*) from fin_inventory_valuations where period like '2099-0%') as n`)).rows[0].n
+    assert.equal(Number(left), 0, '0075 staging 시험 SQL이 저장본 · 조정 · 설정 · 올리기 · 전표 · 재마감 대상 · 평가금액을 남겼다')
+    assert.equal(await switches(), before75, '0075 staging 시험 SQL이 기능 스위치 줄을 바꾼 채 남겼다')
+  }
+  // 0076(첫 달 기초 확인 · 일부 미입력 · 시드 정의자 거름)이 있는 브랜치에서만. 0071보다 먼저.
+  if (files.includes('0076_b_rest.sql')) {
+    const m76 = await runFile('0076_staging_test.sql')
+    assert.match(m76, /^0076 STAGING PASS a\(입력자 확인 거부\) b\(다른 사람 확인\) c\(두 번째 확인 false\) d\(미입력 확인 거부\) e\(일부 미입력\) f\(정의자 거름\) g\(anon 거부\)$/, `0076 staging 시험 SQL이 PASS로 끝나지 않는다 (${m76})`)
+    const left = (await db.query<{ n: number }>(`select (select count(*) from fin_inventory_openings where period like '2099-0%') + (select count(*) from fin_uploads where period in ('2099-07', '2099-08'))
+      + (select count(*) from fin_reclose_flags where period in ('2099-07', '2099-08')) + (select count(*) from audit_log where entity_table = 'fin_inventory_openings') as n`)).rows[0].n
+    assert.equal(Number(left), 0, '0076 staging 시험 SQL이 첫 달 기초 · 올리기 · 재마감 대상 · 감사를 남겼다')
+  }
+  // 0077(판매 실적 · 마진 스위치 문)이 있는 브랜치에서만. 0071보다 먼저.
+  if (files.includes('0077_sales_margins.sql')) {
+    const switches77 = async () => (await db.query<{ s: string }>(`select string_agg(feature_key || ':' || coalesce(business_id, '-') || ':' || enabled || ':' || audience, ',' order by feature_key, business_id) as s from feature_switches`)).rows[0].s
+    const before77 = await switches77()
+    const m77 = await runFile('0077_staging_test.sql')
+    assert.match(m77, /^0077 STAGING PASS a\(직원 스위치 꺼짐\) b\(대표 마진 · 칸 모양\) c\(직원 마진 거부\) d\(끄면 대표도 꺼짐\) e\(anon 거부\)$/, `0077 staging 시험 SQL이 PASS로 끝나지 않는다 (${m77})`)
+    assert.equal(await switches77(), before77, '0077 staging 시험 SQL이 기능 스위치 줄을 바꾼 채 남겼다')
+    const left = (await db.query<{ n: number }>(`select count(*) as n from audit_log where entity_id = 'margins:biz_dy'`)).rows[0].n
+    assert.equal(Number(left), 0, '0077 staging 시험 SQL이 마진 감사 줄을 남겼다')
+  }
+  // 0078(원가 후보 승인)이 있는 브랜치에서만. 0071보다 먼저.
+  if (files.includes('0078_cost_candidates.sql')) {
+    const switches78 = async () => (await db.query<{ s: string }>(`select string_agg(feature_key || ':' || coalesce(business_id, '-') || ':' || enabled || ':' || audience, ',' order by feature_key, business_id) as s from feature_switches`)).rows[0].s
+    const before78 = await switches78()
+    const m78 = await runFile('0078_staging_test.sql')
+    assert.match(m78, /^0078 STAGING PASS a\(직원 스위치 꺼짐\) b\(대표 후보 · 칸 모양\) c\(영업 직원 거부\) d\(이유 필수 · 나중에 · 무시 · 감사\) e\(끄면 대표도 꺼짐\) f\(anon 거부\)$/, `0078 staging 시험 SQL이 PASS로 끝나지 않는다 (${m78})`)
+    assert.equal(await switches78(), before78, '0078 staging 시험 SQL이 기능 스위치 줄을 바꾼 채 남겼다')
+    const left = (await db.query<{ n: number }>(`select (select count(*) from cost_fin_candidate_decisions) + (select count(*) from fin_uploads where period = '2099-09' and kind = 'purchase_in')
+      + (select count(*) from audit_log where entity_table = 'cost_fin_candidate_decisions') as n`)).rows[0].n
+    assert.equal(Number(left), 0, '0078 staging 시험 SQL이 결정 · 올리기 · 감사를 남겼다')
+  }
+  // 0079(원장 → 장부 반영)가 있는 브랜치에서만. 0071보다 먼저.
+  if (files.includes('0079_ledger_post.sql')) {
+    const switches79 = async () => (await db.query<{ s: string }>(`select string_agg(feature_key || ':' || coalesce(business_id, '-') || ':' || enabled || ':' || audience, ',' order by feature_key, business_id) as s from feature_switches`)).rows[0].s
+    const before79 = await switches79()
+    const m79 = await runFile('0079_staging_test.sql')
+    assert.match(m79, /^0079 STAGING PASS a\(직원 스위치 꺼짐\) b\(장부 쓰기 없는 직원 거부\) c\(대기 · 장부 0줄\) d\(반영 전표 · 두 번 거부\) e\(무효 = 역분개 · 원 전표 남음\) f\(끄면 대표도 꺼짐\) g\(anon 거부\)$/, `0079 staging 시험 SQL이 PASS로 끝나지 않는다 (${m79})`)
+    assert.equal(await switches79(), before79, '0079 staging 시험 SQL이 기능 스위치 줄을 바꾼 채 남겼다')
+    const left = (await db.query<{ n: number }>(`select (select count(*) from fin_ledger_posts) + (select count(*) from fin_uploads where period = '2099-08' and kind = 'ledger')
+      + (select count(*) from accounts where account_code in ('T7901', 'T7902')) + (select count(*) from journal_entries where entry_date >= '2099-08-01' and entry_date < '2099-09-01') as n`)).rows[0].n
+    assert.equal(Number(left), 0, '0079 staging 시험 SQL이 반영 · 올리기 · 계정 · 전표를 남겼다')
+  }
+  // 0080(원료 단가 · kg 노출 막기)이 있는 브랜치에서만. 0071보다 먼저.
+  if (files.includes('0080_material_price_lock.sql')) {
+    const grants80 = async () => (await db.query<{ s: string }>(`select string_agg(user_id || ':' || module || ':' || can_write, ',' order by user_id, module) as s from user_module_access`)).rows[0].s
+    const before80 = await grants80()
+    const m80 = await runFile('0080_staging_test.sql')
+    assert.match(m80, /^0080 STAGING PASS a\(숫자 칸 직접 읽기 거부\) b\(올린 사람 방금 = 숫자\) c\(장부 읽기만 = 가림 · 합계\) d\(61분 뒤 올린 사람 가림 · 대표 숫자\) e\(CFO · 원가 관리 숫자\) f\(대기 가림 · 넣기 거부\) g\(anon 거부\)$/, `0080 staging 시험 SQL이 PASS로 끝나지 않는다 (${m80})`)
+    assert.equal(await grants80(), before80, '0080 staging 시험 SQL이 모듈 줄을 바꾼 채 남겼다')
+    const left = (await db.query<{ n: number }>(`select (select count(*) from fin_uploads where period in ('2099-07', '2099-08')) + (select count(*) from fin_purchase_in_lines where period = '2099-07') as n`)).rows[0].n
+    assert.equal(Number(left), 0, '0080 staging 시험 SQL이 올리기 · 줄을 남겼다')
+  }
+  // 0081(청사진 뼈대)이 있는 브랜치에서만. 0071보다 먼저.
+  if (files.includes('0081_blueprint_skeleton.sql')) {
+    const state81 = async () => (await db.query<{ s: string }>(`select coalesce((select string_agg(user_id || ':' || module || ':' || can_write, ',' order by user_id, module) from user_module_access), '')
+      || '|' || coalesce((select string_agg(feature_key || ':' || audience, ',' order by feature_key) from feature_switches), '')
+      || '|' || coalesce((select string_agg(user_id || ':' || role, ',' order by user_id) from user_profiles), '') as s`)).rows[0].s
+    const before81 = await state81()
+    const m81 = await runFile('0081_staging_test.sql')
+    assert.match(m81, /^0081 STAGING PASS a\(스위치 7개 대표만\) b\(스위치 기본 = 직원 feature_off\) c\(영업 = 원가 · 마진 함수 거부\) d\(생산 = 남의 오더 · 구매 성과 거부\) e\(임원 = 구매 성과 월만\) f\(대표 = 진짜 소유자 아래 호출\) g\(anon 거부\)$/, `0081 staging 시험 SQL이 PASS로 끝나지 않는다 (${m81})`)
+    assert.equal(await state81(), before81, '0081 staging 시험 SQL이 모듈 줄 · 스위치 · 역할을 바꾼 채 남겼다')
+  }
+  // 0071은 맨 뒤 — 끝에서 표 · 함수 소유자를 바꾼다(아래 주석).
+  // 0071(프로세스 차트 동기화)이 있는 브랜치에서만. staging처럼 AI Agent 계정이 하나 있다.
+  if (files.includes('0071_process_chart_sync.sql')) {
+    const agent = '00000000-0000-0000-0000-00000061c005'
+    await db.exec(`insert into auth.users (id, email) values ('${agent}', 'agent@x');
+      insert into user_profiles (user_id, role, display_name, max_security_class) values ('${agent}', 'AIAgent', 'AI Agent', 'Restricted');`)
+    const m71 = await runFile('0071_staging_test.sql')
+    assert.match(m71, /^0071 STAGING PASS a\(.*b\(.*c\(.*d\(.*e\(.*f\(.*h\(.*i\(.*j\(.*k\(.*g\(anon 거부\)$/, '0071 staging 시험 SQL이 PASS로 끝나지 않는다')
+    const left = (await db.query<{ n: number }>(`select (select count(*) from process_chart_items) + (select count(*) from process_chart_syncs)
+      + (select count(*) from tasks where source_label is not null) + (select count(*) from teams where team_id like 'team_dy_stg71%') + (select count(*) from projects where project_id like 'pc_%') as n`)).rows[0].n
+    assert.equal(Number(left), 0, '0071 staging 시험 SQL이 시트 줄 · 기록 · 업무 · 팀을 남겼다')
+
+    // 0071 FORCE(2026-10-12 고침): 같은 시험을 **BYPASSRLS 아닌 소유자**로 한 번 더. PGlite의 postgres는 superuser라
+    // FORCE를 우회한다 — 위 통과는 «FORCE 아래에서도 동기화가 된다»를 재지 못한다. Supabase처럼 소유자가
+    // authenticated에 속하게 두고(staging 2026-10-12: pg_has_role('postgres','authenticated') = true) public의 표 · 뷰 ·
+    // 함수를 전부 넘긴다. 이 뒤로는 이 DB에서 다른 시험을 돌리지 않는다(소유자가 바뀌었다).
+    const forced = (await db.query<{ relname: string; f: boolean }>(`select relname, relforcerowsecurity as f from pg_class
+      where relname in ('tasks', 'process_charts', 'teams') and relnamespace = 'public'::regnamespace order by 1`)).rows
+    assert.deepEqual(forced.map((r) => `${r.relname}:${r.f}`), ['process_charts:true', 'tasks:true', 'teams:true'],
+      '0071: tasks · process_charts · teams 중 FORCE가 꺼진 표가 있다(대표 지시 2026-10-12 — 0071은 FORCE를 내리지 않는다)')
+    await db.exec(`
+      create role app_owner nosuperuser nobypassrls nologin;
+      grant authenticated to app_owner;
+      grant usage on schema public, auth to app_owner;
+      grant select on auth.users to app_owner;  -- Supabase의 postgres도 auth.users를 읽는다(담당자 이메일 찾기)
+      do $o$
+      declare r record;
+      begin
+        for r in select c.oid::regclass::text as n, c.relkind from pg_class c
+                  where c.relnamespace = 'public'::regnamespace and c.relkind in ('r', 'v', 'm')
+                    and not exists (select 1 from pg_depend d where d.objid = c.oid and d.deptype = 'e') loop
+          execute format('alter %s %s owner to app_owner',
+            case r.relkind when 'v' then 'view' when 'm' then 'materialized view' else 'table' end, r.n);
+        end loop;
+        for r in select p.oid::regprocedure::text as n from pg_proc p
+                  where p.pronamespace = 'public'::regnamespace and p.prokind = 'f'
+                    and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e') loop
+          execute format('alter function %s owner to app_owner', r.n);
+        end loop;
+      end $o$;
+    `)
+    const ow = (await db.query<{ b: boolean; s: boolean; o: string }>(`select rolbypassrls as b, rolsuper as s,
+      (select relowner::regrole::text from pg_class where oid = 'public.tasks'::regclass) as o from pg_roles where rolname = 'app_owner'`)).rows[0]
+    assert.deepEqual([ow.b, ow.s, ow.o], [false, false, 'app_owner'], '실험 설정이 깨졌다 — app_owner가 bypassrls · superuser이거나 tasks 소유자가 아니다')
+    const m71b = await runFile('0071_staging_test.sql')
+    assert.match(m71b, /^0071 STAGING PASS a\(.*b\(.*c\(.*d\(.*e\(.*f\(.*h\(.*i\(.*j\(.*k\(.*g\(anon 거부\)$/,
+      `0071: BYPASSRLS 아닌 소유자 + FORCE에서 동기화 시험이 깨진다 — 통로(process_chart_sync_ctx)가 모자라다 (${m71b})`)
+    // 통로는 PostgREST 세션에서 켤 수 없다 — 값을 켜도 거짓이고, 시트 업무를 넣지 못한다.
+    await db.exec(`begin; select set_config('request.jwt.claim.sub', '${member}', true); set local role authenticated;
+      select set_config('chairman.process_chart_sync', 'on', true);`)
+    try {
+      const ctx = (await db.query<{ c: boolean }>(`select process_chart_sync_ctx() as c`)).rows[0].c
+      assert.equal(ctx, false, '0071: 사람 세션이 설정값을 켜서 동기화 통로를 연다')
+      await assert.rejects(db.query(`insert into tasks (task_id, project_id, title, source_label) values ('tsk_fake71', 'prj_001', '가짜', '프로세스 차트 · 가짜')`),
+        /row-level security|permission denied/, '0071: 사람 세션이 설정값을 켜고 시트 업무를 넣었다')
+    } finally {
+      await db.exec('rollback')
+    }
+  }
   await db.close()
 }
 

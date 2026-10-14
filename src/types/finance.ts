@@ -343,6 +343,10 @@ export interface ProcessChart {
   sort_order: number
   updated_by: string
   updated_at: IsoDateTime
+  /** 0071. 구글 시트 파일 ID(편집 주소의 /d/<ID>/). null = 연결 전 */
+  sheet_id?: string | null
+  /** 0071. 읽을 탭 이름. null = 첫 탭 */
+  sheet_tab?: string | null
 }
 
 /** 등록·수정으로 들어오는 값. id·updated_*는 DB가 정한다. */
@@ -353,4 +357,57 @@ export interface ProcessChartInput {
   title: string
   embed_url: string
   sort_order: number
+  sheet_id?: string | null
+  sheet_tab?: string | null
+}
+
+/** 0071. 시트 줄의 상태 낱말 — 이 넷만 받는다(다른 값은 «예정» + 경고). */
+export const PROCESS_ITEM_STATUS = ['예정', '진행', '완료', '보류'] as const
+export type ProcessItemStatus = (typeof PROCESS_ITEM_STATUS)[number]
+
+/** 0071 process_chart_items 한 줄. */
+export interface ProcessChartItem {
+  id: number
+  business_id: BusinessId
+  team_name: string
+  chart_id: number | null
+  sheet_row_id: string
+  stage: string | null
+  title: string
+  assignee_email: string | null
+  owner_user_id: string | null
+  start_on: IsoDate | null
+  due_on: IsoDate | null
+  status: ProcessItemStatus
+  note: string | null
+  task_id: string | null
+  /** 시트에서 사라진 때. null = 시트에 있다 */
+  gone_at: IsoDateTime | null
+  last_synced_at: IsoDateTime
+}
+
+/** 0071 동기화 경고 한 줄. row = 시트의 줄 번호(제목 줄 = 1), id = 시트 ID. */
+export interface ProcessSyncWarning {
+  row?: number | null
+  id?: string | null
+  message: string
+}
+
+/** 0071 process_chart_syncs 한 줄. actor_user_id null = 자동. */
+export interface ProcessChartSync {
+  id: number
+  business_id: BusinessId
+  team_name: string
+  chart_id: number | null
+  synced_at: IsoDateTime
+  actor_user_id: string | null
+  trigger: 'button' | 'open' | 'cron'
+  ok: boolean
+  error: string | null
+  read_count: number
+  new_count: number
+  changed_count: number
+  gone_count: number
+  skipped_count: number
+  warnings: ProcessSyncWarning[]
 }

@@ -544,6 +544,11 @@ function salesView(productId: string): SalesCostView {
 
 /** dummy 대표 감시(dummy.ts costingWatch)가 세는 원가 조회 감사 줄. */
 /** 0066 dummy 견적 — 제품의 회사 · 이름(권한 판정 없음 — 견적 함수가 한다). */
+/** 0067 cost_margins의 문(cost_gate_biz 'margins:<회사>' · 'costing_list' — 하루 20번 · 호출마다 감사 · 겸직 거부). dummy-sales-margins.ts가 부른다. */
+export function dummyMarginsGate(businessId: string): { as_of: IsoDate; chairman: boolean } {
+  return gateFor(businessId, `margins:${businessId}`, 'costing_list')
+}
+
 export function dummyCostProduct(productId: string): { business_id: string; name: string } | null {
   const p = store.products.find((x) => x.product_id === productId)
   return p ? { business_id: p.business_id, name: p.name } : null
@@ -1149,3 +1154,41 @@ export function dummyCosts(): CostsMethods {
     },
   }
 }
+
+/**
+ * 0081 dummy 청사진(dummy-blueprint.ts)이 «DB 안»에서 쓰는 원가 엔진 손잡이. dummy.ts만 이것을 불러 deps로 넘긴다
+ * (dummy-blueprint는 이 파일을 import하지 않는다 — check:sales-cost «가짜 BOM은 dummy 어댑터만»).
+ * 권한을 보지 않는 손잡이(원래 값 · BOM 줄)가 섞여 있다 — dummy-blueprint가 0081처럼 문(gate)을 지난 뒤에만, 대표 문 뒤에서만 BOM 줄을 쓴다.
+ */
+export function dummyBlueprintEngine() {
+  return {
+    /** 0062 cost_gate_biz(회사 목록) · cost_gate(제품 하나) — 한도 · 감사 · 겸직 거부 · 영업 0시. */
+    gate: (businessId: string, target: string, kind: string) => gateFor(businessId, target, kind),
+    product: (productId: string) => {
+      const p = store.products.find((x) => x.product_id === productId)
+      return p ? { ...p } : null
+    },
+    products: (businessId: string) => copy(store.products.filter((p) => p.business_id === businessId)),
+    materialCost: (productId: string, kind: 'market' | 'current', on: IsoDate) => materialCost(productId, kind, on),
+    unitPrice: (materialId: string, kind: 'market' | 'current', on: IsoDate) => unitPrice(materialId, kind, on),
+    businessComplete: (businessId: string, kind: 'market' | 'current', on: IsoDate) => businessComplete(businessId, kind, on),
+    overhead: (businessId: string, productId: string | null, on: IsoDate) => overhead(businessId, productId, on),
+    /** 0065 총원가 원래 값(Current 원료비 + 비용 — 비용 줄이 있는데 배부를 못 하면 null). */
+    totalRaw: (productId: string, businessId: string, on: IsoDate) => totalRaw(materialCost(productId, 'current', on), overhead(businessId, productId, on)),
+    /** 대표 문 뒤에서만 — 그 날 판의 수율 · 원료 줄. */
+    bomOn: (productId: string, on: IsoDate) => {
+      const v = versionOn(productId, on)
+      return v ? { yield_pct: v.yield_pct, lines: linesOf(v) } : null
+    },
+    orders: (businessId: string) => copy(store.orders.filter((o) => o.business_id === businessId)),
+    order: (orderId: string) => {
+      const o = store.orders.find((x) => x.order_id === orderId)
+      return o ? { ...o } : null
+    },
+    orderLines: (orderId: string) => copy(store.orderLines.filter((l) => l.order_id === orderId)),
+    prodLots: (businessId: string) => copy(store.prodLots.filter((p) => p.business_id === businessId && !p.voided_at)),
+    inputs: (businessId: string) => copy(store.inputs.filter((i) => i.business_id === businessId && !i.voided_at)),
+  }
+}
+
+export type DummyBlueprintEngine = ReturnType<typeof dummyBlueprintEngine>

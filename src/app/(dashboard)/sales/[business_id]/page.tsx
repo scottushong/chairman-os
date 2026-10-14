@@ -4,6 +4,7 @@ import { CostingWatchCard } from '@/components/cost/costing-watch-card'
 import { PageHeader } from '@/components/layout/page-header'
 import { SalesCostBoard } from '@/components/sales/sales-cost-board'
 import { recordScreenRead } from '@/lib/activity-record'
+import { featureOn } from '@/lib/features-server'
 import { asOfLabel, salesCostError } from '@/lib/sales/cost'
 import { openSales } from '@/lib/sales/page'
 import type { CostingWatchRow, SalesCostRow } from '@/types'
@@ -23,6 +24,7 @@ export default async function SalesCostPage(props: PageProps<'/sales/[business_i
   // 404 뒤에 둔다(볼 수 없는 회사의 id를 찍어 본 것은 조회가 아니다).
   await recordScreenRead({ path: `/sales/${business_id}`, kind: 'page', business_id })
   const chairman = user.role === 'Chairman'
+  const dealsOn = await featureOn(user, 'sales_margins', business_id)
 
   let rows: SalesCostRow[] = []
   let error: string | null = null
@@ -65,6 +67,11 @@ export default async function SalesCostPage(props: PageProps<'/sales/[business_i
             견적 →
           </Link>
           <span className="ml-2 text-ink-muted">고객 견적 저장 · Red는 대표 승인 요청</span>
+          {dealsOn ? (
+            <Link href={`/sales/${business_id}/deals`} className="ml-4 font-semibold text-accent hover:underline">
+              판매 실적 →
+            </Link>
+          ) : null}
         </p>
         {error ? (
           <p role="alert" className="rounded-md border border-critical/40 bg-critical/10 px-3 py-2 text-t12 text-critical">

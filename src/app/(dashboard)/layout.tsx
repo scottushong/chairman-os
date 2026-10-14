@@ -8,6 +8,7 @@ import { Sidebar } from '@/components/layout/sidebar'
 import { SystemBar } from '@/components/layout/system-bar'
 import { TimezoneBeacon } from '@/components/settings/timezone-beacon'
 import { currentUser } from '@/lib/auth/session'
+import { featureOn } from '@/lib/features-server'
 import { brandFor, descriptionFor } from '@/lib/brand'
 import { loadSidebarData } from '@/lib/sidebar-data'
 import { loadUiPrefs } from '@/lib/ui-prefs-server'
@@ -95,7 +96,7 @@ export default async function DashboardLayout({ children }: LayoutProps<'/'>) {
       </div>
       {/* Phase 11 — 모든 화면의 AI 어시스턴트(오른쪽 아래 버튼 → 패널). 셸에 한 번만 둔다: 화면마다 넣으면 빠지는 화면이 생긴다.
           로그인 없는 화면(/login 등)은 이 셸 밖이라 뜨지 않는다. */}
-      {user ? <AssistantDock lang={user.language} /> : null}
+      {user ? <AssistantDock lang={user.language} feedback={await featureOn(user, 'ai_assist')} /> : null}
     </div>
   )
 }

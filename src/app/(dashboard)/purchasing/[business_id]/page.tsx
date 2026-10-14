@@ -1,5 +1,6 @@
 import Link from 'next/link'
 
+import { PurchasePerformance } from '@/components/blueprint/purchase-performance'
 import { CostingWatchCard } from '@/components/cost/costing-watch-card'
 import { PageHeader } from '@/components/layout/page-header'
 import { PriceTrend, type MaterialSeries } from '@/components/purchasing/price-trend'
@@ -7,6 +8,9 @@ import { PurchasingNav } from '@/components/purchasing/purchasing-nav'
 import { kstToday } from '@/lib/chairman-project'
 import { dailyMarket, dailyPurchase, materialOverview, pctText, won, type MaterialOverview } from '@/lib/purchasing/calc'
 import { recordScreenRead } from '@/lib/activity-record'
+import { lastDays, pickRange } from '@/lib/blueprint/period'
+import { CHIP, FIELD, LABEL } from '@/lib/blueprint/ui'
+import { featureOn } from '@/lib/features-server'
 import { openPurchasing } from '@/lib/purchasing/page'
 import { MATERIAL_CATEGORY_LABEL_KO } from '@/types'
 
@@ -15,6 +19,7 @@ import { MATERIAL_CATEGORY_LABEL_KO } from '@/types'
  *
  * 숫자는 전부 일 단위 원자료(시장가 · LOT)에서 여기서 계산한다 — 주 · 월은 저장하지 않는다(설계서 9).
  * «시장가 대비 %» 둘: ① 최근 LOT landed vs 그 LOT 입고일의 시장가 ② 30일 수량 가중 landed vs 최신 시장가.
+ * 0081 ② «구매 성과»(?tab=performance · 스위치 purchase_performance)는 같은 문 안의 다른 보기 — 꺼지면 탭이 없고 개요로 돌아간다.
  */
 export default async function PurchasingOverviewPage(props: PageProps<'/purchasing/[business_id]'>) {
   const { business_id } = await props.params
@@ -22,6 +27,45 @@ export default async function PurchasingOverviewPage(props: PageProps<'/purchasi
   // 구매 화면 열람은 0031 열람 기록으로 남는다 — 대표의 «원가 관리 권한자» 감시(0061 cost_costing_watch)가 센다. 404 뒤에 둔다.
   await recordScreenRead({ path: `/purchasing/${business_id}`, kind: 'page', business_id })
   const today = kstToday()
+  const sp = await props.searchParams
+  const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)
+  const perfOn = await featureOn(user, 'purchase_performance', business_id)
+  const tabs = perfOn ? (
+    <nav className="mt-3 flex flex-wrap gap-1.5 text-t12" aria-label="구매 보기">
+      <Link href={`/purchasing/${encodeURIComponent(business_id)}`} className={CHIP(one(sp.tab) !== 'performance')}>
+        개요
+      </Link>
+      <Link href={`/purchasing/${encodeURIComponent(business_id)}?tab=performance`} className={CHIP(one(sp.tab) === 'performance')}>
+        구매 성과
+      </Link>
+    </nav>
+  ) : null
+  if (perfOn && one(sp.tab) === 'performance') {
+    const { from, to } = pickRange(one(sp.from), one(sp.to), lastDays(today, 180))
+    return (
+      <div className="mx-auto max-w-[1600px] px-4 py-5 sm:px-6">
+        <PageHeader icon="cart" title={`${business.name} 구매 성과`} code="COST-P6" description="구매가(물건값) vs 그날 시장가 · 절감액 · 환율 효과">
+          <PurchasingNav businessId={business_id} current="overview" />
+        </PageHeader>
+        {tabs}
+        <form className="mt-3 flex flex-wrap items-end gap-2 text-t12" method="get">
+          <input type="hidden" name="tab" value="performance" />
+          <label className={LABEL}>
+            입고일 시작
+            <input type="date" name="from" defaultValue={from} className={FIELD} />
+          </label>
+          <label className={LABEL}>
+            끝
+            <input type="date" name="to" defaultValue={to} className={FIELD} />
+          </label>
+          <button type="submit" className="min-h-11 rounded-md border border-line bg-panel px-3 hover:border-accent lg:min-h-0 lg:py-1">
+            보기
+          </button>
+        </form>
+        <PurchasePerformance repo={repo} businessId={business_id} from={from} to={to} showMaterial chairman={user.role === 'Chairman'} />
+      </div>
+    )
+  }
   const [materials, suppliers, prices, lots] = await Promise.all([
     repo.listCostMaterials(business_id),
     repo.listCostSuppliers(business_id),
@@ -61,6 +105,7 @@ export default async function PurchasingOverviewPage(props: PageProps<'/purchasi
       >
         <PurchasingNav businessId={business_id} current="overview" />
       </PageHeader>
+      {tabs}
 
       {active.length === 0 ? (
         <section className="mt-4 rounded-xl border border-line-soft bg-panel px-4 py-10 text-center">

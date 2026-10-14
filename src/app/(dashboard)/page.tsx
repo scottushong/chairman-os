@@ -1,9 +1,11 @@
+import Link from 'next/link'
 import { redirect } from 'next/navigation'
 
 import { CityStrip } from '@/components/city/city-strip'
 import { AiNightPanel } from '@/components/dashboard/ai-night-panel'
 import { AlertPanel } from '@/components/dashboard/alert-panel'
 import { AttentionCard } from '@/components/dashboard/attention-card'
+import { ChairDashboard } from '@/components/dashboard/chair-dashboard'
 import { ClockWeatherCard } from '@/components/dashboard/clock-weather-card'
 import { CriticalBanner } from '@/components/dashboard/critical-banner'
 import { DashboardBoard } from '@/components/dashboard/dashboard-board'
@@ -25,6 +27,7 @@ import { citySky } from '@/lib/city-phase'
 import { summarizeDependency } from '@/lib/dependency'
 import { orderInitiatives } from '@/lib/initiative'
 import { resolveLocation } from '@/lib/geo'
+import { firstParam } from '@/lib/query'
 import { getRepository, loadDashboard } from '@/lib/repository'
 import { loadUiPrefs } from '@/lib/ui-prefs-server'
 import { worldCitiesOf } from '@/lib/world-cities'
@@ -41,7 +44,7 @@ import { getCurrentLocationWeather } from '@/lib/weather'
  * 이 파일도, 아래 컴포넌트도 그걸 알 필요가 없다.
  */
 
-export default async function DashboardPage() {
+export default async function DashboardPage(props: PageProps<'/'>) {
   // 회장 메모(2026-10) — 이 대시보드는 회장 화면이다. 다른 역할은 직원 홈으로 보낸다(로그인 착지와 같은 곳).
   // 기록(recordScreenRead)보다 먼저 — 들르지 않은 화면을 «열었다»로 남기지 않는다.
   // 안내일 뿐 판정은 RLS다. 세션이 없으면(live에서 user_profiles 행 없음) 예전처럼 그린다 — RLS가 빈 손을 준다.
@@ -55,7 +58,10 @@ export default async function DashboardPage() {
   const repo = await getRepository()
   // 위치는 요청 헤더 조회라 왕복이 없다. 날씨·프로세스차트는 나머지와 나란히 기다린다.
   const location = await resolveLocation()
-  const [data, user, chairmanProjects, initiatives, weather, processCharts] = await Promise.all([
+  // 0072 시드 정리 A안 — «예시 숨기기»(보는 사람마다 · URL 칸 ?examples=hide). 예시 줄은 대표 세션에만 온다(지우지 않는다).
+  const sp = await props.searchParams
+  const hideExamples = firstParam(sp.examples) === 'hide'
+  const [loaded, user, chairmanProjects, initiatives, weather, processCharts] = await Promise.all([
     loadDashboard(repo),
     currentUser(),
     repo.listChairmanProjects(),
@@ -64,6 +70,23 @@ export default async function DashboardPage() {
     getCurrentLocationWeather(location),
     repo.listProcessCharts(),
   ])
+
+  const notExample = <T extends { is_example?: boolean }>(rows: T[]) => (hideExamples ? rows.filter((r) => !r.is_example) : rows)
+  const data = {
+    ...loaded,
+    tasks: notExample(loaded.tasks),
+    projects: notExample(loaded.projects),
+    decisions: notExample(loaded.decisions),
+    alerts: notExample(loaded.alerts),
+    aiNightOutputs: notExample(loaded.aiNightOutputs),
+    topGoals: notExample(loaded.topGoals),
+    monthlyPriorities: notExample(loaded.monthlyPriorities),
+    criticalRisks: notExample(loaded.criticalRisks),
+    nextMilestones: notExample(loaded.nextMilestones),
+  }
+  const exampleCount = [loaded.tasks, loaded.projects, loaded.decisions, loaded.alerts, loaded.aiNightOutputs, loaded.topGoals, loaded.monthlyPriorities, loaded.criticalRisks, loaded.nextMilestones]
+    .flat()
+    .filter((r: { is_example?: boolean }) => r.is_example).length
 
   const today = new Intl.DateTimeFormat('ko-KR', {
     year: 'numeric',
@@ -185,6 +208,15 @@ export default async function DashboardPage() {
             CH-027이 붙을 때 오는 것이다. 누르면 아무 일도 없는 드롭다운 표식은
             '이 화면은 눌러도 안 된다'를 매일 가르친다. */}
         <div className="flex items-center gap-3">
+          {exampleCount > 0 ? (
+            <Link
+              href={hideExamples ? '/' : '/?examples=hide'}
+              className="rounded-md border border-line px-2 py-1 text-t11 text-ink-dim hover:border-accent"
+              data-testid="examples-toggle"
+            >
+              {hideExamples ? `예시 보이기 (${exampleCount})` : `예시 숨기기 (${exampleCount})`}
+            </Link>
+          ) : null}
           <span className="text-t12 text-ink-dim tnum">{today}</span>
         </div>
       </div>
@@ -250,6 +282,9 @@ export default async function DashboardPage() {
       <div className="mt-5">
         <CityStrip sky={sky} items={cityItems} live={cityLive} flow={uiPrefs.app.city_motion} />
       </div>
+
+      {/* PHASE 8 대표 대시보드(스위치 chairman_dashboard — 서버에서 판정, 꺼지면 아무것도 그리지 않는다). */}
+      <ChairDashboard repo={repo} user={user} businesses={data.businesses} businessId={firstParam(sp.dbiz)} grain={firstParam(sp.dgrain)} />
 
       {/* 3줄 — 이니셔티브. 도시 띠 아래로 내려왔다(G-2b). */}
       <div className="mt-5">

@@ -164,6 +164,7 @@ export default async function UsersPage(props: PageProps<'/settings/users'>) {
             businesses={businesses}
             viewer={user}
             photoUrls={photoUrls}
+            initialPersonId={typeof params.person === 'string' ? params.person : null}
           />
         )}
       </div>

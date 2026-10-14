@@ -90,6 +90,8 @@ export interface Project {
   status: TaskStatus
   progress_pct: Percent
   deadline: IsoDate | null
+  /** 0072 시드 정리 A안 — 0003 예시 줄. 대표 세션에서만 온다(직원 세션은 DB가 거른다). 화면은 «예시» 꼬리표. */
+  is_example?: boolean
 }
 
 /** CH-040. chairman_needed가 true면 Waiting on Me(CH-017)로 올라온다. */
@@ -107,6 +109,12 @@ export interface Task {
   blocked_since: IsoDate
   deadline: IsoDate | null
   chairman_needed: boolean
+  /** 0071. 바깥 원천(«프로세스 차트 · 영업»). 있으면 시트가 원천이라 앱에서 고치지 않는다. 없으면 앱 업무. */
+  source_label?: string | null
+  /** 0071. 원천(시트)에서 그 줄이 사라진 때 — «시트에서 사라짐». */
+  source_gone_at?: string | null
+  /** 0072 시드 정리 A안 — 0003 예시 줄. 대표 세션에서만 온다(직원 세션은 DB가 거른다). 화면은 «예시» 꼬리표. */
+  is_example?: boolean
 }
 
 export const DECISION_STATUS = ['Open', 'Approved', 'Rejected', 'Modified', 'Delegated'] as const
@@ -164,6 +172,8 @@ export interface Decision {
   /** 올린 시각 · 마지막 처리 시각(대장). */
   created_at?: string
   decided_at?: string | null
+  /** 0072 시드 정리 A안 — 0003 예시 줄. 대표 세션에서만 온다(직원 세션은 DB가 거른다). 화면은 «예시» 꼬리표. */
+  is_example?: boolean
 }
 
 export const ALERT_STATUS = ['Open', 'Acknowledged', 'Resolved'] as const
@@ -197,6 +207,8 @@ export interface Alert {
   severity: Severity
   source: 'Rule' | 'AI'
   status: AlertStatus
+  /** 0072 시드 정리 A안 — 0003 예시 줄. 대표 세션에서만 온다(직원 세션은 DB가 거른다). 화면은 «예시» 꼬리표. */
+  is_example?: boolean
 }
 
 /**
@@ -304,4 +316,6 @@ export interface AiNightOutput {
   model?: string | null
   /** 0014. 그룹 행에만 있다. 장기 프로젝트별 이번 주 행동 하나. */
   project_notes?: ProjectNote[]
+  /** 0072 시드 정리 A안 — 0003 예시 줄. 대표 세션에서만 온다(직원 세션은 DB가 거른다). 화면은 «예시» 꼬리표. */
+  is_example?: boolean
 }

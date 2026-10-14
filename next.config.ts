@@ -46,6 +46,8 @@ const nextConfig: NextConfig = {
   // 이 라우트 번들에 직접 싣는다. 빠지면 Vercel에서만 ENOENT로 회사 전부가 Failed가 된다.
   outputFileTracingIncludes: {
     '/api/cron/night-brief': ['./src/lib/ai/prompts/**/*'],
+    // 0069 «시스템 보완함» AI 정리 버튼(서버 액션) — 그 화면 번들에 정리 프롬프트를 싣는다.
+    '/settings/feedback': ['./src/lib/ai/prompts/feedback-triage.md'],
     // Phase 10 — 첨부 요약 · «AI로 정리»는 서버 액션이라 그 액션을 부르는 화면의 번들에서 돈다.
     // 첨부 칸이 선 화면 전부에 프롬프트를 싣는다(빠지면 Vercel에서만 ENOENT → 요약 실패).
     '/initiatives/*': ['./src/lib/ai/prompts/attachment-summary.md'],

@@ -87,7 +87,7 @@ export default async function ProjectDetailPage(props: PageProps<'/projects/[id]
     <div className="mx-auto max-w-[1600px] px-6 py-5">
       <PageHeader
         icon="folder"
-        title={project.name}
+        title={isChairman(viewer?.role) && project.is_example ? `${project.name} (예시)` : project.name}
         code="CH-020"
         description={`${company} · ${project.project_id}`}
       >

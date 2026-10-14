@@ -145,6 +145,14 @@ import {
   type UserSettings,
 } from './types'
 import { assistantMethods } from './supabase-assistant'
+import { featureMethods } from './supabase-features'
+import { feedbackMethods } from './supabase-feedback'
+import { financeUploadMethods } from './supabase-finance-upload'
+import { monthlyPlMethods } from './supabase-monthly-pl'
+import { salesMarginsMethods } from './supabase-sales-margins'
+import { blueprintMethods } from './supabase-blueprint'
+import { costCandidatesMethods } from './supabase-cost-candidates'
+import { ledgerPostMethods } from './supabase-ledger-post'
 import { attachmentMethods } from './supabase-attachments'
 import { financeImportMethods } from './supabase-finance-imports'
 import { intakeMethods } from './supabase-intake'
@@ -153,6 +161,7 @@ import { quoteMethods } from './supabase-quotes'
 import { salesCostMethods } from './supabase-sales-cost'
 import { productionMethods } from './supabase-production'
 import { costImportMethods } from './supabase-cost-import'
+import { processSyncMethods } from './supabase-process-sync'
 import { costsMethods } from './supabase-costs'
 
 /**
@@ -273,6 +282,8 @@ interface TaskRow {
   blocked_since: string
   deadline: string | null
   chairman_needed: boolean
+  source_label?: string | null
+  source_gone_at?: string | null
 }
 
 /**
@@ -285,6 +296,7 @@ interface TaskAuditRow {
   status: TaskStatus
   chairman_needed: boolean
   blocked_since: string
+  source_label?: string | null
   projects: { business_id: string } | null
 }
 
@@ -776,6 +788,17 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
   const businessNames = createBusinessNames(sb)
 
   /**
+   * 0072 시드 정리 A안 — 예시 줄 id. 대표 세션에서만 줄이 온다(직원 세션은 restrictive 정책이 예시 줄을 통째로 거른다).
+   * 0072 전 DB(칸 없음 42703)는 빈 집합 — 칸 목록을 바꾸지 않아 master 배포가 마이그레이션보다 먼저 가도 화면이 선다.
+   */
+  async function exampleIds(table: string, idCol: string): Promise<Set<string>> {
+    const { data, error } = await sb.from(table).select(idCol).eq('is_example', true).limit(1000)
+    if (error) return new Set()
+    return new Set(((data ?? []) as unknown as Record<string, unknown>[]).map((r) => String(r[idCol])))
+  }
+  const exampleOf = (r: unknown) => (r as { is_example?: boolean }).is_example === true
+
+  /**
    * 0042 soft delete의 유일한 길. 한 줄도 안 바뀌면(없거나 · 이미 지웠거나 · 권한 밖) 던진다 —
    * 예전의 oneAffectedRow와 같은 약속이다(조용히 성공한 척하지 않는다).
    */
@@ -817,6 +840,19 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     ...attachmentMethods(sb),
     // Phase 11 AI 어시스턴트(0046) — 대화 · 제안 · 사용량. 0046 전 DB를 견딘다(supabase-assistant.ts 머리 주석).
     ...assistantMethods(sb),
+    // 0069 권한 · 조직 조회 · AI 보완 의견 · 보완함. 0069 전 DB를 견딘다(supabase-feedback.ts 머리 주석).
+    ...feedbackMethods(sb),
+    // 0073 기능 스위치. 0073 전 DB를 견딘다(supabase-features.ts 머리 주석).
+    ...featureMethods(sb),
+    // 0070 회계 · 재무 자료 올리기. 0070 전 DB를 견딘다(supabase-finance-upload.ts 머리 주석).
+    ...financeUploadMethods(sb),
+    // 0075 월별 손익(재고 반영 · 마감). 0075 전 DB를 견딘다(supabase-monthly-pl.ts 머리 주석).
+    ...monthlyPlMethods(sb),
+    ...salesMarginsMethods(sb),
+    ...costCandidatesMethods(sb),
+    ...ledgerPostMethods(sb),
+    // 0081 청사진 뼈대(Forecast · 구매 성과 · 고객별 · 분해 · 경쟁사 · 작업지시 · 제품 진단). 0081 전 DB면 'blueprint_unavailable'.
+    ...blueprintMethods(sb),
     // ECOUNT 엑셀 업로드(0050 finance_imports) — 읽기는 0050 전 DB를 견딘다(supabase-finance-imports.ts 머리 주석).
     ...financeImportMethods(sb),
     // 0058 자료 받는 입구.
@@ -831,6 +867,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     // 원가 엔진 · 원가 관리(0065 비용 · 배부 · 제품 원가 목록) · 대표 BOM(0063). 0063 · 0065 전 DB를 견딘다.
     ...costsMethods(sb),
     ...costImportMethods(sb),
+    ...processSyncMethods(sb),
 
     async listBusinesses(): Promise<Business[]> {
       const { data, error } = await fetchAll('businesses', ['business_id'], (from, to) =>
@@ -1188,6 +1225,9 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         title: input.title.trim(),
         embed_url: input.embed_url.trim(),
         sort_order: input.sort_order,
+        // 0071 칸은 값을 받았을 때만 보낸다(0071 전 DB에서도 링크 저장이 되게).
+        ...(input.sheet_id !== undefined ? { sheet_id: input.sheet_id } : {}),
+        ...(input.sheet_tab !== undefined ? { sheet_tab: input.sheet_tab } : {}),
       }
       const query = input.id
         ? sb.from('process_charts').update(row).eq('id', input.id).select('id').single()
@@ -1738,8 +1778,10 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         ),
         ownerNames(),
       ])
+      const ex = await exampleIds('projects', 'project_id')
       const rows = unwrap('projects', data, error)
       return rows.map((r) => ({
+        is_example: ex.has(r.project_id),
         project_id: r.project_id,
         business_id: r.business_id,
         name: r.name,
@@ -1752,22 +1794,24 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     },
 
     async listTasks(): Promise<Task[]> {
-      const [{ data, error }, names] = await Promise.all([
+      // 0071 출처 칸(source_label · source_gone_at)을 같이 읽는다. 0071 전 DB면 그 칸이 없어(42703) 옛 칸만 다시 읽는다 —
+      // master 배포가 마이그레이션보다 먼저 가도 업무 화면이 서게.
+      const read = (cols: string) =>
         fetchAll('tasks', ['task_id'], (from, to) =>
-          sb
-            .from('tasks')
-            .select(
-              'task_id,project_id,title,owner_user_id,priority,status,blocked_since,deadline,chairman_needed',
-              { count: 'exact' },
-            )
-            .order('task_id')
-            .range(from, to)
-            .returns<TaskRow[]>(),
-        ),
+          sb.from('tasks').select(cols, { count: 'exact' }).order('task_id').range(from, to).returns<TaskRow[]>(),
+        )
+      const base = 'task_id,project_id,title,owner_user_id,priority,status,blocked_since,deadline,chairman_needed'
+      const [{ data }, names] = await Promise.all([
+        read(`${base},source_label,source_gone_at`).catch((e: unknown) => {
+          if (e instanceof Error && /42703/.test(e.message)) return read(base)
+          throw e
+        }),
         ownerNames(),
       ])
-      const rows = unwrap('tasks', data, error)
+      const rows = data
+      const ex = await exampleIds('tasks', 'task_id')
       return rows.map((r) => ({
+        is_example: ex.has(r.task_id),
         task_id: r.task_id,
         project_id: r.project_id,
         title: r.title,
@@ -1777,6 +1821,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         blocked_since: r.blocked_since,
         deadline: r.deadline,
         chairman_needed: r.chairman_needed,
+        source_label: r.source_label ?? null,
+        source_gone_at: r.source_gone_at ?? null,
       }))
     },
 
@@ -1791,7 +1837,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
           .returns<DecisionRow[]>(),
       )
       const rows = unwrap('decisions', data, error)
-      return rows.map(toDecision)
+      const ex = await exampleIds('decisions', 'decision_id')
+      return rows.map((r) => ({ ...toDecision(r), is_example: ex.has(r.decision_id) }))
     },
 
     async listAlerts(): Promise<Alert[]> {
@@ -1805,6 +1852,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       )
       const rows = unwrap('alerts', data, error)
       return rows.map((r) => ({
+        is_example: exampleOf(r),
         alert_id: r.alert_id,
         business_id: r.business_id,
         category: r.category,
@@ -1830,7 +1878,9 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
           .returns<NightOutputRow[]>(),
       )
       const rows = unwrap('ai_night_outputs', data, error)
+      const ex = await exampleIds('ai_night_outputs', 'output_id')
       return rows.map((r) => ({
+        is_example: ex.has(r.output_id),
         output_id: r.output_id,
         completed_at: r.completed_at,
         business_id: r.business_id,
@@ -1898,6 +1948,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       )
       const rows = unwrap('goals', data, error)
       return rows.map((r) => ({
+        is_example: exampleOf(r),
         goal_id: r.goal_id,
         business_id: toScope(r.business_id),
         title: r.title,
@@ -1922,6 +1973,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       ])
       const rows = unwrap('monthly_priorities', data, error)
       return rows.map((r) => ({
+        is_example: exampleOf(r),
         priority_id: r.priority_id,
         business_id: toScope(r.business_id),
         title: r.title,
@@ -1942,6 +1994,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       )
       const rows = unwrap('critical_risks', data, error)
       return rows.map((r) => ({
+        is_example: exampleOf(r),
         risk_id: r.risk_id,
         business_id: toScope(r.business_id),
         title: r.title,
@@ -1966,6 +2019,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       ])
       const rows = unwrap('milestones', data, error)
       return rows.map((r) => ({
+        is_example: exampleOf(r),
         milestone_id: r.milestone_id,
         business_id: toScope(r.business_id),
         title: r.title,
@@ -2388,15 +2442,17 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     async updateTask(taskId: string, patch: TaskPatch, actor: AuditActor): Promise<void> {
       if (patch.status === undefined && patch.chairman_needed === undefined) return
 
-      const { data: before, error: readError } = await sb
-        .from('tasks')
-        .select('task_id,status,chairman_needed,blocked_since,projects(business_id)')
-        .eq('task_id', taskId)
-        .maybeSingle<TaskAuditRow>()
+      // 0071 source_label을 같이 읽어 시트 업무면 감사 기록을 남기기 전에 멈춘다(정책이 0행으로 막아도 기록이 먼저 남는 순서라).
+      // 0071 전 DB면 그 칸이 없어(42703) 옛 칸만 다시 읽는다.
+      const readBefore = (cols: string) =>
+        sb.from('tasks').select(cols).eq('task_id', taskId).maybeSingle<TaskAuditRow>()
+      let { data: before, error: readError } = await readBefore('task_id,status,chairman_needed,blocked_since,source_label,projects(business_id)')
+      if (readError?.code === '42703') ({ data: before, error: readError } = await readBefore('task_id,status,chairman_needed,blocked_since,projects(business_id)'))
 
       if (readError) throw new Error(`Supabase tasks ${readError.code ?? '?'}: ${readError.message}`)
       // RLS가 가린 행도 여기로 온다. '없다'와 '못 본다'를 화면에서 구분할 필요는 없다 — 둘 다 못 고친다.
       if (!before) throw new Error('Supabase tasks: 그 업무가 없거나 볼 수 없다.')
+      if (before.source_label) throw new Error('Supabase tasks: tasks_external_readonly(0071) — 시트에서 온 업무는 앱에서 고치지 않는다.')
 
       const after: Record<string, string | boolean> = {}
       if (patch.status !== undefined) {

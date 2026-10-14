@@ -1,5 +1,6 @@
 'use client'
 
+import { ExampleTag } from '@/components/ui/example-tag'
 import { useRef, useState, useSyncExternalStore } from 'react'
 
 import { GlassCard } from '@/components/ui/glass-card'
@@ -284,7 +285,7 @@ function GoalPanel({ goal }: { goal: TopGoal | undefined }) {
   if (!goal) return <Empty />
   return (
     <div>
-      <p className="text-t17 leading-snug font-semibold">{goal.title}</p>
+      <p className="text-t17 leading-snug font-semibold">{goal.title}<ExampleTag on={goal.is_example} /></p>
       <p className="mt-1.5 text-t12 text-ink-dim tnum">
         현재 {goal.current_value} / 목표 {goal.target_value} · 기한 {goal.due}
       </p>
@@ -307,7 +308,7 @@ function PriorityPanel({ priority }: { priority: MonthlyPriority | undefined }) 
   return (
     <div>
       <div className="flex items-start gap-2">
-        <p className="flex-1 text-t17 leading-snug font-semibold">{priority.title}</p>
+        <p className="flex-1 text-t17 leading-snug font-semibold">{priority.title}<ExampleTag on={priority.is_example} /></p>
         <span className="mt-0.5 shrink-0 rounded bg-raised px-2 py-0.5 text-t11 text-ink-dim">
           {WORK_PRIORITY_LABEL_KO[priority.weight]}
         </span>
@@ -328,6 +329,7 @@ function RiskPanel({ risks, businesses }: { risks: CriticalRisk[]; businesses: B
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
             <p className={`${i === 0 ? 'text-t17' : 'text-t14'} leading-snug font-semibold`}>
               {r.title}
+              <ExampleTag on={r.is_example} />
             </p>
             <span className="text-t11 text-ink-muted">{businessName(businesses, r.business_id)}</span>
             <span className="ml-auto flex shrink-0 gap-1.5">
@@ -362,6 +364,7 @@ function MilestonePanel({
           <div className="min-w-0 flex-1">
             <p className={`${i === 0 ? 'text-t17' : 'text-t14'} leading-snug font-semibold`}>
               {m.title}
+              <ExampleTag on={m.is_example} />
             </p>
             <p className="mt-1 text-t11 text-ink-muted tnum">
               {businessName(businesses, m.business_id)} · 담당 {m.owner} · {m.deadline}

@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { ATTACHMENT_MAX_BYTES, attachmentMime } from '@/lib/attachments/rules'
 import { currentUser } from '@/lib/auth/session'
 import { readIntake } from '@/lib/intake/read'
-import { intakeOpenFor } from '@/lib/intake/switch'
+import { featureOn } from '@/lib/features-server'
 import { getRepository } from '@/lib/repository'
 import { INTAKE_KIND, INTAKE_KIND_DOC_TYPE, type IntakeKind } from '@/types'
 
@@ -46,11 +46,26 @@ function explain(e: unknown, fallback: string): IntakeActionState {
   return { error: table.find(([re]) => re.test(m))?.[1] ?? fallback }
 }
 
-async function who() {
+/**
+ * 기능 스위치 «자료 받는 입구»(0073, 기본 대표만) — 범위 밖이면 로그인 안 한 것과 같이 거부한다.
+ * 회사 줄까지 보도록 회사 id를 받는다. 입구 줄 동작은 화면이 보낸 회사가 아니라 그 줄의 회사로 본다(0073 리뷰 I1 · I2).
+ */
+async function who(businessId: string | null) {
   const user = await currentUser()
-  // 입구 스위치(lib/intake/switch.ts) — 꺼져 있으면 대표 외에는 로그인 안 한 것과 같이 모든 입구 동작을 거부한다.
-  return user && intakeOpenFor(user) ? { user, actor: { user_id: user.user_id, role: user.role } } : null
+  return user && (await featureOn(user, 'intake', businessId)) ? { user, actor: { user_id: user.user_id, role: user.role } } : null
 }
+
+/** 입구 줄 하나 + 그 줄 회사의 스위치. 못 보거나 꺼졌으면 me · item 중 하나가 null. */
+async function whoFor(itemId: string) {
+  const user = await currentUser()
+  if (!user) return { me: null, item: null, repo: null }
+  const repo = await getRepository()
+  const item = await repo.getIntakeItem(itemId).catch(() => null)
+  if (!item) return { me: { user, actor: { user_id: user.user_id, role: user.role } }, item: null, repo }
+  return { me: await who(item.business_id), item, repo }
+}
+
+const NO_ITEM = '입구 줄을 찾지 못했습니다(없거나 볼 권한이 없습니다).'
 
 const pathOf = (businessId: string) => `/business/${encodeURIComponent(businessId)}`
 
@@ -76,7 +91,7 @@ export async function beginIntakeAction(input: unknown): Promise<BeginIntakeResu
   if (!mime) return { error: 'PDF · Word · Excel · PowerPoint · JPG · PNG만 받습니다.' }
   if (size_bytes < 1 || size_bytes > ATTACHMENT_MAX_BYTES) return { error: '20MB까지 올릴 수 있습니다.' }
 
-  const me = await who()
+  const me = await who(business_id)
   if (!me) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
   try {
     const r = await (await getRepository()).beginIntake(
@@ -91,7 +106,8 @@ export async function beginIntakeAction(input: unknown): Promise<BeginIntakeResu
 
 /** 바이트가 안 올라갔을 때 — 첨부를 지우면 입구 줄도 같이 간다(0058 FK cascade). */
 export async function cancelIntakeAction(attachmentId: string): Promise<IntakeActionState> {
-  const me = await who()
+  // 첨부 id만 온다 — 자기가 막 올린 파일을 치우는 길이라 회사 줄 없이 그룹 줄로 본다.
+  const me = await who(null)
   if (!me) return {}
   try {
     await (await getRepository()).deleteAttachment(attachmentId, me.actor)
@@ -112,11 +128,9 @@ export async function readIntakeAction(itemId: string): Promise<ReadIntakeState>
 }
 
 async function runRead(itemId: string, opts: { chairmanOverrodeMix?: boolean } = {}): Promise<ReadIntakeState> {
-  const me = await who()
-  if (!me) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
-  const repo = await getRepository()
-  const item = await repo.getIntakeItem(itemId).catch(() => null)
-  if (!item) return { error: '입구 줄을 찾지 못했습니다(없거나 볼 권한이 없습니다).' }
+  const { me, item, repo } = await whoFor(itemId)
+  if (!me || !repo) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  if (!item) return { error: NO_ITEM }
   const r = await readIntake(repo, itemId, me.actor, opts)
   revalidatePath(pathOf(item.business_id))
   return { status: r.status, message: r.message }
@@ -124,9 +138,9 @@ async function runRead(itemId: string, opts: { chairmanOverrodeMix?: boolean } =
 
 /** 사진 · 스캔본 «배합비 · 레시피가 아닙니다»(올린 사람만) → 곧바로 읽기. not_attested 차단은 이 확인이 푼다(0058). */
 export async function attestIntakeAction(itemId: string): Promise<ReadIntakeState> {
-  const me = await who()
-  if (!me) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
-  const repo = await getRepository()
+  const { me, item, repo } = await whoFor(itemId)
+  if (!me || !repo) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  if (!item) return { error: NO_ITEM }
   try {
     await repo.updateIntakeItem(itemId, { mix_attested: true }, me.actor)
   } catch (e) {
@@ -137,14 +151,12 @@ export async function attestIntakeAction(itemId: string): Promise<ReadIntakeStat
 
 /** 대표가 «AI 안 보냄»을 푼다(이유와 무관) → 곧바로 읽기. 감지가 다시 돈다(글자 파일이면 또 걸릴 수 있다). */
 export async function liftIntakeBlockAction(itemId: string): Promise<ReadIntakeState> {
-  const me = await who()
-  if (!me) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  const { me, item, repo } = await whoFor(itemId)
+  if (!me || !repo) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
   if (me.user.role !== 'Chairman') return { error: '«AI 안 보냄» 차단은 대표만 풉니다.' }
-  const repo = await getRepository()
+  if (!item) return { error: NO_ITEM }
   let wasMix = false
   try {
-    const item = await repo.getIntakeItem(itemId)
-    if (!item) return { error: '입구 줄을 찾지 못했습니다(없거나 볼 권한이 없습니다).' }
     wasMix = item.ai_blocked_reason === 'mix_ratio'
     await repo.updateIntakeItem(itemId, { status: 'reading' }, me.actor)
   } catch (e) {
@@ -156,13 +168,11 @@ export async function liftIntakeBlockAction(itemId: string): Promise<ReadIntakeS
 
 /** 종류 확인 · 바꾸기(«직접 종류 고르기» 포함). 문서 종류는 다시 읽지 않는다(설계서 A1-3). 실패 · 읽기 전 줄은 «제안»으로. */
 export async function setIntakeKindAction(itemId: string, kind: unknown): Promise<IntakeActionState> {
-  const me = await who()
-  if (!me) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  const { me, item, repo } = await whoFor(itemId)
+  if (!me || !repo) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
   if (!INTAKE_KIND.includes(kind as IntakeKind)) return { error: '종류를 고르세요.' }
-  const repo = await getRepository()
+  if (!item) return { error: NO_ITEM }
   try {
-    const item = await repo.getIntakeItem(itemId)
-    if (!item) return { error: '입구 줄을 찾지 못했습니다(없거나 볼 권한이 없습니다).' }
     // 읽기 실패 · 읽기 전 줄을 사람이 분류하면 «제안» 단계로 — AI 없이도 끝까지 갈 수 있다(A6). no_ai 줄은 상태를 두고 종류만.
     const status = item.status === 'failed' || item.status === 'uploaded' || item.status === 'kept' ? 'proposed' : undefined
     await repo.updateIntakeItem(itemId, { kind: kind as IntakeKind, ...(status ? { status } : {}) }, me.actor)
@@ -175,12 +185,10 @@ export async function setIntakeKindAction(itemId: string, kind: unknown): Promis
 
 /** «입구에만 두기» — 보관(kept). 재무제표 · 단가표는 이 블록에서 그 메뉴로 넣지 않는다. */
 export async function keepIntakeAction(itemId: string): Promise<IntakeActionState> {
-  const me = await who()
-  if (!me) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
-  const repo = await getRepository()
+  const { me, item, repo } = await whoFor(itemId)
+  if (!me || !repo) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  if (!item) return { error: NO_ITEM }
   try {
-    const item = await repo.getIntakeItem(itemId)
-    if (!item) return { error: '입구 줄을 찾지 못했습니다(없거나 볼 권한이 없습니다).' }
     await repo.updateIntakeItem(itemId, { status: 'kept' }, me.actor)
     revalidatePath(pathOf(item.business_id))
     return {}
@@ -198,16 +206,14 @@ export interface LoadIntakeResult extends IntakeActionState {
  * 먼저 확인 도장으로 적는다 — 확인한 사람이 곧 적재한 사람이다. 등록 권한(0048)은 RPC가 판정한다.
  */
 export async function loadIntakeToDocumentAction(itemId: string, input: unknown): Promise<LoadIntakeResult> {
-  const me = await who()
-  if (!me) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  const { me, item, repo } = await whoFor(itemId)
+  if (!me || !repo) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
   const f = (input ?? {}) as Record<string, unknown>
   const title = typeof f.title === 'string' ? f.title.trim().slice(0, 300) : ''
   const asPlainDocument = f.plain === true
   if (!title) return { error: '문서 제목을 적으세요.' }
-  const repo = await getRepository()
+  if (!item) return { error: NO_ITEM }
   try {
-    const item = await repo.getIntakeItem(itemId)
-    if (!item) return { error: '입구 줄을 찾지 못했습니다(없거나 볼 권한이 없습니다).' }
     const kind: IntakeKind = item.kind ?? (asPlainDocument ? 'other' : (item.proposal?.kind ?? 'other'))
     if (item.kind !== kind) await repo.updateIntakeItem(itemId, { kind }, me.actor)
     const docType =
@@ -225,11 +231,9 @@ export async function loadIntakeToDocumentAction(itemId: string, input: unknown)
 
 /** 되돌리기 = 그 문서의 soft delete(0042) — 0058 트리거가 원본을 입구 줄로 돌린다. 적재한 사람 · 대표만(0048 고치기). */
 export async function undoIntakeLoadAction(itemId: string): Promise<IntakeActionState> {
-  const me = await who()
-  if (!me) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
-  const repo = await getRepository()
+  const { me, item, repo } = await whoFor(itemId)
+  if (!me || !repo) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
   try {
-    const item = await repo.getIntakeItem(itemId)
     if (!item || item.status !== 'loaded' || !item.loaded_id) return { error: '되돌릴 적재가 없습니다.' }
     await repo.deleteDocument(item.loaded_id, me.actor)
     revalidatePath(pathOf(item.business_id))

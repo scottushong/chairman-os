@@ -9,6 +9,7 @@ import { WorldCitiesEditor } from '@/components/settings/world-cities-editor'
 import { Icon, type IconName } from '@/components/ui/icon'
 import { canEditChairmanRoutine, canManageUsers } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
+import { featureOn } from '@/lib/features-server'
 import { boss } from '@/lib/boss'
 import { formatDateTime } from '@/lib/format'
 import { getRepository } from '@/lib/repository'
@@ -58,6 +59,8 @@ export default async function SettingsHubPage() {
   const version = appVersion()
   const isChairman = canEditChairmanRoutine(user)
   const isAdmin = canManageUsers(user)
+  // 0073 기능 스위치 — 꺼진 기능의 줄은 이 목록에서도 뺀다.
+  const [feedbackOn, processOn] = await Promise.all([featureOn(user, 'ai_assist'), featureOn(user, 'process_charts')])
   // 직원 화면 용어 원칙(CLAUDE.md): 회장 본인 = 회장, 그 외 = 대표.
   const bossName = boss(user.role)
 
@@ -260,6 +263,22 @@ export default async function SettingsHubPage() {
             ) : null}
             {isChairman ? (
               <Row
+                title="기능 스위치"
+                note="새 기능마다 켜기 · 끄기와 보는 범위(대표만 · 임원 이상 · 전원). 바꿀 때마다 이유를 남깁니다."
+                href="/settings/features"
+                cta="열기"
+              />
+            ) : null}
+            {isChairman && feedbackOn ? (
+              <Row
+                title="시스템 보완함"
+                note="AI 어시스턴트 답마다 남긴 보완 의견 — AI 정리 · Claude Code 지시문 복사 · 상태."
+                href="/settings/feedback"
+                cta="열기"
+              />
+            ) : null}
+            {isChairman ? (
+              <Row
                 title="결재 양식 · 규칙"
                 note="양식 다섯의 항목과 회장까지 올라가는 기준 금액."
                 href="/settings/approvals"
@@ -272,12 +291,14 @@ export default async function SettingsHubPage() {
               href="/approvals"
               cta="열기"
             />
-            <Row
-              title="프로세스 차트"
-              note="대시보드에 띄울 게시된 시트 링크를 등록합니다."
-              href="/settings/process-charts"
-              cta="열기"
-            />
+            {processOn ? (
+              <Row
+                title="프로세스 차트"
+                note="팀별 시트 링크와 동기화할 시트 파일을 연결합니다."
+                href="/process-charts"
+                cta="열기"
+              />
+            ) : null}
           </div>
         </Section>
       ) : null}

@@ -3,7 +3,8 @@
 import { revalidatePath } from 'next/cache'
 
 import { currentUser } from '@/lib/auth/session'
-import { EMBED_PROBLEM_KO, embedProblem } from '@/lib/process-chart'
+import { featureOn } from '@/lib/features-server'
+import { EMBED_PROBLEM_KO, embedProblem, parseSheetId, parseSheetTab } from '@/lib/process-chart'
 import { getRepository } from '@/lib/repository'
 
 /**
@@ -30,6 +31,10 @@ export async function saveProcessChart(input: {
   title: unknown
   embedUrl: unknown
   sortOrder?: unknown
+  /** 0071. 시트 파일 ID 또는 편집 주소. 비우면 연결 안 함. */
+  sheetId?: unknown
+  /** 0071. 탭 이름. 비우면 첫 탭. */
+  sheetTab?: unknown
 }): Promise<ProcessChartState> {
   const business_id = text(input.businessId)
   const team_name = text(input.teamName)
@@ -43,8 +48,15 @@ export async function saveProcessChart(input: {
   const problem = embedProblem(embed_url)
   if (problem) return { error: EMBED_PROBLEM_KO[problem] }
 
+  const sheet_id = parseSheetId(text(input.sheetId))
+  if (sheet_id === undefined) return { error: '시트 파일 ID가 아닙니다. 시트 편집 주소(…/spreadsheets/d/<ID>/edit)를 붙여 넣거나 ID만 넣으세요.' }
+  const sheet_tab = parseSheetTab(text(input.sheetTab))
+  if (sheet_tab === undefined) return { error: '탭 이름은 100자까지, 작은따옴표 · 느낌표 없이 넣으세요.' }
+
   const user = await currentUser()
   if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  // 0073 스위치 «프로세스 차트» — 관리 화면(/process-charts)이 꺼지면 이 길도 닫는다(0071 리뷰 뒤 0073 리뷰 I3).
+  if (!(await featureOn(user, 'process_charts'))) return { error: '지금은 쓸 수 없는 기능입니다.' }
 
   const rawId = Number(input.id)
   const rawOrder = Number(input.sortOrder)
@@ -59,10 +71,12 @@ export async function saveProcessChart(input: {
         title,
         embed_url,
         sort_order: Number.isFinite(rawOrder) ? rawOrder : 0,
+        sheet_id,
+        sheet_tab,
       },
       { user_id: user.user_id, role: user.role },
     )
-    revalidatePath('/settings/process-charts')
+    revalidatePath('/process-charts')
     revalidatePath('/')
     revalidatePath(`/process/${id}`)
     return { id }
@@ -88,13 +102,15 @@ export async function deleteProcessChart(id: unknown): Promise<ProcessChartState
 
   const user = await currentUser()
   if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  // 0073 스위치 «프로세스 차트» — 관리 화면(/process-charts)이 꺼지면 이 길도 닫는다(0071 리뷰 뒤 0073 리뷰 I3).
+  if (!(await featureOn(user, 'process_charts'))) return { error: '지금은 쓸 수 없는 기능입니다.' }
 
   try {
     const repo = await getRepository()
     // 링크만 지운다. 시트는 구글에 그대로 남으므로 되돌릴 수 있다 —
     // 그래서 이 삭제에는 되돌릴 수 없는 삭제에 붙는 확인 절차를 두지 않는다.
     await repo.deleteProcessChart(chartId, { user_id: user.user_id, role: user.role })
-    revalidatePath('/settings/process-charts')
+    revalidatePath('/process-charts')
     revalidatePath('/')
     return {}
   } catch (e) {

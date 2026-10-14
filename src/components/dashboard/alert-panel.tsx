@@ -1,5 +1,6 @@
 import Link from 'next/link'
 
+import { ExampleTag } from '@/components/ui/example-tag'
 import { GlassCard } from '@/components/ui/glass-card'
 import { Icon } from '@/components/ui/icon'
 import { linkedDecisionHref, linkedDecisionTitle } from '@/lib/alert-link'
@@ -107,7 +108,7 @@ function AlertItem({
         <span className="ml-auto shrink-0 text-t9 text-ink-muted">{alert.source}</span>
       </div>
 
-      <p className="mt-0.5 text-t12 leading-snug font-semibold">{alert.message}</p>
+      <p className="mt-0.5 text-t12 leading-snug font-semibold">{alert.message}<ExampleTag on={alert.is_example} /></p>
 
       <p className="mt-0.5 flex items-center gap-1 text-t10 text-ink-dim">
         <Icon name="chevron-right" className="size-3" />

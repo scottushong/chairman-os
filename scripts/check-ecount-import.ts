@@ -1103,8 +1103,8 @@ function shortcutChecks() {
   assert.deepEqual(ids(null), [], '로그인 전에는 없다')
   assert.deepEqual(ids(user('Chairman'), [{ business_id: 'biz_vana', name: 'VANA' }]), [], '볼 수 없는 회사(목록에 없는 DY)의 바로가기는 없다')
   const [s] = ecountUploadShortcuts(user('TeamLead', { biz_dy: { write: true, close: false } }), visible, { withName: true })
-  assert.deepEqual(s, { business_id: 'biz_dy', label: 'DY ECOUNT 업로드', href: '/finance/biz_dy/import' })
-  assert.equal(ecountUploadShortcuts(user('Chairman'), visible, { withName: false })[0].label, 'ECOUNT 업로드')
+  assert.deepEqual(s, { business_id: 'biz_dy', label: 'DY 회계 · 재무 자료 올리기', href: '/finance/biz_dy/upload' })
+  assert.equal(ecountUploadShortcuts(user('Chairman'), visible, { withName: false })[0].label, '회계 · 재무 자료 올리기')
   for (const r of ['Chairman', 'GroupCFO', 'TeamLead'] as const) {
     for (const x of ecountUploadShortcuts(user(r, { biz_dy: { write: true, close: false } }), visible, { withName: true })) {
       assert.ok(!/회장|Chairman/i.test(x.label), `바로가기 글자에 «회장»: ${x.label}`)

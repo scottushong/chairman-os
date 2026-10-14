@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useState, useTransition } from 'react'
 
 import { cancelAiAction, confirmAiAction } from '@/app/actions/assistant'
+import { submitFeedback } from '@/app/actions/feedback'
 import { tr, type Lang } from '@/lib/i18n'
 import { AI_ACTION_LABEL_KO, type AiActionView, type AiChatMessage } from '@/types'
 
@@ -12,6 +13,7 @@ import { AI_ACTION_LABEL_KO, type AiActionView, type AiChatMessage } from '@/typ
  *
  * 답마다 «결정 아님» 표지, 근거 카드(도구가 실제로 읽은 화면 · 줄 — 코드가 만든 것), 그리고 그 답이 만든
  * **제안 카드**(전 → 후 미리보기 + [확인] [취소])를 붙인다. 확인을 눌러야 저장된다 — 카드가 그 사실을 글로 적는다.
+ * 0069: 방금 답 아래 «이어서 물어볼 만한 질문» 3개(누르면 바로 묻는다) · 답마다 접힌 «이 답이 부족했나요?» 칸.
  */
 export function AssistantMessages({
   messages,
@@ -20,6 +22,11 @@ export function AssistantMessages({
   pending,
   onChanged,
   onNavigate,
+  chatId,
+  path,
+  followups,
+  onAsk,
+  feedback = true,
 }: {
   messages: AiChatMessage[]
   actions: AiActionView[]
@@ -27,6 +34,13 @@ export function AssistantMessages({
   pending: boolean
   onChanged: () => void
   onNavigate?: () => void
+  /** 0069 — 이 대화 · 지금 화면(보완 의견에 함께 저장) · 방금 답의 이어서 질문 · 버튼이 부를 묻기. */
+  chatId?: string | null
+  path?: string
+  followups?: { messageId: number; items: string[] }
+  onAsk?: (question: string) => void
+  /** 0073 기능 스위치 «AI 어시스턴트 보강» — false면 «보완 의견 남기기» 칸을 그리지 않는다. */
+  feedback?: boolean
 }) {
   const byId = new Map(actions.map((a) => [a.action_id, a]))
   return (
@@ -60,6 +74,25 @@ export function AssistantMessages({
               const a = byId.get(id)
               return a ? <ActionCard key={id} action={a} lang={lang} busy={pending} onChanged={onChanged} onNavigate={onNavigate} /> : null
             })}
+            {followups && followups.messageId === m.id && onAsk ? (
+              <div className="mt-2.5 border-t border-line-soft pt-2">
+                <p className="text-t10h text-ink-muted">{tr(lang, '이어서 물어볼 만한 질문', 'You could also ask')}</p>
+                <div className="mt-1 flex flex-wrap gap-1.5">
+                  {followups.items.map((q) => (
+                    <button
+                      key={q}
+                      type="button"
+                      disabled={pending}
+                      onClick={() => onAsk(q)}
+                      className="min-h-9 rounded-full border border-accent/40 bg-panel px-3 py-1 text-left text-t11h text-accent hover:border-accent hover:bg-accent/5 disabled:opacity-50"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {feedback && chatId && m.id > 0 ? <FeedbackBox key={`fb-${m.id}`} chatId={chatId} messageId={m.id} path={path ?? '/'} lang={lang} /> : null}
           </li>
         ),
       )}
@@ -157,5 +190,55 @@ function ActionCard({
         </div>
       ) : null}
     </div>
+  )
+}
+
+/** 0069 답마다 접힌 «이 답이 부족했나요? 보완 의견 남기기». 저장되면 칸이 닫히고 «보냈습니다»만 남는다(고치기 · 지우기 없음). */
+function FeedbackBox({ chatId, messageId, path, lang }: { chatId: string; messageId: number; path: string; lang: Lang }) {
+  const [body, setBody] = useState('')
+  const [done, setDone] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, start] = useTransition()
+  if (done) {
+    return <p className="mt-2 text-t10h text-ink-muted">{tr(lang, '보완 의견을 보냈습니다 — 대표가 시스템 보완에 씁니다. 고마워요.', 'Feedback sent — thank you.')}</p>
+  }
+  return (
+    <details className="group mt-2 rounded-lg border border-line-soft bg-panel/60 px-2.5 py-1.5">
+      <summary className="cursor-pointer select-none text-t10h text-ink-muted marker:text-ink-muted group-open:text-ink">
+        {tr(lang, '이 답이 부족했나요? 보완 의견 남기기', 'Was this answer lacking? Leave feedback')}
+      </summary>
+      <form
+        className="mt-1.5 space-y-1.5"
+        onSubmit={(e) => {
+          e.preventDefault()
+          setError(null)
+          start(async () => {
+            const r = await submitFeedback({ chatId, messageId, body, path })
+            if (r.error) setError(r.error)
+            else setDone(true)
+          })
+        }}
+      >
+        <textarea
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          maxLength={2000}
+          rows={3}
+          placeholder={tr(lang, '무엇이 모자랐나요? 무엇을 보고 싶었나요? (질문 · 답 · 지금 화면이 함께 저장됩니다)', 'What was missing? (question, answer and screen are saved with it)')}
+          className="w-full resize-y rounded-md border border-line bg-panel px-2 py-1.5 text-t12h text-ink placeholder:text-ink-muted focus:border-accent focus:outline-none"
+        />
+        {error ? <p className="text-t10h text-critical">{error}</p> : null}
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-t10 text-ink-muted">{tr(lang, '보낸 뒤에는 고칠 수 없습니다.', 'Cannot be edited after sending.')}</span>
+          <button
+            type="submit"
+            disabled={busy || body.trim().length < 2}
+            className="min-h-9 rounded-md bg-accent px-3 text-t11h font-semibold text-white disabled:opacity-50"
+          >
+            {busy ? tr(lang, '보내는 중…', 'Sending…') : tr(lang, '보내기', 'Send')}
+          </button>
+        </div>
+      </form>
+    </details>
   )
 }

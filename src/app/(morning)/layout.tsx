@@ -7,6 +7,7 @@ import { RailSidebar } from '@/components/layout/rail-sidebar'
 import { Sidebar } from '@/components/layout/sidebar'
 import { TimezoneBeacon } from '@/components/settings/timezone-beacon'
 import { currentUser } from '@/lib/auth/session'
+import { featureOn } from '@/lib/features-server'
 import { brandFor, descriptionFor } from '@/lib/brand'
 import { loadSidebarData } from '@/lib/sidebar-data'
 import { loadUiPrefs } from '@/lib/ui-prefs-server'
@@ -56,7 +57,7 @@ export default async function MorningLayout({ children }: LayoutProps<'/'>) {
       <TimezoneBeacon />
       {/* 폰 · 태블릿(1024px 미만)은 레일 대신 (dashboard)와 같은 하단 탭 + 서랍 — 레일 76px가 폰 폭의 1/5을 먹었다. */}
       <div className="hidden lg:flex">
-        <RailSidebar user={user} />
+        <RailSidebar user={user} hidden={sections.hiddenNav} />
       </div>
       <NavDrawer>
         <Sidebar user={user} prefs={prefs.sidebar} sections={sections} drawer />
@@ -78,7 +79,7 @@ export default async function MorningLayout({ children }: LayoutProps<'/'>) {
       </div>
       {/* Phase 11 — 모든 화면의 AI 어시스턴트(오른쪽 아래 버튼 → 패널). 셸에 한 번만 둔다: 화면마다 넣으면 빠지는 화면이 생긴다.
           로그인 없는 화면(/login 등)은 이 셸 밖이라 뜨지 않는다. */}
-      {user ? <AssistantDock lang={user.language} /> : null}
+      {user ? <AssistantDock lang={user.language} feedback={await featureOn(user, 'ai_assist')} /> : null}
     </div>
   )
 }

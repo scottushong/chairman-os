@@ -77,7 +77,7 @@ function examples(kind: string, lang: Lang, chair: boolean): string[] {
     : ['이번 달 마감 결재', '마감 지난 내 업무', '이 화면에 틀린 것 있어?']
 }
 
-export function AssistantDock({ lang }: { lang: Lang }) {
+export function AssistantDock({ lang, feedback = true }: { lang: Lang; /** 0073 기능 스위치 «AI 어시스턴트 보강». */ feedback?: boolean }) {
   const pathname = usePathname()
   const [open, setOpen] = useState(false)
   const [showChats, setShowChats] = useState(false)
@@ -258,6 +258,11 @@ export function AssistantDock({ lang }: { lang: Lang }) {
                 onNavigate={() => {
                   if (window.matchMedia('(max-width: 1023px)').matches) setOpen(false)
                 }}
+                chatId={data.chatId}
+                path={pathname}
+                followups={data.followups}
+                onAsk={ask}
+                feedback={feedback}
               />
               {pending ? <p className="pb-3 text-t11h text-ink-muted">{tr(lang, '읽고 계산하는 중…', 'Working…')}</p> : null}
               <div ref={endRef} />

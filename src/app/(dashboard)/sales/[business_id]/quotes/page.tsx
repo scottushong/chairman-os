@@ -1,10 +1,12 @@
 import Link from 'next/link'
 
 import { PageHeader } from '@/components/layout/page-header'
+import { CompetitorLine } from '@/components/sales/competitor-line'
 import { QuoteForm } from '@/components/sales/quote-form'
 import { GradeBadge } from '@/components/sales/sales-cost-board'
 import { recordScreenRead } from '@/lib/activity-record'
 import { kstToday } from '@/lib/chairman-project'
+import { featureOn } from '@/lib/features-server'
 import { krw } from '@/lib/sales/cost'
 import { openSales } from '@/lib/sales/page'
 import { QUOTE_STATUS_LABEL_KO, shownQuoteStatus, type Quote, type QuoteShownStatus } from '@/types'
@@ -39,6 +41,8 @@ export default async function QuotesPage(props: PageProps<'/sales/[business_id]/
     error = '견적을 불러오지 못했습니다. 잠시 후 다시 시도하세요.'
   }
 
+  // 0081 ⑤ 경쟁사 기준(스위치 competitor_price) — 새 견적 칸 아래 제품마다 한 줄(결과만 · 제품 하나 = 문 한 건).
+  const competitorOn = canWrite && products.length > 0 && (await featureOn(user, 'competitor_price', business_id))
   const shownList = quotes.filter((q) => (!fStatus || shownQuoteStatus(q, today) === fStatus) && (!fGrade || q.grade === fGrade))
   const href = (s: string | null, g: string | null) => {
     const p = new URLSearchParams()
@@ -69,6 +73,16 @@ export default async function QuotesPage(props: PageProps<'/sales/[business_id]/
         </p>
       ) : null}
       {canWrite && products.length > 0 ? <QuoteForm businessId={business_id} products={products} today={today} /> : null}
+      {competitorOn ? (
+        <details className="rounded-xl border border-line-soft bg-panel px-4 py-3">
+          <summary className="min-h-11 cursor-pointer text-t13 font-semibold lg:min-h-0">경쟁사 기준(제품별)</summary>
+          <div className="mt-2 space-y-1">
+            {products.map((p) => (
+              <CompetitorLine key={p.product_id} repo={repo} productId={p.product_id} label={p.name} />
+            ))}
+          </div>
+        </details>
+      ) : null}
 
       <nav className="flex flex-wrap items-center gap-1.5 text-t12" aria-label="견적 거르기">
         <span className="text-ink-muted">상태</span>

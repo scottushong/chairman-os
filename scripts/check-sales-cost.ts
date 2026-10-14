@@ -19,6 +19,9 @@ import { dummyRepository } from '../src/lib/repository/dummy'
 import { DUMMY_UID, dummyModuleGrants, setDummyModuleGrant } from '../src/lib/repository/dummy-org'
 import { kstToday } from '../src/lib/chairman-project'
 import { buildCustomerQuote, CUSTOMER_QUOTE_FIELDS } from '../src/lib/sales/quote-xlsx'
+import { aggregateMargins, costBasisFor, costSourceKo, marginRange, monthsCovered, periodStart, type MarginSaleInput } from '../src/lib/sales/margins'
+import { clearDummyModuleGrants } from '../src/lib/repository/dummy-org'
+import { dummyCostReadAudit } from '../src/lib/repository/dummy-sales-cost'
 
 const ROOT = join(__dirname, '..')
 const shiftDays = (d: string, n: number) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10)
@@ -311,6 +314,67 @@ async function main() {
   console.log('②″ 견적 dummy(Green · Red 승인 · Red 반려 → 새 판 · 가격 예외 손 올리기 거부 · 고객용 견적서 원가 0) OK')
   console.log('② dummy 거울 OK')
 
+  // ── ⑤ PHASE 5 판매 실적 · 마진(0077) ───────────────────────────────
+  assert.equal(periodStart('2026-10-15', 'week'), '2026-10-12', '주 = ISO 월요일')
+  assert.equal(periodStart('2026-10-12', 'week'), '2026-10-12')
+  assert.equal(periodStart('2026-01-01', 'week'), '2025-12-29', '해를 넘는 주')
+  assert.equal(periodStart('2026-11-03', 'quarter'), '2026-10-01')
+  assert.equal(periodStart('2026-11-03', 'year'), '2026-01-01')
+  assert.deepEqual(monthsCovered('2026-09-28', 'week', 'product'), ['2026-09', '2026-10'], '달을 걸친 주')
+  assert.deepEqual(monthsCovered('2026-10-01', 'quarter', 'product'), ['2026-10', '2026-11', '2026-12'])
+  assert.equal(monthsCovered('2026-01-01', 'year', 'total').length, 12)
+  assert.deepEqual(monthsCovered('2026-09-28', 'week', 'deal'), ['2026-09'], 'deal은 그 날의 달 하나')
+  assert.equal(costBasisFor('2026-09-28', 'week', 'product', new Set(['2026-09'])), 'provisional', '걸친 달 하나라도 마감 전이면 잠정')
+  assert.equal(costBasisFor('2026-09-28', 'week', 'product', new Set(['2026-09', '2026-10'])), 'closed_month')
+  const ms = (n: number, d: string, kg: number, price: number, act: number | null, q: [number, number] | null = null): MarginSaleInput => ({
+    sale_id: `s${n}`, shipped_on: d, product_id: 'p', product_name: '제품 X(가짜)', customer_company: '가짜상사', kg, price_krw_per_kg: price, currency: 'KRW',
+    source: 'current', act_raw: act, quote_id: q ? `q${n}` : null, q_price: q?.[0] ?? null, q_raw: q?.[1] ?? null,
+  })
+  // 원가 0.4원 × 2건: 줄마다 1원이면 0 + 0, 원래 값끼리 더한 뒤 1원이면 1.
+  const tiny = aggregateMargins([ms(1, '2026-10-02', 1, 10, 0.4), ms(2, '2026-10-03', 1, 10, 0.4), ms(3, '2026-10-04', 2.5, 10.1, null)], 'month', 'total', false, new Set())
+  assert.equal(tiny.length, 1)
+  assert.deepEqual([tiny[0].cost_krw, tiny[0].margin_krw, tiny[0].revenue_krw, tiny[0].n_uncomputed, tiny[0].n_sales], [1, 19, 45, 1, 3], '0077: 합산은 원래 값끼리 더한 뒤 1원 · 원가 없는 판매는 매출에만')
+  assert.equal(tiny[0].margin_pct, 96, '마진 %는 원가가 있는 매출로 나눈다(19.2 ÷ 20)')
+  const chairT = aggregateMargins([ms(1, '2026-10-02', 1, 10, 0.4), ms(3, '2026-10-04', 2.5, 10.1, null)], 'month', 'total', true, new Set(['2026-10']))
+  assert.deepEqual([chairT[0].cost_krw, chairT[0].revenue_krw, chairT[0].cost_basis], [0.4, 35.25, 'closed_month'], '대표는 원래 값 · 마감된 달은 «월 마감 확정 달»')
+  const q = aggregateMargins([ms(1, '2026-10-02', 10, 100, 60, [110, 70]), ms(2, '2026-10-03', 5, 100, 60)], 'day', 'product', false, new Set())
+  assert.deepEqual(q.map((r) => [r.period_start, r.quote_kg, r.quote_margin_krw]), [['2026-10-03', null, null], ['2026-10-02', 10, 400]], '견적 마진은 견적이 이어진 판매만')
+  assert.ok(costSourceKo('actual', null).includes('LOT 무효'), 'M9: LOT 무효 표시')
+  assert.equal(costSourceKo('current', 100), '출고일 Current(잠정 대체원가)')
+  assert.deepEqual(marginRange('2020-01-01', '2026-10-13', '2026-10-13'), { from: '2025-10-13', to: '2026-10-13' }, '1100일 넘는 기간은 기본으로')
+  assert.equal(marginRange(undefined, '2099-01-01', '2026-10-13').to, '2026-10-13', '미래 끝 날은 오늘로')
+
+  // dummy 거울 — 스위치 · 보이는 줄 · 칸 · 문(한도 · 감사).
+  const today5 = kstToday()
+  const from5 = shiftDays(today5, -100)
+  await assert.rejects(as('sales_staff', () => repo.listSaleDeals('biz_dy', from5, today5)), /feature_off/, '0077 dummy: 스위치 기본(대표만)인데 영업이 읽었다')
+  assert.ok((await as('chairman', () => repo.salesMargins('biz_dy', from5, today5, 'month', 'product'))).length > 0, '0077 dummy: 대표 마진')
+  await as('chairman', () => repo.setFeatureSwitch({ feature_key: 'sales_margins', business_id: 'biz_dy', enabled: true, audience: 'all', reason: '시험' }))
+  const own = await as('sales_staff', () => repo.listSaleDeals('biz_dy', from5, today5))
+  assert.ok(own.length > 0 && own.every((d) => d.mine), '0077 dummy: 영업은 본인 실적만')
+  for (const d of own) {
+    assert.deepEqual(Object.keys(d).sort(), ['currency', 'customer_company', 'customer_name', 'grade', 'grade_as_of', 'grade_basis', 'kg', 'mine', 'price_krw_per_kg', 'product_name', 'quote_id', 'revenue_krw', 'sale_id', 'shipped_on'], '0077 dummy: 영업 칸에 원가 · 마진')
+  }
+  setDummyModuleGrant(DUMMY_UID.salesLead, { module: '/sales/biz_dy', can_write: true, can_approve: false })
+  const team = await as('sales_lead', () => repo.listSaleDeals('biz_dy', from5, today5))
+  clearDummyModuleGrants(DUMMY_UID.salesLead, (m) => m.module !== '/sales/biz_dy')
+  assert.ok(team.length > own.length && team.some((d) => !d.mine), '0077 dummy: 팀장은 팀 실적')
+  await assert.rejects(as('sales_staff', () => repo.salesMargins('biz_dy', from5, today5, 'month', 'product')), /cost_not_found/, '0077 dummy: 영업이 마진을 읽었다')
+  setDummyModuleGrant(DUMMY_UID.supportLead, { module: '/costing/biz_dy', can_write: true, can_approve: false })
+  const a0 = dummyCostReadAudit().length
+  const cm = await as('support_lead', () => repo.salesMargins('biz_dy', from5, today5, 'year', 'total'))
+  assert.ok(cm.length > 0 && cm.every((r) => Number.isInteger(r.revenue_krw) && (r.cost_krw === null || Number.isInteger(r.cost_krw))), '0077 dummy: 원가 관리는 1원')
+  const ch = await as('chairman', () => repo.salesMargins('biz_dy', from5, today5, 'year', 'total'))
+  assert.ok(ch.some((r) => !Number.isInteger(r.revenue_krw)), '0077 dummy: 대표는 원래 값')
+  assert.equal(dummyCostReadAudit().length, a0 + 1, '0077 dummy: 원가 관리는 부를 때마다 감사')
+  for (let i = 1; i < 20; i++) await as('support_lead', () => repo.salesMargins('biz_dy', from5, today5, 'month', 'deal'))
+  await assert.rejects(as('support_lead', () => repo.salesMargins('biz_dy', from5, today5, 'month', 'deal')), /cost_rate_limited/, '0077 dummy: 하루 20번')
+  clearDummyModuleGrants(DUMMY_UID.supportLead, (m) => m.module !== '/costing/biz_dy')
+  await as('chairman', () => repo.setFeatureSwitch({ feature_key: 'sales_margins', business_id: 'biz_dy', enabled: false, audience: 'all', reason: '시험 끄기' }))
+  await assert.rejects(as('chairman', () => repo.salesMargins('biz_dy', from5, today5, 'month', 'product')), /feature_off/, '0077 dummy: 끄면 대표도 꺼짐')
+  await as('chairman', () => repo.setFeatureSwitch({ feature_key: 'sales_margins', business_id: 'biz_dy', enabled: true, audience: 'chairman', reason: '시험 되돌림' }))
+  console.log('⑤ 판매 실적 · 마진(0077 — 묶음 · 1원 · 월 마감 표시 · 스위치 · 본인/팀 · 칸 · 20번 · 감사) OK')
+
   // ── ③ 정적 ─────────────────────────────────────────────────────────
   const walk = (p: string): string[] =>
     statSync(p).isDirectory() ? readdirSync(p).flatMap((f) => walk(join(p, f))) : /\.(ts|tsx)$/.test(p) ? [p] : []
@@ -371,12 +435,24 @@ async function main() {
     const code = readFileSync(f, 'utf8')
     const rel = relative(ROOT, f).replace(/\\/g, '/')
     if (/from '\.\/dummy-sales-cost'|dummy-sales-cost'/.test(code)) {
-      assert.equal(rel, 'src/lib/repository/dummy.ts', `가짜 BOM 저장소를 dummy 밖에서 import: ${rel}`)
+      // dummy-sales-margins.ts는 문(dummyMarginsGate)만 가져온다 — BOM · 원료가 아니다. 이 검사 파일은 감사 수만 센다.
+      assert.ok(['src/lib/repository/dummy.ts', 'src/lib/repository/dummy-sales-margins.ts'].includes(rel), `가짜 BOM 저장소를 dummy 밖에서 import: ${rel}`)
     }
     if (/\bdummyCostLedger\b/.test(code)) {
-      assert.ok(['src/lib/repository/dummy-purchasing.ts', 'src/lib/repository/dummy-sales-cost.ts'].includes(rel), `dummy 원장을 밖에서 부른다: ${rel}`)
+      // dummy.ts는 0078 dummy 원가 후보 거울이 LOT 한 줄을 읽기만 한다(dummy 어댑터 안).
+      assert.ok(['src/lib/repository/dummy-purchasing.ts', 'src/lib/repository/dummy-sales-cost.ts', 'src/lib/repository/dummy.ts'].includes(rel), `dummy 원장을 밖에서 부른다: ${rel}`)
     }
   }
+  // 0077 — 판매 실적 화면은 마진 · 원가를 부르지 않는다. 마진 화면은 내려받기를 붙이지 않는다(원가 엔진 빼기 금지 — 대표 예외는 따로).
+  const dealsPage = stripComments(readFileSync(join(ROOT, 'src/app/(dashboard)/sales/[business_id]/deals/page.tsx'), 'utf8'))
+  for (const bad of [/\bsalesMargins\b/, /cost_krw/, /margin_krw/, /margin_pct/, /cost_margins/, /act_raw/, /snap_total/, /costing/]) {
+    assert.ok(!bad.test(dealsPage), `판매 실적 화면이 원가 · 마진을 다룬다: ${bad}`)
+  }
+  const marginsPage = stripComments(readFileSync(join(ROOT, 'src/app/(dashboard)/costs/[business_id]/margins/page.tsx'), 'utf8'))
+  assert.ok(!/download|xlsx|cost_margins_download_log|exceljs/i.test(marginsPage), '마진 화면에 내려받기가 붙었다')
+  for (const page of [dealsPage, marginsPage]) assert.ok(/featureOn\(user, 'sales_margins', business_id\)\)\) notFound\(\)/.test(page), '0077 화면이 스위치를 보지 않는다')
+  const live77 = stripComments(readFileSync(join(ROOT, 'src/lib/repository/supabase-sales-margins.ts'), 'utf8'))
+  assert.ok(/rpc\('sales_deals'/.test(live77) && /rpc\('sales_margins'/.test(live77) && !/rpc\('cost_margins'|from\('cost_sales'\)/.test(live77), 'live 어댑터가 스위치 문을 지나지 않는다')
   console.log('③ 정적 OK')
   console.log('check:sales-cost — 모두 통과')
 }

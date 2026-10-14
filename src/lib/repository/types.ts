@@ -1,3 +1,24 @@
+import type { FeatureAudience, FeatureSwitchRow } from '@/lib/features'
+import type {
+  CompetitorAssumption,
+  CompetitorAssumptionInput,
+  CompetitorPrice,
+  CustomerProfitRow,
+  ForecastRow,
+  ForecastSetting,
+  MarginBridge,
+  OutlookInput,
+  OutlookRow,
+  PerfBy,
+  ProductDiagnosis,
+  ProductTrendGrain,
+  ProductTrendPoint,
+  ProfitWatchRow,
+  PurchasePerfRow,
+  WorkOrder,
+  WorkOrderListRow,
+  WorkOrderSetInput,
+} from '@/types/blueprint'
 import type { CostImportApply, ImportTarget } from '@/lib/cost-import/payload'
 import type { ActivityEvent, ActivityKind } from '@/lib/activity'
 import type { EntityAuditRecord } from '@/lib/audit-log'
@@ -72,6 +93,8 @@ import type {
   OfficialStatementBasis,
   ProcessChart,
   ProcessChartInput,
+  ProcessChartItem,
+  ProcessChartSync,
   CityLayout,
   CityLayoutInput,
   ApprovalChainBoss,
@@ -149,6 +172,42 @@ import type {
   ProductBreakdownRow,
   ProductionOrder,
   ProductionOrderLine,
+  PersonAccess,
+  NewAiFeedback,
+  AiFeedback,
+  AiFeedbackMine,
+  AiFeedbackBundle,
+  FeedbackStatus,
+  FeedbackTriage,
+  FinUpload,
+  FinUploadPending,
+  FinUploadRecordInput,
+  FinUploadApplyInput,
+  FinUploadShape,
+  FinValuation,
+  FinValuationSaveInput,
+  FinValuationWarning,
+  FinInventoryRollRow,
+  FinOpeningSaveInput,
+  FinIssueSummary,
+  FinMaterialTotals,
+  FinIssueBulkInput,
+  FinTxLine,
+  FinTxGroup,
+  FinTxGroupSaveInput,
+  FinDedupeSetting,
+  FinRecloseFlag,
+  MonthlyPlView,
+  MarginBy,
+  MarginGrain,
+  SaleDeal,
+  SalesMarginRow,
+  CandidateDecision,
+  CostCandidate,
+  LedgerQueueRow,
+  PlAdjustmentKind,
+  PlSettings,
+  PlYearRow,
 } from '@/types'
 
 /**
@@ -302,7 +361,73 @@ export interface CostImportMethods {
   applyCostImport(input: CostImportApply): Promise<{ importId: string; inserted: number; replaced: number }>
 }
 
-export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods, ProductionMethods, CostsMethods, QuoteMethods, CostImportMethods {
+/**
+ * 0071 프로세스 차트 동기화 — **읽기만.** 쓰기(동기화)는 저장소가 아니라 lib/process-sync(AI Agent 세션 RPC · dummy 흉내)가 한다.
+ * 사람 세션이 쓰는 길을 저장소에 두지 않는다 — 0071 머리 주석 «쓰기는 왜 AI Agent 세션만인가».
+ * 0071 전 DB(표 없음)면 빈 목록이다.
+ */
+export interface ProcessSyncMethods {
+  /** 이 사람이 보는 탭의 시트 줄(0071 process_chart_items_read). */
+  listProcessChartItems(): Promise<ProcessChartItem[]>
+  /** 이 사람이 보는 탭의 동기화 기록, 최근 것부터 limit줄. */
+  listProcessChartSyncs(limit?: number): Promise<ProcessChartSync[]>
+}
+
+/**
+ * PHASE 5 판매 실적 · 마진(0077 — 0067 위). 판정은 DB(feature_on('sales_margins') · 0067 sale_visible · cost_margins 문)다.
+ * listSaleDeals는 판매가 · kg · 등급만(실제 원가 · 마진 없음). salesMargins는 대표 · 원가 관리만(하루 20번 · 호출마다 감사).
+ * 0077 전 DB면 'sales_margins_unavailable'. 오류 키는 'feature_off' · 'cost_*'. dummy는 dummy-sales-margins.ts, live는 supabase-sales-margins.ts.
+ */
+export interface SalesMarginsMethods {
+  listSaleDeals(businessId: string, from: string, to: string): Promise<SaleDeal[]>
+  salesMargins(businessId: string, from: string, to: string, grain: MarginGrain, by: MarginBy): Promise<SalesMarginRow[]>
+}
+
+/**
+ * PHASE 6 원가 후보 승인(0078). 판정은 DB(cost_candidate_gate — 스위치 'cost_candidates' · 대표 · 원가 관리 쓰기)다.
+ * 넣기는 원래 입력 길(0061 LOT insert · 0067 sale_record)을 DB가 부른다. 0078 전 DB면 'cost_candidates_unavailable'.
+ */
+export interface CostCandidatesMethods {
+  listCostCandidates(businessId: string, includeDone: boolean): Promise<CostCandidate[]>
+  decideCostCandidate(businessId: string, d: CandidateDecision): Promise<string>
+}
+
+/**
+ * PHASE 7 장부 반영(0079 — ⑤ 계정별 원장 → 0016 전표). 판정은 DB(스위치 'ledger_post' · can_keep_books · 마감 달 대표 · CFO).
+ * 대기 → 반영(post_journal_entry) → 무효(대기 풀기 · 반영 역분개). 0079 전 DB면 'ledger_post_unavailable'.
+ */
+export interface LedgerPostMethods {
+  ledgerPostQueue(businessId: string, period: string): Promise<LedgerQueueRow[]>
+  ledgerPostStage(businessId: string, lineIds: number[], counterAccount: string | null, entryDate: string | null, reason: string | null): Promise<string>
+  ledgerPostApply(postId: string, reason: string | null): Promise<string>
+  ledgerPostVoid(postId: string, reason: string): Promise<string>
+}
+
+/**
+ * 0081 청사진 뼈대 — 판정 · 가리기 · 한도 · 감사는 전부 DB(feature_on 7키 · cost_can · 0062 문)다. 저장소는 모양만 옮긴다.
+ * 0081 전 DB면 'blueprint_unavailable'. 오류 키는 'feature_off' · 'cost_*'. dummy는 dummy-blueprint.ts, live는 supabase-blueprint.ts.
+ */
+export interface BlueprintMethods {
+  costForecastList(businessId: string): Promise<ForecastRow[]>
+  costForecastSetting(businessId: string): Promise<ForecastSetting>
+  setCostForecastSetting(businessId: string, blendPct: number, fxMode: 'today' | 'manual', fxManual: Record<string, number>): Promise<void>
+  costOutlookList(businessId: string): Promise<OutlookRow[]>
+  setCostOutlook(input: OutlookInput): Promise<number>
+  purchasePerformance(businessId: string, from: string, to: string, by: PerfBy): Promise<PurchasePerfRow[]>
+  customerProfit(businessId: string, from: string, to: string): Promise<CustomerProfitRow[]>
+  customerProfitWatch(businessId: string, from: string, to: string): Promise<ProfitWatchRow[]>
+  marginBridge(businessId: string, fromA: string, toA: string, fromB: string, toB: string, productId?: string | null): Promise<MarginBridge>
+  competitorAssumptionList(businessId: string): Promise<CompetitorAssumption[]>
+  setCompetitorAssumption(businessId: string, input: CompetitorAssumptionInput): Promise<void>
+  competitorPrice(productId: string): Promise<CompetitorPrice | null>
+  workOrderGet(orderId: string): Promise<WorkOrder>
+  workOrderMine(businessId: string): Promise<WorkOrderListRow[]>
+  setWorkOrder(input: WorkOrderSetInput): Promise<void>
+  productDiagnosis(productId: string): Promise<ProductDiagnosis>
+  productTrend(productId: string, grain: ProductTrendGrain, from: string, to: string): Promise<ProductTrendPoint[]>
+}
+
+export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods, ProductionMethods, CostsMethods, QuoteMethods, CostImportMethods, ProcessSyncMethods, SalesMarginsMethods, CostCandidatesMethods, LedgerPostMethods, BlueprintMethods {
   /** 어느 쪽을 보고 있는지. 화면이 아니라 DUMMY DATA 뱃지와 로그가 쓴다. */
   readonly mode: 'dummy' | 'live'
 
@@ -674,6 +799,88 @@ export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods,
   staffAdminBusinesses(): Promise<string[]>
   /** 0055 staff_admin_options — 위임 초대 폼의 고르기 칸(이름 · 팀 · 역할 · 줄 수 있는 권한 · 등급). 능력이 없으면 던진다. */
   staffAdminOptions(businessId: string): Promise<StaffAdminOptions>
+
+  /**
+   * 0069 org_access_lookup — 이름 · 팀 이름 · 'me' · uuid로 권한 · 조직 칸(읽기만). 보이는 사람만, 많아야 8명.
+   * 0069가 없는 DB면 null(«아직 이 조회가 없다» — 도구가 사용자 화면을 안내한다).
+   */
+  orgAccessLookup(query: string): Promise<PersonAccess[] | null>
+  /** 0069 의견 남기기 — 질문 · 답은 DB가 본인 대화에서 복사한다. 오류 키(ai_feedback_*)를 그대로 던진다. */
+  submitAiFeedback(input: NewAiFeedback): Promise<string>
+  /** 0069 ai_feedback_mine — 쓴 사람 본인 것. 0069 전 DB는 빈 목록. */
+  listMyAiFeedback(): Promise<AiFeedbackMine[]>
+  cancelAiFeedback(feedbackId: string): Promise<boolean>
+  /** 대표 보완함(0069 — 대표만 행이 온다). 0069 전 DB는 빈 목록. */
+  listAiFeedback(): Promise<AiFeedback[]>
+  listAiFeedbackBundles(): Promise<AiFeedbackBundle[]>
+  setAiFeedbackStatus(feedbackId: string, status: FeedbackStatus): Promise<boolean>
+  setAiFeedbackBundleStatus(bundleId: string, status: Exclude<FeedbackStatus, 'triaged'>): Promise<boolean>
+  saveAiFeedbackTriage(feedbackId: string, triage: FeedbackTriage): Promise<boolean>
+  saveAiFeedbackBundle(ids: string[], title: string, triage: FeedbackTriage): Promise<string>
+  /** 0073 기능 스위치 — 전 줄(그룹 기본 + 회사 덮어쓰기). 0073 전 DB는 null(→ lib/features.ts 기본값). */
+  listFeatureSwitches(): Promise<FeatureSwitchRow[] | null>
+  /** 0073 feature_switch_set — 대표만 · 이유 필수 · 감사. 오류 키(feature_switch_*)를 그대로 던진다. */
+  setFeatureSwitch(input: { feature_key: string; business_id: string | null; enabled: boolean; audience: FeatureAudience; reason: string }): Promise<void>
+  /** 0070 회계 · 재무 자료 올리기 — 그 회사의 올리기 기록(최근 300). 0070 전 DB는 빈 목록. */
+  listFinUploads(businessId: string): Promise<FinUpload[]>
+  /** 0070 fin_upload_pending — 미리보기 대기 줄(급여 개인 줄은 대표 · CFO에게만). */
+  finUploadPending(uploadId: string): Promise<FinUploadPending | null>
+  finUploadRecord(input: FinUploadRecordInput): Promise<string>
+  /** 넣기 — 오류 키(fin_upload_*)를 그대로 던진다. */
+  finUploadApply(input: FinUploadApplyInput): Promise<string>
+  finUploadRevert(uploadId: string, reason: string | null): Promise<boolean>
+  finUploadCancel(uploadId: string): Promise<boolean>
+  finMonthClosed(businessId: string, period: string): Promise<boolean>
+  listFinUploadShapes(businessId: string): Promise<FinUploadShape[]>
+  saveFinUploadShape(shape: FinUploadShape): Promise<void>
+  /**
+   * 0072 회계 · 재무 v2.1 차이분. 0072 전 DB는 읽기가 빈 목록 · null, 쓰기는 'fin_upload_unavailable'.
+   * 판정은 DB(can_keep_books · can_read_books · can_close_books · 마감 문 · 확정자 ≠ 입력자)다 — dummy는 그 거울.
+   */
+  /** 그 회사 · 달의 평가금액(살아 있는 줄 + 무효 이력). 입력자 · 확인자 이름을 붙인다. */
+  listFinValuations(businessId: string, period: string): Promise<FinValuation[]>
+  finValuationSave(input: FinValuationSaveInput): Promise<string>
+  /** 확정 — 입력한 사람이면 'fin_valuation_self_confirm'을 던진다. */
+  finValuationConfirm(valuationId: string, reason: string | null): Promise<boolean>
+  finValuationVoid(valuationId: string, reason: string): Promise<boolean>
+  finValuationWarnings(businessId: string, period: string): Promise<FinValuationWarning[]>
+  finInventoryRoll(businessId: string, period: string): Promise<FinInventoryRollRow[]>
+  finOpeningSave(input: FinOpeningSaveInput): Promise<string>
+  /** 0076 첫 달 기초 «확인» — 입력한 사람이 아닌 장부 쓰기 권한자. 이미 확인 · 무효면 false. */
+  finOpeningConfirm(openingId: string, reason: string | null): Promise<boolean>
+  /** 원료 출고 요약(합계 kg 둘 · 줄 수 · 원료별 «확인 필요» 줄 수만). */
+  finIssueSummary(businessId: string, period: string): Promise<FinIssueSummary | null>
+  finIssueBulkDecide(input: FinIssueBulkInput): Promise<number>
+  /** 0080 입고 · 재고 · OFFER 회사 · 월 합계 금액(장부 읽기). 0080 전 DB는 null. */
+  finMaterialTotals(businessId: string, period: string): Promise<FinMaterialTotals | null>
+  /** 같은 거래 맞추기 줄(판매 · 입고 · 세금계산서 · 원장 거래 줄 — 살아 있는 줄). */
+  listFinTxLines(businessId: string, period: string): Promise<FinTxLine[]>
+  listFinTxGroups(businessId: string, period: string): Promise<FinTxGroup[]>
+  finTxGroupSave(input: FinTxGroupSaveInput): Promise<string>
+  finTxGroupDecide(groupId: string, status: 'same' | 'rejected', reason: string): Promise<boolean>
+  finDedupeSetting(businessId: string): Promise<FinDedupeSetting>
+  finDedupeSettingSave(businessId: string, setting: FinDedupeSetting, reason: string): Promise<void>
+  /** 열린 «재마감 대상»(다시 마감하면 풀린다). */
+  listFinRecloseFlags(businessId: string): Promise<FinRecloseFlag[]>
+  finRecloseClear(flagId: string, note: string | null): Promise<boolean>
+  /** 0073 리뷰 I1 — 줄 id(평가금액 · 묶음 · 재마감 대상)의 실제 회사. 못 보면 null(스위치를 화면이 보낸 회사가 아니라 이 회사로 본다). */
+  finRowBusiness(kind: 'valuation' | 'tx_group' | 'reclose' | 'opening', id: string): Promise<string | null>
+  /**
+   * 0075 월별 손익(재고 반영 · 마감). 판정은 DB(feature_on('monthly_pl') · can_read_books · can_keep_books · can_close_books)다.
+   * 원료별 줄은 대표 · 원가 관리에게만 온다(fin_pl_mask). 0075 전 DB는 읽기 null · 빈 목록, 쓰기는 'fin_pl_unavailable'. 오류 키는 'fin_pl_*' · 'feature_off'.
+   */
+  finPlMonth(businessId: string, period: string): Promise<MonthlyPlView | null>
+  finPlYear(businessId: string, year: string): Promise<PlYearRow[]>
+  finPlSettings(businessId: string): Promise<PlSettings | null>
+  /** 잠정 저장(final = false) · 내부 마감 확정(final = true). 같은 입력이면 같은 줄 id. */
+  finPlRecord(businessId: string, period: string, final: boolean, reason: string | null): Promise<string>
+  /** 다시 열기 — 돌려주는 값 = 재마감 대상으로 표시한 이후 확정 달 수. */
+  finPlReopen(businessId: string, period: string, reason: string): Promise<number>
+  finPlAdjustPropose(input: { business_id: string; period: string; kind: PlAdjustmentKind; amount: number; reason: string }): Promise<string>
+  finPlAdjustDecide(adjId: string, action: 'approve' | 'void', reason: string | null): Promise<boolean>
+  finPlSettingsSave(businessId: string, settings: Omit<PlSettings, 'updated_at'>, reason: string): Promise<void>
+  /** 조정 줄의 실제 회사 · 달(못 보면 null) — 액션이 화면이 보낸 회사와 대조한다. */
+  finPlAdjustRow(adjId: string): Promise<{ business_id: string; period: string } | null>
   /** 0055 staff_admin_invite — 감사 · 회장 알림까지 DB가 한 트랜잭션으로 한다. 오류는 'staff_admin_*' 키로 던진다. */
   staffAdminInvite(input: StaffAdminInviteInput): Promise<UserInvitation>
   /** 0055 staff_admin_revoke_invitation — 본인이 넣은 미수락 위임 초대만. */

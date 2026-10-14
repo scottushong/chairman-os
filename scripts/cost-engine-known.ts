@@ -28,14 +28,14 @@ export interface KnownCtx {
 export const PIN_SALES_IMMEDIATE = `create or replace function cost_secret.sales_cutoff() returns timestamptz
   language sql stable set search_path = public, pg_temp as $fn$ select now() + interval '1 day'; $fn$;`
 
-/** 0062의 진짜 정의 그대로. */
-const REAL_CUTOFF = `create or replace function cost_secret.sales_cutoff() returns timestamptz
+/** 0062의 진짜 정의 그대로(check:blueprint 11절도 쓴다). */
+export const REAL_CUTOFF = `create or replace function cost_secret.sales_cutoff() returns timestamptz
   language sql stable set search_path = public, pg_temp as $fn$ select (cost_today()::timestamp) at time zone 'Asia/Seoul'; $fn$;`
 
 const TABLES = ['cost_market_prices', 'cost_purchase_lots', 'cost_secret.bom_versions', 'cost_prod_lots', 'cost_prod_inputs', 'cost_lot_adjustments', 'cost_overheads']
 
 /** p 이전(전부) 또는 오늘 0시 뒤(오늘 것만)의 줄을 days일 앞으로 돌린다. */
-function shift(days: number, onlyToday: boolean) {
+export function shiftKnown(days: number, onlyToday: boolean) {
   const cut = `(cost_today()::timestamp at time zone 'Asia/Seoul')`
   return `set session_replication_role = replica;
     ${TABLES.map((t) => `update ${t} set created_at = created_at - interval '${days} days'${onlyToday ? ` where created_at > ${cut}` : ''};
@@ -51,7 +51,7 @@ export async function knownCutoff({ db, as, run, owner, p1, mats, s1, U }: Known
   const { big } = (await run(U.buy, `insert into cost_purchase_lots (business_id, material_id, supplier_id, received_on, qty_kg, unit_price)
     values ('biz_dy', '${m2}', '${s1}', '${T}'::date - 3, 50000, 5000) returning lot_id as big`))[0] as { big: string }
   await db.exec(REAL_CUTOFF)
-  await db.exec(shift(2, false))
+  await db.exec(shiftKnown(2, false))
   const reset = () => db.exec(`delete from cost_secret.cost_reads`)
 
   type SV = { market_krw_per_kg: string; current_krw_per_kg: string; total_krw_per_kg: string; computed: boolean }
@@ -117,7 +117,7 @@ export async function knownCutoff({ db, as, run, owner, p1, mats, s1, U }: Known
   assert.ok(audit[0].n > 0, '(가): 영업 원가 조회 감사가 남지 않는다')
 
   // ③ 내일 — 오늘 줄을 하루 앞으로. 영업 = 원가 관리.
-  await db.exec(shift(1, true))
+  await db.exec(shiftKnown(1, true))
   const tomorrow = await sales()
   assert.equal(tomorrow.total_krw_per_kg, prevCost, '(가): «내일» 영업 총원가가 원가 관리 총원가(오늘 넣은 것 포함)와 다르다')
   assert.equal(await chair(), tomorrow.total_krw_per_kg, '(가): «내일» 영업 총원가가 대표 총원가(1원)와 다르다')
