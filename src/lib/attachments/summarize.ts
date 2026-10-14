@@ -37,7 +37,8 @@ const SECTION_CHARS = 40_000
 const MAX_SECTIONS = 8
 const MAX_OUTPUT_TOKENS = 2_000
 
-const SCHEMA = {
+/** check:ai-schemas가 구조 강제 규칙(모든 object에 additionalProperties: false)을 본다. */
+export const SCHEMA = {
   type: 'object',
   additionalProperties: false,
   required: ['summary', 'summary_ko', 'key_numbers', 'decisions_needed', 'next_actions', 'confidence', 'language'],

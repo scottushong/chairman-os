@@ -1,5 +1,5 @@
 import type { ChairmanRepository } from '@/lib/repository'
-import type { Account, FinRow, FinTxGroupSaveInput, FinTxLine, FinUpload } from '@/types'
+import type { Account, FinRow, FinTxGroupSaveInput, FinTxLine, FinUpload, FinUploadShape } from '@/types'
 
 import { cellText, EMPTY_CELL, type EcountCell } from '@/lib/ecount/excel/cells'
 import type { EcountSheet } from '@/lib/ecount/excel/workbook'
@@ -21,12 +21,14 @@ import {
   type OfficialDraft,
 } from './doc-read'
 import { kindSpec, TX_KINDS, type UploadKind } from './kinds'
+import { decodeShape, encodeShape, fixByBalance, LEDGER_COLS, ledgerFeedback, ledgerLayoutByCode, ROLE_KO, type LedgerCol, type LedgerLayout, type RowLabel } from './ledger'
 import { MSG, openUpload } from './open'
 import {
   aiSample,
   autoDecision,
   classifyByCode,
   detectMonth,
+  ledgerLayoutOf,
   looksLikeMaterialIssue,
   mapColumns,
   mergeAi,
@@ -35,8 +37,10 @@ import {
   shapeSignature,
   stripKgGrid,
   validate,
+  type Check,
   type Classification,
   type Confidence,
+  type ReadResult,
 } from './pipeline'
 
 /**
@@ -44,10 +48,28 @@ import {
  * AI는 classify 인자로만 들어온다(진짜 · 가짜 · 없음) — 이 파일은 AI를 모른다.
  */
 
-export type AiClassify = (
-  sample: { sheet: string; rows: string[][] },
-  code: Classification,
-) => Promise<{ kind: string; header_row: number; columns: Record<string, number>; confidence: Confidence; reason: string; cost_usd?: number }>
+/** AI 구조 해석의 답(ai.ts가 JSON을 이 모양으로 바꾼다). header_row는 시트 줄 번호(0부터). */
+export interface AiStructure {
+  kind: string
+  header_row: number
+  columns: Record<string, number>
+  row_labels: RowLabel[]
+  account_head_col: number | null
+  company: string | null
+  period: string | null
+  confidence: Confidence
+  reason: string
+  cost_usd?: number
+}
+
+/** feedback = 앞 해석으로 대조했더니 틀린 계정 · 줄(숫자 없음) — 재해석 때만. */
+export type AiClassify = (sample: { sheet: string; rows: string[][]; row_no?: number[] }, code: Classification, feedback?: string[]) => Promise<AiStructure>
+
+/** 재해석 포함 한 시트에 쓰는 AI 호출 천장(처음 1 + 다시 2). 파일 한도(env)가 더 작으면 그것. */
+export const AI_TRIES_PER_SHEET = 3
+
+/** 0070 fin_upload_shapes가 받는 종류(0072 넷은 학습 표에 없다). */
+const SHAPE_KINDS = new Set(['sales', 'purchase_in', 'inventory', 'production', 'ledger', 'payroll', 'import', 'cashflow', 'card', 'overseas', 'promo', 'loans', 'borrowings', 'savings'])
 
 export interface FileCard {
   file_name: string
@@ -255,19 +277,21 @@ async function processSheets(o: ProcessOptions, sha: string, sheets: EcountSheet
   const fail = (message: string, sheet: string | null = null) => failRecord(o, sha, message, { sheet, aiUsed: doc?.aiUsed ?? 0 })
 
   const [shapes, uploads] = await Promise.all([o.repo.listFinUploadShapes(o.businessId).catch(() => []), o.repo.listFinUploads(o.businessId).catch(() => [] as FinUpload[])])
-  let budget = o.aiBudget
+  const budgetRef = { left: o.aiBudget }
   const cards: FileCard[] = []
   const unknown: { sheet: EcountSheet; aiUsed: number; cls: Classification; sig: string }[] = []
   for (const raw of opened.sheets) {
     if (raw.rows.every((r) => r.every((c) => c.t === 'empty'))) continue
     const { sheet, dropped } = scrubSheet(raw)
-    // c. 분류: 학습 → 코드 → (모자라면) AI
+    // c. 해석: 학습 → 코드 규칙 → (맞지 않으면) AI 구조 해석 + 대조가 틀리면 재해석(최대 2번). d · e. 읽기 · 대조는 해석마다 코드가.
     let cls = classifyByCode(sheet)
     const sig = shapeSignature(o.businessId, sheet, cls.headerRow)
     const learned = shapes.find((s) => s.header_sig === sig)
     let aiUsed = 0
     // 0072 구성표 노출 금지: 원료 출고명세(로 보이는) 시트는 AI에 보내지 않는다 — 코드 분류만.
     const noAi = cls.kind === 'material_issue' || looksLikeMaterialIssue(sheet)
+    let ev: Evaluated
+    let tries = 0
     if (doc) {
       // C단계: AI가 이미 표를 읽었다(종류 판단 포함) — 코드 판단과 합친다(같으면 높음). AI가 아니면 코드 판단만.
       aiUsed = doc.aiUsed
@@ -276,36 +300,27 @@ async function processSheets(o: ProcessOptions, sha: string, sheets: EcountSheet
         cls = mergeAi(cls, { kind: t.doc_kind, confidence: t.confidence, header_row: doc.headerRow, columns: {}, reason: t.reason }, sheet.colCount)
       }
       if (cls.kind === 'material_issue') cls = { ...cls, kind: 'unknown', confidence: 'none', reason: '원료 출고명세는 엑셀로만 받습니다' }
-    } else if (learned) {
-      cls = { kind: learned.kind as UploadKind, confidence: 'high', headerRow: cls.headerRow, columns: learned.column_map, reason: '지난번에 사람이 고른 종류 · 칸(학습)', source: 'learned' }
-    } else if (cls.confidence !== 'high' && noAi) {
-      cls = { ...cls, reason: `${cls.reason} · 출고명세로 보이는 시트라 AI에 보내지 않음(코드 분류만)` }
-    } else if (cls.confidence !== 'high' && o.classify && budget > 0) {
-      const sample = aiSample(sheet, cls.headerRow)
-      const start = Math.max(0, cls.headerRow - 3)
-      try {
-        const ai = await o.classify(sample, cls)
-        aiUsed = 1
-        budget -= 1
-        cls = mergeAi(cls, { ...ai, header_row: ai.header_row + start }, sheet.colCount)
-      } catch (e) {
-        aiUsed = 1
-        budget -= 1
-        cls = { ...cls, confidence: cls.confidence === 'high' ? 'medium' : cls.confidence, reason: `${cls.reason} · AI 분류 실패(${e instanceof Error ? e.message.slice(0, 60) : '?'}) — 코드 판단만` }
+      ev = evaluate(sheet, cls, o.fileName, o.today)
+    } else {
+      const r = await interpret(o, sheet, cls, learned, noAi, budgetRef)
+      ev = r.ev
+      aiUsed = r.aiUsed
+      tries = r.aiUsed
+      if (r.save && SHAPE_KINDS.has(ev.cls.kind)) {
+        // g. 배우기 — 맞게 해석된 모양(칸 · 요약 줄 낱말 · 머리 열, 숫자 없음). 같은 양식은 다음부터 AI 없이.
+        await o.repo
+          .saveFinUploadShape({ business_id: o.businessId, header_sig: sig, sheet_name: sheet.name.slice(0, 120), kind: ev.cls.kind, column_map: encodeShape(ev.cls.columns, ev.cls.ledger ?? (ev.cls.labels?.length ? { headerRow: ev.cls.headerRow, cols: {}, labels: ev.cls.labels } : null)) })
+          .catch((e) => console.error('[finance-upload] shape save', e))
       }
-    } else if (cls.confidence !== 'high' && !o.classify) {
-      cls = { ...cls, reason: `${cls.reason} · AI 분류 꺼짐(한도 · 연결 없음)` }
     }
+    cls = ev.cls
     if (cls.kind === 'unknown') {
       // 모르는 시트 — 다른 시트에 아는 것이 있으면 접고(아래), 아무것도 모르면 사람이 고르게 미리보기로(칸 격자를 둔다).
       unknown.push({ sheet, aiUsed, cls, sig })
       continue
     }
-    // d. 읽기 · 기간 · e. 검증
-    if (Object.keys(cls.columns).length === 0) cls.columns = mapColumns(kindSpec(cls.kind), sheet.rows[cls.headerRow] ?? [])
-    const read = readRows(sheet, cls)
-    const month = detectMonth(sheet, read.dates, o.fileName, o.today)
-    const check = validate(cls.kind, read, month.period)
+    const { read, month } = ev
+    const check = ev.check
     if (doc) {
       check.errors = [...new Set([...check.errors, ...doc.extraErrors])]
       check.warnings = [...new Set([...check.warnings, ...doc.extraWarnings])]
@@ -323,7 +338,13 @@ async function processSheets(o: ProcessOptions, sha: string, sheets: EcountSheet
     // C단계: 사진 · 스캔 처음 3개월 · AI 없이 세운 표는 다섯 조건을 넘어도 미리보기.
     const decision = doc?.forceWhy.length ? { auto: false, why: [...decision0.why, ...doc.forceWhy] } : decision0
     const header = (sheet.rows[cls.headerRow] ?? []).map((c) => cellText(c).slice(0, 40))
-    const meta = { reason: cls.reason, period_how: month.how, errors: check.errors, warnings: check.warnings, why_not_auto: decision.why, columns: cls.columns, header_row: cls.headerRow, header, sig, dropped, dup_suspects: dup.count, dup_notes: dup.notes, ...(doc ? { source_format: doc.format, fixes: doc.fixes } : {}) }
+    const meta = {
+      reason: cls.reason, period_how: month.how, errors: check.errors, warnings: check.warnings, why_not_auto: decision.why, columns: cls.columns, header_row: cls.headerRow, header, sig, dropped, dup_suspects: dup.count, dup_notes: dup.notes,
+      ...(cls.labels?.length ? { labels: cls.labels } : {}),
+      ...(cls.ledger ? { ledger: { headerRow: cls.ledger.headerRow, cols: cls.ledger.cols as Record<string, number>, headCol: cls.ledger.headCol ?? null } } : {}),
+      ...(tries ? { tries } : {}),
+      ...(doc ? { source_format: doc.format, fixes: doc.fixes } : {}),
+    }
     const confidenceDb = cls.confidence
     const base = { file_name: o.fileName, sheet: sheet.name, kind: cls.kind, period: month.period, ai_used: aiUsed, confidence: cls.confidence }
     try {
@@ -370,6 +391,164 @@ async function processSheets(o: ProcessOptions, sha: string, sheets: EcountSheet
   }
   if (!cards.length) return [await fail('빈 파일입니다(채워진 시트가 없습니다).')]
   return cards
+}
+
+/** 한 해석으로 읽고 대조한 결과. structural = 구조가 틀렸다는 표시(계정 · 합계 대조 틀림 · 모르는 줄) — 이것이 있으면 재해석한다. */
+export interface Evaluated {
+  cls: Classification
+  read: ReadResult
+  month: { period: string | null; how: string }
+  check: Check
+  structural: string[]
+  /** 재해석 때 AI에 줄 차이(숫자 없음) */
+  feedback: string[]
+}
+
+/** 해석 하나 → 읽기(코드) · 기간 · 검증 · 구조 대조. */
+export function evaluate(sheet: EcountSheet, cls0: Classification, fileName: string, today?: Date): Evaluated {
+  const cls = { ...cls0 }
+  if (cls.kind !== 'unknown' && Object.keys(cls.columns).length === 0) cls.columns = mapColumns(kindSpec(cls.kind), sheet.rows[cls.headerRow] ?? [])
+  if (cls.kind === 'unknown') {
+    return { cls, read: { rows: [], people: [], fileTotal: null, problems: [], dates: [] }, month: { period: null, how: '' }, check: { errors: [], warnings: [] }, structural: [], feedback: [] }
+  }
+  // ⑤ 원장: 해석(칸 · 요약 줄 낱말 · 머리 열)을 cls에 고정한다 — 미리보기 · 사람이 고칠 때 · 학습이 같은 해석을 쓴다.
+  if (cls.kind === 'ledger') cls.ledger = ledgerLayoutOf(sheet, cls)
+  const read = readRows(sheet, cls)
+  const month = detectMonth(sheet, read.dates, fileName, today)
+  const check = validate(cls.kind, read, month.period)
+  if (read.ledger) {
+    const l = read.ledger
+    const structural = [...l.mismatches.map((m) => `${m.code}:${m.side}`), ...l.unknownRows.map((r) => `row:${r}`), ...(l.rows.length ? [] : ['no-accounts'])]
+    const roles = Object.entries(l.roles).map(([k, v]) => `${ROLE_KO[k as keyof typeof ROLE_KO] ?? k} ${v}`).join(' · ')
+    const fixed = cls.ledger?.note ? ` · ${cls.ledger.note}` : ''
+    cls.reason = `${cls.reason.replace(/ · 줄 종류: [^·]*(?: · [^·]*)*$/, '')}${fixed} · 줄 종류: ${roles || '없음'} · 계정 ${l.rows.length}개 중 ${l.compared}개 요약 줄과 대조`
+    // 화면의 «칸 바꾸기»가 원장 칸을 보이게 — 해석의 차변 · 대변 · 계정 칸을 칸 대응에 싣는다.
+    const lc = cls.ledger!
+    cls.columns = Object.fromEntries((['account_code', 'account_name', 'debit', 'credit'] as const).filter((k) => lc.cols[k] !== undefined).map((k) => [k, lc.cols[k]!]))
+    if (!l.compared && l.rows.length) check.warnings = [...check.warnings, '요약 줄(월계 · 합계)이 없어 계정별 거래 합을 대조하지 못했습니다.']
+    return { cls, read, month, check, structural, feedback: ledgerFeedback(l) }
+  }
+  const spec = kindSpec(cls.kind)
+  const sumOff = check.errors.find((e) => e.startsWith('합계가 맞지 않습니다'))
+  const feedback: string[] = []
+  if (sumOff && spec.sumField && read.fileTotal !== null) {
+    const sum = read.rows.reduce((a, r) => a + Number(r[spec.sumField!] ?? 0), 0)
+    const k = read.fileTotal !== 0 ? sum / read.fileTotal : 0
+    const how = Math.abs(k - Math.round(k)) < 1e-6 && Math.round(k) >= 2 ? `줄의 합이 합계 줄의 정확히 ${Math.round(k)}배` : '줄의 합과 합계 줄이 다름'
+    feedback.push(`«${spec.fields.find((f) => f.key === spec.sumField)?.label}» 칸: ${how}. 읽은 줄 ${read.rows.length}개(줄 번호 ${read.rows.slice(0, 20).map((r) => r.row_no - 1).join(',')}).`)
+  }
+  return { cls, read, month, check, structural: sumOff ? ['sum'] : [], feedback }
+}
+
+/** 나쁜 정도(작을수록 좋음) — 구조 틀림이 먼저, 그다음 검증 오류. */
+const badness = (e: Evaluated) => e.structural.length * 1000 + e.check.errors.length
+
+/** AI 답 → 해석(종류 · 칸은 mergeAi, 요약 줄 낱말 · 원장 칸 · 머리 열은 여기서). 원장 칸은 잔액 흐름으로 한 번 더 확인한다. */
+export function withStructure(code: Classification, ai: AiStructure, sheet: EcountSheet): Classification {
+  const headerOk = Number.isInteger(ai.header_row) && ai.header_row >= 0 && ai.header_row < sheet.rows.length
+  const cls = mergeAi(code, { ...ai, header_row: headerOk ? ai.header_row : code.headerRow }, sheet.colCount)
+  const labels = ai.row_labels ?? []
+  if (cls.kind !== 'ledger') return { ...cls, labels }
+  const base = ledgerLayoutByCode(sheet)
+  const cols: Partial<Record<LedgerCol, number>> = { ...(base?.cols ?? {}) }
+  for (const k of LEDGER_COLS) {
+    const v = ai.columns[k]
+    if (Number.isInteger(v) && v >= 0 && v < sheet.colCount) cols[k] = v
+  }
+  const layout: LedgerLayout = { headerRow: headerOk ? ai.header_row : (base?.headerRow ?? cls.headerRow), cols, labels, headCol: ai.account_head_col }
+  return { ...cls, labels, ledger: fixByBalance(sheet, layout) }
+}
+
+/**
+ * 시트 하나의 해석(엑셀). 학습 모양 → 코드 규칙 → AI(+재해석 2번). 대조가 맞으면 거기서 멈춘다.
+ * 끝까지 맞지 않으면 가장 덜 틀린 해석을 «확인 필요»로 — 숫자를 억지로 맞추지 않는다(차이가 검증 오류로 남는다).
+ */
+async function interpret(o: ProcessOptions, sheet: EcountSheet, code0: Classification, learned: FinUploadShape | undefined, noAi: boolean, budget: { left: number }): Promise<{ ev: Evaluated; aiUsed: number; save: boolean }> {
+  const evalOf = (c: Classification) => evaluate(sheet, c, o.fileName, o.today)
+  let code = code0
+  if (learned) {
+    const d = decodeShape(learned.column_map)
+    const kind = learned.kind as UploadKind
+    const ledger = kind === 'ledger' && d.cols.debit !== undefined && d.cols.credit !== undefined ? fixByBalance(sheet, { headerRow: d.headerRow ?? code.headerRow, cols: d.cols, labels: d.labels, headCol: d.headCol }) : undefined
+    const ev = evalOf({ kind, confidence: 'high', headerRow: d.headerRow ?? code.headerRow, columns: d.columns, labels: d.labels, ledger, reason: '지난번에 맞게 해석된 모양(학습) — AI 없이', source: 'learned' })
+    if (!ev.structural.length) return { ev, aiUsed: 0, save: false }
+    code = { ...code, reason: `${code.reason} · 학습한 모양으로는 대조가 맞지 않아 다시 해석` }
+  }
+  let best = evalOf(code)
+  // 원장: 코드 규칙만으로 요약 줄 대조가 다 맞으면(대조한 계정 1개 이상) 믿음 높음 — AI 없이.
+  if (best.cls.kind === 'ledger' && best.read.ledger && best.read.ledger.compared > 0 && !best.structural.length && best.cls.confidence !== 'high') {
+    best = { ...best, cls: { ...best.cls, confidence: 'high', reason: `${best.cls.reason} · 거래 줄 합 = 요약 줄(코드 규칙)` } }
+  }
+  // 원장은 요약 줄과 대조가 된 해석만 «맞다»고 본다(대조할 줄이 없으면 AI에도 한 번 보인다).
+  const verified = best.cls.kind !== 'ledger' || (best.read.ledger?.compared ?? 0) > 0
+  if (best.cls.confidence === 'high' && !best.structural.length && verified) return { ev: best, aiUsed: 0, save: false }
+  const why = (note: string) => ({ ev: { ...best, cls: { ...best.cls, reason: `${best.cls.reason} · ${note}` } }, aiUsed: 0, save: false })
+  if (noAi) return why('출고명세로 보이는 시트라 AI에 보내지 않음(코드 해석만)')
+  if (!o.classify) return why('AI 해석 꺼짐(한도 · 연결 없음)')
+  if (budget.left <= 0) return why('AI 한도(파일당 · 하루)를 넘어 코드 해석만')
+  let used = 0
+  let feedback: string[] | undefined
+  let ok = false
+  for (let attempt = 0; attempt < AI_TRIES_PER_SHEET && budget.left > 0; attempt += 1) {
+    used += 1
+    budget.left -= 1
+    let ai: AiStructure
+    try {
+      ai = await o.classify(aiSample(sheet, code.headerRow), code, feedback)
+    } catch (e) {
+      best = { ...best, cls: { ...best.cls, confidence: best.cls.confidence === 'high' ? 'medium' : best.cls.confidence, reason: `${best.cls.reason} · AI 해석 실패(${e instanceof Error ? e.message.slice(0, 80) : '?'}) — 코드 해석만` } }
+      break
+    }
+    const ev = evalOf(withStructure(code, ai, sheet))
+    if (attempt) ev.cls.reason = `${ev.cls.reason} · AI 재해석 ${attempt}번째`
+    if (badness(ev) <= badness(best)) best = ev
+    if (!ev.structural.length) {
+      ok = best === ev
+      break
+    }
+    feedback = ev.feedback
+  }
+  if (!ok && best.structural.length && used > 0) best = { ...best, cls: { ...best.cls, reason: `${best.cls.reason} · AI ${used}번 해석해도 요약 줄과 맞지 않음 — 차이를 보고 사람이 정합니다` } }
+  return { ev: best, aiUsed: used, save: ok && best.cls.source === 'ai' && best.cls.kind !== 'unknown' }
+}
+
+/**
+ * «AI로 다시 해석» — 이미 올린 파일의 칸 격자(버리기 뒤)로 해석부터 다시 한다(파일을 다시 올리지 않는다).
+ * 학습 모양은 쓰지 않는다(학습이 틀렸을 수 있다). 기록은 새 대기 · 넣기(옛 대기는 호출자가 먼저 취소).
+ */
+export async function reprocessSheet(o: ProcessOptions, sha: string, sheet: EcountSheet): Promise<FileCard[]> {
+  return processSheets({ ...o, repo: withoutShapes(o.repo) }, sha, [sheet], null)
+}
+
+/**
+ * «확인 필요» 카드의 다시 해석 — 대기의 칸 격자 → 옛 대기 취소 → 해석부터 다시(새 대기 · 넣기). 새 기록이 하나도 안 생기면
+ * 옛 대기를 되살린다(같은 내용 · 같은 해시). 칸 격자가 없으면(급여 · 원료 숫자 가림 · 0080 문 밖) 다시 올리라고 말한다.
+ */
+export async function reinterpretPending(o: Omit<ProcessOptions, 'bytes' | 'fileName' | 'docs'>, uploadId: string): Promise<{ cards: FileCard[]; error?: string }> {
+  const upload = (await o.repo.listFinUploads(o.businessId)).find((u) => u.upload_id === uploadId)
+  if (!upload || upload.status !== 'needs_review') return { cards: [], error: '이미 처리했거나 볼 수 없는 올리기입니다.' }
+  const pending = await o.repo.finUploadPending(uploadId)
+  if (!pending) return { cards: [], error: '이미 처리했거나 볼 수 없는 올리기입니다.' }
+  if (pending.masked || !pending.grid?.length) return { cards: [], error: '이 자리에서는 원본 칸을 볼 수 없어 다시 해석하지 못합니다 — «취소»를 누른 뒤 파일을 다시 올려 주세요.' }
+  const sheet = fromGrid(upload.sheet_name ?? 'sheet', pending.grid)
+  if (!(await o.repo.finUploadCancel(uploadId))) return { cards: [], error: '이미 처리한 올리기입니다.' }
+  let cards: FileCard[] = []
+  try {
+    cards = await reprocessSheet({ ...o, fileName: upload.file_name, bytes: new Uint8Array() }, upload.file_sha256, sheet)
+  } catch (e) {
+    console.error('[finance-upload] reinterpret', e)
+  }
+  if (!cards.some((c) => c.upload_id && (c.status === 'needs_review' || c.status === 'applied'))) {
+    await o.repo
+      .finUploadRecord({ business_id: o.businessId, kind: upload.kind, period: upload.period, file_name: upload.file_name, file_sha256: upload.file_sha256, sheet_name: upload.sheet_name, ai_confidence: upload.ai_confidence, ai_used: upload.ai_used, status: 'needs_review', pending, error: null })
+      .catch((e) => console.error('[finance-upload] reinterpret restore', e))
+    return { cards, error: '다시 해석하지 못해 예전 «확인 필요»를 그대로 두었습니다.' }
+  }
+  return { cards }
+}
+
+function withoutShapes(repo: ChairmanRepository): ChairmanRepository {
+  return new Proxy(repo, { get: (t, k, r) => (k === 'listFinUploadShapes' ? async () => [] : Reflect.get(t, k, r)) })
 }
 
 /** 버리기 뒤 시트 → 칸 격자(pending.grid). 3,000줄 · 40칸까지. */

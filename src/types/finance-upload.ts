@@ -55,6 +55,10 @@ export interface FinUploadPending {
     /** C단계 — 파일 형식(글 PDF · 스캔 PDF · 사진; 엑셀은 없음) · 사진 고친 것 */
     source_format?: 'pdf_text' | 'pdf_scan' | 'image'
     fixes?: string[]
+    /** 2026-10-14 구조 해석 — 요약 줄 낱말(거래에서 뺌) · ⑤ 원장 칸 대응(머리글 줄 · 열) · 계정 머리 열 · AI 해석 횟수 */
+    labels?: { text: string; role: string }[]
+    ledger?: { headerRow: number; cols: Record<string, number>; headCol?: number | null }
+    tries?: number
   }
 }
 

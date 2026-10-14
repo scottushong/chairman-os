@@ -7,9 +7,10 @@ import { currentUser } from '@/lib/auth/session'
 import { aiLimits, realClassifier } from '@/lib/finance-upload/ai'
 import { realDocReader } from '@/lib/finance-upload/ai-doc'
 import { isUploadKind, kindSpec } from '@/lib/finance-upload/kinds'
+import { encodeShape, ROW_ROLES, type LedgerLayout, type RowLabel } from '@/lib/finance-upload/ledger'
 import { UPLOAD_MAX_BYTES } from '@/lib/finance-upload/open'
 import { mapColumns, readRows, validate, type Classification } from '@/lib/finance-upload/pipeline'
-import { finUploadError, fromGrid, processUpload, saveTxGroupsFor, type DocOptions, type FileCard } from '@/lib/finance-upload/process'
+import { finUploadError, fromGrid, processUpload, reinterpretPending, saveTxGroupsFor, type DocOptions, type FileCard } from '@/lib/finance-upload/process'
 import { featureOn } from '@/lib/features-server'
 import { getRepository } from '@/lib/repository'
 import type { FinRow, FinUpload } from '@/types'
@@ -129,14 +130,20 @@ export async function applyPendingUpload(input: ApplyInput): Promise<{ ok?: true
       const sheet = fromGrid(upload?.sheet_name ?? 'sheet', pending.grid)
       const headerRow = meta.header_row ?? 0
       const columns = colsChanged ? chosen : mapColumns(kindSpec(kind), sheet.rows[headerRow] ?? [])
-      const cls: Classification = { kind, confidence: 'medium', headerRow, columns, reason: '사람이 고름', source: 'code' }
+      // 해석이 본 요약 줄 낱말 · 원장 칸은 그대로 쓰고, 사람이 고친 칸이 이긴다.
+      const labels = (meta.labels ?? []).filter((l): l is RowLabel => (ROW_ROLES as readonly string[]).includes(l.role))
+      const ledger: LedgerLayout | undefined =
+        kind === 'ledger' && meta.ledger && !kindChanged
+          ? { headerRow: meta.ledger.headerRow, cols: { ...meta.ledger.cols, ...(colsChanged ? chosen : {}) }, labels, headCol: meta.ledger.headCol ?? null }
+          : undefined
+      const cls: Classification = { kind, confidence: 'medium', headerRow, columns, reason: '사람이 고름', source: 'code', labels, ledger }
       const read = readRows(sheet, cls)
       const check = validate(kind, read, period)
       if (check.errors.length) return { error: '고친 종류 · 칸으로 다시 읽었더니 맞지 않습니다.', problems: check.errors }
       rows = read.rows as FinRow[]
       people = kind === 'payroll' ? (read.people as FinRow[]) : null
-      // g. 배우기 — 시트 모양 → 사람이 고른 종류 · 칸(숫자 없음).
-      if (meta.sig) await repo.saveFinUploadShape({ business_id: businessId, header_sig: meta.sig, sheet_name: upload?.sheet_name ?? null, kind, column_map: columns }).catch((e) => console.error('[applyPendingUpload] shape', e))
+      // g. 배우기 — 시트 모양 → 사람이 고른 종류 · 칸 · 요약 줄 낱말(숫자 없음).
+      if (meta.sig) await repo.saveFinUploadShape({ business_id: businessId, header_sig: meta.sig, sheet_name: upload?.sheet_name ?? null, kind, column_map: encodeShape(columns, ledger ?? (labels.length ? { headerRow, cols: {}, labels } : null)) }).catch((e) => console.error('[applyPendingUpload] shape', e))
     } else if (kindChanged) {
       return { error: '이 올리기는 칸 격자가 없어 종류를 바꿀 수 없습니다 — 파일을 다시 올려 주세요.' }
     } else if (meta.errors?.length) {
@@ -193,6 +200,34 @@ export async function revertUpload(uploadId: unknown, businessId: unknown, reaso
     if (m.includes('ledger_post_live') || m.includes('cost_candidate_live')) return { error: '이 자료의 줄이 장부 반영 · 원가 LOT로 이미 쓰였습니다 — 그쪽을 먼저 무효로 하세요.' }
     if (m.includes('fin_replace_restricted')) return { error: '원료 출고 · 재고 자료의 되돌리기는 대표 · CFO만 합니다 — 대표 · CFO에게 요청하세요.' }
     return { error: finUploadError(e) }
+  }
+}
+
+/**
+ * «AI로 다시 해석» — «확인 필요» 카드의 올리기를 파일 없이 다시 해석한다(대기의 칸 격자 → 해석 · 대조 · 재해석).
+ * AI 한도(파일당 · 하루)는 올리기와 같다. 옛 대기는 취소되고 새 카드가 생긴다(실패하면 옛 대기를 되살린다).
+ */
+export async function reinterpretUpload(uploadId: unknown, businessId: unknown): Promise<UploadResult> {
+  const user = await currentUser()
+  if (!user) return { cards: [], error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  const biz = text(businessId, 40)
+  const id = text(uploadId, 64)
+  if (!BIZ.test(biz) || !UUID.test(id)) return { cards: [], error: '올리기를 알 수 없습니다.' }
+  if (!(await featureOn(user, 'finance_upload', biz))) return { cards: [], error: OFF }
+  if (!canKeepBooks(user, biz)) return { cards: [], error: '이 회사의 재무를 넣을 권한이 없습니다.' }
+  try {
+    const repo = await getRepository()
+    if (!(await ownsUpload(repo, biz, id))) return { cards: [], error: '올리기를 알 수 없습니다.' }
+    const { perFile, perDay } = aiLimits()
+    const today = kstDay(new Date().toISOString())
+    const usedToday = (await repo.listFinUploads(biz).catch(() => [] as FinUpload[])).filter((u) => kstDay(u.created_at) === today).reduce((a, u) => a + u.ai_used, 0)
+    const budget = Math.min(perFile, Math.max(0, perDay - usedToday))
+    const out = await reinterpretPending({ repo, businessId: biz, classify: budget > 0 ? realClassifier(repo, biz) : null, aiBudget: budget }, id)
+    revalidatePath(`/finance/${biz}/upload`)
+    return out
+  } catch (e) {
+    console.error('[reinterpretUpload]', e)
+    return { cards: [], error: finUploadError(e) }
   }
 }
 

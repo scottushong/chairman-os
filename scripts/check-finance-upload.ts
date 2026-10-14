@@ -20,6 +20,8 @@ import { MSG } from '../src/lib/finance-upload/open'
 import { autoDecision, classifyByCode, classifyIssue, readRows, scrubSheet } from '../src/lib/finance-upload/pipeline'
 import { fromGrid, processUpload, saveTxGroupsFor, type AiClassify } from '../src/lib/finance-upload/process'
 import { parseValue } from '../src/lib/finance-upload/v21-text'
+import { checkAiSchemas } from './check-ai-schemas'
+import { runLedgerChecks } from './check-finance-upload-ledger'
 import type { FinTxLine } from '../src/types'
 import { dummyRepository as repo } from '../src/lib/repository/dummy'
 import { dummyFinLines } from '../src/lib/repository/dummy-finance-upload'
@@ -98,7 +100,7 @@ async function main() {
   const sent: { sheet: string; rows: string[][] }[] = []
   const mockAi: AiClassify = async (sampleIn, code) => {
     sent.push(sampleIn)
-    return { kind: code.kind, header_row: Math.max(0, code.headerRow - Math.max(0, code.headerRow - 3)), columns: code.columns, confidence: 'high', reason: '가짜 AI', cost_usd: 0 }
+    return { kind: code.kind, header_row: code.headerRow, columns: code.columns, row_labels: [], account_head_col: null, company: null, period: null, confidence: 'high', reason: '가짜 AI', cost_usd: 0 }
   }
   const run = (fileName: string, bytes: Uint8Array) => processUpload({ repo, businessId: BIZ, fileName, bytes, classify: mockAi, aiBudget: 2, today: new Date('2099-06-15') })
 
@@ -426,6 +428,9 @@ async function main() {
   assert.ok((await repo.listProjects()).some((p) => p.is_example), '대표 세션에 예시 표시가 없다')
   assert.ok((await repo.listTopGoals()).every((g) => g.is_example), '대표 세션의 시드 목표에 예시 표시가 없다')
 
+  // ── 17. 2026-10-14 운영 첫 사용 고침 — ⑤ 원장 구조 해석 ──
+  const ledgerPass = `${await runLedgerChecks()} · ${checkAiSchemas()}`
+
   console.log(
     `PASS: 0070 칸 = kinds.ts · 14가지 자동 넣기(분류 · 기간 · 상태) · 시트명 달라도 내용으로 · ④ 원료 줄 DB 0 · AI 요청 0 · 급여 이름 · 주민 · 계좌 0 · 개인 줄 사번 · ` +
       `카드 뒤 4자리 · 두 번 올리기 늘지 않음 · 합계 틀림 → 확인 필요 · 겹침 → 선택 필수 · replace → 되돌리기 옛 줄 되살림 · 마감 달${closed ? '' : '(dummy에 마감 달 없음 — 건너뜀)'} · ` +
@@ -433,7 +438,7 @@ async function main() {
       `0072: 18가지 자동 넣기 · 평가금액 입력자 확정 거부 · 다른 사람 확정 · 미입력 확정 거부 · 범위 다름 경고 · 빈칸 = 미입력 · 0 = 확인된 0 · 기초 = 앞 달 확정 · 미연결 · 첫 달 출처 · 이유 필수 · ` +
       `출고 구분 칸 없음 = 확인 필요 · 규칙 엇갈림 = 확인 필요 · 출고 kg 대기 읽기 0(대표 포함) · 넣을 때 kg 붙음 · 요약 보류 · 원료별 kg 0 · 출고명세 AI 0 · 모름 시트 kg 칸 비움 · ` +
       `같은 매입 = same 하나 · 금액만 = suspect · 중복 의심 → 미리보기 · 다른 거래로 풀기 · 기준 출처 · 자동 넣기 뒤 마감 · 월별 손익 그대로 · 재마감 대상${closed ? '' : '(마감 달 없음 — 건너뜀)'} · 직원 세션 예시 0. ` +
-      `진짜 AI 호출 0회(가짜 AI ${sent.length}회).`,
+      `${ledgerPass}. 진짜 AI 호출 0회(가짜 AI ${sent.length}회).`,
   )
 }
 
