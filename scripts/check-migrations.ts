@@ -7575,7 +7575,7 @@ async function featureSwitches() {
   const audits = async () => Number((await db.query<{ n: number }>(`select count(*)::int as n from audit_log where entity_table = 'feature_switches'`)).rows[0].n)
 
   // ── 1. 기본 줄: 열 개(0073) + 일곱(0081 청사진 뼈대) · 누구나 읽는다 · 기본값대로 ──
-  assert.equal(Number((await q<{ n: number }>(V73.member, `select count(*)::int as n from feature_switches`))[0].n), 17, '0073: 직원이 기본 줄 열일곱 개(0073 열 · 0081 일곱)를 못 읽는다')
+  assert.equal(Number((await q<{ n: number }>(V73.member, `select count(*)::int as n from feature_switches`))[0].n), 18, '0073: 직원이 기본 줄 열여덟 개(0073 열 · 0081 일곱 · 0082 하나)를 못 읽는다')
   assert.equal(await on(V73.chair, 'intake'), true, '0073: 대표에게 입구(기본 대표만)가 꺼져 있다')
   assert.equal(await on(V73.member, 'intake'), false, '0073: 직원에게 입구(기본 대표만)가 열렸다')
   assert.equal(await on(V73.ceo, 'intake', 'biz_dy'), false, '0073: 회사 대표에게 입구(기본 대표만)가 열렸다')
