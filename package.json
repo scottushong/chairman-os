@@ -38,6 +38,7 @@
     "check:approval-ledger": "tsx scripts/check-approval-ledger.ts",
     "check:approval-scenarios": "tsx --conditions=react-server scripts/check-approval-scenarios.ts",
     "check:staging-sql-0059": "tsx scripts/check-staging-sql-0059.ts",
+    "check:blueprint": "tsx --conditions=react-server scripts/check-blueprint.ts",
     "check:cost-engine": "tsx scripts/check-cost-engine.ts",
     "check:cost-import": "tsx scripts/check-cost-import.ts",
     "check:purchasing": "tsx scripts/check-purchasing.ts",

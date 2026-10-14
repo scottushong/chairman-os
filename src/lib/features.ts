@@ -101,6 +101,55 @@ export const FEATURES = [
     defaultAudience: 'chairman',
     from: 'feat/chair-dashboard',
   },
+  {
+    key: 'cost_forecast',
+    label: 'Forecast 원가',
+    description: '원료 다음 달 시장 전망 넣기와 제품별 Forecast 원료비 · 총원가(최근 구매가 × 오늘 환율과 시장 전망을 섞음). 월별 손익에는 들어가지 않는다. 꺼지면 RPC(cost_outlook_* · cost_forecast_*)도 거부.',
+    defaultAudience: 'chairman',
+    from: 'feat/blueprint-skeleton · 0081',
+  },
+  {
+    key: 'purchase_performance',
+    label: '구매 성과',
+    description: 'LOT · 원료 · 공급처 · 월별 구매가 vs 그날 시장가 · 절감액 · 환율 효과. 월별 손익에 구매이익을 따로 더하지 않는다. 꺼지면 RPC(purchase_performance)도 거부.',
+    defaultAudience: 'chairman',
+    from: 'feat/blueprint-skeleton · 0081',
+  },
+  {
+    key: 'customer_profit',
+    label: '고객별 수익성',
+    description: '고객별 매출 · 매출원가 · GM · 등급(판매 한 줄 실제 원가)과 «매출 큰데 마진 낮은» 고객 · 제품. 영업은 본인 판매의 매출 · 등급만. 꺼지면 RPC(customer_profit · customer_profit_watch)도 거부.',
+    defaultAudience: 'chairman',
+    from: 'feat/blueprint-skeleton · 0081',
+  },
+  {
+    key: 'margin_bridge',
+    label: '마진 변동 분해',
+    description: '두 기간 GM 원/kg 변화를 판매가 · 원료 · 제조 · 물류 · 기타 효과로 나눈다(합 = 전체). 꺼지면 RPC(margin_bridge)도 거부.',
+    defaultAudience: 'chairman',
+    from: 'feat/blueprint-skeleton · 0081',
+  },
+  {
+    key: 'competitor_price',
+    label: '경쟁사 가정',
+    description: '경쟁사 제조 · 물류 · 마진 가정과 경쟁사 예상 최소가 · 우리 목표가 · 그 가격에서의 우리 마진. 영업은 결과만. 꺼지면 RPC(competitor_*)도 거부.',
+    defaultAudience: 'chairman',
+    from: 'feat/blueprint-skeleton · 0081',
+  },
+  {
+    key: 'work_orders',
+    label: '작업지시',
+    description: '오더별 탱크 · 순서 · 담당 · 원료 이름 가림. 생산 직원은 본인 담당 오더만(원료 코드 · 배치 kg · 투입). 꺼지면 RPC(work_order_*)도 거부.',
+    defaultAudience: 'chairman',
+    from: 'feat/blueprint-skeleton · 0081',
+  },
+  {
+    key: 'product_diagnosis',
+    label: '제품 진단',
+    description: '제품 한 장의 진단 카드(Actual · 총원가 · 경쟁사 · 최소 판매가 · 상위 고객 · 마진 하락 이유 등 — 역할별)와 기간별 추이. 꺼지면 RPC(product_diagnosis · product_trend)도 거부.',
+    defaultAudience: 'chairman',
+    from: 'feat/blueprint-skeleton · 0081',
+  },
 ] as const satisfies readonly FeatureDef[]
 
 export type FeatureKey = (typeof FEATURES)[number]['key']

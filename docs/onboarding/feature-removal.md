@@ -27,6 +27,7 @@
 | 0076 | feat/b-rest | **0072**(fin_inventory_openings · fin_inventory_roll · fin_closed_gate · fin_reclose_mark · fin_audit) · **0073**(feature_on) · 0061(cost_purchase_candidates · cost_can) | 없음 |
 | 0077~0079 | feat/sales-margins · feat/cost-candidates · feat/ledger-post | 0073 · 0067 · 0075 · 0070/0072 | 각 절 참고 |
 | (마이그레이션 없음) | feat/chair-dashboard | 0073(chairman_dashboard 기본 줄) · 0075(fin_pl_month) · 0070(fin_uploads) | 없음 |
+| 0081 | feat/blueprint-skeleton | 0061~0067(원가 엔진 표 · cost_secret 문 · 판매) · **0073**(feature_on · 스위치 표) · 0015(fx_rates) — 0075 · 0080은 쓰지 않는다(번호만 이어짐) | 없음(스위치 일곱 · 표 넷 · RPC 열일곱이 함께 빠진다) |
 
 번호를 건너뛰어 올리면 안 된다: Supabase는 번호 순서로 올린다. 가운데를 빼려면 그 뒤 번호의 파일 이름을 다시 매기는 작업이 필요하다 — 그 일은 이 안내서 밖(반영 담당이 브랜치를 다시 짠다).
 
@@ -102,8 +103,48 @@
 - 빼면 사라지는 것: 월 · 분기 · 년 추이 표 · 14가지 자료 달력. 월별 손익 · 판매 마진 화면은 그대로.
 - 남는 데이터: 없음(읽기만).
 
+### 청사진 뼈대 일곱 (0081 · feat/blueprint-skeleton — 공통)
+- 반영에서 빼는 법: feat/blueprint-skeleton을 합치지 않고 0081을 올리지 않는다. 0081은 0061~0067 · 0073에 기대고, 0001~0080의 표 · 함수 · 정책을 하나도 고치지 않는다 — 빼도 앞 번호는 그대로 선다. 일곱 기능은 한 파일이라 하나만 빼려면 스위치로 끈다.
+- 0081 뒤에 빼려면: 새 마이그레이션으로 RPC 열일곱 · cost_secret 내부 함수(outlook_calc · mat_code · diag_card · forecast_unit · forecast_material · forecast_complete · sale_costs · bridge_calc · competitor_calc)를 drop하고, 표 넷(cost_market_outlook · cost_forecast_settings · cost_competitor_assumptions · cost_work_orders)은 보관하거나 지운다(지우기는 대표 확인 — 되돌릴 수 없다). 스위치 줄 일곱은 남겨도 해가 없다.
+- 직원에게 열기(공통): «보는 범위»를 «전원»(또는 회사 줄)으로. 그래도 아래 기능마다 적은 원가 엔진 줄('/purchasing · /production · /sales · /costing/<회사>')이 있어야 보인다. 원가 값은 0062 문(원가 관리 하루 20번 · 부를 때마다 기록 · 영업 0시 · 200건 · 구매 쓰기 겸직 거부)을 지난다.
+
+### cost_forecast — Forecast 원가 (0081)
+- 숨기는 것: 원료 다음 달 시장 전망 넣기 · 목록(cost_outlook_set · cost_outlook_list), Forecast 설정(cost_forecast_setting_set · cost_forecast_setting), 제품별 Forecast 원료비 · 총원가(cost_forecast_list).
+- 끄는 법: /settings/features → «Forecast 원가» 끄기(기본 대표만). RPC 다섯이 첫 줄에서 'feature_off'(대표 포함).
+- 남는 데이터: (끄기) cost_market_outlook · cost_forecast_settings 줄 그대로. 월별 손익(0075)에는 처음부터 들어가지 않는다.
+
+### purchase_performance — 구매 성과 (0081)
+- 숨기는 것: LOT · 원료 · 공급처 · 월별 구매가 vs 그날 시장가 · 절감액 · 환율 효과(purchase_performance). 대표 · 구매 · 원가 관리 · CFO = 모든 묶음, 회사 대표 · 임원 = 월 묶음만.
+- 끄는 법: «구매 성과» 끄기(기본 대표만). RPC가 'feature_off'.
+- 남는 데이터: 없음(읽기만). 대표 외 조회 감사 줄(audit_log 'performance:<회사>')은 남는다.
+
+### customer_profit — 고객별 수익성 (0081)
+- 숨기는 것: 고객별 매출 · 매출원가 · GM · 등급(customer_profit — 영업은 본인 판매의 매출 · 등급만)과 «매출 큰데 마진 낮은» 고객 · 제품(customer_profit_watch — 대표 · 원가 관리).
+- 끄는 법: «고객별 수익성» 끄기(기본 대표만). RPC 둘이 'feature_off'.
+- 남는 데이터: 없음(읽기만 — 0067 판매 표를 읽는다). 하루 셈 · 감사 줄('customers:<회사>')은 0062 자리에 남는다.
+
+### margin_bridge — 마진 변동 분해 (0081)
+- 숨기는 것: 두 기간 GM 원/kg 변화를 판매가 · 원료 · 제조 · 물류 · 기타 효과로 나눈 값(margin_bridge — 대표 · 원가 관리, 원료별은 대표만).
+- 끄는 법: «마진 변동 분해» 끄기(기본 대표만). RPC가 'feature_off'. 제품 진단의 «마진 하락 이유» 카드는 제품 진단 스위치를 따른다(같은 계산).
+- 남는 데이터: 없음(읽기만).
+
+### competitor_price — 경쟁사 가정 (0081)
+- 숨기는 것: 경쟁사 가정 넣기 · 목록(competitor_assumption_set · competitor_assumption_list — 원가 관리 · 대표)과 경쟁사 예상 최소가 · 우리 목표가 · 그 값에서 우리 마진(competitor_price — 영업은 결과만).
+- 끄는 법: «경쟁사 가정» 끄기(기본 대표만). RPC 셋이 'feature_off'.
+- 남는 데이터: (끄기) cost_competitor_assumptions 줄 그대로.
+
+### work_orders — 작업지시 (0081)
+- 숨기는 것: 오더별 탱크 · 순서 · 담당 · 원료 이름 가림(work_order_set — 대표), 작업지시 한 장(work_order_get — 대표 · 담당 생산 직원, 원료 코드 · 배치 kg · 투입), 본인 담당 목록(work_order_mine).
+- 끄는 법: «작업지시» 끄기(기본 대표만). RPC 셋이 'feature_off'. 0064 오더 · 작업지시 수량 표 자체는 그대로(생산은 0064 정책대로 표를 읽는다 — DEFERRED «담당자로 좁히기»).
+- 남는 데이터: (끄기) cost_work_orders 줄 그대로.
+
+### product_diagnosis — 제품 진단 (0081)
+- 숨기는 것: 제품 한 장의 진단 카드(product_diagnosis — 대표 11장 · 원가 관리 10장 · 영업 4장)와 기간별 추이(product_trend — 대표 · 원가 관리).
+- 끄는 법: «제품 진단» 끄기(기본 대표만). RPC 둘이 'feature_off'.
+- 남는 데이터: 없음(읽기만). 하루 셈 · 감사 줄은 0062 자리에 남는다.
+
 ### 다음 단계 기능(스위치 줄만 먼저 있음 — 화면은 아직 없다)
-- 없음.
+- 0081 일곱(cost_forecast · purchase_performance · customer_profit · margin_bridge · competitor_price · work_orders · product_diagnosis) — DB · RPC · 스위치만 있고 화면은 다음 블록.
 
 새 기능을 만들 때: ① `src/lib/features.ts` FEATURES에 한 줄 ② 새 마이그레이션에 그룹 기본 줄 insert(0073 3절 모양, `on conflict do nothing`) ③ 새 RPC 첫 줄 `if not feature_on('키', 회사) then raise exception 'feature_off' using errcode = '42501'; end if;` ④ 화면 `featureOn(user, '키', 회사)` → notFound · 메뉴는 `FEATURE_NAV` ⑤ 이 안내서 표에 줄.
 
