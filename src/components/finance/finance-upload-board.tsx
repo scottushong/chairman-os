@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useRef, useState, useTransition } from 'react'
 
-import { applyPendingUpload, cancelUpload, revertUpload, uploadFinanceFiles } from '@/app/actions/finance-upload'
+import { applyPendingUpload, cancelUpload, reinterpretUpload, revertUpload, uploadFinanceFiles } from '@/app/actions/finance-upload'
 import { saveOfficialStatement } from '@/app/actions/statements'
 import { KIND_SPECS, type FieldSpec, type UploadKind } from '@/lib/finance-upload/kinds'
 import { signedAmount } from '@/lib/finance-upload/official-sign'
@@ -446,7 +446,27 @@ function PendingPanel({ businessId, p, role }: { businessId: string; p: PendingV
         >
           취소
         </button>
+        {p.hasGrid && !p.masked ? (
+          <button
+            type="button"
+            disabled={busy}
+            data-testid="reinterpret"
+            onClick={() =>
+              start(async () => {
+                setProblems([])
+                const r = await reinterpretUpload(p.upload.upload_id, businessId)
+                const c = r.cards.find((x) => x.status === 'applied' || x.status === 'needs_review') ?? r.cards[0]
+                setMsg(r.error ?? (c ? `다시 해석했습니다 — ${STATUS_KO[c.status]}${c.ai_used ? ` · AI ${c.ai_used}번` : ''}. ${c.message}` : '다시 해석했습니다.'))
+                router.refresh()
+              })
+            }
+            className="min-h-10 rounded-md border border-accent/50 px-3 text-t12 text-accent hover:bg-accent/5 disabled:opacity-40"
+          >
+            {busy ? '해석 중…' : 'AI로 다시 해석'}
+          </button>
+        ) : null}
       </div>
+      {p.hasGrid && !p.masked ? <p className="mt-1 text-t10h text-ink-muted">«AI로 다시 해석»은 파일을 다시 올리지 않고 줄 종류(거래 · 월계 · 누계 · 합계 …)와 칸을 처음부터 다시 읽어 합계 줄과 대조합니다. 맞지 않으면 차이를 보여 주고 멈춥니다.</p> : null}
     </article>
   )
 }

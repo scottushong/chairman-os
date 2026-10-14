@@ -4,6 +4,13 @@
 #   bash scripts/release-production.sh 0049
 #   bash scripts/release-production.sh 0050 0051 0052
 #   bash scripts/release-production.sh --include-all 0050 0051 0052
+#   bash scripts/release-production.sh --app-only          (마이그레이션 없는 앱 배포 — 2026-10-14)
+#
+# --app-only — no migration in this release. Steps 1 · 2 run as usual (clean master · production
+# link · migration list), then the pending list must be EMPTY (production already has every local
+# migration) — otherwise it stops: the app would go out ahead of its DB. Steps 3–5 (dry-run · push)
+# are skipped, staging is re-linked, then 7 (git push = Vercel deploy) and 8 (health) as usual.
+# RELEASE_DRY_RUN=1 stops right after the empty-pending check.
 #
 # The arguments are the migrations you expect the production dry-run to list. If the dry-run
 # shows anything else (more, fewer, or nothing), the script stops before writing.
@@ -61,15 +68,22 @@ env_value() {
 linked_ref() { [ -f "$REF_FILE" ] && tr -d '\r\n ' < "$REF_FILE" || true; }
 
 INCLUDE_ALL=0
+APP_ONLY=0
 NUMBERS=()
 for n in "$@"; do
   case "$n" in
     --include-all) INCLUDE_ALL=1 ;;
-    *) [[ "$n" =~ ^[0-9]{4}$ ]] || die "'$n' — 번호는 네 자리 숫자다 (옵션은 --include-all 하나뿐)."; NUMBERS+=("$n") ;;
+    --app-only) APP_ONLY=1 ;;
+    *) [[ "$n" =~ ^[0-9]{4}$ ]] || die "'$n' — 번호는 네 자리 숫자다 (옵션은 --include-all · --app-only뿐)."; NUMBERS+=("$n") ;;
   esac
 done
-[ ${#NUMBERS[@]} -ge 1 ] || die "기대 마이그레이션 번호를 인자로 준다. 예: bash scripts/release-production.sh 0049"
-EXPECTED="$(printf '%s\n' "${NUMBERS[@]}" | sort -u)"
+if [ "$APP_ONLY" = 1 ]; then
+  { [ ${#NUMBERS[@]} -eq 0 ] && [ "$INCLUDE_ALL" = 0 ]; } || die "--app-only는 번호 · --include-all과 같이 쓰지 않는다(마이그레이션 없는 배포)."
+  EXPECTED=""
+else
+  [ ${#NUMBERS[@]} -ge 1 ] || die "기대 마이그레이션 번호를 인자로 준다. 예: bash scripts/release-production.sh 0049 (마이그레이션 없는 앱 배포는 --app-only)"
+  EXPECTED="$(printf '%s\n' "${NUMBERS[@]}" | sort -u)"
+fi
 # Extra flags for both the dry-run and the real push. Only --include-all, only when given.
 PUSH_FLAGS=()
 [ "$INCLUDE_ALL" = 0 ] || PUSH_FLAGS=(--include-all)
@@ -172,6 +186,7 @@ REMOTE_ONLY="$(sed -n 3p <<< "$PARSED")"
 [ -z "$REMOTE_ONLY" ] || die "production에만 있고 이 checkout에 없는 마이그레이션: $REMOTE_ONLY"
 
 JOINED="$(printf '%s\n' "$EXPECTED" | paste -sd~ - | sed 's/~/ · /g')"
+[ "$APP_ONLY" = 0 ] || JOINED="앱만(마이그레이션 없음)"
 echo "복원 지점   $RESTORE_UTC UTC (= $RESTORE_KST KST)"
 echo "production  $PROD_VERSION"
 echo "직전 SHA    $PREVIOUS_SHA"
@@ -179,9 +194,23 @@ echo
 echo "OPERATIONS §9 «되돌리는 길» 기록용:"
 echo "$RELEASE_DATE 릴리스($JOINED · \`$RELEASE_SHA\`)의 값은 복원 지점 \`$RESTORE_UTC UTC\`(= \`$RESTORE_KST KST\`, production $PROD_VERSION)와 직전 SHA \`$PREVIOUS_SHA\`였다."
 
+if [ "$APP_ONLY" = 1 ]; then
+  step "3~5. 앱만 — production 대기 마이그레이션이 없어야 한다"
+  [ -z "$PENDING" ] || die "production에 아직 없는 마이그레이션: $(echo $PENDING) — 앱만 먼저 나가면 안 된다(DB 먼저 · 번호를 주고 다시). 아무것도 쓰지 않았다."
+  echo "대기 없음 — production $PROD_VERSION = 이 checkout의 마지막 마이그레이션. DB는 건드리지 않는다."
+  if [ "${RELEASE_DRY_RUN:-}" = 1 ]; then
+    echo
+    echo "RELEASE_DRY_RUN=1 — 여기서 멈춘다. production DB · git · 앱은 그대로다."
+    exit 0
+  fi
+  relink_staging
+  [ "$LINKED_PRODUCTION" = 0 ] || die "staging 재link가 안 됐다. 앱 배포 전에 link부터 되돌릴 것."
+fi
+
 # Out of order = pending (local file, no remote row) numbered below the highest remote version.
 # In the CLI table such a row has the local version and an empty remote cell — read_migrations
 # already puts it in PENDING. db push refuses these without --include-all.
+if [ "$APP_ONLY" = 0 ]; then
 OUT_OF_ORDER=""
 for n in $PENDING; do
   if [ "$((10#$n))" -lt "$((10#$PROD_VERSION))" ]; then OUT_OF_ORDER="${OUT_OF_ORDER:+$OUT_OF_ORDER }$n"; fi
@@ -241,6 +270,8 @@ PUSH_STARTED=0
 
 relink_staging
 [ "$LINKED_PRODUCTION" = 0 ] || die "staging 재link가 안 됐다. 앱 배포 전에 link부터 되돌릴 것."
+
+fi
 
 # ---------------------------------------------------------------------------------------------
 step "7. origin 비교 → 앱 배포"
