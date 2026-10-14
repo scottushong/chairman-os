@@ -31,9 +31,11 @@
 --   처음 판(ff14103까지)은 둘의 FORCE를 내렸다 — 소유자가 BYPASSRLS가 아니면 정의자 함수가 정책 아래로 내려가
 --   동기화가 0행이 되기 때문이었다. FORCE를 내리면 postgres가 소유한 **모든** 정의자 함수가 tasks를 정책 없이 본다.
 --   그래서 대신 «동기화 통로»를 좁게 낸다:
---     · process_chart_sync_ctx() — 동기화 함수 네 개만 함수 SET 절로 chairman.process_chart_sync = 'on'을 켜고
---       (함수가 끝나면 Postgres가 원래 값으로 되돌린다), 그 안(current_user = 소유자)에서만 참이다.
+--     · process_chart_sync_ctx() — 동기화 함수 네 개만 본문에서 set_config('chairman.process_chart_sync', 'on', true)로 켜고
+--       끝나기 직전에 앞 값으로 되돌린다(오류로 끝나면 트랜잭션 · 하위 트랜잭션과 함께 되돌아간다). 그 안(current_user = 소유자)에서만 참이다.
 --       PostgREST 세션(current_user = authenticated)에서는 그 값을 켜도 거짓이다.
+--       (2026-10-14 고침: 처음 판은 함수 SET 절 «set chairman.process_chart_sync = 'on'»이었다 — Supabase의 postgres는 superuser가
+--        아니라 사용자 정의 설정을 함수 SET 절에 못 쓴다(«permission denied to set parameter», staging push 실패). 본문 set_config는 된다.)
 --     · 그 통로로 열리는 것: process_charts 읽기 · 줄 잡기(for update), tasks 중 **시트 업무(source_label 있음)**의
 --       읽기 · 넣기 · 고치기. 앱 업무(source_label null)는 통로로도 못 고친다.
 --     · process_charts_read는 표를 다시 읽지 않는 판정(team_id 칸)으로 바꾼다 — FORCE 아래에서 정책이
@@ -438,31 +440,35 @@ comment on view calendar_items is
 -- 시트가 연결된 탭 목록(새벽 cron). AI Agent는 process_charts 읽기 정책이 없으므로 이 함수로만 본다.
 create or replace function process_chart_sync_targets()
 returns table (chart_id bigint, business_id text, team_name text, sheet_id text, sheet_tab text)
-language plpgsql stable security definer set search_path = public
-  set chairman.process_chart_sync = 'on' as $fn$
+language plpgsql volatile security definer set search_path = public as $fn$
+declare
+  v_prev text := coalesce(current_setting('chairman.process_chart_sync', true), '');
 begin
   if not is_active() or auth_role() is distinct from 'AIAgent' then
     raise exception 'process_sync_forbidden' using errcode = '42501';
   end if;
+  perform set_config('chairman.process_chart_sync', 'on', true);  -- 통로 켬(머리 주석 · 2026-10-14 고침)
   return query
     select c.id, c.business_id, c.team_name, c.sheet_id, c.sheet_tab
       from process_charts c
      where c.sheet_id is not null
      order by c.business_id, c.sort_order, c.id;
+  perform set_config('chairman.process_chart_sync', v_prev, true);  -- 통로 끔(앞 값으로)
 end;
 $fn$;
 
 -- 공통 입구 판정: AI Agent · 탭 있음 · 시트 연결됨 · 누른 사람이 그 탭을 봄 · 1분 간격. 탭 줄을 잡아 둔다.
 create or replace function process_chart_sync_gate(p_chart_id bigint, p_trigger text, p_requested_by uuid)
 returns process_charts
-language plpgsql volatile security definer set search_path = public
-  set chairman.process_chart_sync = 'on' as $fn$
+language plpgsql volatile security definer set search_path = public as $fn$
 declare
   v_chart process_charts;
+  v_prev  text := coalesce(current_setting('chairman.process_chart_sync', true), '');
 begin
   if not is_active() or auth_role() is distinct from 'AIAgent' then
     raise exception 'process_sync_forbidden' using errcode = '42501';
   end if;
+  perform set_config('chairman.process_chart_sync', 'on', true);  -- 통로 켬(머리 주석 · 2026-10-14 고침)
   if p_trigger is null or p_trigger not in ('button', 'open', 'cron') then
     raise exception 'process_sync_invalid: trigger';
   end if;
@@ -490,6 +496,7 @@ begin
   ) then
     raise exception 'process_sync_too_soon';
   end if;
+  perform set_config('chairman.process_chart_sync', v_prev, true);  -- 통로 끔(부른 apply · fail이 켰으면 'on' 그대로)
   return v_chart;
 end;
 $fn$;
@@ -506,9 +513,9 @@ create or replace function process_chart_sync_apply(
   p_chart_id bigint, p_trigger text, p_requested_by uuid,
   p_read int, p_skipped int, p_warnings jsonb, p_rows jsonb
 ) returns jsonb
-language plpgsql volatile security definer set search_path = public
-  set chairman.process_chart_sync = 'on' as $fn$
+language plpgsql volatile security definer set search_path = public as $fn$
 declare
+  v_prev     text := coalesce(current_setting('chairman.process_chart_sync', true), '');
   v_chart    process_charts;
   v_label    text;
   v_project  text;
@@ -534,6 +541,7 @@ declare
   v_sync_id  bigint;
 begin
   v_chart := process_chart_sync_gate(p_chart_id, p_trigger, p_requested_by);
+  perform set_config('chairman.process_chart_sync', 'on', true);  -- 통로 켬(문을 지난 뒤 · 2026-10-14 고침)
 
   if p_rows is null or jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) > 2000 then
     raise exception 'process_sync_invalid: rows';
@@ -667,6 +675,7 @@ begin
           p_read, v_new, v_changed, v_gone, p_skipped, v_warn)
   returning id into v_sync_id;
 
+  perform set_config('chairman.process_chart_sync', v_prev, true);  -- 통로 끔(앞 값으로)
   return jsonb_build_object('sync_id', v_sync_id, 'read', p_read, 'new', v_new, 'changed', v_changed,
                             'gone', v_gone, 'skipped', p_skipped, 'warnings', jsonb_array_length(v_warn));
 end;
@@ -676,17 +685,19 @@ $fn$;
 create or replace function process_chart_sync_fail(
   p_chart_id bigint, p_trigger text, p_requested_by uuid, p_error text
 ) returns bigint
-language plpgsql volatile security definer set search_path = public
-  set chairman.process_chart_sync = 'on' as $fn$
+language plpgsql volatile security definer set search_path = public as $fn$
 declare
+  v_prev  text := coalesce(current_setting('chairman.process_chart_sync', true), '');
   v_chart process_charts;
   v_id    bigint;
 begin
   v_chart := process_chart_sync_gate(p_chart_id, p_trigger, p_requested_by);
+  perform set_config('chairman.process_chart_sync', 'on', true);  -- 통로 켬(문을 지난 뒤 · 2026-10-14 고침)
   insert into process_chart_syncs (business_id, team_name, chart_id, actor_user_id, trigger, ok, error)
   values (v_chart.business_id, v_chart.team_name, v_chart.id, p_requested_by, p_trigger, false,
           left(coalesce(nullif(btrim(p_error), ''), '알 수 없는 오류'), 500))
   returning id into v_id;
+  perform set_config('chairman.process_chart_sync', v_prev, true);  -- 통로 끔(앞 값으로)
   return v_id;
 end;
 $fn$;

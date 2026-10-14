@@ -3,7 +3,12 @@
 **넣는 것:** 브랜치 `feat/blueprint-skeleton` (워크트리 `C:\Users\Edison Hong\projects\chairman-os-blueprint`) — `feat/material-price-lock`(2dce767) **위에** 쌓았다.
 **마이그레이션 1개:** `0081_blueprint_skeleton`.
 
-**전제: 0069 ~ 0080이 운영에 먼저 들어간 뒤.** 0081은 0073 스위치 표 · 0061 ~ 0067 원가 함수 · 0080 위에 선다. 순서는
+> **2026-10-14 긴급 고침 — 먼저 읽을 것.** 0071의 함수 SET 절이 Supabase(postgres가 superuser 아님)에서 «permission denied to set parameter»로 멈췄다.
+> 이 브랜치의 0071은 고친 판이다(본문 set_config). **`release/2026-10-13-all`(chairman-os-all)의 0071은 옛 판** — 그 브랜치로 운영에 넣지 않는다.
+> 운영은 이 브랜치(`feat/blueprint-skeleton` — 0069 ~ 0081 전부 + 고친 0071)를 master에 합쳐 **0069 ~ 0081을 한 번에** 넣는다(아래 c · d의 번호 목록을 그렇게 읽는다).
+> staging은 2026-10-14에 0071 ~ 0081이 들어갔고, staging 시험 0071 ~ 0081이 staging에서 11/11 PASS(`node scripts/build-staging-dryrun.mjs 0071 0081 --tests-only`). 결정 기록 `docs/decisions/2026-10-14-staging-0071.md`.
+
+**전제: 0069 ~ 0080이 운영에 먼저 들어간 뒤.** (위 긴급 고침 뒤로는: 이 브랜치 하나로 0069 ~ 0081을 함께.) 0081은 0073 스위치 표 · 0061 ~ 0067 원가 함수 · 0080 위에 선다. 순서는
 `docs/onboarding/release-2026-10-13-all.md`(0069 ~ 0079) → `docs/onboarding/release-0080.md`(0080) → 이 문서.
 
 **무엇이 생기나(전부 스위치 — 기본 «대표만»):**
