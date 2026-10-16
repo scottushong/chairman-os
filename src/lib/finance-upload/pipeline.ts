@@ -149,11 +149,15 @@ export function classifyByCode(sheet: EcountSheet): Classification {
   const header = findHeader(sheet.rows)
   const title = normalizeLabel(sheetText(sheet, 5))
   const name = normalizeLabel(sheet.name)
+  // ⑤ 계정별 원장은 계정 코드가 칸이 아니라 계정 제목 줄(«1509(제품)»)에 있다 — 제목 줄이 있으면 «계정코드 칸 있음»과 같게 센다.
+  const noLayout = { cols: {}, headCol: null }
+  const ledgerHeads = sheet.rows.slice(0, 400).filter((r) => accountHead(r, noLayout)).length
   const scored = KIND_SPECS.map((spec) => {
     const hint = spec.hints.some((h) => name.includes(normalizeLabel(h))) ? 3 : spec.hints.some((h) => title.includes(normalizeLabel(h))) ? 2 : 0
     const cols = header ? mapColumns(spec, sheet.rows[header.row]) : {}
-    const required = spec.fields.filter((f) => f.required).every((f) => f.key in cols)
-    const matched = Object.keys(cols).length
+    const headAsCode = spec.kind === 'ledger' && !('account_code' in cols) && ledgerHeads > 0 && 'debit' in cols && 'credit' in cols
+    const required = spec.fields.filter((f) => f.required).every((f) => f.key in cols || (headAsCode && f.key === 'account_code'))
+    const matched = Object.keys(cols).length + (headAsCode ? 1 : 0)
     return { spec, cols, score: hint * 2 + matched + (required ? 2 : -3), hint, required, matched }
   }).sort((a, b) => b.score - a.score)
   const [a, b] = scored
@@ -211,6 +215,8 @@ export interface ReadResult {
   fileTotal: number | null
   problems: string[]
   dates: string[]
+  /** 넣지 않은 줄 수(숫자가 든 제목 · 빈 이름 줄 · 숫자 아닌 칸 · 종류별 문제) — 카드에 적는다(조용히 버리지 않는다) */
+  skipped?: number
   /** ⑤ 원장 — 줄 종류 · 계정 대조 결과 */
   ledger?: LedgerRead
 }
@@ -235,6 +241,7 @@ export function readRows(sheet: EcountSheet, cls: Classification): ReadResult {
   const problems: string[] = []
   const dates: string[] = []
   let fileTotal: number | null = null
+  let skipped = 0
   const firstText = spec.fields.find((f) => f.type === 'text' && f.required)?.key
   const sheetTitle = normalizeLabel(sheetText(sheet, 5))
   const personRefCol = (sheet.rows[cls.headerRow] ?? []).findIndex((c) => /사번|사원번호|직원번호/.test(normalizeLabel(cellText(c))))
@@ -275,14 +282,22 @@ export function readRows(sheet: EcountSheet, cls: Classification): ReadResult {
         rec[field.key] = field.key === 'card_last4' ? (/(\d{4})\D*$/.exec(t)?.[1] ?? null) : t || null
       }
     }
-    if (firstText && !rec[firstText]) continue // 제목 · 빈 이름 줄
-    if (bad) continue
+    if (firstText && !rec[firstText]) {
+      // 제목 · 빈 이름 줄 — 숫자가 든 줄만 센다(꾸밈 줄까지 세면 안내가 시끄럽다)
+      if (spec.fields.some((f) => f.type === 'number' && typeof rec[f.key] === 'number')) skipped += 1
+      continue
+    }
+    if (bad) {
+      skipped += 1
+      continue
+    }
     if (cls.kind === 'payroll') rec.person_ref = personRefCol >= 0 ? cellText(row[personRefCol]).slice(0, 40) || `row-${r + 1}` : `row-${r + 1}`
     // 0072 값 상태 — 빈칸 → missing(값 null) · 0 → 0 확인 · 그 밖 → 값. 빈칸을 0으로 만들지 않는다.
     for (const field of spec.fields) if (field.state) rec[field.state] = valueState(rec[field.key])
     const extra = finishRow(cls.kind, rec, sheetTitle, cls.columns)
     if (extra) {
       problems.push(extra)
+      skipped += 1
       continue
     }
     rows.push(rec)
@@ -297,9 +312,9 @@ export function readRows(sheet: EcountSheet, cls: Classification): ReadResult {
       for (const k of ['salary', 'bonus', 'severance'] as const) cur[k] = Number(cur[k] ?? 0) + Number(p[k] ?? 0)
       byDept.set(d, cur)
     }
-    return { rows: [...byDept.values()], people, fileTotal, problems, dates }
+    return { rows: [...byDept.values()], people, fileTotal, problems, dates, skipped }
   }
-  return { rows, people: [], fileTotal, problems, dates }
+  return { rows, people: [], fileTotal, problems, dates, skipped }
 }
 
 /* ───────────────────────── 0072: 값 상태 · 종류별 마무리 · 원료 출고 구분 ───────────────────────── */
@@ -445,18 +460,21 @@ function finishRow(kind: UploadKind, rec: Rec, title: string, cols: Record<strin
 
 /** 제목 줄의 기간(한 달) → 날짜 칸의 가장 많은 달 → 파일 이름. 못 찾으면 null(사람이 고른다). */
 export function detectMonth(sheet: EcountSheet, dates: string[], fileName: string, today = new Date()): { period: string | null; how: string } {
+  const months = dates.filter((d) => !d.startsWith('0000')).map((d) => d.slice(0, 7))
+  const count = new Map<string, number>()
+  for (const m of months) count.set(m, (count.get(m) ?? 0) + 1)
+  const top = months.length ? [...count.entries()].sort((a, b) => b[1] - a[1] || b[0].localeCompare(a[0]))[0][0] : null
   for (const row of sheet.rows.slice(0, 10)) {
     const p = detectPeriod(row.map(cellText).join(' '))
     if (p && p.from.slice(0, 7) === p.to.slice(0, 7)) return { period: p.from.slice(0, 7), how: `제목 «${p.from} ~ ${p.to}»` }
-    if (p) return { period: p.to.slice(0, 7), how: `제목 기간의 끝 달(${p.from} ~ ${p.to})` }
+    // 연간 · 여러 달 제목(2026/01/01 ~ 2026/12/31 — ECOUNT 원장은 해 전체로 뽑는 일이 흔하다): 달은 날짜 칸이 정한다.
+    // 날짜 칸의 달이 둘 이상이면 «확인 필요»가 되도록 경고는 validate가 아니라 how에 적는다(사람이 기간을 본다).
+    if (p && top && top >= p.from.slice(0, 7) && top <= p.to.slice(0, 7)) {
+      return { period: top, how: `제목은 여러 달(${p.from} ~ ${p.to}) — 날짜 칸에서 가장 많은 달${count.size > 1 ? `(${count.size}개 달이 섞임)` : ''}` }
+    }
+    if (p) return { period: p.to.slice(0, 7), how: `제목 기간의 끝 달(${p.from} ~ ${p.to}) — 날짜 칸으로 정하지 못함` }
   }
-  const months = dates.filter((d) => !d.startsWith('0000')).map((d) => d.slice(0, 7))
-  if (months.length) {
-    const count = new Map<string, number>()
-    for (const m of months) count.set(m, (count.get(m) ?? 0) + 1)
-    const top = [...count.entries()].sort((a, b) => b[1] - a[1] || b[0].localeCompare(a[0]))[0][0]
-    return { period: top, how: `날짜 칸에서 가장 많은 달(${count.size}개 달 중)` }
-  }
+  if (top) return { period: top, how: `날짜 칸에서 가장 많은 달(${count.size}개 달 중)` }
   const name = fileName.normalize('NFKC')
   const ym = /(20\d{2})[.\-_년 ]*(0?[1-9]|1[0-2])\s*월?/.exec(name)
   if (ym) return { period: `${ym[1]}-${ym[2].padStart(2, '0')}`, how: '파일 이름' }

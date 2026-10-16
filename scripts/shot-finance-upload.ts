@@ -145,7 +145,7 @@ async function v21() {
 /**
  * C단계 PDF · 사진(SHOT_OUT=.screenshots/finance-pdf). 서버는 FINANCE_UPLOAD_AI_MOCK=1 + 한도 env(가짜 읽기 — 진짜 AI 0회).
  *   pdf-chair(DUMMY_USER=chairman): 합계 틀린 카드 PDF → «확인 필요» 미리보기 · 급여대장 PDF · 배합비 PDF 거부 · 결산서 PDF → 공식 결산
- *   pdf-staff(DUMMY_USER=support_lead): PDF → «PDF · 사진은 준비 중» · 엑셀은 그대로 넣힘 · «회장» 0
+ *   pdf-staff(DUMMY_USER=support_lead): PDF → «PDF · 사진 읽기는 지금 «대표만» 쓸 수 있습니다»(보류) · 엑셀은 그대로 넣힘 · «회장» 0
  */
 async function pdfShots() {
   const { textPdf } = await import('./fixtures/finance-pdf')
@@ -193,6 +193,8 @@ async function pdfShots() {
       await page.waitForTimeout(2500) // 화면이 붙기(hydration) 전에 파일을 넣으면 onChange가 없다
       await page.locator('input[type=file][multiple]').setInputFiles(files)
       await page.getByText('방금 올린 파일').waitFor({ timeout: 180_000 })
+      // 2026-10-16: 파일마다 한 요청 — 카드가 하나씩 붙는다. 마지막 파일까지 끝나(«파일 고르기»로 돌아와)야 읽는다.
+      await page.getByRole('button', { name: '파일 고르기' }).waitFor({ timeout: 240_000 })
       await page.waitForTimeout(2000)
     }
     if (KIND === 'pdf-chair') {
@@ -213,11 +215,11 @@ async function pdfShots() {
       await shootEl(phone, 'section:has(> h2:text("방금 올린 파일"))', 'chair-2-cards-refused-official-phone.png')
       await shootEl(phone, 'section:has(> h2:has-text("확인 필요 ·")) article:has-text("가짜 법인카드 6월.pdf")', 'chair-4-pdf-preview-total-mismatch-phone.png')
     } else {
-      // 2. 직원 — PDF는 «준비 중», 엑셀은 그대로
+      // 2. 직원 — PDF는 보류(스위치 «대표만» 안내), 엑셀은 그대로
       await upload(pc, [staffPdf, staffXlsx])
       const body = await bodyText(pc)
-      if (!body.includes('PDF · 사진은 준비 중')) throw new Error('직원 화면에 «PDF · 사진은 준비 중»이 없다')
-      if (!body.includes('자동으로 넣었습니다')) throw new Error('직원 엑셀이 안 들어갔다')
+      if (!body.includes('PDF · 사진 읽기는 지금 «대표만» 쓸 수 있습니다')) throw new Error('직원 화면에 PDF 스위치 안내(«대표만»)가 없다')
+      if (!body.includes('자동으로 넣었습니다')) throw new Error(`직원 엑셀이 안 들어갔다: ${body.slice(body.indexOf('방금 올린 파일'), body.indexOf('방금 올린 파일') + 600)}`)
       await shoot(pc, 'staff-1-pdf-later-pc.png')
       await shootEl(pc, 'section:has(> h2:text("방금 올린 파일"))', 'staff-2-cards-pc.png')
       await upload(phone, [staffPdf])

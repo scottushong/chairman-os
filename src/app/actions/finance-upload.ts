@@ -8,10 +8,12 @@ import { aiLimits, realClassifier } from '@/lib/finance-upload/ai'
 import { realDocReader } from '@/lib/finance-upload/ai-doc'
 import { isUploadKind, kindSpec } from '@/lib/finance-upload/kinds'
 import { encodeShape, ledgerLayoutByCode, ROW_ROLES, type LedgerLayout, type RowLabel } from '@/lib/finance-upload/ledger'
-import { UPLOAD_MAX_BYTES } from '@/lib/finance-upload/open'
+import { inboxPathOk } from '@/lib/finance-upload/inbox'
+import { MSG, UPLOAD_MAX_BYTES } from '@/lib/finance-upload/open'
 import { mapColumns, readRows, validate, type Classification } from '@/lib/finance-upload/pipeline'
 import { finUploadError, fromGrid, processUpload, reinterpretPending, saveTxGroupsFor, type DocOptions, type FileCard } from '@/lib/finance-upload/process'
-import { featureOn } from '@/lib/features-server'
+import { AUDIENCE_LABEL } from '@/lib/features'
+import { featureOn, featureWhy } from '@/lib/features-server'
 import { getRepository } from '@/lib/repository'
 import type { FinRow, FinUpload } from '@/types'
 
@@ -38,50 +40,82 @@ function kstDay(iso: string) {
   return new Date(Date.parse(iso) + 9 * 3_600_000).toISOString().slice(0, 10)
 }
 
-export async function uploadFinanceFiles(form: FormData): Promise<UploadResult> {
+const failedCard = (fileName: string, message: string): FileCard => ({ file_name: fileName, sheet: null, kind: 'unknown', period: null, status: 'failed', upload_id: null, rows: 0, message, why: [], ai_used: 0, confidence: 'none' })
+
+/**
+ * 파일 **하나** 올리기(2026-10-16 — 한 요청에 한 파일: 한 파일 실패가 다른 파일에 번지지 않고, 요청마다 maxDuration 300초).
+ *   live  브라우저가 0082 수신함(fin-upload-inbox «<회사>/<본인>/<이름>»)에 바로 올리고 여기에는 경로만 — Vercel 4.5MB 요청 한도를 타지 않는다.
+ *         서버는 사람 세션(RLS)으로 내려받아 처리하고 **지운다**(원본을 두지 않는다 — 0070 설계).
+ *   dummy 바이트를 이 요청으로(dummy 첨부와 같은 길 — bodySizeLimit 21mb).
+ */
+export async function uploadFinanceFile(form: FormData): Promise<UploadResult> {
+  // 요청 300초(화면 maxDuration) 안에 끝내도록 — AI가 남은 시간을 보고 멈춘다.
+  const deadline = Date.now() + 280_000
   const user = await currentUser()
   if (!user) return { cards: [], error: '세션이 만료되었습니다. 다시 로그인하세요.' }
   const businessId = text(form.get('business_id'), 40)
-  if (!BIZ.test(businessId)) return { cards: [], error: '회사를 알 수 없습니다.' }
-  // 0073 기능 스위치 «자료 올리기» — 꺼져 있으면 거부(화면도 404).
-  if (!(await featureOn(user, 'finance_upload', businessId))) return { cards: [], error: OFF }
-  if (!canKeepBooks(user, businessId)) return { cards: [], error: '이 회사의 재무를 넣을 권한이 없습니다.' }
-  const files = form.getAll('files').filter((f): f is File => f instanceof File).slice(0, 10)
-  if (!files.length) return { cards: [], error: '파일을 놓아 주세요.' }
+  const file = form.get('file')
+  const path = text(form.get('path'), 300)
+  const fileName = (file instanceof File ? file.name : text(form.get('name'), 255)).slice(0, 255)
+  // 수신함 파일은 어느 길로 끝나든(거부 · 실패 포함) 지운다 — 원본을 두지 않는다(리뷰: 앞쪽 거부가 파일을 남겼다).
+  const mine = !!path && BIZ.test(businessId) && inboxPathOk(path, businessId, user.user_id)
   const repo = await getRepository()
-  // 하루 AI 한도 — 이 회사의 오늘(KST) 올리기의 AI 호출 합.
-  const { perFile, perDay } = aiLimits()
-  const today = kstDay(new Date().toISOString())
-  const usedToday = (await repo.listFinUploads(businessId).catch(() => [] as FinUpload[])).filter((u) => kstDay(u.created_at) === today).reduce((a, u) => a + u.ai_used, 0)
-  let dayLeft = Math.max(0, perDay - usedToday)
-  const classify = realClassifier(repo, businessId)
-  // C단계 PDF · 사진 — 기능 스위치 «PDF · 사진 읽기»(0073, 기본 대표만). 꺼지면 «준비 중», 엑셀은 그대로. 한도 env가 없으면 읽기 도구 없음(→ 미리보기).
-  const allowed = await featureOn(user, 'finance_docs', businessId)
-  const docs: DocOptions = { allowed, read: allowed && perFile > 0 && perDay > 0 ? realDocReader(repo, businessId) : null }
-  if (allowed && files.some((f) => /\.(pdf|jpe?g|png)$/i.test(f.name) || /^(application\/pdf|image\/)/.test(f.type))) {
-    // 회사 이름 대조 · 공식 결산 계정 맞추기 — PDF · 사진이 있을 때만 읽는다.
+  try {
+    if (!BIZ.test(businessId)) return { cards: [], error: '회사를 알 수 없습니다.' }
+    // 0073 기능 스위치 «자료 올리기» — 꺼져 있으면 거부(화면도 404).
+    if (!(await featureOn(user, 'finance_upload', businessId))) return { cards: [], error: OFF }
+    if (!canKeepBooks(user, businessId)) return { cards: [], error: '이 회사의 재무를 넣을 권한이 없습니다.' }
+    if (!fileName || (!(file instanceof File) && !path)) return { cards: [], error: '파일을 놓아 주세요.' }
+    let bytes: Uint8Array
+    if (path) {
+      // 경로는 본인 폴더만(DB 정책 0082가 최종 판정 — 여기는 사람의 말로 먼저).
+      if (!mine) return { cards: [failedCard(fileName, '올린 파일의 자리가 맞지 않습니다 — 다시 올려 주세요.')] }
+      try {
+        bytes = await repo.finInboxRead(path)
+      } catch (e) {
+        console.error('[uploadFinanceFile] inbox read', e)
+        return { cards: [failedCard(fileName, '올린 파일을 서버가 읽지 못했습니다 — 다시 올려 주세요.')] }
+      }
+    } else {
+      bytes = new Uint8Array(await (file as File).arrayBuffer())
+    }
+    if (bytes.length > UPLOAD_MAX_BYTES) return { cards: [failedCard(fileName, MSG.tooBig)] }
+    // 하루 AI 한도 — 이 회사의 오늘(KST) 올리기의 AI 호출 합(파일마다 다시 센다 — 앞 파일의 기록이 이미 DB에 있다).
+    const { perFile, perDay } = aiLimits()
+    const today = kstDay(new Date().toISOString())
+    const usedToday = (await repo.listFinUploads(businessId).catch(() => [] as FinUpload[])).filter((u) => kstDay(u.created_at) === today).reduce((a, u) => a + u.ai_used, 0)
+    const budget = Math.max(0, Math.min(perFile, perDay - usedToday))
+    const docs = await docOptions(user, repo, businessId, fileName, perFile > 0 && perDay > 0)
+    const cards = await processUpload({ repo, businessId, fileName, bytes, classify: budget > 0 ? realClassifier(repo, businessId) : null, aiBudget: budget, docs, deadline })
+    revalidatePath(`/finance/${businessId}/upload`)
+    return { cards }
+  } catch (e) {
+    console.error('[uploadFinanceFile]', e)
+    return { cards: [failedCard(fileName, finUploadError(e))] }
+  } finally {
+    if (mine) {
+      await repo.finInboxRemove([path]).catch(() => false)
+      // 처리 중 끊겨 남은 본인 파일(1시간 넘은 것)도 치운다(화면을 열 때도 — upload/page.tsx).
+      await repo.finInboxSweep(path.slice(0, path.lastIndexOf('/'))).catch(() => 0)
+    }
+  }
+}
+
+/** PDF · 사진 설정 — 스위치(누구에게 열렸나)와 서버 설정(키 · 한도)을 다른 말로. 회사 이름 · 계정은 PDF · 사진일 때만 읽는다. */
+async function docOptions(user: NonNullable<Awaited<ReturnType<typeof currentUser>>>, repo: Awaited<ReturnType<typeof getRepository>>, businessId: string, fileName: string, limitsSet: boolean): Promise<DocOptions> {
+  const why = await featureWhy(user, 'finance_docs', businessId)
+  const read = why.on && limitsSet ? realDocReader(repo, businessId) : null
+  const docs: DocOptions = {
+    allowed: why.on,
+    read,
+    closed: !why.on ? { why: 'switch', audience: why.enabled ? AUDIENCE_LABEL[why.audience] : null } : read ? null : { why: 'env' },
+  }
+  if (why.on && /\.(pdf|jpe?g|png)$/i.test(fileName)) {
     const [businesses, ledger] = await Promise.all([repo.listBusinesses().catch(() => []), repo.loadFinanceLedger().catch(() => null)])
     docs.businessName = businesses.find((b) => b.business_id === businessId)?.name
     docs.accounts = (ledger?.accounts ?? []).filter((a) => a.business_id === businessId && a.active).map((a) => ({ account_code: a.account_code, name: a.name, section: a.section }))
   }
-  const cards: FileCard[] = []
-  for (const file of files) {
-    if (file.size > UPLOAD_MAX_BYTES) {
-      cards.push({ file_name: file.name, sheet: null, kind: 'unknown', period: null, status: 'failed', upload_id: null, rows: 0, message: '20MB가 넘는 파일입니다.', why: [], ai_used: 0, confidence: 'none' })
-      continue
-    }
-    const budget = Math.min(perFile, dayLeft)
-    try {
-      const out = await processUpload({ repo, businessId, fileName: file.name.slice(0, 255), bytes: new Uint8Array(await file.arrayBuffer()), classify: budget > 0 ? classify : null, aiBudget: budget, docs })
-      dayLeft -= out.reduce((a, c) => a + c.ai_used, 0)
-      cards.push(...out)
-    } catch (e) {
-      console.error('[uploadFinanceFiles]', e)
-      cards.push({ file_name: file.name, sheet: null, kind: 'unknown', period: null, status: 'failed', upload_id: null, rows: 0, message: finUploadError(e), why: [], ai_used: 0, confidence: 'none' })
-    }
-  }
-  revalidatePath(`/finance/${businessId}/upload`)
-  return { cards }
+  return docs
 }
 
 export interface ApplyInput {
@@ -227,7 +261,7 @@ export async function reinterpretUpload(uploadId: unknown, businessId: unknown):
     const sha = all.find((u) => u.upload_id === id)?.file_sha256
     const usedOnFile = sha ? all.filter((u) => u.file_sha256 === sha).reduce((a, u) => a + u.ai_used, 0) : 0
     const budget = Math.max(0, Math.min(perFile - usedOnFile, perDay - usedToday))
-    const out = await reinterpretPending({ repo, businessId: biz, classify: budget > 0 ? realClassifier(repo, biz) : null, aiBudget: budget }, id)
+    const out = await reinterpretPending({ repo, businessId: biz, classify: budget > 0 ? realClassifier(repo, biz) : null, aiBudget: budget, deadline: Date.now() + 280_000 }, id)
     revalidatePath(`/finance/${biz}/upload`)
     return out
   } catch (e) {

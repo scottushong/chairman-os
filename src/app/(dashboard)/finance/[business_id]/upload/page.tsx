@@ -5,7 +5,7 @@ import { BooksNav } from '@/components/finance/books-nav'
 import { EcountImportDrafts, type EcountDraftRow } from '@/components/finance/ecount-import-drafts'
 import { EcountImportPanel } from '@/components/finance/ecount-import-panel'
 import { FinanceTxPanel } from '@/components/finance/finance-tx-panel'
-import { FinanceUploadBoard, type PendingView } from '@/components/finance/finance-upload-board'
+import { FinanceUploadBoard, type DocsClosed, type PendingView } from '@/components/finance/finance-upload-board'
 import { RecloseBadges } from '@/components/finance/reclose-badges'
 import { PageHeader } from '@/components/layout/page-header'
 import { canCloseBooks, canImportEcount, canKeepBooks } from '@/lib/auth/roles'
@@ -18,7 +18,8 @@ import { won } from '@/lib/finance-upload/v21-text'
 import { KIND_SPECS } from '@/lib/finance-upload/kinds'
 import { kstToday } from '@/lib/chairman-project'
 import { crossMonthFor, revertableIds } from '@/lib/finance-upload/process'
-import { featureOn } from '@/lib/features-server'
+import { AUDIENCE_LABEL, FEATURE_WHERE_LABEL } from '@/lib/features'
+import { featureOn, featureWhy } from '@/lib/features-server'
 import { firstParam } from '@/lib/query'
 import { getRepository } from '@/lib/repository'
 import { FINANCE_IMPORT_KIND } from '@/types'
@@ -31,6 +32,12 @@ import { FINANCE_IMPORT_KIND } from '@/types'
  * 지금까지의 흐름을 «그 밖» 칸에 접어 둔다(ECOUNT는 «출처» 값일 뿐 — 화면 이름에 쓰지 않는다).
  * 권한이 없으면 문장으로 말한다. 판정은 0070 RPC(can_keep_books)다.
  */
+/**
+ * 이 화면의 서버 액션(올리기 · 다시 해석)은 긴 파일 · AI 재해석 · PDF 쪽 나눔으로 1분을 넘을 수 있다 — 한 요청 = 파일 하나로 300초까지.
+ * (Vercel 기본 한도에 걸려 요청째 끊기면 화면은 «읽는 중…»에서 멈췄다.)
+ */
+export const maxDuration = 300
+
 export default async function FinanceUploadPage(props: PageProps<'/finance/[business_id]/upload'>) {
   const { business_id } = await props.params
   const params = await props.searchParams
@@ -46,6 +53,8 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
   const month = asked && /^\d{4}-(0[1-9]|1[0-2])$/.test(asked) ? asked : kstToday().slice(0, 7)
 
   const uploads = canKeep ? await repo.listFinUploads(business_id).catch(() => []) : []
+  // 0082 수신함 — 처리 중 끊겨 남은 본인 파일(1시간 넘은 것)을 화면을 열 때도 치운다(원본을 두지 않는다).
+  if (canKeep && user) await repo.finInboxSweep(`${business_id}/${user.user_id}`).catch(() => 0)
   const pendings: PendingView[] = []
   for (const u of uploads.filter((x) => x.status === 'needs_review').slice(0, 20)) {
     const p = await repo.finUploadPending(u.upload_id).catch(() => null)
@@ -76,7 +85,15 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
   }
   const limits = aiLimits()
   // C단계 PDF · 사진 — 기능 스위치 «PDF · 사진 읽기»(0073, 기본 대표만). 공식 결산 계정 맞추기용 계정(그 회사 · 사용 중).
-  const docsOpen = canKeep && (await featureOn(user, 'finance_docs', business_id))
+  const docsWhy = await featureWhy(user, 'finance_docs', business_id)
+  const docsOpen = canKeep && docsWhy.on
+  // 꺼진 까닭을 화면에 — 스위치(범위 · 어느 줄)와 서버 설정(키 · 한도 없음)을 다른 말로(대표에게만 스위치 링크).
+  const aiReady = !!process.env.ANTHROPIC_API_KEY && limits.perFile > 0 && limits.perDay > 0
+  const docsClosed: DocsClosed | null = !docsWhy.on
+    ? { why: 'switch', audience: docsWhy.enabled ? AUDIENCE_LABEL[docsWhy.audience] : null, where: FEATURE_WHERE_LABEL[docsWhy.where] }
+    : aiReady || process.env.FINANCE_UPLOAD_AI_MOCK === '1'
+      ? null
+      : { why: 'env' }
   const ledgerPostOpen = canKeep && (await featureOn(user, 'ledger_post', business_id))
   const accounts = docsOpen
     ? ((await repo.loadFinanceLedger().catch(() => null))?.accounts ?? []).filter((a) => a.business_id === business_id && a.active).map((a) => ({ account_code: a.account_code, name: a.name, section: a.section }))
@@ -143,7 +160,11 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
             ai={{ on: limits.perFile > 0 && limits.perDay > 0, perFile: limits.perFile, perDay: limits.perDay }}
             revertable={revertable}
             docsOpen={docsOpen}
+            docsClosed={docsClosed}
+            isChairman={user?.role === 'Chairman'}
             accounts={accounts}
+            userId={user?.user_id ?? ''}
+            mode={repo.mode}
           />
           {matTotals && matTotals.purchase_lines + matTotals.inventory_lines + matTotals.import_lines > 0 ? (
             <p className="mt-4 rounded-md border border-line-soft bg-panel px-3 py-2 text-t11h text-ink-dim" data-testid="material-totals">

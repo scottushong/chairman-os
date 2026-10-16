@@ -100,6 +100,45 @@ async function main() {
     show(await processUpload({ repo, businessId: BIZ, fileName: '2025 표준재무제표 스캔.pdf', bytes: scanPdf(jpeg, meta.width!, meta.height!), classify: null, aiBudget: 1, docs }))
   } else if (step === 'photo') {
     show(await processUpload({ repo, businessId: BIZ, fileName: '2025 표준재무제표 사진.png', bytes: await statementPng(), classify: null, aiBudget: 1, docs }))
+  } else if (step === 'fallback') {
+    // 2026-10-16: 옛 400 스키마로 callJson → 첫 호출 400(구조 강제) → 강제 없이 한 번 더(2번).
+    const Anthropic = (await import('@anthropic-ai/sdk')).default
+    const { callJson } = await import('../src/lib/finance-upload/ai-call')
+    const { DEFAULT_AI_MODEL } = await import('../src/lib/ai/anthropic')
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, timeout: 60_000, maxRetries: 0 })
+    const OLD = { type: 'object', properties: { kind: { type: 'string' }, columns: { type: 'object', additionalProperties: { type: 'integer' } } }, required: ['kind', 'columns'], additionalProperties: false }
+    const r = await callJson(client, { model: process.env.AI_MODEL?.trim() || DEFAULT_AI_MODEL, maxTokens: 500, timeout: 60_000, system: [{ type: 'text', text: '표 머리글을 보고 종류와 칸 번호(0부터)를 JSON으로.' }], content: '<sheet>[["일자","거래처명","공급가액"]]</sheet>', schema: OLD }, (u) => console.log('usage', u.input_tokens, u.output_tokens))
+    console.log('fallback', r.fallback, JSON.stringify(r.json))
+  } else if (step === 'ledger2') {
+    // 2026-10-16: 괄호 겹침 계정 · 제목 줄의 기간 · 쪽 · 병합 날짜 · 코드가 모르는 월계 낱말(«[당월합산]») → AI 구조 해석.
+    const ExcelJS = (await import('exceljs')).default
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('계정별원장')
+    const range = '2098/03/01 ~ 2098/03/31'
+    const H = ['일자', '적요', '거래처', '차변', '대변', '잔액']
+    const rows: (string | number | null)[][] = [
+      ['계정별원장'], ['회사명 : (주)가짜산업', range],
+      ['1509(제품)', range, null, null, null, '1쪽'], H, [null, '[전기이월]', null, null, null, 1_000_000],
+      ['98/03/05', '가짜 제품 입고', '가짜 갑', 300_000, null, 1_300_000], [null, '가짜 제품 입고 둘', '가짜 갑', 100_000, null, 1_400_000],
+      ['98/03/20', '가짜 제품 출고', '가짜 을', null, 200_000, 1_200_000], [null, '[당월합산]', null, 400_000, 200_000, 1_200_000], [null, '[당월합산누적]', null, 400_000, 200_000, 1_200_000],
+      ['2519(미지급금(카드))', range, null, null, null, '2쪽'], H, [null, '전월이월', null, null, null, -5_000_000],
+      ['98/03/03', '가짜 카드 사용', '가짜 카드사', null, 700_000, -5_700_000], ['98/03/25', '가짜 대금 지급', '가짜 카드사', 400_000, null, -5_300_000],
+      [null, '[당월합산]', null, 400_000, 700_000, -5_300_000], [null, '[당월합산누적]', null, 400_000, 700_000, -5_300_000],
+    ]
+    for (const r of rows) ws.addRow(r)
+    const bytes = new Uint8Array(await wb.xlsx.writeBuffer())
+    const cards = await processUpload({ repo, businessId: BIZ, fileName: '가짜 3월 계정별 원장.xlsx', bytes, classify: realClassifier(repo, BIZ), aiBudget: 3, today: new Date('2098-04-10'), docs })
+    show(cards)
+    const { dummyFinLines } = await import('../src/lib/repository/dummy-finance-upload')
+    console.log('lines', JSON.stringify(dummyFinLines().filter((l) => l.kind === 'ledger' && l.period === '2098-03').map((l) => l.row)))
+  } else if (step === 'pdf25') {
+    // 2026-10-16: 25쪽 글 PDF(부속 명세서 23쪽 + 재무상태표 · 손익계산서가 뒤쪽) → 결산서 쪽을 먼저 읽는다.
+    const { textPdf } = await import('./fixtures/finance-pdf')
+    const filler = (i: number) => [[`부속 명세서 ${i}`], ['항목', '금액'], ...Array.from({ length: 12 }, (_, k) => [`가짜 세부 항목 ${i}-${k}`, 1000 * (k + 1)])]
+    const bs = [['표준재무제표 — 재무상태표'], ['제 5기 2025년 01월 01일 ~ 2025년 12월 31일'], ['현금및현금성자산', 1000000], ['외상매출금', 500000], ['유형자산', 2000000], ['감가상각누계액', '(300,000)'], ['자산총계', 3200000], ['외상매입금', 400000], ['차입금', 1000000], ['부채총계', 1400000], ['자본금', 1800000], ['자본총계', 1800000]]
+    const is = [['손익계산서'], ['제품매출', 5000000], ['원재료비', 3000000], ['급여(판관)', 800000], ['영업이익', 1200000]]
+    const pages = [...Array.from({ length: 20 }, (_, i) => filler(i + 1)), bs, is, ...Array.from({ length: 3 }, (_, i) => filler(i + 21))]
+    show(await processUpload({ repo, businessId: BIZ, fileName: '2025 표준재무제표 25쪽.pdf', bytes: textPdf(pages as (string | number | null)[][][]), classify: null, aiBudget: 3, docs }))
   } else if (step === 'others') {
     const Anthropic = (await import('@anthropic-ai/sdk')).default
     const { DEFAULT_AI_MODEL } = await import('../src/lib/ai/anthropic')
