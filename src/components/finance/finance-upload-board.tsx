@@ -10,9 +10,9 @@ import { FIN_INBOX, inboxPath } from '@/lib/finance-upload/inbox'
 import { KIND_SPECS, type FieldSpec, type UploadKind } from '@/lib/finance-upload/kinds'
 import { sendEach } from '@/lib/finance-upload/send-each'
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
-import { signedAmount } from '@/lib/finance-upload/official-sign'
+import { GROUP_SECTIONS, OFFICIAL_GROUP_KO, officialLines, type OfficialGroup } from '@/lib/finance-upload/official-lines'
 import { REVERT_SCOPE_KO, STATE_KO } from '@/lib/finance-upload/v21-text'
-import { balanceCheck } from '@/lib/statements/balance'
+import { balanceCheck, incomeSubtotals } from '@/lib/statements/balance'
 import type { OfficialDraft } from '@/lib/finance-upload/doc-read'
 import type { FileCard } from '@/lib/finance-upload/process'
 import type { AccountSection, FinRow, FinUpload, FinUploadPending, Role } from '@/types'
@@ -588,12 +588,17 @@ export type { UploadKind }
  * 0020 공식 결산 저장(saveOfficialStatement — 권한 · 균형 · 감사는 DB)으로 넣는다. 자동은 없다. 미리보기는 저장하지 않는다
  * (화면을 떠나면 다시 올린다).
  */
+const SKIP = '__skip'
+
 function OfficialPanel({ businessId, draft, accounts, fileName }: { businessId: string; draft: OfficialDraft | null; accounts: AccountOption[]; fileName: string }) {
   const router = useRouter()
-  const [codes, setCodes] = useState<(string | null)[]>(() => (draft?.lines ?? []).map((l) => l.account_code))
-  const [year, setYear] = useState(draft?.period_key ?? '')
+  // 줄마다 고른 계정(SKIP = 넣지 않음 · null = 아직) — 해가 바뀌어도 같은 고름을 쓴다(계정은 해마다 같다).
+  const [picks, setPicks] = useState<(string | null)[]>(() => (draft?.lines ?? []).map((l) => (l.skip ? SKIP : l.account_code)))
+  const [yearKey, setYearKey] = useState(draft?.period_key ?? draft?.years[draft.years.length - 1] ?? '')
+  const [typedYear, setTypedYear] = useState('')
   const [evidence, setEvidence] = useState('')
   const [memo, setMemo] = useState(`세무사 확정 결산 — ${fileName}`.slice(0, 200))
+  const [saved, setSaved] = useState<string[]>([])
   const [msg, setMsg] = useState<string | null>(null)
   const [busy, start] = useTransition()
   const manual = `/finance/${businessId}/statements/new`
@@ -604,14 +609,56 @@ function OfficialPanel({ businessId, draft, accounts, fileName }: { businessId: 
       </p>
     )
   }
+  const year = yearKey || typedYear
   const lines = draft.lines.map((l, i) => {
-    const acc = accounts.find((a) => a.account_code === codes[i]) ?? null
-    return { ...l, acc, amount: acc ? signedAmount(acc.section, acc.name, l.printed) : null }
+    const pick = picks[i]
+    const acc = pick && pick !== SKIP ? (accounts.find((a) => a.account_code === pick) ?? null) : null
+    const value = l.values[yearKey]
+    return { ...l, i, pick, acc, value, guessed: !!acc && acc.account_code === l.account_code && l.how !== 'exact' }
   })
-  const matched = lines.filter((l) => l.acc && l.amount !== null)
-  const balance = matched.length ? balanceCheck(matched.map((l) => ({ account_code: l.acc!.account_code, section: l.acc!.section, amount: l.amount! }))) : null
-  const missing = lines.length - matched.length
-  const ready = !missing && !!balance?.balanced && /^20\d{2}$/.test(year) && /^https?:\/\//i.test(evidence) && !!memo.trim()
+  // 이 해에 값이 있는 줄만 센다(그 해에 없는 계정은 고르지 않아도 된다).
+  const inYear = lines.filter((l) => typeof l.value === 'number' && l.value !== 0)
+  const picked = inYear.filter((l) => l.acc)
+  const missing = inYear.filter((l) => !l.pick)
+  const summed = officialLines(picked.map((l) => ({ label: l.label, account: l.acc!, printed: l.value! })))
+  const balance = summed.length ? balanceCheck(summed) : null
+  const net = summed.length ? incomeSubtotals(summed).netIncome : null
+  const printedNet = draft.net_income[yearKey]
+  const netOff = typeof printedNet === 'number' && net !== null && Math.abs(net - printedNet) > 1
+  const blockers = [
+    !/^20\d{2}$/.test(year) && '결산 연도(네 자리)를 적어 주세요',
+    missing.length > 0 && `계정을 안 고른 줄 ${missing.length}개 — 고르거나 «넣지 않음»`,
+    !summed.length && '넣을 줄이 없습니다',
+    !!balance && !balance.balanced && (balance.difference === 0 ? '재무상태표 줄(자산 · 부채 · 자본)을 하나도 고르지 않았습니다' : `재무상태표 차이 ${balance.difference.toLocaleString('ko-KR')}원 — 계정 · «넣지 않음»을 확인하세요`),
+    !/^https?:\/\//i.test(evidence.trim()) && '증빙 링크(https://…)를 넣어 주세요',
+    !memo.trim() && '메모를 적어 주세요',
+    saved.includes(year) && `${year}년은 방금 저장했습니다`,
+  ].filter((b): b is string => !!b)
+  // 묶음마다 못 고른 줄 — 한 번에 같은 계정으로(또는 넣지 않음).
+  const openGroups = [...new Set(missing.map((l) => l.group ?? 'none'))]
+  const setPick = (i: number, v: string) => setPicks((p) => p.map((x, j) => (j === i ? v || null : x)))
+  const optionsFor = (group: OfficialGroup | null) => {
+    const home = group ? accounts.filter((a) => GROUP_SECTIONS[group].includes(a.section)) : []
+    const rest = accounts.filter((a) => !home.includes(a))
+    return (
+      <>
+        <option value="">고르세요</option>
+        <option value={SKIP}>넣지 않음</option>
+        {home.length ? (
+          <optgroup label={`${OFFICIAL_GROUP_KO[group!]} 계정`}>
+            {home.map((a) => (
+              <option key={a.account_code} value={a.account_code}>{a.account_code} {a.name}</option>
+            ))}
+          </optgroup>
+        ) : null}
+        <optgroup label={home.length ? '다른 계정' : '계정'}>
+          {rest.map((a) => (
+            <option key={a.account_code} value={a.account_code}>{a.account_code} {a.name}</option>
+          ))}
+        </optgroup>
+      </>
+    )
+  }
   return (
     <div data-testid="official-panel" className="mt-2 rounded-lg border border-accent/30 bg-accent/5 p-2">
       <p className="text-t11h font-semibold">공식 결산 미리보기 — 자동으로 넣지 않습니다</p>
@@ -621,34 +668,80 @@ function OfficialPanel({ businessId, draft, accounts, fileName }: { businessId: 
           {draft.warnings.map((w) => <li key={w} className="text-gold">{w}</li>)}
         </ul>
       ) : null}
-      <div className="mt-1 max-h-72 overflow-auto rounded-md border border-line-soft bg-panel">
+      {draft.years.filter(Boolean).length > 1 ? (
+        <div role="tablist" aria-label="결산 연도" className="mt-2 flex flex-wrap gap-1">
+          {draft.years.filter(Boolean).map((y) => (
+            <button
+              key={y}
+              type="button"
+              role="tab"
+              aria-selected={y === yearKey}
+              onClick={() => {
+                setYearKey(y)
+                setMsg(null)
+              }}
+              className={`min-h-9 rounded-md border px-3 text-t12 font-semibold ${y === yearKey ? 'border-accent bg-accent text-white' : 'border-line bg-panel text-ink'}`}
+            >
+              {y}
+              {saved.includes(y) ? ' ✓' : ''}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {openGroups.length ? (
+        <div className="mt-2 grid gap-1">
+          {openGroups.map((g) => {
+            const group = g === 'none' ? null : (g as OfficialGroup)
+            const n = missing.filter((l) => (l.group ?? 'none') === g).length
+            return (
+              <label key={g} className="flex flex-wrap items-center gap-2 text-t11h">
+                <span className="text-gold">«{group ? OFFICIAL_GROUP_KO[group] : '구분 모름'}» 안 고른 {n}줄 → 한 번에</span>
+                <select
+                  aria-label={`${group ? OFFICIAL_GROUP_KO[group] : '구분 모름'} 안 고른 줄 한 번에`}
+                  value=""
+                  onChange={(e) => {
+                    const v = e.target.value
+                    if (!v) return
+                    const targets = new Set(missing.filter((l) => (l.group ?? 'none') === g).map((l) => l.i))
+                    setPicks((p) => p.map((x, j) => (targets.has(j) ? v : x)))
+                  }}
+                  className="max-w-[16rem] rounded-md border border-gold bg-panel px-1.5 py-1 text-t11h"
+                >
+                  {optionsFor(group)}
+                </select>
+              </label>
+            )
+          })}
+        </div>
+      ) : null}
+      <div className="mt-1 max-h-96 overflow-auto rounded-md border border-line-soft bg-panel">
         <table className="w-full text-t11">
           <thead className="sticky top-0 bg-raised">
             <tr>
+              <th className="px-2 py-1 text-left font-medium text-ink-muted">구분</th>
               <th className="px-2 py-1 text-left font-medium text-ink-muted">문서의 계정</th>
-              <th className="px-2 py-1 text-right font-medium text-ink-muted">금액</th>
+              <th className="px-2 py-1 text-right font-medium text-ink-muted">{year || '금액'}</th>
               <th className="px-2 py-1 text-left font-medium text-ink-muted">맞춘 계정과목</th>
             </tr>
           </thead>
           <tbody>
-            {lines.map((l, i) => (
-              <tr key={`${l.label}-${i}`} className="border-t border-line-soft">
+            {lines.map((l) => (
+              <tr key={`${l.label}-${l.i}`} className={`border-t border-line-soft ${typeof l.value === 'number' && l.value !== 0 ? '' : 'opacity-50'}`}>
+                <td className="px-2 py-1 text-ink-muted">{l.group ? OFFICIAL_GROUP_KO[l.group] : '—'}</td>
                 <td className="px-2 py-1">{l.label}</td>
-                <td className="px-2 py-1 text-right tnum">{l.printed.toLocaleString('ko-KR')}</td>
+                <td className="px-2 py-1 text-right tnum">{typeof l.value === 'number' ? l.value.toLocaleString('ko-KR') : '—'}</td>
                 <td className="px-2 py-1">
-                  <select
-                    aria-label={`${l.label} 계정과목`}
-                    value={codes[i] ?? ''}
-                    onChange={(e) => setCodes((c) => c.map((x, j) => (j === i ? e.target.value || null : x)))}
-                    className={`w-full max-w-[14rem] rounded-md border bg-panel px-1.5 py-1 text-t11h ${l.acc ? 'border-line' : 'border-gold text-gold'}`}
-                  >
-                    <option value="">고르세요</option>
-                    {accounts.map((a) => (
-                      <option key={a.account_code} value={a.account_code}>
-                        {a.account_code} {a.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex items-center gap-1">
+                    <select
+                      aria-label={`${l.label} 계정과목`}
+                      value={l.pick ?? ''}
+                      onChange={(e) => setPick(l.i, e.target.value)}
+                      className={`w-full max-w-[14rem] rounded-md border bg-panel px-1.5 py-1 text-t11h ${l.pick ? 'border-line' : 'border-gold text-gold'}`}
+                    >
+                      {optionsFor(l.group)}
+                    </select>
+                    {l.guessed ? <span className="shrink-0 rounded bg-gold/15 px-1 text-t10 text-gold" title="이름이 같지 않아 비슷한 계정으로 맞췄습니다 — 확인하세요">추정</span> : null}
+                  </div>
                 </td>
               </tr>
             ))}
@@ -656,38 +749,61 @@ function OfficialPanel({ businessId, draft, accounts, fileName }: { businessId: 
         </table>
       </div>
       <p className="mt-1 text-t11h tnum">
-        {balance ? `자산 ${balance.assets.toLocaleString('ko-KR')} · 부채 ${balance.liabilities.toLocaleString('ko-KR')} · 자본 ${balance.equity.toLocaleString('ko-KR')} — ${balance.balanced ? '닫힘' : `차이 ${balance.difference.toLocaleString('ko-KR')}원`}` : '맞춘 계정이 없습니다.'}
-        {missing ? ` · 계정 못 맞춘 줄 ${missing}개` : ''}
+        {balance ? `${year || ''} 자산 ${balance.assets.toLocaleString('ko-KR')} · 부채 ${balance.liabilities.toLocaleString('ko-KR')} · 자본 ${balance.equity.toLocaleString('ko-KR')} — ${balance.balanced ? '닫힘' : `차이 ${balance.difference.toLocaleString('ko-KR')}원`}` : '고른 계정이 아직 없습니다.'}
+        {net !== null ? ` · 당기순이익 ${net.toLocaleString('ko-KR')}` : ''}
+        {typeof printedNet === 'number'
+          ? !netOff
+            ? ' (문서와 같음)'
+            : missing.length
+              ? ` (문서 ${printedNet.toLocaleString('ko-KR')} — 안 고른 줄을 마저 고르면 다시 맞춰 봅니다)`
+              : ` (문서 ${printedNet.toLocaleString('ko-KR')} — 다릅니다: 빠졌거나 두 번 센 줄을 확인하세요)`
+          : ''}
       </p>
       <div className="mt-2 grid gap-2 sm:grid-cols-3">
+        {yearKey ? null : (
+          <label className="text-t10h text-ink-muted">
+            결산 연도
+            <input value={typedYear} onChange={(e) => setTypedYear(e.target.value.trim())} inputMode="numeric" maxLength={4} placeholder="2025" className="mt-0.5 block w-full rounded-md border border-line bg-panel px-2 py-1.5 text-t12h text-ink" />
+          </label>
+        )}
         <label className="text-t10h text-ink-muted">
-          결산 연도
-          <input value={year} onChange={(e) => setYear(e.target.value.trim())} inputMode="numeric" maxLength={4} className="mt-0.5 block w-full rounded-md border border-line bg-panel px-2 py-1.5 text-t12h text-ink" />
-        </label>
-        <label className="text-t10h text-ink-muted">
-          증빙 링크(사내 스토리지 PDF)
-          <input value={evidence} onChange={(e) => setEvidence(e.target.value)} placeholder="https://" className="mt-0.5 block w-full rounded-md border border-line bg-panel px-2 py-1.5 text-t12h text-ink" />
+          증빙 링크(필수 — 이 PDF를 올려 둔 사내 드라이브 주소)
+          <input value={evidence} onChange={(e) => setEvidence(e.target.value)} placeholder="https://drive.google.com/…" inputMode="url" className="mt-0.5 block w-full rounded-md border border-line bg-panel px-2 py-1.5 text-t12h text-ink" />
         </label>
         <label className="text-t10h text-ink-muted">
           메모
           <input value={memo} onChange={(e) => setMemo(e.target.value)} maxLength={200} className="mt-0.5 block w-full rounded-md border border-line bg-panel px-2 py-1.5 text-t12h text-ink" />
         </label>
       </div>
+      <p className="mt-1 text-t10h text-ink-muted">
+        이 화면은 올린 파일을 보관하지 않습니다(읽은 뒤 지움). 확정 결산의 근거가 되도록 원본 PDF를 사내 드라이브에 두고 그 주소를 넣어 주세요. 저장하면 그 해의 월별 입력이 잠깁니다.
+      </p>
+      {blockers.length && !busy ? (
+        <ul data-testid="official-blockers" className="mt-1 list-disc pl-4 text-t11h text-gold">
+          {blockers.map((b) => <li key={b}>{b}</li>)}
+        </ul>
+      ) : null}
       {msg ? <p role="status" className="mt-1 text-t11h">{msg}</p> : null}
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <button
           type="button"
-          disabled={busy || !ready}
+          disabled={busy || blockers.length > 0}
           onClick={() =>
             start(async () => {
-              const r = await saveOfficialStatement({ businessId, periodKind: 'year', periodKey: year, evidenceUrl: evidence, memo, lines: matched.map((l) => ({ account_code: l.acc!.account_code, amount: l.amount })) })
-              setMsg(r.error ?? '공식 결산으로 저장했습니다(그 해의 월별 입력이 잠깁니다).')
-              if (!r.error) router.refresh()
+              const r = await saveOfficialStatement({ businessId, periodKind: 'year', periodKey: year, evidenceUrl: evidence.trim(), memo, lines: summed.map((l) => ({ account_code: l.account_code, amount: l.amount })) })
+              if (r.error) {
+                setMsg(r.error)
+                return
+              }
+              setSaved((s) => [...s, year])
+              const next = draft.years.filter((y) => y && y !== year && !saved.includes(y))
+              setMsg(`${year}년을 공식 결산으로 저장했습니다(그 해의 월별 입력이 잠깁니다).${next.length ? ` 남은 해: ${next.join(' · ')}` : ''}`)
+              router.refresh()
             })
           }
           className="min-h-10 rounded-md bg-accent px-4 text-t12 font-semibold text-white disabled:opacity-40"
         >
-          {busy ? '저장 중…' : '확인하고 공식 결산으로 저장'}
+          {busy ? '저장 중…' : `확인하고 ${year ? `${year}년 ` : ''}공식 결산으로 저장`}
         </button>
         <Link href={manual} className="text-t11h text-ink-dim underline-offset-2 hover:underline">«공식 결산» 화면에서 손으로 넣기</Link>
       </div>

@@ -4,9 +4,10 @@ import { revalidatePath } from 'next/cache'
 
 import { currentUser } from '@/lib/auth/session'
 import { getRepository } from '@/lib/repository'
-import { balanceCheck, type StatementLine } from '@/lib/statements/balance'
+import { balanceCheck } from '@/lib/statements/balance'
+import { readStatementLines } from '@/lib/statements/lines'
 import { isValidPeriodKey, type OfficialPeriodKind } from '@/lib/statements/period'
-import type { AccountSection, NewOfficialStatement } from '@/types'
+import type { NewOfficialStatement } from '@/types'
 
 /**
  * Phase 2-C 블록 1 — 공식 재무제표 저장 (0020).
@@ -27,41 +28,6 @@ export interface StatementState {
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
-}
-
-/**
- * 화면에서 온 줄을 읽는다. 금액이 숫자가 아니면 **그 줄을 버리지 않고 통째로 실패**시킨다 —
- * 한 줄을 조용히 빼면 재무상태표가 그만큼 안 맞는 채로 저장 시도에 들어가고,
- * 회장은 자기가 넣은 숫자가 왜 안 맞는지 알 수 없게 된다.
- */
-function parseLines(
-  raw: unknown,
-  sectionOf: Map<string, AccountSection>,
-): { lines: { account_code: string; amount: number }[]; typed: StatementLine[] } | null {
-  if (!Array.isArray(raw)) return null
-
-  const lines: { account_code: string; amount: number }[] = []
-  const typed: StatementLine[] = []
-
-  for (const item of raw) {
-    if (typeof item !== 'object' || item === null) return null
-    const row = item as { account_code?: unknown; amount?: unknown }
-    const account_code = text(row.account_code)
-    const amount = typeof row.amount === 'number' ? row.amount : Number(row.amount)
-    if (!account_code || !Number.isFinite(amount)) return null
-
-    const section = sectionOf.get(account_code)
-    if (!section) return null
-
-    // 0원 줄은 넣지 않는다. 계정 30~40줄 중 대부분이 비는 것이 보통이고,
-    // 그 빈 줄을 전부 0으로 저장하면 나중에 '이 계정은 0이었다'와 '이 계정은 없었다'가 섞인다.
-    if (amount === 0) continue
-
-    lines.push({ account_code, amount })
-    typed.push({ account_code, section, amount })
-  }
-
-  return { lines, typed }
 }
 
 export async function saveOfficialStatement(input: {
@@ -101,7 +67,8 @@ export async function saveOfficialStatement(input: {
       ledger.accounts.filter((a) => a.business_id === business_id).map((a) => [a.account_code, a.section]),
     )
 
-    const parsed = parseLines(input.lines, sectionOf)
+    // 화면에서 온 줄 — 숫자가 아니면 통째로 실패 · 같은 계정은 더함 · 0원은 뺌(lib/statements/lines.ts).
+    const parsed = readStatementLines(input.lines, sectionOf)
     if (!parsed) return { error: '금액을 읽을 수 없는 줄이 있습니다. 숫자만 넣으세요.' }
     if (parsed.lines.length === 0) return { error: '금액이 있는 줄이 하나도 없습니다.' }
 

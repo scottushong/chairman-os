@@ -4,6 +4,7 @@ import { balanceCheck, type BalanceCheck } from '@/lib/statements/balance'
 import type { Account, AccountSection } from '@/types'
 
 import type { DocFormat, LayoutCell, OpenedDoc } from './doc-open'
+import { cleanLabel, groupOf, matchOfficial, officialLines, plain, type MatchHow, type OfficialGroup } from './official-lines'
 import { signedAmount } from './official-sign'
 import { classifyByCode } from './pipeline'
 
@@ -125,17 +126,24 @@ const STMT_SUBTOTAL = /총계$|합계$|^(매출총|영업|법인세비용차감�
 export function layoutToStatement(layout: LayoutCell[][]): DocTable {
   const text = layout.map((l) => l.map((c) => c.t).join(' ')).join(' ')
   const year = /(20\d{2})\s*[.년/-]?\s*0?1\s*[.월/-]\s*0?1/.exec(text)?.[1] ?? /(20\d{2})\s*년?\s*(귀속|결산|사업연도)/.exec(text)?.[1] ?? null
+  // 해 머리글 줄(«계정과목 2024 2025» — 해 둘 이상)이 있으면 해마다 칸 하나. 없으면 마지막 숫자 하나.
+  const yearHead = layout.find((l) => l.filter((c) => /^(19|20)\d{2}(년)?$/.test(c.t.trim())).length >= 2)
+  const years = yearHead ? yearHead.map((c) => /^((19|20)\d{2})/.exec(c.t.trim())?.[1]).filter((y): y is string => !!y) : []
+  const width = Math.max(1, years.length)
   const rows: DocCell[][] = []
   const totals: DocTotal[] = []
   for (const line of layout) {
-    const label = line.find((c) => !isNumCell(c.t))?.t
+    if (line === yearHead) continue
+    const label = line.filter((c) => !isNumCell(c.t)).map((c) => c.t).join(' ').trim()
     const nums = line.map((c) => parseNumber(c.t)).filter((n): n is number => n !== null)
-    if (!label || !nums.length || /^\d/.test(label)) continue
+    if (!label) continue
+    // 숫자 없는 제목 줄(«재무상태표» · «제조원가명세서»)도 넘긴다 — 묶음 단서다.
+    const vals: DocCell[] = nums.length ? [...new Array(Math.max(0, width - nums.length)).fill(null), ...nums.slice(-width)] : new Array(width).fill(null)
     const l = normalizeLabel(label)
-    if (STMT_SUBTOTAL.test(l)) totals.push({ label: l, level: 'subtotal', after_row: rows.length - 1, values: [null, nums[nums.length - 1]] })
-    else rows.push([label, nums[nums.length - 1]])
+    if (STMT_SUBTOTAL.test(l)) totals.push({ label: l, level: 'subtotal', after_row: rows.length - 1, values: [null, ...vals] as (number | null)[] })
+    else rows.push([label, ...vals])
   }
-  return { doc_kind: 'official_statement', company: null, period: year, title: layout[0]?.map((c) => c.t).join(' ') ?? null, columns: ['계정과목', '금액'], rows, totals, confidence: rows.length ? 'medium' : 'low', reason: '글 PDF의 줄에서 계정 · 금액을 읽음(AI 아님)' }
+  return { doc_kind: 'official_statement', company: null, period: years[years.length - 1] ?? year, title: layout[0]?.map((c) => c.t).join(' ') ?? null, columns: ['계정과목', ...(years.length ? years : ['금액'])], rows, totals, confidence: rows.length ? 'medium' : 'low', reason: '글 PDF의 줄에서 계정 · 금액을 읽음(AI 아님)' }
 }
 
 /** 시험 · dummy용 가짜 AI(FINANCE_UPLOAD_AI_MOCK=1). 글 PDF는 칸 위치로 읽고 종류는 코드로, 그림(스캔 · 사진)은 읽지 않는다. */
@@ -250,18 +258,32 @@ export function forcedDocReview(format: DocFormat, today = new Date()): string |
 /* ───────────────────────── 공식 결산 미리보기 ───────────────────────── */
 
 export interface OfficialDraftLine {
+  /** 문서의 줄 이름(번호 그대로) */
   label: string
-  /** 문서에 찍힌 값(사람이 읽는 양수) */
+  /** 표의 어느 부분(자산 · 판관비 · 영업외수익 …) — 계정은 이 묶음 안에서만 맞춘다 */
+  group: OfficialGroup | null
+  /** 해마다 문서에 찍힌 값(사람이 읽는 양수) — 키 'YYYY' */
+  values: Record<string, number>
+  /** period_key 해의 값(없으면 0) */
   printed: number
   account_code: string | null
   account_name: string | null
   section: AccountSection | null
-  /** 원장 규약(차변 − 대변)으로 바꾼 값. 계정을 못 맞추면 null */
+  /** 어떻게 맞췄나 — exact 말고는 화면이 «추정»으로 보인다 */
+  how: MatchHow | null
+  /** 처음부터 «넣지 않음»(제조원가명세서 줄 — 매출원가에 이미 들어 있다) */
+  skip: boolean
+  /** period_key 해를 원장 규약(차변 − 대변)으로 바꾼 값. 계정을 못 맞추거나 넣지 않으면 null */
   amount: number | null
 }
 
 export interface OfficialDraft {
+  /** 가장 늦은 해(화면이 처음 여는 해) */
   period_key: string | null
+  /** 문서에 든 해(오름차순) — 해마다 따로 저장한다 */
+  years: string[]
+  /** 해마다 문서의 당기순이익(있으면) — 화면이 맞춘 줄로 계산한 값과 대조한다 */
+  net_income: Record<string, number>
   company: string | null
   title: string | null
   lines: OfficialDraftLine[]
@@ -272,39 +294,136 @@ export interface OfficialDraft {
   reason: string
 }
 
-const plain = (s: string) => normalizeLabel(s).replace(/\(.*?\)|[·.\s]/g, '').toLowerCase()
+type OfficialAcc = Pick<Account, 'account_code' | 'name' | 'section'>
 
-export function matchAccount(label: string, accounts: Pick<Account, 'account_code' | 'name' | 'section'>[]): Pick<Account, 'account_code' | 'name' | 'section'> | null {
-  const l = plain(label)
-  if (!l) return null
-  const exact = accounts.filter((a) => plain(a.name) === l)
-  if (exact.length === 1) return exact[0]
-  const near = accounts.filter((a) => {
-    const n = plain(a.name)
-    return n.length >= 2 && (n.startsWith(l) || l.startsWith(n))
+/** 묶음 줄(합계 · 소계 · 매출원가 계산 줄) — 저장 줄이 아니다. */
+const STMT_AGGREGATE = /총계$|합계$|^(매출총|영업|법인세비용차감전|법인세차감전|당기순|경상|세전)(이익|손실|순이익|순손실|이익\(손실\)|손익)/
+const BS_HEADS = /^(유동자산|당좌자산|재고자산|비유동자산|투자자산|기타비유동자산|유동부채|비유동부채|자본잉여금|자본조정|기타포괄손익누계액|이익잉여금\(결손금\)|자산|부채|자본)$/
+const COGS_CALC = /^(기초|기말)(상품|제품|원재료|재공품|부재료|저장품)?재고(액)?$|^당기(상품매입액|제품제조원가|총제조비용|원재료매입액|매입액)$|타계정/
+/** 줄 없이 묶음만 알려 주는 제목 낱말(구분 칸이 없을 때 — 가짜 AI · AI 없이) */
+const HEAD_GROUP: [RegExp, OfficialGroup][] = [
+  [/원가명세서|^재료비$|^노무비$|^제조경비$|^경비$/, 'mfg'],
+  [/잉여금|자본조정|포괄손익누계/, 'equity'],
+]
+
+/** 해 칸 찾기 — 머리글의 해 · 당기/전기 · (해 칸이 없으면) 마지막 숫자 칸을 base 해로. */
+function yearColumns(columns: string[], skip: Set<number>, base: string | null): Map<number, string> {
+  const out = new Map<number, string>()
+  columns.forEach((c, i) => {
+    if (skip.has(i)) return
+    const h = c.normalize('NFKC').replace(/\s/g, '')
+    const y = /(19|20)\d{2}/.exec(h)?.[0]
+    if (y) out.set(i, y)
+    else if (base && /^당기|^당해/.test(h)) out.set(i, base)
+    else if (base && /^전기/.test(h)) out.set(i, String(Number(base) - 1))
   })
-  return near.length === 1 ? near[0] : null
+  return out
 }
 
-export function buildOfficialDraft(t: DocTable, accounts: Pick<Account, 'account_code' | 'name' | 'section'>[], fileName: string): OfficialDraft {
-  const lines: OfficialDraftLine[] = []
-  for (const r of t.rows) {
-    const label = r.find((v): v is string => typeof v === 'string' && !!v.trim())
-    const nums = r.filter((v): v is number => typeof v === 'number')
-    if (!label || !nums.length) continue
-    const printed = nums[nums.length - 1]
-    const acc = matchAccount(label, accounts)
-    lines.push({ label: label.slice(0, 80), printed, account_code: acc?.account_code ?? null, account_name: acc?.name ?? null, section: acc?.section ?? null, amount: acc ? signedAmount(acc.section, acc.name, printed) : null })
+export function buildOfficialDraft(t: DocTable, accounts: OfficialAcc[], fileName: string): OfficialDraft {
+  const cols = t.columns.map((c) => String(c ?? '').normalize('NFKC').replace(/\s/g, ''))
+  const find = (re: RegExp) => cols.findIndex((c) => re.test(c))
+  const groupIdx = find(/^구분$|^분류$|^표$|^부분$/)
+  const levelIdx = find(/^줄$|^수준$|^종류$|^level$/i)
+  const labelIdx = find(/계정|과목|항목|내역/)
+  const base = (t.period && /^(20\d{2})/.exec(t.period)?.[1]) ?? /(20\d{2})/.exec(fileName.normalize('NFKC'))?.[1] ?? null
+  const yearCols = yearColumns(t.columns, new Set([groupIdx, levelIdx, labelIdx].filter((i) => i >= 0)), base)
+
+  type Row = { label: string; name: string; group: OfficialGroup | null; aggregate: boolean; values: Record<string, number> }
+  const rows: Row[] = []
+  let current: OfficialGroup | null = null
+  const read = (r: DocCell[], forcedAggregate: boolean) => {
+    const label = (labelIdx >= 0 && typeof r[labelIdx] === 'string' ? (r[labelIdx] as string) : r.find((v, i): v is string => typeof v === 'string' && !!v.trim() && i !== groupIdx && i !== levelIdx))?.trim()
+    if (!label) return
+    const { name, mark } = cleanLabel(label)
+    const values: Record<string, number> = {}
+    if (yearCols.size) {
+      for (const [i, y] of yearCols) if (typeof r[i] === 'number') values[y] = r[i] as number
+    } else {
+      // 해 칸이 없다 — 마지막 숫자를 base 해로(해도 모르면 '' — 화면이 해를 적게 한다).
+      const nums = r.filter((v): v is number => typeof v === 'number')
+      if (nums.length) values[base ?? ''] = nums[nums.length - 1]
+    }
+    const lv = levelIdx >= 0 && typeof r[levelIdx] === 'string' ? (r[levelIdx] as string) : ''
+    const plainName = name.replace(/\s/g, '')
+    const aggregate =
+      forcedAggregate ||
+      /소계|합계|묶음|총계|계산/.test(lv) ||
+      mark === 'roman' ||
+      (mark === 'paren' && !/항목|계정/.test(lv)) ||
+      STMT_AGGREGATE.test(plainName) ||
+      BS_HEADS.test(plainName) ||
+      COGS_CALC.test(plainName)
+    // 묶음: 구분 칸(AI)이 이기고, 없으면 제목 · 묶음 줄 이름으로 이어 간다.
+    const stated = groupIdx >= 0 ? groupOf(r[groupIdx]) : null
+    if (stated) current = stated
+    else if (aggregate || !Object.keys(values).length) {
+      const head = HEAD_GROUP.find(([re]) => re.test(plainName))?.[1] ?? (STMT_AGGREGATE.test(plainName) ? null : groupOf(plainName))
+      if (head) current = head
+    }
+    rows.push({ label, name, group: stated ?? current, aggregate, values })
   }
-  const year = (t.period && /^(20\d{2})/.exec(t.period)?.[1]) ?? /(20\d{2})/.exec(fileName.normalize('NFKC'))?.[1] ?? null
-  const matched = lines.filter((l) => l.account_code && l.section && l.amount !== null)
-  const balance = matched.length ? balanceCheck(matched.map((l) => ({ account_code: l.account_code!, section: l.section!, amount: l.amount! }))) : null
+  for (const r of t.rows) read(r, false)
+  for (const tot of t.totals) read(tot.values.map((v, i) => (i === (labelIdx >= 0 ? labelIdx : 0) ? tot.label : v)), true)
+
+  const hasNum = (r: Row) => Object.keys(r.values).length > 0
+  // 해마다 따로 읽힌 같은 계정(쪽을 나눠 읽음 · 해마다 다른 줄)을 한 줄로 — 같은 묶음 · 같은 이름이고 해가 겹치지 않을 때만
+  // (같은 해에 같은 이름이 둘이면 «건물 · 기계장치 각각의 감가상각누계액»처럼 따로 있는 줄이다).
+  const leaves: Row[] = []
+  for (const r of rows.filter((x) => !x.aggregate && hasNum(x))) {
+    const same = leaves.find((x) => x.group === r.group && plain(x.name) === plain(r.name) && Object.keys(r.values).every((y) => !(y in x.values)))
+    if (same) Object.assign(same.values, r.values)
+    else leaves.push(r)
+  }
+  // 묶음에 낱 줄이 하나도 없으면(«Ⅱ.매출원가» 한 줄만 있고 아래는 계산 줄) 그 묶음 줄을 낱 줄로 쓴다.
+  const leafGroups = new Set(leaves.map((r) => r.group))
+  const promoted = new Set<OfficialGroup>()
+  for (const r of rows) {
+    if (!r.aggregate || !hasNum(r) || !r.group || leafGroups.has(r.group) || promoted.has(r.group)) continue
+    if (STMT_AGGREGATE.test(r.name.replace(/\s/g, '')) || COGS_CALC.test(r.name.replace(/\s/g, ''))) continue
+    promoted.add(r.group)
+    leaves.push(r)
+  }
+  const ordered = rows.filter((r) => leaves.includes(r))
+
+  const years = [...new Set(ordered.flatMap((r) => Object.keys(r.values)))].sort()
+  const year = years[years.length - 1] ?? base ?? ''
+  const net_income: Record<string, number> = {}
+  for (const r of rows) {
+    if (!/^당기순(이익|손실)/.test(r.name.replace(/\s/g, ''))) continue
+    for (const [y, v] of Object.entries(r.values)) if (!(y in net_income)) net_income[y] = /^당기순손실/.test(r.name.replace(/\s/g, '')) && v > 0 ? -v : v
+  }
+
+  const lines: OfficialDraftLine[] = ordered.map((r) => {
+    const m = matchOfficial(r.name, r.group, accounts)
+    const skip = r.group === 'mfg'
+    const printed = r.values[year] ?? 0
+    return {
+      label: r.label.slice(0, 80),
+      group: r.group,
+      values: r.values,
+      printed,
+      account_code: m?.acc.account_code ?? null,
+      account_name: m?.acc.name ?? null,
+      section: m?.acc.section ?? null,
+      how: m?.how ?? null,
+      skip,
+      amount: m && !skip ? signedAmount(m.acc.section, m.acc.name, printed, r.name) : null,
+    }
+  })
+  const live = lines.filter((l) => !l.skip)
+  const matched = live.filter((l) => l.account_code && l.section && l.amount !== null)
+  const summed = officialLines(matched.map((l) => ({ label: l.label, account: { account_code: l.account_code!, name: l.account_name!, section: l.section! }, printed: l.printed })))
+  const balance = summed.length ? balanceCheck(summed) : null
   const errors: string[] = []
   const warnings: string[] = []
-  const unmatched = lines.length - matched.length
+  const unmatched = live.length - matched.length
   if (!lines.length) errors.push('계정 · 금액 줄을 읽지 못했습니다 — «공식 결산» 화면에서 손으로 넣어 주세요.')
-  if (unmatched) warnings.push(`계정과목을 못 맞춘 줄 ${unmatched}개 — 줄마다 계정을 골라 주세요.`)
+  if (unmatched) warnings.push(`계정과목을 못 맞춘 줄 ${unmatched}개 — 줄마다 계정을 고르거나 «넣지 않음»으로 두세요(묶음마다 한 번에 고를 수 있습니다).`)
+  const skipped = lines.length - live.length
+  if (skipped) warnings.push(`제조원가명세서 줄 ${skipped}개는 처음부터 «넣지 않음» — 매출원가에 이미 들어 있습니다(넣으면 원가가 두 번 셉니다).`)
   if (!year) errors.push('결산 연도를 찾지 못했습니다 — 연도를 적어 주세요.')
-  if (balance && !balance.balanced) warnings.push(`재무상태표가 닫히지 않습니다 — 자산 − (부채 + 자본) = ${balance.difference.toLocaleString('ko-KR')}원(계정 · 부호를 확인하세요).`)
-  return { period_key: year, company: t.company, title: t.title, lines, unmatched, balance, errors, warnings, reason: t.reason }
+  if (years.length > 1) warnings.push(`여러 해(${years.filter(Boolean).join(' · ')})가 들어 있습니다 — 해마다 따로 저장합니다(아래에서 해를 고르세요).`)
+  if (balance && !balance.balanced) warnings.push(`${year || '이 해'} 재무상태표가 닫히지 않습니다 — 자산 − (부채 + 자본) = ${balance.difference.toLocaleString('ko-KR')}원(계정 · 부호를 확인하세요).`)
+  return { period_key: year || null, years: years.length ? years : [year], net_income, company: t.company, title: t.title, lines, unmatched, balance, errors, warnings, reason: t.reason }
 }
