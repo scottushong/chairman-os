@@ -59,6 +59,8 @@ const nextConfig: NextConfig = {
     // 메모 정리 · 첨부 요약 제안이 attachment-summary.md를 같이 읽는다. 카카오 스킬 라우트도 같은 엔진이다.
     '/**': ['./src/lib/ai/prompts/assistant.md', './src/lib/ai/prompts/attachment-summary.md'],
     '/api/kakao/skill': ['./src/lib/ai/prompts/assistant.md'],
+    // 0070 · C단계 자료 올리기 — 구조 해석 · PDF 읽기 프롬프트는 올리기 화면의 서버 액션이 fs로 읽는다(빠지면 Vercel에서만 ENOENT → AI 실패).
+    '/finance/*/upload': ['./src/lib/ai/prompts/finance-upload-classify.md', './src/lib/ai/prompts/finance-upload-read.md'],
   },
   /**
    * Phase 10 — 첨부 추출 도구 셋은 번들하지 않고 node_modules에서 그대로 부른다. unpdf는 PDF.js 번들을

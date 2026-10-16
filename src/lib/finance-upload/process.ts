@@ -90,12 +90,18 @@ export interface FileCard {
   fixes?: string[]
   /** status official의 미리보기 줄(계정 맞추기 · 부호 · 균형) — 저장은 사람이 «공식 결산»(0020 RPC)으로 */
   official?: OfficialDraft
+  /** 조용히 버리지 않은 것의 안내 — «숨긴 시트 n개 건너뜀» · «읽지 않은 줄 n개» */
+  notes?: string[]
+  /** 같은 파일이 이미 «확인 필요»에 있으면 그 올리기 — 화면이 «이전 올리기를 다시 해석할까요?»를 묻는다 */
+  reinterpret_id?: string
 }
 
 /** C단계 PDF · 사진 설정 — 없으면(검사 · 옛 호출) PDF · 사진은 «준비 중». */
 export interface DocOptions {
   /** 이 사람에게 PDF · 사진을 여는가(기능 스위치 «PDF · 사진 읽기» finance_docs — 0073, 기본 대표만) */
   allowed: boolean
+  /** 꺼진 까닭(화면 · 카드 문구) — 스위치(누구에게 열렸나)와 서버 설정(키 · 한도 없음)을 다른 말로 */
+  closed?: { why: 'switch'; audience: string | null } | { why: 'env' } | null
   /** 읽기 도구(진짜 · 가짜 · 없음). 없거나 한도 0이면 AI 없이(글 PDF는 칸 위치로 미리보기 · 사진 · 스캔은 못 읽음) */
   read: AiDocReader | null
   /** 문서의 회사 이름 대조 */
@@ -130,6 +136,8 @@ export interface ProcessOptions {
   today?: Date
   /** C단계 PDF · 사진 */
   docs?: DocOptions
+  /** 이 요청이 끝나야 하는 시각(ms, maxDuration 300초 안) — 가까우면 AI를 새로 부르지 않고 코드 해석으로 끝낸다 */
+  deadline?: number
 }
 
 /** PDF 글의 카드번호 16자리 — 뒤에 숫자가 붙어 읽혀도(칸이 겹친 PDF) 앞 16자리를 가린다. */
@@ -154,6 +162,26 @@ function refusedCard(fileName: string, r: DocRefusal, format?: FileCard['format'
   return { file_name: fileName, sheet: null, kind: 'unknown', period: null, status: 'refused', upload_id: null, rows: 0, message: r.message, why: [], ai_used: 0, confidence: 'none', format }
 }
 
+/** 같은 파일이 이미 살아 있을 때의 카드 — «확인 필요»면 다시 해석할 올리기를 싣는다. */
+export function sameFileCard(fileName: string, u: FinUpload): FileCard {
+  const pending = u.status === 'needs_review'
+  return {
+    file_name: fileName, sheet: u.sheet_name, kind: (u.kind as UploadKind) ?? 'unknown', period: u.period, status: 'duplicate', upload_id: null, rows: 0, why: [], ai_used: 0, confidence: 'none',
+    message: pending
+      ? `같은 파일을 이미 올려 «확인 필요»에 있습니다(${u.created_at.slice(0, 16).replace('T', ' ')}) — 이전 올리기를 다시 해석할까요? 늘리지 않았습니다.`
+      : `${ERR_KO.fin_upload_duplicate} 이미 넣은 파일입니다 — 다시 넣으려면 «최근 올리기»에서 되돌린 뒤 올려 주세요.`,
+    ...(pending ? { reinterpret_id: u.upload_id } : {}),
+  }
+}
+
+/** 읽기에서 넣지 않은 줄 · 해가 없는 날짜를 카드에 — 조용히 버리지 않는다. */
+function readNotes(read: ReadResult): string[] | undefined {
+  const n: string[] = []
+  if (read.skipped) n.push(`읽지 않은 줄 ${read.skipped}개(제목 · 빈 이름 · 숫자 아닌 칸 — 아래 검증에 줄 번호)`)
+  if (read.ledger?.unknownRows.length) n.push(`거래인지 요약인지 모르는 줄 ${read.ledger.unknownRows.length}개는 더하지 않음`)
+  return n.length ? n : undefined
+}
+
 export async function processUpload(o: ProcessOptions): Promise<FileCard[]> {
   // 0. 배합비 · 구성표로 보이는 파일 — 이름만으로, 여는 것보다 먼저. 기록 줄도 남기지 않는다(저장 없음 · AI 없음).
   const formula = refuseFormula(o.fileName)
@@ -161,13 +189,17 @@ export async function processUpload(o: ProcessOptions): Promise<FileCard[]> {
   const opened = await openUpload(o.bytes, o.fileName)
   if (!opened.ok && (opened.format === 'pdf' || opened.format === 'image')) return processDoc(o, opened.format, opened.sha256)
   if (!opened.ok) return [await failRecord(o, opened.sha256, opened.message)]
-  // 엑셀도 시트 이름 · 앞 8줄이 배합비 · 구성표면 통째로 받지 않는다(기록 없음).
+  // 엑셀도 시트 이름 · 앞 8줄이 배합비 · 구성표면 통째로 받지 않는다(기록 없음). 숨긴 시트도 본다(숨겨도 내용은 같다).
   for (const sh of opened.sheets) {
     const head = [sh.name, ...sh.rows.slice(0, 8).map((r) => r.map(cellText).join(' '))].join(' ')
     const r = refuseFormula('', head)
     if (r) return [refusedCard(o.fileName, r, 'excel')]
   }
-  return (await processSheets(o, opened.sha256, opened.sheets, null)).map((c) => ({ ...c, format: c.format ?? 'excel' }))
+  // 숨긴 시트는 건너뛰고(계산용 · 옛 달이 흔하다) 카드에 수를 적는다. 다 숨겨져 있으면 그대로 읽는다.
+  const shown = opened.sheets.filter((s) => !s.hidden)
+  const hidden = shown.length ? opened.sheets.length - shown.length : 0
+  const cards = await processSheets(o, opened.sha256, shown.length ? shown : opened.sheets, null)
+  return cards.map((c) => ({ ...c, format: c.format ?? 'excel', notes: hidden ? [...(c.notes ?? []), `숨긴 시트 ${hidden}개 건너뜀`] : c.notes }))
 }
 
 /** 실패 기록(진행 중에 남지 않는다 — failed는 바로 끝난 상태). 내용은 싣지 않는다. 기록이 실패해도 카드는 보여 준다. */
@@ -177,11 +209,16 @@ async function failRecord(
   message: string,
   extra: { sheet?: string | null; aiUsed?: number; status?: 'failed' | 'refused' | 'later'; format?: FileCard['format'] } = {},
 ): Promise<FileCard> {
+  // 보류(later)도 DB에는 끝난 줄(failed)이다 — 기록 문구 앞머리 «보류 — »로 화면이 «실패»와 가른다(HOLD_PREFIX).
+  const error = extra.status === 'later' ? `${HOLD_PREFIX}${message}` : message
   const id = await o.repo
-    .finUploadRecord({ business_id: o.businessId, kind: 'unknown', period: null, file_name: o.fileName, file_sha256: sha, sheet_name: extra.sheet ?? null, ai_confidence: 'none', ai_used: extra.aiUsed ?? 0, status: 'failed', pending: null, error: message.slice(0, 500) })
+    .finUploadRecord({ business_id: o.businessId, kind: 'unknown', period: null, file_name: o.fileName, file_sha256: sha, sheet_name: extra.sheet ?? null, ai_confidence: 'none', ai_used: extra.aiUsed ?? 0, status: 'failed', pending: null, error: error.slice(0, 500) })
     .catch(() => null)
   return { file_name: o.fileName, sheet: extra.sheet ?? null, kind: 'unknown', period: null, status: extra.status ?? 'failed', upload_id: id, rows: 0, message, why: [], ai_used: extra.aiUsed ?? 0, confidence: 'none', format: extra.format }
 }
+
+/** 보류 기록의 앞머리(화면 finance-upload-board.tsx가 같은 글로 «보류»를 그린다). */
+export const HOLD_PREFIX = '보류 — '
 
 /** 공식 결산 갈래의 fin_uploads 기록 문구(내용 없음 — AI 사용 수를 하루 한도에 세려고 남긴다). 화면이 이 앞머리로 알아본다. */
 export const OFFICIAL_RECORD_NOTE = '공식 결산으로 보냄 — 자료 표에 넣지 않음(사람이 확인하고 «공식 결산»으로 저장)'
@@ -192,8 +229,11 @@ export const OFFICIAL_RECORD_NOTE = '공식 결산으로 보냄 — 자료 표�
  */
 async function processDoc(o: ProcessOptions, kind: 'pdf' | 'image', sha: string): Promise<FileCard[]> {
   const fmt0: FileCard['format'] = kind === 'image' ? 'image' : 'pdf_text'
-  // 6. 입구 스위치가 꺼진 사람(직원) — PDF · 사진은 준비 중(엑셀은 그대로).
-  if (!o.docs?.allowed) return [await failRecord(o, sha, MSG.pdfLater, { format: fmt0, status: 'later' })]
+  // 6. 입구 스위치가 꺼진 사람(직원) — PDF · 사진은 보류(엑셀은 그대로). 스위치 · 서버 설정을 다른 말로.
+  if (!o.docs?.allowed) {
+    const c = o.docs?.closed
+    return [await failRecord(o, sha, c?.why === 'switch' ? MSG.docSwitchOff(c.audience) : MSG.pdfLater, { format: fmt0, status: 'later' })]
+  }
   let doc: OpenedDoc
   try {
     doc = await openDocument(o.bytes, kind)
@@ -204,7 +244,11 @@ async function processDoc(o: ProcessOptions, kind: 'pdf' | 'image', sha: string)
   const refusal = refuseDoc(o.fileName, doc.guardText)
   if (refusal) return [refusal.record ? await failRecord(o, sha, refusal.message, { status: 'refused', format: doc.format }) : refusedCard(o.fileName, refusal, doc.format)]
   const official = looksOfficial(o.fileName, doc.guardText)
-  // 2. 읽기 — 한 파일 = AI 한 번. 글 PDF는 카드번호를 가린 글만 보낸다.
+  // 같은 PDF · 사진이 이미 살아 있으면 읽기(AI) 전에 멈춘다.
+  // (이름까지 같을 때만 — 이름을 바꾼 같은 바이트는 예전처럼 읽은 뒤 종류 · 기간으로 가린다.)
+  const same = (await o.repo.listFinUploads(o.businessId).catch(() => [] as FinUpload[])).find((u) => u.file_sha256 === sha && u.file_name === o.fileName && (u.status === 'applied' || u.status === 'needs_review'))
+  if (same) return [{ ...sameFileCard(o.fileName, same), format: doc.format }]
+  // 2. 읽기 — 한 파일 = AI 한 번(긴 글 PDF는 쪽을 나눠 한도까지). 글 PDF는 카드번호를 가린 글만 보낸다.
   const reader = o.docs.read
   let table: DocTable | null = null
   let aiUsed = 0
@@ -214,12 +258,14 @@ async function processDoc(o: ProcessOptions, kind: 'pdf' | 'image', sha: string)
     try {
       const text = doc.text.replace(CARD_IN_TEXT, (_m, _a, _b, _c, d) => `****-****-****-${d}`)
       const layout = doc.layout?.map((l) => l.map((c) => ({ ...c, t: c.t.replace(CARD_IN_TEXT, (_m, _a, _b, _c, d) => `****-****-****-${d}`) })))
-      table = await reader({ fileName: o.fileName, format: doc.format, text, layout, media: doc.media, expect: official ? 'official' : 'table' })
+      table = await reader({ fileName: o.fileName, format: doc.format, text, layout, media: doc.media, expect: official ? 'official' : 'table', maxCalls: o.aiBudget, deadline: o.deadline })
+      aiUsed = Math.max(1, table.calls ?? 1)
     } catch (e) {
-      aiNote = `AI 읽기 실패(${e instanceof Error ? e.message.slice(0, 60) : '?'})`
+      aiUsed = Math.max(1, Number((e as { calls?: number })?.calls) || 1)
+      aiNote = `AI 읽기 실패(${e instanceof Error ? e.message.slice(0, 80) : '?'})`
     }
   } else {
-    aiNote = reader ? 'AI 한도(파일당 · 하루)를 넘었습니다' : 'AI가 꺼져 있습니다(한도 미설정 · 연결 없음)'
+    aiNote = reader ? 'AI 한도(파일당 · 하루)를 넘었습니다' : o.docs.closed?.why === 'env' ? MSG.docNoAi : 'AI가 꺼져 있습니다(한도 미설정 · 연결 없음)'
   }
   if (table) {
     const after = refuseAfterRead(table.doc_kind)
@@ -249,7 +295,9 @@ async function processDoc(o: ProcessOptions, kind: 'pdf' | 'image', sha: string)
   }
   if (!table) {
     if (!doc.layout) {
-      return [await failRecord(o, sha, `${aiNote ?? 'AI 없음'} — 사진 · 스캔 PDF는 AI 없이 읽지 못합니다. 저장하지 않았습니다 — 내일 다시 올리거나 엑셀로 올려 주세요.`, { aiUsed, format: doc.format })]
+      // 한도 · 설정 때문이면 보류(내일 · 설정 뒤 다시), AI가 읽다 실패했으면 실패.
+      const hold = !aiUsed
+      return [await failRecord(o, sha, `${aiNote ?? 'AI 없음'} — 사진 · 스캔 PDF는 AI 없이 읽지 못합니다. 저장하지 않았습니다 — ${hold ? '내일 다시 올리거나 ' : ''}엑셀로 올려 주세요.`, { aiUsed, format: doc.format, status: hold ? 'later' : 'failed' })]
     }
     table = layoutToTable(doc.layout)
   }
@@ -282,6 +330,12 @@ async function processSheets(o: ProcessOptions, sha: string, sheets: EcountSheet
   const unknown: { sheet: EcountSheet; aiUsed: number; cls: Classification; sig: string }[] = []
   for (const raw of opened.sheets) {
     if (raw.rows.every((r) => r.every((c) => c.t === 'empty'))) continue
+    // 같은 파일 · 같은 시트가 이미 살아 있으면 해석(AI)부터 하지 않는다 — 돈이 드는 호출을 같은 파일에 다시 쓰지 않게.
+    const again = uploads.find((u) => u.file_sha256 === opened.sha256 && u.file_name === o.fileName && u.sheet_name === raw.name && (u.status === 'applied' || u.status === 'needs_review'))
+    if (again) {
+      cards.push({ ...sameFileCard(o.fileName, again), sheet: raw.name })
+      continue
+    }
     const { sheet, dropped } = scrubSheet(raw)
     // c. 해석: 학습 → 코드 규칙 → (맞지 않으면) AI 구조 해석 + 대조가 틀리면 재해석(최대 2번). d · e. 읽기 · 대조는 해석마다 코드가.
     let cls = classifyByCode(sheet)
@@ -326,8 +380,10 @@ async function processSheets(o: ProcessOptions, sha: string, sheets: EcountSheet
       check.warnings = [...new Set([...check.warnings, ...doc.extraWarnings])]
     }
     // 같은 파일(해시 · 종류 · 기간)이 이미 살아 있으면 늘리지 않는다 — 겹침보다 먼저(0070 fin_uploads_same_file과 같은 판정).
-    if (uploads.some((u) => u.kind === cls.kind && u.period === month.period && u.file_sha256 === opened.sha256 && (u.status === 'applied' || u.status === 'needs_review'))) {
-      cards.push({ file_name: o.fileName, sheet: sheet.name, kind: cls.kind, period: month.period, status: 'duplicate', upload_id: null, rows: 0, message: ERR_KO.fin_upload_duplicate, why: [], ai_used: aiUsed, confidence: cls.confidence })
+    // «확인 필요»에 있으면 그 올리기를 다시 해석하자고 묻고(화면 단추), 넣은 것이면 되돌린 뒤 올리라고 말한다.
+    const same = uploads.find((u) => u.kind === cls.kind && u.period === month.period && u.file_sha256 === opened.sha256 && (u.status === 'applied' || u.status === 'needs_review'))
+    if (same) {
+      cards.push({ ...sameFileCard(o.fileName, same), sheet: sheet.name, kind: cls.kind, period: month.period, ai_used: aiUsed, confidence: cls.confidence, notes: readNotes(ev.read) })
       continue
     }
     const overlap = !!month.period && uploads.some((u) => u.kind === cls.kind && u.period === month.period && u.status === 'applied')
@@ -346,7 +402,7 @@ async function processSheets(o: ProcessOptions, sha: string, sheets: EcountSheet
       ...(doc ? { source_format: doc.format, fixes: doc.fixes } : {}),
     }
     const confidenceDb = cls.confidence
-    const base = { file_name: o.fileName, sheet: sheet.name, kind: cls.kind, period: month.period, ai_used: aiUsed, confidence: cls.confidence }
+    const base = { file_name: o.fileName, sheet: sheet.name, kind: cls.kind, period: month.period, ai_used: aiUsed, confidence: cls.confidence, notes: readNotes(read) }
     try {
       if (decision.auto && month.period) {
         const id = await o.repo.finUploadApply({
@@ -422,6 +478,8 @@ export function evaluate(sheet: EcountSheet, cls0: Classification, fileName: str
   const read = readRows(sheet, cls)
   const month = detectMonth(sheet, read.dates, fileName, today)
   const check = validate(cls.kind, read, month.period)
+  // 연간 제목에 여러 달 날짜 — 한 달로 넣으면 다른 달 줄이 섞인다. 자동으로 넣지 않고 사람이 기간을 본다.
+  if (/섞임/.test(month.how)) check.warnings = [...check.warnings, `날짜 칸에 여러 달이 섞여 있습니다(${month.how}) — 한 달씩 내려받아 올리거나 기간을 확인하세요.`]
   if (read.ledger) {
     const l = read.ledger
     const structural = [...l.mismatches.map((m) => `${m.code}:${m.side}`), ...l.unknownRows.map((r) => `row:${r}`), ...(l.rows.length ? [] : ['no-accounts'])]
@@ -432,6 +490,7 @@ export function evaluate(sheet: EcountSheet, cls0: Classification, fileName: str
     const lc = cls.ledger!
     cls.columns = Object.fromEntries((['account_code', 'account_name', 'debit', 'credit'] as const).filter((k) => lc.cols[k] !== undefined).map((k) => [k, lc.cols[k]!]))
     if (!l.compared && l.rows.length) check.warnings = [...check.warnings, '요약 줄(월계 · 합계)이 없어 계정별 거래 합을 대조하지 못했습니다.']
+    if (l.warnings.length) check.warnings = [...new Set([...check.warnings, ...l.warnings])].slice(0, 30)
     return { cls, read, month, check, structural, feedback: ledgerFeedback(l) }
   }
   const spec = kindSpec(cls.kind)
@@ -496,6 +555,11 @@ async function interpret(o: ProcessOptions, sheet: EcountSheet, code0: Classific
   let feedback: string[] | undefined
   let ok = false
   for (let attempt = 0; attempt < AI_TRIES_PER_SHEET && budget.left > 0; attempt += 1) {
+    // 요청 시간 한도(300초)가 가까우면 더 부르지 않는다 — 끊기면 기록 · 수신함 지우기가 남지 않는다.
+    if (o.deadline && Date.now() > o.deadline - 60_000) {
+      best = { ...best, cls: { ...best.cls, reason: `${best.cls.reason} · 시간 한도가 가까워 AI 재해석을 멈춤` } }
+      break
+    }
     used += 1
     budget.left -= 1
     let ai: AiStructure

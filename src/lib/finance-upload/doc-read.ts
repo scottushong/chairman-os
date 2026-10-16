@@ -42,6 +42,8 @@ export interface DocTable {
   confidence: 'high' | 'medium' | 'low'
   reason: string
   cost_usd?: number
+  /** AI 호출 수(긴 글 PDF를 쪽으로 나눠 읽으면 2 이상) — 한도에 센다 */
+  calls?: number
 }
 
 export interface DocReadInput {
@@ -52,6 +54,10 @@ export interface DocReadInput {
   media: OpenedDoc['media']
   /** official = 세무사 결산으로 보여 계정 · 금액 표로 읽기 */
   expect: 'table' | 'official'
+  /** 쪽 나눔까지 쓸 수 있는 AI 호출 수(없으면 1) */
+  maxCalls?: number
+  /** 이 요청이 끝나야 하는 시각(ms) — 넘길 것 같으면 새 호출을 하지 않는다 */
+  deadline?: number
 }
 
 export type AiDocReader = (input: DocReadInput) => Promise<DocTable>

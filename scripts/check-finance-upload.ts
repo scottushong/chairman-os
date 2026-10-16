@@ -22,6 +22,7 @@ import { fromGrid, processUpload, saveTxGroupsFor, type AiClassify } from '../sr
 import { parseValue } from '../src/lib/finance-upload/v21-text'
 import { checkAiSchemas } from './check-ai-schemas'
 import { runLedgerChecks } from './check-finance-upload-ledger'
+import { runHardeningChecks } from './check-upload-hardening'
 import type { FinTxLine } from '../src/types'
 import { dummyRepository as repo } from '../src/lib/repository/dummy'
 import { dummyFinLines } from '../src/lib/repository/dummy-finance-upload'
@@ -429,7 +430,7 @@ async function main() {
   assert.ok((await repo.listTopGoals()).every((g) => g.is_example), '대표 세션의 시드 목표에 예시 표시가 없다')
 
   // ── 17. 2026-10-14 운영 첫 사용 고침 — ⑤ 원장 구조 해석 ──
-  const ledgerPass = `${await runLedgerChecks()} · ${checkAiSchemas()}`
+  const ledgerPass = `${await runLedgerChecks()} · ${checkAiSchemas()} · ${await runHardeningChecks()}`
 
   console.log(
     `PASS: 0070 칸 = kinds.ts · 14가지 자동 넣기(분류 · 기간 · 상태) · 시트명 달라도 내용으로 · ④ 원료 줄 DB 0 · AI 요청 0 · 급여 이름 · 주민 · 계좌 0 · 개인 줄 사번 · ` +

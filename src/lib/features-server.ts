@@ -2,7 +2,7 @@ import 'server-only'
 
 import { cache } from 'react'
 
-import { closedFeatureRows, featureOnFor, hiddenNavKeys, type FeatureKey, type FeatureSwitchRow } from '@/lib/features'
+import { closedFeatureRows, featureOnFor, featureWhyFor, hiddenNavKeys, type FeatureKey, type FeatureSwitchRow, type FeatureWhy } from '@/lib/features'
 import { getRepository } from '@/lib/repository'
 import type { Role, SessionUser } from '@/types'
 
@@ -25,6 +25,12 @@ export const loadFeatureSwitches = cache(async function loadFeatureSwitches(): P
 export async function featureOn(user: Pick<SessionUser, 'role'> | null | undefined, key: FeatureKey, businessId?: string | null): Promise<boolean> {
   if (!user) return false
   return featureOnFor(await loadFeatureSwitches(), key, user.role, businessId)
+}
+
+/** featureOn과 같은 판정 + 근거(어느 줄 · 범위) — 화면이 «왜 꺼졌나»를 말할 때. */
+export async function featureWhy(user: Pick<SessionUser, 'role'> | null | undefined, key: FeatureKey, businessId?: string | null): Promise<FeatureWhy> {
+  const why = featureWhyFor(await loadFeatureSwitches(), key, user?.role, businessId)
+  return user ? why : { ...why, on: false }
 }
 
 /** 사이드바에서 뺄 메뉴 키(꺼진 기능의 메뉴). */

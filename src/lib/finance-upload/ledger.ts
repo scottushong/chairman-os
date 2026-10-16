@@ -65,10 +65,26 @@ export function cellDate(c: EcountCell | undefined): string | null | 'bad' {
   if (!c || c.t === 'empty') return null
   if (c.t === 'date') return c.v
   const t = cellText(c).trim()
+  const ok = (y: string, mo: string, d: string) => {
+    const mm = Number(mo)
+    const dd = Number(d)
+    return mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31 ? `${y}-${mo.padStart(2, '0')}-${d.padStart(2, '0')}` : null
+  }
+  // 2026/01/05 · 2026-01-05 -1(전표 번호) · 2026.1.5
   const m = /^(\d{4})[./-](\d{1,2})[./-](\d{1,2})/.exec(t)
-  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`
+  if (m) return ok(m[1], m[2], m[3]) ?? 'bad'
+  // 2026년 1월 5일 · 1월 5일(해 없음)
+  const k = /^(?:(\d{4})\s*년\s*)?(\d{1,2})\s*월\s*(\d{1,2})\s*일/.exec(t)
+  if (k) return ok(k[1] ?? '0000', k[2], k[3]) ?? 'bad'
+  // 26/01/05 · 26.01.05(두 자리 해 — 20xx) · 뒤에 전표 번호가 붙어도
+  // (같은 구분자 두 번 — «01/05-3»의 «-3»은 전표 번호다)
+  // «-»는 전표 번호 구분에도 쓰여(01-05-3) 두 자리 해로 읽지 않는다 — «/ · .»만. 맞지 않으면 아래 규칙으로 넘긴다.
+  const y2 = /^(\d{2})([./])(\d{1,2})\2(\d{1,2})(?:\s*-\s*\d+)?$/.exec(t)
+  const y2ok = y2 ? ok(`20${y2[1]}`, y2[3], y2[4]) : null
+  if (y2ok) return y2ok
+  // 01/05 · 01/05-3(해 없음 · 전표 번호)
   const m2 = /^(\d{1,2})[./-](\d{1,2})(?:\s*-\s*\d+)?$/.exec(t)
-  if (m2) return `0000-${m2[1].padStart(2, '0')}-${m2[2].padStart(2, '0')}`
+  if (m2) return ok('0000', m2[1], m2[2]) ?? 'bad'
   if (c.t === 'number' && c.v > 20000 && c.v < 80000) return new Date(Date.UTC(1899, 11, 30) + c.v * 86_400_000).toISOString().slice(0, 10)
   return 'bad'
 }
@@ -87,7 +103,7 @@ const BUILTIN: { role: RowRole; re: RegExp }[] = [
   { role: 'carry', re: /^(전기|전월|전년|차기|차월|전기말|기초|월초)?이월(잔액|금액|액)?$|^기초잔액$/ },
   { role: 'day', re: /^(일계|일합계|일소계|일자계|일별계|일별합계)$/ },
   { role: 'month', re: /^(월계|월합계|월소계|당월계|당월합계|월별계|월별합계|\d{1,2}월(계|합계|소계))$/ },
-  { role: 'cumulative', re: /^(누계|누적|누적계|누적합계|당기누계|누계합계|누적액)$/ },
+  { role: 'cumulative', re: /^(누계|누적|누적계|누적합계|당기누계|당월누계|월누계|누계합계|누적액)$/ },
   { role: 'subtotal', re: /^(소계|subtotal)$/ },
   { role: 'total', re: /^(합계|총계|총합계|계|합|총액|total|grandtotal|sum)$/ },
 ]
@@ -114,7 +130,12 @@ export function rowRole(row: EcountCell[], labels: readonly RowLabel[] = []): Ro
   return null
 }
 
-const HEAD_IN_TITLE = /계정별\s*원장[^\d]*?(\d{3,6})\s*\(([^)]+)\)/
+const HEAD_IN_TITLE = /계정별\s*원장[^\d]*?(\d{3,6})\s*\(((?:[^()]|\([^()]*\))+)\)/
+/**
+ * 첫 빈칸 아닌 칸이 «코드(이름)» — 이름 안의 괄호가 겹쳐도(2519(미지급금(카드))) 바깥 괄호까지가 이름이다.
+ * 같은 줄 다른 칸의 글(기간 · 쪽 · 출력 시각)은 보지 않는다. 한 칸에 «코드(이름)  기간 …»이 붙어 있으면 앞의 «코드(이름)»만.
+ */
+const HEAD_FIRST = /^\s*(?:계정(?:과목)?\s*[:：]?\s*)?\[?\s*(\d{3,6})\s*\]?\s*\(((?:[^()]|\([^()]*\))+)\)(?=\s|$)/
 const HEAD_CELL = [
   /^\s*(?:계정(?:과목)?\s*[:：]?\s*)?\[?\s*(\d{3,6})\s*\]?\s*\(\s*([^()]{1,40}?)\s*\)\s*$/, // 1509(제품) · 계정: 1509(제품)
   /^\s*(?:계정(?:과목)?\s*[:：]?\s*)?\[\s*(\d{3,6})\s*\]\s*([^\d[\]()][^[\]()]{0,39}?)\s*$/, // [1509] 제품
@@ -126,9 +147,12 @@ export function accountHead(row: EcountCell[], layout: Pick<LedgerLayout, 'cols'
   const { debit, credit } = layout.cols
   const hasAmt = [debit, credit].some((i) => i !== undefined && typeof cellNum(row[i]) === 'number')
   if (hasAmt) return null
+  const first = row.find((c) => c.t !== 'empty')
+  const f = first && first.t === 'text' ? HEAD_FIRST.exec(first.v) : null
+  if (f) return { code: f[1], name: f[2].trim().slice(0, 40) }
   const line = row.map(cellText).join(' ')
   const t = HEAD_IN_TITLE.exec(line)
-  if (t) return { code: t[1], name: t[2].trim() }
+  if (t) return { code: t[1], name: t[2].trim().slice(0, 40) }
   for (const c of row) {
     if (c.t !== 'text') continue
     for (const re of HEAD_CELL) {
@@ -283,6 +307,8 @@ export interface LedgerRead {
   roles: Record<string, number>
   /** 거래인지 요약인지 모르는 줄(1부터) — 더하지 않았다 */
   unknownRows: number[]
+  /** 경고(넣기를 멈추되 오류는 아님) — 대변 합계 음수 · 요약 줄 칸 밀림을 읽음 */
+  warnings: string[]
 }
 
 const won = (n: number) => Math.round(n).toLocaleString('ko-KR')
@@ -301,40 +327,76 @@ export function mismatchText(m: LedgerMismatch): string {
   return `계정 ${m.code}(${m.name}) ${side}: 거래 줄 합 ${won(m.calc)} ≠ ${against} 줄 ${won(m.file)} · 차이 ${won(m.calc - m.file)}${note}`
 }
 
+/**
+ * 요약 줄의 차변 · 대변 — 머리글 칸이 비어 있으면(ECOUNT 요약 줄은 칸이 밀려 찍히는 일이 있다) 그 줄의 숫자 칸 중
+ * 마지막 셋을 차변 · 대변 · 잔액으로(둘뿐이면 차변 · 대변). 숫자를 지어내지 않는다 — 없으면 null.
+ */
+export function summaryAmounts(row: EcountCell[], debit: number, credit: number, skip: readonly (number | undefined)[] = []): { d: number; c: number; shifted: boolean } | null {
+  const d = cellNum(row[debit])
+  const c = cellNum(row[credit])
+  if (typeof d === 'number' || typeof c === 'number') return { d: typeof d === 'number' ? d : 0, c: typeof c === 'number' ? c : 0, shifted: false }
+  const nums = row.map((x, i) => (skip.includes(i) ? null : cellNum(x))).filter((v): v is number => typeof v === 'number')
+  if (nums.length >= 3) return { d: nums[nums.length - 3], c: nums[nums.length - 2], shifted: true }
+  if (nums.length === 2) return { d: nums[0], c: nums[1], shifted: true }
+  return null
+}
+
 /** 해석(layout)대로 거래 줄만 더하고 요약 줄과 대조한다. 숫자를 맞추려고 고치지 않는다 — 안 맞으면 그대로 차이를 적는다. */
 export function readLedgerWith(sheet: EcountSheet, layout: LedgerLayout): LedgerRead {
-  const { debit, credit, date, account_code: codeCol, account_name: nameCol } = layout.cols
-  const out: LedgerRead = { rows: [], problems: [], dates: [], mismatches: [], compared: 0, roles: {}, unknownRows: [] }
+  const { debit, credit, date, balance, memo, counterparty, account_code: codeCol, account_name: nameCol } = layout.cols
+  const out: LedgerRead = { rows: [], problems: [], dates: [], mismatches: [], compared: 0, roles: {}, unknownRows: [], warnings: [] }
   if (debit === undefined || credit === undefined) {
     out.problems.push('차변 · 대변 칸을 찾지 못했습니다.')
     return out
   }
   const bump = (k: string) => (out.roles[k] = (out.roles[k] ?? 0) + 1)
-  // 날짜 칸이 있고 금액 줄 대부분(60%)에 날짜가 있으면 날짜 없는 금액 줄은 «모르는 줄»(더하지 않는다).
+  // 세로 병합 날짜: 엑셀은 병합의 첫 칸에만 값이 있다 — 같은 계정 안에서 날짜 칸이 비고 적요 · 거래처 글이 있는 금액 줄은 앞 날짜를 잇는다.
+  // (적요 · 거래처도 없는 금액 줄은 요약 줄일 수 있어 잇지 않는다 — «모르는 줄».)
+  // (요약처럼 끝나는 짧은 적요 — «…계 · …합산 · …누적 · …이월» — 는 낱말 규칙이 몰라도 잇지 않는다: 이으면 거래로 더해진다)
+  const summaryish = (row: EcountCell[]) => memo !== undefined && row[memo]?.t === 'text' && labelCore(row[memo].v).length <= 10 && /(계|합산|누적|이월)$/.test(labelCore(row[memo].v))
+  const txText = (row: EcountCell[]) => !summaryish(row) && [memo, counterparty].some((i) => i !== undefined && row[i]?.t === 'text' && row[i].v.trim() !== '')
+  const isAmt = (row: EcountCell[]) => typeof cellNum(row[debit]) === 'number' || typeof cellNum(row[credit]) === 'number'
+  // 날짜 칸이 있고 금액 줄 대부분(60%)에 날짜가 있으면(이어받은 날짜 포함) 날짜 없는 금액 줄은 «모르는 줄»(더하지 않는다).
   let amtRows = 0
   let datedRows = 0
+  let carried: string | null = null
   for (let r = layout.headerRow + 1; r < sheet.rows.length; r += 1) {
     const row = sheet.rows[r]
-    if (rowRole(row, layout.labels) || isHeaderRow(row)) continue
-    if (typeof cellNum(row[debit]) !== 'number' && typeof cellNum(row[credit]) !== 'number') continue
+    if ((codeCol === undefined && accountHead(row, layout)) || isHeaderRow(row)) {
+      carried = null
+      continue
+    }
+    if (rowRole(row, layout.labels)) continue
+    if (!isAmt(row)) continue
     amtRows += 1
-    if (date !== undefined && typeof cellDate(row[date]) === 'string') datedRows += 1
+    const dt = date !== undefined ? cellDate(row[date]) : null
+    if (typeof dt === 'string') {
+      datedRows += 1
+      carried = dt
+    } else if (date !== undefined && dt === null && carried && txText(row)) datedRows += 1
   }
   const needDate = date !== undefined && amtRows > 0 && datedRows / amtRows >= 0.6
 
-  type Block = { code: string; name: string; row: number; d: number; c: number; month: { d: number; c: number } | null; total: { d: number; c: number } | null; cum: { d: number; c: number } | null; tx: number[] }
+  type Sum = { d: number; c: number }
+  type Block = { code: string; name: string; row: number; d: number; c: number; month: Sum | null; total: Sum | null; cum: Sum | null; tx: number[]; lastBal: number | null; lastDate: string | null }
   const blocks = new Map<string, Block>()
   const order: string[] = []
   let cur: Block | null = null
+  // 머리글(차변 · 대변)이 다시 나왔는데 그 사이 계정 제목이 없으면 — 쪽이 넘어간 같은 계정인지(잔액이 이어지는지) 보고, 아니면 섞지 않는다.
+  let headSinceHeader = true
+  let orphan: { block: Block; row: number } | null = null
   const open = (code: string, name: string, row: number) => {
     let b = blocks.get(code)
     if (!b) {
-      b = { code, name, row, d: 0, c: 0, month: null, total: null, cum: null, tx: [] }
+      b = { code, name, row, d: 0, c: 0, month: null, total: null, cum: null, tx: [], lastBal: null, lastDate: null }
       blocks.set(code, b)
       order.push(code)
     }
     cur = b
+    headSinceHeader = true
+    orphan = null
   }
+  const shiftSkip = [date, codeCol]
   for (let r = 0; r < sheet.rows.length; r += 1) {
     const row = sheet.rows[r]
     if (row.every((c) => c.t === 'empty')) continue
@@ -346,7 +408,15 @@ export function readLedgerWith(sheet: EcountSheet, layout: LedgerLayout): Ledger
         continue
       }
     }
-    if (r <= layout.headerRow || isHeaderRow(row)) continue
+    if (isHeaderRow(row)) {
+      if (codeCol === undefined && !headSinceHeader && cur) {
+        orphan = { block: cur, row: r + 1 }
+        cur = null
+      }
+      headSinceHeader = false
+      continue
+    }
+    if (r <= layout.headerRow) continue
     const role = rowRole(row, layout.labels)
     const d = cellNum(row[debit])
     const c = cellNum(row[credit])
@@ -357,11 +427,18 @@ export function readLedgerWith(sheet: EcountSheet, layout: LedgerLayout): Ledger
     if (role) {
       bump(role)
       const b = cur as Block | null
+      if (role === 'carry' && b && balance !== undefined) {
+        const v = cellNum(row[balance])
+        if (typeof v === 'number') b.lastBal = v
+      }
       if (!b) continue
-      const v = { d: typeof d === 'number' ? d : 0, c: typeof c === 'number' ? c : 0 }
-      if (role === 'month') b.month = b.month ? { d: b.month.d + v.d, c: b.month.c + v.c } : v
-      else if (role === 'total') b.total = v
-      else if (role === 'cumulative') b.cum = v
+      const v = summaryAmounts(row, debit, credit, shiftSkip)
+      if (!v) continue
+      if (v.shifted && role !== 'carry' && role !== 'day') out.warnings.push(`${r + 1}행 ${ROLE_KO[role]} 줄은 차변 · 대변 칸이 비어 있어 그 줄의 끝 숫자로 읽었습니다(칸 밀림).`)
+      const s = { d: v.d, c: v.c }
+      if (role === 'month') b.month = b.month ? { d: b.month.d + s.d, c: b.month.c + s.c } : s
+      else if (role === 'total') b.total = s
+      else if (role === 'cumulative') b.cum = s
       continue
     }
     if (d === null && c === null) continue // 제목 · 출력 시각 · 빈 금액 줄
@@ -370,12 +447,27 @@ export function readLedgerWith(sheet: EcountSheet, layout: LedgerLayout): Ledger
       if ([row[debit], row[credit]].some((x) => x?.t === 'text' && /\d/.test(x.v))) out.problems.push(`${r + 1}행 차변 · 대변이 숫자가 아닙니다.`)
       continue
     }
-    const dt = date !== undefined ? cellDate(row[date]) : null
-    if (needDate && typeof dt !== 'string') {
+    const bal = balance !== undefined ? cellNum(row[balance]) : null
+    if (!cur && orphan) {
+      // 쪽 넘김인지: 앞 계정의 마지막 잔액에서 이 줄의 차변 − 대변(어느 쪽 부호든)으로 이 줄 잔액이 나오면 같은 계정이 이어진 것이다.
+      const prev = orphan.block.lastBal
+      const mv = (d ?? 0) - (c ?? 0)
+      if (prev !== null && Math.abs(prev) >= 1 && typeof bal === 'number' && (Math.abs(prev + mv - bal) <= 1 || Math.abs(prev - mv - bal) <= 1)) {
+        cur = orphan.block
+        orphan = null
+      } else {
+        out.problems.push(`${orphan.row}행 머리글 앞에 계정 제목이 없습니다 — 그 아래 줄을 앞 계정(${orphan.block.code})에 섞지 않았습니다.`)
+        orphan = null
+      }
+    }
+    const b = cur as Block | null
+    let dt = date !== undefined ? cellDate(row[date]) : null
+    if (dt === null && b?.lastDate && txText(row)) dt = b.lastDate
+    // 날짜 없이 요약처럼 끝나는 적요(낱말 규칙이 모르는 요약 줄) — 거래로 더하지 않는다(재해석 때 AI가 이 줄을 본다).
+    if ((needDate || summaryish(row)) && typeof dt !== 'string') {
       out.unknownRows.push(r + 1)
       continue
     }
-    const b = cur as Block | null
     if (!b) {
       out.unknownRows.push(r + 1)
       continue
@@ -384,13 +476,18 @@ export function readLedgerWith(sheet: EcountSheet, layout: LedgerLayout): Ledger
     b.d += d ?? 0
     b.c += c ?? 0
     b.tx.push(r + 1)
-    if (typeof dt === 'string') out.dates.push(dt)
+    if (typeof bal === 'number') b.lastBal = bal
+    if (typeof dt === 'string') {
+      b.lastDate = dt
+      out.dates.push(dt)
+    }
   }
   for (const code of order) {
     const b = blocks.get(code)!
     const ref = b.month ? { v: b.month, k: 'month' as const } : b.total ? { v: b.total, k: 'total' as const } : null
     if (ref) {
       out.compared += 1
+      if (ref.v.c < 0) out.warnings.push(`계정 ${b.code}(${b.name}) ${ref.k === 'month' ? '월계' : '합계'} 줄의 대변이 음수입니다(${won(ref.v.c)}) — 칸이 밀렸거나 잔액 칸을 대변으로 읽었을 수 있습니다.`)
       for (const side of ['debit', 'credit'] as const) {
         const calc = side === 'debit' ? b.d : b.c
         const file = side === 'debit' ? ref.v.d : ref.v.c
@@ -401,6 +498,7 @@ export function readLedgerWith(sheet: EcountSheet, layout: LedgerLayout): Ledger
   }
   if (out.unknownRows.length) out.problems.push(`거래인지 요약인지 모르는 줄 ${out.unknownRows.length}개(${out.unknownRows.slice(0, 8).join(' · ')}행)는 더하지 않았습니다.`)
   out.problems.push(...out.mismatches.slice(0, 25).map(mismatchText))
+  out.warnings = [...new Set(out.warnings)].slice(0, 20)
   return out
 }
 

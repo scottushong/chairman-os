@@ -834,6 +834,17 @@ export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods,
   listFinUploadShapes(businessId: string): Promise<FinUploadShape[]>
   saveFinUploadShape(shape: FinUploadShape): Promise<void>
   /**
+   * 0082 자료 올리기 수신함(fin-upload-inbox) — 브라우저가 바로 올린 파일을 사람 세션(RLS)으로 읽는다. 본인 폴더 · 장부 권한 밖이면
+   * 'fin_inbox_denied', 없으면 'fin_inbox_missing'. 0082 전 DB(버킷 없음)도 'fin_inbox_missing'.
+   */
+  finInboxRead(path: string): Promise<Uint8Array>
+  /** 처리 뒤 지우기(원본을 두지 않는다). 실패는 던지지 않고 false. */
+  finInboxRemove(paths: string[]): Promise<boolean>
+  /** 본인 폴더(«<회사>/<uid>»)에 1시간 넘게 남은 파일(처리 중 끊긴 것)을 지운다 — 지운 수. */
+  finInboxSweep(folder: string): Promise<number>
+  /** dummy 전용 흉내(시험) — live는 브라우저가 Storage로 바로 올린다. */
+  finInboxPut?(path: string, bytes: Uint8Array): Promise<void>
+  /**
    * 0072 회계 · 재무 v2.1 차이분. 0072 전 DB는 읽기가 빈 목록 · null, 쓰기는 'fin_upload_unavailable'.
    * 판정은 DB(can_keep_books · can_read_books · can_close_books · 마감 문 · 확정자 ≠ 입력자)다 — dummy는 그 거울.
    */

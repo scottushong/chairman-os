@@ -76,6 +76,10 @@ type Methods = Pick<
   | 'listFinRecloseFlags'
   | 'finRecloseClear'
   | 'finRowBusiness'
+  | 'finInboxRead'
+  | 'finInboxRemove'
+  | 'finInboxSweep'
+  | 'finInboxPut'
 >
 
 interface Line {
@@ -137,7 +141,9 @@ interface Store {
   flags: Flag[]
   demo: boolean
 }
-const g = globalThis as unknown as { __chairmanDummyFinUpload?: Store }
+const g = globalThis as unknown as { __chairmanDummyFinUpload?: Store; __chairmanDummyFinInbox?: Map<string, { bytes: Uint8Array; at: number }> }
+/** 0082 수신함 흉내(경로 → 바이트) */
+const inbox = (g.__chairmanDummyFinInbox ??= new Map())
 const store: Store = (g.__chairmanDummyFinUpload ??= { uploads: [], lines: [], shapes: [], seq: 0, valuations: [], openings: [], groups: [], members: [], dedupe: new Map(), flags: [], demo: false })
 // 옛 모양(0070 판)의 저장소가 dev 서버에 남아 있으면 새 칸을 채운다.
 store.seq ??= 0
@@ -269,6 +275,11 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
   }
   const liveLine = (table: TxSourceTable, lineId: number, business: string, period: string) =>
     store.lines.find((l) => l.line_id === lineId && l.kind === KIND_OF[table] && l.business_id === business && l.period === period && !l.voided_at && !l.people)
+  const inboxOk = (path: string) => {
+    const p = path.split('/')
+    const v = d.viewer()
+    return p.length === 3 && !!p[2] && /^[a-z0-9_]{2,40}$/.test(p[0]) && p[1] === v.user_id && v.role !== 'AIAgent' && v.role !== 'Integration' && d.canKeep(p[0])
+  }
 
   return {
     async listFinUploads(businessId) {
@@ -456,6 +467,32 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
       const i = store.shapes.findIndex((x) => x.business_id === s.business_id && x.header_sig === s.header_sig)
       if (i >= 0) store.shapes[i] = { ...s }
       else store.shapes.push({ ...s })
+    },
+
+    /* ───── 0082 수신함 거울(fin_inbox_object_ok — 본인 폴더 · 장부 쓰기) ───── */
+    async finInboxPut(path, bytes) {
+      if (!inboxOk(path)) throw new Error('fin_inbox_denied')
+      inbox.set(path, { bytes: bytes.slice(), at: Date.now() })
+    },
+    async finInboxRead(path) {
+      if (!inboxOk(path)) throw new Error('fin_inbox_denied')
+      const o = inbox.get(path)
+      if (!o) throw new Error('fin_inbox_missing')
+      return o.bytes.slice()
+    },
+    async finInboxRemove(paths) {
+      for (const p of paths) if (inboxOk(p)) inbox.delete(p)
+      return true
+    },
+    async finInboxSweep(folder) {
+      let n = 0
+      for (const [p, o] of inbox) {
+        if (p.startsWith(`${folder}/`) && inboxOk(p) && o.at < Date.now() - HOUR_MS) {
+          inbox.delete(p)
+          n += 1
+        }
+      }
+      return n
     },
 
     /* ───── 0072 ───── */
