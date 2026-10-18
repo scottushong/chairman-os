@@ -32,6 +32,7 @@ import type {
   OfficialStatement,
   OfficialStatementBasis,
   OfficialStatementLine,
+  OfficialAccountMapRow,
   ProcessChart,
   ProcessChartInput,
 } from '@/types'
@@ -410,6 +411,13 @@ export async function saveOfficialStatement(
 ): Promise<number> {
   assertKeepBooks(input.business_id)
   if (input.lines.length === 0) throw new Error('재무제표에 줄이 하나도 없습니다.')
+  // 0083 official_statement_save_v2와 같은 순서 · 같은 거부 낱말: 증빙 → 한 계정 한 줄 · 장부의 계정 → 균형(이유 · 마감 권한) → 같은 해.
+  const url = input.evidence_url?.trim() || null
+  const file = input.evidence_file?.trim() || null
+  if (!url && !file) throw new Error('official_evidence_missing')
+  if (url && !/^https?:\/\//i.test(url)) throw new Error('official_evidence_missing')
+  if (file && (evidenceBusiness(file) !== input.business_id || !officialEvidence.has(file))) throw new Error('official_evidence_file_missing')
+  if (new Set(input.lines.map((l) => l.account_code)).size !== input.lines.length) throw new Error('official_line_duplicate')
 
   // 자산 + 부채 + 자본 = 0. 0020의 함수가 보는 것과 같은 식이다.
   const ledger = await dummyLedger()
@@ -423,7 +431,16 @@ export async function saveOfficialStatement(
     const section = sectionOf.get(l.account_code)
     return section && BALANCE_SHEET_SECTIONS.includes(section) ? total + cents(l.amount) : total
   }, 0)
-  if (balanceCents !== 0) throw new Error(`재무상태표가 닫히지 않습니다. 차이 ${balanceCents / 100}원`)
+  if (input.lines.some((l) => !sectionOf.has(l.account_code))) throw new Error('official_line_unknown_account')
+  let reason = input.unbalanced_reason?.trim() || null
+  if (balanceCents !== 0) {
+    if (!reason || reason.length < 5) throw new Error(`official_unbalanced — 재무상태표가 닫히지 않습니다. 차이 ${balanceCents / 100}원`)
+    try {
+      assertCloseBooks(input.business_id)
+    } catch {
+      throw new Error('official_unbalanced_forbidden')
+    }
+  } else reason = null
 
   const now = new Date().toISOString()
   // 0050: 세무사 저장은 세무사 행만 supersede한다 — ECOUNT 잠정 행은 그대로.
@@ -435,6 +452,7 @@ export async function saveOfficialStatement(
       s.basis === 'accountant' &&
       s.superseded_at === null,
   )
+  if (prev && !input.replace) throw new Error('official_exists')
   if (prev) prev.superseded_at = now
 
   const id = ++officialSeq
@@ -443,7 +461,9 @@ export async function saveOfficialStatement(
     business_id: input.business_id,
     period_kind: input.period_kind,
     period_key: input.period_key,
-    evidence_url: input.evidence_url.trim(),
+    evidence_url: url,
+    evidence_file: file,
+    unbalanced_reason: reason,
     memo: input.memo.trim(),
     created_by: actor.user_id,
     created_at: now,
@@ -460,8 +480,47 @@ export async function saveOfficialStatement(
       amount: cents(l.amount) / 100,
     })),
   )
-  note(actor, `official ${input.business_id}:${input.period_key}${prev ? ` (정정 #${prev.id})` : ''}`)
+  // 학습 — 모양이 맞고 이 회사 계정인 것만(0083 ④).
+  for (const k of input.learn ?? []) {
+    if (!/^[a-z_]{1,20}:.{1,80}$/.test(k.std_key) || !sectionOf.has(k.account_code)) continue
+    const mk = `${input.business_id}|${k.std_key}`
+    const cur = accountMap.get(mk)
+    accountMap.set(mk, { std_key: k.std_key, account_code: k.account_code, hits: cur && cur.account_code === k.account_code ? cur.hits + 1 : 1 })
+  }
+  note(actor, `official ${input.business_id}:${input.period_key}${prev ? ` (정정 #${prev.id})` : ''}${reason ? ` · 닫히지 않음: ${reason}` : ''}`)
   return id
+}
+
+/** 0083 증빙 버킷 거울 — «<회사>/<sha256>.<확장자>». */
+const officialEvidence = new Map<string, Uint8Array>()
+const evidenceBusiness = (path: string) => (/^[a-z0-9_]{2,40}\/[0-9a-f]{64}\.(pdf|jpg|jpeg|png)$/.test(path) ? path.split('/')[0] : null)
+/** 0083 계정 맞춤 학습 거울 — 키 business|std_key */
+const accountMap = new Map<string, OfficialAccountMapRow>()
+
+/** 0083 증빙 올리기(장부를 쓰는 사람) — 같은 파일이면 그대로(덮지 않는다). */
+export async function putOfficialEvidence(businessId: string, path: string, bytes: Uint8Array): Promise<string> {
+  assertKeepBooks(businessId)
+  if (evidenceBusiness(path) !== businessId) throw new Error('official_evidence_denied')
+  if (!officialEvidence.has(path)) officialEvidence.set(path, bytes.slice())
+  return path
+}
+
+/** 0083 증빙 열기 — dummy는 보관만 흉내 낸다(주소 없음). */
+export async function officialEvidenceUrl(path: string): Promise<string | null> {
+  const b = evidenceBusiness(path)
+  if (!b || !canReadBooks(b) || !officialEvidence.has(path)) return null
+  return null
+}
+
+/** 0083 계정 맞춤 학습(장부를 읽는 사람). */
+export async function listOfficialAccountMap(businessId: string): Promise<OfficialAccountMapRow[]> {
+  if (!canReadBooks(businessId)) return []
+  return [...accountMap.entries()].filter(([k]) => k.startsWith(`${businessId}|`)).map(([, v]) => ({ ...v }))
+}
+
+/** 검사용 — 증빙이 보관됐나 */
+export function dummyHasOfficialEvidence(path: string): boolean {
+  return officialEvidence.has(path)
 }
 
 /**

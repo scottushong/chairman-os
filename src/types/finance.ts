@@ -296,6 +296,10 @@ export interface OfficialStatement {
   /** 증빙 링크. 파일 실체는 사내 스토리지(CLAUDE.md). 세무사 확정(accountant)은 필수 — 확정 꼬리표의 근거다.
    *  ECOUNT 엑셀(ecount_excel)은 업로드 원본(import_id의 첨부)이 증빙이라 없을 수 있다(0050). */
   evidence_url: string | null
+  /** 0083: 올린 원본(fin-official-evidence «<회사>/<sha256>.<확장자>»). 링크와 둘 중 하나 이상. 0083 전 DB에는 칸이 없다 */
+  evidence_file?: string | null
+  /** 0083: 재무상태표가 닫히지 않은 채 저장한 이유(대표 · CFO · 마감 권한자) */
+  unbalanced_reason?: string | null
   memo: string
   /** 출처(0050). accountant = 세무사 확정 · ecount_excel = ECOUNT 엑셀 업로드(잠정). 0050 전 DB에는 칸이 없다 → accountant로 읽는다 */
   basis?: OfficialStatementBasis
@@ -324,9 +328,25 @@ export interface NewOfficialStatement {
   business_id: BusinessId
   period_kind: 'year' | 'quarter'
   period_key: string
+  /** 링크 — 0083부터는 evidence_file이 있으면 비워도 된다 */
   evidence_url: string
+  /** 0083: 올린 원본 경로(fin-official-evidence) */
+  evidence_file?: string | null
   memo: string
   lines: { account_code: string; amount: number }[]
+  /** 0083: 닫히지 않은 채 저장하는 이유(대표 · CFO만 — DB가 판정) */
+  unbalanced_reason?: string | null
+  /** 0083: 같은 해 확정이 있으면 바꾼다(화면이 확인했을 때만 true) */
+  replace?: boolean
+  /** 0083: 계정 맞춤 학습 — «묶음:이름» → 계정 */
+  learn?: { std_key: string; account_code: string }[]
+}
+
+/** 0083 계정 맞춤 학습 한 줄(official_account_map) */
+export interface OfficialAccountMapRow {
+  std_key: string
+  account_code: string
+  hits: number
 }
 
 /**

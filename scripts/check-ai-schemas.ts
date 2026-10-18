@@ -16,6 +16,7 @@ import { SCHEMA as ATTACHMENT_SCHEMA } from '../src/lib/attachments/summarize'
 import { SCHEMA as FEEDBACK_SCHEMA } from '../src/lib/feedback/instruction'
 import { STRUCTURE_SCHEMA } from '../src/lib/finance-upload/ai'
 import { DOC_SCHEMA } from '../src/lib/finance-upload/ai-doc'
+import { OFFICIAL_MATCH_SCHEMA } from '../src/lib/finance-upload/official-ai'
 import { INTAKE_SCHEMA } from '../src/lib/intake/proposal'
 
 const UNSUPPORTED = ['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf', 'minLength', 'maxLength', 'maxItems', 'uniqueItems', 'patternProperties', 'propertyNames', 'minProperties', 'maxProperties']
@@ -52,6 +53,7 @@ export const AI_SCHEMAS: Record<string, unknown> = {
   'intake/proposal INTAKE_SCHEMA': INTAKE_SCHEMA,
   'finance-upload/ai STRUCTURE_SCHEMA': STRUCTURE_SCHEMA,
   'finance-upload/ai-doc DOC_SCHEMA': DOC_SCHEMA,
+  'finance-upload/official-ai OFFICIAL_MATCH_SCHEMA': OFFICIAL_MATCH_SCHEMA,
 }
 
 export function checkAiSchemas(): string {

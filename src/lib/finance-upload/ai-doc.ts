@@ -94,14 +94,29 @@ export function fitPages(pages: string[], limit = DOC_TEXT_LIMIT): { pages: stri
 /** 나눠 읽은 두 표를 하나로 — 줄은 이어 붙이고 소계 after_row를 밀고, 머리글 · 종류는 앞 표. */
 export function mergeTables(a: DocTable, b: DocTable): DocTable {
   const shift = a.rows.length
+  // 2026-10-17: 머리글이 다르면(결산서를 나눠 읽어 앞은 2023 · 2024, 뒤는 2025) 이름으로 칸을 맞춘다 — 자리로 붙이면 해가 섞인다.
+  const sameHead = a.columns.length === b.columns.length && a.columns.every((c, i) => c === b.columns[i])
+  const official = a.doc_kind === 'official_statement' || b.doc_kind === 'official_statement'
+  const named = official && !sameHead && a.columns.length > 0 && b.columns.length > 0 && b.columns.every((c) => c.trim())
+  const columns = named ? [...a.columns, ...b.columns.filter((c) => !a.columns.includes(c))] : a.columns.length >= b.columns.length ? a.columns : b.columns
+  const at = b.columns.map((c) => (named ? columns.indexOf(c) : -1))
+  const moveRow = <T,>(r: T[], empty: T): T[] => {
+    if (!named) return r
+    const out: T[] = new Array(columns.length).fill(empty)
+    r.forEach((v, i) => {
+      if (at[i] >= 0) out[at[i]] = v
+    })
+    return out
+  }
   return {
     ...a,
     company: a.company ?? b.company,
-    period: a.period ?? b.period,
+    // 결산서는 가장 늦은 해, 그 밖은 앞 표.
+    period: official ? ([a.period, b.period].filter((p): p is string => !!p).sort().pop() ?? null) : (a.period ?? b.period),
     title: a.title ?? b.title,
-    columns: a.columns.length >= b.columns.length ? a.columns : b.columns,
-    rows: [...a.rows, ...b.rows],
-    totals: [...a.totals, ...b.totals.map((t) => ({ ...t, after_row: t.after_row + shift }))],
+    columns,
+    rows: [...a.rows, ...b.rows.map((r) => moveRow(r, null))],
+    totals: [...a.totals, ...b.totals.map((t) => ({ ...t, after_row: t.after_row + shift, values: moveRow(t.values, null) }))],
     confidence: a.confidence === 'high' && b.confidence === 'high' ? 'high' : a.confidence === 'low' || b.confidence === 'low' ? 'low' : 'medium',
     reason: `${a.reason.slice(0, 140)} · (나눠 읽음) ${b.reason.slice(0, 100)}`,
     cost_usd: (a.cost_usd ?? 0) + (b.cost_usd ?? 0),
@@ -147,7 +162,10 @@ export function realDocReader(repo: ChairmanRepository, businessId: string): AiD
     const model = process.env.AI_MODEL?.trim() || DEFAULT_AI_MODEL
     const client = new Anthropic({ apiKey: key, timeout: 150_000, maxRetries: 0 })
     const kinds = AI_KIND_SPECS.map((k) => `${k.kind}: ${k.label} — 칸 ${k.fields.map((f) => f.label).join(', ')}`).join('\n')
-    const hint = input.expect === 'official' ? '이 파일은 결산서(재무상태표 · 손익계산서)로 보인다 — 계정 · 금액 표로 읽어라. 부속 명세서는 읽지 않아도 된다.' : '이 파일은 월 재무 자료의 표 하나로 보인다.'
+    const hint =
+      input.expect === 'official'
+        ? '이 파일은 결산서(재무상태표 · 손익계산서 · 제조원가명세서 — 국세청 표준재무제표일 수 있다)로 보인다 — «결산서일 때» 규칙대로(구분 · 계정과목 · 줄 · 해 칸) 읽어라. 여러 해가 있으면 해마다 칸 하나. 부속 명세서는 읽지 않아도 된다.'
+        : '이 파일은 월 재무 자료의 표 하나로 보인다.'
     const system: Anthropic.TextBlockParam[] = [{ type: 'text', text: `${await readPrompt()}\n\n종류와 칸:\n${kinds}`, cache_control: { type: 'ephemeral' } }]
     let calls = 0
     const maxCalls = Math.max(1, input.maxCalls ?? 1)

@@ -6,6 +6,7 @@ import { canKeepBooks } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
 import { aiLimits, realClassifier } from '@/lib/finance-upload/ai'
 import { realDocReader } from '@/lib/finance-upload/ai-doc'
+import { realOfficialSuggester } from '@/lib/finance-upload/official-ai'
 import { isUploadKind, kindSpec } from '@/lib/finance-upload/kinds'
 import { encodeShape, ledgerLayoutByCode, ROW_ROLES, type LedgerLayout, type RowLabel } from '@/lib/finance-upload/ledger'
 import { inboxPathOk } from '@/lib/finance-upload/inbox'
@@ -114,6 +115,9 @@ async function docOptions(user: NonNullable<Awaited<ReturnType<typeof currentUse
     const [businesses, ledger] = await Promise.all([repo.listBusinesses().catch(() => []), repo.loadFinanceLedger().catch(() => null)])
     docs.businessName = businesses.find((b) => b.business_id === businessId)?.name
     docs.accounts = (ledger?.accounts ?? []).filter((a) => a.business_id === businessId && a.active).map((a) => ({ account_code: a.account_code, name: a.name, section: a.section }))
+    // 0083 계정 맞춤 학습 · 2차 맞춤(AI — 읽기와 같은 스위치 · 한도).
+    docs.learned = new Map((await repo.listOfficialAccountMap(businessId).catch(() => [])).map((m) => [m.std_key, m.account_code]))
+    docs.suggest = read ? realOfficialSuggester(repo, businessId) : null
   }
   return docs
 }
