@@ -9,6 +9,7 @@ import { DEFAULT_AI_MODEL } from '@/lib/ai/anthropic'
 import { estimateCostUsd } from '@/lib/ai/pricing'
 import type { ChairmanRepository } from '@/lib/repository'
 
+import { AiShapeError, callJson } from './ai-call'
 import { AI_KIND_SPECS } from './kinds'
 import { LEDGER_COLS, ROW_ROLES } from './ledger'
 import type { AiClassify, AiStructure } from './process'
@@ -103,28 +104,42 @@ export function realClassifier(repo: ChairmanRepository, businessId: string): Ai
   const key = process.env.ANTHROPIC_API_KEY
   if (!key) return null
   return async (sample, _code, feedback) => {
-    promptCache ??= readFile(join(process.cwd(), 'src', 'lib', 'ai', 'prompts', 'finance-upload-classify.md'), 'utf8')
     const model = process.env.AI_MODEL?.trim() || DEFAULT_AI_MODEL
-    const client = new Anthropic({ apiKey: key, timeout: 60_000, maxRetries: 1 })
+    const client = new Anthropic({ apiKey: key, timeout: 45_000, maxRetries: 0 })
     const kinds = AI_KIND_SPECS.map((k) => `${k.kind}: ${k.label} — 칸 ${k.fields.map((f) => `${f.key}(${f.label})`).join(', ')}`).join('\n')
     const again = feedback?.length ? `\n<previous_mismatch>\n앞 해석대로 코드가 거래 줄만 더해 요약 줄과 대조했더니 맞지 않았다. 줄 종류 · 칸 대응을 다시 보라.\n${feedback.join('\n')}\n</previous_mismatch>` : ''
-    const res = await client.messages.create({
-      model,
-      max_tokens: 4000,
-      system: [{ type: 'text', text: `${await promptCache}\n\n종류와 칸:\n${kinds}\n원장(ledger) 구조 칸: ${LEDGER_COLS.join(', ')}`, cache_control: { type: 'ephemeral' } }],
-      output_config: { format: { type: 'json_schema', schema: STRUCTURE_SCHEMA } },
-      messages: [{ role: 'user', content: `<sheet>${JSON.stringify(sample)}</sheet>${again}` }],
-    } as Anthropic.MessageCreateParamsNonStreaming)
-    const read = res.usage.cache_read_input_tokens ?? 0
-    const written = res.usage.cache_creation_input_tokens ?? 0
-    const input = res.usage.input_tokens + read + written
-    const cost = estimateCostUsd(model, input, res.usage.output_tokens, { read, write: written })
-    await repo
-      .logAiUsage({ feature: 'finance_upload_classify', model, input_tokens: input, output_tokens: res.usage.output_tokens, estimated_cost_usd: cost, entity_table: 'fin_uploads', entity_id: businessId })
-      .catch((e) => console.error('[finance-upload] ai_usage_log', e))
-    if (res.stop_reason === 'refusal') throw new Error('AI가 답하지 않았습니다(refusal)')
-    if (res.stop_reason === 'max_tokens') throw new Error('AI 답이 잘렸습니다(max_tokens)')
-    const text = res.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('')
-    return toStructure(JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)) as RawStructure, cost)
+    let cost = 0
+    const r = await callJson(
+      client,
+      {
+        model,
+        maxTokens: 4000,
+        timeout: 45_000,
+        system: [{ type: 'text', text: `${await classifyPrompt()}\n\n종류와 칸:\n${kinds}\n원장(ledger) 구조 칸: ${LEDGER_COLS.join(', ')}`, cache_control: { type: 'ephemeral' } }],
+        content: `<sheet>${JSON.stringify(sample)}</sheet>${again}`,
+        schema: STRUCTURE_SCHEMA,
+      },
+      async (u) => {
+        const read = u.cache_read_input_tokens ?? 0
+        const written = u.cache_creation_input_tokens ?? 0
+        const input = u.input_tokens + read + written
+        const c = estimateCostUsd(model, input, u.output_tokens, { read, write: written })
+        cost += c
+        await repo
+          .logAiUsage({ feature: 'finance_upload_classify', model, input_tokens: input, output_tokens: u.output_tokens, estimated_cost_usd: c, entity_table: 'fin_uploads', entity_id: businessId })
+          .catch((e) => console.error('[finance-upload] ai_usage_log', e))
+      },
+    )
+    if (r.stop === 'max_tokens') throw new AiShapeError('AI 실패 — 답이 잘렸습니다(max_tokens)')
+    return toStructure(r.json as RawStructure, cost)
   }
+}
+
+/** 프롬프트 파일(한 번 읽어 둔다). 읽기가 실패하면 기억을 비운다 — 다음 요청이 다시 읽는다(ENOENT가 굳지 않게). */
+function classifyPrompt(): Promise<string> {
+  promptCache ??= readFile(join(process.cwd(), 'src', 'lib', 'ai', 'prompts', 'finance-upload-classify.md'), 'utf8').catch((e) => {
+    promptCache = null
+    throw e
+  })
+  return promptCache
 }

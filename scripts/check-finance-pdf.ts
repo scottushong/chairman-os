@@ -235,7 +235,8 @@ async function main() {
     assert.equal(featureOnFor(rowsAll, 'finance_docs', 'TeamLead', BIZ), true, '«전원»으로 켰는데 장부 권한자에게 안 열린다')
     assert.equal(featureOnFor(rowsAll, 'intake', 'TeamLead', BIZ), false, '시험 전제: 입구(intake)는 여전히 대표만')
     const action = readFileSync('src/app/actions/finance-upload.ts', 'utf8')
-    assert.ok(action.includes("featureOn(user, 'finance_docs', businessId)") && !/featureOn\(user, 'intake'/.test(action), '업로드 길이 finance_docs 말고 다른 스위치(intake)로도 막는다')
+    // 2026-10-16: 판정 + 근거(featureWhy — 같은 판정)로 바뀌었다. 여전히 finance_docs 하나만.
+    assert.ok(/feature(On|Why)\(user, 'finance_docs', businessId\)/.test(action) && !/feature(On|Why)\(user, 'intake'/.test(action), '업로드 길이 finance_docs 말고 다른 스위치(intake)로도 막는다')
     const openDocs: DocOptions = { allowed: featureOnFor(rowsAll, 'finance_docs', 'TeamLead', BIZ), read: reader, businessName: '가짜산업', accounts }
     const s9c = await run('2025 표준재무제표 직원.pdf', stmt, { docs: openDocs })
     assert.equal(s9c[0].status, 'official', `스위치를 켠 직원의 결산서가 공식 결산으로 안 갔다: ${s9c[0].message}`)
@@ -254,7 +255,8 @@ async function main() {
   assert.equal(off[0].status, 'needs_review')
   assert.ok(off[0].why.some((w) => w.includes('AI가 꺼져')))
   const limScan = await run('가짜 스캔 한도.pdf', scan, { budget: 0 })
-  assert.equal(limScan[0].status, 'failed')
+  // 2026-10-16: 한도 · 설정 때문에 못 읽은 것은 «실패»가 아니라 «보류»(내일 · 설정 뒤 다시 올리면 된다).
+  assert.equal(limScan[0].status, 'later')
   assert.ok(limScan[0].message.includes('AI 한도') && limScan[0].message.includes('저장하지 않았습니다'), limScan[0].message)
   assert.equal(calls.length, n, '한도 0인데 AI를 불렀다')
 

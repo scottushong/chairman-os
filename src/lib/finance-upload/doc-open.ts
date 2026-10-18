@@ -3,7 +3,7 @@
  *
  *   PDF   unpdf(PDF.js)로 쪽마다 글 조각을 받아 **줄(같은 높이) · 칸(틈)** 으로 다시 세운다(칸 사이는 탭).
  *         글이 거의 없으면(쪽당 20자 미만) 스캔으로 본다 — 쪽 그림으로 바꾸려면 canvas 같은 새 의존성이 필요해서,
- *         스캔 PDF는 **PDF 그대로** 모델에 document 블록으로 보낸다(Claude가 스캔 PDF를 쪽 그림으로 읽는다). 10쪽까지.
+ *         스캔 PDF는 **PDF 그대로** 모델에 document 블록으로 보낸다(Claude가 스캔 PDF를 쪽 그림으로 읽는다). 30쪽까지.
  *   사진  sharp로 EXIF 방향대로 바로 세우고(rotate()), 작은 기울기(±10°)는 가로 투영 분산이 가장 큰 각도를 찾아 펴고
  *         (글줄 · 표 줄이 수평일 때 줄마다 검은 점이 한 줄로 몰린다), 긴 변 1,568px JPEG로 줄인다(모델 권장 크기 — 토큰 절약).
  */
@@ -11,7 +11,7 @@ import sharp from 'sharp'
 
 export type DocFormat = 'pdf_text' | 'pdf_scan' | 'image'
 
-export const DOC_MAX_PAGES = 10
+export const DOC_MAX_PAGES = 30 // 2026-10-16: 10 → 30(결산서 · 부속 명세서). 첨부 스캔 한도(lib/attachments/limits.ts PDF_DOC_MAX_PAGES)와 같다
 const MIN_CHARS_PER_PAGE = 20
 const IMAGE_MAX_SIDE = 1568
 

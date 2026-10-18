@@ -208,6 +208,22 @@ export function featureOnFor(rows: readonly FeatureSwitchRow[] | null, key: Feat
   return row.enabled && inAudience(role, row.audience)
 }
 
+/** 판정과 그 근거 — 어느 줄(회사 → 그룹 → 기본값)이 정했고, 켜짐 · 범위가 무엇인가(화면 안내용 · 판정은 featureOnFor와 같다). */
+export interface FeatureWhy {
+  on: boolean
+  where: 'company' | 'group' | 'default'
+  enabled: boolean
+  audience: FeatureAudience
+}
+
+export const FEATURE_WHERE_LABEL: Record<FeatureWhy['where'], string> = { company: '이 회사 줄', group: '그룹 기본 줄', default: '기본값' }
+
+export function featureWhyFor(rows: readonly FeatureSwitchRow[] | null, key: FeatureKey, role: Role | null | undefined, businessId?: string | null): FeatureWhy {
+  const row = switchFor(rows, key, businessId)
+  if (!row) return { on: inAudience(role, featureDef(key).defaultAudience), where: 'default', enabled: true, audience: featureDef(key).defaultAudience }
+  return { on: row.enabled && inAudience(role, row.audience), where: row.business_id ? 'company' : 'group', enabled: row.enabled, audience: row.audience }
+}
+
 /** dummy 모드 · 시험용 기본 줄 — 0073 3절과 같다. */
 export function defaultFeatureRows(): FeatureSwitchRow[] {
   return FEATURES.map((f) => ({

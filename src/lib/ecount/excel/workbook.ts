@@ -29,6 +29,8 @@ export interface EcountSheet {
   /** rows[r][c] — 0부터. 모든 행이 같은 길이(colCount)다. 병합 칸은 왼쪽 위(주인) 칸에만 값이 있고 나머지는 빈 칸이다. */
   rows: EcountCell[][]
   colCount: number
+  /** 엑셀에서 숨긴 시트(hidden · veryHidden) — 자료 올리기는 건너뛰고 수를 알린다. ECOUNT 업로드는 쓰지 않는다. */
+  hidden?: boolean
 }
 
 /** 원본 바이트의 sha256(소문자 hex 64자) — 0050 finance_imports.file_sha256. */
@@ -66,6 +68,7 @@ interface XRow {
 }
 interface XSheet {
   name: string
+  state?: string
   rowCount: number
   columnCount: number
   findRow(row: number): XRow | undefined
@@ -101,7 +104,7 @@ export async function readEcountWorkbook(bytes: Uint8Array): Promise<EcountSheet
       }
       rows.push(out)
     }
-    sheets.push({ name: ws.name, rows, colCount })
+    sheets.push({ name: ws.name, rows, colCount, ...(ws.state === 'hidden' || ws.state === 'veryHidden' ? { hidden: true } : {}) })
   }
   if (sheets.length === 0) throw new EcountExcelError('시트가 없는 파일입니다.')
   return sheets

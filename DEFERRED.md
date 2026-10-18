@@ -2875,5 +2875,9 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - (알림 · 리뷰 M1) 회사 단위 RPC(cost_forecast_list · purchase_performance …)는 스위치를 먼저 본다 — 회수된 사람에게는 feature_off가 나올 수 있다(어느 쪽이든 거부 · id를 떠볼 길은 아니다). id를 받는 RPC만 cost_not_found를 먼저.
 - (끝남 · 재검토 I1′) 제한 보기에서 시장가 있는 LOT 셋 미만 · 외화 LOT 1~2개면 시장가 · 절감 · 환율 효과도 가린다.
 - (미룸 · 리뷰 I1) 구매 성과 제한 보기의 «LOT 3개 미만 가림»은 묶음 단위다 — 같은 달을 두 번(넓힌 기간이 같아) 불러도 같은 답이지만, 달마다 LOT 수가 3 언저리면 달 하나씩 차이로 한 LOT를 짐작할 여지는 남는다. 더 막으려면 k를 키우거나 분기 묶음.
+- (정함 · 10-17 공식 결산 2차 0083) 올린 결산서 원본은 비공개 버킷 fin-official-evidence에 남긴다(0070 «원본 두지 않음»의 예외 — 세무사 확정 결산만). 다른 선택지: 링크 필수 유지(사람이 드라이브에 또 올림) — 운영에서 저장이 막힌 원인이라 버림.
+- (정함) 닫히지 않은 결산은 can_close_books(대표 · 그룹 CFO · 마감 권한)만 이유 5자 이상과 함께 — DB 0083이 판정. 순이익만 다르면 DB는 모르니 이유를 메모에 붙인다.
+- (미룸) 가격 리포트(feat/purchase-price-report · chairman-os-macro)는 아직 0082 이름이다 — 그 블록에서 master(0082 수신함 · 0083 공식 결산) 위로 옮기며 0084로 바꾼다(파일 20곳).
+- (미룸) 저장한 공식 결산의 증빙 파일을 여는 화면(서명 주소 officialEvidenceUrl)은 저장소 함수만 있고 링크 화면은 없다 — 공식 결산 목록 화면을 만들 때.
 
 - 2026-10-14 가격 리포트(0082): 구매팀이 가격을 손으로 넣는 칸 — TradingEconomics를 끄거나(BRIEFING_SOURCES_OFF=te) 수집이 막힐 때의 대안. 이번에는 끄는 손잡이만 두고 칸은 미룸(요청 범위 밖 · 수집이 지금 돎). 원가 관리 줄만 있는 사람의 읽기도 미룸(요청에 없음).

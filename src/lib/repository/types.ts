@@ -92,6 +92,7 @@ import type {
   NewOfficialStatement,
   OfficialStatement,
   OfficialStatementBasis,
+  OfficialAccountMapRow,
   ProcessChart,
   ProcessChartInput,
   ProcessChartItem,
@@ -502,6 +503,19 @@ export interface ChairmanRepository extends PriceReportMethods, PurchasingMethod
   listOfficialStatements(businessId: string, basis?: OfficialStatementBasis | 'all'): Promise<OfficialStatement[]>
 
   /**
+   * 0083 계정 맞춤 학습(official_account_map) — 장부를 읽는 사람. 0083 전 DB는 빈 목록.
+   * 쓰기는 saveOfficialStatement(learn)만 — 저장한 결산의 줄이 곧 학습이다.
+   */
+  listOfficialAccountMap(businessId: string): Promise<OfficialAccountMapRow[]>
+  /**
+   * 0083 공식 결산 증빙 — 올린 원본을 «<회사>/<sha256>.<확장자>»로 비공개 버킷(fin-official-evidence)에 둔다(장부를 쓰는 사람).
+   * 같은 파일이 이미 있으면 그대로 경로를 돌려준다(덮지 않는다). 0083 전 DB(버킷 없음)는 'official_evidence_unavailable'.
+   */
+  putOfficialEvidence(businessId: string, path: string, bytes: Uint8Array): Promise<string>
+  /** 0083 증빙 열기 — 잠깐 쓰는 서명 주소(장부를 읽는 사람). 없거나 못 보면 null. */
+  officialEvidenceUrl(path: string): Promise<string | null>
+
+  /**
    * ECOUNT 엑셀 업로드 한 건(0050 finance_imports). 읽기는 can_read_books, 넣기는 can_keep_books 본인 draft,
    * 고치기는 만든 사람의 draft에서만 — 권한은 여기서 보지 않는다(DB가 본다 · dummy는 옮겨 적는다).
    * 읽기는 0050이 없는 DB를 견딘다(master push = production 배포가 DB보다 먼저 나간다). 쓰기는 견디지 않는다.
@@ -849,6 +863,17 @@ export interface ChairmanRepository extends PriceReportMethods, PurchasingMethod
   finMonthClosed(businessId: string, period: string): Promise<boolean>
   listFinUploadShapes(businessId: string): Promise<FinUploadShape[]>
   saveFinUploadShape(shape: FinUploadShape): Promise<void>
+  /**
+   * 0082 자료 올리기 수신함(fin-upload-inbox) — 브라우저가 바로 올린 파일을 사람 세션(RLS)으로 읽는다. 본인 폴더 · 장부 권한 밖이면
+   * 'fin_inbox_denied', 없으면 'fin_inbox_missing'. 0082 전 DB(버킷 없음)도 'fin_inbox_missing'.
+   */
+  finInboxRead(path: string): Promise<Uint8Array>
+  /** 처리 뒤 지우기(원본을 두지 않는다). 실패는 던지지 않고 false. */
+  finInboxRemove(paths: string[]): Promise<boolean>
+  /** 본인 폴더(«<회사>/<uid>»)에 1시간 넘게 남은 파일(처리 중 끊긴 것)을 지운다 — 지운 수. */
+  finInboxSweep(folder: string): Promise<number>
+  /** dummy 전용 흉내(시험) — live는 브라우저가 Storage로 바로 올린다. */
+  finInboxPut?(path: string, bytes: Uint8Array): Promise<void>
   /**
    * 0072 회계 · 재무 v2.1 차이분. 0072 전 DB는 읽기가 빈 목록 · null, 쓰기는 'fin_upload_unavailable'.
    * 판정은 DB(can_keep_books · can_read_books · can_close_books · 마감 문 · 확정자 ≠ 입력자)다 — dummy는 그 거울.

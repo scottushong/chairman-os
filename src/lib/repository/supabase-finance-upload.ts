@@ -66,7 +66,13 @@ type Methods = Pick<
   | 'listFinRecloseFlags'
   | 'finRecloseClear'
   | 'finRowBusiness'
+  | 'finInboxRead'
+  | 'finInboxRemove'
+  | 'finInboxSweep'
 >
+
+/** 0082 수신함 버킷(브라우저가 바로 올린다 — 화면 finance-upload-board.tsx와 같은 이름). */
+export const FIN_INBOX_BUCKET = 'fin-upload-inbox'
 
 const DEFAULT_DEDUPE: FinDedupeSetting = { amount_base: 'ledger', qty_base: 'r2_ecount' }
 const n = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v))
@@ -151,6 +157,31 @@ export function financeUploadMethods(sb: SupabaseClient): Methods {
     async saveFinUploadShape(s) {
       const { error } = await sb.rpc('fin_upload_shape_save', { p_business: s.business_id, p_sig: s.header_sig, p_sheet: s.sheet_name, p_kind: s.kind, p_map: s.column_map })
       if (error) fail('fin_upload_shape_save', error)
+    },
+
+    /* ───── 0082 수신함 ───── */
+    async finInboxRead(path) {
+      const { data, error } = await sb.storage.from(FIN_INBOX_BUCKET).download(path)
+      if (error || !data) {
+        // storage는 RLS 거부도 «없음»(400 · 404)으로 돌려준다 — 둘을 가를 수 없으니 «없음»으로 말한다(다시 올리기).
+        const m = error?.message ?? ''
+        throw new Error(/denied|unauthor|403/i.test(m) ? 'fin_inbox_denied' : 'fin_inbox_missing')
+      }
+      return new Uint8Array(await data.arrayBuffer())
+    },
+    async finInboxRemove(paths) {
+      if (!paths.length) return true
+      const { error } = await sb.storage.from(FIN_INBOX_BUCKET).remove(paths)
+      if (error) console.error('[finInboxRemove]', error.message)
+      return !error
+    },
+    async finInboxSweep(folder) {
+      const { data, error } = await sb.storage.from(FIN_INBOX_BUCKET).list(folder, { limit: 100 })
+      if (error || !data) return 0
+      const old = data.filter((o) => o.created_at && Date.parse(o.created_at) < Date.now() - 3_600_000).map((o) => `${folder}/${o.name}`)
+      if (!old.length) return 0
+      const { error: rmErr } = await sb.storage.from(FIN_INBOX_BUCKET).remove(old)
+      return rmErr ? 0 : old.length
     },
 
     /* ───── 0072 ───── */

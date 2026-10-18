@@ -2,11 +2,13 @@
 
 import { revalidatePath } from 'next/cache'
 
+import { canCloseBooks } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
 import { getRepository } from '@/lib/repository'
-import { balanceCheck, type StatementLine } from '@/lib/statements/balance'
+import { balanceCheck } from '@/lib/statements/balance'
+import { readStatementLines } from '@/lib/statements/lines'
 import { isValidPeriodKey, type OfficialPeriodKind } from '@/lib/statements/period'
-import type { AccountSection, NewOfficialStatement } from '@/types'
+import type { NewOfficialStatement } from '@/types'
 
 /**
  * Phase 2-C 블록 1 — 공식 재무제표 저장 (0020).
@@ -23,45 +25,21 @@ export interface StatementState {
   id?: number
   /** 자산 − (부채 + 자본). 안 맞을 때만 채워 보낸다 — 화면이 금액으로 말해 준다. */
   difference?: number
+  /** 같은 해 확정이 이미 있다(0083) — 화면이 «바꾸기»를 확인한 뒤 replace로 다시 보낸다 */
+  exists?: boolean
+}
+
+/** 0083 학습 줄 — «묶음:이름» → 계정. 모양이 틀린 줄은 버린다(DB도 버린다). */
+function readLearn(raw: unknown): { std_key: string; account_code: string }[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter((x): x is { std_key: string; account_code: string } => !!x && typeof (x as { std_key?: unknown }).std_key === 'string' && typeof (x as { account_code?: unknown }).account_code === 'string')
+    .filter((x) => /^[a-z_]{1,20}:.{1,80}$/.test(x.std_key) && x.account_code.length <= 40)
+    .slice(0, 500)
 }
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
-}
-
-/**
- * 화면에서 온 줄을 읽는다. 금액이 숫자가 아니면 **그 줄을 버리지 않고 통째로 실패**시킨다 —
- * 한 줄을 조용히 빼면 재무상태표가 그만큼 안 맞는 채로 저장 시도에 들어가고,
- * 회장은 자기가 넣은 숫자가 왜 안 맞는지 알 수 없게 된다.
- */
-function parseLines(
-  raw: unknown,
-  sectionOf: Map<string, AccountSection>,
-): { lines: { account_code: string; amount: number }[]; typed: StatementLine[] } | null {
-  if (!Array.isArray(raw)) return null
-
-  const lines: { account_code: string; amount: number }[] = []
-  const typed: StatementLine[] = []
-
-  for (const item of raw) {
-    if (typeof item !== 'object' || item === null) return null
-    const row = item as { account_code?: unknown; amount?: unknown }
-    const account_code = text(row.account_code)
-    const amount = typeof row.amount === 'number' ? row.amount : Number(row.amount)
-    if (!account_code || !Number.isFinite(amount)) return null
-
-    const section = sectionOf.get(account_code)
-    if (!section) return null
-
-    // 0원 줄은 넣지 않는다. 계정 30~40줄 중 대부분이 비는 것이 보통이고,
-    // 그 빈 줄을 전부 0으로 저장하면 나중에 '이 계정은 0이었다'와 '이 계정은 없었다'가 섞인다.
-    if (amount === 0) continue
-
-    lines.push({ account_code, amount })
-    typed.push({ account_code, section, amount })
-  }
-
-  return { lines, typed }
 }
 
 export async function saveOfficialStatement(input: {
@@ -71,12 +49,22 @@ export async function saveOfficialStatement(input: {
   evidenceUrl: unknown
   memo: unknown
   lines: unknown
+  /** 0083: 올린 원본(fin-official-evidence) — 있으면 링크는 비워도 된다 */
+  evidenceFile?: unknown
+  /** 0083: 재무상태표가 닫히지 않은 채 저장하는 이유(대표 · CFO · 마감 권한자) */
+  unbalancedReason?: unknown
+  /** 0083: 같은 해 확정을 바꾼다(화면이 확인함) */
+  replace?: unknown
+  /** 0083: 계정 맞춤 학습 */
+  learn?: unknown
 }): Promise<StatementState> {
   const business_id = text(input.businessId)
   const period_kind = text(input.periodKind) as OfficialPeriodKind
   const period_key = text(input.periodKey)
   const evidence_url = text(input.evidenceUrl)
   const memo = text(input.memo)
+  const evidence_file = text(input.evidenceFile) || null
+  const reason = text(input.unbalancedReason).slice(0, 500)
 
   if (!business_id) return { error: '어느 회사의 재무제표인지 알 수 없습니다.' }
   if (period_kind !== 'year' && period_kind !== 'quarter') {
@@ -86,8 +74,10 @@ export async function saveOfficialStatement(input: {
     return { error: '기간 형식이 올바르지 않습니다. (연간 2025 · 분기 2026-Q1)' }
   }
   // 증빙과 메모를 막는 이유: 확정 꼬리표를 다는 숫자에 근거가 없으면 그 꼬리표가 거짓이 된다.
-  if (!/^https?:\/\//i.test(evidence_url)) {
-    return { error: '증빙 링크가 필요합니다. 사내 스토리지의 PDF 주소를 넣으세요.' }
+  if (evidence_file && !evidence_file.startsWith(`${business_id}/`)) return { error: '증빙 파일이 이 회사 것이 아닙니다 — 다시 올려 주세요.' }
+  if (evidence_url && !/^https?:\/\//i.test(evidence_url)) return { error: '증빙 링크는 https:// 로 시작하는 주소입니다.' }
+  if (!evidence_url && !evidence_file) {
+    return { error: '증빙이 필요합니다. 결산서 원본을 올리거나 사내 스토리지의 PDF 주소를 넣으세요.' }
   }
   if (!memo) return { error: '메모가 필요합니다. (예: 성연회계법인 2025 결산)' }
 
@@ -101,15 +91,17 @@ export async function saveOfficialStatement(input: {
       ledger.accounts.filter((a) => a.business_id === business_id).map((a) => [a.account_code, a.section]),
     )
 
-    const parsed = parseLines(input.lines, sectionOf)
+    // 화면에서 온 줄 — 숫자가 아니면 통째로 실패 · 같은 계정은 더함 · 0원은 뺌(lib/statements/lines.ts).
+    const parsed = readStatementLines(input.lines, sectionOf)
     if (!parsed) return { error: '금액을 읽을 수 없는 줄이 있습니다. 숫자만 넣으세요.' }
     if (parsed.lines.length === 0) return { error: '금액이 있는 줄이 하나도 없습니다.' }
 
     // 저장 전에 같은 규칙으로 한 번 본다. 판정은 DB가 한 번 더 한다(0020).
     const balance = balanceCheck(parsed.typed)
-    if (!balance.balanced) {
+    // 0083: 안 닫히면 대표 · CFO · 마감 권한자가 이유(5자 이상)를 적었을 때만. 판정은 DB가 한 번 더 한다.
+    if (!balance.balanced && (reason.length < 5 || !canCloseBooks(user, business_id))) {
       return {
-        error: `재무상태표가 닫히지 않습니다. 자산 − (부채 + 자본) = ${balance.difference.toLocaleString('ko-KR')}원`,
+        error: `재무상태표가 닫히지 않습니다. 자산 − (부채 + 자본) = ${balance.difference.toLocaleString('ko-KR')}원${canCloseBooks(user, business_id) ? ' — 그대로 저장하려면 이유를 적어 주세요.' : ' — 계정 · 부호를 확인하거나 대표 · CFO에게 저장을 부탁하세요.'}`,
         difference: balance.difference,
       }
     }
@@ -119,8 +111,12 @@ export async function saveOfficialStatement(input: {
       period_kind,
       period_key,
       evidence_url,
+      evidence_file,
       memo,
       lines: parsed.lines,
+      unbalanced_reason: balance.balanced ? null : reason,
+      replace: input.replace === true,
+      learn: readLearn(input.learn),
     }
     const id = await repo.saveOfficialStatement(statement, { user_id: user.user_id, role: user.role })
 
@@ -135,6 +131,13 @@ export async function saveOfficialStatement(input: {
   } catch (e) {
     console.error('[saveOfficialStatement]', e)
     const message = e instanceof Error ? e.message : ''
+    if (/official_exists/.test(message)) return { error: '이 해의 확정 결산이 이미 있습니다 — 바꾸려면 «바꾸기»를 확인해 주세요.', exists: true }
+    if (/official_unbalanced_forbidden/.test(message)) return { error: '닫히지 않은 결산은 대표 · 그룹 CFO · 마감 권한자만 이유를 적고 저장합니다.' }
+    if (/official_unbalanced/.test(message)) return { error: '재무상태표가 닫히지 않습니다 — 그대로 저장하려면 이유(5자 이상)를 적어 주세요.' }
+    if (/official_evidence_file_missing/.test(message)) return { error: '보관된 증빙 파일을 찾지 못했습니다 — 결산서를 다시 올리거나 링크를 넣어 주세요.' }
+    if (/official_evidence_missing/.test(message)) return { error: '증빙이 필요합니다(올린 원본 또는 링크).' }
+    if (/official_line_unknown_account/.test(message)) return { error: '계정과목표에 없는 계정이 있습니다 — 새로 고친 뒤 다시 골라 주세요.' }
+    if (/official_line_duplicate/.test(message)) return { error: '같은 계정이 두 줄입니다 — 새로 고친 뒤 다시 저장해 주세요.' }
     if (/닫히지 않습니다/.test(message)) return { error: message }
     // 0051 리뷰 m-3: 같은 기간을 두 사람이 동시에 저장하면 활성 unique(23505)나 supersede 가드가 둘째를 막는다.
     if (/23505|official_statements_one_active|official_statement_immutable/.test(message)) {
