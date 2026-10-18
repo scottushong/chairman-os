@@ -4,7 +4,7 @@ import { balanceCheck, type BalanceCheck } from '@/lib/statements/balance'
 import type { Account, AccountSection } from '@/types'
 
 import type { DocFormat, LayoutCell, OpenedDoc } from './doc-open'
-import { cleanLabel, groupOf, matchOfficial, officialLines, plain, type MatchHow, type OfficialGroup } from './official-lines'
+import { cleanLabel, GROUP_SECTIONS, groupOf, isSuggestion, matchOfficial, officialLines, plain, stdKey, type MatchHow, type OfficialGroup } from './official-lines'
 import { signedAmount } from './official-sign'
 import { classifyByCode } from './pipeline'
 
@@ -269,8 +269,12 @@ export interface OfficialDraftLine {
   account_code: string | null
   account_name: string | null
   section: AccountSection | null
-  /** 어떻게 맞췄나 — exact 말고는 화면이 «추정»으로 보인다 */
+  /** 어떻게 맞췄나 — learned · exact는 확정, 나머지는 «제안»(사람 승인) */
   how: MatchHow | null
+  /** 맞춤 믿음 — 화면이 low만 노란색으로 */
+  confidence: 'high' | 'medium' | 'low' | null
+  /** 학습 표 열쇠(«묶음:이름») — 저장할 때 이 줄의 계정을 학습한다 */
+  std_key: string
   /** 처음부터 «넣지 않음»(제조원가명세서 줄 — 매출원가에 이미 들어 있다) */
   skip: boolean
   /** period_key 해를 원장 규약(차변 − 대변)으로 바꾼 값. 계정을 못 맞추거나 넣지 않으면 null */
@@ -292,9 +296,44 @@ export interface OfficialDraft {
   errors: string[]
   warnings: string[]
   reason: string
+  /** 회사 계정과목표가 비었다 — 화면 맨 위 «먼저 계정과목표를 올려 주세요» · 저장 막음 */
+  no_accounts: boolean
+  /** 해를 어디서 알았나(칸 머리글 · 파일 이름 · 표지 · 모름) — 모르면 화면이 적게 한다 */
+  year_from: 'columns' | 'file_name' | 'cover' | 'unknown'
+  /** 0083: 올린 원본을 증빙으로 보관한 경로(fin-official-evidence) — 없으면 링크를 적어야 한다 */
+  evidence_file: string | null
+  /** 증빙 보관이 안 된 까닭(0083 전 DB · 권한 · 실패) */
+  evidence_note: string | null
+  /** AI가 계정을 제안한 줄 수(2차 맞춤) */
+  ai_suggested: number
+}
+
+const MATCH_CONFIDENCE: Record<MatchHow, 'high' | 'medium' | 'low'> = { learned: 'high', exact: 'high', alias: 'medium', near: 'low', group: 'low', ai: 'low' }
+
+/**
+ * 결산 해 짐작 — 파일 이름(«2023~5 표준재무제표» → 2023 · 2024 · 2025, «2025 결산») · 표지 글(«2025년 12월 31일 현재»).
+ * 해 칸이 없을 때(한 해짜리 · AI 없이 읽음)의 기본값이다. 사람이 바꿀 수 있다.
+ */
+export function guessYears(fileName: string, cover = ''): { years: string[]; from: OfficialDraft['year_from'] } {
+  const f = fileName.normalize('NFKC')
+  const range = /(20\d{2})\s*[~\-–]\s*(20)?(\d{1,2})(?!\d)/.exec(f)
+  if (range) {
+    const a = Number(range[1])
+    const tail = range[3]
+    const b = tail.length === 2 ? Number(`20${tail}`) : Math.floor(a / 10) * 10 + Number(tail)
+    if (b > a && b - a <= 5) return { years: Array.from({ length: b - a + 1 }, (_, i) => String(a + i)), from: 'file_name' }
+  }
+  const inName = [...f.matchAll(/(?<!\d)(20\d{2})(?!\d)/g)].map((m) => m[1])
+  if (inName.length) return { years: [...new Set(inName)].sort(), from: 'file_name' }
+  const c = cover.normalize('NFKC').slice(0, 3000)
+  const dated = [...c.matchAll(/(20\d{2})\s*년\s*12\s*월\s*31\s*일/g)].map((m) => m[1])
+  if (dated.length) return { years: [...new Set(dated)].sort(), from: 'cover' }
+  return { years: [], from: 'unknown' }
 }
 
 type OfficialAcc = Pick<Account, 'account_code' | 'name' | 'section'>
+
+const unmatchedWarning = (n: number) => `계정과목을 못 맞춘 줄 ${n}개 — 줄마다 계정을 고르거나 «넣지 않음»으로 두세요(묶음마다 한 번에 고를 수 있습니다).`
 
 /** 묶음 줄(합계 · 소계 · 매출원가 계산 줄) — 저장 줄이 아니다. */
 const STMT_AGGREGATE = /총계$|합계$|^(매출총|영업|법인세비용차감전|법인세차감전|당기순|경상|세전)(이익|손실|순이익|순손실|이익\(손실\)|손익)/
@@ -320,13 +359,21 @@ function yearColumns(columns: string[], skip: Set<number>, base: string | null):
   return out
 }
 
-export function buildOfficialDraft(t: DocTable, accounts: OfficialAcc[], fileName: string): OfficialDraft {
+export interface OfficialDraftOptions {
+  /** 0083 학습 표 «묶음:이름» → 계정 코드 */
+  learned?: ReadonlyMap<string, string>
+  /** 표지 · 첫 쪽 글(해 짐작) */
+  cover?: string
+}
+
+export function buildOfficialDraft(t: DocTable, accounts: OfficialAcc[], fileName: string, opts: OfficialDraftOptions = {}): OfficialDraft {
   const cols = t.columns.map((c) => String(c ?? '').normalize('NFKC').replace(/\s/g, ''))
   const find = (re: RegExp) => cols.findIndex((c) => re.test(c))
   const groupIdx = find(/^구분$|^분류$|^표$|^부분$/)
   const levelIdx = find(/^줄$|^수준$|^종류$|^level$/i)
   const labelIdx = find(/계정|과목|항목|내역/)
-  const base = (t.period && /^(20\d{2})/.exec(t.period)?.[1]) ?? /(20\d{2})/.exec(fileName.normalize('NFKC'))?.[1] ?? null
+  const guess = guessYears(fileName, opts.cover)
+  const base = (t.period && /^(20\d{2})/.exec(t.period)?.[1]) ?? guess.years[guess.years.length - 1] ?? null
   const yearCols = yearColumns(t.columns, new Set([groupIdx, levelIdx, labelIdx].filter((i) => i >= 0)), base)
 
   type Row = { label: string; name: string; group: OfficialGroup | null; aggregate: boolean; values: Record<string, number> }
@@ -395,7 +442,7 @@ export function buildOfficialDraft(t: DocTable, accounts: OfficialAcc[], fileNam
   }
 
   const lines: OfficialDraftLine[] = ordered.map((r) => {
-    const m = matchOfficial(r.name, r.group, accounts)
+    const m = matchOfficial(r.name, r.group, accounts, opts.learned)
     const skip = r.group === 'mfg'
     const printed = r.values[year] ?? 0
     return {
@@ -407,6 +454,8 @@ export function buildOfficialDraft(t: DocTable, accounts: OfficialAcc[], fileNam
       account_name: m?.acc.name ?? null,
       section: m?.acc.section ?? null,
       how: m?.how ?? null,
+      confidence: m ? MATCH_CONFIDENCE[m.how] : null,
+      std_key: stdKey(r.group, r.name),
       skip,
       amount: m && !skip ? signedAmount(m.acc.section, m.acc.name, printed, r.name) : null,
     }
@@ -419,11 +468,74 @@ export function buildOfficialDraft(t: DocTable, accounts: OfficialAcc[], fileNam
   const warnings: string[] = []
   const unmatched = live.length - matched.length
   if (!lines.length) errors.push('계정 · 금액 줄을 읽지 못했습니다 — «공식 결산» 화면에서 손으로 넣어 주세요.')
-  if (unmatched) warnings.push(`계정과목을 못 맞춘 줄 ${unmatched}개 — 줄마다 계정을 고르거나 «넣지 않음»으로 두세요(묶음마다 한 번에 고를 수 있습니다).`)
+  if (unmatched) warnings.push(unmatchedWarning(unmatched))
   const skipped = lines.length - live.length
   if (skipped) warnings.push(`제조원가명세서 줄 ${skipped}개는 처음부터 «넣지 않음» — 매출원가에 이미 들어 있습니다(넣으면 원가가 두 번 셉니다).`)
+  if (!accounts.length) errors.push(NO_ACCOUNTS_MSG)
   if (!year) errors.push('결산 연도를 찾지 못했습니다 — 연도를 적어 주세요.')
   if (years.length > 1) warnings.push(`여러 해(${years.filter(Boolean).join(' · ')})가 들어 있습니다 — 해마다 따로 저장합니다(아래에서 해를 고르세요).`)
   if (balance && !balance.balanced) warnings.push(`${year || '이 해'} 재무상태표가 닫히지 않습니다 — 자산 − (부채 + 자본) = ${balance.difference.toLocaleString('ko-KR')}원(계정 · 부호를 확인하세요).`)
-  return { period_key: year || null, years: years.length ? years : [year], net_income, company: t.company, title: t.title, lines, unmatched, balance, errors, warnings, reason: t.reason }
+  const suggested = lines.filter((l) => !l.skip && isSuggestion(l.how)).length
+  if (suggested) warnings.push(suggestWarning(suggested, 0))
+  const yearFrom: OfficialDraft['year_from'] = yearCols.size || t.period ? 'columns' : guess.from
+  return {
+    period_key: year || null,
+    years: years.length ? years : [year],
+    net_income,
+    company: t.company,
+    title: t.title,
+    lines,
+    unmatched,
+    balance,
+    errors,
+    warnings,
+    reason: t.reason,
+    no_accounts: !accounts.length,
+    year_from: year ? yearFrom : 'unknown',
+    evidence_file: null,
+    evidence_note: null,
+    ai_suggested: 0,
+  }
+}
+
+export const NO_ACCOUNTS_MSG =
+  '이 회사 계정과목표가 비어 있습니다 — 먼저 계정과목표(ECOUNT 기초데이터 › 계정 내려받기)를 올려 주세요. 그 전까지는 표준 계정 이름을 임시 후보로만 보이고 저장하지 않습니다.'
+
+const suggestWarning = (n: number, ai: number) =>
+  `이름이 똑같지 않아 비슷한 계정을 제안한 줄 ${n}개${ai ? `(AI ${ai}개 포함)` : ''} — 확인하고 «제안 전부 승인»을 눌러 주세요.`
+
+/** AI 2차 맞춤 한 줄 — line은 draft.lines 번호 */
+export interface OfficialAiSuggestion {
+  line: number
+  account_code: string | null
+  confidence: 'high' | 'medium' | 'low'
+}
+
+/**
+ * AI 제안을 아직 못 맞춘 줄에만 얹는다(코드가 맞춘 줄 · 넣지 않음 줄은 건드리지 않는다). 계정은 이 회사 계정과목표에 있고
+ * 그 줄의 묶음(자산 · 판관비 …) 안이어야 한다 — 아니면 버린다(AI가 지어낸 코드 · 매출을 판관비로 같은 실수). 순수.
+ */
+export function applyOfficialSuggestions(draft: OfficialDraft, items: OfficialAiSuggestion[], accounts: OfficialAcc[]): number {
+  let n = 0
+  for (const it of items) {
+    const l = draft.lines[it.line]
+    if (!l || l.skip || l.account_code || !it.account_code) continue
+    const acc = accounts.find((a) => a.account_code === it.account_code)
+    if (!acc || (l.group && !GROUP_SECTIONS[l.group].includes(acc.section))) continue
+    l.account_code = acc.account_code
+    l.account_name = acc.name
+    l.section = acc.section
+    l.how = 'ai'
+    l.confidence = it.confidence
+    l.amount = signedAmount(acc.section, acc.name, l.printed, cleanLabel(l.label).name)
+    n += 1
+  }
+  if (!n) return 0
+  draft.ai_suggested = n
+  const live = draft.lines.filter((l) => !l.skip)
+  draft.unmatched = live.filter((l) => !l.account_code).length
+  draft.warnings = draft.warnings.filter((w) => !/^계정과목을 못 맞춘 줄|^이름이 똑같지 않아/.test(w))
+  if (draft.unmatched) draft.warnings.unshift(unmatchedWarning(draft.unmatched))
+  draft.warnings.push(suggestWarning(live.filter((l) => isSuggestion(l.how)).length, n))
+  return n
 }

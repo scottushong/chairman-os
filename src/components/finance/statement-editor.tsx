@@ -132,6 +132,8 @@ export function StatementEditor({
         evidenceUrl: evidenceUrl.trim(),
         memo: memo.trim(),
         lines: lines.map((l) => ({ account_code: l.account_code, amount: l.amount })),
+        // 위에서 «바꾸기»를 확인했다(0083 — 확인 없이는 DB가 같은 해를 덮지 않는다).
+        replace: !!clash,
       })
       if (result.error) {
         setError(result.error)

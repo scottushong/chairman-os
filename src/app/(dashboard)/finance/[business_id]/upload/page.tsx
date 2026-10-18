@@ -99,6 +99,10 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
     ? ((await repo.loadFinanceLedger().catch(() => null))?.accounts ?? []).filter((a) => a.business_id === business_id && a.active).map((a) => ({ account_code: a.account_code, name: a.name, section: a.section }))
     : []
   const revertable = revertableIds(uploads)
+  // 0083 공식 결산 — 이미 확정이 있는 해(«바꾸기» 확인)
+  const officialYears = docsOpen
+    ? (await repo.listOfficialStatements(business_id).catch(() => [])).filter((s) => s.period_kind === 'year').map((s) => s.period_key)
+    : []
 
   // 0072 — 같은 거래 묶음 · 기준 출처 · 재마감 대상(0072 전 DB는 빈 목록).
   const [txGroups, txLines, dedupe, reclose] = canKeep
@@ -163,6 +167,8 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
             docsClosed={docsClosed}
             isChairman={user?.role === 'Chairman'}
             accounts={accounts}
+            canClose={canCloseBooks(user, business_id)}
+            officialYears={officialYears}
             userId={user?.user_id ?? ''}
             mode={repo.mode}
           />

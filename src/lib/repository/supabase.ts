@@ -75,6 +75,7 @@ import type {
   NewOfficialStatement,
   OfficialStatement,
   OfficialStatementBasis,
+  OfficialAccountMapRow,
   ProcessChart,
   ProcessChartInput,
   CityLayout,
@@ -1167,22 +1168,66 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
      */
     async saveOfficialStatement(input: NewOfficialStatement, actor: AuditActor): Promise<number> {
       void actor // 행위자는 DB가 auth.uid() / auth_role()로 적는다.
-      const { data, error } = await sb.rpc('official_statement_save', {
+      const fail = (fn: string, error: PostgrestError): never => {
+        throw new Error(`Supabase ${fn} ${error.code ?? '?'}: ${error.message}${error.details ? ` — ${error.details}` : ''}`)
+      }
+      // 0083 v2 — 증빙 파일 · 닫히지 않은 이유 · 같은 해 바꾸기 확인 · 학습.
+      const v2 = await sb.rpc('official_statement_save_v2', {
         p_business_id: input.business_id,
         p_period_kind: input.period_kind,
         p_period_key: input.period_key,
-        p_evidence_url: input.evidence_url,
+        p_evidence_url: input.evidence_url || null,
+        p_evidence_file: input.evidence_file ?? null,
         p_memo: input.memo,
         p_lines: input.lines,
+        p_unbalanced_reason: input.unbalanced_reason ?? null,
+        p_replace: !!input.replace,
+        p_learn: input.learn ?? [],
       })
-      if (error) {
-        throw new Error(
-          `Supabase official_statement_save ${error.code ?? '?'}: ${error.message}${error.details ? ` — ${error.details}` : ''}`,
-        )
+      let data: unknown = v2.data
+      if (v2.error) {
+        // 0083 전 DB(앱이 DB보다 먼저 나감) — 링크 · 닫힘이 있는 저장만 옛 함수로(옛 함수는 늘 supersede한다).
+        const old = (v2.error.code === 'PGRST202' || v2.error.code === '42883') && /^https?:\/\//i.test(input.evidence_url) && !input.unbalanced_reason
+        if (!old) fail('official_statement_save_v2', v2.error)
+        const r = await sb.rpc('official_statement_save', {
+          p_business_id: input.business_id,
+          p_period_kind: input.period_kind,
+          p_period_key: input.period_key,
+          p_evidence_url: input.evidence_url,
+          p_memo: input.memo,
+          p_lines: input.lines,
+        })
+        if (r.error) fail('official_statement_save', r.error)
+        data = r.data
       }
       const id = Number(data)
       if (!Number.isFinite(id)) throw new Error('official_statement_save: id가 오지 않았다.')
       return id
+    },
+
+    async listOfficialAccountMap(businessId) {
+      const { data, error } = await sb.from('official_account_map').select('std_key,account_code,hits').eq('business_id', businessId).limit(2000)
+      if (error && ['PGRST205', '42P01'].includes(error.code ?? '')) return []
+      if (error) throw new Error(`Supabase official_account_map ${error.code ?? '?'}: ${error.message}`)
+      return (data ?? []) as OfficialAccountMapRow[]
+    },
+
+    async putOfficialEvidence(businessId, path, bytes) {
+      if (!path.startsWith(`${businessId}/`)) throw new Error('official_evidence_denied')
+      const type = /\.pdf$/.test(path) ? 'application/pdf' : /\.png$/.test(path) ? 'image/png' : 'image/jpeg'
+      const { error } = await sb.storage.from('fin-official-evidence').upload(path, bytes, { contentType: type, upsert: false })
+      if (!error) return path
+      const m = `${(error as { statusCode?: string }).statusCode ?? ''} ${error.message}`
+      // 같은 파일(같은 해시)이 이미 있다 — 덮지 않고 그 경로를 쓴다.
+      if (/409|duplicate|already exists/i.test(m)) return path
+      if (/bucket not found|404/i.test(m)) throw new Error('official_evidence_unavailable')
+      throw new Error(`official_evidence_denied ${m.slice(0, 120)}`)
+    },
+
+    async officialEvidenceUrl(path) {
+      const { data, error } = await sb.storage.from('fin-official-evidence').createSignedUrl(path, 300)
+      if (error || !data?.signedUrl) return null
+      return data.signedUrl
     },
 
     /**

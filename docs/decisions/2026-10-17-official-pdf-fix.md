@@ -24,3 +24,29 @@
 ## 남은 것
 - 진짜 스캔 PDF로 진짜 AI 다시 읽기는 못 함(Anthropic 크레딧 부족 · 원본 파일 없음) — 프롬프트가 새 모양(구분 · 줄 · 해 칸)을 지키는지는 운영에서 처음 본다. 지키지 않아도(옛 «계정과목 · 금액» 모양) 번호 떼기 · 묶음 줄 이름 거르기 · 이름 바꿈은 그대로 돈다.
 - 회사 계정과목표에 없는 계정(대손충당금 · 해외시장개척비 …)은 사람이 고르거나 /finance/<회사>/accounts에서 계정을 먼저 만든다.
+
+---
+
+# 2차(같은 날 — 지시문 전체를 받고) — 0083 공식 결산 v2
+
+1차는 «앱만»이었다. 지시문 전체(«■ 할 일» 1 ~ 7)를 받고 모자란 것을 채웠다.
+
+## 1번 원인 확인(읽기 전용)
+- 운영 DB는 읽지 않았다(규칙: production 읽기도 회장 SQL Editor로). 대신 코드 · 마이그레이션으로 확인:
+  - **DY(biz_dy)는 표준 계정과목표를 받지 않는다**(0016 시드 · `src/lib/ledger/standard-chart.ts` `ECOUNT_CODE_BUSINESSES`). DY 계정은 «ECOUNT 기초데이터 › 계정 내려받기» 올리기(0051 `ecount_accounts_import`)로만 들어온다. 그 올리기를 운영에서 한 번도 안 했으면 **DY accounts는 0개** — 화면의 «맞춘 계정이 없습니다»와 «고르세요»뿐인 목록이 그대로 나온다.
+  - 맞추기는 **이름으로만** 했다(옛 `matchAccount` — 결산서에는 코드가 없다). 이름 정확 → 앞부분 일치, 번호(«29.»)를 떼지 않아 102줄 전부 실패.
+  - staging biz_dy 계정은 14개(0083 staging 시험이 참고로 셈). 운영 수는 회장이 SQL Editor로: `select count(*) from accounts where business_id = 'biz_dy';`
+- PGlite: 0001 ~ 0083을 다 올려도 DY 계정은 0개(`scripts/check-official-v2.ts`가 잰다).
+
+## 정한 것
+- **0083** `supabase/migrations/0083_official_statement_v2.sql` — 비공개 버킷 `fin-official-evidence`(«<회사>/<sha256>.<확장자>», 올리기 can_keep_books · 보기 can_read_books · 옮기기 · 지우기 없음) · `official_statements.evidence_file` · `unbalanced_reason` · 증빙 규칙(링크 또는 파일) · 학습 표 `official_account_map`(쓰기는 함수 안에서만) · `official_statement_save_v2`(증빙 · 한 계정 한 줄 · 장부 계정 · 안 닫힘은 can_close_books + 이유 · 같은 해는 p_replace · 학습 · 감사). 옛 `official_statement_save`는 그대로(앱이 DB보다 먼저 나가면 링크가 있는 저장만 옛 길로).
+- 원본 보관은 0070 «원본 두지 않음»의 예외 — 세무사 확정 결산만. 지시문 4(«이미 저장된 원본을 증빙으로»)를 지키려면 남겨야 한다(실제로는 0082가 처리 뒤 지웠다).
+- 맞추기 순서: 학습(이 회사가 전에 저장한 맞춤) → 이름 그대로 → 이름 바꿈 표 → 앞 · 뒤 일치 → 영업외 묶음 → **AI 2차**(못 맞춘 줄의 이름 · 묶음과 계정과목표만 보냄, 숫자 없음 · 계정표 · 묶음 밖 제안은 버림). 학습 · 이름 그대로는 «확정», 나머지는 «제안» — 미리 골라 두고 «제안 전부 승인» 또는 줄마다 바꾸기. 믿음 낮음만 노란색.
+- 계정과목표가 비면 맨 위 빨간 문구 + 줄마다 «임시: 표준 이름» · 저장 막음.
+- 해: 칸 머리글 → 파일 이름(«2023~5» = 2023 · 2024 · 2025) → 표지(«2025년 12월 31일») → 사람이 적음.
+- 저장 단추 옆에 첫 이유 + «외 n건», 아래에 전체 목록. 재무상태표 · 순이익이 안 맞으면 경고, 대표 · CFO(마감 권한)만 이유를 적고 저장(순이익만 다르면 DB는 모르므로 이유를 메모에 붙임).
+- 같은 해 확정이 있으면 «바꾸기» 확인 체크 — 확인 없이는 DB가 `official_exists`로 막는다. 손으로 넣는 화면(statements/new)은 이미 확인 창이 있어 그대로 replace.
+- 가격 리포트는 0084로 밀린다 — 브랜치(chairman-os-macro)는 그 블록에서 고친다(DEFERRED).
+
+## 진짜 AI 호출
+- 0회(한도 5회 중). Anthropic 크레딧 부족이 풀리지 않았고, 진짜 회사 파일은 쓰지 않는다. 가짜 AI(두 글자 조각 — `src/lib/finance-upload/official-suggest.ts`)로만 쟀다.

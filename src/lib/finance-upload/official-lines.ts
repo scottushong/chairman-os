@@ -117,7 +117,22 @@ const GROUP_CATCH_ALL: Partial<Record<OfficialGroup, string[]>> = {
   nonop_expense: ['잡손실', '영업외비용', '기타영업외비용'],
 }
 
-export type MatchHow = 'exact' | 'alias' | 'near' | 'group'
+/**
+ * 어떻게 맞췄나. learned = 이 회사가 전에 저장한 맞춤(0083 학습 표) · exact = 이름 그대로 — 둘은 «확정»,
+ * 나머지(alias · near · group · ai)는 «제안» — 화면이 미리 골라 두되 사람이 승인해야 저장된다.
+ */
+export type MatchHow = 'learned' | 'exact' | 'alias' | 'near' | 'group' | 'ai'
+
+/** 제안(사람 승인 필요)인가 */
+export const isSuggestion = (how: MatchHow | null | undefined) => !!how && how !== 'learned' && how !== 'exact'
+
+/**
+ * 학습 표 열쇠 «묶음:이름» — 번호 · 띄어쓰기 · 괄호 설명(«(전기료 제외)») · 점을 뗀 이름. 묶음이 다르면 다른 줄이다
+ * (판관비 «급여» ≠ 제조 «급여»). 묶음을 모르면 'none'. DB 모양 규칙(0083): ^[a-z_]{1,20}:.{1,80}$
+ */
+export function stdKey(group: OfficialGroup | null, label: string): string {
+  return `${group ?? 'none'}:${plain(label).slice(0, 80)}`
+}
 
 export interface OfficialAccount {
   account_code: string
@@ -125,9 +140,18 @@ export interface OfficialAccount {
   section: AccountSection
 }
 
-export function matchOfficial<A extends OfficialAccount>(label: string, group: OfficialGroup | null, accounts: A[]): { acc: A; how: MatchHow } | null {
+export function matchOfficial<A extends OfficialAccount>(
+  label: string,
+  group: OfficialGroup | null,
+  accounts: A[],
+  learned?: ReadonlyMap<string, string>,
+): { acc: A; how: MatchHow } | null {
   const l = plain(label)
   if (!l) return null
+  // 0. 이 회사가 전에 저장한 맞춤 — 계정이 아직 있을 때만.
+  const code = learned?.get(stdKey(group, label))
+  const hit = code ? accounts.find((a) => a.account_code === code) : undefined
+  if (hit) return { acc: hit, how: 'learned' }
   const pool = group ? accounts.filter((a) => GROUP_SECTIONS[group].includes(a.section)) : accounts
   const one = (xs: A[]) => (xs.length === 1 ? xs[0] : null)
   const byName = (name: string) => one(pool.filter((a) => plain(a.name) === plain(name)))

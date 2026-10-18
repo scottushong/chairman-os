@@ -91,6 +91,7 @@ import type {
   NewOfficialStatement,
   OfficialStatement,
   OfficialStatementBasis,
+  OfficialAccountMapRow,
   ProcessChart,
   ProcessChartInput,
   ProcessChartItem,
@@ -484,6 +485,19 @@ export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods,
    * 필요하면 basis를 준다. 0050 전 DB(basis 칸 없음)의 행은 accountant로 읽는다.
    */
   listOfficialStatements(businessId: string, basis?: OfficialStatementBasis | 'all'): Promise<OfficialStatement[]>
+
+  /**
+   * 0083 계정 맞춤 학습(official_account_map) — 장부를 읽는 사람. 0083 전 DB는 빈 목록.
+   * 쓰기는 saveOfficialStatement(learn)만 — 저장한 결산의 줄이 곧 학습이다.
+   */
+  listOfficialAccountMap(businessId: string): Promise<OfficialAccountMapRow[]>
+  /**
+   * 0083 공식 결산 증빙 — 올린 원본을 «<회사>/<sha256>.<확장자>»로 비공개 버킷(fin-official-evidence)에 둔다(장부를 쓰는 사람).
+   * 같은 파일이 이미 있으면 그대로 경로를 돌려준다(덮지 않는다). 0083 전 DB(버킷 없음)는 'official_evidence_unavailable'.
+   */
+  putOfficialEvidence(businessId: string, path: string, bytes: Uint8Array): Promise<string>
+  /** 0083 증빙 열기 — 잠깐 쓰는 서명 주소(장부를 읽는 사람). 없거나 못 보면 null. */
+  officialEvidenceUrl(path: string): Promise<string | null>
 
   /**
    * ECOUNT 엑셀 업로드 한 건(0050 finance_imports). 읽기는 can_read_books, 넣기는 can_keep_books 본인 draft,

@@ -8,6 +8,7 @@ import { countNewSuspects, crossMonthPairs, describeGroup, matchTx, nearMonthEdg
 import { looksOfficial, refuseAfterRead, refuseDoc, refuseFormula, type DocRefusal } from './doc-guard'
 import { DocOpenError, openDocument, type DocFormat, type OpenedDoc } from './doc-open'
 import {
+  applyOfficialSuggestions,
   buildOfficialDraft,
   checkDocTotals,
   companyMismatch,
@@ -21,6 +22,7 @@ import {
   type OfficialDraft,
 } from './doc-read'
 import { kindSpec, TX_KINDS, type UploadKind } from './kinds'
+import { linesToAsk, type OfficialSuggester } from './official-suggest'
 import { decodeShape, encodeShape, fixByBalance, LEDGER_COLS, ledgerFeedback, ledgerLayoutByCode, ROLE_KO, type LedgerCol, type LedgerLayout, type RowLabel } from './ledger'
 import { MSG, openUpload } from './open'
 import {
@@ -108,6 +110,10 @@ export interface DocOptions {
   businessName?: string
   /** 공식 결산 계정 맞추기(그 회사 계정과목) */
   accounts?: Pick<Account, 'account_code' | 'name' | 'section'>[]
+  /** 0083 계정 맞춤 학습 «묶음:이름» → 계정 코드 */
+  learned?: ReadonlyMap<string, string>
+  /** 공식 결산 계정 맞추기 2차(AI) — 없으면 코드 맞춤만 */
+  suggest?: OfficialSuggester | null
 }
 
 /** PDF · 사진에서 온 시트의 덧붙임(검증 · 미리보기 이유). */
@@ -274,7 +280,34 @@ async function processDoc(o: ProcessOptions, kind: 'pdf' | 'image', sha: string)
   // 5. 세무사 확정 결산 → «공식 결산» 미리보기(자료 표에 안 넣음 · 자동 없음). 기록은 실패 줄(내용 없음 — AI 사용 수를 하루 한도에 센다).
   if (official || table?.doc_kind === 'official_statement') {
     const t = table ?? (doc.layout ? layoutToStatement(doc.layout) : null)
-    const draft = t ? buildOfficialDraft(t, o.docs.accounts ?? [], o.fileName) : null
+    const accounts = o.docs.accounts ?? []
+    const draft = t ? buildOfficialDraft(t, accounts, o.fileName, { learned: o.docs.learned, cover: doc.guardText }) : null
+    // 2차 맞춤(AI) — 코드가 못 맞춘 줄만 · 줄 이름과 계정과목표만(숫자 없음) · 남은 한도 안에서 한 번.
+    if (draft && accounts.length && o.docs.suggest) {
+      const ask = linesToAsk(draft)
+      if (ask.length && o.aiBudget - aiUsed > 0) {
+        try {
+          const r = await o.docs.suggest({ lines: ask, accounts, deadline: o.deadline })
+          aiUsed += r.calls
+          applyOfficialSuggestions(draft, r.items, accounts)
+        } catch (e) {
+          aiUsed += Math.max(1, Number((e as { calls?: number })?.calls) || 1)
+          draft.warnings.push(`AI 계정 제안 실패(${e instanceof Error ? e.message.slice(0, 80) : '?'}) — 남은 줄은 직접 골라 주세요.`)
+        }
+      } else if (ask.length) draft.warnings.push('AI 한도(파일당 · 하루)를 넘어 계정 제안을 받지 못했습니다 — 남은 줄은 직접 골라 주세요.')
+    }
+    // 0083 증빙 — 올린 원본을 그 회사 증빙 보관함에 둔다(링크를 따로 적지 않아도 된다). 실패하면 링크를 적게 한다.
+    if (draft) {
+      const ext = /\.(pdf|jpe?g|png)$/i.exec(o.fileName)?.[1]?.toLowerCase() ?? (kind === 'pdf' ? 'pdf' : 'jpg')
+      try {
+        draft.evidence_file = await o.repo.putOfficialEvidence(o.businessId, `${o.businessId}/${sha}.${ext}`, o.bytes)
+      } catch (e) {
+        const m = e instanceof Error ? e.message : ''
+        draft.evidence_note = /unavailable/.test(m)
+          ? '증빙 보관함이 아직 없습니다(0083 반영 전) — 원본을 둔 사내 드라이브 링크를 적어 주세요.'
+          : '올린 원본을 증빙으로 보관하지 못했습니다 — 원본을 둔 사내 드라이브 링크를 적어 주세요.'
+      }
+    }
     if (draft && table && doc.format === 'pdf_text') {
       const miss = numbersNotInText(table, doc.text)
       if (miss) draft.warnings.push(`AI가 읽은 숫자 ${miss}개가 PDF 글에 없습니다 — 줄마다 확인하세요.`)
