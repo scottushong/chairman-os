@@ -47,6 +47,8 @@ export interface DummyFinUploadDeps {
   name(userId: string): string | null
   /** 0076 fin_opening_confirm 거울 — 스위치 'finance_upload'(PHASE 11). 없으면 켜짐으로 본다(옛 시험). */
   featureOn?(businessId: string): Promise<boolean>
+  /** 0089 fin_inbox_legacy_read_ok 거울 — 스위치 finance_legacy_import(그 회사). 없으면 꺼짐. */
+  legacyImportOn?(businessId: string): Promise<boolean>
   /** 0080 fin_material_viewer 거울 — 대표 · 그룹 CFO · '/costing/<회사>' 줄. 없으면 대표 · CFO만으로 본다. */
   materialViewer?(businessId: string): boolean
 }
@@ -89,6 +91,7 @@ type Methods = Pick<
   | 'finInboxSweep'
   | 'finInboxPut'
   | 'finInboxList'
+  | 'finInboxListBusiness'
   | 'listFinLegacyImports'
   | 'markFinLegacyImport'
 >
@@ -306,6 +309,11 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
     const v = d.viewer()
     return p.length === 3 && !!p[2] && /^[a-z0-9_]{2,40}$/.test(p[0]) && p[1] === v.user_id && v.role !== 'AIAgent' && v.role !== 'Integration' && d.canKeep(p[0])
   }
+  /** 0089 남의 폴더 읽기(읽기만) — 대표 · 스위치 켬 · 장부 쓰기. */
+  const legacyReadOk = async (path: string) => {
+    const p = path.split('/')
+    return p.length === 3 && !!p[2] && /^[a-z0-9_]{2,40}$/.test(p[0]) && d.viewer().role === 'Chairman' && d.canKeep(p[0]) && !!(await d.legacyImportOn?.(p[0]))
+  }
 
   return {
     async listFinUploads(businessId) {
@@ -519,7 +527,7 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
       inbox.set(path, { bytes: bytes.slice(), at: Date.now() })
     },
     async finInboxRead(path) {
-      if (!inboxOk(path)) throw new Error('fin_inbox_denied')
+      if (!inboxOk(path) && !(await legacyReadOk(path))) throw new Error('fin_inbox_denied')
       const o = inbox.get(path)
       if (!o) throw new Error('fin_inbox_missing')
       return o.bytes.slice()
@@ -543,6 +551,15 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
         .filter(([p]) => p.startsWith(`${folder}/`) && p.split('/').length === 3 && inboxOk(p))
         .sort((a, b) => a[1].at - b[1].at)
         .map(([p, o]) => ({ path: p, created_at: new Date(o.at).toISOString() }))
+    },
+
+    async finInboxListBusiness(businessId) {
+      const out: { path: string; created_at: string | null }[] = []
+      for (const [p, o] of [...inbox.entries()].sort((a, b) => a[1].at - b[1].at)) {
+        if (!p.startsWith(`${businessId}/`) || p.split('/').length !== 3) continue
+        if (inboxOk(p) || (await legacyReadOk(p))) out.push({ path: p, created_at: new Date(o.at).toISOString() })
+      }
+      return out
     },
 
     /* ───── 0089 «예전 자료 가져오기» 옮김 기록(대표만) ───── */

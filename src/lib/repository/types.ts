@@ -920,6 +920,8 @@ export interface ChairmanRepository extends PriceReportMethods, PurchasingMethod
   finInboxPut?(path: string, bytes: Uint8Array): Promise<void>
   /** 0082 본인 폴더(«<회사>/<uid>»)에 남은 파일 — 이름(경로)과 올린 시각. 못 보면 빈 목록(«예전 자료 가져오기» A2). */
   finInboxList(folder: string): Promise<{ path: string; created_at: string | null }[]>
+  /** 0089 그 회사 수신함 전체(«<회사>/<누구든>/<이름>») — 대표 + 스위치 finance_legacy_import 켬일 때만 남의 폴더까지(읽기만 · fin_inbox_objects_legacy_read). 아니면 본인 것만 · 못 보면 빈 목록. */
+  finInboxListBusiness(businessId: string): Promise<{ path: string; created_at: string | null }[]>
   /** 0083 그 회사의 공식 결산 증빙 파일 경로(장부를 읽는 사람). 0083 전 DB · 못 보면 빈 목록(A2). */
   listOfficialEvidence(businessId: string): Promise<string[]>
   /** 0083 증빙 파일 바이트(장부를 읽는 사람). 없거나 못 보면 'official_evidence_missing'(A2 — 코드로 다시 읽는다 · AI 없음). */

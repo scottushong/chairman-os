@@ -16,7 +16,8 @@
 --        읽기는 장부를 읽는 사람(can_read_books — 결산 줄과 같다) · 쓰기는 official_unmatched_save(장부를 쓰는 사람 · 활성 결산만 · 통째로 바꾸기).
 --   3절 기능 스위치 finance_upload_ai(엑셀 열 맞추기 AI · 기본 전원 — 0089 전과 같은 동작. 대표가 회사 줄로 끈다)
 --        · finance_legacy_import(«예전 자료 가져오기» 단추 · 기본 대표만).
---   4절 fin_legacy_imports — «예전 자료 가져오기»(A2) 옮김 기록(원천 자리마다 한 줄 · 대표만 · 쓰기는 fin_legacy_import_mark만).
+--   4절 fin_legacy_imports — «예전 자료 가져오기»(A2) 옮김 기록(원천 자리마다 한 줄 · 대표만 · 쓰기는 fin_legacy_import_mark만)
+--        · 수신함 읽기 정책 하나(fin_inbox_objects_legacy_read — 대표 + 스위치 켜짐일 때 그 회사 폴더 전체 select만, 쓰기 · 지우기 없음).
 --
 -- 0035 규칙: force를 새로 걸지 않는다 · FORCE를 내리지 않는다 · 0001~0088을 고치지 않는다. 새 정책 · grant는 늘 to authenticated.
 -- 정의자 함수는 auth.uid()가 없으면(익명 · service) 거부한다.
@@ -196,6 +197,36 @@ begin
   return v_n > 0;
 end;
 $fn$;
+
+-- 4절 이어서 — «예전 자료 가져오기»가 그 회사 수신함 전체(직원 폴더 포함)를 읽는 좁은 문.
+--   0082는 «본인 폴더만»이다. 이 단추는 «한 번 누르면 전부»라 남의 폴더에 끊겨 남은 파일도 옮겨야 한다(대표 지시 2026-10-20).
+--   **읽기(select)만** · 대표(활성 · 사람) · 스위치 finance_legacy_import가 그 회사에 켜져 있을 때만 · 그 회사 장부를 쓰는 사람.
+--   쓰기 · 지우기 · 바꾸기 정책은 늘리지 않는다(남의 파일은 옮긴 뒤에도 지우지 않는다). 스위치를 끄면 0082 그대로(본인 폴더만).
+create or replace function fin_inbox_legacy_read_ok(object_name text) returns boolean
+language plpgsql stable security invoker set search_path = public as $fn$
+declare
+  v_parts text[];
+begin
+  if auth.uid() is null or not public.is_active() or coalesce(public.auth_role()::text, '') <> 'Chairman' then
+    return false;
+  end if;
+  v_parts := string_to_array(object_name, '/');
+  if coalesce(array_length(v_parts, 1), 0) <> 3 or v_parts[3] = '' or v_parts[1] !~ '^[a-z0-9_]{2,40}$' then
+    return false;
+  end if;
+  return public.feature_on('finance_legacy_import', v_parts[1]) and public.can_keep_books(v_parts[1]);
+end;
+$fn$;
+
+comment on function fin_inbox_legacy_read_ok(text) is
+  '0089. «예전 자료 가져오기» — 대표 · 스위치 finance_legacy_import 켜짐 · 그 회사 장부 쓰기일 때 수신함 «<회사>/<누구든>/<이름>» 읽기만.';
+
+revoke all on function fin_inbox_legacy_read_ok(text) from public, anon;
+grant execute on function fin_inbox_legacy_read_ok(text) to authenticated;
+
+drop policy if exists fin_inbox_objects_legacy_read on storage.objects;
+create policy fin_inbox_objects_legacy_read on storage.objects for select to authenticated
+  using (bucket_id = 'fin-upload-inbox' and public.fin_inbox_legacy_read_ok(name));
 
 revoke all on function fin_column_map_save(text, text, jsonb, text) from public, anon;
 revoke all on function official_unmatched_save(bigint, jsonb) from public, anon;

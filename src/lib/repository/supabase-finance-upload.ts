@@ -75,6 +75,7 @@ type Methods = Pick<
   | 'finInboxRemove'
   | 'finInboxSweep'
   | 'finInboxList'
+  | 'finInboxListBusiness'
   | 'listFinLegacyImports'
   | 'markFinLegacyImport'
 >
@@ -211,6 +212,19 @@ export function financeUploadMethods(sb: SupabaseClient): Methods {
       if (error || !data) return []
       // 폴더(id 없음) · 자리표(.emptyFolderPlaceholder)는 뺀다.
       return data.filter((o) => o.id && !o.name.startsWith('.')).map((o) => ({ path: `${folder}/${o.name}`, created_at: o.created_at ?? null }))
+    },
+
+    async finInboxListBusiness(businessId) {
+      // 첫 단은 사람 폴더(id 없음) — 보이는 폴더마다 한 번 더(정책이 보이는 파일만 돌려준다).
+      const { data, error } = await sb.storage.from(FIN_INBOX_BUCKET).list(businessId, { limit: 200 })
+      if (error || !data) return []
+      const out: { path: string; created_at: string | null }[] = []
+      for (const d of data.filter((o) => !o.id && /^[0-9a-f-]{36}$/.test(o.name))) {
+        const folder = `${businessId}/${d.name}`
+        const { data: files } = await sb.storage.from(FIN_INBOX_BUCKET).list(folder, { limit: 200, sortBy: { column: 'created_at', order: 'asc' } })
+        for (const o of files ?? []) if (o.id && !o.name.startsWith('.')) out.push({ path: `${folder}/${o.name}`, created_at: o.created_at ?? null })
+      }
+      return out
     },
 
     /* ───── 0089 «예전 자료 가져오기» 옮김 기록 ───── */

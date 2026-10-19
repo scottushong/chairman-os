@@ -130,6 +130,19 @@ export async function financeMappingDb(): Promise<string> {
   assert.equal(typeof (await as(U.chair, `insert into fin_legacy_imports (business_id, source, source_ref, outcome) values ('biz_dy', 'inbox', 'z', 'saved') returning 1`)), 'string', '0089: 옮김 기록 표에 직접 썼다')
   assert.equal(typeof (await as(U.chair, `delete from fin_legacy_imports returning 1`)), 'string', '0089: 옮김 기록을 직접 지웠다')
   assert.equal(typeof (await as(null, `select 1 from fin_legacy_imports`)), 'string', '0089: 익명이 옮김 기록 표를 읽는다')
+
+  // ── 5. 수신함 남의 폴더 읽기(대표 + 스위치 켬만 · 읽기만) ──
+  const other = `biz_dy/${U.ceo}/legacy-a.xlsx`
+  await db.exec(`insert into storage.objects (bucket_id, name, owner) values ('fin-upload-inbox', '${other}', '${U.ceo}'), ('fin-upload-inbox', 'biz_dy/${U.member}/legacy-b.xlsx', '${U.member}')`)
+  const seeInbox = async (uid: string) => ((await as<{ n: number }>(uid, `select count(*)::int as n from storage.objects where bucket_id = 'fin-upload-inbox' and name like 'biz_dy/%/legacy-%'`)) as { n: number }[])[0].n
+  assert.equal(await seeInbox(U.chair), 2, '0089: 대표 + 스위치 켬인데 직원 폴더 파일이 안 보인다')
+  assert.equal(await seeInbox(U.ceo), 1, '0089: 회사 대표가 남의 폴더 파일을 본다(본인 것 하나만 보여야)')
+  assert.equal(await seeInbox(U.member), 0, '0089: 장부 권한 없는 직원이 수신함을 본다')
+  assert.deepEqual(await as(U.chair, `delete from storage.objects where bucket_id = 'fin-upload-inbox' and name = '${other}' returning 1`), [], '0089: 대표가 남의 수신함 파일을 지웠다')
+  assert.equal(typeof (await as(U.chair, `insert into storage.objects (bucket_id, name, owner) values ('fin-upload-inbox', 'biz_dy/${U.ceo}/forged.xlsx', '${U.chair}') returning 1`)), 'string', '0089: 대표가 남의 수신함 폴더에 썼다')
+  await db.exec(`update feature_switches set enabled = false where business_id is null and feature_key = 'finance_legacy_import'`)
+  assert.equal(await seeInbox(U.chair), 0, '0089: 스위치를 껐는데 대표가 남의 폴더를 본다')
+  await db.exec(`update feature_switches set enabled = true where business_id is null and feature_key = 'finance_legacy_import'`)
   await db.close()
-  return '0089 열 맞춤(장부 쓰는 사람만 읽기 · 저장 · 직원 · AI Agent · 익명 · 다른 회사 거부 · 직접 쓰기 없음 · 더하기 · 칸 이름 모양 · 숫자 거부) · 다시 맞출 줄(권한 · 모양 · 통째로 바꿈 · 밀려난 결산 거부 · 읽기 범위 · 직접 쓰기 없음) · 스위치 finance_upload_ai · finance_legacy_import · 옮김 기록(대표만 · 두 번 안 적힘 · 실패만 다시 · 모양 · 직접 쓰기 없음)'
+  return '0089 열 맞춤(장부 쓰는 사람만 읽기 · 저장 · 직원 · AI Agent · 익명 · 다른 회사 거부 · 직접 쓰기 없음 · 더하기 · 칸 이름 모양 · 숫자 거부) · 다시 맞출 줄(권한 · 모양 · 통째로 바꿈 · 밀려난 결산 거부 · 읽기 범위 · 직접 쓰기 없음) · 스위치 finance_upload_ai · finance_legacy_import · 옮김 기록(대표만 · 두 번 안 적힘 · 실패만 다시 · 모양 · 직접 쓰기 없음) · 수신함 남의 폴더 읽기(대표 + 스위치 켬만 · 회사 대표 · 직원 안 보임 · 지우기 · 쓰기 없음 · 끄면 안 보임)'
 }

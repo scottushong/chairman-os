@@ -52,11 +52,19 @@ async function main() {
   // ── 심기 ──
   const inboxFx = fixtures.filter((f) => !PENDING.has(f.name) && !UNUSED.has(f.name))
   assert.equal(inboxFx.length, 18)
+  // 13개는 대표 폴더, 5개는 직원(김병훈 — DY 재무 입력) 폴더에 남은 것(직원이 올리다 끊긴 파일).
+  const staffUser = as('teamless_staff')
+  as('chairman')
+  const STAFF_N = 5
   for (const [i, f] of inboxFx.entries()) {
-    const path = `${BIZ}/${chair.user_id}/legacy${String(i).padStart(2, '0')}.xlsx`
+    const mine = i < inboxFx.length - STAFF_N
+    if (!mine) as('teamless_staff')
+    const path = `${BIZ}/${mine ? chair.user_id : staffUser.user_id}/legacy${String(i).padStart(2, '0')}.xlsx`
     await repo.finInboxPut!(path, f.bytes)
     assert.ok(dummyFinInboxAge(path, 2 * 3_600_000))
+    as('chairman')
   }
+  assert.equal((await repo.finInboxListBusiness(BIZ)).length, 18, '대표 + 스위치 켬인데 직원 폴더 파일이 안 보인다')
   // 0085 전 «확인 필요» 대기 — 코드가 읽은 줄을 대기(pending)에 두고 보류 까닭(meta.hold)은 없다(0082 · 0083 때 모양).
   for (const f of fixtures.filter((x) => PENDING.has(x.name))) {
     const opened = await openUpload(f.bytes, f.name)
@@ -100,6 +108,7 @@ async function main() {
   for (const i of fresh1) console.log(`  ${i.source} · ${i.outcome} · ${i.message.slice(0, 110)}`)
   const bySource = (s: string) => fresh1.filter((i) => i.source === s)
   assert.equal(bySource('inbox').length, 18, '수신함 18개를 다 보지 않았다')
+  assert.equal(bySource('inbox').filter((i) => i.ref.includes(`/${staffUser.user_id}/`) && i.outcome === 'saved').length, STAFF_N, `직원 폴더에 있는 파일 ${STAFF_N}개가 옮겨지지 않았다`)
   assert.equal(bySource('pending').length, 3, '예전 대기 3개를 다 보지 않았다')
   assert.equal(bySource('evidence').length, 1, '증빙 PDF를 보지 않았다')
   const notSaved = fresh1.filter((i) => i.outcome !== 'saved')
@@ -141,7 +150,7 @@ async function main() {
   assert.match(legacySummary(r3), /새로 옮길 것이 없습니다/)
 
   // ── 4. 대표만 · 지우지 않음 ──
-  assert.equal((await repo.finInboxList(`${BIZ}/${chair.user_id}`)).length, 18, '수신함 파일을 지웠다(되돌릴 수 없는 삭제)')
+  assert.equal((await repo.finInboxListBusiness(BIZ)).length, 18, '수신함 파일을 지웠다(되돌릴 수 없는 삭제 — 남의 폴더 포함)')
   assert.equal(inboxSweepAllowed('Chairman', true), false)
   assert.equal(inboxSweepAllowed('Chairman', false), true)
   assert.equal(inboxSweepAllowed('Member', true), true)
@@ -149,10 +158,15 @@ async function main() {
   await assert.rejects(importLegacy({ repo, user: staff, businessId: BIZ, today }), /fin_legacy_denied/, '사원이 예전 자료 가져오기를 했다')
   await assert.rejects(repo.markFinLegacyImport({ business_id: BIZ, source: 'inbox', source_ref: 'x', outcome: 'saved', upload_id: null, note: null }), /fin_legacy_denied/, '사원이 옮김 기록을 적었다')
   assert.deepEqual(await repo.listFinLegacyImports(BIZ), [], '사원이 옮김 기록을 읽었다')
+  assert.equal((await repo.finInboxListBusiness(BIZ)).length, STAFF_N, '사원이 남의(대표) 수신함 폴더를 본다')
+  await assert.rejects(repo.finInboxRead(`${BIZ}/${chair.user_id}/legacy00.xlsx`), /fin_inbox_denied/, '사원이 대표 폴더 파일을 읽었다')
   as('chairman')
   assert.ok((await repo.listFinLegacyImports(BIZ)).filter((r) => r.source === 'run').length === 3, '누름 기록이 셋이 아니다')
+  // 스위치를 끄면 대표도 남의 폴더를 못 본다(0082 그대로 — 본인 것만).
+  await repo.setFeatureSwitch({ feature_key: 'finance_legacy_import', business_id: null, enabled: false, audience: 'chairman', reason: '시험 — 끄기' })
+  assert.equal((await repo.finInboxListBusiness(BIZ)).length, 18 - STAFF_N, '스위치를 껐는데 대표가 직원 폴더를 본다')
 
-  console.log('PASS: A2 예전 자료 가져오기 — 수신함 18 + 예전 대기 3 + 증빙 PDF 1 한 번에 옮김(AI 0) · 체크표 18/18 · 공식 결산 2024 · 2025 · 두 번째 자료 0건 더함(월별 입력 «이미 장부» 기록만 · 8월 체크표 ✓) · 세 번째 0 · 대표만 · 수신함 파일 지우지 않음')
+  console.log('PASS: A2 예전 자료 가져오기 — 수신함 18(직원 폴더 5 포함) + 예전 대기 3 + 증빙 PDF 1 한 번에 옮김(AI 0) · 체크표 18/18 · 공식 결산 2024 · 2025 · 두 번째 자료 0건 더함(월별 입력 «이미 장부» 기록만 · 8월 체크표 ✓) · 세 번째 0 · 대표만 · 수신함 파일 지우지 않음')
 }
 
 main().catch((e) => {

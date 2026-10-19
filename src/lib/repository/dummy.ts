@@ -657,6 +657,7 @@ seedDummyIntake(dummySeedAttachment, { salesStaff: DUMMY_UID.salesStaff, support
 const FIN_UPLOAD_DEPS: DummyFinUploadDeps = {
     viewer: () => dummyViewer(),
     featureOn: async (b) => featureOnFor(await dummyRepository.listFeatureSwitches(), 'finance_upload', dummyViewer().role, b),
+    legacyImportOn: async (b) => featureOnFor(await dummyRepository.listFeatureSwitches(), 'finance_legacy_import', dummyViewer().role, b),
     canKeep: (b) => dummyCanKeepBooks(b),
     canRead: (b) => dummyCanKeepBooks(b) || ['Chairman', 'GroupCFO', 'BusinessCEO', 'Executive'].includes(dummyViewer().role),
     materialViewer: (b) => dummyMaterialViewer(b),

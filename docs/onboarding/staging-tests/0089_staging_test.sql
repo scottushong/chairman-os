@@ -2,7 +2,7 @@
 -- 0089 staging 검사(재무 보강 — 열 맞춤 · 공식 결산 «다시 맞출 줄») — 쓰지 않는다.
 -- build-staging-dryrun.mjs --tests가 0089와 같은 트랜잭션에서 돌리고 끝에 되돌린다(이 파일만 돌릴 때도 끝은 raise exception).
 -- 사람(이 시험 안에서만): 대표(Chairman) · rehearsal.member@example.com(직원 — 그 회사 장부를 쓰지 않으면 거부를 본다).
--- 기대: ERROR  0089 STAGING PASS a(열 맞춤 저장 · 더하기) b(모양 거부) c(직원 거부) d(다시 맞출 줄 · 통째로 바꿈) e(밀려난 결산 거부) f(스위치 기본 줄) g(anon 0) h(옮김 기록 …)
+-- 기대: ERROR  0089 STAGING PASS a(열 맞춤 저장 · 더하기) b(모양 거부) c(직원 거부) d(다시 맞출 줄 · 통째로 바꿈) e(밀려난 결산 거부) f(스위치 기본 줄) g(anon 0) h(옮김 기록 …) i(남의 폴더 읽기 …)
 -- =====================================================================
 do $t$
 declare
@@ -179,7 +179,38 @@ begin
   if not exists (select 1 from public.feature_switches where business_id is null and feature_key = 'finance_legacy_import' and enabled and audience::text = 'chairman') then
     raise exception 'FAIL h: finance_legacy_import 기본 줄이 없다';
   end if;
-  v_out := v_out || 'h(옮김 기록 대표만 · 두 번 안 적힘 · 실패만 다시 · 모양 · 직원 거부 · 직접 쓰기 없음 · 스위치)';
+  v_out := v_out || 'h(옮김 기록 대표만 · 두 번 안 적힘 · 실패만 다시 · 모양 · 직원 거부 · 직접 쓰기 없음 · 스위치) ';
+
+  -- ── i. 수신함 남의 폴더 읽기 — 대표 + 스위치 켬 = 보임 · 스위치 끔 = 안 보임 · 직원 = 안 보임 · 대표도 지우기 0 ──
+  insert into storage.objects (bucket_id, name) values ('fin-upload-inbox', 'biz_dy/00000000-0000-0000-0000-0000000089ff/dryrun-0089.xlsx');
+  perform set_config('request.jwt.claims', json_build_object('sub', v_chair, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_chair::text, true);
+  set local role authenticated;
+  select count(*) into n from storage.objects where bucket_id = 'fin-upload-inbox' and name = 'biz_dy/00000000-0000-0000-0000-0000000089ff/dryrun-0089.xlsx';
+  if n <> 1 then raise exception 'FAIL i: 대표 + 스위치 켬인데 남의 폴더 파일이 안 보인다(%)', n; end if;
+  -- 지우기 정책이 없다(0 줄) — Supabase는 직접 지우기 자체도 막는다(42501). 둘 다 «못 지움».
+  begin
+    delete from storage.objects where bucket_id = 'fin-upload-inbox' and name = 'biz_dy/00000000-0000-0000-0000-0000000089ff/dryrun-0089.xlsx';
+    get diagnostics n = row_count;
+    if n <> 0 then raise exception 'FAIL i: 대표가 남의 수신함 파일을 지웠다'; end if;
+  exception when insufficient_privilege then null;
+  end;
+  reset role;
+  update public.feature_switches set enabled = false where business_id is null and feature_key = 'finance_legacy_import';
+  set local role authenticated;
+  select count(*) into n from storage.objects where bucket_id = 'fin-upload-inbox' and name = 'biz_dy/00000000-0000-0000-0000-0000000089ff/dryrun-0089.xlsx';
+  if n <> 0 then raise exception 'FAIL i: 스위치를 껐는데 대표가 남의 폴더를 본다'; end if;
+  reset role;
+  update public.feature_switches set enabled = true where business_id is null and feature_key = 'finance_legacy_import';
+  if v_m is not null then
+    perform set_config('request.jwt.claims', json_build_object('sub', v_m, 'role', 'authenticated')::text, true);
+    perform set_config('request.jwt.claim.sub', v_m::text, true);
+    set local role authenticated;
+    select count(*) into n from storage.objects where bucket_id = 'fin-upload-inbox' and name = 'biz_dy/00000000-0000-0000-0000-0000000089ff/dryrun-0089.xlsx';
+    if n <> 0 then raise exception 'FAIL i: 직원이 남의 수신함 파일을 본다'; end if;
+    reset role;
+  end if;
+  v_out := v_out || 'i(남의 폴더 읽기 — 대표 + 스위치 켬 보임 · 끔 안 보임 · 직원 안 보임 · 지우기 0)';
 
   raise exception '0089 STAGING PASS %', v_out;
 end

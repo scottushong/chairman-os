@@ -14,8 +14,8 @@ import { processUpload, type DocOptions, type FileCard } from './process'
  * 원천(결정 docs/decisions/2026-10-20-finance-legacy.md):
  *   pending  «확인 필요»에 남은 예전 대기(fin_uploads needs_review — 0085 보류 까닭이 없는 것 = 0085 전 미리보기). 읽힌 줄로 저장.
  *            종류 · 달을 모르는 것 · 마감 달은 저장하지 않고 «보류»로 남긴다(카드에서 사람이 고른다 — 마감 달 이유를 대신 적지 않는다).
- *   inbox    0082 수신함에 남은 본인 파일(서버가 읽고 지우는 설계 — 남은 것은 처리 중 끊긴 것). 이름이 임의 id라 «예전 자료 <id>»로 읽는다.
- *            대표 본인 폴더만(0082 정책 — 대표도 남의 폴더는 못 본다).
+ *   inbox    0082 수신함에 남은 파일(서버가 읽고 지우는 설계 — 남은 것은 처리 중 끊긴 것). 이름이 임의 id라 «예전 자료 <id>»로 읽는다.
+ *            그 회사 폴더 전체(직원 폴더 포함 — 0089 읽기 정책: 대표 + 스위치 켬일 때만 · 읽기만 · 남의 파일은 지우지 않는다).
  *   evidence 0083 공식 결산 증빙 PDF(fin-official-evidence). 활성 결산이 그 증빙을 이미 쓰면 «이미 있음»(0085 재무 현황이 그 결산을 그대로 읽는다),
  *            없으면(미리보기만 하고 저장 안 한 PDF) 글 줄로 읽어 «놓으면 저장»으로.
  *   monthly  «월별 입력(CH-026)» 손입력 — 이미 장부 전표(«YYYY-MM 월별 간이 손익»)라 0085가 그대로 읽는다. 옮기지 않고(두 번 세지 않게) 기록만 · 체크표가 센다.
@@ -133,7 +133,7 @@ export async function importLegacy(o: LegacyImportOptions): Promise<LegacyImport
     }
   }
 
-  // ── 2. 0082 수신함에 남은 본인 파일 · 3. 0083 증빙 PDF — 같은 «놓으면 저장» 길(processUpload)을 AI 없이 ──
+  // ── 2. 0082 수신함에 남은 파일(회사 폴더 전체) · 3. 0083 증빙 PDF — 같은 «놓으면 저장» 길(processUpload)을 AI 없이 ──
   const [ledger, learned, businesses] = await Promise.all([
     repo.loadFinanceLedger().catch(() => null),
     repo.listOfficialAccountMap(biz).catch(() => []),
@@ -152,7 +152,8 @@ export async function importLegacy(o: LegacyImportOptions): Promise<LegacyImport
   const run = async (fileName: string, bytes: Uint8Array) =>
     processUpload({ repo, businessId: biz, fileName, bytes, classify: null, aiBudget: 0, docs, boss: true, user, today: o.today, deadline: o.deadline })
 
-  const inbox = await repo.finInboxList(`${biz}/${user.user_id}`).catch(() => [])
+  // 그 회사 폴더 전체(직원 폴더 포함 — 0089 읽기 정책 · 대표 + 스위치). 남의 파일은 읽기만 하고 지우지 않는다.
+  const inbox = await repo.finInboxListBusiness(biz).catch(() => [])
   for (const f of inbox) {
     if (seen('inbox', f.path)) continue
     if (late()) {
