@@ -69,7 +69,7 @@ export async function financeOverviewDb(): Promise<string> {
 
   // ── 저장 · 바꾸기 · 되돌리기 ──
   const a = await one<{ id: string }>(U.keeper, save(U.keeper, 'sales', '2099-01', sha('a'), sales(100), { warn: '["합계가 맞지 않습니다"]' }))
-  let up = (await su<{ status: string; auto: boolean; warnings: string[] }>(`select status, auto, warnings from fin_uploads where upload_id = '${a.id}'`))[0]
+  const up = (await su<{ status: string; auto: boolean; warnings: string[] }>(`select status, auto, warnings from fin_uploads where upload_id = '${a.id}'`))[0]
   assert.equal(up.status, 'applied', '0085: 첫 저장이 applied가 아니다')
   assert.equal(up.auto, true, '0085: 저장 한 번이 자동 표시를 안 남긴다')
   assert.deepEqual(up.warnings, ['합계가 맞지 않습니다'], '0085: 경고가 저장되지 않았다')

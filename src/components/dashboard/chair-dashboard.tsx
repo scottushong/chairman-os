@@ -58,7 +58,10 @@ export async function ChairDashboard({
     <section id="chair-dashboard" className="mt-5 scroll-mt-4 rounded-glass border border-line bg-panel p-4" data-testid="chair-dashboard">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-t14 font-semibold text-ink">대표 대시보드 — 손익 · 매출 · 현금 추이</h2>
-        <span className="text-t11 text-ink-muted">월별 손익(재고 반영) 값만 · 지난 12달</span>
+        <span className="text-t11 text-ink-muted">재무 현황 자동 계산(잠정) · 내부 마감 확정이 있으면 그 값 · 지난 12달</span>
+        <Link href={`/finance?biz=${encodeURIComponent(biz.business_id)}`} className="text-t11 text-accent hover:underline">
+          재무 현황 ›
+        </Link>
         <div className="ml-auto flex flex-wrap gap-1 text-t11">
           {businesses.map((b) => (
             <Link key={b.business_id} href={href({ biz: b.business_id })} className={`rounded-md border px-2 py-0.5 ${b.business_id === biz.business_id ? 'border-accent text-accent' : 'border-line text-ink-dim'}`}>
