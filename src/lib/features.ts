@@ -157,6 +157,13 @@ export const FEATURES = [
     defaultAudience: 'all',
     from: 'feat/purchase-price-report · 0084',
   },
+  {
+    key: 'memory_engine',
+    label: '기억 엔진',
+    description: '모든 화면의 «빠른 기록» 단추 · /memory(기록 · 검색 · 약속 · 검토함) · 회사/프로젝트 화면의 «관련 기억» · 주의 화면 «기억에서 나온 주의» · 어시스턴트 «기억 검색» 도구. 기록은 쓴 사람 본인만 본다(직원용을 열어도 개인 기록은 공유되지 않음). 꺼지면 화면 · 단추 · 도구가 사라지고 표 · RPC도 0행 · 거부.',
+    defaultAudience: 'chairman',
+    from: 'feat/memory-engine · 0086',
+  },
 ] as const satisfies readonly FeatureDef[]
 
 export type FeatureKey = (typeof FEATURES)[number]['key']
@@ -245,6 +252,7 @@ export function closedFeatureRows(): FeatureSwitchRow[] {
 /** 기능 → 그 기능이 세우는 메뉴 키(lib/nav.ts). 꺼진 기능의 메뉴는 navFor가 뺀다. */
 export const FEATURE_NAV: Partial<Record<FeatureKey, string>> = {
   process_charts: 'nav_process_charts',
+  memory_engine: 'nav_memory',
 }
 
 /** 이 사람에게 숨길 메뉴 키 — 그룹 줄 기준(메뉴는 회사를 모른다). */

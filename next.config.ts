@@ -57,7 +57,7 @@ const nextConfig: NextConfig = {
     '/approvals': ['./src/lib/ai/prompts/attachment-summary.md'],
     // Phase 11 — AI 어시스턴트는 셸(모든 화면)에 떠 있고 서버 액션이 그 화면의 번들에서 돈다. 그래서 전 라우트에 싣는다.
     // 메모 정리 · 첨부 요약 제안이 attachment-summary.md를 같이 읽는다. 카카오 스킬 라우트도 같은 엔진이다.
-    '/**': ['./src/lib/ai/prompts/assistant.md', './src/lib/ai/prompts/attachment-summary.md'],
+    '/**': ['./src/lib/ai/prompts/assistant.md', './src/lib/ai/prompts/attachment-summary.md', './src/lib/ai/prompts/memory-extract.md'],
     '/api/kakao/skill': ['./src/lib/ai/prompts/assistant.md'],
     // 0070 · C단계 자료 올리기 — 구조 해석 · PDF 읽기 프롬프트는 올리기 화면의 서버 액션이 fs로 읽는다(빠지면 Vercel에서만 ENOENT → AI 실패).
     '/finance/*/upload': ['./src/lib/ai/prompts/finance-upload-classify.md', './src/lib/ai/prompts/finance-upload-read.md'],
