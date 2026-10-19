@@ -50,7 +50,7 @@ export function sniffLegacy(sheets: readonly EcountSheet[], fileName: string): L
   const all = normalizeLabel(fileName) + ' ' + sheets.map(head).join(' ')
   if (/계정별원장|원장거래|전표/.test(all)) return null
   const monthCols = Math.max(0, ...sheets.map((s) => Math.max(0, ...s.rows.slice(0, 12).map((r) => r.filter((c) => MONTH_HEAD(cellText(c))).length))))
-  if (/손익계산서|월별손익/.test(all) && monthCols >= 3) return guessMapping([...sheets], 'monthly').found ? 'monthly' : null
+  if (/손익계산서|월별손익/.test(all) && (monthCols >= 3 || (monthCols >= 1 && /월별/.test(all)))) return guessMapping([...sheets], 'monthly').found ? 'monthly' : null
   if (/계정과목표|계정과목코드표|계정코드표|계정과목목록|계정과목리스트/.test(all)) return guessMapping([...sheets], 'accounts').found ? 'accounts' : null
   if (/재무상태표|대차대조표|손익계산서|재무제표/.test(all) && !/표준재무제표|세무사|회계법인/.test(all)) return guessMapping([...sheets], 'annual').found ? 'annual' : null
   return null

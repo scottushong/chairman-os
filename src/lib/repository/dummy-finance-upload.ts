@@ -840,6 +840,8 @@ export const FIN_DEMO = { business: 'biz_dy', period: '2026-09', prev: '2026-08'
 function ensureDemo() {
   if (store.demo) return
   store.demo = true
+  // 0085 — 재무 현황 시험 · 스크린샷은 예시 없이(가짜 18개 파일만) 본다: DUMMY_FIN_DEMO=off.
+  if (process.env.DUMMY_FIN_DEMO === 'off') return
   const { business: B, period: D, prev: P } = FIN_DEMO
   const staff = DUMMY_UID.supportLead
   const ceo = DUMMY_UID.dyCeo

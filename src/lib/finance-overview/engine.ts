@@ -128,31 +128,57 @@ export function plAccounts(ctx: Ctx, period: string): AcctAmount[] | null {
   return [...out.values()]
 }
 
-/** 그 달 말 재무상태 계정 잔액(차변 − 대변). 계산할 수 없으면 null. */
+/** 장부의 그 달 재무상태 잔액(없으면 null). */
+function booksBs(ctx: Ctx, period: string): Map<string, AcctAmount> | null {
+  if (!ctx.scope.periods.includes(period)) return null
+  const out = new Map<string, AcctAmount>()
+  for (const [code, f] of ctx.scope.cellsAt(period)) {
+    const a = ctx.accounts.get(code)
+    if (a && BS_SECTIONS.includes(a.section) && code !== 'ECOUNT-PL') out.set(code, { code, name: a.name, section: a.section, category: a.category, amount: f.value })
+  }
+  return out.size ? out : null
+}
+
+/**
+ * 그 달 말 재무상태 계정 잔액(차변 − 대변). 계산할 수 없으면 null.
+ *   ① 그 달 장부 잔액 → ② 그 앞 마지막 장부 달 잔액 + 그 뒤 달들의 올린 계정별 원장 증감 → ③ 전년 공식 결산 기말 + 올해 원장 증감.
+ *   원장 증감의 손익 계정은 «당기 손익(계산)»으로 자본에 더한다(마감분개 전이라 닫히게).
+ */
 export function bsAccounts(ctx: Ctx, period: string): AcctAmount[] | null {
-  const src = sourceOf(ctx, period)
-  if (src === 'books') {
-    const out: AcctAmount[] = []
-    for (const [code, f] of ctx.scope.cellsAt(period)) {
-      const a = ctx.accounts.get(code)
-      if (a && BS_SECTIONS.includes(a.section)) out.push({ code, name: a.name, section: a.section, category: a.category, amount: f.value })
+  const hasLedger = (p: string) => !!ctx.months.get(p)?.ledgerSums.length
+  // 원장을 올린 달은 원장 증감이 이긴다(장부의 그 달이 월별 손익 전표뿐이면 재무상태 움직임이 없다). 거슬러 올라가 원장 없는 장부 달을 기초로.
+  if (!hasLedger(period)) {
+    const own = booksBs(ctx, period)
+    if (own) return [...own.values()]
+  }
+  let base: Map<string, AcctAmount> | null = null
+  let from = ''
+  for (let p = addMonths(period, -1), n = 0; n < 36; p = addMonths(p, -1), n += 1) {
+    if (hasLedger(p)) continue
+    const b = booksBs(ctx, p)
+    if (b) {
+      base = b
+      from = p
     }
-    if (out.length) return out
+    break
   }
-  // 원장만 — 전년 공식 결산 기말 + 올해 1월 ~ 이 달 원장 증감.
-  const prevYear = String(Number(period.slice(0, 4)) - 1)
-  const official = ctx.officials.find((o) => o.year === prevYear)
-  if (!official) return null
-  const bal = new Map<string, AcctAmount>()
-  for (const l of official.lines) {
-    const a = ctx.accounts.get(l.account_code)
-    if (!a || !BS_SECTIONS.includes(a.section)) continue
-    bal.set(l.account_code, { code: l.account_code, name: a.name, section: a.section, category: a.category, amount: l.amount })
+  if (!base) {
+    const official = ctx.officials.find((o) => o.year === String(Number(period.slice(0, 4)) - 1))
+    if (!official) return null
+    base = new Map()
+    for (const l of official.lines) {
+      const a = ctx.accounts.get(l.account_code)
+      if (a && BS_SECTIONS.includes(a.section)) base.set(l.account_code, { code: l.account_code, name: a.name, section: a.section, category: a.category, amount: l.amount })
+    }
+    from = `${Number(period.slice(0, 4)) - 1}-12`
   }
+  const bal = new Map([...base].map(([k, v]) => [k, { ...v }]))
+  let moved = false
   let netIncome = 0
-  for (const p of monthsOfYear(period)) {
+  for (let p = addMonths(from, 1); p <= period; p = addMonths(p, 1)) {
     const m = ctx.months.get(p)
-    if (!m) continue
+    if (!m || !m.ledgerSums.length) continue
+    moved = true
     for (const r of m.ledgerSums) {
       const code = String(r.account_code ?? '').trim()
       const name = String(r.account_name ?? code)
@@ -168,7 +194,8 @@ export function bsAccounts(ctx: Ctx, period: string): AcctAmount[] | null {
       bal.set(code, cur)
     }
   }
-  // 올해 손익(차변 − 대변 합 = −순이익)을 «당기 손익(계산)»으로 자본에 — 마감분개 전이라 닫히게.
+  // 장부 달과 이 달 사이에 원장이 하나도 없으면 — 이 달 잔액을 모른다(앞 달 값을 이 달로 부르지 않는다).
+  if (!moved && from !== period) return null
   if (netIncome !== 0) bal.set('CALC-NI', { code: 'CALC-NI', name: '당기 손익(계산)', section: 'equity', category: 'equity', amount: netIncome })
   return [...bal.values()]
 }

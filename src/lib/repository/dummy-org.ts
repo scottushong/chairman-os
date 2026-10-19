@@ -198,7 +198,8 @@ export const DUMMY_PEOPLE: UserAccount[] = [
     modules: [{ module: '/production/biz_dy', can_write: true, can_approve: false }],
   }),
   // 2026-10-09. 운영 김병훈과 같은 조건 — 사원 · DY · 팀 없음 · 상사 = 대표. 조직도 경고 «팀 미배정»에 잡힌다.
-  person(DUMMY_UID.teamless, 'Member', '팀 없는 사원', null, '사원', DUMMY_UID.chair, null),
+  // 0085 — 운영 김병훈 자리는 DY 재무 자료를 올린다(대표가 재무 입력 권한을 준 상태 — 마감 권한은 없음).
+  person(DUMMY_UID.teamless, 'Member', '팀 없는 사원', null, '사원', DUMMY_UID.chair, null, { modules: [{ module: '/finance/biz_dy', can_write: true, can_approve: false }] }),
 ]
 
 const BY_ID = new Map(DUMMY_PEOPLE.map((p) => [p.user_id, p]))
