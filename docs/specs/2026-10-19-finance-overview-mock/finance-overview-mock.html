@@ -3,11 +3,9 @@
 <head>
 <meta charset="utf-8">
 <title>재무 현황</title>
-<script src="./support.js"></script>
 </head>
 <body>
-<x-dc>
-<helmet>
+
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;display=swap">
 <style>
 body{margin:0;background:#f4f5f3;font-family:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;color:#1a211e}
@@ -17,7 +15,7 @@ th{font-size:12px;color:#6b7772;font-weight:500;text-align:left;padding:6px 8px;
 td{font-size:14px;padding:8px;border-bottom:1px solid #eef1ef}
 td.n,th.n{text-align:right}
 </style>
-</helmet>
+
 <div style="max-width: 1360px; margin: 0 auto; box-sizing: border-box; padding: 24px 28px 48px; display: flex; flex-direction: column; gap: 20px">
 
   <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px">
@@ -30,8 +28,15 @@ td.n,th.n{text-align:right}
     <div style="margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 13px; color: #6b7772">
       <span style="padding: 3px 10px; border-radius: 999px; background: #f8eadf; color: #9a4b12; font-weight: 600">잠정</span>
       <span>마지막 올림 10-19 11:42 · 자료 16/18</span>
-      <a href="Upload.dc.html" style="padding: 7px 14px; border-radius: 8px; background: #0f6b5c; color: #fff; font-weight: 600">자료 올리기</a>
+      <a href="finance-upload-mock.html" style="padding: 7px 14px; border-radius: 8px; background: #0f6b5c; color: #fff; font-weight: 600">자료 올리기</a>
     </div>
+  </div>
+  <div style="display: flex; gap: 4px; border-bottom: 1px solid #d7ddda; flex-wrap: wrap">
+    <a href="finance-overview-mock.html" style="padding: 10px 16px; font-size: 14px; font-weight: 700; color: #0f6b5c; border-bottom: 2px solid #0f6b5c">요약</a>
+    <a href="finance-daily-mock.html" style="padding: 10px 16px; font-size: 14px; color: #6b7772">일별 자금보고</a>
+    <a href="finance-calendar-mock.html" style="padding: 10px 16px; font-size: 14px; color: #6b7772">현금흐름 달력</a>
+    <a href="finance-pl-mock.html" style="padding: 10px 16px; font-size: 14px; color: #6b7772">손익계산서</a>
+    <a href="#k" style="padding: 10px 16px; font-size: 14px; color: #6b7772">12가지 지표</a>
   </div>
 
   <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px">
@@ -146,7 +151,7 @@ td.n,th.n{text-align:right}
   </div>
 
   <div style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
-    <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px"><div style="font-size: 15px; font-weight: 700">⑦ 이번 달 자료 — 받은 것 16 · 빠진 것 2 · 경고 1</div><a href="Upload.dc.html" style="font-size: 13px">자료 올리기 ›</a></div>
+    <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px"><div style="font-size: 15px; font-weight: 700">⑦ 이번 달 자료 — 받은 것 16 · 빠진 것 2 · 경고 1</div><a href="finance-upload-mock.html" style="font-size: 13px">자료 올리기 ›</a></div>
     <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px">
       <div style="padding: 8px 10px; border-radius: 8px; background: #e1efeb; color: #0f6b5c; font-size: 13px">✓ 판매현황</div>
       <div style="padding: 8px 10px; border-radius: 8px; background: #e1efeb; color: #0f6b5c; font-size: 13px">✓ 입고명세서</div>
@@ -164,17 +169,103 @@ td.n,th.n{text-align:right}
       <div style="padding: 8px 10px; border-radius: 8px; background: #e1efeb; color: #0f6b5c; font-size: 13px">✓ 절감목표 · 진행</div>
       <div style="padding: 8px 10px; border-radius: 8px; background: #e1efeb; color: #0f6b5c; font-size: 13px">✓ 계정과목표</div>
       <div style="padding: 8px 10px; border-radius: 8px; background: #e1efeb; color: #0f6b5c; font-size: 13px">✓ 월별 손익계산서</div>
-      <div style="padding: 8px 10px; border-radius: 8px; background: #fff; border: 1px dashed #c9d1cd; color: #6b7772; font-size: 13px">· 재공품 · 완제품 평가 <a href="Upload.dc.html">올리기</a></div>
-      <div style="padding: 8px 10px; border-radius: 8px; background: #fff; border: 1px dashed #c9d1cd; color: #6b7772; font-size: 13px">· 출하집계표 <a href="Upload.dc.html">올리기</a></div>
+      <div style="padding: 8px 10px; border-radius: 8px; background: #fff; border: 1px dashed #c9d1cd; color: #6b7772; font-size: 13px">· 재공품 · 완제품 평가 <a href="finance-upload-mock.html">올리기</a></div>
+      <div style="padding: 8px 10px; border-radius: 8px; background: #fff; border: 1px dashed #c9d1cd; color: #6b7772; font-size: 13px">· 출하집계표 <a href="finance-upload-mock.html">올리기</a></div>
+    </div>
+  </div>
+
+  <div id="k" style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px">
+    <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px"><div style="font-size: 15px; font-weight: 700">⑧ 12가지 지표 — 한눈에 판단</div><div style="font-size: 12px; color: #6b7772">초록 = 괜찮음 · 주황 = 살펴볼 것 · 빨강 = 조치 필요</div></div>
+    <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px">
+
+      <div style="border: 1px solid #e1e6e3; border-left: 4px solid #0f6b5c; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px">
+        <div style="font-size: 12px; color: #6b7772">1 매출</div>
+        <div style="font-size: 18px; font-weight: 700">19.9억 <span style="font-size: 12px; color: #0f6b5c; font-weight: 600">전월 +4% · 전년 +11%</span></div>
+        <div style="font-size: 12px; color: #6b7772">제품별 1위 A-200 6.1억 · 거래처 1위 A사 4.2억</div>
+        <div style="font-size: 12px; color: #1a211e">→ 장사가 커지는가, 줄어드는가: <b>커지고 있음</b></div>
+      </div>
+
+      <div style="border: 1px solid #e1e6e3; border-left: 4px solid #d9a441; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px">
+        <div style="font-size: 12px; color: #6b7772">2 이익</div>
+        <div style="font-size: 18px; font-weight: 700">영업 1.3억 <span style="font-size: 12px; color: #6b7772; font-weight: 500">6.5%</span></div>
+        <div style="font-size: 12px; color: #6b7772">매출총이익 4.8억(24.1%) · 당기순이익 0.9억(4.5%) · 영업이익률 전월 7.8%</div>
+        <div style="font-size: 12px; color: #1a211e">→ 팔아서 남는가: <b>남지만 이익률이 1.3p 줄었음</b></div>
+      </div>
+
+      <div style="border: 1px solid #e1e6e3; border-left: 4px solid #0f6b5c; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px">
+        <div style="font-size: 12px; color: #6b7772">3 예상 실적 (연말까지)</div>
+        <div style="font-size: 18px; font-weight: 700">매출 236억 <span style="font-size: 12px; color: #6b7772; font-weight: 500">목표 240억 · 98%</span></div>
+        <div style="font-size: 12px; color: #6b7772">영업이익 전망 15.4억 (목표 18억 · 86%) · 수주잔고 반영</div>
+        <div style="font-size: 12px; color: #1a211e">→ 목표 달성 가능한가: <b>매출은 근접, 이익은 미달 예상</b></div>
+      </div>
+
+      <div style="border: 1px solid #e1e6e3; border-left: 4px solid #d9a441; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px">
+        <div style="font-size: 12px; color: #6b7772">4 원가</div>
+        <div style="font-size: 18px; font-weight: 700">원가율 75.9% <span style="font-size: 12px; color: #b4432b; font-weight: 600">전월 +1.1p</span></div>
+        <div style="font-size: 12px; color: #6b7772">원재료 58.2% · 노무 9.4% · 경비 8.3% · 원료 구매단가 +3.2%</div>
+        <div style="font-size: 12px; color: #1a211e">→ 원가가 오르고 있는가: <b>원료가 밀어 올리고 있음</b></div>
+      </div>
+
+      <div style="border: 1px solid #e1e6e3; border-left: 4px solid #d9a441; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px">
+        <div style="font-size: 12px; color: #6b7772">5 제품 수익성</div>
+        <div style="font-size: 18px; font-weight: 700">흑자 11 · 적자 3</div>
+        <div style="font-size: 12px; color: #6b7772">잘 남는 것: A-200 31% · B-110 28% / 손해: C-050 −4% · D-300 −2% · E-010 −1%</div>
+        <div style="font-size: 12px; color: #1a211e">→ 무엇을 밀고 무엇을 접을지: <b>C-050 가격 조정 또는 단종 검토</b></div>
+      </div>
+
+      <div style="border: 1px solid #e1e6e3; border-left: 4px solid #0f6b5c; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px">
+        <div style="font-size: 12px; color: #6b7772">6 거래처 수익성</div>
+        <div style="font-size: 18px; font-weight: 700">이익 상위 A사 · B사 · F사</div>
+        <div style="font-size: 12px; color: #6b7772">이익률 하위: G사 3% (할인 많음) · H사 5% (물류비) · 매출 상위 ≠ 이익 상위</div>
+        <div style="font-size: 12px; color: #1a211e">→ 누가 돈이 되는 손님인가: <b>G사 거래조건 재협상</b></div>
+      </div>
+
+      <div style="border: 1px solid #e1e6e3; border-left: 4px solid #0f6b5c; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px">
+        <div style="font-size: 12px; color: #6b7772">7 현금</div>
+        <div style="font-size: 18px; font-weight: 700">20.6억 <span style="font-size: 12px; color: #6b7772; font-weight: 500">원 16.2억 + $31.8만</span></div>
+        <div style="font-size: 12px; color: #6b7772">이달 들어온 돈 10.2억 · 나간 돈 10.6억 · 순증 −0.4억 · 영업현금흐름 +1.1억</div>
+        <div style="font-size: 12px; color: #1a211e">→ 돈이 돌아가는가: <b>영업에선 들어오고, 투자·상환으로 나감</b></div>
+      </div>
+
+      <div style="border: 1px solid #e1e6e3; border-left: 4px solid #d9a441; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px">
+        <div style="font-size: 12px; color: #6b7772">8 자금 전망 (3개월)</div>
+        <div style="font-size: 18px; font-weight: 700">최저 잔액 11.4억 <span style="font-size: 12px; color: #9a4b12; font-weight: 600">12월 셋째 주</span></div>
+        <div style="font-size: 12px; color: #6b7772">11월 +1.2억 · 12월 −6.8억(상여·부가세·원료) · 1월 +2.1억 · 안전선 10억</div>
+        <div style="font-size: 12px; color: #1a211e">→ 모자랄 때가 오는가: <b>12월에 바짝 붙음, 수금 당기면 여유</b></div>
+      </div>
+
+      <div style="border: 1px solid #e1e6e3; border-left: 4px solid #b4432b; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px">
+        <div style="font-size: 12px; color: #6b7772">9 매출채권</div>
+        <div style="font-size: 18px; font-weight: 700">미수 28.2억 <span style="font-size: 12px; color: #6b7772; font-weight: 500">회수 46일</span></div>
+        <div style="font-size: 12px; color: #6b7772">60일 초과 3.1억 (G사 1.8 · K사 0.9 · M사 0.4) · 전월 회수 41일</div>
+        <div style="font-size: 12px; color: #1a211e">→ 받을 돈이 잘 들어오는가: <b>연체 늘어남, G사 독촉 필요</b></div>
+      </div>
+
+      <div style="border: 1px solid #e1e6e3; border-left: 4px solid #d9a441; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px">
+        <div style="font-size: 12px; color: #6b7772">10 재고</div>
+        <div style="font-size: 18px; font-weight: 700">31.4억 <span style="font-size: 12px; color: #6b7772; font-weight: 500">재고일수 58일</span></div>
+        <div style="font-size: 12px; color: #6b7772">원재료 18.2 (미리 사둔 LOT 6.3) · 재공 4.1 · 완제품 9.1 · 6개월 안 움직인 것 1.2억</div>
+        <div style="font-size: 12px; color: #1a211e">→ 돈이 창고에 묶여 있는가: <b>원료 선매입 분이 묶여 있음, 3개월 내 소진</b></div>
+      </div>
+
+      <div style="border: 1px solid #e1e6e3; border-left: 4px solid #0f6b5c; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px">
+        <div style="font-size: 12px; color: #6b7772">11 차입금</div>
+        <div style="font-size: 18px; font-weight: 700">38.6억 <span style="font-size: 12px; color: #6b7772; font-weight: 500">월 이자 1,260만</span></div>
+        <div style="font-size: 12px; color: #6b7772">부채비율 142% · 이자보상배율 10.3배 · 다음 만기 2027-03 국민은행 12억</div>
+        <div style="font-size: 12px; color: #1a211e">→ 빚이 감당되는가: <b>이자는 충분히 감당, 만기 연장만 챙기면 됨</b></div>
+      </div>
+
+      <div style="border: 1px solid #e1e6e3; border-left: 4px solid #0f6b5c; border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 4px">
+        <div style="font-size: 12px; color: #6b7772">12 투자 여력</div>
+        <div style="font-size: 18px; font-weight: 700">약 6억 <span style="font-size: 12px; color: #6b7772; font-weight: 500">안전선 지키고 쓸 수 있는 돈</span></div>
+        <div style="font-size: 12px; color: #6b7772">= 3개월 최저 잔액 11.4억 − 안전선 10억 + 미사용 한도 4.6억 · 연 영업현금 13억</div>
+        <div style="font-size: 12px; color: #1a211e">→ 새 설비·사업에 얼마나 쓸 수 있나: <b>6억 안에서, 그 이상은 차입 필요</b></div>
+      </div>
+
     </div>
   </div>
 
 </div>
-</x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1360,"height":1720}}'>
-class Component extends DCLogic {
-  renderVals() { return {}; }
-}
-</script>
+
 </body>
 </html>

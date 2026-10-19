@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>현금흐름 달력</title>
+</head>
+<body>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;background:#f4f5f3;font-family:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;color:#1a211e}
+a{color:#0f6b5c;text-decoration:none}a:hover{text-decoration:underline}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th{font-size:12px;color:#6b7772;font-weight:500;text-align:left;padding:6px 8px;border-bottom:1px solid #e1e6e3}
+td{font-size:14px;padding:8px;border-bottom:1px solid #eef1ef}
+td.n,th.n{text-align:right}
+</style>
+
+<div style="max-width: 1360px; margin: 0 auto; box-sizing: border-box; padding: 24px 28px 48px; display: flex; flex-direction: column; gap: 20px">
+
+  <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px">
+    <div style="font-size: 22px; font-weight: 700">재무 현황</div>
+    <div style="padding: 6px 12px; border: 1px solid #d7ddda; border-radius: 8px; background: #fff; font-size: 14px">DY (주) ▾</div>
+    <div style="padding: 6px 12px; border: 1px solid #d7ddda; border-radius: 8px; background: #fff; font-size: 14px">‹ 2026년 11월 ›</div>
+    <div style="margin-left: auto; font-size: 13px; color: #6b7772">실제 = 진하게 · 예정 = 수금예정·지급예정·대출 일정에서 자동</div>
+  </div>
+  <div style="display: flex; gap: 4px; border-bottom: 1px solid #d7ddda; flex-wrap: wrap">
+    <a href="finance-overview-mock.html" style="padding: 10px 16px; font-size: 14px; color: #6b7772">요약</a>
+    <a href="finance-daily-mock.html" style="padding: 10px 16px; font-size: 14px; color: #6b7772">일별 자금보고</a>
+    <a href="finance-calendar-mock.html" style="padding: 10px 16px; font-size: 14px; font-weight: 700; color: #0f6b5c; border-bottom: 2px solid #0f6b5c">현금흐름 달력</a>
+    <a href="finance-pl-mock.html" style="padding: 10px 16px; font-size: 14px; color: #6b7772">손익계산서</a>
+    <a href="Main.dc.html#k" style="padding: 10px 16px; font-size: 14px; color: #6b7772">12가지 지표</a>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px">
+    <div style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; padding: 12px 16px"><div style="font-size: 12px; color: #6b7772">월초 잔액 (11/1)</div><div style="font-size: 20px; font-weight: 700">20.6억</div></div>
+    <div style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; padding: 12px 16px"><div style="font-size: 12px; color: #6b7772">이달 들어올 돈</div><div style="font-size: 20px; font-weight: 700; color: #0f6b5c">+12.1억</div></div>
+    <div style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; padding: 12px 16px"><div style="font-size: 12px; color: #6b7772">이달 나갈 돈</div><div style="font-size: 20px; font-weight: 700; color: #b4432b">−14.0억</div></div>
+    <div style="background: #fdf4ec; border: 1px solid #e8d2bf; border-radius: 10px; padding: 12px 16px"><div style="font-size: 12px; color: #9a4b12">월말 예상 잔액 · 이달 최저</div><div style="font-size: 20px; font-weight: 700">18.7억 <span style="font-size: 13px; font-weight: 500; color: #9a4b12">최저 17.4억 (11/11)</span></div></div>
+  </div>
+
+  <div style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 8px">
+    <div style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; font-size: 12px; color: #6b7772; text-align: center">
+      <div style="color: #b4432b">일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div style="color: #0f6b5c">토</div>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px">
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">1</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">2</div><div style="font-size: 12px; color: #0f6b5c">+1.28억 A사 수금</div><div style="font-size: 12px; color: #b4432b">−0.43억 이자</div><div style="font-size: 12px; color: #1a211e; font-weight: 600; margin-top: auto">잔액 20.1억</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">3</div><div style="font-size: 12px; color: #0f6b5c">+0.6억 D사</div><div style="font-size: 12px; color: #1a211e; font-weight: 600; margin-top: auto">잔액 20.7억</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">4</div></div>
+        <div style="min-height: 104px; background: #fdf4ec; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">5</div><div style="font-size: 12px; color: #b4432b">−1.66억 원료 LOT</div><div style="font-size: 12px; color: #1a211e; font-weight: 600; margin-top: auto">잔액 19.0억</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">6</div><div style="font-size: 12px; color: #0f6b5c">+2.1억 B사 수금</div><div style="font-size: 12px; color: #1a211e; font-weight: 600; margin-top: auto">잔액 21.1억</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">7</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">8</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">9</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">10</div><div style="font-size: 12px; color: #b4432b">−2.9억 급여</div><div style="font-size: 12px; color: #1a211e; font-weight: 600; margin-top: auto">잔액 18.2억</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">11</div><div style="font-size: 12px; color: #b4432b">−0.8억 4대보험·세금</div><div style="font-size: 12px; color: #1a211e; font-weight: 600; margin-top: auto">잔액 17.4억</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">12</div><div style="font-size: 12px; color: #0f6b5c">+$42,000 C사 수출</div><div style="font-size: 12px; color: #1a211e; font-weight: 600; margin-top: auto">잔액 18.0억</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">13</div><div style="font-size: 12px; color: #0f6b5c">+1.5억 F사</div><div style="font-size: 12px; color: #b4432b">−0.5억 외주가공</div><div style="font-size: 12px; color: #1a211e; font-weight: 600; margin-top: auto">잔액 19.0억</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">14</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">15</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">16</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">17</div><div style="font-size: 12px; color: #b4432b">−0.52억 국민은행 이자</div><div style="font-size: 12px; color: #1a211e; font-weight: 600; margin-top: auto">잔액 18.5억</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">18</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">19</div><div style="font-size: 12px; color: #0f6b5c">+0.9억 H사</div><div style="font-size: 12px; color: #b4432b">−1.2억 원료 2차</div><div style="font-size: 12px; color: #1a211e; font-weight: 600; margin-top: auto">잔액 18.2억</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">20</div><div style="font-size: 12px; color: #b4432b">−0.3억 전기·가스</div><div style="font-size: 12px; color: #1a211e; font-weight: 600; margin-top: auto">잔액 17.9억</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">21</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">22</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">23</div></div>
+        <div style="min-height: 104px; background: #e1efeb; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">24</div><div style="font-size: 12px; color: #0f6b5c">+3.2억 A사·B사 월말</div><div style="font-size: 12px; color: #1a211e; font-weight: 600; margin-top: auto">잔액 21.1억</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">25</div><div style="font-size: 12px; color: #0f6b5c">+1.1억 G사(연체분)</div><div style="font-size: 12px; color: #b4432b">−0.7억 카드 결제</div><div style="font-size: 12px; color: #1a211e; font-weight: 600; margin-top: auto">잔액 21.5억</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">26</div><div style="font-size: 12px; color: #b4432b">−0.4억 임차·리스</div><div style="font-size: 12px; color: #1a211e; font-weight: 600; margin-top: auto">잔액 21.1억</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">27</div><div style="font-size: 12px; color: #0f6b5c">+0.8억 기타 수금</div><div style="font-size: 12px; color: #b4432b">−2.1억 원료 3차·부자재</div><div style="font-size: 12px; color: #1a211e; font-weight: 600; margin-top: auto">잔액 19.8억</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">28</div></div>
+        <div style="min-height: 104px; background: #fff; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">29</div></div>
+        <div style="min-height: 104px; background: #fdf4ec; border: 1px solid #e1e6e3; border-radius: 6px; padding: 6px 8px; display: flex; flex-direction: column; gap: 2px"><div style="font-size: 12px; font-weight: 600; color: #6b7772">30</div><div style="font-size: 12px; color: #b4432b">−1.1억 시설대출 원금</div><div style="font-size: 12px; color: #1a211e; font-weight: 600; margin-top: auto">잔액 18.7억</div></div>
+        <div style="min-height: 104px; background: #f4f5f3; border-radius: 6px"></div>
+        <div style="min-height: 104px; background: #f4f5f3; border-radius: 6px"></div>
+        <div style="min-height: 104px; background: #f4f5f3; border-radius: 6px"></div>
+        <div style="min-height: 104px; background: #f4f5f3; border-radius: 6px"></div>
+        <div style="min-height: 104px; background: #f4f5f3; border-radius: 6px"></div>
+    </div>
+    <div style="font-size: 12px; color: #6b7772; display: flex; gap: 16px; flex-wrap: wrap"><span><span style="color: #0f6b5c">■</span> 들어오는 돈</span><span><span style="color: #b4432b">■</span> 나가는 돈</span><span><span style="display: inline-block; width: 10px; height: 10px; background: #fdf4ec; border: 1px solid #e8d2bf"></span> 큰 지출 날</span><span><span style="display: inline-block; width: 10px; height: 10px; background: #e1efeb"></span> 큰 수금 날</span><span>날짜를 누르면 그날 거래 목록</span></div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px">
+    <div style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px">
+      <div style="font-size: 15px; font-weight: 700">이달 현금흐름 — 항목별</div>
+      <table>
+        <tr><th>구분</th><th class="n">들어옴</th><th class="n">나감</th></tr>
+        <tr><td>영업 — 매출 수금 / 원료·급여·경비</td><td class="n" style="color: #0f6b5c">12.1억</td><td class="n" style="color: #b4432b">−11.4억</td></tr>
+        <tr><td>투자 — 설비·보증금</td><td class="n">—</td><td class="n" style="color: #b4432b">−0.6억</td></tr>
+        <tr><td>재무 — 대출 원금 · 이자</td><td class="n">—</td><td class="n" style="color: #b4432b">−2.0억</td></tr>
+        <tr><td style="font-weight: 600">합계</td><td class="n" style="font-weight: 600">12.1억</td><td class="n" style="font-weight: 600">−14.0억</td></tr>
+      </table>
+    </div>
+    <div style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px">
+      <div style="font-size: 15px; font-weight: 700">앞으로 3개월 — 월별 전망</div>
+      <table>
+        <tr><th>달</th><th class="n">들어옴</th><th class="n">나감</th><th class="n">월말 잔액</th><th class="n">최저</th></tr>
+        <tr><td>11월</td><td class="n">12.1억</td><td class="n">−14.0억</td><td class="n">18.7억</td><td class="n">17.4억</td></tr>
+        <tr style="background: #fdf4ec"><td>12월 (상여 · 부가세 · 원료)</td><td class="n">13.4억</td><td class="n">−20.2억</td><td class="n">11.9억</td><td class="n" style="color: #b4432b; font-weight: 600">11.4억</td></tr>
+        <tr><td>1월</td><td class="n">14.0억</td><td class="n">−11.9억</td><td class="n">14.0억</td><td class="n">11.9억</td></tr>
+      </table>
+      <div style="font-size: 12px; color: #9a4b12">안전선 10억 · 12월 셋째 주 1.4억 여유 → G사 연체 1.8억 회수 시 해소</div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

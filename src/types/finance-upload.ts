@@ -22,10 +22,14 @@ export interface FinUpload {
   applied_at: IsoDateTime | null
   reverted_at: IsoDateTime | null
   replaced_by: string | null
+  /** 0085 저장 뒤 경고 꼬리표(합계 안 맞음 · 날짜 모름 …). 0085 전 DB는 없음. */
+  warnings?: string[] | null
 }
 
 export const FIN_UPLOAD_COLUMNS =
   'upload_id,business_id,kind,period,file_name,file_sha256,sheet_name,ai_confidence,ai_used,auto,status,row_count,overlap,reason,error,created_by,created_at,applied_at,reverted_at,replaced_by'
+/** 0085 — 경고 칸까지(0085 전 DB는 이 칸이 없어 FIN_UPLOAD_COLUMNS로 다시 읽는다). */
+export const FIN_UPLOAD_COLUMNS_V85 = `${FIN_UPLOAD_COLUMNS},warnings`
 
 export type FinRow = Record<string, string | number | null> & { row_no: number }
 
@@ -301,3 +305,59 @@ export interface FinRecloseFlag {
   reason: string | null
   created_at: string
 }
+
+/* ───────────────────────── 0085 재무 현황 · 저장 한 번 ───────────────────────── */
+
+/** fin_upload_save — 같은 달이 있으면 바꾸기를 DB가 고른다 · 경고 꼬리표. */
+export interface FinUploadSaveInput {
+  business_id: string
+  kind: string
+  period: string
+  file_name: string
+  file_sha256: string
+  sheet_name: string | null
+  ai_confidence: FinUpload['ai_confidence']
+  ai_used: number
+  rows: FinRow[]
+  people: FinRow[] | null
+  reason: string | null
+  upload_id: string | null
+  warnings: string[]
+}
+
+/** 급여 개인 줄 보류(0085) — rows는 대표 · CFO에게만 온다. */
+export interface FinPayrollHeld {
+  hold_id: string
+  upload_id: string
+  period: string
+  people: number
+  created_at: string
+  rows: FinRow[] | null
+}
+
+export interface FinRecalcJob {
+  job_id: string
+  business_id: string
+  from_period: string
+  status: 'pending' | 'running' | 'done' | 'failed'
+  attempts: number
+  last_error: string | null
+  cause: string
+  requested_at: string
+  started_at: string | null
+  finished_at: string | null
+}
+
+/** 재무 현황 저장본(회사 합계만 — 원료별 · 개인 줄 없음). */
+export interface FinOverviewMonthRow {
+  business_id: string
+  period: string
+  totals: Record<string, unknown>
+  missing: string[]
+  provisional: boolean
+  computed_at: string
+}
+
+/** 재무 현황이 읽는 줄 종류(원료 숫자 종류 — 입고 · 재고 · OFFER · 원료 출고 — 는 빠진다: 합계는 fin_material_totals로). */
+export const OVERVIEW_LINE_KINDS = ['sales', 'production', 'ledger', 'payroll', 'cashflow', 'card', 'overseas', 'promo', 'loans', 'borrowings', 'savings', 'shipment', 'ledger_lines', 'tax_invoice'] as const
+export type OverviewLineKind = (typeof OVERVIEW_LINE_KINDS)[number]

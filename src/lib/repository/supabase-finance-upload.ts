@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 import {
   FIN_UPLOAD_COLUMNS,
+  FIN_UPLOAD_COLUMNS_V85,
   type FinDedupeSetting,
   type FinInventoryRollRow,
   type FinIssueSummary,
@@ -80,7 +81,10 @@ const n = (v: unknown): number | null => (v === null || v === undefined ? null :
 export function financeUploadMethods(sb: SupabaseClient): Methods {
   return {
     async listFinUploads(businessId) {
-      const { data, error } = await sb.from('fin_uploads').select(FIN_UPLOAD_COLUMNS).eq('business_id', businessId).order('created_at', { ascending: false }).limit(300)
+      const read = (cols: string) => sb.from('fin_uploads').select(cols).eq('business_id', businessId).order('created_at', { ascending: false }).limit(300)
+      // 0085 경고 칸까지 — 0085 전 DB(칸 없음 42703)는 옛 칸으로 다시.
+      let { data, error } = await read(FIN_UPLOAD_COLUMNS_V85)
+      if (error && error.code === '42703') ({ data, error } = await read(FIN_UPLOAD_COLUMNS))
       if (error && MISSING.has(error.code ?? '')) return []
       if (error) fail('fin_uploads', error)
       return (data ?? []) as unknown as FinUpload[]

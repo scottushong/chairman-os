@@ -148,6 +148,7 @@ import {
 import { assistantMethods } from './supabase-assistant'
 import { featureMethods } from './supabase-features'
 import { feedbackMethods } from './supabase-feedback'
+import { financeOverviewMethods } from './supabase-finance-overview'
 import { financeUploadMethods } from './supabase-finance-upload'
 import { monthlyPlMethods } from './supabase-monthly-pl'
 import { salesMarginsMethods } from './supabase-sales-margins'
@@ -848,6 +849,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     ...featureMethods(sb),
     // 0070 회계 · 재무 자료 올리기. 0070 전 DB를 견딘다(supabase-finance-upload.ts 머리 주석).
     ...financeUploadMethods(sb),
+    // 0085 재무 현황 · 저장 한 번 · 큐 · 저장본. 0085 전 DB를 견딘다(supabase-finance-overview.ts 머리 주석).
+    ...financeOverviewMethods(sb, financeUploadMethods(sb)),
     // 0075 월별 손익(재고 반영 · 마감). 0075 전 DB를 견딘다(supabase-monthly-pl.ts 머리 주석).
     ...monthlyPlMethods(sb),
     ...salesMarginsMethods(sb),

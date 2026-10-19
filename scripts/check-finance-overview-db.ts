@@ -168,6 +168,21 @@ export async function financeOverviewDb(): Promise<string> {
   assert.deepEqual(activeYear.map((r) => Number(r.id)), [Number(o3.id)], '0085: 되돌린 뒤 활성 결산이 하나가 아니다')
   assert.notEqual(o1.id, o3.id)
 
+  // ── 자금흐름표 · 대출 0085 칸(저장 직후 같은 거래에서 채움) ──
+  await one(U.keeper, save(U.keeper, 'cashflow', '2099-01', sha('5'), `[{"row_no":7,"flow_date":"2099-01-03","category":"수금","inflow":10,"outflow":null,"account":"기업은행 외화","currency":"usd","balance":320,"planned":true}]`))
+  const cf = (await su<{ account: string; currency: string; balance: string; planned: boolean }>(`select account, currency, balance::text, planned from fin_cash_flows where period = '2099-01' and voided_at is null`))[0]
+  assert.deepEqual({ ...cf, balance: Number(cf.balance) }, { account: '기업은행 외화', currency: 'USD', balance: 320, planned: true }, '0085: 자금흐름표 계좌 · 통화 · 잔액 · 예정 칸이 안 찼다')
+  await one(U.keeper, save(U.keeper, 'loans', '2099-01', sha('6'), `[{"row_no":2,"lender":"기업은행","principal":1000,"rate":4.1,"loan_type":"시설자금","loan_total":2000,"pay_day":25}]`))
+  const ln = (await su<{ loan_type: string; loan_total: string; pay_day: number }>(`select loan_type, loan_total::text, pay_day from fin_loans where period = '2099-01'`))[0]
+  assert.deepEqual({ ...ln, loan_total: Number(ln.loan_total) }, { loan_type: '시설자금', loan_total: 2000, pay_day: 25 }, '0085: 대출 종류 · 총액 · 내는 날 칸이 안 찼다')
+
+  // ── 지표 기준값 — 대표 · CFO · 마감 권한만 ──
+  assert.equal(typeof (await as(U.keeper, `select fin_kpi_settings_save('biz_dy', '{"safety_cash":1000000000}'::jsonb, '시험')`)), 'string', '0085: 마감 권한 없는 장부 사원이 기준값을 바꿨다')
+  assert.equal(typeof (await as(U.ceo, `select fin_kpi_settings_save('biz_dy', '{"safety_cash":1000000000}'::jsonb, '시험')`)), 'string', '0085: 마감 권한 없는 회사 대표가 기준값을 바꿨다')
+  await one(U.chair, `select fin_kpi_settings_save('biz_dy', '{"safety_cash":1000000000}'::jsonb, '안전선 10억')`)
+  assert.equal(((await as(U.keeper, `select settings from fin_kpi_settings`)) as unknown[]).length, 1, '0085: 장부 사원이 기준값을 못 읽는다')
+  assert.equal(((await as(U.member, `select settings from fin_kpi_settings`)) as unknown[]).length, 0, '0085: 장부 못 읽는 직원이 기준값을 본다')
+
   // ── anon · 스위치 · 자동 생성 칸 ──
   for (const fn of [
     `fin_upload_save('biz_dy','sales','2099-05','a','${sha('4')}',null,'high',0,'[]'::jsonb,null,null,null,'[]'::jsonb)`,

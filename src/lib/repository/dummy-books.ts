@@ -491,6 +491,32 @@ export async function saveOfficialStatement(
   return id
 }
 
+/** 0085 official_statement_withdraw 거울 — 7일 · 올린 사람 또는 마감 권한 · 앞 결산이 있으면 그 줄로 새 결산(고치지 않는다). */
+export async function withdrawOfficialStatement(id: number, reason: string): Promise<number | null> {
+  const cur = officialStatements.find((s) => s.id === id)
+  if (!cur) throw new Error('books_forbidden')
+  assertKeepBooks(cur.business_id)
+  if (cur.superseded_at !== null || cur.basis !== 'accountant') throw new Error('official_withdraw_state')
+  if (Date.parse(cur.created_at) < Date.now() - 7 * 86_400_000) throw new Error('official_withdraw_expired')
+  const me = dummyViewer()
+  if (cur.created_by !== me.user_id) {
+    try {
+      assertCloseBooks(cur.business_id)
+    } catch {
+      throw new Error('books_forbidden')
+    }
+  }
+  const now = new Date().toISOString()
+  cur.superseded_at = now
+  const prev = cur.supersedes_id ? officialStatements.find((s) => s.id === cur.supersedes_id) : undefined
+  if (!prev) return null
+  const nid = ++officialSeq
+  officialStatements.push({ ...prev, id: nid, memo: `되돌림 — ${prev.memo}`.slice(0, 500), created_by: me.user_id, created_at: now, superseded_at: null, supersedes_id: cur.id })
+  officialLines.push(...officialLines.filter((l) => l.statement_id === prev.id).map((l) => ({ ...l, statement_id: nid })))
+  void reason
+  return nid
+}
+
 /** 0083 증빙 버킷 거울 — «<회사>/<sha256>.<확장자>». */
 const officialEvidence = new Map<string, Uint8Array>()
 const evidenceBusiness = (path: string) => (/^[a-z0-9_]{2,40}\/[0-9a-f]{64}\.(pdf|jpg|jpeg|png)$/.test(path) ? path.split('/')[0] : null)

@@ -19,6 +19,7 @@
 --        넣기 · 되돌리기 · 공식 결산 · ECOUNT 손익 전표 · 수기 전표 · 평가금액이 바뀌면 트리거가 큐에 넣는다(앱이 잊어도 빠지지 않게).
 --   6절 재무 현황 저장본 — fin_overview_months(회사 합계만 — 원료별 · 개인 줄 없음) · fin_overview_save.
 --   7절 공식 결산 되돌리기 — official_statement_withdraw(7일 · 앞 결산이 있으면 그 줄로 새 결산을 세워 되살린다 · 고치지 않는다).
+--   1절 이어서 — 자금흐름표 칸(계좌 · 통화 · 잔액 · 예정) · 대출 칸(종류 · 총액 · 내는 날) · 12가지 지표 기준값(fin_kpi_settings · 대표 · CFO · 마감 권한).
 --   8절 기능 스위치 finance_overview(기본 전원).
 --
 -- 0035 규칙: force를 새로 걸지 않는다 · FORCE를 내리지 않는다 · 0001~0084를 고치지 않는다. 새 정책 · grant는 늘 to authenticated.
@@ -83,6 +84,50 @@ $fn$;
 drop trigger if exists fin_shipment_follow_trigger on fin_uploads;
 create trigger fin_shipment_follow_trigger after update of status on fin_uploads
   for each row execute function fin_shipment_follow();
+
+-- 1절 이어서 — 일별 자금보고 · 현금흐름 달력 · 대출 칸(0070 표에 칸만 더한다 — 넣기는 fin_upload_save가 저장 직후 같은 거래에서 채운다)
+alter table fin_cash_flows
+  add column account  text check (account is null or length(account) <= 120),                    -- [일반] 계좌(기업은행 주거래 …)
+  add column currency text check (currency is null or currency ~ '^[A-Z]{3}$'),                    -- [일반] 통화(없으면 원화)
+  add column balance  numeric(20,2),                                                                -- [제한] 그 줄 뒤 계좌 잔액(그 통화)
+  add column planned  boolean not null default false;                                              -- [일반] 예정(수금예정 · 지급예정)
+comment on column fin_cash_flows.planned is '0085. 수금예정 · 지급예정 줄(현금흐름 달력의 앞날). 실제 입출금이 아니다.';
+alter table fin_loans
+  add column loan_type  text check (loan_type is null or length(loan_type) <= 60),               -- [일반] 시설자금 · 운전자금 · 차입금
+  add column loan_total numeric(20,2),                                                             -- [제한] 약정 · 총액
+  add column pay_day    int check (pay_day is null or pay_day between 1 and 31);                  -- [일반] 이자 · 원금 내는 날(달력)
+
+-- 지표 기준값(12가지 지표의 초록 · 주황 · 빨강) — 회사마다 한 줄. 없으면 앱 기본값.
+create table fin_kpi_settings (
+  business_id text primary key references businesses(business_id) on delete restrict,  -- [일반]
+  settings    jsonb not null check (jsonb_typeof(settings) = 'object' and octet_length(settings::text) <= 8192),  -- [일반] 안전선 잔액 · 연체 기준일 · 목표 …
+  reason      text not null check (length(btrim(reason)) between 2 and 500),
+  updated_by  uuid not null default auth.uid(),
+  updated_at  timestamptz not null default now()
+);
+comment on table fin_kpi_settings is '0085. 12가지 지표 기준값(안전선 잔액 · 연체 기준일 · 목표 · 미사용 한도 …). 쓰기는 fin_kpi_settings_save(대표 · CFO · 마감 권한)만.';
+alter table fin_kpi_settings enable row level security;
+revoke all on table fin_kpi_settings from public, anon, authenticated;
+grant select on table fin_kpi_settings to authenticated;
+create policy fin_kpi_settings_read on fin_kpi_settings for select to authenticated using (can_read_books(business_id));
+
+create or replace function fin_kpi_settings_save(p_business text, p_settings jsonb, p_reason text) returns void
+language plpgsql security definer set search_path = public, pg_temp as $fn$
+begin
+  if not coalesce(can_close_books(p_business), false) or auth_role()::text in ('AIAgent', 'Integration') then
+    raise exception 'fin_kpi_settings_denied' using errcode = '42501';
+  end if;
+  if jsonb_typeof(p_settings) is distinct from 'object' or length(btrim(coalesce(p_reason, ''))) < 2 then
+    raise exception 'fin_kpi_settings_shape' using errcode = '22023';
+  end if;
+  insert into fin_kpi_settings as k (business_id, settings, reason, updated_by, updated_at)
+  values (p_business, p_settings, btrim(p_reason), auth.uid(), now())
+  on conflict (business_id) do update set settings = excluded.settings, reason = excluded.reason, updated_by = auth.uid(), updated_at = now();
+  perform fin_recalc_enqueue(p_business, to_char(now() at time zone 'Asia/Seoul', 'YYYY-MM'), 'manual');
+  insert into audit_log (action, entity_table, entity_id, business_id, actor_user_id, actor_role, after, note)
+  values ('update'::audit_action, 'fin_kpi_settings', p_business, p_business, auth.uid(), auth_role()::text, p_settings, '12가지 지표 기준값(0085): ' || left(btrim(p_reason), 200));
+end;
+$fn$;
 
 -- =====================================================================
 -- 5절(먼저 — 2절 · 트리거가 부른다). 다시 계산 큐
@@ -296,6 +341,20 @@ begin
     v_id := fin_upload_apply(p_business, p_kind, p_period, p_file_name, p_sha, p_sheet, p_confidence, p_ai_used, false,
                              p_rows, p_people, case when v_old is null then 'none' else 'replace' end, p_reason, p_upload, null);
     update fin_uploads set auto = true, warnings = v_warn where upload_id = v_id;
+    -- 0085 칸(계좌 · 통화 · 잔액 · 예정 / 종류 · 총액 · 내는 날) — 0072 넣기가 모르는 칸을 같은 거래에서 줄 번호로 채운다.
+    if p_kind = 'cashflow' then
+      update fin_cash_flows c
+         set account = nullif(btrim(coalesce(x.account, '')), ''), currency = case when upper(btrim(coalesce(x.currency, ''))) ~ '^[A-Z]{3}$' then upper(btrim(x.currency)) end,
+             balance = x.balance, planned = coalesce(x.planned, false)
+        from jsonb_to_recordset(p_rows) as x(row_no int, account text, currency text, balance numeric, planned boolean)
+       where c.upload_id = v_id and c.row_no = coalesce(x.row_no, 0);
+    elsif p_kind = 'loans' then
+      update fin_loans l
+         set loan_type = nullif(btrim(coalesce(x.loan_type, '')), ''), loan_total = x.loan_total,
+             pay_day = case when x.pay_day between 1 and 31 then x.pay_day end
+        from jsonb_to_recordset(p_rows) as x(row_no int, loan_type text, loan_total numeric, pay_day int)
+       where l.upload_id = v_id and l.row_no = coalesce(x.row_no, 0);
+    end if;
     return v_id;
   end if;
 
@@ -572,6 +631,7 @@ revoke all on function fin_payroll_held_list(text) from public, anon;
 revoke all on function fin_payroll_release(uuid, boolean) from public, anon;
 revoke all on function fin_overview_save(text, text, jsonb, jsonb, boolean) from public, anon;
 revoke all on function official_statement_withdraw(bigint, text) from public, anon;
+revoke all on function fin_kpi_settings_save(text, jsonb, text) from public, anon;
 
 grant execute on function fin_recalc_request(text, text) to authenticated;
 grant execute on function fin_recalc_claim(text, int) to authenticated;
@@ -582,5 +642,6 @@ grant execute on function fin_payroll_held_list(text) to authenticated;
 grant execute on function fin_payroll_release(uuid, boolean) to authenticated;
 grant execute on function fin_overview_save(text, text, jsonb, jsonb, boolean) to authenticated;
 grant execute on function official_statement_withdraw(bigint, text) to authenticated;
+grant execute on function fin_kpi_settings_save(text, jsonb, text) to authenticated;
 
 commit;

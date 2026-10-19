@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>일별 자금보고</title>
+</head>
+<body>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;background:#f4f5f3;font-family:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;color:#1a211e}
+a{color:#0f6b5c;text-decoration:none}a:hover{text-decoration:underline}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th{font-size:12px;color:#6b7772;font-weight:500;text-align:left;padding:6px 8px;border-bottom:1px solid #e1e6e3}
+td{font-size:14px;padding:8px;border-bottom:1px solid #eef1ef}
+td.n,th.n{text-align:right}
+</style>
+
+<div style="max-width: 1360px; margin: 0 auto; box-sizing: border-box; padding: 24px 28px 48px; display: flex; flex-direction: column; gap: 20px">
+
+  <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px">
+    <div style="font-size: 22px; font-weight: 700">재무 현황</div>
+    <div style="padding: 6px 12px; border: 1px solid #d7ddda; border-radius: 8px; background: #fff; font-size: 14px">DY (주) ▾</div>
+    <div style="margin-left: auto; font-size: 13px; color: #6b7772">2026-10-19 (월) 09:10 기준 · 자동 갱신</div>
+  </div>
+  <div style="display: flex; gap: 4px; border-bottom: 1px solid #d7ddda; flex-wrap: wrap">
+    <a href="finance-overview-mock.html" style="padding: 10px 16px; font-size: 14px; color: #6b7772">요약</a>
+    <a href="finance-daily-mock.html" style="padding: 10px 16px; font-size: 14px; font-weight: 700; color: #0f6b5c; border-bottom: 2px solid #0f6b5c">일별 자금보고</a>
+    <a href="finance-calendar-mock.html" style="padding: 10px 16px; font-size: 14px; color: #6b7772">현금흐름 달력</a>
+    <a href="finance-pl-mock.html" style="padding: 10px 16px; font-size: 14px; color: #6b7772">손익계산서</a>
+    <a href="Main.dc.html#k" style="padding: 10px 16px; font-size: 14px; color: #6b7772">12가지 지표</a>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px">
+    <div style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+      <div style="font-size: 15px; font-weight: 700">① 현금 잔액 — 오늘 아침</div>
+      <table>
+        <tr><th>계좌</th><th class="n">원화</th><th class="n">달러</th></tr>
+        <tr><td>기업은행 주거래</td><td class="n">1,214,300,500</td><td class="n">—</td></tr>
+        <tr><td>국민은행 운영</td><td class="n">402,714,424</td><td class="n">—</td></tr>
+        <tr><td>기업은행 외화</td><td class="n">—</td><td class="n">$ 318,420.00</td></tr>
+        <tr><td>현금 · 소액</td><td class="n">2,150,000</td><td class="n">—</td></tr>
+        <tr><td style="font-weight: 600">합계</td><td class="n" style="font-weight: 600">1,619,164,924</td><td class="n" style="font-weight: 600">$ 318,420.00</td></tr>
+        <tr><td style="color: #6b7772">원화 환산 (1,398.5원)</td><td class="n" style="color: #6b7772">2,064,474,294</td><td></td></tr>
+      </table>
+      <div style="font-size: 12px; color: #6b7772">전일 대비 −38,200,000원 (원료대금 지급) · 달러 변동 없음</div>
+    </div>
+
+    <div style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+      <div style="font-size: 15px; font-weight: 700">② 10월 매출과 수금 (1~19일)</div>
+      <table>
+        <tr><th>구분</th><th class="n">원</th><th class="n">%</th></tr>
+        <tr><td>이달 매출 (세금계산서 기준)</td><td class="n">1,186,400,000</td><td class="n">목표 대비 59%</td></tr>
+        <tr><td>이달 수금</td><td class="n">1,021,900,000</td><td class="n">매출 대비 86%</td></tr>
+        <tr><td style="padding-left: 24px; color: #6b7772">그중 전월 매출 수금</td><td class="n" style="color: #6b7772">884,300,000</td><td class="n" style="color: #6b7772"></td></tr>
+        <tr><td>미수금 잔액</td><td class="n">2,822,371,227</td><td class="n">평균 회수 46일</td></tr>
+        <tr><td style="color: #b4432b">60일 넘은 미수</td><td class="n" style="color: #b4432b">312,000,000</td><td class="n" style="color: #b4432b">3곳</td></tr>
+      </table>
+      <div style="font-size: 12px; color: #6b7772">수금 예정: 이번 주 410,000,000 · 다음 주 286,000,000</div>
+    </div>
+
+    <div style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+      <div style="font-size: 15px; font-weight: 700">③ 대출 현황</div>
+      <table>
+        <tr><th>기관</th><th class="n">총액</th><th class="n">잔액</th><th class="n">월 이자</th></tr>
+        <tr><td>기업은행 시설</td><td class="n">2,000,000,000</td><td class="n">1,266,600,000</td><td class="n">4,330,000</td></tr>
+        <tr><td>국민은행 운전</td><td class="n">1,200,000,000</td><td class="n">1,200,000,000</td><td class="n">5,200,000</td></tr>
+        <tr><td>신보 보증부</td><td class="n">800,000,000</td><td class="n">800,000,000</td><td class="n">3,070,000</td></tr>
+        <tr><td>대표 차입</td><td class="n">700,000,000</td><td class="n">593,400,000</td><td class="n">—</td></tr>
+        <tr><td style="font-weight: 600">합계</td><td class="n" style="font-weight: 600">4,700,000,000</td><td class="n" style="font-weight: 600">3,860,000,000</td><td class="n" style="font-weight: 600">12,600,000</td></tr>
+      </table>
+      <div style="font-size: 12px; color: #9a4b12">다음 만기: 국민은행 운전자금 2027-03 (연장 협의 2027-01까지)</div>
+    </div>
+  </div>
+
+  <div style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+    <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px"><div style="font-size: 15px; font-weight: 700">④ 최근 10일 잔액 추이 · 오늘 들어오고 나간 돈</div><div style="font-size: 12px; color: #6b7772">원화 + 달러 환산</div></div>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px">
+      <div style="display: flex; align-items: flex-end; gap: 6px; height: 140px; padding: 0 4px; border-bottom: 1px solid #e1e6e3">
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px"><div style="width: 100%; height: 88px; background: #b9d8d0; border-radius: 3px 3px 0 0"></div><div style="font-size: 11px; color: #6b7772">10/8</div></div>
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px"><div style="width: 100%; height: 92px; background: #b9d8d0; border-radius: 3px 3px 0 0"></div><div style="font-size: 11px; color: #6b7772">10/9</div></div>
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px"><div style="width: 100%; height: 110px; background: #b9d8d0; border-radius: 3px 3px 0 0"></div><div style="font-size: 11px; color: #6b7772">10/10</div></div>
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px"><div style="width: 100%; height: 106px; background: #b9d8d0; border-radius: 3px 3px 0 0"></div><div style="font-size: 11px; color: #6b7772">10/13</div></div>
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px"><div style="width: 100%; height: 98px; background: #b9d8d0; border-radius: 3px 3px 0 0"></div><div style="font-size: 11px; color: #6b7772">10/14</div></div>
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px"><div style="width: 100%; height: 120px; background: #b9d8d0; border-radius: 3px 3px 0 0"></div><div style="font-size: 11px; color: #6b7772">10/15</div></div>
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px"><div style="width: 100%; height: 116px; background: #b9d8d0; border-radius: 3px 3px 0 0"></div><div style="font-size: 11px; color: #6b7772">10/16</div></div>
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px"><div style="width: 100%; height: 112px; background: #b9d8d0; border-radius: 3px 3px 0 0"></div><div style="font-size: 11px; color: #6b7772">10/17</div></div>
+        <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px"><div style="width: 100%; height: 108px; background: #0f6b5c; border-radius: 3px 3px 0 0"></div><div style="font-size: 11px; color: #1a211e; font-weight: 600">오늘</div></div>
+      </div>
+      <table>
+        <tr><th>오늘</th><th>내용</th><th class="n">금액</th></tr>
+        <tr><td style="color: #0f6b5c">입금</td><td>A사 9월분 수금</td><td class="n" style="color: #0f6b5c">+128,000,000</td></tr>
+        <tr><td style="color: #0f6b5c">입금</td><td>C사 (USD 수출대금)</td><td class="n" style="color: #0f6b5c">+$ 42,000.00</td></tr>
+        <tr><td style="color: #b4432b">출금</td><td>원료 LOT 2610-03 대금</td><td class="n" style="color: #b4432b">−166,200,000</td></tr>
+        <tr><td style="color: #b4432b">출금</td><td>기업은행 이자</td><td class="n" style="color: #b4432b">−4,330,000</td></tr>
+        <tr><td style="font-weight: 600">순변동</td><td></td><td class="n" style="font-weight: 600">−38,200,000 · +$42,000</td></tr>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>
