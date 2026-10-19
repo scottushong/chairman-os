@@ -1030,12 +1030,13 @@ export const dummyRepository: ChairmanRepository = {
     ).map((t) => ({
       ...t.task,
       owner: ownerLabel(t.owner_user_id),
+      owner_user_id: t.owner_user_id,
       ...memoryTaskPatches.get(t.task.task_id),
     }))
     // 0071 시트에서 온 업무 — tasks_read(0026 식) AND tasks_external_scope(담당자 본인 또는 그 탭을 보는 사람).
     const synced = dummyProcessTasks()
       .filter((t) => (canSeeRow(t.business_id, t.owner_user_id) || dummySharedWithMe(memoryShares, viewer.user_id, 'tasks', t.task.task_id)) && dummyProcessTaskVisible(viewer, t))
-      .map((t) => ({ ...t.task }))
+      .map((t) => ({ ...t.task, owner_user_id: t.owner_user_id }))
     return [...seeded, ...owned, ...synced]
   },
   async listDecisions() {

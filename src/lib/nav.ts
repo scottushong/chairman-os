@@ -52,6 +52,9 @@ export const NAV: readonly NavGroup[] = [
   {
     items: [
       { key: 'nav_dashboard', label: '대시보드', href: '/', icon: 'home', ready: true },
+      // 0086 내 홈 — 직원마다 위젯 배치(/home). 스위치 home_widgets가 켜진 사람에게만(FEATURE_NAV). 켜지면 직원의 예전 «내 홈»(/me)은
+      // «내 업무함»으로 이름을 바꿔 둘이 같은 이름이 되지 않게 한다(navFor — 0087 «결재 요청»과 같은 방식).
+      { key: 'nav_home', label: '내 홈', href: '/home', icon: 'grid', ready: true },
       {
         // Phase 8 G-1 — 그룹 시티. key는 그대로 둔다: 사이드바 주머니(0030)가 이 key로 순서·숨김을 기억한다.
         key: 'nav_group', label: '그룹',
@@ -329,13 +332,15 @@ export function navFor(role: Role | null | undefined, opts: NavOptions = {}): re
   // 0059 «결재 대장 열람» 줄(SessionUser.ledger)이 없으면 대장 메뉴를 뺀다. 화면은 누구나 열 수 있다(본인 · 결재선 줄만 보인다).
   const ledgerMenu = (opts.ledger?.length ?? 0) > 0
   const eapproval = !(opts.hidden ?? []).includes('nav_eapproval')
+  const homeWidgets = !(opts.hidden ?? []).includes('nav_home')
   return NAV.map((group) => ({
     ...group,
     items: group.items
       .filter((item) => !CHAIRMAN_ONLY_NAV.has(item.key) && (initiatives || item.key !== 'nav_initiatives') && (ledgerMenu || item.key !== 'nav_ledger'))
       .filter(purchasingFilter)
       .map((item) => (STAFF_NAV_OVERRIDE[item.key] ? { ...item, ...STAFF_NAV_OVERRIDE[item.key] } : item))
-      .map((item) => (item.key === 'nav_decisions' && eapproval ? { ...item, label: '결재 요청' } : item)),
+      .map((item) => (item.key === 'nav_decisions' && eapproval ? { ...item, label: '결재 요청' } : item))
+      .map((item) => (item.key === 'nav_dashboard' && homeWidgets ? { ...item, label: '내 업무함' } : item)),
   })).filter((group) => group.items.length > 0)
 }
 

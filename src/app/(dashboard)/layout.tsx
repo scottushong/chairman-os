@@ -92,7 +92,7 @@ export default async function DashboardLayout({ children }: LayoutProps<'/'>) {
         <div className="hidden lg:block">
           <SystemBar />
         </div>
-        <MobileTabs role={user?.role} />
+        <MobileTabs role={user?.role} eapproval={!sections.hiddenNav.includes('nav_eapproval')} />
       </div>
       {/* Phase 11 — 모든 화면의 AI 어시스턴트(오른쪽 아래 버튼 → 패널). 셸에 한 번만 둔다: 화면마다 넣으면 빠지는 화면이 생긴다.
           로그인 없는 화면(/login 등)은 이 셸 밖이라 뜨지 않는다. */}

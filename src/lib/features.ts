@@ -185,6 +185,13 @@ export const FEATURES = [
     defaultAudience: 'chairman',
     from: 'feat/approvals-0087 · 0087',
   },
+  {
+    key: 'home_widgets',
+    label: '내 홈(위젯)',
+    description: '«내 홈»(/home) — 직원마다 위젯(내 업무 · 전자결재 · 일정 · 요청한 업무 · 공지 · 최근 문서 · 즐겨찾기 등)의 종류 · 순서 · 크기 · 표시 범위를 고르고 서버에 저장(본인만 · 다른 탭 덮어쓰기 막음). 위젯 내용은 각 기능의 기존 권한 그대로. 꺼지면 메뉴 · 화면이 사라지고 저장 RPC(home_layout_save)도 거부. 예전 직원 홈(/me)은 그대로.',
+    defaultAudience: 'chairman',
+    from: 'release/2026-10-20 · 0086',
+  },
 ] as const satisfies readonly FeatureDef[]
 
 export type FeatureKey = (typeof FEATURES)[number]['key']
@@ -274,6 +281,7 @@ export function closedFeatureRows(): FeatureSwitchRow[] {
 export const FEATURE_NAV: Partial<Record<FeatureKey, string>> = {
   process_charts: 'nav_process_charts',
   approvals: 'nav_eapproval',
+  home_widgets: 'nav_home',
 }
 
 /**

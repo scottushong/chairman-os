@@ -1902,6 +1902,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         project_id: r.project_id,
         title: r.title,
         owner: ownerName(names, r.owner_user_id),
+        owner_user_id: r.owner_user_id ?? null,
         priority: r.priority,
         status: r.status,
         blocked_since: r.blocked_since,

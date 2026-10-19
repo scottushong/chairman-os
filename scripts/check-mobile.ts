@@ -59,6 +59,8 @@ export const ROUTES = [
   { key: '18-users', path: '/settings/users' },
   { key: '19-activity', path: '/settings/activity' },
   { key: '20-me', path: '/me' },
+  // 0086 내 홈 — 기본 스위치(대표만)라 기본 dummy 서버(회장)에서 위젯이 선다. 직원으로 볼 때는 DUMMY_HOME_OPEN=biz_dy.
+  { key: '21-home', path: '/home' },
 ] as const
 
 export interface Finding {

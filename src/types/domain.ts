@@ -99,7 +99,10 @@ export interface Task {
   task_id: TaskId
   project_id: ProjectId
   title: string
+  /** 화면 표기용 담당자 이름(어댑터가 프로필에서 바꿔 넣는다 — 이름표). 사람 비교에는 owner_user_id를 쓴다. */
   owner: UserId
+  /** 0086 — 담당자 id 그대로(«내 업무» 판정용). 옛 어댑터 · 시드에는 없을 수 있다. */
+  owner_user_id?: string | null
   priority: WorkPriority
   status: TaskStatus
   /**
