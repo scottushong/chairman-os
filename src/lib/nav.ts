@@ -108,7 +108,7 @@ export const NAV: readonly NavGroup[] = [
     items: [
       {
         // Phase 2-A/2-B. 그룹 재무와 회사별 재무(/finance/[business_id] · /journal · /accounts). 원천은 자체 장부.
-        key: 'nav_finance', label: '재무 / 회계',
+        key: 'nav_finance', label: '회계 · 재무',
         href: '/finance',
         icon: 'coin',
         ready: true,

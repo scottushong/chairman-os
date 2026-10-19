@@ -71,6 +71,16 @@ export function canKeepBooks(user: SessionUser | null, businessId: string): bool
 }
 
 /**
+ * 이 회사의 재무를 읽을 수 있는가(안내) — 0047 can_read_books와 같은 판정: [제한] 열람 역할(대표 · 그룹 CFO · 회사 대표 · 임원)
+ * 또는 그 회사 재무 모듈 줄(쓰기 · 읽기 어느 쪽이든). 회사 범위는 화면이 고르는 목록(보이는 회사)이 이미 좁힌다. 판정은 DB(RLS).
+ */
+export function canReadBooks(user: SessionUser | null, businessId: string): boolean {
+  if (user === null || SYSTEM.includes(user.role)) return false
+  if (['Chairman', 'GroupCFO', 'BusinessCEO', 'Executive'].includes(user.role)) return true
+  return user.finance[businessId] !== undefined
+}
+
+/**
  * ECOUNT 엑셀 업로드 화면(/finance/<회사>/import)을 열 수 있는가(안내). ECOUNT 코드 체계를 쓰는 회사(DY) +
  * 그 회사 재무 쓰기 권한. 판정은 0050 finance_imports_insert(can_keep_books)가 한다.
  */

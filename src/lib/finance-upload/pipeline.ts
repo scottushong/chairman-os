@@ -38,6 +38,9 @@ export interface Classification {
 
 const PERSON_COLS = /성명|이름|주민|주민번호|주민등록|계좌|은행|생년|주소|연락처|휴대폰|전화/
 const MATERIAL_ROW = /투입|원료|원재료|부재료|자재|배합|소요량|bom/i
+/** 0085 계좌번호 모양(10자리 이상 · 붙임표) — 계좌 이름 칸에서만 가린다. */
+const ACCT_NO = /\d{2,6}[- ]\d{2,6}[- ]\d{3,8}/g
+const ACCT_ONE = new RegExp(ACCT_NO.source)
 const CARD_RE = /\b(\d{4})[- ]?(\d{4})[- ]?(\d{4})[- ]?(\d{4})\b/g
 const PRODUCTION_HINT = /제조지시|작업지시|생산실적|생산지시/
 const PAYROLL_HINT = /급여|임금|상여/
@@ -66,11 +69,17 @@ export function scrubSheet(sheet: EcountSheet): Scrubbed {
   let cardNumbers = 0
   const header = findHeader(sheet.rows)
   const personCols = new Set<number>()
+  const acctCols = new Set<number>()
   // 머리글 줄의 이름 · 주민 · 계좌 칸을 비운다 — 급여 모양이면 이름 · 연락처까지, 아니면 주민 · 계좌만(카드 · 판촉의 담당자 이름은 남긴다).
   // 머리글 줄만 본다: 자료 줄의 «가짜 은행»(대출 금융기관)을 칸 이름으로 읽으면 금융기관 칸이 통째로 비워진다.
   if (header) {
     sheet.rows[header.row].forEach((c, i) => {
       const t = normalizeLabel(cellText(c))
+      // 0085: 급여가 아닌 시트의 «계좌 · 계좌명»(자금흐름표의 «기업은행 주거래»)은 칸을 두고 번호 모양만 가린다(아래).
+      if (!payrollish && /^(계좌|계좌명)$/.test(t)) {
+        acctCols.add(i)
+        return
+      }
       if (t && t.length <= 12 && PERSON_COLS.test(t) && (payrollish || /주민|계좌번호|계좌|은행계좌/.test(t)) && !/금융기관/.test(t)) personCols.add(i)
     })
   }
@@ -84,6 +93,8 @@ export function scrubSheet(sheet: EcountSheet): Scrubbed {
     rows.push(
       row.map((c, i) => {
         if (personCols.has(i) && r > (header?.row ?? -1)) return EMPTY_CELL
+        // 계좌 이름 칸의 번호 모양(110-123-456789)은 뒤 4자리만 남긴다.
+        if (acctCols.has(i) && r > (header?.row ?? -1) && c.t === 'text' && ACCT_ONE.test(c.v)) return { t: 'text', v: c.v.replace(ACCT_NO, (m) => `****${m.replace(/\D/g, '').slice(-4)}`) }
         if (c.t === 'text' && CARD_RE.test(c.v)) {
           CARD_RE.lastIndex = 0
           cardNumbers += 1
@@ -424,6 +435,14 @@ export function stripKgGrid(grid: (string | number | null)[][], headerRow: numbe
  * 종류별 마무리(줄 하나). 문제가 있으면 문구(그 줄은 넣지 않는다). 원본 값은 바꾸지 않고 칸을 더하기만 한다.
  */
 function finishRow(kind: UploadKind, rec: Rec, title: string, cols: Record<string, number>): string | null {
+  if (kind === 'cashflow') {
+    // 0085 — 예정 줄(수금예정 · 지급예정) · 통화(세 글자 · 원화는 비움). 1 = 예정(DB boolean이 '1'을 참으로 읽는다).
+    const plan = String(rec.planned ?? '')
+    rec.planned = /예정|plan/i.test(plan) || /예정/.test(String(rec.category ?? '')) ? 1 : 0
+    const cur = String(rec.currency ?? '').trim().toUpperCase()
+    rec.currency = /^(USD|달러|\$)$/.test(cur) ? 'USD' : /^[A-Z]{3}$/.test(cur) && cur !== 'KRW' ? cur : null
+    return null
+  }
   if (kind === 'sales' || kind === 'purchase_in') {
     rec.counterparty = (kind === 'sales' ? rec.customer : rec.supplier) ?? null
     rec.item_or_account = (kind === 'sales' ? rec.product : rec.material) ?? null

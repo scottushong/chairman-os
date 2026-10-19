@@ -3,7 +3,8 @@ import type { ChairmanRepository as Repository } from '@/lib/repository/types'
 import type { FinUpload, MonthlyPlView } from '@/types'
 
 /**
- * PHASE 8 «대표 대시보드»(스위치 'chairman_dashboard' · 기본 대표만) — 대표 홈 확장. 숫자는 **PHASE 3 월별 손익(0075 fin_pl_month)만** 쓴다.
+ * PHASE 8 «대표 대시보드»(스위치 'chairman_dashboard' · 기본 대표만) — 대표 홈 확장. 숫자는 0085 «재무 현황» 저장본(자동 계산 · 잠정)을 먼저,
+ * 내부 마감 확정(0075 fin_pl_month final)이 있으면 그것을 — 재무 현황 화면과 같은 값이다.
  *   · 월 → 분기 → 년: 그 달들의 fin_pl_month 값(매출 · 영업이익 · 현금 순증감)을 더한다. 한 달이라도 확정이 아니면 그 묶음은 «잠정».
  *     값이 없는 달(미입력)이 섞이면 «일부 달 없음»으로 적고 더한 값은 있는 달만.
  *   · 일 · 주: 0075는 달 단위다 — 나누지 않는다(지어내지 않음). 화면에 그렇게 적는다.
@@ -85,15 +86,28 @@ export interface ChairDashboardData {
 
 export async function loadChairDashboard(repo: Repository, businessId: string, today: string, n = 12): Promise<ChairDashboardData> {
   const periods = lastMonths(today, n)
+  // 0085 — 재무 현황 저장본(자동 계산 · 잠정)을 먼저 쓴다. 내부 마감 확정(0075 final)이 있으면 그것이 이긴다.
+  const snaps = new Map((await repo.listFinOverviewMonths(businessId, periods).catch(() => [])).map((r) => [r.period, r]))
+  const n0 = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null)
   const months = await Promise.all(
     periods.map(async (period): Promise<TrendMonth> => {
+      let v: MonthlyPlView | null = null
       try {
-        const v = await repo.finPlMonth(businessId, period)
-        if (!v) return { period, status: null, revenue: null, operating_income: null, cash_net: null }
-        return { period, status: v.view_status, revenue: v.result.pl.revenue, operating_income: v.result.pl.operating_income, cash_net: v.result.cash.net }
+        v = await repo.finPlMonth(businessId, period)
       } catch {
-        return { period, status: null, revenue: null, operating_income: null, cash_net: null }
+        v = null
       }
+      const snap = snaps.get(period)
+      if (v && v.view_status === 'final') return { period, status: v.view_status, revenue: v.result.pl.revenue, operating_income: v.result.pl.operating_income, cash_net: v.result.cash.net }
+      if (snap) {
+        const pl = (snap.totals.pl ?? {}) as Record<string, unknown>
+        const cash = (snap.totals.cash ?? {}) as Record<string, unknown>
+        if (n0(pl.revenue) !== null || n0(cash.net) !== null) {
+          return { period, status: 'provisional', revenue: n0(pl.revenue), operating_income: n0(pl.op) ?? (v ? v.result.pl.operating_income : null), cash_net: n0(cash.net) ?? (v ? v.result.cash.net : null) }
+        }
+      }
+      if (!v) return { period, status: null, revenue: null, operating_income: null, cash_net: null }
+      return { period, status: v.view_status, revenue: v.result.pl.revenue, operating_income: v.result.pl.operating_income, cash_net: v.result.cash.net }
     }),
   )
   let uploads: FinUpload[] = []

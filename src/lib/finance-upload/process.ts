@@ -1,5 +1,5 @@
 import type { ChairmanRepository } from '@/lib/repository'
-import type { Account, FinRow, FinTxGroupSaveInput, FinTxLine, FinUpload, FinUploadShape } from '@/types'
+import type { Account, FinHoldKind, FinRow, FinTxGroupSaveInput, FinTxLine, FinUpload, FinUploadShape, SessionUser } from '@/types'
 
 import { cellText, EMPTY_CELL, type EcountCell } from '@/lib/ecount/excel/cells'
 import type { EcountSheet } from '@/lib/ecount/excel/workbook'
@@ -22,12 +22,14 @@ import {
   type OfficialDraft,
 } from './doc-read'
 import { kindSpec, TX_KINDS, type UploadKind } from './kinds'
+import { ensureAccounts } from './auto-accounts'
+import { runLegacyImport, sniffLegacy, type LegacyKind } from './legacy-auto'
+import { autoSaveOfficial } from './official-auto'
 import { linesToAsk, type OfficialSuggester } from './official-suggest'
 import { decodeShape, encodeShape, fixByBalance, LEDGER_COLS, ledgerFeedback, ledgerLayoutByCode, ROLE_KO, type LedgerCol, type LedgerLayout, type RowLabel } from './ledger'
 import { MSG, openUpload } from './open'
 import {
   aiSample,
-  autoDecision,
   classifyByCode,
   detectMonth,
   ledgerLayoutOf,
@@ -79,7 +81,15 @@ export interface FileCard {
   kind: UploadKind | 'unknown'
   period: string | null
   /** official = 세무사 결산 → «공식 결산» 미리보기(자료 표에 안 넣음) · refused = 받지 않음(급여 · 제조지시 · 배합비 PDF · 사진) */
-  status: 'applied' | 'needs_review' | 'failed' | 'duplicate' | 'official' | 'refused' | 'later'
+  status: 'applied' | 'needs_review' | 'failed' | 'duplicate' | 'official' | 'refused' | 'later' | 'held'
+  /** 0085 보류 까닭(status held) — 화면이 그 자리에서 고르는 칸(종류 · 달 · 이유)을 띄운다 */
+  hold?: FinHoldKind
+  /** 0085 저장 뒤 경고 꼬리표 */
+  warnings?: string[]
+  /** 0085 계정과목표 · 월별 손익 · 재무제표(ECOUNT 양식) — 자료 표가 아니라 장부 · 결산으로 저장된 파일 */
+  legacy?: LegacyKind
+  /** 0085 바로 저장한 공식 결산(해마다 하나 — «되돌리기»가 이것을 되돌린다) */
+  official_ids?: number[]
   upload_id: string | null
   rows: number
   message: string
@@ -144,6 +154,10 @@ export interface ProcessOptions {
   docs?: DocOptions
   /** 이 요청이 끝나야 하는 시각(ms, maxDuration 300초 안) — 가까우면 AI를 새로 부르지 않고 코드 해석으로 끝낸다 */
   deadline?: number
+  /** 0085 올린 사람이 대표 · 그룹 CFO인가 — 급여 개인 줄을 바로 저장한다(아니면 보류) */
+  boss?: boolean
+  /** 0085 올린 사람(세션) — 있으면 계정과목표 · 월별 손익 · 재무제표 · 공식 결산도 바로 저장한다(없으면 예전처럼 미리보기) */
+  user?: SessionUser
 }
 
 /** PDF 글의 카드번호 16자리 — 뒤에 숫자가 붙어 읽혀도(칸이 겹친 PDF) 앞 16자리를 가린다. */
@@ -204,6 +218,16 @@ export async function processUpload(o: ProcessOptions): Promise<FileCard[]> {
   // 숨긴 시트는 건너뛰고(계산용 · 옛 달이 흔하다) 카드에 수를 적는다. 다 숨겨져 있으면 그대로 읽는다.
   const shown = opened.sheets.filter((s) => !s.hidden)
   const hidden = shown.length ? opened.sheets.length - shown.length : 0
+  // 0085 계정과목표 · 월별 손익계산서 · 재무제표(ECOUNT 양식) — 장부 · 결산으로 바로 저장(legacy-auto.ts).
+  const legacy = o.user ? sniffLegacy(shown.length ? shown : opened.sheets, o.fileName) : null
+  if (legacy && o.user) {
+    const r = await runLegacyImport({ repo: o.repo, user: o.user, businessId: o.businessId, kind: legacy, fileName: o.fileName, bytes: o.bytes, sha: opened.sha256, sheets: shown.length ? shown : opened.sheets })
+    if (r.status === 'applied') {
+      const first = r.months.length ? [...r.months].sort()[0] : `${new Date().getFullYear()}-01`
+      await o.repo.finRecalcRequest(o.businessId, first).catch(() => undefined)
+    }
+    return [{ file_name: o.fileName, sheet: null, kind: 'unknown', legacy, period: r.months.length === 1 ? r.months[0] : null, status: r.status, hold: r.status === 'held' ? 'other' : undefined, upload_id: null, rows: 0, message: r.message, why: [], warnings: r.warnings, ai_used: 0, confidence: 'high', format: 'excel' }]
+  }
   const cards = await processSheets(o, opened.sha256, shown.length ? shown : opened.sheets, null)
   return cards.map((c) => ({ ...c, format: c.format ?? 'excel', notes: hidden ? [...(c.notes ?? []), `숨긴 시트 ${hidden}개 건너뜀`] : c.notes }))
 }
@@ -221,6 +245,60 @@ async function failRecord(
     .finUploadRecord({ business_id: o.businessId, kind: 'unknown', period: null, file_name: o.fileName, file_sha256: sha, sheet_name: extra.sheet ?? null, ai_confidence: 'none', ai_used: extra.aiUsed ?? 0, status: 'failed', pending: null, error: error.slice(0, 500) })
     .catch(() => null)
   return { file_name: o.fileName, sheet: extra.sheet ?? null, kind: 'unknown', period: null, status: extra.status ?? 'failed', upload_id: id, rows: 0, message, why: [], ai_used: extra.aiUsed ?? 0, confidence: 'none', format: extra.format }
+}
+
+/** 0085 보류 문구(직원 화면 — «대표»). 저장을 막는 것은 이 몇 가지뿐이다. */
+export const MSG_HOLD: Record<FinHoldKind, string> = {
+  kind: '보류 — 어떤 자료인지 알아보지 못했습니다. 종류를 고르면 그 자리에서 저장합니다.',
+  period: '보류 — 몇 월 자료인지 알아보지 못했습니다. 달을 고르면 그 자리에서 저장합니다.',
+  closed: '보류 — 마감된 달입니다. 대표 · CFO가 이유를 적고 풀면 저장됩니다.',
+  restricted: '보류 — 이미 넣은 달의 재고 · 원료 출고를 바꾸는 것은 대표 · CFO만 합니다(원료 하나의 양이 드러나지 않게).',
+  final_exists: '보류 — 그 구분의 확정된 평가금액이 이미 있습니다. «재고 · 평가» 화면에서 이유를 적고 바꾸세요.',
+  value_state: '보류 — 빈칸 · 0 표시가 맞지 않는 칸이 있습니다(빈칸은 0이 아닙니다). 파일을 고쳐 다시 올려 주세요.',
+  legacy: '보류 — 이전 방식으로 «확인 필요»에 있던 자료입니다. «저장»을 누르면 지금 방식으로 저장합니다.',
+  other: '보류 — 저장하지 못했습니다.',
+}
+
+/** DB 거부 낱말 → 보류 까닭(아니면 null — 실패 · 이미 올림). */
+export function holdOf(message: string): FinHoldKind | null {
+  if (message.includes('fin_upload_closed')) return 'closed'
+  if (message.includes('fin_replace_restricted') || message.includes('fin_material_hidden')) return 'restricted'
+  if (message.includes('fin_valuation_final_exists')) return 'final_exists'
+  if (message.includes('fin_value_state')) return 'value_state'
+  return null
+}
+
+/** 저장 뒤 경고 꼬리표 — 검증 문구 · 중복 의심 · 사진 · 스캔 안내(숫자 원문은 문구 안의 합계뿐). */
+export function saveWarnings(check: Check, dup: { count: number | null; notes: string[] }, forced: string[], read: ReadResult): string[] {
+  const w = [...check.errors, ...check.warnings]
+  if (dup.count === null) w.push('자료 간 중복 의심을 세지 못했습니다 — 같은 거래가 두 번 들어갔는지 «같은 거래» 칸에서 보세요.')
+  else if (dup.count > 0) w.push(`자료 간 중복 의심 ${dup.count}건 — 판매 · 입고 · 세금계산서 · 원장에 같은 거래로 보이는 줄이 있습니다.`)
+  for (const f of forced) w.push(f)
+  if (read.ledger?.unknownRows.length) w.push(`거래인지 요약인지 모르는 줄 ${read.ledger.unknownRows.length}개는 더하지 않았습니다.`)
+  return [...new Set(w)].slice(0, 40)
+}
+
+/** 보류 기록(needs_review + 까닭) — 화면이 그 자리에서 종류 · 달 · 이유를 받아 저장한다. */
+async function holdCard(
+  o: ProcessOptions,
+  sha: string,
+  base: Omit<FileCard, 'status' | 'upload_id' | 'rows' | 'message' | 'why'>,
+  rows: number,
+  hold: FinHoldKind,
+  message: string,
+  pending: Parameters<ChairmanRepository['finUploadRecord']>[0]['pending'],
+  warnings: string[],
+): Promise<FileCard> {
+  try {
+    const id = await o.repo.finUploadRecord({
+      business_id: o.businessId, kind: base.kind, period: base.period, file_name: o.fileName, file_sha256: sha, sheet_name: base.sheet,
+      ai_confidence: base.confidence, ai_used: base.ai_used, status: 'needs_review', pending, error: null,
+    })
+    return { ...base, status: 'held', hold, upload_id: id, rows, message, why: [], warnings }
+  } catch (e) {
+    const msg = finUploadError(e)
+    return { ...base, status: msg === ERR_KO.fin_upload_duplicate ? 'duplicate' : 'failed', upload_id: null, rows: 0, message: msg, why: [] }
+  }
 }
 
 /** 보류 기록의 앞머리(화면 finance-upload-board.tsx가 같은 글로 «보류»를 그린다). */
@@ -314,6 +392,14 @@ async function processDoc(o: ProcessOptions, kind: 'pdf' | 'image', sha: string)
     }
     if (draft && aiNote) draft.warnings.push(`${aiNote} — AI 없이 글 줄에서 읽었습니다.`)
     const rec = await failRecord(o, sha, OFFICIAL_RECORD_NOTE, { aiUsed, format: doc.format })
+    // 0085 «놓으면 저장» — 맞춘 계정으로 해마다 바로 저장(못 맞춘 줄은 «기타» · 경고). 보류면 예전 미리보기 칸을 그대로 둔다.
+    if (o.user && draft && draft.lines.length) {
+      const r = await autoSaveOfficial({ repo: o.repo, user: o.user, businessId: o.businessId, draft, fileName: o.fileName })
+      if (r.status === 'applied') {
+        return [{ ...rec, status: 'applied', kind: 'unknown', period: r.years.join(' · '), message: r.message, warnings: r.warnings, official_ids: r.ids, fixes: doc.fixes, rows: r.matched }]
+      }
+      return [{ ...rec, status: 'official', hold: 'other', message: r.message, warnings: r.warnings, official: draft, fixes: doc.fixes }]
+    }
     return [
       {
         ...rec,
@@ -419,46 +505,66 @@ async function processSheets(o: ProcessOptions, sha: string, sheets: EcountSheet
       cards.push({ ...sameFileCard(o.fileName, same), sheet: sheet.name, kind: cls.kind, period: month.period, ai_used: aiUsed, confidence: cls.confidence, notes: readNotes(ev.read) })
       continue
     }
-    const overlap = !!month.period && uploads.some((u) => u.kind === cls.kind && u.period === month.period && u.status === 'applied')
-    const closed = month.period ? await o.repo.finMonthClosed(o.businessId, month.period).catch(() => false) : false
-    // 0072 다섯째 조건 — 다른 자료의 살아 있는 줄과 «같은 거래 의심»(순수 함수). 세지 못하면 null(자동 아님).
+    // 0085 «넣으면 쌓인다» — 미리보기 없이 저장한다(같은 달은 DB가 바꾸기를 고른다). 사람이 볼 것은 경고 꼬리표로만.
+    // 0072 다섯째 조건(중복 의심)도 막지 않고 경고로 — 세지 못했으면(null) 그렇게 적는다.
     const dup = await countDupSuspects(o.repo, o.businessId, cls.kind, month.period, read.rows as FinRow[])
-    const decision0 = autoDecision({ confidence: cls.confidence, check, overlap, closed, dupSuspects: dup.count })
-    // C단계: 사진 · 스캔 처음 3개월 · AI 없이 세운 표는 다섯 조건을 넘어도 미리보기.
-    const decision = doc?.forceWhy.length ? { auto: false, why: [...decision0.why, ...doc.forceWhy] } : decision0
     const header = (sheet.rows[cls.headerRow] ?? []).map((c) => cellText(c).slice(0, 40))
+    const warnings = saveWarnings(check, dup, doc?.forceWhy ?? [], read)
     const meta = {
-      reason: cls.reason, period_how: month.how, errors: check.errors, warnings: check.warnings, why_not_auto: decision.why, columns: cls.columns, header_row: cls.headerRow, header, sig, dropped, dup_suspects: dup.count, dup_notes: dup.notes,
+      reason: cls.reason, period_how: month.how, errors: check.errors, warnings, why_not_auto: [], columns: cls.columns, header_row: cls.headerRow, header, sig, dropped, dup_suspects: dup.count, dup_notes: dup.notes,
       ...(cls.labels?.length ? { labels: cls.labels } : {}),
       ...(cls.ledger ? { ledger: { headerRow: cls.ledger.headerRow, cols: cls.ledger.cols as Record<string, number>, headCol: cls.ledger.headCol ?? null } } : {}),
       ...(tries ? { tries } : {}),
       ...(doc ? { source_format: doc.format, fixes: doc.fixes } : {}),
     }
-    const confidenceDb = cls.confidence
     const base = { file_name: o.fileName, sheet: sheet.name, kind: cls.kind, period: month.period, ai_used: aiUsed, confidence: cls.confidence, notes: readNotes(read) }
+    const people = cls.kind === 'payroll' ? (read.people as FinRow[]) : []
+    const pendingOf = (hold: FinHoldKind, message: string) => ({
+      rows: read.rows as FinRow[],
+      people: people.length ? people : undefined,
+      // 0072 리뷰 C1: 출고명세는 칸 격자의 kg · 수량 칸을 기록 전에 비운다.
+      grid: cls.kind === 'material_issue' ? stripKgGrid(toGrid(sheet), cls.headerRow, true).grid : toGrid(sheet),
+      meta: { ...meta, hold, hold_message: message },
+    })
+    if (!read.rows.length) {
+      cards.push({ ...base, status: 'failed', upload_id: null, rows: 0, message: '넣을 줄이 없습니다 — 제목 · 빈 줄만 있는 시트입니다.', why: check.errors.slice(0, 5) })
+      continue
+    }
+    if (!month.period) {
+      cards.push(await holdCard(o, sha, base, read.rows.length, 'period', MSG_HOLD.period, pendingOf('period', MSG_HOLD.period), warnings))
+      continue
+    }
     try {
-      if (decision.auto && month.period) {
-        const id = await o.repo.finUploadApply({
-          business_id: o.businessId, kind: cls.kind, period: month.period, file_name: o.fileName, file_sha256: opened.sha256, sheet_name: sheet.name,
-          ai_confidence: confidenceDb, ai_used: aiUsed, auto: true, rows: read.rows as FinRow[], people: cls.kind === 'payroll' ? (read.people as FinRow[]) : null,
-          overlap: 'none', reason: null, upload_id: null, dup_suspects: dup.count ?? 0,
-        })
-        // 같은 거래(same) 묶음 저장 — 원천 줄은 고치지 않는다. 실패해도 넣기는 그대로(묶음은 화면에서 다시 맞춘다).
-        await saveTxGroupsFor(o.repo, o.businessId, cls.kind, month.period, id, null).catch((e) => console.error('[finance-upload] tx groups', e))
-        cards.push({ ...base, status: 'applied', upload_id: id, rows: read.rows.length, message: `자동으로 넣었습니다 — ${read.rows.length}줄. 7일 안에 되돌릴 수 있습니다.`, why: [] })
-      } else {
-        const id = await o.repo.finUploadRecord({
-          business_id: o.businessId, kind: cls.kind, period: month.period, file_name: o.fileName, file_sha256: opened.sha256, sheet_name: sheet.name,
-          ai_confidence: confidenceDb, ai_used: aiUsed, status: 'needs_review',
-          // 0072 리뷰 C1: 출고명세는 칸 격자의 kg · 수량 칸을 기록 전에 비운다(대기 줄의 kg는 DB가 넣을 때만 쓰고 아무에게도 돌려주지 않는다).
-          pending: { rows: read.rows as FinRow[], people: cls.kind === 'payroll' ? (read.people as FinRow[]) : undefined, grid: cls.kind === 'material_issue' ? stripKgGrid(toGrid(sheet), cls.headerRow, true).grid : toGrid(sheet), meta },
-          error: null,
-        })
-        cards.push({ ...base, status: 'needs_review', upload_id: id, rows: read.rows.length, message: '확인이 필요합니다 — 아래 미리보기에서 종류 · 칸 · 기간을 보고 넣으세요.', why: decision.why })
+      const id = await o.repo.finUploadSave({
+        business_id: o.businessId, kind: cls.kind, period: month.period, file_name: o.fileName, file_sha256: opened.sha256, sheet_name: sheet.name,
+        ai_confidence: cls.confidence, ai_used: aiUsed, rows: read.rows as FinRow[], people: o.boss && people.length ? people : null, reason: null, upload_id: null, warnings,
+      })
+      // 같은 거래(same) 묶음 저장 — 원천 줄은 고치지 않는다. 실패해도 저장은 그대로.
+      await saveTxGroupsFor(o.repo, o.businessId, cls.kind, month.period, id, null).catch((e) => console.error('[finance-upload] tx groups', e))
+      // 계정과목표가 없거나 모자라면 원장의 코드 · 이름으로 «자동 생성»(계정과목표 파일이 오면 덮어쓴다).
+      if (o.user && (cls.kind === 'ledger' || cls.kind === 'ledger_lines')) {
+        const made = await ensureAccounts(o.repo, { user_id: o.user.user_id, role: o.user.role }, o.businessId,
+          (read.rows as FinRow[]).filter((r) => r.account_code && r.account_name).map((r) => ({ code: String(r.account_code), name: String(r.account_name) }))).catch(() => ({ created: [] as string[], unknown: [] as string[] }))
+        if (made.created.length) warnings.push(`계정과목표에 없는 계정 ${made.created.length}개를 «자동 생성»했습니다 — 계정과목표를 올리면 덮어씁니다.`)
       }
+      let held = 0
+      if (people.length && !o.boss) {
+        // 예외 ① 급여 개인 줄 — 부서 합계는 저장, 개인 줄은 대표 · CFO가 «저장»할 때까지 보류.
+        await o.repo.finPayrollHold(id, people).then(() => (held = people.length)).catch((e) => console.error('[finance-upload] payroll hold', e))
+      }
+      const what = cls.kind === 'payroll' ? `부서 합계 ${read.rows.length}` : `${read.rows.length}줄`
+      cards.push({
+        ...base, status: 'applied', upload_id: id, rows: read.rows.length, why: [], warnings,
+        message: `저장됨 · ${what}${held ? ` (개인 줄 ${held}개는 대표 · CFO 확인 뒤 저장)` : cls.kind === 'payroll' && people.length ? ` · 개인 줄 ${people.length}` : ''}${doc?.byAi ? ` (${doc.format === 'image' ? '사진 · ' : ''}AI 읽음)` : ''}`,
+      })
     } catch (e) {
-      const msg = finUploadError(e)
-      cards.push({ ...base, status: msg === ERR_KO.fin_upload_duplicate ? 'duplicate' : 'failed', upload_id: null, rows: 0, message: msg, why: [] })
+      const m = e instanceof Error ? e.message : String(e)
+      const hold = holdOf(m)
+      if (hold) cards.push(await holdCard(o, sha, base, read.rows.length, hold, MSG_HOLD[hold], pendingOf(hold, MSG_HOLD[hold]), warnings))
+      else {
+        const msg = finUploadError(e)
+        cards.push({ ...base, status: msg === ERR_KO.fin_upload_duplicate ? 'duplicate' : 'failed', upload_id: null, rows: 0, message: msg, why: [] })
+      }
     }
   }
   // 아는 시트가 하나도 없으면 «모름» 시트를 사람이 고르게 미리보기로 남긴다(첫 시트 하나 — 표지 · 메모 시트가 흔하다).
@@ -470,10 +576,10 @@ async function processSheets(o: ProcessOptions, sha: string, sheets: EcountSheet
         business_id: o.businessId, kind: 'unknown', period: null, file_name: o.fileName, file_sha256: opened.sha256, sheet_name: u.sheet.name,
         ai_confidence: u.cls.confidence, ai_used: u.aiUsed, status: 'needs_review',
         // 0072 리뷰 C1 남은 일: «모름» 대기의 칸 격자에서 kg 칸을 비운다(출고명세로 보이면 수량 칸까지).
-        pending: { rows: [], grid: stripKgGrid(toGrid(u.sheet), u.cls.headerRow, looksLikeMaterialIssue(u.sheet)).grid, meta: { reason: u.cls.reason, header_row: u.cls.headerRow, header, sig: u.sig, columns: {}, ...(doc ? { source_format: doc.format, fixes: doc.fixes, why_not_auto: doc.forceWhy, errors: doc.extraErrors } : {}) } },
+        pending: { rows: [], grid: stripKgGrid(toGrid(u.sheet), u.cls.headerRow, looksLikeMaterialIssue(u.sheet)).grid, meta: { reason: u.cls.reason, header_row: u.cls.headerRow, header, sig: u.sig, columns: {}, hold: 'kind' as const, hold_message: MSG_HOLD.kind, ...(doc ? { source_format: doc.format, fixes: doc.fixes, why_not_auto: doc.forceWhy, errors: doc.extraErrors } : {}) } },
         error: null,
       })
-      cards.push({ file_name: o.fileName, sheet: u.sheet.name, kind: 'unknown', period: null, status: 'needs_review', upload_id: id, rows: 0, message: `종류를 모릅니다 — 종류를 골라 주세요. (${u.cls.reason})`, why: [], ai_used: u.aiUsed, confidence: u.cls.confidence })
+      cards.push({ file_name: o.fileName, sheet: u.sheet.name, kind: 'unknown', period: null, status: 'held', hold: 'kind', upload_id: id, rows: 0, message: `${MSG_HOLD.kind} (${u.cls.reason})`, why: [], ai_used: u.aiUsed, confidence: u.cls.confidence })
     } catch (e) {
       cards.push({ file_name: o.fileName, sheet: u.sheet.name, kind: 'unknown', period: null, status: 'failed', upload_id: null, rows: 0, message: finUploadError(e), why: [], ai_used: u.aiUsed, confidence: 'none' })
     }

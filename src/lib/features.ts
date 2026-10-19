@@ -157,6 +157,13 @@ export const FEATURES = [
     defaultAudience: 'all',
     from: 'feat/purchase-price-report · 0084',
   },
+  {
+    key: 'finance_overview',
+    label: '재무 현황(한 화면)',
+    description: '«회계 · 재무»(/finance) 첫 화면 — 요약 · 일별 자금보고 · 현금흐름 달력 · 손익계산서 · 12가지 지표, 자료 올리기의 «놓으면 저장»(미리보기 없음 · 같은 달은 바꾸기 · 경고 꼬리표) · 다시 계산 큐. 꺼지면 /finance가 예전 «그룹 재무»로 돌아간다(저장 방식은 그대로).',
+    defaultAudience: 'all',
+    from: 'feat/finance-overview · 0085',
+  },
 ] as const satisfies readonly FeatureDef[]
 
 export type FeatureKey = (typeof FEATURES)[number]['key']

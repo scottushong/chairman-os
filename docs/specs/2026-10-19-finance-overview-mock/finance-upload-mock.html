@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>자료 올리기</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;background:#f4f5f3;font-family:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;color:#1a211e}
+a{color:#0f6b5c;text-decoration:none}a:hover{text-decoration:underline}
+</style>
+</helmet>
+<div style="max-width: 1360px; margin: 0 auto; box-sizing: border-box; padding: 24px 28px 48px; display: flex; flex-direction: column; gap: 20px">
+
+  <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px">
+    <div style="font-size: 22px; font-weight: 700">회계 · 재무 자료 올리기</div>
+    <div style="padding: 6px 12px; border: 1px solid #d7ddda; border-radius: 8px; background: #fff; font-size: 14px">DY (주) ▾</div>
+    <div style="margin-left: auto"><a href="Main.dc.html" style="font-size: 13px">재무 현황으로 ›</a></div>
+  </div>
+
+  <div style="border: 2px dashed #8fb3a8; border-radius: 12px; background: #fff; padding: 44px 24px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center">
+    <div style="font-size: 18px; font-weight: 600">여기에 이번 달 파일을 전부 끌어다 놓으세요</div>
+    <div style="font-size: 14px; color: #6b7772">엑셀 · PDF · 사진 · 한 번에 여러 개 · 순서 상관없음 · 종류는 앱이 알아봅니다</div>
+    <button type="button" style="margin-top: 6px; padding: 10px 18px; border-radius: 8px; border: 1px solid #0f6b5c; background: #0f6b5c; color: #fff; font-size: 14px; font-weight: 600; font-family: inherit">파일 고르기</button>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 8px">
+    <div style="font-size: 15px; font-weight: 700">방금 올린 파일 18개 — 저장 17 · 경고 1</div>
+    <div style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; overflow: hidden">
+      <div style="display: grid; grid-template-columns: 1.6fr 1fr 0.8fr 1.2fr 0.7fr; gap: 12px; padding: 10px 14px; font-size: 12px; color: #6b7772; border-bottom: 1px solid #e1e6e3"><div>파일</div><div>알아본 종류</div><div>달</div><div>상태</div><div></div></div>
+      <div style="display: grid; grid-template-columns: 1.6fr 1fr 0.8fr 1.2fr 0.7fr; gap: 12px; padding: 10px 14px; font-size: 14px; border-bottom: 1px solid #eef1ef; align-items: center"><div>2026_09_판매현황.xlsx</div><div>판매현황</div><div>2026-09</div><div style="color: #0f6b5c">저장됨 · 312줄</div><div><a href="#">되돌리기</a></div></div>
+      <div style="display: grid; grid-template-columns: 1.6fr 1fr 0.8fr 1.2fr 0.7fr; gap: 12px; padding: 10px 14px; font-size: 14px; border-bottom: 1px solid #eef1ef; align-items: center"><div>9월 계정별 원장.xlsx</div><div>계정별 원장</div><div>2026-09</div><div style="color: #9a4b12">저장됨 · 경고 2 (1039 · 2519 합계 차이)</div><div><a href="#">보기</a></div></div>
+      <div style="display: grid; grid-template-columns: 1.6fr 1fr 0.8fr 1.2fr 0.7fr; gap: 12px; padding: 10px 14px; font-size: 14px; border-bottom: 1px solid #eef1ef; align-items: center"><div>급여대장_2609.xlsx</div><div>급여대장</div><div>2026-09</div><div style="color: #0f6b5c">저장됨 · 부서 합계 6 (개인 줄은 대표 · CFO)</div><div><a href="#">되돌리기</a></div></div>
+      <div style="display: grid; grid-template-columns: 1.6fr 1fr 0.8fr 1.2fr 0.7fr; gap: 12px; padding: 10px 14px; font-size: 14px; border-bottom: 1px solid #eef1ef; align-items: center"><div>대출현황_0930.pdf</div><div>대출현황</div><div>2026-09-30</div><div style="color: #0f6b5c">저장됨 · 4건 (AI 읽음)</div><div><a href="#">되돌리기</a></div></div>
+      <div style="display: grid; grid-template-columns: 1.6fr 1fr 0.8fr 1.2fr 0.7fr; gap: 12px; padding: 10px 14px; font-size: 14px; border-bottom: 1px solid #eef1ef; align-items: center"><div>IMG_4471.jpg</div><div>법인카드 사용내역</div><div>2026-09</div><div style="color: #0f6b5c">저장됨 · 41건 (사진 · AI 읽음)</div><div><a href="#">되돌리기</a></div></div>
+      <div style="display: grid; grid-template-columns: 1.6fr 1fr 0.8fr 1.2fr 0.7fr; gap: 12px; padding: 10px 14px; font-size: 14px; border-bottom: 1px solid #eef1ef; align-items: center"><div>2023~5 표준재무제표.pdf</div><div>공식 결산 (3년)</div><div>2023 · 24 · 25</div><div style="color: #0f6b5c">저장됨 · 계정 102/102 맞춤</div><div><a href="#">되돌리기</a></div></div>
+      <div style="display: grid; grid-template-columns: 1.6fr 1fr 0.8fr 1.2fr 0.7fr; gap: 12px; padding: 10px 14px; font-size: 14px; border-bottom: 1px solid #eef1ef; align-items: center"><div>재고금액명세서_9월.xlsx</div><div>재고금액명세서</div><div>2026-09</div><div style="color: #0f6b5c">저장됨 · 출고 구분 자동 88 · 확인 필요 3</div><div><a href="#">보기</a></div></div>
+      <div style="display: grid; grid-template-columns: 1.6fr 1fr 0.8fr 1.2fr 0.7fr; gap: 12px; padding: 10px 14px; font-size: 14px; color: #6b7772; align-items: center"><div>… 11개 더</div><div></div><div></div><div>모두 저장됨</div><div><a href="#">펼치기</a></div></div>
+    </div>
+    <div style="font-size: 13px; color: #6b7772">저장되면 재무 현황이 바로 다시 계산됩니다(보통 1분 안). 잘못 올린 파일은 7일 안에 «되돌리기»로 무효 처리할 수 있습니다.</div>
+  </div>
+
+  <div style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; padding: 14px 18px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+    <div style="font-size: 14px; font-weight: 600; margin-right: 8px">2026년 9월 — 받은 것 16 / 18</div>
+    <div style="padding: 4px 10px; border-radius: 999px; background: #fff; border: 1px dashed #c9d1cd; color: #6b7772; font-size: 13px">빠짐: 재공품 · 완제품 평가</div>
+    <div style="padding: 4px 10px; border-radius: 999px; background: #fff; border: 1px dashed #c9d1cd; color: #6b7772; font-size: 13px">빠짐: 출하집계표</div>
+    <div style="margin-left: auto; font-size: 13px"><a href="Main.dc.html">재무 현황 보기 ›</a></div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1360,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

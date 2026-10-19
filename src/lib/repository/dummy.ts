@@ -53,7 +53,7 @@ import * as books from './dummy-books'
 import { dummyAssistant } from './dummy-assistant'
 import { dummyFeatures } from './dummy-features'
 import { dummyFeedback } from './dummy-feedback'
-import { dummyFinanceUpload, dummyFinLines, dummyFinStore } from './dummy-finance-upload'
+import { dummyFinanceOverview, dummyFinanceUpload, dummyFinLines, dummyFinStore, type DummyFinUploadDeps } from './dummy-finance-upload'
 import { dummyMonthlyPl, dummyPlCloses } from './dummy-monthly-pl'
 import { dummySalesMargins } from './dummy-sales-margins'
 import * as chat from './dummy-chat'
@@ -653,6 +653,27 @@ const intake = dummyIntake({
 })
 seedDummyIntake(dummySeedAttachment, { salesStaff: DUMMY_UID.salesStaff, supportLead: DUMMY_UID.supportLead, buyStaff: DUMMY_UID.buyStaff })
 
+/** 0070 · 0085 dummy 판정 거울(장부 쓰기 = can_keep_books 거울) — 자료 올리기 · 재무 현황이 같이 쓴다. */
+const FIN_UPLOAD_DEPS: DummyFinUploadDeps = {
+    viewer: () => dummyViewer(),
+    featureOn: async (b) => featureOnFor(await dummyRepository.listFeatureSwitches(), 'finance_upload', dummyViewer().role, b),
+    canKeep: (b) => dummyCanKeepBooks(b),
+    canRead: (b) => dummyCanKeepBooks(b) || ['Chairman', 'GroupCFO', 'BusinessCEO', 'Executive'].includes(dummyViewer().role),
+    materialViewer: (b) => dummyMaterialViewer(b),
+    // 0072 재마감 대상 풀기 = can_close_books 거울(역할 둘 또는 그 회사 재무 마감 줄).
+    canClose: (b) => {
+      const v = dummyViewer()
+      if (v.revoked_at) return false
+      if (v.role === 'Chairman' || v.role === 'GroupCFO') return true
+      return v.business_ids.includes(b) && dummyModuleGrants(v.user_id).some((m) => m.module === `/finance/${b}` && m.can_approve)
+    },
+    name: (u) => dummyPerson(u)?.display_name ?? null,
+    closed: async (b, p) => (await dummyRepository.loadFinanceLedger()).closings.some((c) => c.business_id === b && c.period === p && c.closed),
+    notify: (_u, title, body, link) => {
+      memoryNotifications.push({ notification_id: `ntf_${memoryNotifications.length + 1}`, kind: 'system', title, body, link, read_at: null, created_at: new Date().toISOString() })
+    },
+  }
+
 export const dummyRepository: ChairmanRepository = {
   mode: 'dummy',
 
@@ -796,6 +817,9 @@ export const dummyRepository: ChairmanRepository = {
   listOfficialAccountMap: books.listOfficialAccountMap,
   putOfficialEvidence: books.putOfficialEvidence,
   officialEvidenceUrl: books.officialEvidenceUrl,
+  withdrawOfficialStatement: books.withdrawOfficialStatement,
+  listAutoAccounts: books.listAutoAccounts,
+  listOfficialStatementLines: books.listOfficialStatementLines,
   listProcessCharts: books.listProcessCharts,
   saveProcessChart: books.saveProcessChart,
   deleteProcessChart: books.deleteProcessChart,
@@ -848,25 +872,9 @@ export const dummyRepository: ChairmanRepository = {
     businesses: () => [...businesses, ...memoryBusinesses].map((b) => b.business_id),
   }),
   // 0070 — 회계 · 재무 자료 올리기(dummy-finance-upload.ts). 판정은 0070 거울(장부 쓰기 = can_keep_books 거울).
-  ...dummyFinanceUpload({
-    viewer: () => dummyViewer(),
-    featureOn: async (b) => featureOnFor(await dummyRepository.listFeatureSwitches(), 'finance_upload', dummyViewer().role, b),
-    canKeep: (b) => dummyCanKeepBooks(b),
-    canRead: (b) => dummyCanKeepBooks(b) || ['Chairman', 'GroupCFO', 'BusinessCEO', 'Executive'].includes(dummyViewer().role),
-    materialViewer: (b) => dummyMaterialViewer(b),
-    // 0072 재마감 대상 풀기 = can_close_books 거울(역할 둘 또는 그 회사 재무 마감 줄).
-    canClose: (b) => {
-      const v = dummyViewer()
-      if (v.revoked_at) return false
-      if (v.role === 'Chairman' || v.role === 'GroupCFO') return true
-      return v.business_ids.includes(b) && dummyModuleGrants(v.user_id).some((m) => m.module === `/finance/${b}` && m.can_approve)
-    },
-    name: (u) => dummyPerson(u)?.display_name ?? null,
-    closed: async (b, p) => (await dummyRepository.loadFinanceLedger()).closings.some((c) => c.business_id === b && c.period === p && c.closed),
-    notify: (_u, title, body, link) => {
-      memoryNotifications.push({ notification_id: `ntf_${memoryNotifications.length + 1}`, kind: 'system', title, body, link, read_at: null, created_at: new Date().toISOString() })
-    },
-  }),
+  ...dummyFinanceUpload(FIN_UPLOAD_DEPS),
+  // 0085 — 저장 한 번 · 급여 개인 줄 보류 · 다시 계산 큐 · 재무 현황 저장본(dummy-finance-upload.ts 끝).
+  ...dummyFinanceOverview(FIN_UPLOAD_DEPS, { finUploadApply: (x) => dummyRepository.finUploadApply(x) }),
   // 0075 — 월별 손익(재고 반영 · 마감)(dummy-monthly-pl.ts). 판정은 0075 거울(읽기 = 장부 읽기 · 잠정 = 장부 쓰기 · 마감 = can_close_books).
   ...dummyMonthlyPl({
     viewer: () => dummyViewer(),

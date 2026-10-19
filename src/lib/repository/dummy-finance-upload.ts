@@ -1,5 +1,9 @@
+import { OVERVIEW_LINE_KINDS } from '@/types'
 import type {
   FinDedupeSetting,
+  FinOverviewMonthRow,
+  FinPayrollHeld,
+  FinRecalcJob,
   FinInventoryRollRow,
   FinIssueSummary,
   FinRecloseFlag,
@@ -447,6 +451,7 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
       voidRows(prev.map((x) => x.upload_id), false)
       for (const p of prev) Object.assign(p, { status: 'applied', replaced_by: null })
       Object.assign(u, { status: 'reverted', reverted_at: new Date().toISOString(), reason: reason ?? u.reason })
+      dummyRecalcEnqueue(u.business_id, u.period, 'revert')
       if (u.period) await reclose(u.business_id, u.period, id, 'revert', reason)
       return true
     },
@@ -835,6 +840,8 @@ export const FIN_DEMO = { business: 'biz_dy', period: '2026-09', prev: '2026-08'
 function ensureDemo() {
   if (store.demo) return
   store.demo = true
+  // 0085 — 재무 현황 시험 · 스크린샷은 예시 없이(가짜 18개 파일만) 본다: DUMMY_FIN_DEMO=off.
+  if (process.env.DUMMY_FIN_DEMO === 'off') return
   const { business: B, period: D, prev: P } = FIN_DEMO
   const staff = DUMMY_UID.supportLead
   const ceo = DUMMY_UID.dyCeo
@@ -914,4 +921,170 @@ function ensureDemo() {
   })
   // 재마감 대상(예시) — 앞 달 평가금액 확정이 마감 뒤에 들어온 경우의 표시.
   store.flags.push({ flag_id: crypto.randomUUID(), business_id: B, period: P, upload_id: null, cause: 'valuation', reason: '가짜 예시 — 마감 뒤 재공품 평가 확정', created_at: t(`${P}-30`), cleared_at: null })
+}
+
+/* ───────────────────────── 0085 재무 현황 · 저장 한 번(거울) ───────────────────────── */
+
+interface Held extends FinPayrollHeld {
+  business_id: string
+  created_by: string
+  decided: 'saved' | 'discarded' | null
+}
+interface Extra {
+  held: Held[]
+  jobs: FinRecalcJob[]
+  overview: Map<string, FinOverviewMonthRow>
+  kpi: Map<string, Record<string, unknown>>
+}
+const gx = globalThis as unknown as { __chairmanDummyFinOverview?: Extra }
+const extra: Extra = (gx.__chairmanDummyFinOverview ??= { held: [], jobs: [], overview: new Map(), kpi: new Map() })
+
+/** 0085 트리거 거울 — 기다리는 일은 회사마다 하나(시작 달만 앞으로). */
+export function dummyRecalcEnqueue(business: string, period: string | null, cause: string): void {
+  if (!period || !PERIOD.test(period)) return
+  const p = extra.jobs.find((j) => j.business_id === business && j.status === 'pending')
+  if (p) {
+    p.from_period = p.from_period < period ? p.from_period : period
+    p.requested_at = new Date().toISOString()
+    return
+  }
+  extra.jobs.unshift({ job_id: crypto.randomUUID(), business_id: business, from_period: period, status: 'pending', attempts: 0, last_error: null, cause, requested_at: new Date().toISOString(), started_at: null, finished_at: null })
+}
+
+/** 시험이 큐 · 저장본을 본다(dummy만). */
+export function dummyFinOverviewStore(): Readonly<Extra> {
+  return extra
+}
+
+type OverviewMethods = Pick<
+  ChairmanRepository,
+  | 'finUploadSave'
+  | 'finPayrollHold'
+  | 'listFinPayrollHeld'
+  | 'finPayrollRelease'
+  | 'finRecalcRequest'
+  | 'finRecalcClaim'
+  | 'finRecalcFinish'
+  | 'listFinRecalcJobs'
+  | 'finOverviewSave'
+  | 'listFinOverviewMonths'
+  | 'listFinLines'
+  | 'finKpiSettings'
+  | 'saveFinKpiSettings'
+>
+
+const OVERVIEW_KINDS = new Set<string>(OVERVIEW_LINE_KINDS)
+
+export function dummyFinanceOverview(d: DummyFinUploadDeps, up: Pick<ChairmanRepository, 'finUploadApply'>): OverviewMethods {
+  const agent = () => d.viewer().role === 'AIAgent'
+  const canRun = (b: string) => d.canKeep(b) || (agent() && d.canRead(b))
+  return {
+    async finUploadSave(x) {
+      if (!d.canKeep(x.business_id)) throw new Error('fin_upload_denied')
+      if (!PERIOD.test(x.period)) throw new Error('fin_upload_period')
+      const old = store.uploads.some((u) => u.business_id === x.business_id && u.kind === x.kind && u.period === x.period && u.status === 'applied' && u.upload_id !== x.upload_id)
+      const id = await up.finUploadApply({ ...x, auto: false, overlap: old ? 'replace' : 'none', dup_suspects: null })
+      const u = store.uploads.find((v) => v.upload_id === id)
+      if (u) Object.assign(u, { auto: true, warnings: x.warnings.slice(0, 40).map((w) => w.slice(0, 300)) })
+      dummyRecalcEnqueue(x.business_id, x.period, 'upload')
+      return id
+    },
+    async finPayrollHold(uploadId, rows) {
+      const u = store.uploads.find((v) => v.upload_id === uploadId)
+      if (!u || !d.canKeep(u.business_id) || u.created_by !== d.viewer().user_id) throw new Error('fin_payroll_hold_denied')
+      if (u.kind !== 'payroll' || u.status !== 'applied') throw new Error('fin_payroll_hold_state')
+      if (!rows.length) throw new Error('fin_upload_rows')
+      const keep: FinRow[] = rows.map((r) => ({ row_no: r.row_no, dept: r.dept ?? null, person_ref: r.person_ref ?? null, salary: r.salary ?? null, bonus: r.bonus ?? null, severance: r.severance ?? null }))
+      const open = extra.held.find((h) => h.upload_id === uploadId && !h.decided)
+      if (open) {
+        open.rows = keep
+        open.people = keep.length
+        return open.hold_id
+      }
+      const h: Held = { hold_id: crypto.randomUUID(), upload_id: uploadId, business_id: u.business_id, period: u.period ?? '', people: keep.length, created_at: new Date().toISOString(), rows: keep, created_by: d.viewer().user_id, decided: null }
+      extra.held.unshift(h)
+      return h.hold_id
+    },
+    async listFinPayrollHeld(businessId) {
+      if (!d.canKeep(businessId)) return []
+      const boss = chairOrCfo(d.viewer().role)
+      return extra.held
+        .filter((h) => h.business_id === businessId && !h.decided && store.uploads.some((u) => u.upload_id === h.upload_id && u.status === 'applied'))
+        .map((h) => ({ hold_id: h.hold_id, upload_id: h.upload_id, period: h.period, people: h.people, created_at: h.created_at, rows: boss ? structuredClone(h.rows) : null }))
+    },
+    async finPayrollRelease(holdId, save) {
+      if (!chairOrCfo(d.viewer().role)) throw new Error('fin_payroll_release_denied')
+      const h = extra.held.find((x) => x.hold_id === holdId)
+      if (!h || h.decided) return false
+      const u = store.uploads.find((x) => x.upload_id === h.upload_id)
+      if (save) {
+        if (!u || u.status !== 'applied') throw new Error('fin_payroll_hold_state')
+        for (const row of h.rows ?? []) store.lines.push({ line_id: (store.seq += 1), upload_id: h.upload_id, business_id: h.business_id, period: h.period, kind: 'payroll', people: true, row: { ...row }, voided_at: null })
+      }
+      h.decided = save ? 'saved' : 'discarded'
+      return true
+    },
+    async finRecalcRequest(businessId, period) {
+      if (!d.canKeep(businessId)) throw new Error('fin_recalc_denied')
+      dummyRecalcEnqueue(businessId, period, 'manual')
+    },
+    async finRecalcClaim(businessId, limit) {
+      if (businessId === null ? !agent() : !canRun(businessId)) throw new Error('fin_recalc_denied')
+      const stale = (j: FinRecalcJob) => j.status === 'running' && !!j.started_at && Date.parse(j.started_at) < Date.now() - 15 * 60_000
+      const busy = (b: string) => extra.jobs.some((r) => r.business_id === b && r.status === 'running' && !stale(r))
+      const out: FinRecalcJob[] = []
+      for (const j of [...extra.jobs].sort((a, b) => a.requested_at.localeCompare(b.requested_at))) {
+        if (out.length >= Math.max(1, Math.min(limit, 20))) break
+        if (businessId !== null && j.business_id !== businessId) continue
+        if (businessId === null && !d.canRead(j.business_id)) continue
+        if (j.attempts >= 5) continue
+        if (!(j.status === 'pending' || stale(j))) continue
+        if (j.status === 'pending' && busy(j.business_id)) continue
+        Object.assign(j, { status: 'running', started_at: new Date().toISOString(), attempts: j.attempts + 1 })
+        out.push({ ...j })
+      }
+      return out
+    },
+    async finRecalcFinish(jobId, ok, error) {
+      const j = extra.jobs.find((x) => x.job_id === jobId)
+      if (!j) return
+      if (!canRun(j.business_id)) throw new Error('fin_recalc_denied')
+      if (j.status !== 'running') return
+      if (ok) Object.assign(j, { status: 'done', finished_at: new Date().toISOString(), last_error: null })
+      else if (j.attempts >= 5) Object.assign(j, { status: 'failed', finished_at: new Date().toISOString(), last_error: error })
+      else {
+        const next = extra.jobs.find((o) => o.business_id === j.business_id && o.status === 'pending' && o.job_id !== j.job_id)
+        if (next) {
+          next.from_period = next.from_period < j.from_period ? next.from_period : j.from_period
+          Object.assign(j, { status: 'failed', finished_at: new Date().toISOString(), last_error: error })
+        } else Object.assign(j, { status: 'pending', last_error: error })
+      }
+    },
+    async listFinRecalcJobs(businessId) {
+      return d.canRead(businessId) ? extra.jobs.filter((j) => j.business_id === businessId).slice(0, 20).map((j) => ({ ...j })) : []
+    },
+    async finOverviewSave(businessId, period, totals, missing, provisional) {
+      if (!canRun(businessId)) throw new Error('fin_overview_denied')
+      if (!PERIOD.test(period) || /"(materials?|people|person_ref|unit_price|qty_kg|bom)"/i.test(JSON.stringify(totals))) throw new Error('fin_overview_shape')
+      extra.overview.set(`${businessId}|${period}`, { business_id: businessId, period, totals: structuredClone(totals), missing: [...missing], provisional, computed_at: new Date().toISOString() })
+    },
+    async listFinOverviewMonths(businessId, periods) {
+      if (!d.canRead(businessId)) return []
+      return periods.map((p) => extra.overview.get(`${businessId}|${p}`)).filter((r): r is FinOverviewMonthRow => !!r).map((r) => structuredClone(r))
+    },
+    async listFinLines(kind, businessId, periods) {
+      ensureDemo()
+      if (!OVERVIEW_KINDS.has(kind) || !d.canRead(businessId)) return []
+      const want = new Set(periods)
+      return store.lines.filter((l) => l.kind === kind && l.business_id === businessId && want.has(l.period) && !l.voided_at && !l.people).map((l) => ({ ...l.row, period: l.period }))
+    },
+    async finKpiSettings(businessId) {
+      return d.canRead(businessId) ? structuredClone(extra.kpi.get(businessId) ?? null) : null
+    },
+    async saveFinKpiSettings(businessId, settings, reason) {
+      if (!d.canClose(businessId)) throw new Error('fin_kpi_settings_denied')
+      if (!reasonOk(reason)) throw new Error('fin_kpi_settings_shape')
+      extra.kpi.set(businessId, structuredClone(settings))
+    },
+  }
 }

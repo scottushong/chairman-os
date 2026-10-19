@@ -92,6 +92,7 @@ import type {
   NewOfficialStatement,
   OfficialStatement,
   OfficialStatementBasis,
+  OfficialStatementLine,
   OfficialAccountMapRow,
   ProcessChart,
   ProcessChartInput,
@@ -186,6 +187,12 @@ import type {
   FinUploadRecordInput,
   FinUploadApplyInput,
   FinUploadShape,
+  FinUploadSaveInput,
+  FinRow,
+  FinPayrollHeld,
+  FinRecalcJob,
+  FinOverviewMonthRow,
+  OverviewLineKind,
   FinValuation,
   FinValuationSaveInput,
   FinValuationWarning,
@@ -851,6 +858,32 @@ export interface ChairmanRepository extends PriceReportMethods, PurchasingMethod
   listFeatureSwitches(): Promise<FeatureSwitchRow[] | null>
   /** 0073 feature_switch_set — 대표만 · 이유 필수 · 감사. 오류 키(feature_switch_*)를 그대로 던진다. */
   setFeatureSwitch(input: { feature_key: string; business_id: string | null; enabled: boolean; audience: FeatureAudience; reason: string }): Promise<void>
+  /**
+   * 0085 «넣으면 쌓이고 · 알아서 계산하고 · 한 화면에» — 저장 한 번(같은 달은 바꾸기) · 급여 개인 줄 보류 · 다시 계산 큐 · 재무 현황 저장본 ·
+   * 재무 현황이 읽는 줄(원료 숫자 종류는 없다 — 합계는 finMaterialTotals) · 공식 결산 되돌리기. 0085 전 DB: 저장은 0072 넣기로 물러서고
+   * (바꾸기를 앱이 고름), 큐 · 저장본 · 보류는 빈 목록 · 'fin_upload_unavailable'.
+   */
+  finUploadSave(input: FinUploadSaveInput): Promise<string>
+  finPayrollHold(uploadId: string, rows: FinRow[]): Promise<string>
+  listFinPayrollHeld(businessId: string): Promise<FinPayrollHeld[]>
+  finPayrollRelease(holdId: string, save: boolean): Promise<boolean>
+  finRecalcRequest(businessId: string, period: string): Promise<void>
+  finRecalcClaim(businessId: string | null, limit: number): Promise<FinRecalcJob[]>
+  finRecalcFinish(jobId: string, ok: boolean, error: string | null): Promise<void>
+  listFinRecalcJobs(businessId: string): Promise<FinRecalcJob[]>
+  finOverviewSave(businessId: string, period: string, totals: Record<string, unknown>, missing: string[], provisional: boolean): Promise<void>
+  listFinOverviewMonths(businessId: string, periods: string[]): Promise<FinOverviewMonthRow[]>
+  /** 살아 있는 줄(voided 아님) — 장부 읽기 권한(can_read_books). 급여는 부서 합계만. 여러 달 한 번에(줄마다 period 칸). */
+  listFinLines(kind: OverviewLineKind, businessId: string, periods: string[]): Promise<FinRow[]>
+  /** 0085 official_statement_withdraw — 앞 결산이 있으면 그 줄로 새 결산(돌려주는 값 = 새 id), 없으면 null. */
+  withdrawOfficialStatement(id: number, reason: string): Promise<number | null>
+  /** 0085 12가지 지표 기준값(없으면 null → 앱 기본값). 쓰기는 대표 · CFO · 마감 권한. */
+  finKpiSettings(businessId: string): Promise<Record<string, unknown> | null>
+  /** 0085 «자동 생성» 계정 코드(그 회사). 0085 전 DB는 빈 목록. */
+  listAutoAccounts(businessId: string): Promise<string[]>
+  /** 공식 결산 줄(원장 규약 차변 − 대변) — 재무 현황의 전년 기말 · 3년 비교. 장부 읽기. */
+  listOfficialStatementLines(businessId: string, statementIds: number[]): Promise<OfficialStatementLine[]>
+  saveFinKpiSettings(businessId: string, settings: Record<string, unknown>, reason: string): Promise<void>
   /** 0070 회계 · 재무 자료 올리기 — 그 회사의 올리기 기록(최근 300). 0070 전 DB는 빈 목록. */
   listFinUploads(businessId: string): Promise<FinUpload[]>
   /** 0070 fin_upload_pending — 미리보기 대기 줄(급여 개인 줄은 대표 · CFO에게만). */
@@ -1374,8 +1407,9 @@ export interface BriefTimezoneSettings {
 }
 
 /** CH-024 키맨 폼이 보내는 한 행. keyman_id가 없으면 새 사람이다. */
-export type NewAccount = { business_id: string; account_code: string } & AccountFields
-export type AccountPatch = Partial<AccountFields & { active: boolean }>
+/** auto_created(0085) = 계정과목표 없이 원장 · 손익 · 결산 줄로 앱이 만든 계정(«자동 생성»). 0085 전 DB는 칸이 없다 — 보내지 않는다. */
+export type NewAccount = { business_id: string; account_code: string; auto_created?: boolean } & AccountFields
+export type AccountPatch = Partial<AccountFields & { active: boolean; auto_created: boolean }>
 
 /** ECOUNT 계정과목 업로드의 병합 한 벌(lib/ecount/excel/accounts-import.ts planAccounts가 만든다). 회사는 업로드 줄에서 온다. */
 export interface EcountAccountMerge {
