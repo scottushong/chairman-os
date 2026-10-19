@@ -31,6 +31,8 @@ export interface HeldView {
   hold: FinHoldKind
   message: string
   warnings: string[]
+  /** 0080: 원료 숫자가 가려진 대기(이 사람은 저장하지 못한다 — 파일을 다시 올린다) */
+  masked?: boolean
 }
 
 export function UploadBoard({
@@ -328,7 +330,7 @@ function HeldRow({ h, businessId, month, boss }: { h: HeldView; businessId: stri
   const needKind = h.hold === 'kind'
   const needPeriod = h.hold === 'period' || needKind
   const needReason = h.hold === 'closed'
-  const canDo = !(needReason && !boss) && h.hold !== 'value_state' && h.hold !== 'final_exists' && !(h.hold === 'restricted' && !boss)
+  const canDo = !h.masked && !(needReason && !boss) && h.hold !== 'value_state' && h.hold !== 'final_exists' && !(h.hold === 'restricted' && !boss)
   return (
     <div className="border-b border-[#eef1ef] px-3.5 py-2.5 text-[14px] last:border-b-0">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -368,7 +370,7 @@ function HeldRow({ h, businessId, month, boss }: { h: HeldView; businessId: stri
           {msg ? <span role="status" className="text-[13px] text-[#6b7772]">{msg}</span> : null}
         </div>
       ) : (
-        <div className="mt-1 text-[12px] text-[#6b7772]">{h.hold === 'closed' || h.hold === 'restricted' ? '대표 · CFO가 이 화면에서 풉니다.' : '파일을 고쳐 다시 올려 주세요.'}</div>
+        <div className="mt-1 text-[12px] text-[#6b7772]">{h.masked ? '원료 단가 · 수량은 올린 사람(올린 뒤 1시간) · 대표 · CFO · 원가 관리만 봅니다 — 파일을 다시 올려 주세요.' : h.hold === 'closed' || h.hold === 'restricted' ? '대표 · CFO가 이 화면에서 풉니다.' : '파일을 고쳐 다시 올려 주세요.'}</div>
       )}
       {h.warnings.length ? <div className="mt-1 text-[12px] text-[#9a4b12]">{h.warnings.slice(0, 3).join(' · ')}</div> : null}
     </div>

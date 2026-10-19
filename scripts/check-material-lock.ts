@@ -297,11 +297,12 @@ function statics() {
   assert.match(read('src/app/actions/finance-upload.ts'), /if \(pending\.masked\) return \{ error: MATERIAL_HIDDEN \}/, '넣기 액션이 가려진 대기를 거르지 않는다')
   const page = read('src/app/(dashboard)/finance/[business_id]/upload/page.tsx')
   assert.match(page, /l\.hidden \? '금액 가림'/, '같은 거래 줄 이름에 가린 금액 표시가 없다')
-  assert.match(page, /masked: !!p\.masked/, '화면이 대기 가림을 넘기지 않는다')
-  assert.match(read('src/components/finance/finance-upload-board.tsx'), /disabled=\{busy \|\| !kind \|\| !period \|\| !!p\.masked\}/, '가려진 대기의 «넣기» 단추가 열려 있다')
+  assert.match(page, /masked: !!p\?\.masked/, '화면이 대기 가림을 넘기지 않는다')
+  // 0085 — 보류 칸(upload-board): 가려진 대기는 «저장» 단추 자체가 없다.
+  assert.match(read('src/components/finance-overview/upload-board.tsx'), /const canDo = !h\.masked/, '가려진 대기의 «저장» 단추가 열려 있다')
   const sql = read('supabase/migrations/0080_material_price_lock.sql')
   assert.ok(!/disable row level security|no force row level security|service_role/i.test(sql), '0080이 RLS를 끄거나 service_role을 쓴다')
-  for (const t of [page, read('src/components/finance/finance-upload-board.tsx')]) assert.ok(!/회장/.test(t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')), '직원 화면 문구에 «회장»')
+  for (const t of [page, read('src/components/finance/finance-upload-board.tsx'), read('src/components/finance-overview/upload-board.tsx')]) assert.ok(!/회장/.test(t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')), '직원 화면 문구에 «회장»')
   console.log('④ 정적(저장소 RPC · 액션 거름 · 화면 가림 · 단추 · RLS · 문구) OK')
 }
 

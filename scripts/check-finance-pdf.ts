@@ -97,11 +97,10 @@ async function main() {
   assert.equal(calls[calls.length - 1].media.kind, 'pdf', '스캔 PDF는 PDF 그대로(document 블록) 보내야 한다')
   assert.equal(s2[0].kind, 'purchase_in', JSON.stringify(s2[0]))
   assert.equal(s2[0].confidence, 'high')
-  assert.equal(s2[0].status, 'needs_review', `스캔이 처음 3개월에 자동으로 들어갔다: ${s2[0].message}`)
-  assert.ok(s2[0].why.some((w) => w.includes('처음 3개월')), `3개월 이유가 없다: ${s2[0].why}`)
-  const p2 = (await repo.finUploadPending(s2[0].upload_id!))!
-  assert.equal(p2.meta?.source_format, 'pdf_scan')
-  assert.equal(p2.rows.length, 2)
+  // 0085: 처음 3개월도 저장하고 «사람이 봅니다»는 경고 꼬리표로(막지 않는다).
+  assert.equal(s2[0].status, 'applied', `스캔이 저장되지 않았다: ${s2[0].message}`)
+  assert.ok(s2[0].warnings?.some((w) => w.includes('처음 3개월')), `3개월 경고가 없다: ${s2[0].warnings}`)
+  assert.equal(s2[0].rows, 2)
 
   // ── 3. 기운 사진(EXIF 6 + 4°) — 바로 세우고 펴서 JPEG로 · 미리보기 ──
   const photo = await tablePhoto({ angle: 4, exif: 6 })
@@ -123,19 +122,17 @@ async function main() {
   const imgCall = calls[calls.length - 1]
   assert.ok(imgCall.media.kind === 'image' && imgCall.media.mediaType === 'image/jpeg', '사진은 JPEG image 블록으로 보내야 한다')
   assert.equal(s3[0].kind, 'card')
-  assert.equal(s3[0].status, 'needs_review')
-  assert.ok(s3[0].why.some((w) => w.includes('사진은')) && s3[0].fixes?.some((f) => f.includes('기울기')), `사진 이유 · 고친 것: ${s3[0].why} ${s3[0].fixes}`)
+  assert.equal(s3[0].status, 'applied')
+  assert.ok(s3[0].warnings?.some((w) => w.includes('사진은')) && s3[0].fixes?.some((f) => f.includes('기울기')), `사진 경고 · 고친 것: ${s3[0].warnings} ${s3[0].fixes}`)
 
   // ── 4. 합계 틀림 → 확인 필요 · 카드번호는 AI에 뒤 4자리만 ──
   const wrongPdf = textPdf([[title('법인카드 사용내역', '2099-06'), ['이용일', '가맹점', '사용부서', '카드번호', '이용금액'], ['2099-06-04', '가짜 식당', '경영지원', '1234-5678-9012-3456', 30000], ['2099-06-06', '가짜 문구', '영업', '1234-5678-9012-3456', 12000], ['합계', null, null, null, 45000]]], 200)
   const s4 = await run('가짜 법인카드 6월.pdf', wrongPdf)
-  assert.equal(s4[0].status, 'needs_review', `합계 틀림이 자동으로 들어갔다: ${s4[0].message}`)
-  assert.ok(s4[0].why.some((w) => w.startsWith('검증')), `검증이 이유가 아니다: ${s4[0].why}`)
-  const p4 = (await repo.finUploadPending(s4[0].upload_id!))!
-  assert.ok(p4.meta?.errors?.some((e) => e.startsWith('합계가 맞지 않습니다') && e.includes('줄의 합 42,000')), `합계 문구가 없다: ${p4.meta?.errors}`)
+  assert.equal(s4[0].status, 'applied', `합계 틀림이 저장 + 경고가 아니다: ${s4[0].message}`)
+  assert.ok(s4[0].warnings?.some((e) => e.startsWith('합계가 맞지 않습니다') && e.includes('줄의 합 42,000')), `합계 경고가 없다: ${s4[0].warnings}`)
   const sentText = JSON.stringify(calls[calls.length - 1])
   assert.ok(!sentText.includes('1234-5678-9012') && sentText.includes('****-****-****-3456'), 'AI에 카드번호 전체가 갔다')
-  assert.ok(!JSON.stringify(p4).includes('1234-5678-9012'), '대기 줄에 카드번호 전체가 남았다')
+  assert.ok(!JSON.stringify(dummyFinLines().filter((l) => l.upload_id === s4[0].upload_id)).includes('1234-5678-9012'), '저장 줄에 카드번호 전체가 남았다')
   // 소계(순수): 소계가 덮는 줄만 더한다
   const sub = checkDocTotals({ doc_kind: 'card', company: null, period: null, title: null, columns: ['항목', '금액'], rows: [['a', 10], ['b', 20], ['c', 5]], totals: [{ label: '소계', level: 'subtotal', after_row: 1, values: [null, 33] }, { label: '소계', level: 'subtotal', after_row: 2, values: [null, 5] }, { label: '합계', level: 'total', after_row: 2, values: [null, 35] }], confidence: 'high', reason: '' })
   assert.equal(sub.length, 1, `소계 대조: ${sub}`)
@@ -248,12 +245,12 @@ async function main() {
   // ── 10. AI 한도 넘음 · 꺼짐 → 미리보기(글 PDF) / 사진 · 스캔은 못 읽음(저장 없음) ──
   n = calls.length
   const lim = await run('가짜 판매현황 한도.pdf', textPdf([[title('판매현황', '2099-09'), ['거래처명', '품목명', '수량', '단가', '공급가액'], ['가짜 거래처 D', '가짜 제품 4', 1, 500, 500], ['합계', null, 1, null, 500]]]), { budget: 0 })
-  assert.equal(lim[0].status, 'needs_review', `한도 넘음이 미리보기가 아니다: ${lim[0].message}`)
-  assert.ok(lim[0].why.some((w) => w.includes('AI 한도')), `한도 이유: ${lim[0].why}`)
+  assert.equal(lim[0].status, 'applied', `한도 넘음(글 PDF — 칸 위치로 읽음)이 저장 + 경고가 아니다: ${lim[0].message}`)
+  assert.ok(lim[0].warnings?.some((w) => w.includes('AI 한도')), `한도 경고: ${lim[0].warnings}`)
   assert.equal(lim[0].ai_used, 0)
   const off = await run('가짜 판매현황 꺼짐.pdf', textPdf([[title('판매현황', '2099-10'), ['거래처명', '품목명', '수량', '단가', '공급가액'], ['가짜 거래처 E', '가짜 제품 5', 1, 600, 600], ['합계', null, 1, null, 600]]]), { docs: { ...docsChair, read: null } })
-  assert.equal(off[0].status, 'needs_review')
-  assert.ok(off[0].why.some((w) => w.includes('AI가 꺼져')))
+  assert.equal(off[0].status, 'applied')
+  assert.ok(off[0].warnings?.some((w) => w.includes('AI가 꺼져')))
   const limScan = await run('가짜 스캔 한도.pdf', scan, { budget: 0 })
   // 2026-10-16: 한도 · 설정 때문에 못 읽은 것은 «실패»가 아니라 «보류»(내일 · 설정 뒤 다시 올리면 된다).
   assert.equal(limScan[0].status, 'later')
