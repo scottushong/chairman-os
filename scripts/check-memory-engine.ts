@@ -437,6 +437,41 @@ async function main() {
     await ch.searchMemory({ query: "100% '_ \\" })
   })
 
+  await group('리뷰 고침 — 대표도 tasks 직접 넣기 거부 · 처리 쪽은 사람/바깥 인물 확정 못 함 · 다시 처리로 밀린 초안의 검토는 닫힘', async () => {
+    await assert.rejects(as(U.chair, `insert into tasks (task_id, project_id, title) values ('t_direct_1', 'prj_sb', '몰래 업무')`), /row-level security|permission denied/, '대표가 검토 없이 tasks에 넣었다')
+    const id = await save('review-fix-01', '메모')
+    await ch.claimMemoryJob(id)
+    const base = { summary: null, categories: ['other'], runs: [] }
+    const item = (content: string) => ({ ref: 'i0', memory_type: 'task', content, source_quote: null, speaker_label: null, direction: 'mine', who_text: null, to_text: null, due_date: null, due_text: null, amount_text: null, event_time: null, confidence: 0.5, origin: 'manual' })
+    const p1 = {
+      ...base,
+      items: [item('견적서를 보내야 한다')],
+      links: [
+        { item_ref: null, target_type: 'entity', target_id: null, entity_type: 'person', display_name: '홍길동', relationship: 'mentions', verification_status: 'confirmed', confidence: 1, mention_text: '홍길동' },
+        { item_ref: null, target_type: 'person', target_id: U.lee, relationship: 'mentions', verification_status: 'confirmed', confidence: 1, mention_text: '이 부장' },
+        { item_ref: null, target_type: 'business', target_id: 'biz_vn', relationship: 'mentions', verification_status: 'confirmed', confidence: 1, mention_text: 'DY Vietnam' },
+      ],
+      reviews: [{ review_type: 'task_candidate', title: '업무로?', proposed_change: { project_id: 'prj_sb' }, item_ref: 'i0', related_item_id: null, link_ref: null, priority: 'low', key: 'k1' }],
+    }
+    await ch.applyMemory(id, p1 as never)
+    const ls = await owner<{ t: string; v: string }>(`select target_type as t, verification_status as v from memory_links where capture_id = '${id}' order by 1`)
+    assert.deepEqual(ls.map((l) => `${l.t}:${l.v}`), ['business:confirmed', 'entity:suggested', 'person:suggested'], `연결 확정 판정: ${JSON.stringify(ls)}`)
+    assert.equal(await cnt(`select count(*)::int as n from memory_items where capture_id = '${id}' and origin = 'manual'`), 0, '처리 쪽이 manual 출처를 넣었다')
+    // 같은 약속을 다른 말로 — 앞 초안은 superseded, 그 업무 후보는 자동으로 닫힘
+    await ch.applyMemory(id, { ...p1, items: [item('견적서 보내기')], reviews: [{ ...p1.reviews[0], key: 'k2' }] } as never)
+    const open = await owner<{ n: number }>(`select count(*)::int as n from memory_review_queue where capture_id = '${id}' and review_type = 'task_candidate' and status = 'open'`)
+    assert.equal(Number(open[0].n), 1, '업무 후보가 둘 열려 있다')
+    const stale = (await owner<{ id: string }>(`select review_id::text as id from memory_review_queue where capture_id = '${id}' and resolution ->> 'auto' = 'superseded_by_reprocess'`))[0]
+    assert.ok(stale, '밀린 초안의 검토가 닫히지 않았다')
+    // 처음 말로 다시 나오면 되살아나고 검토도 다시 열린다
+    await ch.applyMemory(id, p1 as never)
+    assert.equal(Number((await owner<{ s: string }>(`select status as s from memory_review_queue where review_id = '${stale.id}'`))[0].s === 'open' ? 1 : 0), 1, '되살린 초안의 검토가 다시 열리지 않았다')
+    // 지금 밀린 쪽(둘째 말)의 검토는 자동으로 닫혔다 — 억지로 열어도 밀린 정보로는 업무를 못 만든다.
+    const rv = (await owner<{ id: string }>(`update memory_review_queue set status = 'open', resolution = null, resolved_at = null where capture_id = '${id}' and review_type = 'task_candidate' and review_id <> '${stale.id}' returning review_id::text as id`))[0]
+    await assert.rejects(ch.resolveMemoryReview(rv.id, 'confirm', {}), /memory_item_superseded/, '밀린 정보로 업무를 만들었다')
+    await assert.rejects(ch.resolveMemoryReview(stale.id, 'link', { target_type: 'business', target_id: 'biz_vn' }), /memory_bad_action/, '업무 후보에 «잇기»가 통했다')
+  })
+
   // ───────────────────────── ③ 순수 ─────────────────────────
   await group('③ 날짜 풀기 — 기록 시점 · 서울 시간 기준 · 범위는 모호', () => {
     const at = '2026-10-19T03:00:00.000Z' // 월요일 12:00 KST

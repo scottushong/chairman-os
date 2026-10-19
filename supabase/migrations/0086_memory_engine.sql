@@ -330,9 +330,11 @@ revoke all on sequence memory_revisions_revision_id_seq from public, anon, authe
 create policy audit_log_memory_private on audit_log as restrictive for select to authenticated
   using (entity_table is null or entity_table not like 'memory\_%' or actor_user_id = auth.uid());
 
--- 검토함에서 승인한 업무만 대표가 넣는다(출처 칸 없음 = 앱 업무 · 직원이 그 회사 업무로 본다). 다른 길의 업무 넣기는 그대로 없다.
+-- 검토함에서 승인한 업무만 넣는다(출처 칸 없음 = 앱 업무 · 직원이 그 회사 업무로 본다). 정의자 함수(memory_review_resolve) 안에서만
+-- 참이다 — PostgREST 세션(current_user = authenticated)에서 대표가 직접 tasks에 넣는 길은 열지 않는다(0071 통로와 같은 생각).
+-- Supabase의 postgres는 BYPASSRLS라 이 정책 없이도 돌지만, BYPASSRLS 없는 소유자에서도 같은 결과가 나게 둔다.
 create policy tasks_memory_insert on tasks for insert to authenticated
-  with check (source_label is null and memory_me(auth.uid()));
+  with check (source_label is null and memory_me(auth.uid()) and current_user not in ('authenticated', 'anon', 'authenticator'));
 
 -- =====================================================================
 -- 4절. 비공개 버킷 — '<본인 uid>/<기록 id>/<이름>'
@@ -353,7 +355,7 @@ begin
 end $$;
 
 create or replace function memory_object_ok(object_name text) returns boolean
-language plpgsql stable security invoker set search_path = public as $fn$
+language plpgsql stable security invoker set search_path = public, pg_temp as $fn$
 declare
   v_parts text[];
 begin
@@ -460,7 +462,8 @@ begin
   if v_owner is null or not memory_me(v_owner) then
     raise exception 'memory_denied' using errcode = '42501';
   end if;
-  if p_path is null or p_path not like auth.uid()::text || '/' || p_capture::text || '/%' or p_path like '%/../%' then
+  if p_path is null or p_path not like auth.uid()::text || '/' || p_capture::text || '/%' or p_path like '%/../%'
+     or coalesce(array_length(string_to_array(p_path, '/'), 1), 0) <> 3 then
     raise exception 'memory_bad_path' using errcode = '22023';
   end if;
   insert into memory_capture_assets (owner_id, capture_id, storage_path, file_name, file_type, file_size, kind, processing_status)
@@ -469,7 +472,7 @@ begin
   on conflict (storage_path) do nothing
   returning asset_id into v_id;
   if v_id is null then
-    select asset_id into v_id from memory_capture_assets where storage_path = p_path and owner_id = v_owner;
+    select asset_id into v_id from memory_capture_assets where storage_path = p_path and owner_id = v_owner and capture_id = p_capture;
     return v_id;
   end if;
   -- 새 파일이 오면 다시 처리한다(같은 기록 · 같은 큐 줄).
@@ -615,7 +618,8 @@ begin
             nullif(v_r ->> 'speaker_label', ''), coalesce(nullif(v_r ->> 'direction', ''), 'unknown'), nullif(v_r ->> 'who_text', ''),
             nullif(v_r ->> 'to_text', ''), nullif(v_r ->> 'due_date', '')::date, nullif(v_r ->> 'due_text', ''),
             nullif(v_r ->> 'amount_text', ''), nullif(v_r ->> 'event_time', '')::timestamptz,
-            least(greatest(coalesce((v_r ->> 'confidence')::numeric, 0.5), 0), 1), coalesce(v_r ->> 'origin', 'rule'), v_key)
+            least(greatest(coalesce((v_r ->> 'confidence')::numeric, 0.5), 0), 1),
+            case when v_r ->> 'origin' = 'ai' then 'ai' else 'rule' end, v_key)
     on conflict (owner_id, dedupe_key) do nothing
     returning item_id into v_id;
     if v_id is null then
@@ -624,6 +628,10 @@ begin
       update memory_items set lifecycle_status = 'open', updated_at = now()
        where item_id = v_id and verification_status = 'draft' and lifecycle_status = 'superseded'
          and not exists (select 1 from memory_revisions rv where rv.item_id = v_id);
+      -- 그때 자동으로 닫았던 검토도 다시 연다(사람이 닫은 것은 그대로).
+      update memory_review_queue set status = 'open', resolution = null, resolved_at = null
+       where item_id = v_id and status = 'rejected' and resolution ->> 'auto' = 'superseded_by_reprocess'
+         and exists (select 1 from memory_items i where i.item_id = v_id and i.lifecycle_status = 'open');
     else
       v_new_items := v_new_items + 1;
     end if;
@@ -634,6 +642,11 @@ begin
    where capture_id = p_capture and verification_status = 'draft' and origin in ('ai', 'rule')
      and lifecycle_status = 'open' and not (dedupe_key = any (v_keys))
      and not exists (select 1 from memory_revisions rv where rv.item_id = memory_items.item_id);
+  -- 밀려난 초안을 가리키던 열린 검토는 닫는다(같은 약속이 다른 말로 다시 나와 업무 후보가 둘 생기지 않게 — 리뷰 I2).
+  update memory_review_queue q set status = 'rejected', resolution = '{"auto": "superseded_by_reprocess"}'::jsonb, resolved_at = now()
+    from memory_items i
+   where q.item_id = i.item_id and q.capture_id = p_capture and q.status = 'open'
+     and i.capture_id = p_capture and i.lifecycle_status = 'superseded' and i.verification_status = 'draft';
 
   -- 연결
   v_i := 0;
@@ -650,8 +663,8 @@ begin
     insert into memory_links (owner_id, capture_id, item_id, target_type, target_id, relationship, verification_status, confidence, mention_text)
     values (v_owner, p_capture, nullif(v_refs ->> (v_r ->> 'item_ref'), '')::uuid, v_r ->> 'target_type', v_target,
             coalesce(v_r ->> 'relationship', 'mentions'),
-            -- 사람(person) 연결은 처리 쪽이 자동 확정할 수 없다 — 신원은 검토함에서만 확정한다.
-            case when v_r ->> 'target_type' = 'person' then 'suggested' else coalesce(v_r ->> 'verification_status', 'suggested') end,
+            -- 처리 쪽(AI · 규칙)이 확정할 수 있는 것은 회사 · 프로젝트의 정식 이름 연결뿐 — 사람 · 바깥 인물 · 결정 · 업무는 검토함에서만(리뷰 I3).
+            case when v_r ->> 'target_type' in ('business', 'project') and v_r ->> 'verification_status' = 'confirmed' then 'confirmed' else 'suggested' end,
             least(greatest(coalesce((v_r ->> 'confidence')::numeric, 0.5), 0), 1), left(v_r ->> 'mention_text', 120))
     on conflict do nothing
     returning link_id into v_id;
@@ -809,8 +822,15 @@ begin
   if p_action not in ('confirm', 'edit', 'reject', 'link', 'create_entity') then
     raise exception 'memory_bad_action' using errcode = '22023';
   end if;
+  if p_action in ('link', 'create_entity') and v_rv.review_type not in ('entity_identity', 'link_suggestion') then
+    raise exception 'memory_bad_action' using errcode = '22023';
+  end if;
   if v_rv.item_id is not null then
     select * into v_item from memory_items where item_id = v_rv.item_id;
+    if p_action <> 'reject' and v_item.lifecycle_status = 'superseded'
+       and v_rv.review_type in ('task_candidate', 'financial', 'decision_check', 'date_ambiguous') then
+      raise exception 'memory_item_superseded' using errcode = '55P03';
+    end if;
   end if;
 
   if p_action = 'reject' then
@@ -895,7 +915,7 @@ begin
       join tasks t on t.task_id = l.target_id
      where l.owner_id = v_rv.owner_id and l.target_type = 'task' and l.relationship = 'created_task'
        and t.project_id = v_project
-       and memory_norm(i.content) = memory_norm(coalesce(v_item.content, v_rv.title))
+       and memory_norm(i.content) = memory_norm(coalesce(v_item.content, v_rv.proposed_change ->> 'title', v_rv.title))
      limit 1;
     if v_task is null then
       v_task := 't' || to_char(now() at time zone 'Asia/Seoul', 'YYMMDD') || '_' || substr(md5(p_review::text), 1, 10);
@@ -905,7 +925,7 @@ begin
               nullif(v_data ->> 'owner_user_id', '')::uuid, 'Medium', 'Todo',
               coalesce(nullif(v_data ->> 'due_date', '')::date, v_item.due_date))
       on conflict (task_id) do nothing;
-      v_result := jsonb_build_object('task_id', v_task, 'created', true);
+      v_result := jsonb_build_object('task_id', v_task, 'created', found);
     else
       v_result := jsonb_build_object('task_id', v_task, 'created', false);
     end if;

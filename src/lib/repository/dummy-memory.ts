@@ -259,11 +259,16 @@ export function dummyMemory(deps: DummyMemoryDeps): MemoryMethods {
           newItems++
         } else if (row.verification_status === 'draft' && row.lifecycle_status === 'superseded' && !st.revisions.some((r) => r.item_id === row!.item_id)) {
           row.lifecycle_status = 'open'
+          for (const q of st.reviews) if (q.item_id === row.item_id && q.status === 'rejected' && q.resolution?.auto === 'superseded_by_reprocess') Object.assign(q, { status: 'open', resolution: null, resolved_at: null })
         }
         refs.set(it.ref, row.item_id)
       }
       for (const i of st.items) {
         if (i.capture_id === captureId && i.verification_status === 'draft' && i.origin !== 'manual' && i.lifecycle_status === 'open' && !keys.includes(i.dedupe_key) && !st.revisions.some((r) => r.item_id === i.item_id)) i.lifecycle_status = 'superseded'
+      }
+      for (const q of st.reviews) {
+        const it = q.item_id ? st.items.find((i) => i.item_id === q.item_id) : undefined
+        if (q.capture_id === captureId && q.status === 'open' && it && it.lifecycle_status === 'superseded' && it.verification_status === 'draft') Object.assign(q, { status: 'rejected', resolution: { auto: 'superseded_by_reprocess' }, resolved_at: now() })
       }
       const linkRefs: string[] = []
       let newLinks = 0
@@ -272,7 +277,7 @@ export function dummyMemory(deps: DummyMemoryDeps): MemoryMethods {
         const itemId = l.item_ref ? (refs.get(l.item_ref) ?? null) : null
         let row = st.links.find((x) => x.owner_id === owner && x.capture_id === captureId && x.item_id === itemId && x.target_type === l.target_type && x.target_id === target && x.relationship === l.relationship)
         if (!row) {
-          row = { link_id: randomUUID(), owner_id: owner, capture_id: captureId, item_id: itemId, target_type: l.target_type, target_id: target, relationship: l.relationship, verification_status: l.target_type === 'person' ? 'suggested' : l.verification_status, confidence: l.confidence, mention_text: l.mention_text }
+          row = { link_id: randomUUID(), owner_id: owner, capture_id: captureId, item_id: itemId, target_type: l.target_type, target_id: target, relationship: l.relationship, verification_status: (l.target_type === 'business' || l.target_type === 'project') && l.verification_status === 'confirmed' ? 'confirmed' : 'suggested', confidence: l.confidence, mention_text: l.mention_text }
           st.links.push(row)
           newLinks++
         }
@@ -381,7 +386,9 @@ export function dummyMemory(deps: DummyMemoryDeps): MemoryMethods {
       const rv = st.reviews.find((r) => r.review_id === reviewId && r.owner_id === owner)
       if (!rv) throw new Error('memory_denied')
       if (rv.status !== 'open') throw new Error('memory_review_closed')
+      if ((action === 'link' || action === 'create_entity') && rv.review_type !== 'entity_identity' && rv.review_type !== 'link_suggestion') throw new Error('memory_bad_action')
       const item = rv.item_id ? st.items.find((i) => i.item_id === rv.item_id) : undefined
+      if (action !== 'reject' && item?.lifecycle_status === 'superseded' && ['task_candidate', 'financial', 'decision_check', 'date_ambiguous'].includes(rv.review_type)) throw new Error('memory_item_superseded')
       let status: MemoryReview['status'] = 'confirmed'
       let result: Record<string, unknown> = {}
       const linkRow = rv.link_id ? st.links.find((l) => l.link_id === rv.link_id) : undefined
