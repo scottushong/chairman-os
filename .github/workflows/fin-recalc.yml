@@ -1,0 +1,40 @@
+# 재무 현황 다시 계산 큐 재시도 (0085)
+#
+# 매시 20분 UTC에 /api/cron/fin-recalc 를 한 번 부른다. 저장 직후 · 화면을 열 때 이미 계산이 돈다 —
+# 이 틱은 그 둘이 놓친 일(요청이 끊김 · 실패 · 다섯 번까지 재시도)의 그물이다. 숫자는 응답에 없다(일 · 달 · 실패 수만).
+# 필요한 것: chairman-tick.yml과 같은 secret 둘(CRON_SECRET · APP_URL). Vercel에는 AI_AGENT_EMAIL · AI_AGENT_PASSWORD(야간 브리핑과 같은 계정).
+name: fin recalc tick
+
+on:
+  schedule:
+    - cron: '20 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: fin-recalc-tick
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: 다시 계산 한 번
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${APP_URL}" ] || [ -z "${CRON_SECRET}" ]; then
+            echo "APP_URL / CRON_SECRET secret이 없습니다 (Settings > Secrets and variables > Actions)." >&2
+            exit 1
+          fi
+          status=$(curl -sS -o /tmp/recalc-body -w '%{http_code}' --max-time 330 \
+            -X GET "${APP_URL}/api/cron/fin-recalc" -H "Authorization: Bearer ${CRON_SECRET}")
+          echo "HTTP ${status}"
+          cat /tmp/recalc-body || true
+          echo
+          case "${status}" in
+            200|204) exit 0 ;;
+            *) exit 1 ;;
+          esac

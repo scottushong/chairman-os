@@ -602,7 +602,7 @@ const SKIP = '__skip'
 
 type LinePick = { code: string | null; approved: boolean }
 
-function OfficialPanel({
+export function OfficialPanel({
   businessId,
   draft,
   accounts,

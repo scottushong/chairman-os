@@ -1,8 +1,9 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import { after } from 'next/server'
 
-import { canKeepBooks } from '@/lib/auth/roles'
+import { canCloseBooks, canKeepBooks } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
 import { aiLimits, realClassifier } from '@/lib/finance-upload/ai'
 import { realDocReader } from '@/lib/finance-upload/ai-doc'
@@ -15,7 +16,9 @@ import { mapColumns, readRows, validate, type Classification } from '@/lib/finan
 import { finUploadError, fromGrid, processUpload, reinterpretPending, saveTxGroupsFor, type DocOptions, type FileCard } from '@/lib/finance-upload/process'
 import { AUDIENCE_LABEL } from '@/lib/features'
 import { featureOn, featureWhy } from '@/lib/features-server'
-import { getRepository } from '@/lib/repository'
+import { getRepository, type ChairmanRepository } from '@/lib/repository'
+import { processRecalc } from '@/lib/finance-overview/recalc'
+import { parseKpiSettings } from '@/lib/finance-overview/settings'
 import type { FinRow, FinUpload } from '@/types'
 
 /** 0073 기능 스위치로 꺼진 기능의 문장. */
@@ -87,8 +90,10 @@ export async function uploadFinanceFile(form: FormData): Promise<UploadResult> {
     const usedToday = (await repo.listFinUploads(businessId).catch(() => [] as FinUpload[])).filter((u) => kstDay(u.created_at) === today).reduce((a, u) => a + u.ai_used, 0)
     const budget = Math.max(0, Math.min(perFile, perDay - usedToday))
     const docs = await docOptions(user, repo, businessId, fileName, perFile > 0 && perDay > 0)
-    const cards = await processUpload({ repo, businessId, fileName, bytes, classify: budget > 0 ? realClassifier(repo, businessId) : null, aiBudget: budget, docs, deadline })
+    const cards = await processUpload({ repo, businessId, fileName, bytes, classify: budget > 0 ? realClassifier(repo, businessId) : null, aiBudget: budget, docs, deadline, boss: user.role === 'Chairman' || user.role === 'GroupCFO', user })
+    recalcAfter(repo, businessId)
     revalidatePath(`/finance/${businessId}/upload`)
+    revalidatePath('/finance')
     return { cards }
   } catch (e) {
     console.error('[uploadFinanceFile]', e)
@@ -122,95 +127,163 @@ async function docOptions(user: NonNullable<Awaited<ReturnType<typeof currentUse
   return docs
 }
 
+/** 저장 직후 다시 계산(그 사람 세션 — 응답 뒤). 실패는 큐가 cron으로 다시 한다. */
+function recalcAfter(repo: ChairmanRepository, businessId: string) {
+  try {
+    after(async () => {
+      await processRecalc(repo, { businessId, limit: 2 }).catch((e) => console.error('[finance-upload] recalc', e))
+    })
+  } catch {
+    // after 밖(검사 스크립트)에서 불리면 건너뛴다 — 큐에는 이미 들어 있다(DB 트리거).
+  }
+}
+
 export interface ApplyInput {
   uploadId: unknown
   businessId: unknown
-  kind: unknown
-  period: unknown
-  /** 칸 이름 → 열 번호 — 사람이 바꿨으면 */
-  columns?: unknown
-  overlap: unknown
+  /** 보류 «종류 모름»이면 고른 종류 */
+  kind?: unknown
+  /** 보류 «달 모름»이면 고른 달 */
+  period?: unknown
+  /** 보류 «마감 달»이면 대표 · CFO의 이유 */
   reason?: unknown
+  /** 옛 미리보기 칸(쓰지 않는다 — 0085부터 겹치면 늘 바꾸기) */
+  overlap?: unknown
+  columns?: unknown
 }
 
+const YM = /^\d{4}-(0[1-9]|1[0-2])$/
+
+/**
+ * 0085 보류 풀기 — «보류» 카드에서 종류 · 달 · 이유를 받아 그 자리에서 저장한다(미리보기 · 겹침 고르기 없음 — 같은 달은 바꾸기).
+ * 종류를 바꾸면 버리기 뒤 칸 격자로 다시 읽는다(숫자는 코드가). 막는 것은 DB 판정(마감 · 재고 바꾸기 · 확정 평가) 그대로.
+ */
 export async function applyPendingUpload(input: ApplyInput): Promise<{ ok?: true; error?: string; problems?: string[] }> {
   const user = await currentUser()
   if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
   const id = text(input.uploadId, 64)
   const businessId = text(input.businessId, 40)
   if (!(await featureOn(user, 'finance_upload', businessId))) return { error: OFF }
-  const kind = text(input.kind, 30)
-  const period = text(input.period, 7)
-  const overlap = text(input.overlap, 10) as 'none' | 'replace' | 'keep_old'
   const reason = text(input.reason, 500) || null
-  if (!UUID.test(id) || !BIZ.test(businessId) || !isUploadKind(kind) || !/^\d{4}-(0[1-9]|1[0-2])$/.test(period) || !['none', 'replace', 'keep_old'].includes(overlap)) {
-    return { error: '종류 · 기간(YYYY-MM) · 겹침 선택을 확인하세요.' }
-  }
+  if (!UUID.test(id) || !BIZ.test(businessId)) return { error: '올리기를 알 수 없습니다.' }
   try {
     const repo = await getRepository()
     const pending = await repo.finUploadPending(id)
     if (!pending) return { error: '이미 처리했거나 볼 수 없는 올리기입니다.' }
-    // 0080: 원료 숫자가 가려진 대기는 숫자 없는 줄만 돌려받는다 — 넣지 않는다(DB 트리거도 거부한다).
     if (pending.masked) return { error: MATERIAL_HIDDEN }
-    const meta = pending.meta ?? {}
-    const cols = input.columns && typeof input.columns === 'object' ? (input.columns as Record<string, unknown>) : null
-    const chosen: Record<string, number> = {}
-    if (cols) for (const [k, v] of Object.entries(cols)) if (Number.isInteger(v) && (v as number) >= 0 && (v as number) < 200) chosen[k] = v as number
-    // 스위치는 화면이 보낸 회사로 봤다 — 그 올리기가 정말 그 회사 것이어야 한다(0073 리뷰 I1).
     const upload = (await repo.listFinUploads(businessId)).find((u) => u.upload_id === id)
     if (!upload) return { error: '이미 처리했거나 볼 수 없는 올리기입니다.' }
-    const kindChanged = upload?.kind !== kind
-    const colsChanged = !!cols && JSON.stringify(chosen) !== JSON.stringify(meta.columns ?? {})
+    const meta = pending.meta ?? {}
+    const kind = text(input.kind, 30) || upload.kind
+    const period = text(input.period, 7) || upload.period || ''
+    if (!isUploadKind(kind)) return { error: '종류를 골라 주세요.' }
+    if (!YM.test(period)) return { error: '달(YYYY-MM)을 골라 주세요.' }
     let rows = pending.rows
     let people = pending.people ?? null
-    if ((kindChanged || colsChanged) && pending.grid) {
-      // 사람이 종류 · 칸을 고쳤다 — 버리기 뒤 칸 격자로 다시 읽는다(숫자는 코드가 읽는다).
-      const sheet = fromGrid(upload?.sheet_name ?? 'sheet', pending.grid)
+    let warnings = [...(meta.warnings ?? []), ...(meta.errors ?? [])]
+    if ((kind !== upload.kind || !rows.length) && pending.grid) {
+      const sheet = fromGrid(upload.sheet_name ?? 'sheet', pending.grid)
       const headerRow = meta.header_row ?? 0
-      const columns = colsChanged ? chosen : mapColumns(kindSpec(kind), sheet.rows[headerRow] ?? [])
-      // 해석이 본 요약 줄 낱말 · 원장 칸은 그대로 쓰고, 사람이 고친 칸이 이긴다.
+      const columns = mapColumns(kindSpec(kind), sheet.rows[headerRow] ?? [])
       const labels = (meta.labels ?? []).filter((l): l is RowLabel => (ROW_ROLES as readonly string[]).includes(l.role))
-      // 리뷰(2026-10-14): 사람이 고른 원장 칸(계정 · 차변 · 대변)은 해석 · 코드 탐지보다 늘 이긴다(머리글 줄 · 날짜 · 잔액은 해석에서).
-      const base = kind === 'ledger' ? (meta.ledger && !kindChanged ? { headerRow: meta.ledger.headerRow, cols: meta.ledger.cols, headCol: meta.ledger.headCol ?? null } : ledgerLayoutByCode(sheet)) : null
-      const picked = colsChanged ? Object.fromEntries(Object.entries(chosen).filter(([k]) => ['account_code', 'account_name', 'debit', 'credit'].includes(k))) : {}
-      const ledger: LedgerLayout | undefined =
-        kind === 'ledger' ? { headerRow: base?.headerRow ?? headerRow, cols: { ...(base?.cols ?? {}), ...picked }, labels, headCol: base?.headCol ?? null } : undefined
+      const base = kind === 'ledger' ? ledgerLayoutByCode(sheet) : null
+      const ledger: LedgerLayout | undefined = kind === 'ledger' ? { headerRow: base?.headerRow ?? headerRow, cols: base?.cols ?? {}, labels, headCol: base?.headCol ?? null } : undefined
       const cls: Classification = { kind, confidence: 'medium', headerRow, columns, reason: '사람이 고름', source: 'code', labels, ledger }
       const read = readRows(sheet, cls)
-      const check = validate(kind, read, period)
-      if (check.errors.length) return { error: '고친 종류 · 칸으로 다시 읽었더니 맞지 않습니다.', problems: check.errors }
+      if (!read.rows.length) return { error: '고른 종류로 읽었더니 넣을 줄이 없습니다 — 종류를 다시 고르거나 파일을 고쳐 올려 주세요.' }
       rows = read.rows as FinRow[]
       people = kind === 'payroll' ? (read.people as FinRow[]) : null
-      // g. 배우기 — 시트 모양 → 사람이 고른 종류 · 칸 · 요약 줄 낱말(숫자 없음).
-      if (meta.sig) await repo.saveFinUploadShape({ business_id: businessId, header_sig: meta.sig, sheet_name: upload?.sheet_name ?? null, kind, column_map: encodeShape(columns, ledger ?? (labels.length ? { headerRow, cols: {}, labels } : null)) }).catch((e) => console.error('[applyPendingUpload] shape', e))
-    } else if (kindChanged) {
+      const check = validate(kind, read, period)
+      warnings = [...new Set([...check.errors, ...check.warnings])]
+      // 배우기 — 시트 모양 → 사람이 고른 종류 · 칸(숫자 없음).
+      if (meta.sig) await repo.saveFinUploadShape({ business_id: businessId, header_sig: meta.sig, sheet_name: upload.sheet_name ?? null, kind, column_map: encodeShape(columns, ledger ?? null) }).catch((e) => console.error('[applyPendingUpload] shape', e))
+    } else if (kind !== upload.kind) {
       return { error: '이 올리기는 칸 격자가 없어 종류를 바꿀 수 없습니다 — 파일을 다시 올려 주세요.' }
-    } else if (meta.errors?.length) {
-      return { error: '검증을 통과하지 못한 자료는 넣지 않습니다 — 칸을 고르거나 파일을 고쳐 다시 올리세요.', problems: meta.errors }
     }
-    if (kind === 'payroll' && !people && !['Chairman', 'GroupCFO'].includes(user.role)) people = null
-    // 0072: 손으로 넣기는 다섯째 조건이 없다(사람이 미리보기에서 «중복 의심»을 보고 넣는다 — dup_suspects null).
-    // 원료 출고(material_issue)는 돌려받은 줄에 kg가 없다 — DB가 저장해 둔 대기 줄에서 줄 번호로 붙인다(0072 리뷰 C1).
-    await repo.finUploadApply({
-      business_id: businessId, kind, period, file_name: upload?.file_name ?? '', file_sha256: upload?.file_sha256 ?? '', sheet_name: upload?.sheet_name ?? null,
-      ai_confidence: upload?.ai_confidence ?? 'none', ai_used: upload?.ai_used ?? 0, auto: false, rows, people, overlap, reason, upload_id: id, dup_suspects: null,
+    const boss = user.role === 'Chairman' || user.role === 'GroupCFO'
+    const saved = await repo.finUploadSave({
+      business_id: businessId, kind, period, file_name: upload.file_name, file_sha256: upload.file_sha256, sheet_name: upload.sheet_name ?? null,
+      ai_confidence: upload.ai_confidence, ai_used: upload.ai_used, rows, people: boss && people?.length ? people : null, reason, upload_id: id,
+      warnings: warnings.slice(0, 40),
     })
-    // 같은 거래 묶음(same · suspect) 저장 — suspect는 «같은 거래» 칸에서 사람이 정한다. 실패해도 넣기는 그대로.
-    await saveTxGroupsFor(repo, businessId, kind, period, id, reason).catch((e) => console.error('[applyPendingUpload] tx groups', e))
+    if (!boss && people?.length) await repo.finPayrollHold(saved, people).catch((e) => console.error('[applyPendingUpload] payroll hold', e))
+    await saveTxGroupsFor(repo, businessId, kind, period, saved, reason).catch((e) => console.error('[applyPendingUpload] tx groups', e))
+    recalcAfter(repo, businessId)
     revalidatePath(`/finance/${businessId}/upload`)
-    revalidatePath(`/finance/${businessId}/valuation`)
+    revalidatePath('/finance')
     return { ok: true }
   } catch (e) {
     console.error('[applyPendingUpload]', e)
     const m = e instanceof Error ? e.message : ''
-    if (m.includes('fin_upload_overlap')) return { error: '같은 달에 이미 넣은 자료가 있습니다 — «새 값으로 바꾸기» 또는 «기존 값 두기»를 고르세요.' }
-    if (m.includes('fin_upload_closed')) return { error: '마감된 달입니다 — 대표 · CFO가 이유를 적어야 넣을 수 있습니다.' }
+    if (m.includes('fin_upload_closed')) return { error: '마감된 달입니다 — 대표 · CFO가 이유(2자 이상)를 적어야 저장됩니다.' }
     if (m.includes('ledger_post_live') || m.includes('cost_candidate_live')) return { error: '이 자료의 줄이 장부 반영 · 원가 LOT로 이미 쓰였습니다 — 그쪽을 먼저 무효로 하세요.' }
-    if (m.includes('fin_replace_restricted')) return { error: '원료 출고 · 재고 자료의 «바꾸기»는 대표 · CFO만 합니다 — «기존 값 두기»를 고르거나 대표 · CFO에게 요청하세요.' }
+    if (m.includes('fin_replace_restricted')) return { error: '이미 넣은 달의 재고 · 원료 출고를 바꾸는 것은 대표 · CFO만 합니다.' }
     if (m.includes('fin_material_hidden')) return { error: MATERIAL_HIDDEN }
     if (m.includes('fin_valuation_final_exists')) return { error: '그 구분의 확정된 평가금액이 이미 있습니다 — «재고 · 평가» 화면에서 이유를 적고 바꾸세요.' }
     if (m.includes('fin_value_state')) return { error: '빈칸 · 0 표시가 맞지 않는 칸이 있습니다(빈칸은 0이 아닙니다).' }
     return { error: finUploadError(e) }
+  }
+}
+
+/** 0085 급여 개인 줄 보류 — 대표 · CFO의 저장 · 버리기. */
+export async function releasePayrollHold(holdId: unknown, businessId: unknown, save: unknown): Promise<{ ok?: true; error?: string }> {
+  const user = await currentUser()
+  if (!user) return { error: '세션이 만료되었습니다.' }
+  if (user.role !== 'Chairman' && user.role !== 'GroupCFO') return { error: '급여 개인 줄은 대표 · CFO만 저장합니다.' }
+  const id = text(holdId, 64)
+  const biz = text(businessId, 40)
+  if (!UUID.test(id) || !BIZ.test(biz)) return { error: '보류를 알 수 없습니다.' }
+  try {
+    const repo = await getRepository()
+    if (!(await repo.listFinPayrollHeld(biz)).some((h) => h.hold_id === id)) return { error: '보류를 알 수 없습니다.' }
+    const ok = await repo.finPayrollRelease(id, save === true)
+    revalidatePath(`/finance/${biz}/upload`)
+    return ok ? { ok: true } : { error: '이미 결정한 보류입니다.' }
+  } catch (e) {
+    return { error: /hold_state/.test(e instanceof Error ? e.message : '') ? '그 급여대장이 되돌려졌습니다 — 다시 올려 주세요.' : finUploadError(e) }
+  }
+}
+
+/** 0085 바로 저장한 공식 결산 되돌리기(7일 — 앞 결산이 있으면 되살린다). */
+export async function withdrawOfficialSave(ids: unknown, businessId: unknown): Promise<{ ok?: true; error?: string }> {
+  const user = await currentUser()
+  if (!user) return { error: '세션이 만료되었습니다.' }
+  const biz = text(businessId, 40)
+  const list = Array.isArray(ids) ? ids.filter((x): x is number => Number.isInteger(x) && x > 0).slice(0, 10) : []
+  if (!BIZ.test(biz) || !list.length) return { error: '되돌릴 결산을 알 수 없습니다.' }
+  if (!canKeepBooks(user, biz)) return { error: '이 회사의 재무를 넣을 권한이 없습니다.' }
+  try {
+    const repo = await getRepository()
+    const mine = new Set((await repo.listOfficialStatements(biz)).filter((o) => o.superseded_at === null).map((o) => o.id))
+    for (const id of list) if (mine.has(id)) await repo.withdrawOfficialStatement(id, '자료 올리기 되돌리기')
+    recalcAfter(repo, biz)
+    revalidatePath(`/finance/${biz}/upload`)
+    revalidatePath('/finance')
+    return { ok: true }
+  } catch (e) {
+    const m = e instanceof Error ? e.message : ''
+    if (/withdraw_expired/.test(m)) return { error: '저장한 지 7일이 지나 되돌릴 수 없습니다.' }
+    if (/books_forbidden/.test(m)) return { error: '올린 사람 또는 대표 · CFO · 마감 권한자만 되돌립니다.' }
+    return { error: '되돌리지 못했습니다.' }
+  }
+}
+
+/** 0085 12가지 지표 기준값 — 대표 · CFO · 마감 권한자. */
+export async function saveKpiSettings(businessId: unknown, raw: unknown, reason: unknown): Promise<{ ok?: true; error?: string }> {
+  const user = await currentUser()
+  if (!user) return { error: '세션이 만료되었습니다.' }
+  const biz = text(businessId, 40)
+  if (!BIZ.test(biz)) return { error: '회사를 알 수 없습니다.' }
+  if (!canCloseBooks(user, biz)) return { error: '기준값은 대표 · CFO · 마감 권한자만 바꿉니다.' }
+  const why = text(reason, 300)
+  if (why.length < 2) return { error: '바꾸는 이유를 적어 주세요.' }
+  try {
+    const repo = await getRepository()
+    await repo.saveFinKpiSettings(biz, parseKpiSettings(raw) as unknown as Record<string, unknown>, why)
+    revalidatePath('/finance')
+    return { ok: true }
+  } catch (e) {
+    return { error: /denied/.test(e instanceof Error ? e.message : '') ? '기준값은 대표 · CFO · 마감 권한자만 바꿉니다.' : '저장하지 못했습니다.' }
   }
 }
 
@@ -230,7 +303,9 @@ export async function revertUpload(uploadId: unknown, businessId: unknown, reaso
     const repo = await getRepository()
     if (!(await ownsUpload(repo, text(businessId, 40), id))) return { error: '올리기를 알 수 없습니다.' }
     const ok = await repo.finUploadRevert(id, text(reason, 500) || null)
+    if (ok) recalcAfter(repo, text(businessId, 40))
     revalidatePath(`/finance/${text(businessId, 40)}/upload`)
+    revalidatePath('/finance')
     return ok ? { ok: true } : { error: '이미 되돌렸거나 넣은 것이 아닙니다.' }
   } catch (e) {
     const m = e instanceof Error ? e.message : ''
