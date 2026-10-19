@@ -142,11 +142,11 @@ export async function runLedgerChecks(): Promise<string> {
     const onlyDays = ecountLedger('2098-02').filter((r) => !(typeof r[1] === 'string' && /월|누/.test(r[1]) && r[0] === null))
     const c = await processUpload({ repo, businessId: BIZ, fileName: '가짜 2월 원장.xlsx', bytes: await xlsx('계정별원장', onlyDays), classify: failing, aiBudget: 3, today: new Date('2098-03-10') })
     assert.equal(thrown, 1, 'AI 실패 뒤에도 계속 불렀다')
-    assert.equal(c[0].status, 'needs_review')
-    const p = (await repo.finUploadPending(c[0].upload_id!))!
-    assert.ok(p.meta?.reason?.includes('AI 해석 실패'), `실패 이유가 없다: ${p.meta?.reason}`)
-    assert.deepEqual(p.rows.map((r) => ({ code: r.account_code, debit: r.debit, credit: r.credit })), want, `AI 실패 때 코드 규칙 합이 다르다: ${JSON.stringify(p.rows)}`)
-    await repo.finUploadCancel(c[0].upload_id!)
+    // 0085: AI가 실패해도 코드 규칙으로 읽은 값을 저장한다(막지 않는다) — 합이 2배가 아니어야 한다.
+    assert.equal(c[0].status, 'applied', `AI 실패 뒤 코드 규칙으로 저장되지 않았다: ${c[0].message}`)
+    const got = dummyFinLines().filter((l) => l.upload_id === c[0].upload_id && !l.voided_at).map((l) => ({ code: l.row.account_code, debit: l.row.debit, credit: l.row.credit }))
+    assert.deepEqual(got, want, `AI 실패 때 코드 규칙 합이 다르다: ${JSON.stringify(got)}`)
+    await repo.finUploadRevert(c[0].upload_id!, '시험')
   }
 
   // ── ⑤ 재해석: 처음엔 모르는 요약 낱말(«[당일합산]», 날짜 있음)을 놓침 → 차이를 받고 두 번째에 맞춤 → 학습 → 다음엔 AI 없이 ──
@@ -192,11 +192,9 @@ export async function runLedgerChecks(): Promise<string> {
     const before = aiCalls
     const c = await processUpload({ repo, businessId: BIZ, fileName: '가짜 7월 원장.xlsx', bytes: await xlsx('계정별원장', ecountLedger('2098-07', { day: '[하루끝]' })), classify: stubborn, aiBudget: 9, today: new Date('2098-08-10') })
     assert.equal(aiCalls - before, 3, `AI를 3번(처음 + 다시 2번)보다 많이/적게 불렀다: ${aiCalls - before}`)
-    assert.equal(c[0].status, 'needs_review')
-    const p = (await repo.finUploadPending(c[0].upload_id!))!
-    assert.ok(p.meta?.errors?.some((e) => /차이/.test(e) && /정확히 2배/.test(e)), `차이 표시가 없다: ${p.meta?.errors}`)
-    assert.ok(p.meta?.reason?.includes('맞지 않음'), `끝까지 안 맞은 이유가 없다: ${p.meta?.reason}`)
-    assert.ok(p.grid?.length, '다시 해석에 쓸 칸 격자가 없다')
+    // 0085: 끝까지 안 맞아도 저장하고 «차이(정확히 2배)»를 경고 꼬리표로 — 사람이 되돌리고 다시 올린다.
+    assert.equal(c[0].status, 'applied', `끝까지 안 맞은 원장이 경고와 함께 저장되지 않았다: ${c[0].message}`)
+    assert.ok(c[0].warnings?.some((e) => /차이/.test(e) && /정확히 2배/.test(e)), `차이 경고가 없다: ${c[0].warnings}`)
     stubbornId = c[0].upload_id!
   }
 
@@ -206,15 +204,14 @@ export async function runLedgerChecks(): Promise<string> {
       aiCalls += 1
       return { kind: 'ledger', header_row: 2, columns: { date: 0, memo: 1, debit: 4, credit: 5, balance: 6 }, row_labels: [{ text: '[하루끝]', role: 'day' }], account_head_col: null, company: null, period: null, confidence: 'high', reason: '가짜 — 이번엔 봄' }
     }
-    const r = await reinterpretPending({ repo, businessId: BIZ, classify: fixer, aiBudget: 3, today: new Date('2098-08-10') }, stubbornId)
-    assert.ok(!r.error, `다시 해석 오류: ${r.error}`)
-    assert.equal(r.cards[0]?.status, 'applied', `다시 해석 뒤 자동으로 안 들어갔다: ${JSON.stringify(r.cards)}`)
-    const old = (await repo.listFinUploads(BIZ)).find((u) => u.upload_id === stubbornId)
-    assert.equal(old?.status, 'cancelled', '옛 대기가 취소되지 않았다')
+    // 0085: 저장된 것은 «다시 해석»(대기 칸 격자)이 아니라 되돌리고 다시 올린다 — 같은 파일 이름 · 같은 바이트도 되돌린 뒤엔 받는다.
+    assert.equal(await repo.finUploadRevert(stubbornId, '경고 보고 되돌림'), true)
+    const r = await processUpload({ repo, businessId: BIZ, fileName: '가짜 7월 원장.xlsx', bytes: await xlsx('계정별원장', ecountLedger('2098-07', { day: '[하루끝]' })), classify: fixer, aiBudget: 3, today: new Date('2098-08-10') })
+    assert.equal(r[0]?.status, 'applied', `다시 올린 원장이 저장되지 않았다: ${JSON.stringify(r)}`)
     const l7 = dummyFinLines().filter((l) => l.kind === 'ledger' && l.period === '2098-07' && !l.voided_at)
     assert.deepEqual(l7.map((l) => ({ code: l.row.account_code, debit: l.row.debit, credit: l.row.credit })), want)
-    // 이미 처리한 대기는 다시 못 한다
-    assert.ok((await reinterpretPending({ repo, businessId: BIZ, classify: fixer, aiBudget: 3 }, stubbornId)).error)
+    // 저장된 올리기는 «다시 해석» 대상이 아니다
+    assert.ok((await reinterpretPending({ repo, businessId: BIZ, classify: fixer, aiBudget: 3 }, r[0].upload_id!)).error)
   }
 
   // ── AI 견본: 숫자 가림 · 요약 줄 · 줄 번호 · 원료 금액 없음 ──

@@ -222,8 +222,9 @@ export async function runHardeningChecks(): Promise<string> {
     // AI 실패(JSON 아님) → 원장은 코드 해석으로 «확인 필요»(숫자를 지어내지 않음) — 학습 · 대조 규칙 그대로.
     const odd = ledgerA('2099-04').map((r) => r.map((v) => (v === '[월계]' ? '[당월합산]' : v === '월 계' ? '[당월합산]' : v)))
     const cards = await processUpload({ repo, businessId: BIZ, fileName: '가짜 4월 원장.xlsx', bytes: await xlsx([{ name: '계정별원장', rows: odd }]), classify: async () => Promise.reject(new AiShapeError('AI 실패 — 답이 JSON이 아닙니다(…)')), aiBudget: 3, today: new Date('2099-05-01') })
-    assert.equal(cards[0].status, 'needs_review', `E: AI 실패인데 ${cards[0].status}`)
-    done.push('E AI 400 대조군 · 구조 강제 400 → 강제 없이 1번 더 · JSON 아님 → AI 실패 → 확인 필요 · 다른 400 그대로')
+    // 0085: AI가 실패해도 코드 해석으로 저장하고(숫자를 지어내지 않음) 맞지 않는 곳은 경고 꼬리표로.
+    assert.equal(cards[0].status, 'applied', `E: AI 실패인데 ${cards[0].status}`)
+    done.push('E AI 400 대조군 · 구조 강제 400 → 강제 없이 1번 더 · JSON 아님 → AI 실패 → 코드 해석으로 저장 + 경고 · 다른 400 그대로')
   }
 
   // ── F. 수신함(0082 흉내) · 여러 파일 중 하나 실패 ──
@@ -335,12 +336,11 @@ export async function runHardeningChecks(): Promise<string> {
     const odd = ledgerA('2099-08').map((r) => r.map((v) => (v === '[월계]' || v === '월 계' ? '[당월합산]' : v)))
     const bytes = await xlsx([{ name: '계정별원장', rows: odd }])
     const first = await processUpload({ repo, businessId: BIZ, fileName: '가짜 8월 원장.xlsx', bytes, classify: null, aiBudget: 0, today: new Date('2099-09-01') })
-    assert.equal(first[0].status, 'needs_review', `H: 첫 올리기 ${first[0].status}`)
+    assert.equal(first[0].status, 'applied', `H: 첫 올리기 ${first[0].status}`)
     let aiAgain = 0
     const again = await processUpload({ repo, businessId: BIZ, fileName: '가짜 8월 원장.xlsx', bytes, classify: async () => (aiAgain += 1, Promise.reject(new Error('x'))), aiBudget: 3, today: new Date('2099-09-01') })
     assert.equal(again[0].status, 'duplicate', 'H: 같은 파일이 늘었다')
-    assert.equal(again[0].reinterpret_id, first[0].upload_id, 'H: «다시 해석할까요?»의 올리기가 없다')
-    assert.match(again[0].message, /다시 해석할까요/, 'H: 문구')
+    assert.match(again[0].message, /이미 넣은 파일/, 'H: 문구')
     assert.equal(aiAgain, 0, 'H: 같은 파일에 AI를 다시 불렀다')
     // CSV 1만 줄 초과 → 자르지 않고 오류.
     const csv = ['일자,거래처명,품목명,공급가액', ...Array.from({ length: TEXT_SHEET_MAX_ROWS + 5 }, (_, i) => `2099-10-01,가짜,가짜,${i}`)].join('\n')

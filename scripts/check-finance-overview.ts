@@ -134,7 +134,7 @@ async function main() {
   const salesFx = fixtures.find((f) => f.expect === 'sales')!
   const ExcelJS = (await import('exceljs')).default
   const wb = new ExcelJS.Workbook()
-  await wb.xlsx.load(Buffer.from(salesFx.bytes))
+  await wb.xlsx.load(salesFx.bytes.buffer.slice(salesFx.bytes.byteOffset, salesFx.bytes.byteOffset + salesFx.bytes.byteLength) as ArrayBuffer)
   const ws = wb.worksheets[0]
   ws.getCell(`F3`).value = Number(ws.getCell('F3').value) + 1_000_000
   ws.getCell(`F${ws.rowCount}`).value = EXPECT.revenue + 1_000_000

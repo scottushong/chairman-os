@@ -91,6 +91,8 @@ function sample(kind: UploadKind, ym: string, opts: { wrongTotal?: boolean; shee
       return { name: opts.sheetName ?? '원료 출고명세', rows: [title('원료 출고명세서', ym), ['출고일자', '원료명', '출고량(kg)', '출고유형', '적요', '출고창고'], [d(3), '가짜 원료 가', 410, '생산출고', '', '1공장'], [d(4), '가짜 원료 나', 120, '', '샘플 출고', ''], [d(5), '가짜 원료 다', 60, '', '', '']] }
     case 'tax_invoice':
       return { name: opts.sheetName ?? '매입 세금계산서', rows: [title('전자세금계산서 매입', ym), ['작성일자', '상호', '품목명', '공급가액', '세액', '합계금액'], [d(7), '가짜 공급처 정', '가짜 원재료 7', 70000, 7000, 77000], ['합계', null, null, T(70000), 7000, 77000]] }
+    case 'shipment':
+      return { name: opts.sheetName ?? '출하집계표', rows: [title('출하집계표', ym), ['출하일자', '거래처명', '품목명', '출하량', '출하금액'], [d(4), '가짜 거래처 A', '가짜 제품 1', 1000, 2000000], ['합계', null, null, T(1000), 2000000]] }
     case 'ledger_lines':
       return { name: opts.sheetName ?? '전표내역', rows: [title('일반전표 전표내역', ym), ['전표일자', '계정코드', '계정과목', '거래처명', '적요', '차변', '대변'], [d(3), '8110', '복리후생비', '가짜 식당', '가짜 식대', 30000, null], [d(3), '1030', '보통예금', null, '가짜 식대', null, 30000]] }
   }
@@ -108,15 +110,19 @@ async function main() {
   // ── 0. 0070 칸 = kinds.ts 칸 ──
   const sql70 = readFileSync('supabase/migrations/0070_finance_upload.sql', 'utf8')
   const sql72 = readFileSync('supabase/migrations/0072_finance_v21.sql', 'utf8')
-  const sql = sql70 + sql72
+  // 0085 — 출하집계표(새 표 · fin_upload_save가 넣는다) · 자금흐름표 · 대출 칸(저장 직후 같은 거래에서 채운다).
+  const sql85 = readFileSync('supabase/migrations/0085_finance_overview.sql', 'utf8')
+  const sql = sql70 + sql72 + sql85
   for (const k of KIND_SPECS) {
     const block = new RegExp(`create table ${k.table} \\(([\\s\\S]*?)\\n\\);`).exec(sql)?.[1] ?? ''
+    const alter85 = new RegExp(`alter table ${k.table}\\n([\\s\\S]*?);`).exec(sql85)?.[1] ?? ''
     for (const f of k.fields) {
-      const ok = new RegExp(`\\n\\s+${f.key}\\s`).test(block) || sql72.includes(`alter table ${k.table} add column ${f.key} `)
-      assert.ok(ok, `0070 · 0072 ${k.table}에 ${f.key} 칸이 없다`)
+      const ok = new RegExp(`\\n\\s+${f.key}\\s`).test(block) || sql72.includes(`alter table ${k.table} add column ${f.key} `) || new RegExp(`add column ${f.key}\\s`).test(alter85)
+      assert.ok(ok, `0070 · 0072 · 0085 ${k.table}에 ${f.key} 칸이 없다`)
       if (f.state) assert.ok(sql72.includes(`x.${f.state}`), `0072 넣기가 ${k.kind}.${f.state}(상태)를 받지 않는다`)
+      if (new RegExp(`add column ${f.key}\\s`).test(alter85)) assert.ok(sql85.includes(`x.${f.key}`), `0085 저장이 ${k.kind}.${f.key}를 채우지 않는다`)
     }
-    assert.ok(sql72.includes(`p_kind = '${k.kind}'`), `0072 넣기에 ${k.kind} 분기가 없다`)
+    assert.ok(sql72.includes(`p_kind = '${k.kind}'`) || (k.kind === 'shipment' && sql85.includes('insert into fin_shipment_lines')), `넣기에 ${k.kind} 분기가 없다`)
   }
   const ppl = /create table fin_payroll_people \(([\s\S]*?)\n\);/.exec(sql)?.[1] ?? ''
   for (const c of PAYROLL_PEOPLE_FIELDS) assert.ok(ppl.includes(c), `급여 개인 줄 표에 ${c}가 없다`)
@@ -148,7 +154,12 @@ async function main() {
   assert.ok(!prod.some((r) => /원료|투입|원재료/.test(r)), '생산 표에 원료 줄이 들어갔다')
   const pay = JSON.stringify(lines.filter((l) => l.kind === 'payroll'))
   assert.ok(!/가짜이름|900101|110-123/.test(pay), '급여 줄에 이름 · 주민 · 계좌가 남았다')
-  assert.ok(lines.some((l) => l.kind === 'payroll' && l.people && l.row.person_ref === 'E001'), '급여 개인 줄(사번)이 없다')
+  // 0085: 대표 · CFO가 아닌 사람이 올린 급여는 개인 줄이 보류(대표 · CFO가 «저장»)된다 — 줄 내용은 대표에게만.
+  assert.ok(!lines.some((l) => l.kind === 'payroll' && l.people), '사원이 올린 급여의 개인 줄이 바로 저장됐다')
+  process.env.DUMMY_USER = 'chairman'
+  const heldPay = (await repo.listFinPayrollHeld(BIZ)).flatMap((h) => h.rows ?? [])
+  assert.ok(heldPay.some((r) => r.person_ref === 'E001') && !/가짜이름|900101|110-123/.test(JSON.stringify(heldPay)), '보류된 급여 개인 줄(사번)이 없거나 이름 · 주민 · 계좌가 남았다')
+  process.env.DUMMY_USER = 'support_lead'
   assert.ok(lines.filter((l) => l.kind === 'payroll' && !l.people).length === 2, '급여 부서 합계가 둘(경영지원 · 영업)이 아니다')
   const card = lines.filter((l) => l.kind === 'card').map((l) => l.row.card_last4)
   assert.deepEqual(card, ['3456', '3456'], '카드는 뒤 4자리만이어야 한다')
@@ -167,20 +178,17 @@ async function main() {
   assert.equal(again[0].status, 'duplicate', `같은 파일 두 번이 막히지 않았다: ${again[0].message}`)
   assert.equal(dummyFinLines().length, before, '두 번 올리기에 줄이 늘었다')
 
-  // ── 4. 합계 틀림 → 확인 필요(자동 아님) ──
+  // ── 4. 합계 틀림 → 0085: 저장하고 경고 꼬리표(막지 않는다) ──
   const wrong = await run('가짜 카드 합계틀림.xlsx', await xlsx([sample('card', '2099-11', { wrongTotal: true })]))
-  assert.equal(wrong[0].status, 'needs_review')
-  assert.ok(wrong[0].why.some((w) => w.startsWith('검증')), `합계 틀림이 자동 막힘 이유가 아니다: ${wrong[0].why}`)
-  const pend = await repo.finUploadPending(wrong[0].upload_id!)
-  assert.ok(pend?.meta?.errors?.some((e) => e.startsWith('합계가 맞지 않습니다')), '합계 틀림 문구가 없다')
+  assert.equal(wrong[0].status, 'applied', `합계 틀림이 저장되지 않았다: ${wrong[0].message}`)
+  assert.ok(wrong[0].warnings?.some((e) => e.startsWith('합계가 맞지 않습니다')), '합계 틀림 경고가 없다')
+  assert.ok((await repo.listFinUploads(BIZ)).find((u) => u.upload_id === wrong[0].upload_id)?.warnings?.some((e) => e.startsWith('합계가 맞지 않습니다')), '합계 틀림 경고가 올리기 기록에 남지 않았다')
 
-  // ── 5. 겹침 → 확인 필요 · replace로 넣기 · 되돌리기 → 옛 줄 되살림 ──
+  // ── 5. 겹침 → 0085: 새 값으로 바꾸기(옛 줄은 이력) · 되돌리기 → 옛 줄 되살림 ──
   const over = await run('가짜 판매 2.xlsx', await xlsx([{ ...sample('sales', '2099-01'), rows: [...sample('sales', '2099-01').rows.slice(0, 3), ['가짜 거래처 C', '가짜 제품 3', 1, 500, 500], ['합계', null, 1, null, 500]] }]))
-  assert.equal(over[0].status, 'needs_review')
-  assert.ok(over[0].why.some((w) => w.includes('겹침')), `겹침이 이유가 아니다: ${over[0].why}`)
-  const op = (await repo.finUploadPending(over[0].upload_id!))!
-  await assert.rejects(repo.finUploadApply({ business_id: BIZ, kind: 'sales', period: '2099-01', file_name: 'x', file_sha256: 'x', sheet_name: null, ai_confidence: 'high', ai_used: 0, auto: false, rows: op.rows, people: null, overlap: 'none', reason: null, upload_id: over[0].upload_id }), /fin_upload_overlap/)
-  const newId = await repo.finUploadApply({ business_id: BIZ, kind: 'sales', period: '2099-01', file_name: 'x', file_sha256: 'x', sheet_name: null, ai_confidence: 'high', ai_used: 0, auto: false, rows: op.rows, people: null, overlap: 'replace', reason: '새 파일', upload_id: over[0].upload_id })
+  assert.equal(over[0].status, 'applied', `같은 달 두 번째가 바꾸기로 저장되지 않았다: ${over[0].message}`)
+  const newId = over[0].upload_id!
+  assert.equal((await repo.listFinUploads(BIZ)).find((u) => u.upload_id === applied.sales)?.status, 'replaced', '옛 올리기가 이력(replaced)이 아니다')
   const liveSales = () => dummyFinLines().filter((l) => l.kind === 'sales' && l.period === '2099-01' && !l.voided_at).length
   assert.equal(liveSales(), 1, 'replace 뒤 살아 있는 줄이 새 파일 1줄이 아니다')
   assert.equal(await repo.finUploadRevert(newId, '시험'), true)
@@ -192,8 +200,8 @@ async function main() {
   if (closed) {
     process.env.DUMMY_USER = 'support_lead'
     const cm = await run('가짜 카드 마감달.xlsx', await xlsx([sample('card', closed.period)]))
-    assert.equal(cm[0].status, 'needs_review', `마감 달이 자동으로 들어갔다: ${cm[0].message}`)
-    assert.ok(cm[0].why.some((w) => w.includes('마감')))
+    assert.equal(cm[0].status, 'held', `마감 달이 보류되지 않았다: ${cm[0].message}`)
+    assert.equal(cm[0].hold, 'closed')
     const cp = (await repo.finUploadPending(cm[0].upload_id!))!
     await assert.rejects(repo.finUploadApply({ business_id: BIZ, kind: 'card', period: closed.period, file_name: 'x', file_sha256: 'y', sheet_name: null, ai_confidence: 'high', ai_used: 0, auto: false, rows: cp.rows, people: null, overlap: 'none', reason: '이유', upload_id: cm[0].upload_id }), /fin_upload_closed/)
     process.env.DUMMY_USER = 'chairman'
@@ -204,12 +212,12 @@ async function main() {
   // ── 7. 급여 개인 줄 — 대기 줄은 대표 · CFO에게만 people · grid ──
   process.env.DUMMY_USER = 'support_lead'
   const pw = await run('가짜 급여 합계틀림.xlsx', await xlsx([sample('payroll', '2099-12', { wrongTotal: true })]))
-  assert.equal(pw[0].status, 'needs_review')
-  const staffView = (await repo.finUploadPending(pw[0].upload_id!))!
-  assert.ok(!staffView.people && !staffView.grid, '재무 입력 직원에게 급여 개인 줄 · 칸 격자가 보인다')
+  assert.equal(pw[0].status, 'applied', `급여(합계 틀림)가 부서 합계로 저장되지 않았다: ${pw[0].message}`)
+  const staffHeld = (await repo.listFinPayrollHeld(BIZ)).find((h) => h.upload_id === pw[0].upload_id)
+  assert.ok(staffHeld && staffHeld.rows === null && staffHeld.people === 3, '재무 입력 직원에게 급여 개인 줄 내용이 보이거나 보류가 없다')
   process.env.DUMMY_USER = 'chairman'
-  const chairView = (await repo.finUploadPending(pw[0].upload_id!))!
-  assert.ok(chairView.people?.length === 3 && chairView.grid, '대표에게 급여 개인 줄 · 칸 격자가 안 보인다')
+  const chairHeld = (await repo.listFinPayrollHeld(BIZ)).find((h) => h.upload_id === pw[0].upload_id)
+  assert.ok(chairHeld?.rows?.length === 3, '대표에게 급여 개인 줄이 안 보인다')
   // 권한 없는 사원
   process.env.DUMMY_USER = 'sales_staff'
   const deny = await run('가짜 카드 권한없음.xlsx', await xlsx([sample('card', '2099-10')]))
@@ -314,7 +322,8 @@ async function main() {
   assert.deepEqual(issueLines.map((l) => [l.row.material, l.row.class]), [['가짜 원료 가', 'production'], ['가짜 원료 나', 'non_production'], ['가짜 원료 다', 'needs_review']], '출고 규칙 구분이 다르다')
   // 같은 달 새 출고명세(겹침) → 미리보기 · 대기 읽기에 kg 없음 · 칸 격자 없음 · 넣으면 kg는 대기 줄에서 붙는다.
   const iss2 = await run('가짜 원료 출고명세 2.xlsx', await xlsx([{ ...sample('material_issue', '2099-04'), rows: [...sample('material_issue', '2099-04').rows.slice(0, 2), ['2099-04-09', '가짜 원료 마', 77, '', '', '']] }]))
-  assert.equal(iss2[0].status, 'needs_review', `겹친 출고명세가 미리보기가 아니다: ${iss2[0].message}`)
+  assert.equal(iss2[0].status, 'held', `겹친 출고명세(직원 — 바꾸기는 대표 · CFO)가 보류가 아니다: ${iss2[0].message}`)
+  assert.equal(iss2[0].hold, 'restricted')
   for (const who of ['support_lead', 'chairman']) {
     process.env.DUMMY_USER = who
     const ip = (await repo.finUploadPending(iss2[0].upload_id!))!
@@ -347,7 +356,7 @@ async function main() {
   assert.ok(!AI_KIND_SPECS.some((k) => k.kind === 'material_issue'), 'AI 종류 목록에 원료 출고명세가 있다')
   // «모름» 시트의 kg 칸은 대기 기록 전에 비운다.
   const unk = await run('가짜 모름 kg.xlsx', await xlsx([{ name: 'Sheet1', rows: [['가짜 메모 시트'], ['가', '나', '중량(kg)'], [1, 2, 3]] }]))
-  assert.ok(unk[0].status === 'needs_review' && unk[0].kind === 'unknown', `모르는 시트가 미리보기가 아니다: ${JSON.stringify(unk)}`)
+  assert.ok(unk[0].status === 'held' && unk[0].hold === 'kind' && unk[0].kind === 'unknown', `모르는 시트가 «종류 모름» 보류가 아니다: ${JSON.stringify(unk)}`)
   {
     const ug = (await repo.finUploadPending(unk[0].upload_id!))!.grid!
     assert.equal(ug[2][2], null, `모르는 시트의 kg 칸이 남았다: ${JSON.stringify(ug)}`)
@@ -390,13 +399,10 @@ async function main() {
   assert.equal(led[0].status, 'applied', `원장 거래 줄이 자동으로 안 들어갔다: ${led[0].message} ${led[0].why}`)
   assert.equal(JSON.stringify([(await repo.loadFinanceLedger()).closings, await repo.listFinanceKpis()]), ledgerKpiBefore, '자동 넣기가 마감 · 월별 손익을 바꿨다')
   const pur = await run('가짜 R2 입고 11월.xlsx', await xlsx([{ name: '입고명세서', rows: [title('R2 입고명세서', '2099-11'), ['입고일자', '자재명', '공급처', '자재구분', '입고수량', '입고금액'], ['2099-11-05', '가짜 원재료 A', '가짜 공급처 갑', '원재료', 100, 500000], ['2099-11-12', '가짜 원재료 B', '가짜 공급처 을', '원재료', 30, 300000], ['합계', null, null, null, 130, 800000]] }]))
-  assert.equal(pur[0].status, 'needs_review', `중복 의심이 있는데 자동으로 들어갔다: ${pur[0].message}`)
-  assert.ok(pur[0].why.some((w) => w.startsWith('자료 간 중복 의심 1건')), `다섯째 조건이 이유가 아니다: ${pur[0].why}`)
-  const pp = (await repo.finUploadPending(pur[0].upload_id!))!
-  assert.equal(pp.meta?.dup_suspects, 1)
-  assert.equal(pp.rows[0].source_system, 'r2', '제목의 R2를 출처로 읽지 못했다')
-  await repo.finUploadApply({ business_id: BIZ, kind: 'purchase_in', period: '2099-11', file_name: 'x', file_sha256: 'x', sheet_name: null, ai_confidence: 'high', ai_used: 0, auto: false, rows: pp.rows, people: null, overlap: 'none', reason: null, upload_id: pur[0].upload_id, dup_suspects: null })
-  assert.equal(await saveTxGroupsFor(repo, BIZ, 'purchase_in', '2099-11', pur[0].upload_id!, null), 2)
+  // 0085: 중복 의심은 막지 않고 경고 꼬리표 — 저장 직후 같은 거래 묶음(same · suspect)이 선다.
+  assert.equal(pur[0].status, 'applied', `중복 의심이 있는 입고가 저장되지 않았다: ${pur[0].message}`)
+  assert.ok(pur[0].warnings?.some((w) => w.startsWith('자료 간 중복 의심 1건')), `중복 의심 경고가 없다: ${pur[0].warnings}`)
+  assert.equal(dummyFinLines().find((l) => l.upload_id === pur[0].upload_id)?.row.source_system, 'r2', '제목의 R2를 출처로 읽지 못했다')
   const groups = await repo.listFinTxGroups(BIZ, '2099-11')
   assert.deepEqual(groups.map((x) => x.status).sort(), ['same', 'suspect'], `묶음이 same · suspect 하나씩이 아니다: ${JSON.stringify(groups)}`)
   const sus = groups.find((x) => x.status === 'suspect')!
@@ -434,11 +440,11 @@ async function main() {
 
   console.log(
     `PASS: 0070 칸 = kinds.ts · 14가지 자동 넣기(분류 · 기간 · 상태) · 시트명 달라도 내용으로 · ④ 원료 줄 DB 0 · AI 요청 0 · 급여 이름 · 주민 · 계좌 0 · 개인 줄 사번 · ` +
-      `카드 뒤 4자리 · 두 번 올리기 늘지 않음 · 합계 틀림 → 확인 필요 · 겹침 → 선택 필수 · replace → 되돌리기 옛 줄 되살림 · 마감 달${closed ? '' : '(dummy에 마감 달 없음 — 건너뜀)'} · ` +
+      `카드 뒤 4자리 · 두 번 올리기 늘지 않음 · 0085 합계 틀림 → 저장 + 경고 · 겹침 → 바꾸기(이력) · 되돌리기 옛 줄 되살림 · 급여 개인 줄 보류 · 마감 달 보류${closed ? '' : '(dummy에 마감 달 없음 — 건너뜀)'} · ` +
       `급여 대기 줄 대표만 · 권한 없음 거부 · DRM · 웹 표 · PDF 문구 · 자동 다섯 조건. ` +
       `0072: 18가지 자동 넣기 · 평가금액 입력자 확정 거부 · 다른 사람 확정 · 미입력 확정 거부 · 범위 다름 경고 · 빈칸 = 미입력 · 0 = 확인된 0 · 기초 = 앞 달 확정 · 미연결 · 첫 달 출처 · 이유 필수 · ` +
       `출고 구분 칸 없음 = 확인 필요 · 규칙 엇갈림 = 확인 필요 · 출고 kg 대기 읽기 0(대표 포함) · 넣을 때 kg 붙음 · 요약 보류 · 원료별 kg 0 · 출고명세 AI 0 · 모름 시트 kg 칸 비움 · ` +
-      `같은 매입 = same 하나 · 금액만 = suspect · 중복 의심 → 미리보기 · 다른 거래로 풀기 · 기준 출처 · 자동 넣기 뒤 마감 · 월별 손익 그대로 · 재마감 대상${closed ? '' : '(마감 달 없음 — 건너뜀)'} · 직원 세션 예시 0. ` +
+      `같은 매입 = same 하나 · 금액만 = suspect · 중복 의심 → 저장 + 경고 · 다른 거래로 풀기 · 기준 출처 · 자동 넣기 뒤 마감 · 월별 손익 그대로 · 재마감 대상${closed ? '' : '(마감 달 없음 — 건너뜀)'} · 직원 세션 예시 0. ` +
       `${ledgerPass}. 진짜 AI 호출 0회(가짜 AI ${sent.length}회).`,
   )
 }
