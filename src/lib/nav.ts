@@ -62,6 +62,9 @@ export const NAV: readonly NavGroup[] = [
       // CH-041 전자결재. 라벨은 시안 그대로 두고 대상만 실제 화면으로 잇는다 —
       // 그 화면이 곧 대시보드 '내 결정 사항' 패널의 전체 화면 버전이다.
       { key: 'nav_decisions', label: '내 결정 사항', href: '/approvals', icon: 'check-circle', ready: true },
+      // 0087 전자결재(새) — 결재할 문서 · 예정 · 내가 올린 문서 · 임시저장 · 처리 이력 · 참조 · 후속. 스위치 approvals가 켜진 사람에게만(FEATURE_NAV).
+      // 켜지면 직원 메뉴의 예전 «전자결재»(/approvals)는 «결재 요청»으로 이름을 바꿔 둘이 같은 이름이 되지 않게 한다(navFor).
+      { key: 'nav_eapproval', label: '전자결재', href: '/e-approval', icon: 'stamp', ready: true },
       // 0059 결재 대장 — 양식 결재를 한 장의 표로 · 엑셀. 회장과 «결재 대장 열람» 줄이 있는 사람에게만 건다(navFor의 ledger).
       { key: 'nav_ledger', label: '결재 대장', href: '/approvals/ledger', icon: 'file-text', ready: true },
       // Phase 3-A. 야간 브리핑 전문. CH-044 자연어 질의는 아직 없다 — 붙으면 같은 화면에 들어온다.
@@ -325,12 +328,14 @@ export function navFor(role: Role | null | undefined, opts: NavOptions = {}): re
   const initiatives = canReadInitiatives(role)
   // 0059 «결재 대장 열람» 줄(SessionUser.ledger)이 없으면 대장 메뉴를 뺀다. 화면은 누구나 열 수 있다(본인 · 결재선 줄만 보인다).
   const ledgerMenu = (opts.ledger?.length ?? 0) > 0
+  const eapproval = !(opts.hidden ?? []).includes('nav_eapproval')
   return NAV.map((group) => ({
     ...group,
     items: group.items
       .filter((item) => !CHAIRMAN_ONLY_NAV.has(item.key) && (initiatives || item.key !== 'nav_initiatives') && (ledgerMenu || item.key !== 'nav_ledger'))
       .filter(purchasingFilter)
-      .map((item) => (STAFF_NAV_OVERRIDE[item.key] ? { ...item, ...STAFF_NAV_OVERRIDE[item.key] } : item)),
+      .map((item) => (STAFF_NAV_OVERRIDE[item.key] ? { ...item, ...STAFF_NAV_OVERRIDE[item.key] } : item))
+      .map((item) => (item.key === 'nav_decisions' && eapproval ? { ...item, label: '결재 요청' } : item)),
   })).filter((group) => group.items.length > 0)
 }
 

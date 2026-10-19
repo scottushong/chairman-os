@@ -34,7 +34,7 @@ export async function featureWhy(user: Pick<SessionUser, 'role'> | null | undefi
 }
 
 /** 사이드바에서 뺄 메뉴 키(꺼진 기능의 메뉴). */
-export async function hiddenNavFor(role: Role | null | undefined): Promise<string[]> {
+export async function hiddenNavFor(role: Role | null | undefined, businessIds: readonly string[] = []): Promise<string[]> {
   if (!role) return []
-  return hiddenNavKeys(await loadFeatureSwitches(), role)
+  return hiddenNavKeys(await loadFeatureSwitches(), role, businessIds)
 }

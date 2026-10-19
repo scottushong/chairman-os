@@ -49,12 +49,13 @@ export const loadSidebarData = cache(async function loadSidebarData(role: Role |
   if (!role) return { companies: [], initiatives: null, hiddenNav: [] }
   const repo = await getRepository()
   // 사이드바 하나 때문에 화면 전체가 깨지면 안 된다 — 못 읽으면 빈 목록으로 떨어진다.
-  const [businesses, exceptions, initiatives, hiddenNav] = await Promise.all([
+  const [businesses, exceptions, initiatives] = await Promise.all([
     repo.listBusinesses().catch(() => []),
     canReadExceptions(role) ? repo.listExceptions().catch(() => []) : Promise.resolve([]),
     canReadInitiatives(role) ? repo.listInitiatives().catch(() => []) : Promise.resolve(null),
-    hiddenNavFor(role),
   ])
+  // 회사 줄로만 켠 기능(0087 전자결재)도 그 회사 사람에게 메뉴가 서게 — 볼 수 있는 회사(RLS)를 같이 넘긴다.
+  const hiddenNav = await hiddenNavFor(role, businesses.map((b) => b.business_id))
 
   const level = new Map<string, SidebarLevel>()
   for (const e of exceptions) {

@@ -164,6 +164,13 @@ export const FEATURES = [
     defaultAudience: 'all',
     from: 'feat/finance-overview · 0085',
   },
+  {
+    key: 'approvals',
+    label: '전자결재',
+    description: '«전자결재»(/e-approval) — 결재할 문서 · 결재 예정 · 내가 올린 문서 · 임시저장 · 내 처리 이력 · 참조 · 공유 · 후속 처리, 양식 여섯 · 합의 · 대결 · 회수 · 재상신. 꺼지면 메뉴 · 화면이 사라지고 RPC(ea_*)도 거부. 예전 «결재»(/approvals · 결재 대장)는 그대로.',
+    defaultAudience: 'chairman',
+    from: 'feat/approvals-0087 · 0087',
+  },
 ] as const satisfies readonly FeatureDef[]
 
 export type FeatureKey = (typeof FEATURES)[number]['key']
@@ -252,9 +259,15 @@ export function closedFeatureRows(): FeatureSwitchRow[] {
 /** 기능 → 그 기능이 세우는 메뉴 키(lib/nav.ts). 꺼진 기능의 메뉴는 navFor가 뺀다. */
 export const FEATURE_NAV: Partial<Record<FeatureKey, string>> = {
   process_charts: 'nav_process_charts',
+  approvals: 'nav_eapproval',
 }
 
-/** 이 사람에게 숨길 메뉴 키 — 그룹 줄 기준(메뉴는 회사를 모른다). */
-export function hiddenNavKeys(rows: readonly FeatureSwitchRow[] | null, role: Role | null | undefined): string[] {
-  return (Object.entries(FEATURE_NAV) as [FeatureKey, string][]).filter(([key]) => !featureOnFor(rows, key, role)).map(([, nav]) => nav)
+/**
+ * 이 사람에게 숨길 메뉴 키 — 그룹 줄 기준. businessIds를 주면 그 회사들 중 하나라도 켜져 있으면 보인다
+ * (0087 전자결재: «대표가 회사 줄에서 켜면 그 회사 전원» — 그룹 줄은 대표만이어도 그 회사 직원에게 메뉴가 선다).
+ */
+export function hiddenNavKeys(rows: readonly FeatureSwitchRow[] | null, role: Role | null | undefined, businessIds: readonly string[] = []): string[] {
+  return (Object.entries(FEATURE_NAV) as [FeatureKey, string][])
+    .filter(([key]) => !featureOnFor(rows, key, role) && !businessIds.some((b) => featureOnFor(rows, key, role, b)))
+    .map(([, nav]) => nav)
 }
