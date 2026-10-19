@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>재무 현황</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&amp;display=swap">
+<style>
+body{margin:0;background:#f4f5f3;font-family:"IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;color:#1a211e}
+a{color:#0f6b5c;text-decoration:none}a:hover{text-decoration:underline}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th{font-size:12px;color:#6b7772;font-weight:500;text-align:left;padding:6px 8px;border-bottom:1px solid #e1e6e3}
+td{font-size:14px;padding:8px;border-bottom:1px solid #eef1ef}
+td.n,th.n{text-align:right}
+</style>
+</helmet>
+<div style="max-width: 1360px; margin: 0 auto; box-sizing: border-box; padding: 24px 28px 48px; display: flex; flex-direction: column; gap: 20px">
+
+  <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px">
+    <div style="font-size: 22px; font-weight: 700">재무 현황</div>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap">
+      <div style="padding: 6px 12px; border: 1px solid #d7ddda; border-radius: 8px; background: #fff; font-size: 14px">DY (주) ▾</div>
+      <div style="padding: 6px 12px; border: 1px solid #d7ddda; border-radius: 8px; background: #fff; font-size: 14px">2026년 9월 ▾</div>
+      <div style="padding: 6px 12px; border: 1px solid #d7ddda; border-radius: 8px; background: #fff; font-size: 14px">월 · 분기 · 년</div>
+    </div>
+    <div style="margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 13px; color: #6b7772">
+      <span style="padding: 3px 10px; border-radius: 999px; background: #f8eadf; color: #9a4b12; font-weight: 600">잠정</span>
+      <span>마지막 올림 10-19 11:42 · 자료 16/18</span>
+      <a href="Upload.dc.html" style="padding: 7px 14px; border-radius: 8px; background: #0f6b5c; color: #fff; font-weight: 600">자료 올리기</a>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px">
+    <div style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px">
+      <div style="font-size: 12px; color: #6b7772">매출액</div>
+      <div style="font-size: 22px; font-weight: 700">19.9억</div>
+      <div style="font-size: 12px; color: #0f6b5c">전월 +4.2% · 전년 +11.0%</div>
+    </div>
+    <div style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px">
+      <div style="font-size: 12px; color: #6b7772">매출총이익</div>
+      <div style="font-size: 22px; font-weight: 700">4.8억 <span style="font-size: 13px; font-weight: 500; color: #6b7772">24.1%</span></div>
+      <div style="font-size: 12px; color: #0f6b5c">전월 +0.8%p</div>
+    </div>
+    <div style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px">
+      <div style="font-size: 12px; color: #6b7772">영업이익</div>
+      <div style="font-size: 22px; font-weight: 700">1.3억 <span style="font-size: 13px; font-weight: 500; color: #6b7772">6.5%</span></div>
+      <div style="font-size: 12px; color: #b4432b">전월 −0.4%p</div>
+    </div>
+    <div style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px">
+      <div style="font-size: 12px; color: #6b7772">기말 현금</div>
+      <div style="font-size: 22px; font-weight: 700">21.2억</div>
+      <div style="font-size: 12px; color: #b4432b">전월 −3.1억 (원료 선매입 지급)</div>
+    </div>
+    <div style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 4px">
+      <div style="font-size: 12px; color: #6b7772">차입 잔액</div>
+      <div style="font-size: 22px; font-weight: 700">38.6억</div>
+      <div style="font-size: 12px; color: #6b7772">이번 달 원리금 0.42억</div>
+    </div>
+  </div>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px">
+
+    <div style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline"><div style="font-size: 15px; font-weight: 700">① 손익 (재고 반영)</div><a href="#" style="font-size: 13px">자세히 ›</a></div>
+      <table>
+        <tr><th>항목</th><th class="n">9월</th><th class="n">8월</th><th class="n">전년 9월</th></tr>
+        <tr><td>매출액</td><td class="n">1,992,975,160</td><td class="n">1,912,440,000</td><td class="n">1,795,200,000</td></tr>
+        <tr><td>매출원가</td><td class="n">1,512,803,000</td><td class="n">1,466,100,000</td><td class="n">1,390,500,000</td></tr>
+        <tr><td style="font-weight: 600">매출총이익</td><td class="n" style="font-weight: 600">480,172,160</td><td class="n">446,340,000</td><td class="n">404,700,000</td></tr>
+        <tr><td>판매관리비</td><td class="n">350,890,000</td><td class="n">314,500,000</td><td class="n">301,200,000</td></tr>
+        <tr><td style="font-weight: 600">영업이익</td><td class="n" style="font-weight: 600">129,282,160</td><td class="n">131,840,000</td><td class="n">103,500,000</td></tr>
+        <tr><td>영업외손익</td><td class="n">−18,420,000</td><td class="n">−17,900,000</td><td class="n">−16,100,000</td></tr>
+        <tr><td style="font-weight: 600">당기순이익</td><td class="n" style="font-weight: 600">110,862,160</td><td class="n">113,940,000</td><td class="n">87,400,000</td></tr>
+      </table>
+      <div style="font-size: 12px; color: #9a4b12; background: #fdf4ec; padding: 6px 10px; border-radius: 6px">잠정 — 9월 재공품 · 완제품 평가금액이 아직 없어 8월 값으로 계산했습니다.</div>
+    </div>
+
+    <div style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline"><div style="font-size: 15px; font-weight: 700">② 재무상태</div><a href="#" style="font-size: 13px">자세히 ›</a></div>
+      <table>
+        <tr><th>자산</th><th class="n">9월 말</th><th>부채 · 자본</th><th class="n">9월 말</th></tr>
+        <tr><td>현금 · 예금</td><td class="n">2,117,014,924</td><td>외상매입금</td><td class="n">1,031,331,190</td></tr>
+        <tr><td>외상매출금</td><td class="n">2,822,371,227</td><td>미지급금</td><td class="n">338,984,098</td></tr>
+        <tr><td>원재료</td><td class="n">1,725,316,455</td><td>단기차입금</td><td class="n">1,200,000,000</td></tr>
+        <tr><td>재공품</td><td class="n">581,051,000</td><td>장기차입금</td><td class="n">2,660,000,000</td></tr>
+        <tr><td>제품</td><td class="n">1,423,553,496</td><td style="font-weight: 600">부채 합계</td><td class="n" style="font-weight: 600">5,230,315,288</td></tr>
+        <tr><td>유형자산</td><td class="n">4,910,000,000</td><td>자본</td><td class="n">8,349,000,814</td></tr>
+        <tr><td style="font-weight: 600">자산 합계</td><td class="n" style="font-weight: 600">13,579,316,102</td><td style="font-weight: 600">부채 + 자본</td><td class="n" style="font-weight: 600">13,579,316,102</td></tr>
+      </table>
+      <div style="font-size: 12px; color: #6b7772">재고 합계 37.3억 · 전월 대비 +2.1억(원료 선매입)</div>
+    </div>
+
+    <div style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline"><div style="font-size: 15px; font-weight: 700">③ 현금흐름</div><a href="#" style="font-size: 13px">자세히 ›</a></div>
+      <table>
+        <tr><th>구분</th><th class="n">9월</th><th class="n">누계(1~9월)</th></tr>
+        <tr><td>기초 현금</td><td class="n">2,427,014,924</td><td class="n">1,980,300,000</td></tr>
+        <tr><td>영업활동</td><td class="n">+86,000,000</td><td class="n">+612,400,000</td></tr>
+        <tr><td style="padding-left: 24px; color: #6b7772">그중 원료대금 지급</td><td class="n" style="color: #6b7772">−520,000,000</td><td class="n" style="color: #6b7772">−3,980,000,000</td></tr>
+        <tr><td>투자활동</td><td class="n">−354,000,000</td><td class="n">−410,000,000</td></tr>
+        <tr><td>재무활동</td><td class="n">−42,000,000</td><td class="n">−65,685,076</td></tr>
+        <tr><td style="font-weight: 600">기말 현금</td><td class="n" style="font-weight: 600">2,117,014,924</td><td class="n" style="font-weight: 600">2,117,014,924</td></tr>
+      </table>
+      <div style="font-size: 12px; color: #6b7772">이익은 났지만 선매입 지급과 설비 투자로 현금은 줄었습니다.</div>
+    </div>
+
+    <div style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline"><div style="font-size: 15px; font-weight: 700">④ 대출 · 차입</div><a href="#" style="font-size: 13px">자세히 ›</a></div>
+      <table>
+        <tr><th>기관</th><th>종류</th><th class="n">잔액</th><th class="n">금리</th><th>만기</th><th class="n">이달 원리금</th></tr>
+        <tr><td>기업은행</td><td>시설자금</td><td class="n">1,266,600,000</td><td class="n">4.1%</td><td>2029-06</td><td class="n">16,660,000</td></tr>
+        <tr><td>국민은행</td><td>운전자금</td><td class="n">1,200,000,000</td><td class="n">5.2%</td><td>2027-03</td><td class="n">5,200,000</td></tr>
+        <tr><td>신보 보증부</td><td>운전자금</td><td class="n">800,000,000</td><td class="n">4.6%</td><td>2027-11</td><td class="n">3,070,000</td></tr>
+        <tr><td>대표 차입</td><td>차입금</td><td class="n">593,400,000</td><td class="n">—</td><td>—</td><td class="n">17,000,000</td></tr>
+        <tr><td style="font-weight: 600">합계</td><td></td><td class="n" style="font-weight: 600">3,860,000,000</td><td></td><td></td><td class="n" style="font-weight: 600">41,930,000</td></tr>
+      </table>
+    </div>
+
+    <div style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline"><div style="font-size: 15px; font-weight: 700">⑤ 비용 상위</div><a href="#" style="font-size: 13px">자세히 ›</a></div>
+      <table>
+        <tr><th>계정</th><th class="n">9월</th><th class="n">전월 대비</th></tr>
+        <tr><td>급여 (부서 합계)</td><td class="n">142,300,000</td><td class="n">+1.1%</td></tr>
+        <tr><td>해외시장개척비</td><td class="n">24,806,862</td><td class="n" style="color: #b4432b">+38.0%</td></tr>
+        <tr><td>수출입제비용</td><td class="n">18,480,849</td><td class="n">−2.4%</td></tr>
+        <tr><td>법인카드 (41건)</td><td class="n">9,210,500</td><td class="n">+6.3%</td></tr>
+        <tr><td>전기료</td><td class="n">1,110,909</td><td class="n">+0.9%</td></tr>
+      </table>
+    </div>
+
+    <div style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+      <div style="display: flex; justify-content: space-between; align-items: baseline"><div style="font-size: 15px; font-weight: 700">⑥ 매출 상위</div><a href="#" style="font-size: 13px">자세히 ›</a></div>
+      <table>
+        <tr><th>거래처</th><th class="n">매출</th><th class="n">kg</th><th class="n">비중</th></tr>
+        <tr><td>A사</td><td class="n">412,000,000</td><td class="n">148,200</td><td class="n">20.7%</td></tr>
+        <tr><td>B사</td><td class="n">298,500,000</td><td class="n">101,300</td><td class="n">15.0%</td></tr>
+        <tr><td>C사 (베트남)</td><td class="n">244,100,000</td><td class="n">93,800</td><td class="n">12.2%</td></tr>
+        <tr><td>D사</td><td class="n">176,000,000</td><td class="n">60,100</td><td class="n">8.8%</td></tr>
+        <tr><td>그 밖 27곳</td><td class="n">862,375,160</td><td class="n">301,900</td><td class="n">43.3%</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div style="background: #fff; border: 1px solid #e1e6e3; border-radius: 10px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px">
+    <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 8px"><div style="font-size: 15px; font-weight: 700">⑦ 이번 달 자료 — 받은 것 16 · 빠진 것 2 · 경고 1</div><a href="Upload.dc.html" style="font-size: 13px">자료 올리기 ›</a></div>
+    <div style="display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px">
+      <div style="padding: 8px 10px; border-radius: 8px; background: #e1efeb; color: #0f6b5c; font-size: 13px">✓ 판매현황</div>
+      <div style="padding: 8px 10px; border-radius: 8px; background: #e1efeb; color: #0f6b5c; font-size: 13px">✓ 입고명세서</div>
+      <div style="padding: 8px 10px; border-radius: 8px; background: #e1efeb; color: #0f6b5c; font-size: 13px">✓ 재고금액명세서</div>
+      <div style="padding: 8px 10px; border-radius: 8px; background: #e1efeb; color: #0f6b5c; font-size: 13px">✓ 제조지시명세서</div>
+      <div style="padding: 8px 10px; border-radius: 8px; background: #fdf4ec; color: #9a4b12; font-size: 13px">⚠ 계정별 원장 (합계 차이 2건)</div>
+      <div style="padding: 8px 10px; border-radius: 8px; background: #e1efeb; color: #0f6b5c; font-size: 13px">✓ 급여대장</div>
+      <div style="padding: 8px 10px; border-radius: 8px; background: #e1efeb; color: #0f6b5c; font-size: 13px">✓ 수입 거래목록</div>
+      <div style="padding: 8px 10px; border-radius: 8px; background: #e1efeb; color: #0f6b5c; font-size: 13px">✓ 월별 자금흐름표</div>
+      <div style="padding: 8px 10px; border-radius: 8px; background: #e1efeb; color: #0f6b5c; font-size: 13px">✓ 법인카드 사용내역</div>
+      <div style="padding: 8px 10px; border-radius: 8px; background: #e1efeb; color: #0f6b5c; font-size: 13px">✓ 베트남 법인 운영비</div>
+      <div style="padding: 8px 10px; border-radius: 8px; background: #e1efeb; color: #0f6b5c; font-size: 13px">✓ 해외 판촉비</div>
+      <div style="padding: 8px 10px; border-radius: 8px; background: #e1efeb; color: #0f6b5c; font-size: 13px">✓ 대출현황</div>
+      <div style="padding: 8px 10px; border-radius: 8px; background: #e1efeb; color: #0f6b5c; font-size: 13px">✓ 차입금</div>
+      <div style="padding: 8px 10px; border-radius: 8px; background: #e1efeb; color: #0f6b5c; font-size: 13px">✓ 절감목표 · 진행</div>
+      <div style="padding: 8px 10px; border-radius: 8px; background: #e1efeb; color: #0f6b5c; font-size: 13px">✓ 계정과목표</div>
+      <div style="padding: 8px 10px; border-radius: 8px; background: #e1efeb; color: #0f6b5c; font-size: 13px">✓ 월별 손익계산서</div>
+      <div style="padding: 8px 10px; border-radius: 8px; background: #fff; border: 1px dashed #c9d1cd; color: #6b7772; font-size: 13px">· 재공품 · 완제품 평가 <a href="Upload.dc.html">올리기</a></div>
+      <div style="padding: 8px 10px; border-radius: 8px; background: #fff; border: 1px dashed #c9d1cd; color: #6b7772; font-size: 13px">· 출하집계표 <a href="Upload.dc.html">올리기</a></div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1360,"height":1720}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
