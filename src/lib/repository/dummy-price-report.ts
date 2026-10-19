@@ -14,7 +14,7 @@ import { dummyHasBusiness, dummyModuleGrants, dummyViewer } from "./dummy-org";
 import type { PriceReportMethods } from "./types";
 
 /**
- * 0082 가격 리포트의 dummy 자리. **DB(0082)가 막는 것을 여기서도 막는다**:
+ * 0084 가격 리포트의 dummy 자리. **DB(0084)가 막는 것을 여기서도 막는다**:
  *   읽기 = 대표 · 그 회사 임원 이상(GroupCFO · BusinessCEO · Executive) · '/purchasing/<회사>' 줄 · 스위치 — 아니면 0행.
  *   버튼 = 대표 · 구매 입력 줄(can_write) · 스위치 → 수집 중 잠김 · 10분 · 하루 n번(천장 12) · 30분 넘은 «대기 · 수집 중»은 실패로.
  * 리포트 html은 엔진 dry-run 결과(fixtures/price-report-sample.html — 가짜 아님: 채팅 리포트 1월~10/14 누적 값과 같은 화면).
@@ -287,7 +287,7 @@ export function dummyPriceReport(deps: {
 }
 
 /**
- * 엔진 흉내(시험 · dummy 화면) — GitHub Actions가 하는 일을 dummy 저장소에 한다. 사건은 같은 제목 · 링크면 한 번만(0082와 같은 열쇠).
+ * 엔진 흉내(시험 · dummy 화면) — GitHub Actions가 하는 일을 dummy 저장소에 한다. 사건은 같은 제목 · 링크면 한 번만(0084와 같은 열쇠).
  */
 export function dummyPriceAgent() {
   const key = (t: string, u: string | null) =>

@@ -1,6 +1,6 @@
-"""seed_v2.json(1월~10/14 가격 · 사건 메모) → 0082 마이그레이션의 한 번짜리 적재 SQL.
+"""seed_v2.json(1월~10/14 가격 · 사건 메모) → 0084 마이그레이션의 한 번짜리 적재 SQL.
 
-사용: python macro/engine/tools/seed_sql.py > (출력을 0082 «적재» 절에 붙인다)
+사용: python macro/engine/tools/seed_sql.py > (출력을 0084 «적재» 절에 붙인다)
 같은 줄이 이미 있으면 건너뛴다(on conflict do nothing) — 두 번 돌아도 늘지 않는다.
 """
 import json

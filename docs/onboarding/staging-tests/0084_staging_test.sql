@@ -1,8 +1,8 @@
 -- =====================================================================
--- 0082 staging 검사(DY 가격 리포트 — 적재 · 읽기 문 · 버튼 판정 · AI Agent만 쓰기 · 범위 검사) — 쓰지 않는다.
--- build-staging-dryrun.mjs --tests가 0082와 같은 트랜잭션에서 돌리고 끝에 되돌린다(이 파일만 돌릴 때도 끝은 raise exception).
+-- 0084 staging 검사(DY 가격 리포트 — 적재 · 읽기 문 · 버튼 판정 · AI Agent만 쓰기 · 범위 검사) — 쓰지 않는다.
+-- build-staging-dryrun.mjs --tests가 0084와 같은 트랜잭션에서 돌리고 끝에 되돌린다(이 파일만 돌릴 때도 끝은 raise exception).
 -- 사람(이 시험 안에서만 바꾼다): 대표 · rehearsal.member@example.com(구매 입력 → 영업) · AI Agent 계정(있으면).
--- 기대: ERROR  0082 STAGING PASS a(적재 87 · 메모 1) b(대표 읽음) c(구매 입력 버튼 · 잠김 · 자기 실패) d(영업 0행 · 버튼 거부) e(사람 쓰기 거부) f(AI Agent 범위 · 사건 한 번) g(anon 0)
+-- 기대: ERROR  0084 STAGING PASS a(적재 87 · 메모 1) b(대표 읽음) c(구매 입력 버튼 · 잠김 · 자기 실패) d(영업 0행 · 버튼 거부) e(사람 쓰기 거부) f(AI Agent 범위 · 사건 한 번) g(anon 0)
 -- =====================================================================
 do $t$
 declare
@@ -114,6 +114,6 @@ begin
   end if;
   v_out := v_out || 'g(anon 0)';
 
-  raise exception '0082 STAGING PASS %', v_out;
+  raise exception '0084 STAGING PASS %', v_out;
 end
 $t$;

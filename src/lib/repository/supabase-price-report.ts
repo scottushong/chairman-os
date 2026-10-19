@@ -5,8 +5,8 @@ import type { PriceCards, PriceEvent, PriceReport, PriceReportMeta, PriceRun, Pr
 import type { PriceReportMethods } from './types'
 
 /**
- * 0082 가격 리포트의 live 어댑터 조각. supabase.ts가 펼쳐 넣는다. 판정 · 한도 · 감사는 전부 DB(표 RLS · price_report_request)다.
- * 0082가 없는 DB면 'price_report_unavailable'(앱이 DB보다 먼저 나갈 수 있다 — 화면이 «준비 중»).
+ * 0084 가격 리포트의 live 어댑터 조각. supabase.ts가 펼쳐 넣는다. 판정 · 한도 · 감사는 전부 DB(표 RLS · price_report_request)다.
+ * 0084가 없는 DB면 'price_report_unavailable'(앱이 DB보다 먼저 나갈 수 있다 — 화면이 «준비 중»).
  */
 
 const MISSING = new Set(['PGRST202', '42883', 'PGRST205', '42P01'])

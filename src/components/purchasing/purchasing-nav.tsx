@@ -5,7 +5,7 @@ import { featureOn } from '@/lib/features-server'
 import { canReadPriceReport } from '@/lib/price-report/rules'
 
 /**
- * 구매 화면 — 개요 / 구매 LOT / 시장가 / 원료 / 공급처 / 가격 리포트(0082). BooksNav(재무)와 같은 모양 · 같은 자리(PageHeader 오른쪽).
+ * 구매 화면 — 개요 / 구매 LOT / 시장가 / 원료 / 공급처 / 가격 리포트(0084). BooksNav(재무)와 같은 모양 · 같은 자리(PageHeader 오른쪽).
  */
 
 export type PurchasingTab = 'overview' | 'materials' | 'suppliers' | 'market' | 'lots' | 'price-report'
@@ -16,7 +16,7 @@ const TABS: { tab: PurchasingTab; label: string; suffix: string }[] = [
   { tab: 'market', label: '시장가', suffix: '/market' },
   { tab: 'materials', label: '원료', suffix: '/materials' },
   { tab: 'suppliers', label: '공급처', suffix: '/suppliers' },
-  // 0082 — 스위치 purchase_price_report · 대표 · 임원 이상 · 구매 줄에게만 보인다(원가 관리 줄만 있는 사람에게는 없다).
+  // 0084 — 스위치 purchase_price_report · 대표 · 임원 이상 · 구매 줄에게만 보인다(원가 관리 줄만 있는 사람에게는 없다).
   { tab: 'price-report', label: '가격 리포트', suffix: '/price-report' },
 ]
 

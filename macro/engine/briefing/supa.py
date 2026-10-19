@@ -1,10 +1,10 @@
-"""Supabase 저장(0082) — 엔진이 AI Agent 계정(야간 브리핑과 같은 로그인, service_role 아님)으로 RPC만 부른다.
+"""Supabase 저장(0084) — 엔진이 AI Agent 계정(야간 브리핑과 같은 로그인, service_role 아님)으로 RPC만 부른다.
 
 환경변수(GitHub Secrets — 이름만, 값은 대표가 넣는다):
   SUPABASE_URL · SUPABASE_ANON_KEY · AI_AGENT_EMAIL · AI_AGENT_PASSWORD
 
 읽기: 앞 가격 · 회차 메모 · 직전 리포트(표 RLS — price_report_reader가 AIAgent를 들인다)
-쓰기: price_report_agent_begin · _points · _events · _save · _fail (0082 — AIAgent만)
+쓰기: price_report_agent_begin · _points · _events · _save · _fail (0084 — AIAgent만)
 """
 import json
 import os

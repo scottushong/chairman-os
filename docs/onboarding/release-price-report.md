@@ -1,7 +1,7 @@
-# 가격 리포트(DY 구매팀 · 0082) 반영 — 대표가 따라 하는 순서
+# 가격 리포트(DY 구매팀 · 0084) 반영 — 대표가 따라 하는 순서
 
-**넣는 것:** 브랜치 `feat/purchase-price-report`(워크트리 `C:\Users\Edison Hong\projects\chairman-os-macro`) — master 5b3922a 위.
-**마이그레이션 1개:** `0082_purchase_price_report`(표 넷 · 읽기 문 · 버튼 RPC · AI Agent RPC · 1월~10/14 가격 87점 · 메모 1 적재).
+**넣는 것:** 브랜치 `feat/purchase-price-report`(워크트리 `C:\Users\Edison Hong\projects\chairman-os-macro`) — 2026-10-19 로컬 master 969c6a2(0082 수신함 · 0083 공식 결산 v2) 위로 옮기고 번호를 **0082 → 0084**로 바꿨다.
+**마이그레이션 1개:** `0084_purchase_price_report`(표 넷 · 읽기 문 · 버튼 RPC · AI Agent RPC · 1월~10/14 가격 87점 · 메모 1 적재).
 **화면:** `https://chairman-os-eosin.vercel.app/purchasing/biz_dy/price-report` (구매 메뉴 «가격 리포트») · 구매 개요 요약 카드 · 시장가 화면 «참고» 한 줄. 대표 홈에는 없다.
 
 규칙: 상자 하나에 명령 하나. `&&`는 쓰지 않는다. 상자 아래 «기대»와 다르면 멈추고 결과를 보낸다.
@@ -13,9 +13,9 @@
 2026-10-14 시험 중 Anthropic API가 «credit balance is too low»로 거절했다. **운영 AI(분류 · 어시스턴트 · 가격 리포트) 전부가 같은 키라면 지금 멈춰 있다.**
 `https://console.anthropic.com/settings/billing` → 크레딧 충전(가격 리포트만 Sonnet 5.5로 월 약 $283 — 아래 «비용»). 자동 충전 켜기 권장.
 
-## 1) 앞 반영 — 첫 사용 고침(마이그레이션 없음)이 먼저
+## 1) 앞 반영 — 0082 수신함 · 0083 공식 결산이 먼저
 
-`docs/onboarding/release-2026-10-14b.md`대로 `bash scripts/release-production.sh --app-only`를 **먼저** 끝낸다(master에 0082가 들어오면 --app-only가 멈춘다).
+`docs/onboarding/release-2026-10-16.md`(0082) → `docs/onboarding/release-2026-10-17a.md`(0083)를 **먼저** 끝낸다. production이 0083이어야 아래 dry-run 대기 목록이 `0084` 하나다(첫 사용 고침은 0082 반영에 이미 들어 있다).
 
 ## 2) 합치기 (Git Bash)
 
@@ -28,7 +28,7 @@ git checkout master
 ```
 
 ```bash
-git merge --no-ff feat/purchase-price-report -m "merge: DY 가격 리포트 (0082 · feat/purchase-price-report)"
+git merge --no-ff feat/purchase-price-report -m "merge: DY 가격 리포트 (0084 · feat/purchase-price-report)"
 ```
 
 기대: 충돌 없음. `git status`가 깨끗하다.
@@ -39,19 +39,19 @@ git merge --no-ff feat/purchase-price-report -m "merge: DY 가격 리포트 (008
 npm run db:push:staging
 ```
 
-기대: dry-run 목록이 **정확히** `0082_purchase_price_report.sql` 하나 → 적용.
+기대: dry-run 목록이 **정확히** `0084_purchase_price_report.sql` 하나 → 적용.
 
 staging 시험(쓰지 않는다 — 끝에 되돌림):
 
 ```bash
-node scripts/build-staging-dryrun.mjs 0082 0082 --tests-only
+node scripts/build-staging-dryrun.mjs 0084 0084 --tests-only
 ```
 
 ```bash
-SUPABASE_DB_PASSWORD="$(grep ^SUPABASE_DB_PASSWORD .env.staging.local | cut -d= -f2-)" npx supabase db query --linked -f "supabase/.temp/dryrun_0082_0082_tests.sql"
+SUPABASE_DB_PASSWORD="$(grep ^SUPABASE_DB_PASSWORD .env.staging.local | cut -d= -f2-)" npx supabase db query --linked -f "supabase/.temp/dryrun_0084_0084_tests.sql"
 ```
 
-기대: `ERROR … 0082-0082 DRYRUN PASS (… tests 1/1 · 0082)`. (Claude Code가 2026-10-14에 0082 + 시험을 한 트랜잭션으로 staging에서 돌려 PASS · 되돌림을 확인했다.)
+기대: `ERROR … 0084-0084 DRYRUN PASS (… tests 1/1 · 0084)`. (Claude Code가 2026-10-14에 같은 본문(그때 이름 0082) + 시험을 한 트랜잭션으로 staging에서 돌려 PASS · 되돌림을 확인했다. 10-19 번호를 바꾼 뒤 다시 돌린 결과는 이 문서 끝 «10-19 다시 확인».)
 
 ## 4) GitHub Secrets · Variables (브라우저)
 
@@ -70,13 +70,13 @@ SUPABASE_DB_PASSWORD="$(grep ^SUPABASE_DB_PASSWORD .env.staging.local | cut -d= 
 ## 5) production 반영 (Git Bash — DB 먼저 → 앱)
 
 ```bash
-RELEASE_DRY_RUN=1 bash scripts/release-production.sh 0082
+RELEASE_DRY_RUN=1 bash scripts/release-production.sh 0084
 ```
 
-기대: 대기 목록 = `0082` 하나 → «여기서 멈춘다».
+기대: 대기 목록 = `0084` 하나 → «여기서 멈춘다».
 
 ```bash
-bash scripts/release-production.sh 0082
+bash scripts/release-production.sh 0084
 ```
 
 기대: YES 두 번(DB · 앱) → 배포 success → health. 이 push로 `.github/workflows/macro-briefing.yml`이 master에 들어가 08 · 18시 자동이 켜진다.
@@ -127,4 +127,10 @@ select m.can_write, count(*) from user_module_access m join user_profiles p on p
 
 ## 되돌리는 길
 
-앱: Vercel 직전 Production «Promote». 화면만 숨기기: `/settings/features` «가격 리포트(구매)» 끄기. 자동 수집 멈추기: Actions → «Macro briefing» → «Disable workflow». DB 0082 표는 남겨 둬도 다른 화면에 영향 없다(원가 엔진 표에 쓰지 않는다).
+앱: Vercel 직전 Production «Promote». 화면만 숨기기: `/settings/features` «가격 리포트(구매)» 끄기. 자동 수집 멈추기: Actions → «Macro briefing» → «Disable workflow». DB 0084 표는 남겨 둬도 다른 화면에 영향 없다(원가 엔진 표에 쓰지 않는다).
+
+## 10-19 다시 확인 (번호 0082 → 0084)
+
+- master 969c6a2(0082 수신함 · 0083 공식 결산 v2)를 이 브랜치에 합치고 이름만 바꿨다 — 본문 SQL은 그대로(설명 줄의 번호만).
+- `check:price-report` 10묶음 · `check:migrations`(0001 → 0084, 81개) · `check:features` · `typecheck` PASS.
+- staging 되돌리는 시험: `0084-0084 DRYRUN PASS (1 files · tests 1/1 · 0084)` — 남은 것 없음.

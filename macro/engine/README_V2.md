@@ -9,7 +9,7 @@
 3. ① 원유 1월~현재 · ② 나프타 1월~현재 — **SVG**(예전 canvas와 같은 좌표 · 색 · 글꼴 — 스크립트 없이 그려져 앱이 스크립트를 막은 sandbox로 보인다. 기준 화면과 픽셀 차 0.4%, 차트 안 글자 테두리뿐)
 4. ③ 3층 비교표 · 5. 사건 메모(최신이 위)
 
-## 저장 — Supabase(0082)만. 저장소에 커밋하지 않는다
+## 저장 — Supabase(0084)만. 저장소에 커밋하지 않는다
 | 표 | 내용 |
 |---|---|
 | purchase_price_points | 지점별 가격(정산 · 장중 · 월평균) — 정산은 장중이 덮지 않음 · 범위 밖(884 같은 원화 값) 거부 |
@@ -17,7 +17,7 @@
 | purchase_price_reports | 리포트 html · 채팅 요약 · 수치(요약 카드) · 정상/미확인 |
 | purchase_price_runs | 실행 기록(자동 · 수동, 대기 → 수집 중 → 완료/실패) |
 
-엔진은 **AI Agent 계정**(야간 브리핑과 같은 로그인, service_role 아님)으로 0082 RPC만 부른다(`briefing/supa.py`).
+엔진은 **AI Agent 계정**(야간 브리핑과 같은 로그인, service_role 아님)으로 0084 RPC만 부른다(`briefing/supa.py`).
 
 ## 파일
 | 파일 | 역할 |
@@ -28,8 +28,8 @@
 | briefing/render.py | HTML(SVG 차트 · 메모 정화: <b> · <br>만) |
 | briefing/supa.py | Supabase: AI Agent 로그인 · 앞 데이터 읽기(pull) · 결과 쓰기(push) |
 | run.py | `--supabase [--run-id] [--slot]`(Actions) · `--dry-run JSON`(API · DB 없이) |
-| data/seed_v2.json | 1월~10/14 누적(가격 87 · ③표 고정행 6 · 메모 1) — 0082가 한 번 적재 · ③표 고정행은 이 파일에서 읽는다 |
-| tools/seed_sql.py | seed_v2.json → 0082 적재 SQL |
+| data/seed_v2.json | 1월~10/14 누적(가격 87 · ③표 고정행 6 · 메모 1) — 0084가 한 번 적재 · ③표 고정행은 이 파일에서 읽는다 |
+| tools/seed_sql.py | seed_v2.json → 0084 적재 SQL |
 | tests/test_supa.py | 가짜 PostgREST로 supa.py 시험(check:price-report가 부른다) |
 
 ## 로컬에서 화면만 보기(API · DB 없음)

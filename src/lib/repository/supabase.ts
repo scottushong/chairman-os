@@ -855,7 +855,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     ...ledgerPostMethods(sb),
     // 0081 청사진 뼈대(Forecast · 구매 성과 · 고객별 · 분해 · 경쟁사 · 작업지시 · 제품 진단). 0081 전 DB면 'blueprint_unavailable'.
     ...blueprintMethods(sb),
-    // 0082 DY 구매팀 가격 리포트. 0082 전 DB면 'price_report_unavailable'.
+    // 0084 DY 구매팀 가격 리포트. 0084 전 DB면 'price_report_unavailable'.
     ...priceReportMethods(sb),
     // ECOUNT 엑셀 업로드(0050 finance_imports) — 읽기는 0050 전 DB를 견딘다(supabase-finance-imports.ts 머리 주석).
     ...financeImportMethods(sb),

@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 /**
  * 가격 리포트 html을 그대로(채팅 리포트와 같은 화면) — **스크립트를 막은** sandbox iframe. 외부 글(AI · 웹)이 들어가므로:
  *   sandbox="allow-same-origin"만 — 스크립트 · 폼 · 팝업 · 상단 이동 없음. 리포트는 SVG라 스크립트 없이 그대로 그려진다
- *   (DB도 <script> · javascript: 가 든 html을 거부한다 — 0082). allow-same-origin은 이 화면(부모)이 높이를 재려고 둔다 — 안에서 도는 코드는 없다.
+ *   (DB도 <script> · javascript: 가 든 html을 거부한다 — 0084). allow-same-origin은 이 화면(부모)이 높이를 재려고 둔다 — 안에서 도는 코드는 없다.
  */
 export function PriceReportFrame({ html, title }: { html: string; title: string }) {
   const ref = useRef<HTMLIFrameElement>(null)

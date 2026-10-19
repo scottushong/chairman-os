@@ -32,7 +32,7 @@ ok('키가 겹치지 않고 모양이 0073 check와 맞다', () => {
   for (const k of FEATURE_KEYS) assert.match(k, /^[a-z][a-z0-9_]{1,62}$/)
 })
 ok('0073 3절 · 0081 0절 기본 줄 = FEATURES(키 · 기본 범위)', () => {
-  const sql = ['0073_feature_switches.sql', '0081_blueprint_skeleton.sql', '0082_purchase_price_report.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n')
+  const sql = ['0073_feature_switches.sql', '0081_blueprint_skeleton.sql', '0084_purchase_price_report.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n')
   const seeded = [...sql.matchAll(/\(null, '([a-z_]+)',\s*true, '(chairman|exec|all)',/g)].map((m) => `${m[1]}:${m[2]}`).sort()
   assert.deepEqual(seeded, FEATURES.map((f) => `${f.key}:${f.defaultAudience}`).sort())
 })

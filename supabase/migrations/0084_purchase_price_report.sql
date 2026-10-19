@@ -1,5 +1,5 @@
 -- =====================================================================
--- Chairman OS — 0082_purchase_price_report (DY 구매팀 가격 리포트 — 오피넷 정산가 · 나프타 · 장중가 · 사건 메모 · 크랙)
+-- Chairman OS — 0084_purchase_price_report (DY 구매팀 가격 리포트 — 오피넷 정산가 · 나프타 · 장중가 · 사건 메모 · 크랙)
 -- 작성: 2026-10-14 · 브랜치 feat/purchase-price-report · 엔진 macro/engine(채팅 리포트와 같은 화면)
 --
 -- ■ 무엇을 만드나 ■
@@ -29,7 +29,7 @@ begin;
 -- 0절. 기능 스위치 — src/lib/features.ts와 같은 키 · 기본값(check:features가 대조). 'all' + DB 읽기 규칙이 구매 · 대표 · 임원으로 거른다.
 -- =====================================================================
 insert into feature_switches (business_id, feature_key, enabled, audience, reason) values
-  (null, 'purchase_price_report', true, 'all', '기본값(0082)')
+  (null, 'purchase_price_report', true, 'all', '기본값(0084)')
 on conflict do nothing;
 
 -- =====================================================================
@@ -105,10 +105,10 @@ create table purchase_price_events (
 );
 create index purchase_price_events_by_biz on purchase_price_events (business_id, first_seen_at desc);
 
-comment on table purchase_price_reports is '0082. DY 구매팀 가격 리포트(엔진 macro/engine이 만든 html — 스크립트 없음). 쓰기는 AIAgent RPC만.';
-comment on table purchase_price_points is '0082. 가격 리포트의 지점별 가격(원유 정산 · 장중 · 나프타 CFD · 오피넷 $/bbl · MOPJ). 원가 엔진 시세와 따로.';
-comment on table purchase_price_events is '0082. 사건 · 뉴스(같은 제목 · 링크 한 번) · 회차 메모.';
-comment on table purchase_price_runs is '0082. 가격 리포트 실행 기록(자동 08 · 18시 KST · «지금 업데이트»).';
+comment on table purchase_price_reports is '0084. DY 구매팀 가격 리포트(엔진 macro/engine이 만든 html — 스크립트 없음). 쓰기는 AIAgent RPC만.';
+comment on table purchase_price_points is '0084. 가격 리포트의 지점별 가격(원유 정산 · 장중 · 나프타 CFD · 오피넷 $/bbl · MOPJ). 원가 엔진 시세와 따로.';
+comment on table purchase_price_events is '0084. 사건 · 뉴스(같은 제목 · 링크 한 번) · 회차 메모.';
+comment on table purchase_price_runs is '0084. 가격 리포트 실행 기록(자동 08 · 18시 KST · «지금 업데이트»).';
 
 -- =====================================================================
 -- 2절. 판정
@@ -188,7 +188,7 @@ begin
   insert into purchase_price_runs (business_id, trigger, slot, requested_by, status) values (p_business, 'manual', 'manual', auth.uid(), 'queued')
   returning run_id into v_id;
   insert into audit_log (action, entity_table, entity_id, business_id, actor_user_id, actor_role, before, after, note)
-  values ('create', 'purchase_price_runs', v_id::text, p_business, auth.uid(), auth_role()::text, null, jsonb_build_object('trigger', 'manual'), '가격 리포트 «지금 업데이트»(0082)');
+  values ('create', 'purchase_price_runs', v_id::text, p_business, auth.uid(), auth_role()::text, null, jsonb_build_object('trigger', 'manual'), '가격 리포트 «지금 업데이트»(0084)');
   return v_id;
 end;
 $fn$;

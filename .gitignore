@@ -33,7 +33,7 @@ passwords.txt
 # 견본은 ECOUNT_SAMPLE_DIR로 만든다(check:ecount-import).
 *.xlsx
 *.xls
-# 가격 리포트 엔진 — 로컬 실행 결과(저장은 Supabase · 0082). seed_v2.json만 저장소에 둔다.
+# 가격 리포트 엔진 — 로컬 실행 결과(저장은 Supabase · 0084). seed_v2.json만 저장소에 둔다.
 /macro/engine/data/*.json
 !/macro/engine/data/seed_v2.json
 /macro/engine/data/chat_summary.md

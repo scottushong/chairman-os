@@ -1,7 +1,7 @@
 import type { PriceRun, SessionUser } from '@/types'
 
 /**
- * 0082 가격 리포트 — 화면의 안내 규칙(순수). **문은 DB다**(표 RLS price_report_reader · price_report_request). 여기 판정은
+ * 0084 가격 리포트 — 화면의 안내 규칙(순수). **문은 DB다**(표 RLS price_report_reader · price_report_request). 여기 판정은
  * 화면이 버튼을 잠그거나 404를 내는 데만 쓴다 — 어긋나면 DB가 이긴다(check:price-report가 둘을 대조한다).
  */
 
@@ -54,7 +54,7 @@ export function kstLabel(iso: string): string {
 
 export const SLOT_KO: Record<string, string> = { AM: '아침(08시)', PM: '저녁(18시)', manual: '수동' }
 
-/** 지금 «대기 · 수집 중»인 실행(30분 넘은 것은 DB가 실패로 본다 — 0082 price_report_expire). */
+/** 지금 «대기 · 수집 중»인 실행(30분 넘은 것은 DB가 실패로 본다 — 0084 price_report_expire). */
 export function liveRun(runs: PriceRun[], now = Date.now()): PriceRun | null {
   return runs.find((r) => (r.status === 'queued' || r.status === 'collecting') && Date.parse(r.created_at) > now - 30 * 60_000) ?? null
 }
@@ -78,6 +78,6 @@ export const REQUEST_ERROR_KO: Record<string, string> = {
   price_report_busy: '이미 수집 중입니다 — 끝나면 다시 누를 수 있습니다.',
   price_report_too_soon: '마지막 실행 뒤 10분 안에는 다시 누를 수 없습니다.',
   price_report_daily_limit: '오늘 수동 업데이트 횟수를 다 썼습니다.',
-  price_report_unavailable: '가격 리포트가 아직 준비 중입니다(0082 반영 전).',
+  price_report_unavailable: '가격 리포트가 아직 준비 중입니다(0084 반영 전).',
   feature_off: '지금은 쓸 수 없는 기능입니다.',
 }

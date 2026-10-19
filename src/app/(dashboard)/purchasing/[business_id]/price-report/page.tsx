@@ -27,7 +27,7 @@ import type {
 } from "@/types";
 
 /**
- * DY 구매팀 가격 리포트(0082) — /purchasing/<회사>/price-report. 엔진(macro/engine)이 하루 2번(08 · 18시 KST) + «지금 업데이트»로 만든
+ * DY 구매팀 가격 리포트(0084) — /purchasing/<회사>/price-report. 엔진(macro/engine)이 하루 2번(08 · 18시 KST) + «지금 업데이트»로 만든
  * html을 그대로(채팅 리포트와 같은 화면) 스크립트를 막은 sandbox로 보인다. 날짜 · 회차를 골라 지난 리포트도.
  * 문: 스위치 purchase_price_report · 대표 · 임원 이상 · 구매 줄(안내 — 문은 DB 표 RLS). 아니면 404. 대표 홈에는 넣지 않는다.
  */
@@ -55,7 +55,7 @@ export default async function PriceReportPage(
     business_id,
   });
 
-  // 0082 전 DB면 'price_report_unavailable' — 화면은 «준비 중». 다른 오류는 빈 화면(로그만).
+  // 0084 전 DB면 'price_report_unavailable' — 화면은 «준비 중». 다른 오류는 빈 화면(로그만).
   const data = await Promise.all([
     repo.listPriceReports(business_id, 60),
     repo.getPriceReport(business_id, pick),

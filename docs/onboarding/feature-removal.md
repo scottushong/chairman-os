@@ -143,10 +143,10 @@
 - 끄는 법: «제품 진단» 끄기(기본 대표만). RPC 둘이 'feature_off'.
 - 남는 데이터: 없음(읽기만). 하루 셈 · 감사 줄은 0062 자리에 남는다.
 
-### purchase_price_report — 가격 리포트(구매 · 0082)
+### purchase_price_report — 가격 리포트(구매 · 0084)
 - 숨기는 것: 구매 메뉴 «가격 리포트»(/purchasing/<회사>/price-report — 리포트 · 지난 리포트 · 사건 · 뉴스 · «지금 업데이트»), 구매 개요 요약 카드, 시장가 화면 «참고: 오늘 나프타 · 원유» 한 줄.
 - 끄는 법: «가격 리포트(구매)» 끄기(기본 «전원» — DB 읽기 규칙이 구매 줄 · 대표 · 임원 이상으로 거른다). 끄면 표 넷이 대표에게도 0행, 버튼 RPC(price_report_request)가 'price_report_denied'. AI Agent(GitHub Actions)는 계속 수집 · 저장한다 — 자동 수집까지 멈추려면 GitHub → Actions → «Macro briefing» → «Disable workflow».
-- 빼는 법(브랜치): feat/purchase-price-report를 합치지 않는다 — 0082 · macro/ · .github/workflows/macro-briefing.yml이 함께 빠진다.
+- 빼는 법(브랜치): feat/purchase-price-report를 합치지 않는다 — 0084 · macro/ · .github/workflows/macro-briefing.yml이 함께 빠진다.
 - 남는 데이터: (끄기) purchase_price_reports · points · events · runs 줄 그대로. 원가 엔진 표(cost_market_prices)에는 아무것도 들어가지 않았다.
 
 ### 다음 단계 기능(스위치 줄만 먼저 있음 — 화면은 아직 없다)

@@ -8,7 +8,7 @@ import { canReadPriceReport, canRequestPriceReport, manualPerDay } from '@/lib/p
 import { pollPriceReport, requestPriceReport, type PollResult } from '@/lib/price-report/request'
 import { getRepository } from '@/lib/repository'
 
-/** 0082 가격 리포트 서버 액션 — 판정은 DB(price_report_request · 표 RLS). 여기는 안내 문과 GitHub 호출뿐. */
+/** 0084 가격 리포트 서버 액션 — 판정은 DB(price_report_request · 표 RLS). 여기는 안내 문과 GitHub 호출뿐. */
 
 const BIZ = /^[a-z0-9_]{2,40}$/
 const UUID = /^[0-9a-f-]{36}$/i

@@ -6,9 +6,9 @@ import type { ChairmanRepository } from '@/lib/repository'
 import type { PriceReportMeta, SessionUser } from '@/types'
 
 /**
- * 0082 가격 리포트 요약 — 구매 개요 카드(Brent · 두바이 · 나프타 · 크랙 · 상태 · 마지막 업데이트 · 전체 보기)와 시장가 화면 참고 한 줄.
+ * 0084 가격 리포트 요약 — 구매 개요 카드(Brent · 두바이 · 나프타 · 크랙 · 상태 · 마지막 업데이트 · 전체 보기)와 시장가 화면 참고 한 줄.
  * 숫자는 엔진이 저장한 figures.cards 그대로다. **원가 엔진 원료 시세 표(cost_market_prices)에는 넣지 않는다**(원가 · BOM 경로와 분리).
- * 스위치 꺼짐 · 권한 없음 · 0082 전 DB · 리포트 없음이면 아무것도 그리지 않는다.
+ * 스위치 꺼짐 · 권한 없음 · 0084 전 DB · 리포트 없음이면 아무것도 그리지 않는다.
  */
 
 async function latest(repo: ChairmanRepository, user: SessionUser, businessId: string): Promise<PriceReportMeta | null> {

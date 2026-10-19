@@ -21,7 +21,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--slot", choices=["AM", "PM", "manual"])
     ap.add_argument("--dry-run", metavar="JSON", help="API 대신 저장된 브리핑 JSON 사용")
-    ap.add_argument("--supabase", action="store_true", help="저장을 Supabase(0082 RPC, AI Agent 로그인)로")
+    ap.add_argument("--supabase", action="store_true", help="저장을 Supabase(0084 RPC, AI Agent 로그인)로")
     ap.add_argument("--run-id", default="", help="«지금 업데이트»가 만든 실행 기록 id(없으면 자동 회차)")
     args = ap.parse_args()
 

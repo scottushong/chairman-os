@@ -1,4 +1,4 @@
-# DY 구매팀 가격 리포트(0082) — 하루 2번 자동 + 화면 «지금 업데이트»
+# DY 구매팀 가격 리포트(0084) — 하루 2번 자동 + 화면 «지금 업데이트»
 #
 # 결과는 저장소에 커밋하지 않는다 — Supabase RPC(AI Agent 로그인, service_role 아님)로만 저장한다.
 # 화면: /purchasing/biz_dy/price-report

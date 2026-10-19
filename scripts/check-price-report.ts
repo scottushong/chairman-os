@@ -1,7 +1,7 @@
 /**
- * DY 구매팀 가격 리포트(0082) 검사 — npm run check:price-report. 진짜 AI · GitHub · Supabase 호출 0회.
+ * DY 구매팀 가격 리포트(0084) 검사 — npm run check:price-report. 진짜 AI · GitHub · Supabase 호출 0회.
  *
- *   ① PGlite 0001~0082 — 적재(가격 87 · 메모 1) · 읽기(대표 · 구매 · 임원 / 영업 · 생산 · 원가 관리 · 다른 회사 · anon 0) · 스위치 끄면 0 ·
+ *   ① PGlite 0001~0084 — 적재(가격 87 · 메모 1) · 읽기(대표 · 구매 · 임원 / 영업 · 생산 · 원가 관리 · 다른 회사 · anon 0) · 스위치 끄면 0 ·
  *      버튼(권한 없는 사람 거부 · 구매 읽기만 거부 · 수집 중 잠김 · 10분 · 하루 n번 · 천장 12 · 30분 넘은 실행 풀림 · 감사) ·
  *      AI Agent 외 쓰기 거부 · 범위 검사(884 원화 값 거부) · 정산은 장중이 안 덮음 · 사건 같은 제목 · 링크 한 번 · 새로 수 · 스크립트 든 html 거부 ·
  *      dispatch_failed는 자기 «대기»만 · 자동 회차 같은 날 바꿈
@@ -90,7 +90,7 @@ async function pglite() {
   await group('① 적재 — 1월~10/14 가격 87점 · 메모 1(seed_v2) · 두 번 돌려도 그대로', async () => {
     assert.equal(Number((await owner<{ n: number }>(`select count(*)::int as n from purchase_price_points`))[0].n), 87)
     assert.equal(Number((await owner<{ n: number }>(`select count(*)::int as n from purchase_price_events where kind = 'memo'`))[0].n), 1)
-    const seedSql = readFileSync(join(MIGRATIONS, '0082_purchase_price_report.sql'), 'utf8')
+    const seedSql = readFileSync(join(MIGRATIONS, '0084_purchase_price_report.sql'), 'utf8')
     const load = seedSql.slice(seedSql.indexOf('insert into purchase_price_points (business_id'), seedSql.lastIndexOf('commit;'))
     await db.exec(load)
     assert.equal(Number((await owner<{ n: number }>(`select count(*)::int as n from purchase_price_points`))[0].n), 87, '적재를 두 번 돌리니 늘었다')
@@ -325,8 +325,8 @@ async function statics() {
     const frame = readFileSync('src/components/purchasing/price-report-frame.tsx', 'utf8')
     assert.match(frame, /sandbox="allow-same-origin"/)
     assert.ok(!/allow-scripts/.test(frame.replace(/\/\*[\s\S]*?\*\//g, '')), 'iframe이 스크립트를 연다')
-    const sql = readFileSync(join(MIGRATIONS, '0082_purchase_price_report.sql'), 'utf8').replace(/--.*$/gm, '')
-    assert.ok(!/cost_market_prices|insert into cost_/.test(sql), '0082가 원가 엔진 표에 쓴다')
+    const sql = readFileSync(join(MIGRATIONS, '0084_purchase_price_report.sql'), 'utf8').replace(/--.*$/gm, '')
+    assert.ok(!/cost_market_prices|insert into cost_/.test(sql), '0084가 원가 엔진 표에 쓴다')
     assert.ok(!/raise notice/i.test(sql))
     assert.ok(!/SERVICE_ROLE|service_role_key/i.test(readFileSync('macro/engine/briefing/supa.py', 'utf8').replace(/"""[\s\S]*?"""/g, '')), '엔진이 service_role 키를 읽는다')
   })
