@@ -19,6 +19,7 @@ import type {
   WorkOrderListRow,
   WorkOrderSetInput,
 } from '@/types/blueprint'
+import type { PriceEvent, PriceReport, PriceReportMeta, PriceRun } from '@/types/price-report'
 import type { CostImportApply, ImportTarget } from '@/lib/cost-import/payload'
 import type { ActivityEvent, ActivityKind } from '@/lib/activity'
 import type { EntityAuditRecord } from '@/lib/audit-log'
@@ -428,7 +429,22 @@ export interface BlueprintMethods {
   productTrend(productId: string, grain: ProductTrendGrain, from: string, to: string): Promise<ProductTrendPoint[]>
 }
 
-export interface ChairmanRepository extends PurchasingMethods, SalesCostMethods, ProductionMethods, CostsMethods, QuoteMethods, CostImportMethods, ProcessSyncMethods, SalesMarginsMethods, CostCandidatesMethods, LedgerPostMethods, BlueprintMethods {
+/**
+ * 0084 DY 구매팀 가격 리포트. 읽기는 표 RLS(price_report_reader — 대표 · 그 회사 임원 이상 · 구매 줄 · 스위치), 버튼은 price_report_request
+ * (권한 · 수집 중 잠김 · 10분 · 하루 n번 — 오류 키 price_report_*). 0084 전 DB면 'price_report_unavailable'. dummy는 dummy-price-report.ts.
+ */
+export interface PriceReportMethods {
+  listPriceReports(businessId: string, limit?: number): Promise<PriceReportMeta[]>
+  /** reportId가 없으면 가장 최근 것 */
+  getPriceReport(businessId: string, reportId?: string | null): Promise<PriceReport | null>
+  listPriceEvents(businessId: string, limit?: number): Promise<PriceEvent[]>
+  listPriceRuns(businessId: string, limit?: number): Promise<PriceRun[]>
+  /** «지금 업데이트» — 실행 기록 «대기» id. */
+  priceReportRequest(businessId: string, perDay: number): Promise<string>
+  priceReportDispatchFailed(runId: string, error: string): Promise<boolean>
+}
+
+export interface ChairmanRepository extends PriceReportMethods, PurchasingMethods, SalesCostMethods, ProductionMethods, CostsMethods, QuoteMethods, CostImportMethods, ProcessSyncMethods, SalesMarginsMethods, CostCandidatesMethods, LedgerPostMethods, BlueprintMethods {
   /** 어느 쪽을 보고 있는지. 화면이 아니라 DUMMY DATA 뱃지와 로그가 쓴다. */
   readonly mode: 'dummy' | 'live'
 

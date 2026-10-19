@@ -150,6 +150,13 @@ export const FEATURES = [
     defaultAudience: 'chairman',
     from: 'feat/blueprint-skeleton · 0081',
   },
+  {
+    key: 'purchase_price_report',
+    label: '가격 리포트(구매)',
+    description: '구매 메뉴의 «가격 리포트»(/purchasing/<회사>/price-report — 오피넷 정산가 · 나프타 · 장중가 · 사건 메모 · 크랙, 하루 2번 자동 + «지금 업데이트») · 구매 개요 요약 카드 · 시장가 화면 참고 한 줄. 범위 «전원»이어도 DB가 구매 줄 · 대표 · 임원 이상으로 거른다. 꺼지면 화면이 사라지고 버튼 RPC도 거부.',
+    defaultAudience: 'all',
+    from: 'feat/purchase-price-report · 0084',
+  },
 ] as const satisfies readonly FeatureDef[]
 
 export type FeatureKey = (typeof FEATURES)[number]['key']

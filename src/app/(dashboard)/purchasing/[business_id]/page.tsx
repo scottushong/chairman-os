@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { PurchasePerformance } from '@/components/blueprint/purchase-performance'
 import { CostingWatchCard } from '@/components/cost/costing-watch-card'
 import { PageHeader } from '@/components/layout/page-header'
+import { PriceReportSummaryCard } from '@/components/purchasing/price-report-summary'
 import { PriceTrend, type MaterialSeries } from '@/components/purchasing/price-trend'
 import { PurchasingNav } from '@/components/purchasing/purchasing-nav'
 import { kstToday } from '@/lib/chairman-project'
@@ -106,6 +107,7 @@ export default async function PurchasingOverviewPage(props: PageProps<'/purchasi
         <PurchasingNav businessId={business_id} current="overview" />
       </PageHeader>
       {tabs}
+      <PriceReportSummaryCard repo={repo} user={user} businessId={business_id} />
 
       {active.length === 0 ? (
         <section className="mt-4 rounded-xl border border-line-soft bg-panel px-4 py-10 text-center">

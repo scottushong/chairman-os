@@ -3,6 +3,7 @@ import { ActionForm } from '@/components/blueprint/action-form'
 import { CostImportPanel } from '@/components/cost-import/cost-import-panel'
 import { PageHeader } from '@/components/layout/page-header'
 import { MarketManager } from '@/components/purchasing/market-manager'
+import { PriceReportLine } from '@/components/purchasing/price-report-summary'
 import { PurchasingNav } from '@/components/purchasing/purchasing-nav'
 import { kstToday } from '@/lib/chairman-project'
 import { recordScreenRead } from '@/lib/activity-record'
@@ -40,6 +41,7 @@ export default async function PurchasingMarketPage(props: PageProps<'/purchasing
       >
         <PurchasingNav businessId={business_id} current="market" />
       </PageHeader>
+      <PriceReportLine repo={repo} user={user} businessId={business_id} />
       {canWrite ? (
         <div className="mt-4">
           <CostImportPanel businessId={business_id} target="market_prices" />
