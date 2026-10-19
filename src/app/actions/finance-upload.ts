@@ -11,6 +11,7 @@ import { realOfficialSuggester } from '@/lib/finance-upload/official-ai'
 import { isUploadKind, kindSpec } from '@/lib/finance-upload/kinds'
 import { encodeShape, ledgerLayoutByCode, ROW_ROLES, type LedgerLayout, type RowLabel } from '@/lib/finance-upload/ledger'
 import { inboxPathOk } from '@/lib/finance-upload/inbox'
+import { labelKey, SKIP_COLUMN } from '@/lib/finance-upload/synonyms'
 import { MSG, UPLOAD_MAX_BYTES } from '@/lib/finance-upload/open'
 import { mapColumns, readRows, validate, type Classification } from '@/lib/finance-upload/pipeline'
 import { finUploadError, fromGrid, processUpload, reinterpretPending, saveTxGroupsFor, type DocOptions, type FileCard } from '@/lib/finance-upload/process'
@@ -90,7 +91,9 @@ export async function uploadFinanceFile(form: FormData): Promise<UploadResult> {
     const usedToday = (await repo.listFinUploads(businessId).catch(() => [] as FinUpload[])).filter((u) => kstDay(u.created_at) === today).reduce((a, u) => a + u.ai_used, 0)
     const budget = Math.max(0, Math.min(perFile, perDay - usedToday))
     const docs = await docOptions(user, repo, businessId, fileName, perFile > 0 && perDay > 0)
-    const cards = await processUpload({ repo, businessId, fileName, bytes, classify: budget > 0 ? realClassifier(repo, businessId) : null, aiBudget: budget, docs, deadline, boss: user.role === 'Chairman' || user.role === 'GroupCFO', user })
+    // 0089 기능 스위치 «엑셀 열 맞추기 AI»(finance_upload_ai) — 꺼진 회사 · 사람은 엑셀 해석에 AI를 부르지 않는다(비슷한 이름 · 저장된 맞춤만). PDF · 사진은 finance_docs가 따로.
+    const excelAi = budget > 0 && (await featureOn(user, 'finance_upload_ai', businessId)) ? realClassifier(repo, businessId) : null
+    const cards = await processUpload({ repo, businessId, fileName, bytes, classify: excelAi, aiBudget: budget, docs, deadline, boss: user.role === 'Chairman' || user.role === 'GroupCFO', user })
     recalcAfter(repo, businessId)
     revalidatePath(`/finance/${businessId}/upload`)
     revalidatePath('/finance')
@@ -190,7 +193,7 @@ export async function applyPendingUpload(input: ApplyInput): Promise<{ ok?: true
       const ledger: LedgerLayout | undefined = kind === 'ledger' ? { headerRow: base?.headerRow ?? headerRow, cols: base?.cols ?? {}, labels, headCol: base?.headCol ?? null } : undefined
       const cls: Classification = { kind, confidence: 'medium', headerRow, columns, reason: '사람이 고름', source: 'code', labels, ledger }
       const read = readRows(sheet, cls)
-      if (!read.rows.length) return { error: '고른 종류로 읽었더니 넣을 줄이 없습니다 — 종류를 다시 고르거나 파일을 고쳐 올려 주세요.' }
+      if (!read.rows.length) return { error: '고른 종류로 읽었더니 넣을 줄이 없습니다 — 다른 종류를 골라 주세요(엑셀은 받은 그대로 두셔도 됩니다).' }
       rows = read.rows as FinRow[]
       people = kind === 'payroll' ? (read.people as FinRow[]) : null
       const check = validate(kind, read, period)
@@ -340,7 +343,7 @@ export async function reinterpretUpload(uploadId: unknown, businessId: unknown):
     const sha = all.find((u) => u.upload_id === id)?.file_sha256
     const usedOnFile = sha ? all.filter((u) => u.file_sha256 === sha).reduce((a, u) => a + u.ai_used, 0) : 0
     const budget = Math.max(0, Math.min(perFile - usedOnFile, perDay - usedToday))
-    const out = await reinterpretPending({ repo, businessId: biz, classify: budget > 0 ? realClassifier(repo, biz) : null, aiBudget: budget, deadline: Date.now() + 280_000 }, id)
+    const out = await reinterpretPending({ repo, businessId: biz, classify: budget > 0 && (await featureOn(user, 'finance_upload_ai', biz)) ? realClassifier(repo, biz) : null, aiBudget: budget, deadline: Date.now() + 280_000 }, id)
     revalidatePath(`/finance/${biz}/upload`)
     return out
   } catch (e) {
@@ -362,6 +365,40 @@ export async function cancelUpload(uploadId: unknown, businessId: unknown): Prom
     revalidatePath(`/finance/${text(businessId, 40)}/upload`)
     return { ok: true }
   } catch (e) {
+    return { error: finUploadError(e) }
+  }
+}
+
+/**
+ * 0089 «이 열은 무엇입니까?»의 답 — (회사, 종류) 열 맞춤에 더한다(머리글 글 → 칸 이름 · '-' = 쓰지 않음). 다음 올리기부터 그 열을 그 칸으로 읽는다.
+ * 숫자는 받지 않는다. 판정은 DB(fin_column_map_save — 그 회사 장부를 쓰는 사람).
+ */
+export async function answerColumns(businessId: unknown, kind: unknown, answers: unknown): Promise<{ ok?: true; error?: string; saved?: number }> {
+  const user = await currentUser()
+  if (!user) return { error: '세션이 만료되었습니다.' }
+  const biz = text(businessId, 40)
+  if (!BIZ.test(biz)) return { error: '회사를 알 수 없습니다.' }
+  if (!(await featureOn(user, 'finance_upload', biz))) return { error: OFF }
+  if (!canKeepBooks(user, biz)) return { error: '이 회사의 재무를 넣을 권한이 없습니다.' }
+  if (!isUploadKind(kind) || kind === 'ledger') return { error: '자료 종류를 알 수 없습니다.' }
+  const keys = new Set(kindSpec(kind).fields.map((f) => f.key))
+  const list = Array.isArray(answers) ? answers.slice(0, 20) : []
+  const map: Record<string, string> = {}
+  for (const a of list) {
+    const label = labelKey(text((a as { label?: unknown })?.label, 60))
+    const key = text((a as { key?: unknown })?.key, 40)
+    if (!label || !(key === SKIP_COLUMN || keys.has(key))) continue
+    map[label] = key
+  }
+  if (!Object.keys(map).length) return { error: '고른 열이 없습니다.' }
+  try {
+    const repo = await getRepository()
+    await repo.saveFinColumnMap({ business_id: biz, kind, label_map: map, source: 'person' })
+    revalidatePath(`/finance/${biz}/upload`)
+    return { ok: true, saved: Object.keys(map).length }
+  } catch (e) {
+    const m = e instanceof Error ? e.message : ''
+    if (/unavailable/.test(m)) return { error: '아직 준비 중입니다(0089 반영 전) — 이번 파일은 그대로 저장되어 있습니다.' }
     return { error: finUploadError(e) }
   }
 }

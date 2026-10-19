@@ -13,6 +13,7 @@ import {
   type FinUpload,
   type FinUploadPending,
   type FinUploadShape,
+  type FinColumnMap,
   type FinValuation,
   type FinValuationWarning,
   type TxSourceTable,
@@ -47,6 +48,8 @@ type Methods = Pick<
   | 'finMonthClosed'
   | 'listFinUploadShapes'
   | 'saveFinUploadShape'
+  | 'listFinColumnMaps'
+  | 'saveFinColumnMap'
   | 'listFinValuations'
   | 'finValuationSave'
   | 'finValuationConfirm'
@@ -161,6 +164,18 @@ export function financeUploadMethods(sb: SupabaseClient): Methods {
     async saveFinUploadShape(s) {
       const { error } = await sb.rpc('fin_upload_shape_save', { p_business: s.business_id, p_sig: s.header_sig, p_sheet: s.sheet_name, p_kind: s.kind, p_map: s.column_map })
       if (error) fail('fin_upload_shape_save', error)
+    },
+    /* ───── 0089 열 맞춤 ───── */
+    async listFinColumnMaps(businessId) {
+      const { data, error } = await sb.from('fin_column_maps').select('business_id,kind,label_map,source,updated_at').eq('business_id', businessId).limit(100)
+      if (error && MISSING.has(error.code ?? '')) return []
+      if (error) fail('fin_column_maps', error)
+      return (data ?? []) as FinColumnMap[]
+    },
+    async saveFinColumnMap(m) {
+      const { error } = await sb.rpc('fin_column_map_save', { p_business: m.business_id, p_kind: m.kind, p_map: m.label_map, p_source: m.source })
+      if (error && /fin_column_map_[a-z]+/.test(error.message)) throw new Error(/fin_column_map_[a-z]+/.exec(error.message)![0])
+      if (error) fail('fin_column_map_save', error)
     },
 
     /* ───── 0082 수신함 ───── */

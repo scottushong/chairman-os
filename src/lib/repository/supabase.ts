@@ -76,6 +76,7 @@ import type {
   OfficialStatement,
   OfficialStatementBasis,
   OfficialAccountMapRow,
+  OfficialUnmatchedLine,
   ProcessChart,
   ProcessChartInput,
   CityLayout,
@@ -1222,6 +1223,23 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       if (error && ['PGRST205', '42P01'].includes(error.code ?? '')) return []
       if (error) throw new Error(`Supabase official_account_map ${error.code ?? '?'}: ${error.message}`)
       return (data ?? []) as OfficialAccountMapRow[]
+    },
+
+    /** 0089 공식 결산 «다시 맞출 줄» — 활성 결산만(밀려난 결산의 줄은 앱에서 거른다). 0089 전 DB는 빈 목록. */
+    async listOfficialUnmatched(businessId) {
+      const { data, error } = await sb.from('official_unmatched_lines').select('statement_id,business_id,std_key,label,grp,printed,from_code').eq('business_id', businessId).limit(5000)
+      if (error && ['PGRST205', '42P01'].includes(error.code ?? '')) return []
+      if (error) throw new Error(`Supabase official_unmatched_lines ${error.code ?? '?'}: ${error.message}`)
+      const { data: live, error: e2 } = await sb.from('official_statements').select('id').eq('business_id', businessId).is('superseded_at', null)
+      if (e2) throw new Error(`Supabase official_statements ${e2.code ?? '?'}: ${e2.message}`)
+      const ids = new Set((live ?? []).map((r) => Number((r as { id: number }).id)))
+      return ((data ?? []) as OfficialUnmatchedLine[]).map((r) => ({ ...r, statement_id: Number(r.statement_id), printed: Number(r.printed) })).filter((r) => ids.has(r.statement_id))
+    },
+
+    async saveOfficialUnmatched(statementId, lines) {
+      const { error } = await sb.rpc('official_unmatched_save', { p_statement: statementId, p_lines: lines })
+      if (error && ['PGRST202', '42883'].includes(error.code ?? '')) throw new Error('official_unmatched_unavailable')
+      if (error) throw new Error(/official_unmatched_[a-z_]+/.exec(error.message)?.[0] ?? `Supabase official_unmatched_save ${error.code ?? '?'}: ${error.message}`)
     },
 
     async putOfficialEvidence(businessId, path, bytes) {

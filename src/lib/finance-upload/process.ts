@@ -1,5 +1,5 @@
 import type { ChairmanRepository } from '@/lib/repository'
-import type { Account, FinHoldKind, FinRow, FinTxGroupSaveInput, FinTxLine, FinUpload, FinUploadShape, SessionUser } from '@/types'
+import type { Account, FinColumnMap, FinHoldKind, FinRow, FinTxGroupSaveInput, FinTxLine, FinUpload, FinUploadShape, SessionUser } from '@/types'
 
 import { cellText, EMPTY_CELL, type EcountCell } from '@/lib/ecount/excel/cells'
 import type { EcountSheet } from '@/lib/ecount/excel/workbook'
@@ -28,13 +28,17 @@ import { autoSaveOfficial } from './official-auto'
 import { linesToAsk, type OfficialSuggester } from './official-suggest'
 import { decodeShape, encodeShape, fixByBalance, LEDGER_COLS, ledgerFeedback, ledgerLayoutByCode, ROLE_KO, type LedgerCol, type LedgerLayout, type RowLabel } from './ledger'
 import { MSG, openUpload } from './open'
+import type { ColumnLabelMap } from './synonyms'
 import {
   aiSample,
   classifyByCode,
   detectMonth,
+  labelMapOf,
   ledgerLayoutOf,
   looksLikeMaterialIssue,
   mapColumns,
+  mapColumnsHow,
+  unmatchedColumns,
   mergeAi,
   readRows,
   scrubSheet,
@@ -106,6 +110,12 @@ export interface FileCard {
   notes?: string[]
   /** 같은 파일이 이미 «확인 필요»에 있으면 그 올리기 — 화면이 «이전 올리기를 다시 해석할까요?»를 묻는다 */
   reinterpret_id?: string
+  /** 0089 «이 열은 무엇입니까?» — 못 맞춘 열(머리글 글 · 열 번호, 숫자 없음). 나머지는 이미 저장됐다. */
+  ask?: { col: number; label: string }[]
+  /** 0089 고를 수 있는 칸(그 종류에서 아직 비어 있는 칸) */
+  ask_fields?: { key: string; label: string }[]
+  /** 0089 이번에 (회사, 종류) 열 맞춤을 새로 저장했나(비슷한 이름 · AI) */
+  map_saved?: 'code' | 'ai'
 }
 
 /** C단계 PDF · 사진 설정 — 없으면(검사 · 옛 호출) PDF · 사진은 «준비 중». */
@@ -254,7 +264,7 @@ export const MSG_HOLD: Record<FinHoldKind, string> = {
   closed: '보류 — 마감된 달입니다. 대표 · CFO가 이유를 적고 풀면 저장됩니다.',
   restricted: '보류 — 이미 넣은 달의 재고 · 원료 출고를 바꾸는 것은 대표 · CFO만 합니다(원료 하나의 양이 드러나지 않게).',
   final_exists: '보류 — 그 구분의 확정된 평가금액이 이미 있습니다. «재고 · 평가» 화면에서 이유를 적고 바꾸세요.',
-  value_state: '보류 — 빈칸 · 0 표시가 맞지 않는 칸이 있습니다(빈칸은 0이 아닙니다). 파일을 고쳐 다시 올려 주세요.',
+  value_state: '보류 — 빈칸 · 0 표시가 맞지 않는 칸이 있습니다(빈칸은 0이 아닙니다). 대표 · CFO가 확인합니다 — 엑셀은 받은 그대로 두셔도 됩니다.',
   legacy: '보류 — 이전 방식으로 «확인 필요»에 있던 자료입니다. «저장»을 누르면 지금 방식으로 저장합니다.',
   other: '보류 — 저장하지 못했습니다.',
 }
@@ -443,7 +453,13 @@ async function processSheets(o: ProcessOptions, sha: string, sheets: EcountSheet
   const opened = { sha256: sha, sheets }
   const fail = (message: string, sheet: string | null = null) => failRecord(o, sha, message, { sheet, aiUsed: doc?.aiUsed ?? 0 })
 
-  const [shapes, uploads] = await Promise.all([o.repo.listFinUploadShapes(o.businessId).catch(() => []), o.repo.listFinUploads(o.businessId).catch(() => [] as FinUpload[])])
+  const [shapes, uploads, colmaps] = await Promise.all([
+    o.repo.listFinUploadShapes(o.businessId).catch(() => []),
+    o.repo.listFinUploads(o.businessId).catch(() => [] as FinUpload[]),
+    // 0089 (회사, 종류) 열 맞춤 — 0089 전 DB · 읽기 실패는 빈 것(비슷한 이름 · AI로).
+    o.repo.listFinColumnMaps(o.businessId).catch(() => [] as FinColumnMap[]),
+  ])
+  const maps = new Map<string, ColumnLabelMap>(colmaps.map((m) => [m.kind, m.label_map]))
   const budgetRef = { left: o.aiBudget }
   const cards: FileCard[] = []
   const unknown: { sheet: EcountSheet; aiUsed: number; cls: Classification; sig: string }[] = []
@@ -457,12 +473,13 @@ async function processSheets(o: ProcessOptions, sha: string, sheets: EcountSheet
     }
     const { sheet, dropped } = scrubSheet(raw)
     // c. 해석: 학습 → 코드 규칙 → (맞지 않으면) AI 구조 해석 + 대조가 틀리면 재해석(최대 2번). d · e. 읽기 · 대조는 해석마다 코드가.
-    let cls = classifyByCode(sheet)
+    let cls = classifyByCode(sheet, maps)
     const sig = shapeSignature(o.businessId, sheet, cls.headerRow)
     const learned = shapes.find((s) => s.header_sig === sig)
     let aiUsed = 0
     // 0072 구성표 노출 금지: 원료 출고명세(로 보이는) 시트는 AI에 보내지 않는다 — 코드 분류만.
-    const noAi = cls.kind === 'material_issue' || looksLikeMaterialIssue(sheet)
+    // 0089: 표가 없는 시트(안내 · 표지 · 메모 — 두 칸 넘게 찬 줄이 둘 미만)도 AI에 보내지 않는다(여러 시트 파일에서 돈이 새지 않게).
+    const noAi = cls.kind === 'material_issue' || looksLikeMaterialIssue(sheet) ? '출고명세로 보이는 시트라 AI에 보내지 않음(코드 해석만)' : !hasTable(sheet) ? '표가 없는 시트(안내 · 표지)라 AI에 보내지 않음' : null
     let ev: Evaluated
     let tries = 0
     if (doc) {
@@ -494,6 +511,9 @@ async function processSheets(o: ProcessOptions, sha: string, sheets: EcountSheet
     }
     const { read, month } = ev
     const check = ev.check
+    // 0089 열 맞춤 — 비슷한 이름 · AI · 저장된 맞춤으로 맞춘 칸을 (회사, 종류)마다 저장(다음부터 AI 없이) · 못 맞춘 열만 묻는다.
+    const learn = doc ? null : await learnColumns(o, sheet, ev, maps)
+    const ask = doc ? [] : unmatchedColumns(sheet, cls, maps.get(cls.kind))
     if (doc) {
       check.errors = [...new Set([...check.errors, ...doc.extraErrors])]
       check.warnings = [...new Set([...check.warnings, ...doc.extraWarnings])]
@@ -517,7 +537,12 @@ async function processSheets(o: ProcessOptions, sha: string, sheets: EcountSheet
       ...(tries ? { tries } : {}),
       ...(doc ? { source_format: doc.format, fixes: doc.fixes } : {}),
     }
-    const base = { file_name: o.fileName, sheet: sheet.name, kind: cls.kind, period: month.period, ai_used: aiUsed, confidence: cls.confidence, notes: readNotes(read) }
+    const askFields = ask.length ? kindSpec(cls.kind).fields.filter((f) => !(f.key in cls.columns)).map((f) => ({ key: f.key, label: f.label })) : []
+    const base = {
+      file_name: o.fileName, sheet: sheet.name, kind: cls.kind, period: month.period, ai_used: aiUsed, confidence: cls.confidence, notes: readNotes(read),
+      ...(ask.length ? { ask, ask_fields: askFields } : {}),
+      ...(learn ? { map_saved: learn } : {}),
+    }
     const people = cls.kind === 'payroll' ? (read.people as FinRow[]) : []
     const pendingOf = (hold: FinHoldKind, message: string) => ({
       rows: read.rows as FinRow[],
@@ -667,7 +692,7 @@ export function withStructure(code: Classification, ai: AiStructure, sheet: Ecou
  * 시트 하나의 해석(엑셀). 학습 모양 → 코드 규칙 → AI(+재해석 2번). 대조가 맞으면 거기서 멈춘다.
  * 끝까지 맞지 않으면 가장 덜 틀린 해석을 «확인 필요»로 — 숫자를 억지로 맞추지 않는다(차이가 검증 오류로 남는다).
  */
-async function interpret(o: ProcessOptions, sheet: EcountSheet, code0: Classification, learned: FinUploadShape | undefined, noAi: boolean, budget: { left: number }): Promise<{ ev: Evaluated; aiUsed: number; save: boolean }> {
+async function interpret(o: ProcessOptions, sheet: EcountSheet, code0: Classification, learned: FinUploadShape | undefined, noAi: string | null, budget: { left: number }): Promise<{ ev: Evaluated; aiUsed: number; save: boolean }> {
   const evalOf = (c: Classification) => evaluate(sheet, c, o.fileName, o.today)
   let code = code0
   if (learned) {
@@ -687,7 +712,7 @@ async function interpret(o: ProcessOptions, sheet: EcountSheet, code0: Classific
   const verified = best.cls.kind !== 'ledger' || (best.read.ledger?.compared ?? 0) > 0
   if (best.cls.confidence === 'high' && !best.structural.length && verified) return { ev: best, aiUsed: 0, save: false }
   const why = (note: string) => ({ ev: { ...best, cls: { ...best.cls, reason: `${best.cls.reason} · ${note}` } }, aiUsed: 0, save: false })
-  if (noAi) return why('출고명세로 보이는 시트라 AI에 보내지 않음(코드 해석만)')
+  if (noAi) return why(noAi)
   if (!o.classify) return why('AI 해석 꺼짐(한도 · 연결 없음)')
   if (budget.left <= 0) return why('AI 한도(파일당 · 하루)를 넘어 코드 해석만')
   let used = 0
@@ -721,6 +746,43 @@ async function interpret(o: ProcessOptions, sheet: EcountSheet, code0: Classific
   // 학습은 대조로 맞음이 확인된 해석만(원장은 요약 줄과 맞춰 본 계정이 하나 이상).
   const checked = best.cls.kind !== 'ledger' || (best.read.ledger?.compared ?? 0) > 0
   return { ev: best, aiUsed: used, save: ok && checked && best.cls.source === 'ai' && best.cls.kind !== 'unknown' }
+}
+
+/** 0089 표가 있는 시트인가 — 두 칸 넘게 찬 줄이 둘 이상. */
+function hasTable(sheet: EcountSheet): boolean {
+  let n = 0
+  for (const r of sheet.rows) if (r.filter((c) => c.t !== 'empty').length >= 2 && ++n >= 2) return true
+  return false
+}
+
+/** 0089 열 맞춤을 저장하지 않는 종류 — ⑤ 원장은 구조 학습(fin_upload_shapes)이 따로 있다. */
+const NO_COLUMN_MAP = new Set<string>(['ledger', 'unknown'])
+
+/**
+ * 0089 — 맞게 읽힌 해석의 칸 중 kinds.ts 낱말이 아닌 것(비슷한 이름 · AI · 저장된 맞춤)이 있으면 (회사, 종류) 열 맞춤에 더한다.
+ * 저장은 머리글 글 → 칸 이름뿐(숫자 없음). 대조가 틀렸거나 믿음이 낮으면 저장하지 않는다(틀린 맞춤이 굳지 않게).
+ * 돌려주는 값 = 새로 저장했으면 그 출처('code' 비슷한 이름 · 'ai'), 아니면 null. maps도 고친다(같은 파일의 다음 시트가 바로 쓴다).
+ */
+async function learnColumns(o: ProcessOptions, sheet: EcountSheet, ev: Evaluated, maps: Map<string, ColumnLabelMap>): Promise<'code' | 'ai' | null> {
+  const cls = ev.cls
+  if (NO_COLUMN_MAP.has(cls.kind) || ev.structural.length || (cls.confidence !== 'high' && cls.confidence !== 'medium')) return null
+  const header = sheet.rows[cls.headerRow] ?? []
+  const plain = mapColumnsHow(kindSpec(cls.kind as UploadKind), header)
+  const sameAsKeywords = Object.keys(cls.columns).length === Object.keys(plain.columns).length && Object.entries(cls.columns).every(([k, v]) => plain.columns[k] === v && plain.via[k] === 'keyword')
+  if (sameAsKeywords) return null
+  const stored = maps.get(cls.kind) ?? {}
+  const next = labelMapOf(header, cls.columns)
+  const fresh = Object.fromEntries(Object.entries(next).filter(([k, v]) => stored[k] !== v))
+  if (!Object.keys(fresh).length) return null
+  const source = cls.source === 'ai' ? 'ai' : 'code'
+  try {
+    await o.repo.saveFinColumnMap({ business_id: o.businessId, kind: cls.kind, label_map: fresh, source })
+    maps.set(cls.kind, { ...stored, ...fresh })
+    return source
+  } catch (e) {
+    console.error('[finance-upload] column map save', e instanceof Error ? e.message : e)
+    return null
+  }
 }
 
 /**

@@ -116,6 +116,33 @@ export interface FinUploadShape {
   column_map: Record<string, number>
 }
 
+/**
+ * 0089 (회사, 종류)마다 저장한 열 맞춤 — 머리글 글(띄어쓰기 없는 소문자) → 칸 이름 또는 '-'(쓰지 않음). 숫자 없음.
+ * 비슷한 이름 · AI · 사람(«이 열은 무엇입니까?»)이 맞춘 것을 두고, 다음 올리기부터 AI 없이 쓴다.
+ */
+export interface FinColumnMap {
+  business_id: string
+  kind: string
+  label_map: Record<string, string>
+  source: 'code' | 'ai' | 'person'
+  updated_at?: string
+}
+
+/**
+ * 0089 공식 결산의 «다시 맞출 줄» — 저장할 때 계정을 못 맞춰 «기타 …(자동)»(또는 묶음 계정)에 넣은 줄.
+ * 계정과목표가 올라오면 이 줄만 다시 맞춰 결산을 바꾼다(official-rematch.ts). printed = 문서에 찍힌 값(사람이 읽는 양수).
+ */
+export interface OfficialUnmatchedLine {
+  statement_id: number
+  business_id: string
+  std_key: string
+  label: string
+  grp: string | null
+  printed: number
+  /** 지금 이 줄이 들어 있는 계정(기타 · 묶음 계정) */
+  from_code: string
+}
+
 /* ───────────────────────── 0072 회계 · 재무 v2.1 차이분 ───────────────────────── */
 
 /** 값 상태 — 빈칸(missing, 값 null) · 0 확인(confirmed_zero) · 값(value). 빈칸은 0이 되지 않는다. */

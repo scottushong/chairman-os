@@ -165,6 +165,13 @@ export const FEATURES = [
     from: 'feat/finance-overview · 0085',
   },
   {
+    key: 'finance_upload_ai',
+    label: '엑셀 열 맞추기 AI',
+    description: '자료 올리기에서 ECOUNT 엑셀의 열 이름이 우리 낱말 · 비슷한 이름 표로 맞지 않을 때만 AI를 한 번 부른다(기존 파일당 · 하루 한도 안). 맞춘 결과는 회사 · 종류마다 저장해 다음부터 AI 없이 읽는다. 꺼지면 비슷한 이름 · 저장된 맞춤 · «이 열은 무엇입니까?»로만(PDF · 사진은 «PDF · 사진 읽기» 스위치가 따로).',
+    defaultAudience: 'all',
+    from: 'release/2026-10-20 · 0089',
+  },
+  {
     key: 'approvals',
     label: '전자결재',
     description: '«전자결재»(/e-approval) — 결재할 문서 · 결재 예정 · 내가 올린 문서 · 임시저장 · 내 처리 이력 · 참조 · 공유 · 후속 처리, 양식 여섯 · 합의 · 대결 · 회수 · 재상신. 꺼지면 메뉴 · 화면이 사라지고 RPC(ea_*)도 거부. 예전 «결재»(/approvals · 결재 대장)는 그대로.',

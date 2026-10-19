@@ -187,6 +187,8 @@ import type {
   FinUploadRecordInput,
   FinUploadApplyInput,
   FinUploadShape,
+  FinColumnMap,
+  OfficialUnmatchedLine,
   FinUploadSaveInput,
   FinRow,
   FinPayrollHeld,
@@ -896,6 +898,14 @@ export interface ChairmanRepository extends PriceReportMethods, PurchasingMethod
   finMonthClosed(businessId: string, period: string): Promise<boolean>
   listFinUploadShapes(businessId: string): Promise<FinUploadShape[]>
   saveFinUploadShape(shape: FinUploadShape): Promise<void>
+  /** 0089 (회사, 종류) 열 맞춤 — 그 회사 장부를 쓰는 사람만. 0089 전 DB는 빈 목록. */
+  listFinColumnMaps(businessId: string): Promise<FinColumnMap[]>
+  /** 0089 열 맞춤 저장(정의자 함수 fin_column_map_save — 있는 맞춤에 더한다). 0089 전 DB는 'fin_upload_unavailable'. */
+  saveFinColumnMap(input: Omit<FinColumnMap, 'updated_at'>): Promise<void>
+  /** 0089 공식 결산의 «다시 맞출 줄»(활성 결산만) — 장부를 읽는 사람. 0089 전 DB는 빈 목록. */
+  listOfficialUnmatched(businessId: string): Promise<OfficialUnmatchedLine[]>
+  /** 0089 그 결산의 «다시 맞출 줄»을 통째로 바꾼다(빈 목록 = 지움) — 장부를 쓰는 사람 · 활성 결산만. */
+  saveOfficialUnmatched(statementId: number, lines: Omit<OfficialUnmatchedLine, 'statement_id' | 'business_id'>[]): Promise<void>
   /**
    * 0082 자료 올리기 수신함(fin-upload-inbox) — 브라우저가 바로 올린 파일을 사람 세션(RLS)으로 읽는다. 본인 폴더 · 장부 권한 밖이면
    * 'fin_inbox_denied', 없으면 'fin_inbox_missing'. 0082 전 DB(버킷 없음)도 'fin_inbox_missing'.

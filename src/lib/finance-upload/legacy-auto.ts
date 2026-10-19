@@ -14,6 +14,7 @@ import type { AuditActor, ChairmanRepository } from '@/lib/repository'
 import type { FinanceImportKind, FinanceLedger, SessionUser } from '@/types'
 
 import { ensureAccounts } from './auto-accounts'
+import { rematchNote, rematchOfficial, type RematchResult } from './official-rematch'
 
 /**
  * 0085 — 계정과목표 · 월별 손익계산서 · 재무제표(연간)도 칸 하나에 놓으면 저장한다(예전 «그 밖» 칸의 미리보기 → 열 지정 → 등록을 사람 없이).
@@ -37,6 +38,8 @@ export interface LegacyResult {
   importId: string | null
   /** 계정과목표 — 덮어쓴 자동 생성 계정 수 */
   overwritten?: number
+  /** 0089 계정과목표 — 공식 결산 미매칭 줄 다시 맞춤 결과 */
+  rematch?: RematchResult
 }
 
 const MONTH_HEAD = (s: string) => {
@@ -126,7 +129,7 @@ export async function runLegacyImport(o: {
       const plan = planAccounts({ rows, ignored, existing })
       if (plan.blockCount > 0) {
         await cancel()
-        return held(kind, `보류 — 계정과목표 ${plan.blockCount}줄이 막혔습니다(분류를 모름 · 코드 모양). 그 줄을 고쳐 다시 올려 주세요.`, plan.lines.flatMap((l) => l.blocks.map((b) => `${l.rowNo}행 ${b}`)).slice(0, 10))
+        return held(kind, `보류 — 계정과목표 ${plan.blockCount}줄이 막혔습니다(분류를 모름 · 코드 모양). «ECOUNT 올리기»(/finance/<회사>/import) 미리보기에서 그 줄의 분류를 고르면 등록됩니다 — 엑셀은 받은 그대로 두셔도 됩니다.`, plan.lines.flatMap((l) => l.blocks.map((b) => `${l.rowNo}행 ${b}`)).slice(0, 10))
       }
       await repo.recordFinanceImportPreview(imp.import_id, { file_sha256: o.sha, summary: { stage: 'preview', mapping, counts: { rows: rows.length, creates: plan.creates.length, blocks: 0, warnings: plan.warningCount }, auto: true }, period_key: null }, actor)
       const r = await repo.registerEcountAccounts(imp.import_id, { file_sha256: o.sha, creates: plan.creates, renames: plan.renames }, actor)
@@ -143,7 +146,13 @@ export async function runLegacyImport(o: {
           warnings.push(`자동 생성 계정 ${row.code}을 계정과목표 값으로 바꾸지 못했습니다(${e instanceof Error ? e.message.slice(0, 60) : '?'}).`)
         }
       }
-      return { kind, status: 'applied', message: `저장됨 · 계정 ${rows.length}개(새 ${r.added} · 이름 ${r.renamed}${overwritten ? ` · 자동 생성 ${overwritten}개 덮어씀` : ''})`, warnings: [...warnings, ...plan.lines.flatMap((l) => l.warnings).slice(0, 10)], months: [], importId, overwritten }
+      // 0089 A3 — 공식 결산에서 계정을 못 맞춰 «기타»에 둔 줄을 새 계정과목표로 다시 맞춘다(같은 해 결산을 «바꾸기»로 새로 세운다).
+      const rm = await rematchOfficial({ repo, user, businessId }).catch((e) => {
+        console.error('[legacy-auto] rematch', e instanceof Error ? e.message : e)
+        return null
+      })
+      const rmNote = rm ? rematchNote(rm) : ''
+      return { kind, status: 'applied', message: `저장됨 · 계정 ${rows.length}개(새 ${r.added} · 이름 ${r.renamed}${overwritten ? ` · 자동 생성 ${overwritten}개 덮어씀` : ''})${rmNote ? ` · ${rmNote}` : ''}`, warnings: [...warnings, ...(rm?.warnings ?? []), ...plan.lines.flatMap((l) => l.warnings).slice(0, 10)], months: [], importId, overwritten, rematch: rm ?? undefined }
     }
 
     if (kind === 'monthly') {

@@ -14,6 +14,7 @@ import type {
   FinUploadApplyInput,
   FinUploadPending,
   FinUploadShape,
+  FinColumnMap,
   FinValuation,
   FinValuationWarning,
   Role,
@@ -60,6 +61,8 @@ type Methods = Pick<
   | 'finMonthClosed'
   | 'listFinUploadShapes'
   | 'saveFinUploadShape'
+  | 'listFinColumnMaps'
+  | 'saveFinColumnMap'
   | 'listFinValuations'
   | 'finValuationSave'
   | 'finValuationConfirm'
@@ -136,6 +139,8 @@ interface Store {
   uploads: (FinUpload & { pending: FinUploadPending | null })[]
   lines: Line[]
   shapes: FinUploadShape[]
+  /** 0089 (회사, 종류) 열 맞춤 */
+  colmaps: FinColumnMap[]
   seq: number
   valuations: Valuation[]
   openings: Opening[]
@@ -148,9 +153,10 @@ interface Store {
 const g = globalThis as unknown as { __chairmanDummyFinUpload?: Store; __chairmanDummyFinInbox?: Map<string, { bytes: Uint8Array; at: number }> }
 /** 0082 수신함 흉내(경로 → 바이트) */
 const inbox = (g.__chairmanDummyFinInbox ??= new Map())
-const store: Store = (g.__chairmanDummyFinUpload ??= { uploads: [], lines: [], shapes: [], seq: 0, valuations: [], openings: [], groups: [], members: [], dedupe: new Map(), flags: [], demo: false })
+const store: Store = (g.__chairmanDummyFinUpload ??= { uploads: [], lines: [], shapes: [], colmaps: [], seq: 0, valuations: [], openings: [], groups: [], members: [], dedupe: new Map(), flags: [], demo: false })
 // 옛 모양(0070 판)의 저장소가 dev 서버에 남아 있으면 새 칸을 채운다.
 store.seq ??= 0
+store.colmaps ??= []
 store.valuations ??= []
 store.openings ??= []
 store.groups ??= []
@@ -472,6 +478,23 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
       const i = store.shapes.findIndex((x) => x.business_id === s.business_id && x.header_sig === s.header_sig)
       if (i >= 0) store.shapes[i] = { ...s }
       else store.shapes.push({ ...s })
+    },
+    /* ───── 0089 열 맞춤 거울(fin_column_maps · fin_column_map_save — 장부를 쓰는 사람 · 있는 맞춤에 더함 · 칸 이름 모양만) ───── */
+    async listFinColumnMaps(businessId) {
+      return d.canKeep(businessId) ? store.colmaps.filter((m) => m.business_id === businessId).map((m) => ({ ...m, label_map: { ...m.label_map } })) : []
+    },
+    async saveFinColumnMap(m) {
+      if (!d.canKeep(m.business_id)) throw new Error('fin_upload_denied')
+      const entries = Object.entries(m.label_map)
+      if (!/^[a-z_]{2,20}$/.test(m.kind) || !entries.length || entries.length > 80 || entries.some(([k, v]) => !k || k.length > 40 || !/^([a-z][a-z0-9_]{0,39}|-)$/.test(v))) throw new Error('fin_column_map_shape')
+      if (!['code', 'ai', 'person'].includes(m.source)) throw new Error('fin_column_map_shape')
+      const cur = store.colmaps.find((x) => x.business_id === m.business_id && x.kind === m.kind)
+      const now = new Date().toISOString()
+      if (cur) {
+        const merged = { ...cur.label_map, ...m.label_map }
+        if (Object.keys(merged).length > 200) throw new Error('fin_column_map_shape')
+        Object.assign(cur, { label_map: merged, source: m.source, updated_at: now })
+      } else store.colmaps.push({ business_id: m.business_id, kind: m.kind, label_map: { ...m.label_map }, source: m.source, updated_at: now })
     },
 
     /* ───── 0082 수신함 거울(fin_inbox_object_ok — 본인 폴더 · 장부 쓰기) ───── */

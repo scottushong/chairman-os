@@ -33,6 +33,7 @@ import type {
   OfficialStatementBasis,
   OfficialStatementLine,
   OfficialAccountMapRow,
+  OfficialUnmatchedLine,
   ProcessChart,
   ProcessChartInput,
 } from '@/types'
@@ -569,6 +570,32 @@ export async function officialEvidenceUrl(path: string): Promise<string | null> 
 export async function listOfficialAccountMap(businessId: string): Promise<OfficialAccountMapRow[]> {
   if (!canReadBooks(businessId)) return []
   return [...accountMap.entries()].filter(([k]) => k.startsWith(`${businessId}|`)).map(([, v]) => ({ ...v }))
+}
+
+/** 0089 공식 결산 «다시 맞출 줄» 거울(official_unmatched_lines · official_unmatched_save). */
+const unmatchedLines: OfficialUnmatchedLine[] = []
+
+/** 활성 결산의 다시 맞출 줄(장부를 읽는 사람). */
+export async function listOfficialUnmatched(businessId: string): Promise<OfficialUnmatchedLine[]> {
+  if (!canReadBooks(businessId)) return []
+  const live = new Set(officialStatements.filter((s) => s.business_id === businessId && s.superseded_at === null).map((s) => s.id))
+  return unmatchedLines.filter((l) => l.business_id === businessId && live.has(l.statement_id)).map((l) => ({ ...l }))
+}
+
+/** 그 결산의 다시 맞출 줄을 통째로 바꾼다 — 장부를 쓰는 사람 · 활성 결산만 · 줄 모양(0089 check와 같은 규칙). */
+export async function saveOfficialUnmatched(statementId: number, lines: Omit<OfficialUnmatchedLine, 'statement_id' | 'business_id'>[]): Promise<void> {
+  const st = officialStatements.find((s) => s.id === statementId)
+  if (!st) throw new Error('official_unmatched_state')
+  assertKeepBooks(st.business_id)
+  if (st.superseded_at !== null) throw new Error('official_unmatched_state')
+  if (lines.length > 500 || lines.some((l) => !/^[a-z_]{1,20}:.{1,80}$/.test(l.std_key) || !l.label || l.label.length > 200 || !Number.isFinite(l.printed) || !l.from_code)) throw new Error('official_unmatched_shape')
+  for (let i = unmatchedLines.length - 1; i >= 0; i -= 1) if (unmatchedLines[i].statement_id === statementId) unmatchedLines.splice(i, 1)
+  const seen = new Set<string>()
+  for (const l of lines) {
+    if (seen.has(l.std_key)) continue
+    seen.add(l.std_key)
+    unmatchedLines.push({ ...l, statement_id: statementId, business_id: st.business_id })
+  }
 }
 
 /** 검사용 — 증빙이 보관됐나 */

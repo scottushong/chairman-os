@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useRef, useState, useTransition } from 'react'
 
-import { applyPendingUpload, releasePayrollHold, revertUpload, uploadFinanceFile, withdrawOfficialSave } from '@/app/actions/finance-upload'
+import { answerColumns, applyPendingUpload, releasePayrollHold, revertUpload, uploadFinanceFile, withdrawOfficialSave } from '@/app/actions/finance-upload'
 import { OfficialPanel, type AccountOption } from '@/components/finance/finance-upload-board'
 import { FIN_INBOX, inboxPath } from '@/lib/finance-upload/inbox'
 import { CHECKLIST } from '@/lib/finance-overview/checklist'
@@ -293,7 +293,64 @@ function CardRow({ c, businessId }: { c: FileCard; businessId: string }) {
           {w.length > 4 ? ` 외 ${w.length - 4}건` : ''}
         </div>
       ) : null}
+      {c.ask?.length && c.ask_fields?.length && c.kind !== 'unknown' ? <AskColumns c={c} businessId={businessId} /> : null}
     </>
+  )
+}
+
+/**
+ * 0089 «이 열은 무엇입니까?» — 못 맞춘 열만 한 번 묻는다(나머지는 이미 저장됨). 고르면 (회사, 종류) 열 맞춤에 저장 → 다음 올리기부터 그 열을 읽는다.
+ * «쓰지 않음»도 저장한다(다시 묻지 않는다).
+ */
+function AskColumns({ c, businessId }: { c: FileCard; businessId: string }) {
+  const [picks, setPicks] = useState<Record<string, string>>({})
+  const [busy, start] = useTransition()
+  const [done, setDone] = useState<string | null>(null)
+  const chosen = Object.entries(picks).filter(([, v]) => v)
+  return (
+    <div className="border-b border-[#eef1ef] bg-[#f7faf9] px-3.5 py-2.5 text-[13px]" data-testid="ask-columns">
+      <div className="font-semibold">이 열은 무엇입니까?</div>
+      <div className="mt-0.5 text-[12px] text-[#6b7772]">나머지 칸은 이미 저장했습니다. 고르면 이 회사 {KIND_KO[c.kind] ?? '자료'}는 다음 올리기부터 그 열까지 읽습니다(엑셀은 받은 그대로 두셔도 됩니다).</div>
+      <div className="mt-2 flex flex-col gap-1.5">
+        {c.ask!.map((a) => (
+          <label key={a.col} className="flex flex-wrap items-center gap-2">
+            <span className="min-w-[7rem] rounded border border-[#d7ddda] bg-white px-2 py-1 font-medium">«{a.label}»</span>
+            <span className="text-[#6b7772]">→</span>
+            <select
+              aria-label={`${a.label} 열`}
+              value={picks[a.label] ?? ''}
+              disabled={!!done}
+              onChange={(e) => setPicks((p) => ({ ...p, [a.label]: e.target.value }))}
+              className="min-h-9 rounded-md border border-[#d7ddda] bg-white px-2 py-1"
+            >
+              <option value="">고르기</option>
+              {c.ask_fields!.map((f) => (
+                <option key={f.key} value={f.key}>
+                  {f.label}
+                </option>
+              ))}
+              <option value="-">쓰지 않음(다시 묻지 않음)</option>
+            </select>
+          </label>
+        ))}
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          disabled={busy || !chosen.length || !!done}
+          onClick={() =>
+            start(async () => {
+              const r = await answerColumns(businessId, c.kind, chosen.map(([label, key]) => ({ label, key })))
+              setDone(r.error ?? `저장했습니다 — 열 ${r.saved ?? chosen.length}개. 다음 올리기부터 이렇게 읽습니다.`)
+            })
+          }
+          className="min-h-9 rounded-md border border-[#0f6b5c] bg-[#0f6b5c] px-3 text-[13px] font-semibold text-white disabled:opacity-50"
+        >
+          {busy ? '저장 중…' : '열 맞춤 저장'}
+        </button>
+        {done ? <span role="status" className="text-[12px] text-[#6b7772]">{done}</span> : null}
+      </div>
+    </div>
   )
 }
 
@@ -378,7 +435,7 @@ function HeldRow({ h, businessId, month, boss }: { h: HeldView; businessId: stri
           {msg ? <span role="status" className="text-[13px] text-[#6b7772]">{msg}</span> : null}
         </div>
       ) : (
-        <div className="mt-1 text-[12px] text-[#6b7772]">{h.masked ? '원료 단가 · 수량은 올린 사람(올린 뒤 1시간) · 대표 · CFO · 원가 관리만 봅니다 — 파일을 다시 올려 주세요.' : h.hold === 'closed' || h.hold === 'restricted' ? '대표 · CFO가 이 화면에서 풉니다.' : '파일을 고쳐 다시 올려 주세요.'}</div>
+        <div className="mt-1 text-[12px] text-[#6b7772]">{h.masked ? '원료 단가 · 수량은 올린 사람(올린 뒤 1시간) · 대표 · CFO · 원가 관리만 봅니다 — 파일을 다시 올려 주세요.' : h.hold === 'closed' || h.hold === 'restricted' ? '대표 · CFO가 이 화면에서 풉니다.' : h.hold === 'final_exists' ? '«재고 · 평가» 화면에서 이유를 적고 바꿉니다.' : '엑셀은 받은 그대로 두셔도 됩니다 — 대표 · CFO가 이 파일을 확인합니다.'}</div>
       )}
       {h.warnings.length ? <div className="mt-1 text-[12px] text-[#9a4b12]">{h.warnings.slice(0, 3).join(' · ')}</div> : null}
     </div>

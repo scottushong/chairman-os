@@ -24,6 +24,22 @@ export interface OfficialAutoResult {
   total: number
 }
 
+/** 0089 그 해의 «다시 맞출 줄» — 기타 계정에 넣은 줄과 묶음 계정(영업외수익 · 잡손실 …)으로만 맞춘 줄. */
+export function unmatchedFor(
+  live: OfficialDraft['lines'],
+  year: string,
+  others: ReadonlyMap<string, { account_code: string }>,
+): { std_key: string; label: string; grp: string | null; printed: number; from_code: string }[] {
+  const out: { std_key: string; label: string; grp: string | null; printed: number; from_code: string }[] = []
+  for (const l of live) {
+    const printed = l.values[year]
+    if (printed === undefined || printed === null || !l.group) continue
+    const from = l.account_code && l.section ? (l.how === 'group' ? l.account_code : null) : (others.get(l.group)?.account_code ?? null)
+    if (from) out.push({ std_key: l.std_key, label: l.label.slice(0, 200), grp: l.group, printed, from_code: from })
+  }
+  return out
+}
+
 export async function autoSaveOfficial(o: { repo: ChairmanRepository; user: SessionUser; businessId: string; draft: OfficialDraft; fileName: string }): Promise<OfficialAutoResult> {
   const { repo, user, businessId, draft } = o
   const actor: AuditActor = { user_id: user.user_id, role: user.role }
@@ -96,6 +112,9 @@ export async function autoSaveOfficial(o: { repo: ChairmanRepository; user: Sess
       )
       ids.push(id)
       saved.push(year)
+      // 0089 — 계정을 못 맞춘 줄(기타 · 묶음 계정)을 «다시 맞출 줄»로 둔다. 계정과목표가 올라오면 이 줄만 다시 맞춘다(official-rematch.ts).
+      const pending = unmatchedFor(live, year, others)
+      if (pending.length) await repo.saveOfficialUnmatched(id, pending).catch((e) => console.error('[official-auto] unmatched', e instanceof Error ? e.message : e))
     } catch (e) {
       warnings.push(`${year}년을 저장하지 못했습니다(${e instanceof Error ? e.message.slice(0, 80) : '?'}).`)
     }
