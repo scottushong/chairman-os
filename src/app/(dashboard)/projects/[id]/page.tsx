@@ -19,6 +19,7 @@ import {
   type TaskStatus,
   type WorkPriority,
 } from '@/types'
+import { MemoryRelated } from '@/components/memory/memory-sections'
 
 /**
  * CH-020 프로젝트 단건 화면 (DEFERRED D-12 선택지 A).
@@ -241,6 +242,8 @@ export default async function ProjectDetailPage(props: PageProps<'/projects/[id]
           </section>
         </aside>
       </div>
+      {/* 0086 관련 기억 — 대표 · 스위치일 때만 그린다. */}
+      <MemoryRelated targetType="project" targetId={project.project_id} />
     </div>
   )
 }

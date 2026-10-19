@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 
 import { AssistantDock } from '@/components/assistant/assistant-dock'
+import { QuickCapture } from '@/components/memory/quick-capture'
 import { MobileTabs } from '@/components/layout/mobile-tabs'
 import { NavDrawer } from '@/components/layout/nav-drawer'
 import { Header } from '@/components/layout/header'
@@ -8,6 +9,7 @@ import { Sidebar } from '@/components/layout/sidebar'
 import { SystemBar } from '@/components/layout/system-bar'
 import { TimezoneBeacon } from '@/components/settings/timezone-beacon'
 import { currentUser } from '@/lib/auth/session'
+import { DATA_MODE } from '@/lib/env'
 import { featureOn } from '@/lib/features-server'
 import { brandFor, descriptionFor } from '@/lib/brand'
 import { loadSidebarData } from '@/lib/sidebar-data'
@@ -97,6 +99,10 @@ export default async function DashboardLayout({ children }: LayoutProps<'/'>) {
       {/* Phase 11 — 모든 화면의 AI 어시스턴트(오른쪽 아래 버튼 → 패널). 셸에 한 번만 둔다: 화면마다 넣으면 빠지는 화면이 생긴다.
           로그인 없는 화면(/login 등)은 이 셸 밖이라 뜨지 않는다. */}
       {user ? <AssistantDock lang={user.language} feedback={await featureOn(user, 'ai_assist')} /> : null}
+      {/* 0086 빠른 기록 — 대표 · 스위치 memory_engine일 때만 그린다(직원 화면에는 단추도 코드 경로도 없다). */}
+      {user?.role === 'Chairman' && (await featureOn(user, 'memory_engine')) ? (
+        <QuickCapture mode={DATA_MODE === 'dummy' ? 'dummy' : 'live'} userId={user.user_id} />
+      ) : null}
     </div>
   )
 }

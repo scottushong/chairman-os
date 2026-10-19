@@ -192,6 +192,13 @@ export const FEATURES = [
     defaultAudience: 'chairman',
     from: 'release/2026-10-20 · 0086',
   },
+  {
+    key: 'memory_engine',
+    label: '기억 엔진',
+    description: '모든 화면의 «빠른 기록» 단추 · /memory(기록 · 검색 · 약속 · 검토함) · 회사/프로젝트 화면의 «관련 기억» · 주의 화면 «기억에서 나온 주의» · 어시스턴트 «기억 검색» 도구. 기록은 쓴 사람 본인만 본다(직원용을 열어도 개인 기록은 공유되지 않음). 꺼지면 화면 · 단추 · 도구가 사라지고 표 · RPC도 0행 · 거부.',
+    defaultAudience: 'chairman',
+    from: 'feat/memory-engine · 0086',
+  },
 ] as const satisfies readonly FeatureDef[]
 
 export type FeatureKey = (typeof FEATURES)[number]['key']
@@ -282,6 +289,7 @@ export const FEATURE_NAV: Partial<Record<FeatureKey, string>> = {
   process_charts: 'nav_process_charts',
   approvals: 'nav_eapproval',
   home_widgets: 'nav_home',
+  memory_engine: 'nav_memory',
 }
 
 /**

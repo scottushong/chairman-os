@@ -31,6 +31,7 @@ import { loadUiPrefs } from '@/lib/ui-prefs-server'
 import { getCurrentLocationWeather, getWorldCitiesWeather } from '@/lib/weather'
 import { worldCitiesOf } from '@/lib/world-cities'
 import type { AiBriefItem, AiNightOutput, Business, ProjectNote } from '@/types'
+import { MemoryMorning } from '@/components/memory/memory-sections'
 
 /**
  * 0059 — 회장 차례로 기다리는 단계 결재 수(대기 중인 approval_steps 가운데 is_chairman이고 결재자가 회장 본인).
@@ -251,6 +252,8 @@ export default async function AiPage(props: PageProps<'/ai'>) {
             여기 글자에는 ink-muted와 상태색(지난 D-day)이 섞여 있어 맨 배경 위에 두면 안 된다
             (globals.css '유리 없이 글자를 놓지 마라'). 다크 라디얼 위에서도 같은 원칙이다. */}
         <div className="min-w-0 space-y-5 pb-6">
+          {/* 0086 어제 기억 · 열린 약속 — 스위치 memory_engine일 때만(대표 세션에서 센다 — 야간 브리핑의 AI Agent는 기억을 못 읽는다). */}
+          {isChairman ? <MemoryMorning /> : null}
           {/* 0059 회장 결재 대기 — 0건이면 아무것도 그리지 않는다. */}
           {isChairman && approvalsWaiting ? (
             <GlassCard as="section">

@@ -49,6 +49,7 @@
     "check:finance-pdf": "tsx --conditions=react-server scripts/check-finance-pdf.ts",
     "check:price-report": "tsx --conditions=react-server scripts/check-price-report.ts",
     "check:official-pdf": "tsx --conditions=react-server scripts/check-official-pdf.ts",
+    "check:memory": "tsx --conditions=react-server scripts/check-memory-engine.ts",
     "check:ai-schemas": "tsx --conditions=react-server scripts/check-ai-schemas.ts",
     "check:features": "tsx scripts/check-features.ts",
     "check:home-widgets": "tsx --conditions=react-server scripts/check-home-widgets.ts",

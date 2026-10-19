@@ -86,6 +86,8 @@ export const NAV: readonly NavGroup[] = [
       // 대시보드 최상단 카드의 «전체 보기»가 가는 곳이고, 회장이 매일 여는 항목이다.
       // 블록 E가 사이드바를 10개로 갈아 끼울 때 «ATTENTION»이 된다.
       { key: 'nav_attention', label: '주의', href: '/attention', icon: 'bell', badge: 'NEW', ready: true },
+      // 0086 기억 엔진 — 빠른 기록 · 회의 · 약속 · 검토함 · 검색. 대표 전용(CHAIRMAN_ONLY_NAV) + 스위치 memory_engine(FEATURE_NAV).
+      { key: 'nav_memory', label: '기억', href: '/memory', icon: 'book', badge: 'NEW', ready: true },
       {
         key: 'nav_projects', label: '프로젝트',
         href: '/projects',
@@ -273,7 +275,7 @@ export const SYSTEM_LINKS: readonly NavItem[] = [
  * «회사»는 여기 없다 — 펼치면 그 사람이 볼 수 있는 회사(0002 has_business)만 나온다.
  * **화면 안내일 뿐 권한이 아니다** — 주소로 들어가면 각 화면과 RLS가 판정한다.
  */
-const CHAIRMAN_ONLY_NAV: ReadonlySet<string> = new Set(['nav_group', 'nav_morning', 'nav_dependency', 'nav_attention', 'nav_chairman'])
+const CHAIRMAN_ONLY_NAV: ReadonlySet<string> = new Set(['nav_group', 'nav_morning', 'nav_dependency', 'nav_attention', 'nav_chairman', 'nav_memory'])
 
 /**
  * 이니셔티브를 읽는 역할 — 0017 can_read_initiatives()(Chairman · GroupCFO · AIAgent)의 거울.

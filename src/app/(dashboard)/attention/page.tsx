@@ -29,6 +29,7 @@ import {
   EXCEPTION_STATUS_LABEL_KO,
   type ExceptionStatus,
 } from '@/types'
+import { MemoryAttention } from '@/components/memory/memory-sections'
 
 /**
  * `/attention` — 주의 전체 목록 (Phase 7 블록 B-3 · §18 · §19).
@@ -175,6 +176,9 @@ export default async function AttentionPage(props: PageProps<'/attention'>) {
           </ul>
         </section>
       ) : null}
+
+      {/* 0086 기억에서 나온 주의 — 스위치 memory_engine이 꺼지면 그리지 않는다. */}
+      <MemoryAttention />
 
       {/* ───────── 탭과 필터. 전부 URL이다 ───────── */}
       <nav className="mt-4 flex flex-wrap items-center gap-1.5" aria-label="상태">
