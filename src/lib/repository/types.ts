@@ -92,6 +92,7 @@ import type {
   NewOfficialStatement,
   OfficialStatement,
   OfficialStatementBasis,
+  OfficialStatementLine,
   OfficialAccountMapRow,
   ProcessChart,
   ProcessChartInput,
@@ -872,12 +873,16 @@ export interface ChairmanRepository extends PriceReportMethods, PurchasingMethod
   listFinRecalcJobs(businessId: string): Promise<FinRecalcJob[]>
   finOverviewSave(businessId: string, period: string, totals: Record<string, unknown>, missing: string[], provisional: boolean): Promise<void>
   listFinOverviewMonths(businessId: string, periods: string[]): Promise<FinOverviewMonthRow[]>
-  /** 살아 있는 줄(voided 아님) — 장부 읽기 권한(can_read_books). 급여는 부서 합계만. */
-  listFinLines(kind: OverviewLineKind, businessId: string, period: string): Promise<FinRow[]>
+  /** 살아 있는 줄(voided 아님) — 장부 읽기 권한(can_read_books). 급여는 부서 합계만. 여러 달 한 번에(줄마다 period 칸). */
+  listFinLines(kind: OverviewLineKind, businessId: string, periods: string[]): Promise<FinRow[]>
   /** 0085 official_statement_withdraw — 앞 결산이 있으면 그 줄로 새 결산(돌려주는 값 = 새 id), 없으면 null. */
   withdrawOfficialStatement(id: number, reason: string): Promise<number | null>
   /** 0085 12가지 지표 기준값(없으면 null → 앱 기본값). 쓰기는 대표 · CFO · 마감 권한. */
   finKpiSettings(businessId: string): Promise<Record<string, unknown> | null>
+  /** 0085 «자동 생성» 계정 코드(그 회사). 0085 전 DB는 빈 목록. */
+  listAutoAccounts(businessId: string): Promise<string[]>
+  /** 공식 결산 줄(원장 규약 차변 − 대변) — 재무 현황의 전년 기말 · 3년 비교. 장부 읽기. */
+  listOfficialStatementLines(businessId: string, statementIds: number[]): Promise<OfficialStatementLine[]>
   saveFinKpiSettings(businessId: string, settings: Record<string, unknown>, reason: string): Promise<void>
   /** 0070 회계 · 재무 자료 올리기 — 그 회사의 올리기 기록(최근 300). 0070 전 DB는 빈 목록. */
   listFinUploads(businessId: string): Promise<FinUpload[]>
@@ -1402,8 +1407,9 @@ export interface BriefTimezoneSettings {
 }
 
 /** CH-024 키맨 폼이 보내는 한 행. keyman_id가 없으면 새 사람이다. */
-export type NewAccount = { business_id: string; account_code: string } & AccountFields
-export type AccountPatch = Partial<AccountFields & { active: boolean }>
+/** auto_created(0085) = 계정과목표 없이 원장 · 손익 · 결산 줄로 앱이 만든 계정(«자동 생성»). 0085 전 DB는 칸이 없다 — 보내지 않는다. */
+export type NewAccount = { business_id: string; account_code: string; auto_created?: boolean } & AccountFields
+export type AccountPatch = Partial<AccountFields & { active: boolean; auto_created: boolean }>
 
 /** ECOUNT 계정과목 업로드의 병합 한 벌(lib/ecount/excel/accounts-import.ts planAccounts가 만든다). 회사는 업로드 줄에서 온다. */
 export interface EcountAccountMerge {

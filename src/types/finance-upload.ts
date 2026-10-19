@@ -1,5 +1,8 @@
 import type { IsoDateTime } from './primitives'
 
+/** 0085 보류 까닭. */
+export type FinHoldKind = 'kind' | 'period' | 'closed' | 'restricted' | 'final_exists' | 'value_state' | 'legacy' | 'other'
+
 /** 0070 fin_uploads 한 줄(pending 칸은 열 grant 밖 — fin_upload_pending()으로만 읽는다). */
 export interface FinUpload {
   upload_id: string
@@ -63,6 +66,9 @@ export interface FinUploadPending {
     labels?: { text: string; role: string }[]
     ledger?: { headerRow: number; cols: Record<string, number>; headCol?: number | null }
     tries?: number
+    /** 0085 보류 까닭 — 저장하지 못하고 기다리는 것(종류 · 달을 모름 · 마감 달 · 재고 바꾸기 · 확정 평가 · 그 밖) */
+    hold?: FinHoldKind
+    hold_message?: string
   }
 }
 

@@ -1044,9 +1044,15 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         actor,
         after: input,
       })
-      const { data, error } = await sb.from('accounts').insert(row).select(ACCOUNT_COLUMNS).single<Account>()
+      let { data, error } = await sb.from('accounts').insert(row).select(ACCOUNT_COLUMNS).single<Account>()
+      // 0085 전 DB — «자동 생성» 칸이 없으면 그 칸 없이 한 번 더(표시만 빠진다).
+      if (error && error.code === '42703' && 'auto_created' in row) {
+        const { auto_created: _a, ...plainRow } = row
+        void _a
+        ;({ data, error } = await sb.from('accounts').insert(plainRow).select(ACCOUNT_COLUMNS).single<Account>())
+      }
       if (error) throw accountError(error)
-      return data
+      return data!
     },
 
     async updateAccount(businessId: string, accountCode: string, patch: AccountPatch, actor: AuditActor): Promise<Account> {

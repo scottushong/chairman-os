@@ -1070,10 +1070,11 @@ export function dummyFinanceOverview(d: DummyFinUploadDeps, up: Pick<ChairmanRep
       if (!d.canRead(businessId)) return []
       return periods.map((p) => extra.overview.get(`${businessId}|${p}`)).filter((r): r is FinOverviewMonthRow => !!r).map((r) => structuredClone(r))
     },
-    async listFinLines(kind, businessId, period) {
+    async listFinLines(kind, businessId, periods) {
       ensureDemo()
       if (!OVERVIEW_KINDS.has(kind) || !d.canRead(businessId)) return []
-      return store.lines.filter((l) => l.kind === kind && l.business_id === businessId && l.period === period && !l.voided_at && !l.people).map((l) => ({ ...l.row }))
+      const want = new Set(periods)
+      return store.lines.filter((l) => l.kind === kind && l.business_id === businessId && want.has(l.period) && !l.voided_at && !l.people).map((l) => ({ ...l.row, period: l.period }))
     },
     async finKpiSettings(businessId) {
       return d.canRead(businessId) ? structuredClone(extra.kpi.get(businessId) ?? null) : null

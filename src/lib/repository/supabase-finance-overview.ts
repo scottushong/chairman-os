@@ -35,6 +35,8 @@ type Methods = Pick<
   | 'withdrawOfficialStatement'
   | 'finKpiSettings'
   | 'saveFinKpiSettings'
+  | 'listAutoAccounts'
+  | 'listOfficialStatementLines'
 >
 
 /** 재무 현황이 읽는 표와 칸(원료 숫자 표는 없다). 0085 칸은 따로 — 0085 전 DB는 그 칸 없이 다시 읽는다. */
@@ -61,6 +63,10 @@ function toRow(r: Record<string, unknown>): FinRow {
   const out: FinRow = { row_no: Number(r.row_no ?? 0) }
   for (const [k, v] of Object.entries(r)) {
     if (k === 'row_no') continue
+    if (k === 'period') {
+      out.period = String(v)
+      continue
+    }
     out[k] = v === null || v === undefined ? null : NUMERIC.test(k) ? Number(v) : typeof v === 'boolean' ? (v ? 1 : 0) : String(v)
   }
   return out
@@ -149,9 +155,10 @@ export function financeOverviewMethods(sb: SupabaseClient, fallback: Pick<Chairm
       if (error) fail('fin_overview_months', error)
       return (data ?? []) as FinOverviewMonthRow[]
     },
-    async listFinLines(kind, businessId, period) {
+    async listFinLines(kind, businessId, periods) {
+      if (!periods.length) return []
       const spec = LINE_TABLE[kind]
-      const read = (cols: string) => sb.from(spec.table).select(cols).eq('business_id', businessId).eq('period', period).is('voided_at', null).order('row_no').limit(20000)
+      const read = (cols: string) => sb.from(spec.table).select(`period,${cols}`).eq('business_id', businessId).in('period', periods).is('voided_at', null).order('period').order('row_no').limit(50000)
       let { data, error } = await read(spec.v85 ? `${spec.cols},${spec.v85}` : spec.cols)
       if (error && spec.v85 && error.code === '42703') ({ data, error } = await read(spec.cols))
       if (error && MISSING.has(error.code ?? '')) return []
@@ -168,6 +175,19 @@ export function financeOverviewMethods(sb: SupabaseClient, fallback: Pick<Chairm
       if (error && MISSING.has(error.code ?? '')) return null
       if (error) fail('fin_kpi_settings', error)
       return data?.settings ?? null
+    },
+    async listOfficialStatementLines(businessId, ids) {
+      if (!ids.length) return []
+      const { data, error } = await sb.from('official_statement_lines').select('statement_id,business_id,account_code,amount').eq('business_id', businessId).in('statement_id', ids)
+      if (error && MISSING.has(error.code ?? '')) return []
+      if (error) fail('official_statement_lines', error)
+      return ((data ?? []) as { statement_id: number; business_id: string; account_code: string; amount: number }[]).map((r) => ({ ...r, statement_id: Number(r.statement_id), amount: Number(r.amount) }))
+    },
+    async listAutoAccounts(businessId) {
+      const { data, error } = await sb.from('accounts').select('account_code').eq('business_id', businessId).eq('auto_created', true)
+      if (error && MISSING.has(error.code ?? '')) return []
+      if (error) fail('accounts', error)
+      return ((data ?? []) as { account_code: string }[]).map((r) => r.account_code)
     },
     async saveFinKpiSettings(businessId, settings, reason) {
       const { error } = await sb.rpc('fin_kpi_settings_save', { p_business: businessId, p_settings: settings, p_reason: reason })

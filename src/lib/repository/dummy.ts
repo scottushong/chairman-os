@@ -818,6 +818,8 @@ export const dummyRepository: ChairmanRepository = {
   putOfficialEvidence: books.putOfficialEvidence,
   officialEvidenceUrl: books.officialEvidenceUrl,
   withdrawOfficialStatement: books.withdrawOfficialStatement,
+  listAutoAccounts: books.listAutoAccounts,
+  listOfficialStatementLines: books.listOfficialStatementLines,
   listProcessCharts: books.listProcessCharts,
   saveProcessChart: books.saveProcessChart,
   deleteProcessChart: books.deleteProcessChart,

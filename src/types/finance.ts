@@ -165,6 +165,8 @@ export interface Account extends Provenance {
    * 비활성 계정에는 새 전표를 넣을 수 없고, 이미 있는 숫자는 재무제표에 그대로 선다.
    */
   active: boolean
+  /** 0085 «자동 생성»(계정과목표 없이 원장 · 손익 · 결산 줄로 만든 계정). 0085 전 DB · 읽지 않은 화면은 없음. */
+  auto_created?: boolean
 }
 
 /**

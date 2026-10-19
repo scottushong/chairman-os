@@ -26,6 +26,8 @@ export const UPLOAD_KINDS = [
   'material_issue',
   'tax_invoice',
   'ledger_lines',
+  // 0085
+  'shipment',
 ] as const
 export type UploadKind = (typeof UPLOAD_KINDS)[number]
 
@@ -110,7 +112,9 @@ export const KIND_SPECS: KindSpec[] = [
   {
     kind: 'cashflow', no: '⑧', label: '자금 · 월별 자금흐름표', hints: ['자금흐름', '자금일보', '자금수지', '자금'], table: 'fin_cash_flows', dateField: 'flow_date',
     target: '실제 입출금 — 손익과 현금흐름 비교',
-    fields: [f('flow_date', '일자', 'date', ['일자', '날짜', '거래일']), f('category', '항목', 'text', ['항목', '적요', '내용', '구분'], true), f('inflow', '입금', 'number', ['입금', '수입']), f('outflow', '출금', 'number', ['출금', '지출'])],
+    fields: [f('flow_date', '일자', 'date', ['일자', '날짜', '거래일']), f('category', '항목', 'text', ['항목', '적요', '내용', '구분'], true), f('inflow', '입금', 'number', ['입금', '수입']), f('outflow', '출금', 'number', ['출금', '지출']),
+      // 0085 — 일별 자금보고 · 현금흐름 달력(계좌 · 통화 · 잔액 · 예정). 없으면 빈칸(원화 · 실제로 본다).
+      f('account', '계좌', 'text', ['계좌명', '계좌', '은행명']), f('currency', '통화', 'text', ['통화', 'currency']), f('balance', '잔액', 'number', ['잔액', '잔고']), f('planned', '예정', 'text', ['실적예정', '예정구분', '예정'])],
   },
   {
     kind: 'card', no: '⑨', label: '카드 · 법인카드 사용내역', hints: ['법인카드', '카드사용', '카드'], table: 'fin_card_lines', sumField: 'amount', dateField: 'used_on',
@@ -130,7 +134,9 @@ export const KIND_SPECS: KindSpec[] = [
   {
     kind: 'loans', no: '⑫', label: '대출현황', hints: ['대출현황', '대출', '차입금현황'], table: 'fin_loans', sumField: 'principal',
     target: '금융기관 · 대출금액 · 금리 · 만기 · 상환조건 · 원금 · 이자(기준일마다 한 벌)',
-    fields: [f('lender', '금융기관', 'text', ['금융기관', '은행', '대출기관'], true), f('principal', '대출금액', 'number', ['대출금액', '대출잔액', '대출금', '잔액'], true), f('rate', '금리', 'number', ['금리', '이율']), f('maturity', '만기', 'date', ['만기일', '만기']), f('terms', '상환조건', 'text', ['상환조건', '상환방법']), f('principal_paid', '원금', 'number', ['원금상환', '원금']), f('interest_paid', '이자', 'number', ['이자'])],
+    // 0085: 잔액(principal)과 약정 · 총액(loan_total)을 가른다 — «대출금액»은 총액, «잔액»은 잔액. 총액 칸이 없으면 잔액만.
+    fields: [f('lender', '금융기관', 'text', ['금융기관', '은행', '대출기관', '차입처'], true), f('principal', '잔액', 'number', ['대출잔액', '현재잔액', '잔액'], true), f('rate', '금리', 'number', ['금리', '이율']), f('maturity', '만기', 'date', ['만기일', '만기']), f('terms', '상환조건', 'text', ['상환조건', '상환방법']), f('principal_paid', '원금', 'number', ['원금상환', '원금']), f('interest_paid', '이자', 'number', ['월이자', '이자']),
+      f('loan_type', '종류', 'text', ['대출종류', '자금구분', '종류']), f('loan_total', '총액', 'number', ['약정금액', '대출총액', '대출금액', '총액', '한도', '대출금']), f('pay_day', '내는 날', 'number', ['이자납입일', '납입일', '상환일', '결제일'])],
   },
   {
     kind: 'borrowings', no: '⑬', label: '연도별 차입금', hints: ['차입금', '차입'], table: 'fin_borrowings', sumField: 'amount', dateField: 'tx_date',
@@ -193,6 +199,18 @@ export const KIND_SPECS: KindSpec[] = [
       f('memo', '적요', 'text', ['적요']),
       f('debit', '차변', 'number', ['차변']),
       f('credit', '대변', 'number', ['대변']),
+    ],
+  },
+  // ───── 0085 ─────
+  {
+    kind: 'shipment', no: '⑲', label: '출하집계표', hints: ['출하집계', '출하현황', '출하실적', '출하'], table: 'fin_shipment_lines', sumField: 'qty', dateField: 'ship_date',
+    target: '거래처 · 제품별 출하 kg · 금액(재무 현황 «매출 상위»의 kg)',
+    fields: [
+      f('ship_date', '출하일', 'date', ['출하일자', '출하일', '일자']),
+      f('customer', '거래처', 'text', ['거래처명', '거래처', '고객', '납품처'], true),
+      f('product', '제품', 'text', ['품목명', '품명', '제품', '품목']),
+      f('qty', '출하 kg', 'number', ['출하량', '출하중량', '중량', '출하수량', 'kg', '수량']),
+      f('amount', '금액', 'number', ['출하금액', '공급가액', '금액']),
     ],
   },
 ]

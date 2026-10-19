@@ -201,6 +201,17 @@ export async function createAccount(input: NewAccount, actor: AuditActor): Promi
   return { ...row }
 }
 
+/** 공식 결산 줄(장부 읽기). */
+export async function listOfficialStatementLines(businessId: string, ids: number[]): Promise<OfficialStatementLine[]> {
+  return officialLines.filter((l) => l.business_id === businessId && ids.includes(l.statement_id)).map((l) => ({ ...l }))
+}
+
+/** 0085 «자동 생성» 계정 코드(그 회사 · 장부 읽기). */
+export async function listAutoAccounts(businessId: string): Promise<string[]> {
+  const store = await accountStore()
+  return [...store.values()].filter((a) => a.business_id === businessId && (a as Account & { auto_created?: boolean }).auto_created).map((a) => a.account_code)
+}
+
 export async function updateAccount(
   businessId: string,
   accountCode: string,

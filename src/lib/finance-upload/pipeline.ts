@@ -424,6 +424,14 @@ export function stripKgGrid(grid: (string | number | null)[][], headerRow: numbe
  * 종류별 마무리(줄 하나). 문제가 있으면 문구(그 줄은 넣지 않는다). 원본 값은 바꾸지 않고 칸을 더하기만 한다.
  */
 function finishRow(kind: UploadKind, rec: Rec, title: string, cols: Record<string, number>): string | null {
+  if (kind === 'cashflow') {
+    // 0085 — 예정 줄(수금예정 · 지급예정) · 통화(세 글자 · 원화는 비움). 1 = 예정(DB boolean이 '1'을 참으로 읽는다).
+    const plan = String(rec.planned ?? '')
+    rec.planned = /예정|plan/i.test(plan) || /예정/.test(String(rec.category ?? '')) ? 1 : 0
+    const cur = String(rec.currency ?? '').trim().toUpperCase()
+    rec.currency = /^(USD|달러|\$)$/.test(cur) ? 'USD' : /^[A-Z]{3}$/.test(cur) && cur !== 'KRW' ? cur : null
+    return null
+  }
   if (kind === 'sales' || kind === 'purchase_in') {
     rec.counterparty = (kind === 'sales' ? rec.customer : rec.supplier) ?? null
     rec.item_or_account = (kind === 'sales' ? rec.product : rec.material) ?? null
