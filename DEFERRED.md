@@ -2881,3 +2881,17 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - (미룸) 저장한 공식 결산의 증빙 파일을 여는 화면(서명 주소 officialEvidenceUrl)은 저장소 함수만 있고 링크 화면은 없다 — 공식 결산 목록 화면을 만들 때.
 
 - 2026-10-14 가격 리포트(0084 · 처음 0082): 구매팀이 가격을 손으로 넣는 칸 — TradingEconomics를 끄거나(BRIEFING_SOURCES_OFF=te) 수집이 막힐 때의 대안. 이번에는 끄는 손잡이만 두고 칸은 미룸(요청 범위 밖 · 수집이 지금 돎). 원가 관리 줄만 있는 사람의 읽기도 미룸(요청에 없음).
+
+## 2026-10-19 기억 엔진 0086 (feat/memory-engine) — 미룸 · 리뷰 Minor
+- (막힘) 청사진 보강 0085 — 지시문을 찾지 못했다. 0085는 비워 둠(docs/decisions/2026-10-19-memory-engine.md).
+- (Phase 2 · 구현 안 됨) 음성 전사(STT 업체 · 키 없음 — 음성은 «원본 보관 · 전사 대기») · 브라우저 안 녹음(MediaRecorder) · 메모-녹음 시점 맞추기 · 발언자 구분(표 memory_segments 자리만) · Meeting Workspace 화면(회의는 기록 종류 + memory_meetings 머리만) · 스캔 PDF/사진 읽기(AI 문서 읽기 길 재사용 예정).
+- (Phase 3 · 구현 안 됨) Google Calendar · Gmail · Meet · Zoom · WhatsApp 연동(ExternalSourceAdapter 자리) — 카카오톡 내보내기 txt를 파일로 올리면 «이름: 내용»으로 펴는 것만 있다.
+- (Phase 4 · 구현 안 됨) 바뀜 지능(AI) · 약속 감시 알림 · 관계 이력 · AI 아침 요약 · 선제 주의 — 지금은 규칙(같은 대상 + 낱말 겹침 + 기한/금액/담당 차이)과 코드로 센 칸.
+- (Phase 1 일부) 벡터 검색 — 표 memory_embeddings와 EmbeddingAdapter만. pgvector 켜기 · 업체 · 키는 대표 결정 뒤 새 마이그레이션.
+- (Phase 1 일부) 사람 상세 화면(People Memory) — 사람 화면이 없어 /memory «대상» 거르기로만. 회사 · 프로젝트는 상세에 «관련 기억».
+- (리뷰 Minor) memory_apply · memory_fail이 큐를 잡은 쪽인지 보지 않는다(10분 넘긴 늦은 처리가 새 결과 뒤에 앞 결과를 넣을 수 있음 — 같은 열쇠라 겹치지는 않음).
+- (리뷰 Minor) memory_requeue는 돌고 있으면 아무것도 안 하고 true · 처리 상태 칸을 되돌리지 않음.
+- (리뷰 Minor) memory_item_set · memory_apply는 감사 줄을 안 쓴다(이력은 memory_revisions · runs) · memory_revisions.review_id FK 없음.
+- (리뷰 Minor) 버킷 memory-assets: 지우기 정책 없음(올림 성공 · 등록 실패 파일이 남을 수 있음) · allowed_mime_types 미설정 · memory_object_ok가 기록 id 존재를 보지 않음.
+- (리뷰 Minor) create_entity가 같은 이름의 rejected · merged 바깥 인물을 다시 확정한다 · 새 업무의 owner_user_id가 그 회사 사람인지 보지 않는다.
+- (판단) 직원 화면에서 스위치 키 이름 'memory_engine'은 feature_switches 표(0073 — 누구나 읽음)로 보인다 — intake 등 다른 대표 전용 기능과 같아 그대로.

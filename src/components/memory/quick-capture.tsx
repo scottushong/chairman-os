@@ -75,7 +75,7 @@ export function QuickCapture({ mode, userId }: { mode: 'dummy' | 'live'; userId:
     if (loaded.current) return
     loaded.current = true
     const d = readDraft()
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- 브라우저 저장소는 마운트 뒤에만 읽힌다(서버 렌더와 맞추려고)
+    // 브라우저 저장소는 마운트 뒤에만 읽힌다(서버 렌더와 맞추려고)
     setDraft(d)
   }, [])
 

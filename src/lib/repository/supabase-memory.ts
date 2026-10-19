@@ -171,7 +171,7 @@ export function memoryMethods(sb: SupabaseClient): MemoryMethods {
         projects: (p.data ?? []) as { project_id: string; name: string; business_id: string }[],
         people: ((u.data ?? []) as { user_id: string; display_name: string; display_name_en: string | null; title_ko: string | null; role: string }[])
           .filter((x) => x.role !== 'AIAgent' && x.role !== 'Integration')
-          .map(({ role: _role, ...x }) => x),
+          .map((x) => ({ user_id: x.user_id, display_name: x.display_name, display_name_en: x.display_name_en, title_ko: x.title_ko })),
         aliases: (a.data ?? []) as never,
         entities: (e.data ?? []) as never,
       }

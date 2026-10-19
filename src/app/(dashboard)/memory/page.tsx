@@ -39,10 +39,10 @@ export default async function MemoryPage(props: PageProps<'/memory'>) {
   const target = ['business', 'project', 'person', 'entity'].includes(tt) && tid.length ? { type: tt as LinkTargetType, id: tid.join(':') } : null
   const searching = !!(q || type || from || to || target)
 
-  let unavailable = false
+  const flags = { unavailable: false }
   const safe = async <T,>(p: Promise<T>, fallback: T): Promise<T> =>
     p.catch((e) => {
-      if (e instanceof Error && e.message === 'memory_unavailable') unavailable = true
+      if (e instanceof Error && e.message === 'memory_unavailable') flags.unavailable = true
       return fallback
     })
 
@@ -72,7 +72,7 @@ export default async function MemoryPage(props: PageProps<'/memory'>) {
       </PageHeader>
       <MemoryAutoProcess />
 
-      {unavailable ? (
+      {flags.unavailable ? (
         <p className="mt-4 rounded-lg border border-line-soft bg-panel px-3 py-2 text-t12 text-ink-dim">기억 기능이 아직 준비되지 않았습니다(DB 0086 반영 전).</p>
       ) : null}
 

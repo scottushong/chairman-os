@@ -155,7 +155,7 @@ export function ReviewCard({
           </>
         ) : null}
         {typeof p.before === 'string' ? ` · 앞: ${p.before} → 새: ${String(p.after ?? '')}` : ''}
-        {' · AI · 규칙의 제안입니다 — 확정은 대표가 합니다'}
+        {' · AI · 규칙의 제안입니다 — 확정은 회장님이 합니다'}
       </p>
 
       {identity ? (

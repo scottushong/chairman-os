@@ -27,6 +27,7 @@ import {
   type Task,
 } from '@/types'
 import { decisionStatusLabel } from '@/lib/decision-status'
+import { MemoryRelated } from '@/components/memory/memory-sections'
 
 /**
  * CH-023 회사 상세 + CH-024 전략 좌표.
@@ -217,6 +218,8 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
           ))}
         </Card>
       </div>
+      {/* 0086 관련 기억 — 대표 · 스위치일 때만 그린다(직원에게는 아무것도 없음). */}
+      <MemoryRelated targetType="business" targetId={id} />
     </div>
   )
 }

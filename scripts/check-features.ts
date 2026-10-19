@@ -80,7 +80,7 @@ ok('그룹 줄이 없는 키(0073 뒤에 더한 키)는 기본값', () => {
 })
 ok('스위치를 못 읽으면 전부 꺼짐(표 없음 null만 기본값 — 0073 리뷰 I4)', () => {
   for (const f of FEATURES) for (const r of ['Chairman', 'Member'] as const) assert.equal(featureOnFor(closedFeatureRows(), f.key, r, 'biz_dy'), false, `${f.key}/${r}`)
-  assert.deepEqual(hiddenNavKeys(closedFeatureRows(), 'Chairman'), ['nav_process_charts'])
+  assert.deepEqual(hiddenNavKeys(closedFeatureRows(), 'Chairman'), ['nav_process_charts', 'nav_memory'])
 })
 
 console.log('옛 스위치 · 메뉴')
@@ -91,12 +91,13 @@ ok('intakeOpenFor — 옛 동작 그대로(대표만)', () => {
 })
 ok('프로세스 차트를 끄면 메뉴가 빠진다(대표 · 직원 모두)', () => {
   const has = (role: 'Chairman' | 'Member', hidden: string[]) => navFor(role, { hidden }).some((g) => g.items.some((i) => i.key === 'nav_process_charts'))
-  assert.deepEqual(hiddenNavKeys(defaultFeatureRows(), 'Member'), [])
+  // 0086 기억 엔진은 기본 «대표만» — 직원에게는 처음부터 «기억» 메뉴가 없다.
+  assert.deepEqual(hiddenNavKeys(defaultFeatureRows(), 'Member'), ['nav_memory'])
   assert.equal(has('Member', []), true)
   const off = defaultFeatureRows().map((r) => (r.feature_key === 'process_charts' ? { ...r, enabled: false } : r))
   for (const role of ['Chairman', 'Member'] as const) {
     const hidden = hiddenNavKeys(off, role)
-    assert.deepEqual(hidden, ['nav_process_charts'])
+    assert.deepEqual(hidden, role === 'Chairman' ? ['nav_process_charts'] : ['nav_process_charts', 'nav_memory'])
     assert.equal(has(role, hidden), false, role)
   }
   // 대표만 범위면 직원에게서만 빠진다.

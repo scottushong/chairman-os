@@ -56,6 +56,12 @@ export function resetDummyMemory(): void {
 const md5 = (s: string) => createHash('md5').update(s).digest('hex')
 const norm = (s: string) => s.toLowerCase().replace(/[\s\p{P}·«»“”‘’]+/gu, '')
 const now = () => new Date().toISOString()
+/** 줄에서 안 보일 칸(주인 · 열쇠)을 뺀 사본 */
+function omit<T extends object, K extends keyof T>(o: T, ...keys: K[]): Omit<T, K> {
+  const r = { ...o }
+  for (const k of keys) delete r[k]
+  return r
+}
 
 export interface DummyMemoryDeps {
   viewer: () => UserAccount
@@ -103,10 +109,7 @@ export function dummyMemory(deps: DummyMemoryDeps): MemoryMethods {
     if (!c) throw new Error('memory_denied')
     return c
   }
-  const strip = <T extends { owner_id: string }>(r: T) => {
-    const { owner_id: _o, ...rest } = r
-    return rest
-  }
+  const strip = <T extends { owner_id: string }>(r: T) => omit(r, 'owner_id')
   const recount = (captureId: string, hint?: string | null) => {
     const st = store()
     const c = st.captures.find((x) => x.capture_id === captureId)!
@@ -200,12 +203,12 @@ export function dummyMemory(deps: DummyMemoryDeps): MemoryMethods {
       const links = st.links.filter((l) => l.capture_id === captureId)
       const job = st.jobs.get(captureId)
       return {
-        capture: (({ owner_id: _o, client_key: _k, archived_at: _a, ...r }) => r)(c),
+        capture: omit(c, 'owner_id', 'client_key', 'archived_at'),
         assets: st.assets.filter((a) => a.capture_id === captureId).map(strip),
-        items: items.map((i) => (({ owner_id: _o, dedupe_key: _d, ...r }) => r)(i)),
+        items: items.map((i) => omit(i, 'owner_id', 'dedupe_key')),
         links: links.map(strip),
-        reviews: st.reviews.filter((r) => r.capture_id === captureId).map((r) => (({ owner_id: _o, dedupe_key: _d, ...x }) => x)(r)),
-        runs: st.runs.filter((r) => r.capture_id === captureId).map((r) => (({ owner_id: _o, capture_id: _c, ...x }) => x)(r)),
+        reviews: st.reviews.filter((r) => r.capture_id === captureId).map((r) => omit(r, 'owner_id', 'dedupe_key')),
+        runs: st.runs.filter((r) => r.capture_id === captureId).map((r) => omit(r, 'owner_id', 'capture_id')),
         revisions: st.revisions.filter((r) => items.some((i) => i.item_id === r.item_id) || links.some((l) => l.link_id === r.link_id)).map(strip),
         job: job ? { status: job.status, attempts: job.attempts, next_at: job.next_at, last_error: job.last_error } : null,
       }
@@ -226,7 +229,7 @@ export function dummyMemory(deps: DummyMemoryDeps): MemoryMethods {
       return rows
         .sort((a, b) => b.captured_at.localeCompare(a.captured_at))
         .slice(0, opts.limit ?? 50)
-        .map((c) => (({ owner_id: _o, client_key: _k, archived_at: _a, ...r }) => r)(c))
+        .map((c) => omit(c, 'owner_id', 'client_key', 'archived_at'))
     },
     async claimMemoryJob(captureId) {
       await ownCapture(captureId)
@@ -342,7 +345,7 @@ export function dummyMemory(deps: DummyMemoryDeps): MemoryMethods {
       caps.delete(captureId)
       return assemblePrior(captureId, {
         links: st.links.filter((l) => caps.has(l.capture_id)),
-        items: st.items.filter((i) => caps.has(i.capture_id) && ['open', 'superseded'].includes(i.lifecycle_status) && i.verification_status !== 'rejected').map((i) => (({ owner_id: _o, dedupe_key: _d, ...r }) => r)(i)),
+        items: st.items.filter((i) => caps.has(i.capture_id) && ['open', 'superseded'].includes(i.lifecycle_status) && i.verification_status !== 'rejected').map((i) => omit(i, 'owner_id', 'dedupe_key')),
         entities: st.entities.filter((e) => e.owner_id === owner),
         capturedAt: new Map(st.captures.map((c) => [c.capture_id, c.captured_at])),
       })
@@ -378,7 +381,7 @@ export function dummyMemory(deps: DummyMemoryDeps): MemoryMethods {
         .reviews.filter((r) => r.owner_id === owner && (opts.status === 'closed' ? r.status !== 'open' : r.status === 'open') && (!opts.captureId || r.capture_id === opts.captureId))
         .sort((a, b) => b.created_at.localeCompare(a.created_at))
         .slice(0, opts.limit ?? 100)
-        .map((r) => (({ owner_id: _o, dedupe_key: _d, ...x }) => x)(r))
+        .map((r) => omit(r, 'owner_id', 'dedupe_key'))
     },
     async resolveMemoryReview(reviewId, action, data) {
       const owner = await must()
@@ -474,7 +477,7 @@ export function dummyMemory(deps: DummyMemoryDeps): MemoryMethods {
         .filter((i) => !filter.direction || i.direction === filter.direction)
         .sort((a, b) => b.created_at.localeCompare(a.created_at))
         .slice(0, filter.limit ?? 100)
-        .map((i) => ({ ...(({ owner_id: _o, dedupe_key: _d, ...r }) => r)(i), captured_at: capMap.get(i.capture_id)!.captured_at, capture_title: capMap.get(i.capture_id)!.title }))
+        .map((i) => ({ ...omit(i, 'owner_id', 'dedupe_key'), captured_at: capMap.get(i.capture_id)!.captured_at, capture_title: capMap.get(i.capture_id)!.title }))
     },
     async memoryTargetNames(targets) {
       const owner = await me()
