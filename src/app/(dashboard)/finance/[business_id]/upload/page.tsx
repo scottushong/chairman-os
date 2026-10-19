@@ -67,7 +67,7 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
     uploads,
     accounts: accts.length === 0 ? 'none' : accts.every((a) => autoCodes.includes(a.account_code)) ? 'auto' : 'file',
     accountsAt: null,
-    plMonthlyAt: slips.some((s) => s.month === month && s.superseded_at === null) ? `${month}-01` : null,
+    plMonthlyAt: slips.some((s) => s.month === month && !s.superseded_at) ? `${month}-01` : null,
     valuationAt: vals.some((v) => !v.voided_at) ? `${month}-01` : null,
   })
   const official = await repo.listOfficialStatements(business_id).catch(() => [])

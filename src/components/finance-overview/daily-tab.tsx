@@ -114,7 +114,7 @@ export function DailyTab({ d, upload }: { d: DailyReport; upload: string }) {
                 {d.loans.rows.map((r, i) => (
                   <tr key={i}>
                     <Td>
-                      {r.lender} {r.type !== '대출' ? <span className="text-[#6b7772]">{r.type.replace(/자금$/, '')}</span> : null}
+                      {r.lender} {r.type !== '대출' && r.type !== '차입금' ? <span className="text-[#6b7772]">{r.type.replace(/자금$/, '')}</span> : null}
                     </Td>
                     <Td n>{won(r.total)}</Td>
                     <Td n>{won(r.balance)}</Td>

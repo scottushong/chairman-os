@@ -108,7 +108,7 @@ export async function loadOverview(repo: ChairmanRepository, businessId: string,
   const human = ledger.accounts.filter((a) => a.business_id === businessId)
   const auto = new Set(autoCodes)
   const accountsState = human.length === 0 ? 'none' : human.every((a) => auto.has(a.account_code)) ? 'auto' : 'file'
-  const slip = slips.find((x) => x.month === period && x.superseded_at === null)
+  const slip = slips.find((x) => x.month === period && !x.superseded_at)
   const slipAt = slip ? (ledger.entries.find((e) => e.business_id === businessId && e.slip_no === slip.slip_no) as { created_at?: string } | undefined)?.created_at ?? `${period}-01T00:00:00Z` : null
   const checklist = buildChecklist({
     period,

@@ -50,7 +50,7 @@ export function Th({ children, n, className = '' }: { children?: ReactNode; n?: 
 }
 export function Td({ children, n, bold, className = '', title }: { children?: ReactNode; n?: boolean; bold?: boolean; className?: string; title?: string }) {
   return (
-    <td title={title} className={`border-b border-[#eef1ef] px-2 py-2 text-[14px] ${n ? 'text-right whitespace-nowrap' : ''} ${bold ? 'font-semibold' : ''} ${className}`}>
+    <td title={title} className={`border-b border-[#eef1ef] px-2 py-2 text-[14px] whitespace-nowrap ${n ? 'text-right' : ''} ${bold ? 'font-semibold' : ''} ${className}`}>
       {children}
     </td>
   )

@@ -49,7 +49,7 @@ export function PlTab({ ctx, period, hrefFor, selected, officials, upload }: { c
           </div>
         </div>
         <div className="-mx-1 overflow-x-auto">
-          <table className="w-full min-w-[620px] border-collapse tnum" data-testid="pl-table">
+          <table className="w-full min-w-[760px] border-collapse tnum" data-testid="pl-table">
             <thead>
               <tr>
                 {['과목', '이번 달', '전월', '증감', '올해 누계', '매출 대비'].map((h, i) => (
@@ -69,7 +69,7 @@ export function PlTab({ ctx, period, hrefFor, selected, officials, upload }: { c
                 const cls = sum ? 'border-t border-[#d7ddda] bg-[#f7f9f8] font-bold' : 'text-[13px] text-[#6b7772]'
                 return (
                   <tr key={l.key} className={`${cls} ${selected === l.key ? 'outline outline-1 outline-[#0f6b5c]' : ''}`}>
-                    <td className={`border-b border-[#eef1ef] px-2 py-[7px] ${sum ? 'text-[14px]' : 'pl-7'}`}>
+                    <td className={`border-b border-[#eef1ef] px-2 py-[7px] whitespace-nowrap ${sum ? 'text-[14px]' : 'pl-7'}`}>
                       {l.codes.length ? (
                         <Link href={hrefFor(l.key)} scroll={false} className="hover:underline">
                           {l.label}
@@ -78,7 +78,7 @@ export function PlTab({ ctx, period, hrefFor, selected, officials, upload }: { c
                         l.label
                       )}
                     </td>
-                    <td className="border-b border-[#eef1ef] px-2 py-[7px] text-right">{won(l.amount)}</td>
+                    <td className="border-b border-[#eef1ef] px-2 py-[7px] text-right whitespace-nowrap">{won(l.amount)}</td>
                     <td className="border-b border-[#eef1ef] px-2 py-[7px] text-right">{won(p)}</td>
                     <td className={`border-b border-[#eef1ef] px-2 py-[7px] text-right ${dTone}`}>{/open|close/.test(l.key) ? '' : won(d, true)}</td>
                     <td className="border-b border-[#eef1ef] px-2 py-[7px] text-right">{/open|close/.test(l.key) ? '' : won(y)}</td>

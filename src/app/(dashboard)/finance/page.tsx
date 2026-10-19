@@ -137,18 +137,18 @@ export default async function FinancePage(props: PageProps<'/finance'>) {
           </div>
         </div>
 
-        <nav className="-mb-1 flex flex-wrap gap-1 border-b border-[#d7ddda]" aria-label="재무 현황">
+        <nav className="-mb-1 flex gap-1 overflow-x-auto border-b border-[#d7ddda] whitespace-nowrap" aria-label="재무 현황">
           {TABS.map((t) => (
             <Link
               key={t.key}
               href={q({ tab: t.key === 'summary' ? null : t.key, month: t.key === 'calendar' || tab === 'calendar' ? null : askedMonth ?? null })}
               aria-current={tab === t.key ? 'page' : undefined}
-              className={`px-4 py-2.5 text-[14px] ${tab === t.key ? 'border-b-2 border-[#0f6b5c] font-bold text-[#0f6b5c]' : 'text-[#6b7772] hover:text-[#1a211e]'}`}
+              className={`shrink-0 px-4 py-2.5 text-[14px] max-sm:px-3 ${tab === t.key ? 'border-b-2 border-[#0f6b5c] font-bold text-[#0f6b5c]' : 'text-[#6b7772] hover:text-[#1a211e]'}`}
             >
               {t.label}
             </Link>
           ))}
-          <Link href="/finance?view=group" className="ml-auto self-center px-2 text-[12px] text-[#6b7772] hover:text-[#0f6b5c]">
+          <Link href="/finance?view=group" className="ml-auto self-center px-2 text-[12px] text-[#6b7772] hover:text-[#0f6b5c] max-md:hidden">
             그룹 합산 · 재무제표 원본 ›
           </Link>
         </nav>

@@ -238,7 +238,7 @@ export async function buildFinanceFixtures(): Promise<Fixture[]> {
   // ⑦ 수입 거래목록(OFFER) — 원료 셋
   await add('수입거래목록_OFFER_9월.xlsx', 'import', 'OFFER SHEET', [T('수입 거래목록 OFFER SHEET', ym), ['OFFER NO', 'ITEM', 'SHIPPER', '통화', 'AMOUNT', '환율', '원화금액', '부대비용'], ['OF-2609-1', '가짜 원료 가', '가짜 수출자 A', 'USD', 120_000, 1390, 166_800_000, 4_100_000], ['OF-2609-2', '가짜 원료 나', '가짜 수출자 B', 'USD', 90_000, 1392, 125_280_000, 3_200_000], ['OF-2609-3', '가짜 원료 다', '가짜 수출자 C', 'USD', 30_000, 1395, 41_850_000, 1_100_000], ['합계', null, null, null, 240_000, null, 333_930_000, 8_400_000]], 'import')
   // ⑧ 월별 자금흐름표 9월 · 10월 · 11월 · 12월(10월부터 예정 줄)
-  const open9: Record<string, number> = { [MAIN]: 1_710_000_000, [OPS]: 395_000_000, [FX]: 276_420 }
+  const open9: Record<string, number> = { [MAIN]: 1_710_000_000, [OPS]: 795_000_000, [FX]: 276_420 }
   const s9 = septemberFlows()
   out.push({ name: '월별 자금흐름표_2026-09.xlsx', bytes: await xlsx('자금흐름표', cashRows(ym, s9, open9)), expect: 'cashflow', check: 'cashflow' })
   const end9 = { ...open9 }

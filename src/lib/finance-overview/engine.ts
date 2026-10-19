@@ -455,7 +455,8 @@ export function computeBs(ctx: Ctx, period: string): BsResult {
   const otherAssets = totalAssetsBooks === null ? null : totalAssetsBooks - known
   const payable = sum(accts.filter((a) => a.section === 'payable' || /외상매입금|지급어음/.test(a.name)), -1)
   const accrued = sum(pick(/미지급/, ['other_liability']), -1)
-  const shortDebt = sum(pick(/단기차입|유동성/, ['other_liability']), -1)
+  // «차입금» 하나뿐인 계정과목표(DY)는 단기로 본다 — 장기는 이름에 «장기»가 있을 때만.
+  const shortDebt = sum(accts.filter((a) => a.section === 'other_liability' && /단기차입|유동성|차입금/.test(a.name) && !/장기/.test(a.name)), -1)
   const longDebt = sum(pick(/장기차입|사채/, ['other_liability']), -1)
   const totalLiabilities = sum(liabAll, -1)
   const otherLiab = totalLiabilities === null ? null : totalLiabilities - (payable ?? 0) - (accrued ?? 0) - (shortDebt ?? 0) - (longDebt ?? 0)

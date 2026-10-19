@@ -114,17 +114,34 @@ function cents(amount: number): number {
   return c === 0 ? 0 : c
 }
 
-/** mock 계정 위에 얹은 계정들. 키는 business|code. mock 계정을 고치면 여기 복사본이 선다. */
-let accounts: Map<string, Account> | null = null
+/**
+ * 0085 — 장부 저장소는 globalThis 한 곳에(dev 서버는 화면과 서버 액션을 따로 묶어 모듈이 두 벌이 된다 — 액션이 넣은 ECOUNT 월별 손익 ·
+ * 계정 · 공식 결산을 화면이 못 보던 «두 벌 함정»). 값은 예전과 같다.
+ */
+interface BooksState {
+  accounts: Map<string, Account> | null
+  entries: JournalEntry[]
+  lines: JournalLine[]
+  slipSeq: number
+  closings: Closing[]
+  closedMonths: Set<string>
+  officialStatements: OfficialStatement[]
+  officialLines: OfficialStatementLine[]
+  officialSeq: number
+  importSlips: { business_id: string; month: string; slip_no: string; import_id: string; superseded_at: string | null }[]
+}
+const BOOKS: BooksState = ((globalThis as unknown as { __chairmanDummyBooks?: BooksState }).__chairmanDummyBooks ??= {
+  accounts: null, entries: [], lines: [], slipSeq: 0, closings: [], closedMonths: new Set(), officialStatements: [], officialLines: [], officialSeq: 0, importSlips: [],
+})
 
+/** mock 계정 위에 얹은 계정들. 키는 business|code. mock 계정을 고치면 여기 복사본이 선다. */
 /** 화면에서 넣은 전표. mock 전표 뒤에 붙는다. */
-const entries: JournalEntry[] = []
-const lines: JournalLine[] = []
-let slipSeq = 0
+const entries: JournalEntry[] = BOOKS.entries
+const lines: JournalLine[] = BOOKS.lines
 
 /** 화면에서 한 마감. 결산 칸과, 마감된 회사·달(그 달 전표 라인은 읽을 때 closed로 보인다). */
-const closings: Closing[] = []
-const closedMonths = new Set<string>()
+const closings: Closing[] = BOOKS.closings
+const closedMonths = BOOKS.closedMonths
 
 function standardRow(businessId: string, s: StandardAccount, fetched_at: string): Account {
   return {
@@ -142,7 +159,7 @@ function standardRow(businessId: string, s: StandardAccount, fetched_at: string)
 }
 
 async function accountStore(): Promise<Map<string, Account>> {
-  if (accounts) return accounts
+  if (BOOKS.accounts) return BOOKS.accounts
   const ledger = await loadMockLedger()
   const store = new Map(ledger.accounts.map((a) => [key(a.business_id, a.account_code), { ...a }]))
   // 0016 시드와 같다 — 스타트업 네 곳은 표준 계정과목표를 받는다. mock이 이미 쓰는 코드는 그대로 둔다.
@@ -151,7 +168,7 @@ async function accountStore(): Promise<Map<string, Account>> {
       if (!store.has(key(b, s.code))) store.set(key(b, s.code), standardRow(b, s, MOCK_FETCHED_AT))
     }
   }
-  accounts = store
+  BOOKS.accounts = store
   return store
 }
 
@@ -330,7 +347,7 @@ function insertEntry(
   actor: AuditActor,
   correction: { corrects_id: string; kind: 'reversal' | 'restatement' } | null,
 ): string {
-  const slip_no = slipNumber(input.entry_date, ++slipSeq)
+  const slip_no = slipNumber(input.entry_date, ++BOOKS.slipSeq)
   const now = new Date().toISOString()
   entries.push({
     business_id: input.business_id,
@@ -412,9 +429,8 @@ export async function closePeriod(businessId: string, period: string, actor: Aud
 // 검사 순서와 거부 낱말을 같게 둔다 — dummy에서 통과한 입력이 live에서 막히면
 // 화면을 dummy로 검증한 의미가 없다(CLAUDE.md의 검증 관례).
 // ---------------------------------------------------------------------
-const officialStatements: OfficialStatement[] = []
-const officialLines: OfficialStatementLine[] = []
-let officialSeq = 0
+const officialStatements: OfficialStatement[] = BOOKS.officialStatements
+const officialLines: OfficialStatementLine[] = BOOKS.officialLines
 
 export async function saveOfficialStatement(
   input: NewOfficialStatement,
@@ -466,7 +482,7 @@ export async function saveOfficialStatement(
   if (prev && !input.replace) throw new Error('official_exists')
   if (prev) prev.superseded_at = now
 
-  const id = ++officialSeq
+  const id = ++BOOKS.officialSeq
   officialStatements.push({
     id,
     business_id: input.business_id,
@@ -521,7 +537,7 @@ export async function withdrawOfficialStatement(id: number, reason: string): Pro
   cur.superseded_at = now
   const prev = cur.supersedes_id ? officialStatements.find((s) => s.id === cur.supersedes_id) : undefined
   if (!prev) return null
-  const nid = ++officialSeq
+  const nid = ++BOOKS.officialSeq
   officialStatements.push({ ...prev, id: nid, memo: `되돌림 — ${prev.memo}`.slice(0, 500), created_by: me.user_id, created_at: now, superseded_at: null, supersedes_id: cur.id })
   officialLines.push(...officialLines.filter((l) => l.statement_id === prev.id).map((l) => ({ ...l, statement_id: nid })))
   void reason
@@ -596,7 +612,7 @@ export async function dummyImportEcountAnnual(
   const now = new Date().toISOString()
   const prev = active('ecount_excel')
   if (prev) prev.superseded_at = now
-  const id = ++officialSeq
+  const id = ++BOOKS.officialSeq
   officialStatements.push({
     id,
     business_id: imp.business_id,
@@ -617,7 +633,7 @@ export async function dummyImportEcountAnnual(
 }
 
 /** 0050 finance_import_slips의 dummy 자리 — 월별 업로드가 세운 전표 ↔ (회사, 달). 활성은 달마다 하나. */
-const importSlips: { business_id: string; month: string; slip_no: string; import_id: string; superseded_at: string | null }[] = []
+const importSlips = BOOKS.importSlips
 
 const PL_SECTIONS: readonly string[] = ['revenue', 'cogs', 'sga', 'd_and_a', 'non_operating', 'tax']
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/

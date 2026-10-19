@@ -7,6 +7,7 @@ import { useRef, useState, useTransition } from 'react'
 import { applyPendingUpload, releasePayrollHold, revertUpload, uploadFinanceFile, withdrawOfficialSave } from '@/app/actions/finance-upload'
 import { OfficialPanel, type AccountOption } from '@/components/finance/finance-upload-board'
 import { FIN_INBOX, inboxPath } from '@/lib/finance-upload/inbox'
+import { CHECKLIST } from '@/lib/finance-overview/checklist'
 import { KIND_SPECS } from '@/lib/finance-upload/kinds'
 import type { FileCard } from '@/lib/finance-upload/process'
 import { sendEach } from '@/lib/finance-upload/send-each'
@@ -22,7 +23,14 @@ import type { FinHoldKind, FinPayrollHeld, FinUpload } from '@/types'
 
 const ACCEPT = '.xlsx,.xls,.csv,.pdf,.jpg,.jpeg,.png'
 const UPLOAD_MAX = 20 * 1024 * 1024
-const KIND_KO: Record<string, string> = Object.fromEntries(KIND_SPECS.map((k) => [k.kind, k.label.replace(/^.*· /, '')]))
+// 체크표(시안) 이름을 먼저 — 그 밖 종류는 짧은 이름.
+const KIND_KO: Record<string, string> = {
+  ...Object.fromEntries(KIND_SPECS.map((k) => [k.kind, k.label])),
+  ...Object.fromEntries(CHECKLIST.map((c) => [c.key, c.label])),
+  tax_invoice: '세금계산서',
+  ledger_lines: '원장 거래 줄',
+  material_issue: '원료 출고명세',
+}
 const LEGACY_KO: Record<string, string> = { accounts: '계정과목표', monthly: '월별 손익계산서', annual: '재무제표(연간)' }
 const failCard = (fileName: string, message: string): FileCard => ({ file_name: fileName, sheet: null, kind: 'unknown', period: null, status: 'failed', upload_id: null, rows: 0, message, why: [], ai_used: 0, confidence: 'none' })
 
