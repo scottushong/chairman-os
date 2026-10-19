@@ -22,6 +22,15 @@ if (process.env.DUMMY_FEATURES_OPEN === '1') {
   for (const r of memory) if (r.business_id === null && BLUEPRINT_KEYS.includes(r.feature_key)) r.audience = 'all'
 }
 
+/**
+ * 0087 전자결재 — dummy 전용 손잡이. DUMMY_EA_OPEN=biz_dy면 «대표가 그 회사 줄을 켠» 상태(회사 줄 · 전원)로 시작한다.
+ * 서버를 다시 켜도 같은 상태라야 A · B · 대표를 차례로 켜 보는 시험이 이어진다. live에는 이 길이 없다(운영 기본값은 0087 그대로 대표만).
+ */
+const eaOpen = process.env.DUMMY_EA_OPEN?.trim()
+if (eaOpen && /^[a-z0-9_]{2,40}$/.test(eaOpen)) {
+  memory.push({ business_id: eaOpen, feature_key: 'approvals', enabled: true, audience: 'all', reason: 'dummy 시험 — 회사 줄 전원', updated_by: null, updated_at: new Date().toISOString() })
+}
+
 export function dummyFeatures(deps: { viewer(): UserAccount; businesses(): string[] }): Methods {
   return {
     async listFeatureSwitches() {

@@ -23,6 +23,7 @@
     "check:kakao": "tsx scripts/check-kakao.ts",
     "check:schedule": "tsx scripts/check-brief-schedule.ts",
     "check:migrations": "tsx scripts/check-migrations.ts",
+    "check:approvals": "tsx scripts/check-approvals.ts",
     "check:activity": "tsx scripts/check-activity.ts",
     "check:dependency": "tsx scripts/check-dependency.ts",
     "check:attention": "tsx scripts/check-attention.ts",
