@@ -140,7 +140,7 @@ export const ALL_TOOLS: AssistantTool[] = [
   financeInputHelpTool,
   searchDocumentsTool,
   myTasksTool,
-  // 0086 기억 검색 — 대표 · 웹 · 스위치(ctx.memoryOn)만. 직원에게는 도구 자체가 없다.
+  // 0088 기억 검색 — 대표 · 웹 · 스위치(ctx.memoryOn)만. 직원에게는 도구 자체가 없다.
   memoryTool,
 ]
 

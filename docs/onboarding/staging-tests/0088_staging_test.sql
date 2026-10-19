@@ -1,8 +1,8 @@
 -- =====================================================================
--- 0086 staging 검사(기억 엔진 — 대표 본인만 · 저장 · 처리 넣기 · 중복 없음 · 검토 · 업무 · 검색 · 직원/AI Agent/anon 0) — 쓰지 않는다.
--- build-staging-dryrun.mjs --tests가 0086과 같은 트랜잭션에서 돌리고 끝에 되돌린다(이 파일만 돌릴 때도 끝은 raise exception).
+-- 0088 staging 검사(기억 엔진 — 대표 본인만 · 저장 · 처리 넣기 · 중복 없음 · 검토 · 업무 · 검색 · 직원/AI Agent/anon 0) — 쓰지 않는다.
+-- build-staging-dryrun.mjs --tests가 0088과 같은 트랜잭션에서 돌리고 끝에 되돌린다(이 파일만 돌릴 때도 끝은 raise exception).
 -- 사람(이 시험 안에서만): 대표 · rehearsal.member@example.com(사원) · AI Agent 계정(있으면).
--- 기대: ERROR  0086 STAGING PASS a(스위치 대표만) b(저장 · 같은 열쇠 한 줄) c(넣기 · 두 번 넣어도 한 번) d(사람 확정 안 됨) e(업무 승인 · 정의자 통로) f(검색) g(사원 0 · 거부) h(AI Agent 0) i(anon 거부) j(원본 고치기 거부)
+-- 기대: ERROR  0088 STAGING PASS a(스위치 대표만) b(저장 · 같은 열쇠 한 줄) c(넣기 · 두 번 넣어도 한 번) d(사람 확정 안 됨) e(업무 승인 · 정의자 통로) f(검색) g(사원 0 · 거부) h(AI Agent 0) i(anon 거부) j(원본 고치기 거부)
 -- =====================================================================
 do $t$
 declare
@@ -34,8 +34,8 @@ begin
   perform set_config('request.jwt.claims', json_build_object('sub', v_chair, 'role', 'authenticated')::text, true);
   perform set_config('request.jwt.claim.sub', v_chair::text, true);
   set local role authenticated;
-  v_cap := public.memory_capture_save('staging-0086-test-a', 'note', null, 'A회사는 11월 납품을 약속했다. 방 사장에게 전달했다.', null, 'quick_capture', '{}'::jsonb);
-  if public.memory_capture_save('staging-0086-test-a', 'note', null, '다른 글', null, 'quick_capture', '{}'::jsonb) <> v_cap then raise exception 'FAIL b: 같은 열쇠로 두 줄'; end if;
+  v_cap := public.memory_capture_save('staging-0088-test-a', 'note', null, 'A회사는 11월 납품을 약속했다. 방 사장에게 전달했다.', null, 'quick_capture', '{}'::jsonb);
+  if public.memory_capture_save('staging-0088-test-a', 'note', null, '다른 글', null, 'quick_capture', '{}'::jsonb) <> v_cap then raise exception 'FAIL b: 같은 열쇠로 두 줄'; end if;
   select count(*) into n from public.memory_captures where capture_id = v_cap and processing_status = 'saved';
   if n <> 1 then raise exception 'FAIL b: 대표가 자기 기록을 못 본다'; end if;
   v_out := v_out || 'b(저장 · 같은 열쇠 한 줄) ';
@@ -74,7 +74,7 @@ begin
   v_r := public.memory_review_resolve(v_rv, 'confirm', '{}'::jsonb);
   if not (v_r ->> 'created')::boolean then raise exception 'FAIL e: 업무가 안 생겼다 %', v_r; end if;
   begin
-    insert into public.tasks (task_id, project_id, title) values ('staging_0086_direct', v_proj, '직접');
+    insert into public.tasks (task_id, project_id, title) values ('staging_0088_direct', v_proj, '직접');
     raise exception 'FAIL e: 대표가 tasks에 직접 넣었다';
   exception when others then
     if sqlerrm like 'FAIL%' then raise; end if;
@@ -109,7 +109,7 @@ begin
   select count(*) into n from public.audit_log where entity_table like 'memory%';
   if n <> 0 then raise exception 'FAIL g: 사원이 기억 감사 줄을 본다'; end if;
   begin
-    v_cap2 := public.memory_capture_save('staging-0086-member', 'note', null, '몰래', null, 'quick_capture', '{}'::jsonb);
+    v_cap2 := public.memory_capture_save('staging-0088-member', 'note', null, '몰래', null, 'quick_capture', '{}'::jsonb);
     raise exception 'FAIL g: 사원이 저장했다';
   exception when others then
     if sqlerrm not like '%memory_denied%' then raise exception 'FAIL g: 거부 문장(%)', sqlerrm; end if;
@@ -143,6 +143,6 @@ begin
   reset role;
   v_out := v_out || 'i(anon 거부) j(원본 고치기 거부)';
 
-  raise exception '0086 STAGING PASS %', v_out;
+  raise exception '0088 STAGING PASS %', v_out;
 end
 $t$;

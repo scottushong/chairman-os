@@ -900,7 +900,7 @@ export const dummyRepository: ChairmanRepository = {
   }),
   // 0084 — DY 구매팀 가격 리포트(dummy-price-report.ts). 문은 스위치 'purchase_price_report' · 대표 · 임원 이상 · 구매 줄.
   ...dummyPriceReport({ featureOn: async (b) => featureOnFor(await dummyRepository.listFeatureSwitches(), 'purchase_price_report', dummyViewer().role, b) }),
-  // 0086 — 기억 엔진(dummy-memory.ts). 문은 memory_me 거울(주인 본인 · 대표 · 스위치 'memory_engine').
+  // 0088 — 기억 엔진(dummy-memory.ts). 문은 memory_me 거울(주인 본인 · 대표 · 스위치 'memory_engine').
   ...dummyMemory({
     viewer: () => dummyViewer(),
     featureOn: async () => featureOnFor(await dummyRepository.listFeatureSwitches(), 'memory_engine', dummyViewer().role, null),

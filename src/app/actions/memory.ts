@@ -11,7 +11,7 @@ import { CAPTURE_TYPES, type CaptureType, type ReviewAction } from '@/lib/memory
 import { getRepository, type ChairmanRepository } from '@/lib/repository'
 
 /**
- * 기억 엔진(0086) 서버 액션. 문은 둘: 여기(대표 · 스위치 — 사람이 읽을 말) + DB(memory_me — 최종 판정).
+ * 기억 엔진(0088) 서버 액션. 문은 둘: 여기(대표 · 스위치 — 사람이 읽을 말) + DB(memory_me — 최종 판정).
  * 직원이 이 액션을 직접 불러도 'denied'와 DB 거부로 끝난다(존재를 알리는 문구 없이 «권한이 없습니다»).
  *
  * 처리 흐름(머리말 기술 결정): 저장은 즉시(원본 먼저) → 응답을 보낸 뒤 after()로 1차 처리 → 실패 · 남은 일은 대표가 기억 화면을

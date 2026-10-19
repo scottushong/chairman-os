@@ -20,7 +20,7 @@ import {
 export const maxDuration = 60
 
 /**
- * 기억(0086) — 대표 본인의 기록을 시간순으로 · 연결된 대상으로 찾아보는 화면. 대표 전용(아니면 /me) · 스위치 꺼지면 404.
+ * 기억(0088) — 대표 본인의 기록을 시간순으로 · 연결된 대상으로 찾아보는 화면. 대표 전용(아니면 /me) · 스위치 꺼지면 404.
  *
  *   위: 검색(낱말 · 종류 · 기간 · 회사/프로젝트/사람)
  *   왼쪽: 타임라인(검색하면 검색 결과 — 기록 줄 · 정보 줄, 모두 원본으로 이어진다)
@@ -65,7 +65,7 @@ export default async function MemoryPage(props: PageProps<'/memory'>) {
 
   return (
     <div className="mx-auto max-w-[1280px] px-4 py-5 sm:px-6">
-      <PageHeader icon="book" title="기억" code="Memory Engine · 0086" description="회장님이 남긴 메모 · 회의 · 대화를 시간순으로 기억하고, 회사 · 사람 · 프로젝트에 이어 둡니다. 원본은 고치지 않습니다.">
+      <PageHeader icon="book" title="기억" code="Memory Engine · 0088" description="회장님이 남긴 메모 · 회의 · 대화를 시간순으로 기억하고, 회사 · 사람 · 프로젝트에 이어 둡니다. 원본은 고치지 않습니다.">
         <Link href="/memory/review" className="flex items-center gap-1 rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim hover:border-accent hover:text-ink">
           검토함 <span className="tnum font-semibold text-ink">{reviews.length}</span>
         </Link>
@@ -73,7 +73,7 @@ export default async function MemoryPage(props: PageProps<'/memory'>) {
       <MemoryAutoProcess />
 
       {flags.unavailable ? (
-        <p className="mt-4 rounded-lg border border-line-soft bg-panel px-3 py-2 text-t12 text-ink-dim">기억 기능이 아직 준비되지 않았습니다(DB 0086 반영 전).</p>
+        <p className="mt-4 rounded-lg border border-line-soft bg-panel px-3 py-2 text-t12 text-ink-dim">기억 기능이 아직 준비되지 않았습니다(DB 0088 반영 전).</p>
       ) : null}
 
       <form className="mt-4 flex flex-wrap items-end gap-2 rounded-xl border border-line-soft bg-panel p-3" action="/memory">

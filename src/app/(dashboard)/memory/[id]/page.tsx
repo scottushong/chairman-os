@@ -21,7 +21,7 @@ const VERIFY_LABEL = { draft: '초안', confirmed: '확정', rejected: '틀림' 
 const ASSET_LABEL = { stored: '보관', waiting_transcript: '원본 보관 · 전사 대기', extracted: '글 읽음', failed: '읽기 실패', skipped: '읽지 않음(형식 · 원가 자료)' } as const
 
 /**
- * 기록 하나(0086) — 원본(고치지 않음) · 요약(AI 또는 규칙이 만든 것 — 따로 표시) · 뽑은 정보(근거 인용 · 기록 시점 · 기한) ·
+ * 기록 하나(0088) — 원본(고치지 않음) · 요약(AI 또는 규칙이 만든 것 — 따로 표시) · 뽑은 정보(근거 인용 · 기록 시점 · 기한) ·
  * 연결 · 이 기록의 검토 · 파일 · 처리 이력. 대표 전용(아니면 /me) · 남의 기록이나 없는 기록은 404(DB가 0행).
  */
 export default async function MemoryCapturePage(props: PageProps<'/memory/[id]'>) {

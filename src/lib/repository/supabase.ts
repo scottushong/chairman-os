@@ -862,7 +862,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     ...blueprintMethods(sb),
     // 0084 DY 구매팀 가격 리포트. 0084 전 DB면 'price_report_unavailable'.
     ...priceReportMethods(sb),
-    // 0086 기억 엔진(대표 본인 기록만 — memory_me). 0086 전 DB면 'memory_unavailable'.
+    // 0088 기억 엔진(대표 본인 기록만 — memory_me). 0088 전 DB면 'memory_unavailable'.
     ...memoryMethods(sb),
     // ECOUNT 엑셀 업로드(0050 finance_imports) — 읽기는 0050 전 DB를 견딘다(supabase-finance-imports.ts 머리 주석).
     ...financeImportMethods(sb),

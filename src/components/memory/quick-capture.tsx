@@ -9,7 +9,7 @@ import { STATUS_LABEL, type ProcessingStatus } from '@/lib/memory/types'
 import { createSupabaseBrowserClient } from '@/lib/supabase/client'
 
 /**
- * 빠른 기록(0086) — 대표에게만 그린다(레이아웃이 대표 · 스위치일 때만 붙인다). 모든 화면 오른쪽 아래(어시스턴트 단추 위).
+ * 빠른 기록(0088) — 대표에게만 그린다(레이아웃이 대표 · 스위치일 때만 붙인다). 모든 화면 오른쪽 아래(어시스턴트 단추 위).
  *
  *   · 데스크톱은 오른쪽 패널, 휴대폰은 아래에서 올라오는 판. 단축키 Alt+M(열기) · Ctrl/⌘+Enter(저장) · Esc(닫기).
  *   · 쓰는 중인 글은 이 브라우저에 자동 보관(화면을 옮겨도 · 새로고침해도 남는다). 저장되면 지운다.

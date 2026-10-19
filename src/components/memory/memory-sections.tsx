@@ -9,7 +9,7 @@ import { MEMORY_TYPE_LABEL, type LinkTargetType, type MemoryItemWithCapture, typ
 import { getRepository } from '@/lib/repository'
 
 /**
- * 기존 화면에 끼우는 기억 칸(0086) — 대표 · 스위치일 때만 그린다(아니면 아무것도 없음 — 직원 화면에 존재가 보이지 않는다).
+ * 기존 화면에 끼우는 기억 칸(0088) — 대표 · 스위치일 때만 그린다(아니면 아무것도 없음 — 직원 화면에 존재가 보이지 않는다).
  *   MemoryRelated   회사 · 프로젝트 상세의 «관련 기억»
  *   MemoryAttention 주의 화면의 «기억에서 나온 주의»(기본 위험 후보 — 지난 기한 · 바뀜 · 금액 · 오래 열린 결정)
  *   MemoryMorning   아침 루틴의 «어제 기억 · 열린 약속»(코드로 센다 — AI 요약은 Phase 4)

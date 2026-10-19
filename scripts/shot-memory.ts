@@ -1,5 +1,5 @@
 /**
- * 기억 엔진(0086) 화면 스크린숏 — dummy 서버 전용(로그인 없음 · 세션 = DUMMY_USER로 띄운 서버의 사람).
+ * 기억 엔진(0088) 화면 스크린숏 — dummy 서버 전용(로그인 없음 · 세션 = DUMMY_USER로 띄운 서버의 사람).
  *
  *   npx tsx scripts/shot-memory.ts <서버 주소> <이름 접두>
  *

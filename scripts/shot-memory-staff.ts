@@ -1,5 +1,5 @@
 /**
- * 기억 엔진(0086) 직원 화면 점검 — DUMMY_USER가 대표가 아닌 dummy 서버에서: 빠른 기록 단추 없음 · «기억» 메뉴 없음 ·
+ * 기억 엔진(0088) 직원 화면 점검 — DUMMY_USER가 대표가 아닌 dummy 서버에서: 빠른 기록 단추 없음 · «기억» 메뉴 없음 ·
  * /memory · /memory/review · /memory/<id> → /me · 회사 화면에 «관련 기억» 없음 · 화면 글에 «회장» 없음(기억 칸에서 새로 생긴 것).
  *
  *   npx tsx scripts/shot-memory-staff.ts <서버 주소>

@@ -2910,8 +2910,8 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - /coming-soon «지금 쓸 수 있는 화면»(readyItems)은 스위치를 모른다 — 꺼진 사람에게도 «내 홈» · «전자결재»가 목록에 뜬다(0087과 같은 문제).
 - 스테이징 반영 명령 `npm run db:push:staging`(db-push.mjs)은 --include-all을 받지 않는다(check:db-safety가 막음) — 순서 밖 번호(0086)는 손 명령으로. 필요하면 db-push.mjs에 번호 지정 --include-all을 release-production.sh처럼 넣는다.
 
-## 2026-10-19 기억 엔진 0086 (feat/memory-engine) — 미룸 · 리뷰 Minor
-- (막힘) 청사진 보강 0085 — 지시문을 찾지 못했다. 0085는 비워 둠(docs/decisions/2026-10-19-memory-engine.md).
+## 2026-10-19 기억 엔진 0088(처음 0086 · feat/memory-engine) — 미룸 · 리뷰 Minor
+- (끝남 · 10-20) 청사진 보강 0085 자리 — 0085는 재무 현황이 썼고 기억 엔진은 0088로(docs/decisions/2026-10-20-memory-engine.md).
 - (Phase 2 · 구현 안 됨) 음성 전사(STT 업체 · 키 없음 — 음성은 «원본 보관 · 전사 대기») · 브라우저 안 녹음(MediaRecorder) · 메모-녹음 시점 맞추기 · 발언자 구분(표 memory_segments 자리만) · Meeting Workspace 화면(회의는 기록 종류 + memory_meetings 머리만) · 스캔 PDF/사진 읽기(AI 문서 읽기 길 재사용 예정).
 - (Phase 3 · 구현 안 됨) Google Calendar · Gmail · Meet · Zoom · WhatsApp 연동(ExternalSourceAdapter 자리) — 카카오톡 내보내기 txt를 파일로 올리면 «이름: 내용»으로 펴는 것만 있다.
 - (Phase 4 · 구현 안 됨) 바뀜 지능(AI) · 약속 감시 알림 · 관계 이력 · AI 아침 요약 · 선제 주의 — 지금은 규칙(같은 대상 + 낱말 겹침 + 기한/금액/담당 차이)과 코드로 센 칸.
@@ -2923,3 +2923,18 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - (리뷰 Minor) 버킷 memory-assets: 지우기 정책 없음(올림 성공 · 등록 실패 파일이 남을 수 있음) · allowed_mime_types 미설정 · memory_object_ok가 기록 id 존재를 보지 않음.
 - (리뷰 Minor) create_entity가 같은 이름의 rejected · merged 바깥 인물을 다시 확정한다 · 새 업무의 owner_user_id가 그 회사 사람인지 보지 않는다.
 - (판단) 직원 화면에서 스위치 키 이름 'memory_engine'은 feature_switches 표(0073 — 누구나 읽음)로 보인다 — intake 등 다른 대표 전용 기능과 같아 그대로.
+
+## 2026-10-20 메모리 엔진 0088 — 1단계(저장 · 검색 · 화면)까지만, 2단계 이후 미룸
+- 메모리 엔진 2단계 이후 — 음성 올리기 뒤 전사(Speech-to-Text): STT 업체 · 키는 대표 결정 뒤. 지금은 «원본 보관 · 전사 대기»(SttAdapter 자리만).
+- 메모리 엔진 2단계 이후 — 브라우저 안 녹음(MediaRecorder): 지금은 휴대폰 녹음기(capture 속성) 파일 올리기만.
+- 메모리 엔진 2단계 이후 — Meeting Workspace 화면 · 메모/녹음 통합 · 회의 AI 요약: 표 memory_meetings 머리만.
+- 메모리 엔진 2단계 이후 — 발언자 구분: 표 memory_segments 자리만.
+- 메모리 엔진 2단계 이후 — 스캔 PDF · 사진 글 읽기(AI 문서 읽기 길 재사용): 지금은 «건너뜀».
+- 메모리 엔진 2단계 이후 — Google Calendar · Gmail · Google Meet · Zoom 연동(ExternalSourceAdapter 자리만 · 공식 API · 권한 확인 뒤).
+- 메모리 엔진 2단계 이후 — WhatsApp 내보내기 · 추가 파일 형식: 카카오톡 내보내기 txt 펴기만 있다.
+- 메모리 엔진 2단계 이후 — 바뀜 지능(AI) · 충돌 분석: 지금은 규칙(같은 대상 + 낱말 겹침 + 기한/금액/담당 차이)만.
+- 메모리 엔진 2단계 이후 — 약속 감시 알림 · 관계 이력 · 선제 주의: 지금은 주의 화면 칸을 코드로 센다.
+- 메모리 엔진 2단계 이후 — AI 아침 요약(Executive Morning Briefing): 아침 루틴 칸은 코드로 센 숫자만 · 야간 브리핑(AI Agent)은 기억을 못 읽는다.
+- 메모리 엔진 2단계 이후 — 벡터 검색: memory_embeddings · EmbeddingAdapter 자리만, pgvector · 업체 · 키는 대표 결정 뒤 새 마이그레이션.
+- 메모리 엔진 2단계 이후 — 사람 상세 화면(People Memory): /memory «대상» 거르기로만.
+- 메모리 엔진 2단계 이후 — 처리 재시도 cron 경로: AI Agent가 기억을 못 읽어 대표 세션(/memory 열 때 최대 3건)이 대신한다.

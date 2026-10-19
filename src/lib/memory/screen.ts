@@ -10,7 +10,7 @@ import type { SessionUser } from '@/types'
 import type { LinkTargetType, MemoryDirectory } from './types'
 
 /**
- * 기억 화면의 문(0086) — 대표가 아니면 /me로(화면의 존재를 알리지 않는다 · CLAUDE.md «회장 전용 기능»),
+ * 기억 화면의 문(0088) — 대표가 아니면 /me로(화면의 존재를 알리지 않는다 · CLAUDE.md «회장 전용 기능»),
  * 대표인데 스위치가 꺼졌으면 404. 판정은 DB(memory_me)가 한 번 더 한다.
  */
 export async function memoryViewer() {

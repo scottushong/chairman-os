@@ -1,7 +1,7 @@
 /**
- * 기억 엔진(0086) 검사 — npm run check:memory. 진짜 AI · Supabase 호출 0회(AI는 mock).
+ * 기억 엔진(0088) 검사 — npm run check:memory. 진짜 AI · Supabase 호출 0회(AI는 mock).
  *
- *   ① PGlite 0001~0086 — 권한: 대표 본인만 · 직원 · 임원 · GroupCFO · BusinessCEO · AI Agent · Integration = 표 13개 · RPC · 검색 0행/거부 ·
+ *   ① PGlite 0001~0088 — 권한: 대표 본인만 · 직원 · 임원 · GroupCFO · BusinessCEO · AI Agent · Integration = 표 13개 · RPC · 검색 0행/거부 ·
  *      anon grant 0 · 정책 to authenticated · 직접 쓰기 없음 · 스위치 끄면 대표도 0 · 감사 줄 비공개 · 버킷 본인 폴더만 · 원본 고치기 거부
  *   ② 지시문 14절 Case A~H — 진짜 처리 길(pipeline.ts: 규칙 · mock AI → 이름 맞추기 → 바뀜 찾기 → memory_apply)을 PGlite DB에 그대로
  *   ③ 순수 — 날짜 풀기 · 이름 맞추기(사람 자동 확정 없음) · AI 답 검사 · 지어낸 근거/기한/금액 버림 · 프롬프트 주입 울타리
@@ -29,16 +29,16 @@ import { memoryAnswerFromHits } from '../src/lib/ai/assistant/tools-memory'
 import { applyOne, MIGRATIONS, SUPABASE_STUBS } from './pglite'
 
 const U = {
-  chair: '00000000-0000-0000-0000-0000000086a1',
-  cfo: '00000000-0000-0000-0000-0000000086a2',
-  ceo: '00000000-0000-0000-0000-0000000086a3',
-  exec: '00000000-0000-0000-0000-0000000086a4',
-  member: '00000000-0000-0000-0000-0000000086a5',
-  agent: '00000000-0000-0000-0000-0000000086a6',
-  integ: '00000000-0000-0000-0000-0000000086a7',
-  bang1: '00000000-0000-0000-0000-0000000086b1', // 방민호 사장(직원 명단)
-  bang2: '00000000-0000-0000-0000-0000000086b2', // 방지훈 부장
-  lee: '00000000-0000-0000-0000-0000000086b3', // 이수진 부장
+  chair: '00000000-0000-0000-0000-0000000088a1',
+  cfo: '00000000-0000-0000-0000-0000000088a2',
+  ceo: '00000000-0000-0000-0000-0000000088a3',
+  exec: '00000000-0000-0000-0000-0000000088a4',
+  member: '00000000-0000-0000-0000-0000000088a5',
+  agent: '00000000-0000-0000-0000-0000000088a6',
+  integ: '00000000-0000-0000-0000-0000000088a7',
+  bang1: '00000000-0000-0000-0000-0000000088b1', // 방민호 사장(직원 명단)
+  bang2: '00000000-0000-0000-0000-0000000088b2', // 방지훈 부장
+  lee: '00000000-0000-0000-0000-0000000088b3', // 이수진 부장
 }
 const OTHERS = [U.cfo, U.ceo, U.exec, U.member, U.agent, U.integ] as const
 const TABLES = ['memory_captures', 'memory_capture_assets', 'memory_segments', 'memory_meetings', 'memory_entities', 'memory_aliases', 'memory_items', 'memory_links', 'memory_revisions', 'memory_review_queue', 'memory_processing_runs', 'memory_jobs', 'memory_embeddings']
@@ -429,7 +429,8 @@ async function main() {
     assert.equal(none.found, false)
     assert.match(none.note, /찾지 못/)
     // 날짜 · 대상 거르기
-    assert.equal((await ch.searchMemory({ query: 'A회사', from: day(-1).slice(0, 10) })).length, 0, '미래 날짜 범위에 결과')
+    // 이틀 뒤(UTC 날짜) — 하루 뒤는 UTC 15~24시(서울은 이미 다음 날)에 오늘 서울 기록과 겹쳐 실패했다(2026-10-20 00:53 서울).
+    assert.equal((await ch.searchMemory({ query: 'A회사', from: day(-2).slice(0, 10) })).length, 0, '미래 날짜 범위에 결과')
     const ent = (await owner<{ id: string }>(`select target_id as id from memory_links where capture_id = '${oldB}' and target_type = 'entity' limit 1`))[0].id
     const byTarget = await ch.searchMemory({ query: '', targetType: 'entity', targetId: ent })
     assert.ok(byTarget.length >= 2 && byTarget.every((h) => h.capture_id === oldB || h.capture_id === newB), '대상 거르기')

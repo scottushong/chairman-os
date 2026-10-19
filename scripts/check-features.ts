@@ -32,7 +32,7 @@ ok('키가 겹치지 않고 모양이 0073 check와 맞다', () => {
   for (const k of FEATURE_KEYS) assert.match(k, /^[a-z][a-z0-9_]{1,62}$/)
 })
 ok('0073 3절 · 0081 0절 기본 줄 = FEATURES(키 · 기본 범위)', () => {
-  const sql = ['0073_feature_switches.sql', '0081_blueprint_skeleton.sql', '0084_purchase_price_report.sql', '0085_finance_overview.sql', '0086_home_widgets.sql', '0086_memory_engine.sql', '0087_approvals.sql', '0089_finance_mapping.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n')
+  const sql = ['0073_feature_switches.sql', '0081_blueprint_skeleton.sql', '0084_purchase_price_report.sql', '0085_finance_overview.sql', '0086_home_widgets.sql', '0087_approvals.sql', '0088_memory_engine.sql', '0089_finance_mapping.sql'].map((f) => readFileSync(`supabase/migrations/${f}`, 'utf8')).join('\n')
   const seeded = [...sql.matchAll(/\(null, '([a-z_]+)',\s*true, '(chairman|exec|all)',/g)].map((m) => `${m[1]}:${m[2]}`).sort()
   assert.deepEqual(seeded, FEATURES.map((f) => `${f.key}:${f.defaultAudience}`).sort())
 })
@@ -91,7 +91,7 @@ ok('intakeOpenFor — 옛 동작 그대로(대표만)', () => {
 })
 ok('프로세스 차트를 끄면 메뉴가 빠진다(대표 · 직원 모두)', () => {
   const has = (role: 'Chairman' | 'Member', hidden: string[]) => navFor(role, { hidden }).some((g) => g.items.some((i) => i.key === 'nav_process_charts'))
-  // 0086 기억 엔진은 기본 «대표만» — 직원에게는 처음부터 «기억» 메뉴가 없다.
+  // 0088 기억 엔진은 기본 «대표만» — 직원에게는 처음부터 «기억» 메뉴가 없다.
   assert.deepEqual(hiddenNavKeys(defaultFeatureRows(), 'Member'), ['nav_eapproval', 'nav_home', 'nav_memory'])
   assert.equal(has('Member', []), true)
   const off = defaultFeatureRows().map((r) => (r.feature_key === 'process_charts' ? { ...r, enabled: false } : r))
@@ -112,9 +112,9 @@ ok('전자결재(0087) — 기본 대표만 · 회사 줄을 켜면 그 회사 �
   assert.deepEqual(label(hiddenNavKeys(rows, 'Member', ['biz_dy'])), ['전자결재'])
   const dy: FeatureSwitchRow = { ...row('approvals', 'biz_dy', true, 'all') }
   const hidden = hiddenNavKeys([...rows, dy], 'Member', ['biz_dy'])
-  assert.deepEqual(hidden, ['nav_home'])
+  assert.deepEqual(hidden, ['nav_home', 'nav_memory'])
   assert.deepEqual(label(hidden), ['결재 요청', '전자결재'])
-  assert.deepEqual(hiddenNavKeys([...rows, dy], 'Member', ['biz_vana']), ['nav_eapproval', 'nav_home'], '다른 회사 사람')
+  assert.deepEqual(hiddenNavKeys([...rows, dy], 'Member', ['biz_vana']), ['nav_eapproval', 'nav_home', 'nav_memory'], '다른 회사 사람')
 })
 ok('내 홈(0086) — 기본 대표만 · 회사 줄을 켜면 그 회사 사람에게 «내 홈» · 예전 «내 홈»(/me)은 «내 업무함»으로', () => {
   const rows = defaultFeatureRows()

@@ -86,7 +86,7 @@ export const NAV: readonly NavGroup[] = [
       // 대시보드 최상단 카드의 «전체 보기»가 가는 곳이고, 회장이 매일 여는 항목이다.
       // 블록 E가 사이드바를 10개로 갈아 끼울 때 «ATTENTION»이 된다.
       { key: 'nav_attention', label: '주의', href: '/attention', icon: 'bell', badge: 'NEW', ready: true },
-      // 0086 기억 엔진 — 빠른 기록 · 회의 · 약속 · 검토함 · 검색. 대표 전용(CHAIRMAN_ONLY_NAV) + 스위치 memory_engine(FEATURE_NAV).
+      // 0088 기억 엔진 — 빠른 기록 · 회의 · 약속 · 검토함 · 검색. 대표 전용(CHAIRMAN_ONLY_NAV) + 스위치 memory_engine(FEATURE_NAV).
       { key: 'nav_memory', label: '기억', href: '/memory', icon: 'book', badge: 'NEW', ready: true },
       {
         key: 'nav_projects', label: '프로젝트',

@@ -17,8 +17,8 @@ import type {
 } from '@/lib/memory/types'
 
 /**
- * 0086 기억 엔진의 live 어댑터 조각. supabase.ts가 펼쳐 넣는다. 판정 · 중복 막기 · 이력은 전부 DB(memory_me · RPC)다.
- * 사람 세션(쿠키) 그대로 — service_role 없음. 0086이 없는 DB면 'memory_unavailable'(앱이 DB보다 먼저 나갈 수 있다).
+ * 0088 기억 엔진의 live 어댑터 조각. supabase.ts가 펼쳐 넣는다. 판정 · 중복 막기 · 이력은 전부 DB(memory_me · RPC)다.
+ * 사람 세션(쿠키) 그대로 — service_role 없음. 0088이 없는 DB면 'memory_unavailable'(앱이 DB보다 먼저 나갈 수 있다).
  */
 
 const MISSING = new Set(['PGRST202', '42883', 'PGRST205', '42P01'])

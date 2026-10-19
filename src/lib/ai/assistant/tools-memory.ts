@@ -6,7 +6,7 @@ import { MEMORY_TYPES, MEMORY_TYPE_LABEL } from '@/lib/memory/types'
 import { addEvidence, resolveBusiness, str, type AssistantTool } from './kit'
 
 /**
- * 어시스턴트 «기억 검색»(0086) — 대표 본인의 기록 · 회의 · 약속을 찾는다. 새 채팅 화면을 만들지 않고 기존 어시스턴트에 도구 하나.
+ * 어시스턴트 «기억 검색»(0088) — 대표 본인의 기록 · 회의 · 약속을 찾는다. 새 채팅 화면을 만들지 않고 기존 어시스턴트에 도구 하나.
  *
  * ■ 누구에게 ■ 대표 · 웹 · 스위치 memory_engine이 켜졌을 때만(ctx.memoryOn). 직원에게는 도구 자체가 없다 — 이름 · 설명도 안 보인다
  *   (직원용 설명 staffDescription을 두지 않는다). 읽기는 질문한 사람의 repo(RLS — memory_me)라 DB가 한 번 더 막는다.

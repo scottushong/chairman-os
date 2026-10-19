@@ -8,7 +8,7 @@ import type { MemoryReview, ReviewAction } from '@/lib/memory/types'
 import { REVIEW_TYPE_LABEL } from '@/lib/memory/types'
 
 /**
- * 기억 화면(0086)의 손잡이들 — 남은 일 처리 · 다시 처리 · 정보 상태 · 검토함 카드. 판정은 서버 액션 + DB.
+ * 기억 화면(0088)의 손잡이들 — 남은 일 처리 · 다시 처리 · 정보 상태 · 검토함 카드. 판정은 서버 액션 + DB.
  */
 
 /** 화면을 열면 한 번 — 대기 · 실패(다음 시도 시각 지남) 기록을 처리하고, 처리한 것이 있으면 다시 그린다. */

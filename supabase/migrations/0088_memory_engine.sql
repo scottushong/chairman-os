@@ -1,5 +1,5 @@
 -- =====================================================================
--- Chairman OS — 0086_memory_engine (기억 엔진 Phase 1 — 빠른 기록 · 원본 보존 · AI 추출 · 기존 회사/사람/프로젝트 연결 · 검토함 · 검색)
+-- Chairman OS — 0088_memory_engine (기억 엔진 Phase 1 — 빠른 기록 · 원본 보존 · AI 추출 · 기존 회사/사람/프로젝트 연결 · 검토함 · 검색)
 -- 작성: 2026-10-19 · 브랜치 feat/memory-engine · 지시문 docs/specs/2026-10-19-memory-engine.txt · 결정 docs/decisions/2026-10-19-memory-engine.md
 --
 -- ■ 누구 것인가 ■
@@ -36,7 +36,7 @@ begin;
 -- 0절. 기능 스위치 — src/lib/features.ts와 같은 키 · 기본값(check:features가 대조). 기본 «대표만».
 -- =====================================================================
 insert into feature_switches (business_id, feature_key, enabled, audience, reason) values
-  (null, 'memory_engine', true, 'chairman', '기본값(0086)')
+  (null, 'memory_engine', true, 'chairman', '기본값(0088)')
 on conflict do nothing;
 
 -- =====================================================================
@@ -52,7 +52,7 @@ language sql stable security definer set search_path = public, pg_temp as $fn$
      and coalesce(auth_role()::text, '') = 'Chairman'
      and coalesce(feature_on('memory_engine', null), false);
 $fn$;
-comment on function memory_me(uuid) is '0086. 기억 엔진 판정 — 줄의 주인이 본인 · 활성 · Chairman · 스위치 memory_engine. 표 RLS · RPC가 같이 쓴다.';
+comment on function memory_me(uuid) is '0088. 기억 엔진 판정 — 줄의 주인이 본인 · 활성 · Chairman · 스위치 memory_engine. 표 RLS · RPC가 같이 쓴다.';
 revoke all on function memory_me(uuid) from public, anon;
 grant execute on function memory_me(uuid) to authenticated;
 
@@ -289,10 +289,10 @@ create table memory_embeddings (
 create unique index memory_embeddings_one on memory_embeddings
   (owner_id, capture_id, coalesce(item_id, '00000000-0000-0000-0000-000000000000'::uuid), model, content_hash);
 
-comment on table memory_captures is '0086. 기억 엔진 원본(빠른 기록 · 회의 · 파일). 주인 본인만(memory_me). raw_text는 고치지 않는다.';
-comment on table memory_items is '0086. 기록에서 뽑은 정보 단위(사실 · 주장 · 결정 · 제안 · 약속 · 업무 · 위험 · 기회 · 질문) — 초안으로 시작.';
-comment on table memory_review_queue is '0086. 기억 검토함 — 불확실한 연결 · 바뀜 · 재무 · 업무 후보 · 모호한 날짜. 자동 확정 없음.';
-comment on table memory_embeddings is '0086. 벡터 검색 자리(업체 결정 전 — 비어 있음). 같은 판정(memory_me).';
+comment on table memory_captures is '0088. 기억 엔진 원본(빠른 기록 · 회의 · 파일). 주인 본인만(memory_me). raw_text는 고치지 않는다.';
+comment on table memory_items is '0088. 기록에서 뽑은 정보 단위(사실 · 주장 · 결정 · 제안 · 약속 · 업무 · 위험 · 기회 · 질문) — 초안으로 시작.';
+comment on table memory_review_queue is '0088. 기억 검토함 — 불확실한 연결 · 바뀜 · 재무 · 업무 후보 · 모호한 날짜. 자동 확정 없음.';
+comment on table memory_embeddings is '0088. 벡터 검색 자리(업체 결정 전 — 비어 있음). 같은 판정(memory_me).';
 
 -- 원본 보존 — 주인 · 열쇠 · 본문 · 기록 시각은 바꾸지 않는다(처리 칸 · 요약 · 분류 · 보관만 바뀐다).
 create or replace function memory_captures_guard() returns trigger
@@ -370,7 +370,7 @@ begin
   return public.memory_me(auth.uid());
 end;
 $fn$;
-comment on function memory_object_ok(text) is '0086. 기억 파일 «<본인 uid>/<기록 id>/<이름>» — 본인 폴더 · memory_me. 읽기 · 올리기 공통(지우기 · 옮기기 없음).';
+comment on function memory_object_ok(text) is '0088. 기억 파일 «<본인 uid>/<기록 id>/<이름>» — 본인 폴더 · memory_me. 읽기 · 올리기 공통(지우기 · 옮기기 없음).';
 revoke all on function memory_object_ok(text) from public, anon;
 grant execute on function memory_object_ok(text) to authenticated;
 
@@ -444,7 +444,7 @@ begin
   insert into memory_jobs (capture_id, owner_id) values (v_id, auth.uid()) on conflict (capture_id) do nothing;
   insert into memory_processing_runs (owner_id, capture_id, processing_stage, status, engine, stats, completed_at)
   values (auth.uid(), v_id, 'ingest', 'done', 'rule', jsonb_build_object('chars', length(coalesce(p_raw_text, ''))), now());
-  perform memory_audit('create', 'memory_captures', v_id::text, jsonb_build_object('type', p_type), '기억 기록 저장(0086)');
+  perform memory_audit('create', 'memory_captures', v_id::text, jsonb_build_object('type', p_type), '기억 기록 저장(0088)');
   return v_id;
 end;
 $fn$;
@@ -477,7 +477,7 @@ begin
   end if;
   -- 새 파일이 오면 다시 처리한다(같은 기록 · 같은 큐 줄).
   update memory_jobs set status = 'queued', next_at = now(), updated_at = now() where capture_id = p_capture and status <> 'running';
-  perform memory_audit('create', 'memory_capture_assets', v_id::text, jsonb_build_object('kind', p_kind, 'size', p_size), '기억 파일 올림(0086)');
+  perform memory_audit('create', 'memory_capture_assets', v_id::text, jsonb_build_object('kind', p_kind, 'size', p_size), '기억 파일 올림(0088)');
   return v_id;
 end;
 $fn$;
@@ -953,7 +953,7 @@ begin
   update memory_captures set processing_status = 'ready'
    where capture_id = v_rv.capture_id and processing_status = 'needs_review'
      and not exists (select 1 from memory_review_queue where capture_id = v_rv.capture_id and status = 'open');
-  perform memory_audit('update', 'memory_review_queue', p_review::text, jsonb_build_object('action', p_action, 'status', v_status), '기억 검토(0086)');
+  perform memory_audit('update', 'memory_review_queue', p_review::text, jsonb_build_object('action', p_action, 'status', v_status), '기억 검토(0088)');
   return jsonb_build_object('status', v_status) || v_result;
 end;
 $fn$;

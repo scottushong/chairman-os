@@ -1,6 +1,6 @@
 /**
- * 기억 엔진 저장소 손잡이(0086) — ChairmanRepository가 펼쳐 넣는다(live: supabase-memory.ts · dummy: dummy-memory.ts).
- * 판정 · 중복 막기 · 이력은 전부 DB(memory_me · dedupe_key · memory_revisions)다. 0086 전 DB면 'memory_unavailable'.
+ * 기억 엔진 저장소 손잡이(0088) — ChairmanRepository가 펼쳐 넣는다(live: supabase-memory.ts · dummy: dummy-memory.ts).
+ * 판정 · 중복 막기 · 이력은 전부 DB(memory_me · dedupe_key · memory_revisions)다. 0088 전 DB면 'memory_unavailable'.
  */
 import type {
   ApplyPayload,

@@ -9,7 +9,7 @@ const PRIORITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3 } as const
 const RESULT_LABEL = { confirmed: '확인', edited: '고쳐서 확인', rejected: '거절', linked: '이음', created: '새로 만듦', open: '열림' } as const
 
 /**
- * 기억 검토함(0086) — AI · 규칙이 확신하지 못한 것(누구인지 · 연결 · 바뀜 · 금액 · 업무 후보 · 모호한 날짜 · 결정)을 대표가 정한다.
+ * 기억 검토함(0088) — AI · 규칙이 확신하지 못한 것(누구인지 · 연결 · 바뀜 · 금액 · 업무 후보 · 모호한 날짜 · 결정)을 대표가 정한다.
  * 확인 · 고치기 · 거절 · 기존 대상에 잇기 · 새 인물/회사로. 처리한 뒤에도 이력이 남는다(memory_revisions · 검토 줄은 지우지 않음).
  */
 export default async function MemoryReviewPage(props: PageProps<'/memory/review'>) {

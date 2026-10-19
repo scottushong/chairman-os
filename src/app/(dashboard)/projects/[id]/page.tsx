@@ -242,7 +242,7 @@ export default async function ProjectDetailPage(props: PageProps<'/projects/[id]
           </section>
         </aside>
       </div>
-      {/* 0086 관련 기억 — 대표 · 스위치일 때만 그린다. */}
+      {/* 0088 관련 기억 — 대표 · 스위치일 때만 그린다. */}
       <MemoryRelated targetType="project" targetId={project.project_id} />
     </div>
   )

@@ -21,7 +21,7 @@ import type {
 import type { UserAccount } from '@/types/access'
 
 /**
- * 0086 기억 엔진의 dummy 자리. **DB(0086)가 막는 것을 여기서도 막는다**: 주인 본인 · 대표 · 스위치(memory_me 거울) —
+ * 0088 기억 엔진의 dummy 자리. **DB(0088)가 막는 것을 여기서도 막는다**: 주인 본인 · 대표 · 스위치(memory_me 거울) —
  * 아니면 읽기 0행 · 쓰기 'memory_denied'. 중복 열쇠(dedupe_key = md5(기록:종류:정규화 내용)) · 앞 초안 superseded ·
  * 검토 처리 · 이력은 memory_apply · memory_review_resolve와 같은 규칙이다. 저장은 서버가 살아 있는 동안만(globalThis).
  */

@@ -177,7 +177,7 @@ export default async function AttentionPage(props: PageProps<'/attention'>) {
         </section>
       ) : null}
 
-      {/* 0086 기억에서 나온 주의 — 스위치 memory_engine이 꺼지면 그리지 않는다. */}
+      {/* 0088 기억에서 나온 주의 — 스위치 memory_engine이 꺼지면 그리지 않는다. */}
       <MemoryAttention />
 
       {/* ───────── 탭과 필터. 전부 URL이다 ───────── */}
