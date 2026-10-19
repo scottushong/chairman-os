@@ -39,7 +39,7 @@ ok('0073 3절 · 0081 0절 기본 줄 = FEATURES(키 · 기본 범위)', () => {
 ok('요청한 기본값 — 셋은 전원, 나머지는 대표만', () => {
   const all = FEATURES.filter((f) => f.defaultAudience === 'all').map((f) => f.key).sort()
   assert.deepEqual(all, ['ai_assist', 'finance_overview', 'finance_upload', 'finance_upload_ai', 'process_charts', 'purchase_price_report'])
-  assert.equal(FEATURES.length, 21)
+  assert.equal(FEATURES.length, 22)
 })
 
 console.log('판정')

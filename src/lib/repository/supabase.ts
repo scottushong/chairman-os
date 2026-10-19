@@ -1254,6 +1254,17 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       throw new Error(`official_evidence_denied ${m.slice(0, 120)}`)
     },
 
+    async listOfficialEvidence(businessId) {
+      const { data, error } = await sb.storage.from('fin-official-evidence').list(businessId, { limit: 200 })
+      if (error || !data) return []
+      return data.filter((o) => o.id && /^[0-9a-f]{64}\.(pdf|jpg|jpeg|png)$/.test(o.name)).map((o) => `${businessId}/${o.name}`)
+    },
+    async readOfficialEvidence(path) {
+      const { data, error } = await sb.storage.from('fin-official-evidence').download(path)
+      if (error || !data) throw new Error('official_evidence_missing')
+      return new Uint8Array(await data.arrayBuffer())
+    },
+
     async officialEvidenceUrl(path) {
       const { data, error } = await sb.storage.from('fin-official-evidence').createSignedUrl(path, 300)
       if (error || !data?.signedUrl) return null

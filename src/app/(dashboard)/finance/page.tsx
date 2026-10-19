@@ -8,8 +8,10 @@ import { KpiSettingsPanel } from '@/components/finance-overview/kpi-settings'
 import { NavSelect } from '@/components/finance-overview/nav-select'
 import { Badge } from '@/components/finance-overview/parts'
 import { PlTab } from '@/components/finance-overview/pl-tab'
+import { OriginalsMenu } from '@/components/finance-overview/originals-menu'
 import { SummaryTab } from '@/components/finance-overview/summary-tab'
 import { FinanceView } from '@/components/finance/finance-view'
+import { PlClosePanel } from '@/components/finance/pl-close-panel'
 import { PageHeader } from '@/components/layout/page-header'
 import { recordScreenRead } from '@/lib/activity-record'
 import { canCloseBooks, canKeepBooks, canReadBooks } from '@/lib/auth/roles'
@@ -22,6 +24,7 @@ import { computeKpis } from '@/lib/finance-overview/kpis'
 import { loadOverview } from '@/lib/finance-overview/load'
 import { processRecalc } from '@/lib/finance-overview/recalc'
 import { featureOn } from '@/lib/features-server'
+import { plError } from '@/lib/monthly-pl/text'
 import { firstParam, oneOf } from '@/lib/query'
 import { getRepository } from '@/lib/repository'
 
@@ -72,6 +75,10 @@ export default async function FinancePage(props: PageProps<'/finance'>) {
   const { ctx } = loaded
   const kpis = computeKpis(ctx, period)
   const canKeep = canKeepBooks(user, biz)
+  // 원본 화면(재무제표 · 전표 · 계정과목 · 공식 결산 · 재고 · 평가 · 그룹 합산)은 «원본 보기 ›» 하나 아래에만 — 대표 · 그룹 CFO만(2026-10-20 A5).
+  const top = user?.role === 'Chairman' || user?.role === 'GroupCFO'
+  // 0075 내부 마감 확정 · 조정 제안 · 설정 — 예전 /finance/<회사>/monthly 아래 패널에서 손익계산서 탭 아래로(스위치 monthly_pl · 권한 그대로).
+  const plClose = tab === 'pl' && (await featureOn(user, 'monthly_pl', biz)) ? await plCloseData(repo, biz, period) : null
 
   // 기다리는 다시 계산이 있으면 이 사람 세션으로 응답 뒤에(cron이 못 왔어도 저장본이 늦지 않게).
   if (canKeep) {
@@ -134,6 +141,7 @@ export default async function FinancePage(props: PageProps<'/finance'>) {
                 자료 올리기
               </Link>
             ) : null}
+            {top ? <OriginalsMenu businessId={biz} period={period} canImport={canKeep} /> : null}
           </div>
         </div>
 
@@ -148,9 +156,6 @@ export default async function FinancePage(props: PageProps<'/finance'>) {
               {t.label}
             </Link>
           ))}
-          <Link href="/finance?view=group" className="ml-auto self-center px-2 text-[12px] text-[#6b7772] hover:text-[#0f6b5c] max-md:hidden">
-            그룹 합산 · 재무제표 원본 ›
-          </Link>
         </nav>
 
         {tab === 'summary' ? (
@@ -165,7 +170,7 @@ export default async function FinancePage(props: PageProps<'/finance'>) {
               pl: q({ tab: 'pl' }),
               calendar: q({ tab: 'calendar', month: null }),
               daily: q({ tab: 'daily' }),
-              statements: `/finance/${encodeURIComponent(biz)}?tab=bs&month=${period}`,
+              statements: top ? `/finance/${encodeURIComponent(biz)}?tab=bs&month=${period}` : null,
               customers: `/finance/${encodeURIComponent(biz)}/customers`,
               kpi: q({ tab: 'kpi' }),
             }}
@@ -175,7 +180,12 @@ export default async function FinancePage(props: PageProps<'/finance'>) {
         ) : tab === 'calendar' ? (
           <CalendarTab cal={computeCalendar(ctx, period)} />
         ) : tab === 'pl' ? (
-          <PlTab ctx={ctx} period={period} officials={loaded.officialStatements} upload={uploadHref} selected={firstParam(params.acct) ?? null} hrefFor={(acct) => `${q({ tab: 'pl', acct })}${acct ? '#ledger' : ''}`} />
+          <div className="flex flex-col gap-4">
+            <PlTab ctx={ctx} period={period} officials={loaded.officialStatements} upload={uploadHref} selected={firstParam(params.acct) ?? null} hrefFor={(acct) => `${q({ tab: 'pl', acct })}${acct ? '#ledger' : ''}`} />
+            {plClose ? (
+              <PlClosePanel businessId={biz} period={period} view={plClose.view} error={plClose.error} settings={plClose.settings} canKeep={canKeep} canClose={canCloseBooks(user, biz)} isTop={top} />
+            ) : null}
+          </div>
         ) : (
           <div className="flex flex-col gap-4">
             <KpiGrid kpis={kpis} title={`12가지 지표 — ${period.slice(0, 4)}년 ${Number(period.slice(5, 7))}월`} />
@@ -213,4 +223,14 @@ async function LegacyGroupFinance({ params }: { params: Record<string, string | 
       <FinanceView ledger={ledger} businessIds={active.map((b) => b.business_id)} basePath="/finance" month={firstParam(params.month)} tab={tab} />
     </div>
   )
+}
+
+/** 0075 마감 · 조정 · 설정 칸이 읽는 것(예전 monthly 화면과 같다) — 읽기 실패는 문장으로(화면 전체를 깨지 않는다). */
+async function plCloseData(repo: Awaited<ReturnType<typeof getRepository>>, businessId: string, period: string) {
+  try {
+    const [view, settings] = await Promise.all([repo.finPlMonth(businessId, period), repo.finPlSettings(businessId)])
+    return { view, settings, error: view ? null : '이 기능의 DB가 아직 준비되지 않았습니다(0075 반영 전).' }
+  } catch (e) {
+    return { view: null, settings: null, error: plError(e) }
+  }
 }

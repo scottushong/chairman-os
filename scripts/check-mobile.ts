@@ -48,7 +48,7 @@ export const ROUTES = [
   { key: '07-finance', path: '/finance' },
   { key: '08-finance-biz', path: '/finance/biz_vana' },
   { key: '09-journal', path: '/finance/biz_vana/journal' },
-  { key: '10-monthly', path: '/finance/biz_vana/monthly' },
+  { key: '10-finance-pl', path: '/finance?biz=biz_vana&tab=pl' },
   { key: '11-group-city', path: '/group' },
   { key: '12-business', path: '/business/biz_vana' },
   { key: '13-dependency', path: '/dependency/biz_vana' },

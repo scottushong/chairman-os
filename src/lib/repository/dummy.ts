@@ -819,6 +819,8 @@ export const dummyRepository: ChairmanRepository = {
   saveOfficialUnmatched: books.saveOfficialUnmatched,
   putOfficialEvidence: books.putOfficialEvidence,
   officialEvidenceUrl: books.officialEvidenceUrl,
+  listOfficialEvidence: books.listOfficialEvidence,
+  readOfficialEvidence: books.readOfficialEvidence,
   withdrawOfficialStatement: books.withdrawOfficialStatement,
   listAutoAccounts: books.listAutoAccounts,
   listOfficialStatementLines: books.listOfficialStatementLines,

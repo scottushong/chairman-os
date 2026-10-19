@@ -110,7 +110,7 @@ export async function ChairDashboard({
         </div>
       )}
       <p className="mt-2 text-t11">
-        <Link href={`/finance/${biz.business_id}/monthly`} className="text-accent hover:underline">월별 손익 자세히</Link>
+        <Link href={`/finance?biz=${encodeURIComponent(biz.business_id)}&tab=pl`} className="text-accent hover:underline">월별 손익 자세히</Link>
         <span className="mx-2 text-ink-muted">·</span>
         <Link href={`/costs/${biz.business_id}/margins?by=product`} className="text-accent hover:underline">제품별 판매 kg · 매출 · 등급 · 견적 마진 vs 실제(권한자만)</Link>
       </p>

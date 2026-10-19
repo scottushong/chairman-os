@@ -102,10 +102,10 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
         description={`${business.industry} · ${STATUS_LABEL_KO[business.status]} · ${business.business_id}`}
       >
         <Link
-          href={`/finance/${encodeURIComponent(id)}`}
+          href={`/finance?biz=${encodeURIComponent(id)}`}
           className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
-          재무제표
+          재무 현황
         </Link>
         <Link
           href="/"

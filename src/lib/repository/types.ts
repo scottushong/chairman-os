@@ -188,6 +188,7 @@ import type {
   FinUploadApplyInput,
   FinUploadShape,
   FinColumnMap,
+  FinLegacyImport,
   OfficialUnmatchedLine,
   FinUploadSaveInput,
   FinRow,
@@ -917,6 +918,16 @@ export interface ChairmanRepository extends PriceReportMethods, PurchasingMethod
   finInboxSweep(folder: string): Promise<number>
   /** dummy 전용 흉내(시험) — live는 브라우저가 Storage로 바로 올린다. */
   finInboxPut?(path: string, bytes: Uint8Array): Promise<void>
+  /** 0082 본인 폴더(«<회사>/<uid>»)에 남은 파일 — 이름(경로)과 올린 시각. 못 보면 빈 목록(«예전 자료 가져오기» A2). */
+  finInboxList(folder: string): Promise<{ path: string; created_at: string | null }[]>
+  /** 0083 그 회사의 공식 결산 증빙 파일 경로(장부를 읽는 사람). 0083 전 DB · 못 보면 빈 목록(A2). */
+  listOfficialEvidence(businessId: string): Promise<string[]>
+  /** 0083 증빙 파일 바이트(장부를 읽는 사람). 없거나 못 보면 'official_evidence_missing'(A2 — 코드로 다시 읽는다 · AI 없음). */
+  readOfficialEvidence(path: string): Promise<Uint8Array>
+  /** 0089 «예전 자료 가져오기» 옮김 기록 — 대표만 읽는다(아니면 빈 목록). 0089 전 DB는 빈 목록. */
+  listFinLegacyImports(businessId: string): Promise<FinLegacyImport[]>
+  /** 0089 옮김 한 줄(fin_legacy_import_mark — 대표만 · 같은 자리는 실패였을 때만 바꿈). 적었으면 true. 0089 전 DB는 'fin_legacy_unavailable'. */
+  markFinLegacyImport(row: Omit<FinLegacyImport, 'created_at'>): Promise<boolean>
   /**
    * 0072 회계 · 재무 v2.1 차이분. 0072 전 DB는 읽기가 빈 목록 · null, 쓰기는 'fin_upload_unavailable'.
    * 판정은 DB(can_keep_books · can_read_books · can_close_books · 마감 문 · 확정자 ≠ 입력자)다 — dummy는 그 거울.

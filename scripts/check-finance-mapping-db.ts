@@ -108,6 +108,28 @@ export async function financeMappingDb(): Promise<string> {
   // ── 3. 기능 스위치 ──
   const sw = (await db.query<{ enabled: boolean; audience: string }>(`select enabled, audience from feature_switches where business_id is null and feature_key = 'finance_upload_ai'`)).rows
   assert.deepEqual(sw, [{ enabled: true, audience: 'all' }], '0089: finance_upload_ai 기본 줄이 없다')
+  const sw2 = (await db.query<{ enabled: boolean; audience: string }>(`select enabled, audience from feature_switches where business_id is null and feature_key = 'finance_legacy_import'`)).rows
+  assert.deepEqual(sw2, [{ enabled: true, audience: 'chairman' }], '0089: finance_legacy_import 기본 줄(대표만)이 없다')
+
+  // ── 4. «예전 자료 가져오기» 옮김 기록 ──
+  const mark = (uid: string | null, ref: string, outcome = 'saved', source = 'inbox', biz = 'biz_dy') => as<{ r: boolean }>(uid, `select fin_legacy_import_mark('${biz}', '${source}', '${ref}', '${outcome}', null, '시험') as r`)
+  assert.match(String(await mark(U.ceo, 'a')), /fin_legacy_denied/, '0089: 대표가 아닌 회사 대표가 옮김 기록을 적었다')
+  assert.match(String(await mark(U.member, 'a')), /fin_legacy_denied/, '0089: 직원이 옮김 기록을 적었다')
+  assert.match(String(await mark(U.agent, 'a')), /fin_legacy_denied/, '0089: AI Agent가 옮김 기록을 적었다')
+  assert.equal(typeof (await mark(null, 'a')), 'string', '0089: 익명이 옮김 기록을 적었다')
+  assert.deepEqual(await mark(U.chair, 'a'), [{ r: true }], '0089: 대표가 처음 기록을 못 적었다')
+  assert.deepEqual(await mark(U.chair, 'a'), [{ r: false }], '0089: 같은 자리를 두 번 적었다(멱등 아님)')
+  assert.deepEqual(await mark(U.chair, 'b', 'failed'), [{ r: true }])
+  assert.deepEqual(await mark(U.chair, 'b', 'saved'), [{ r: true }], '0089: 실패 기록을 새 결과로 못 바꿨다')
+  assert.deepEqual(await mark(U.chair, 'b', 'failed'), [{ r: false }], '0089: 옮긴 기록을 실패로 덮었다')
+  assert.match(String(await mark(U.chair, 'c', 'saved', 'robot')), /fin_legacy_shape/, '0089: 모르는 원천을 받았다')
+  assert.match(String(await mark(U.chair, 'c', 'weird')), /fin_legacy_shape/, '0089: 모르는 결과를 받았다')
+  assert.match(String(await mark(U.chair, 'c', 'saved', 'inbox', 'biz_nope')), /fin_legacy_shape/, '0089: 없는 회사를 받았다')
+  assert.equal(((await as(U.chair, `select 1 from fin_legacy_imports where business_id = 'biz_dy'`)) as unknown[]).length, 2, '0089: 대표가 옮김 기록을 못 읽는다')
+  assert.equal(((await as(U.ceo, `select 1 from fin_legacy_imports`)) as unknown[]).length, 0, '0089: 대표가 아닌 사람이 옮김 기록을 읽는다')
+  assert.equal(typeof (await as(U.chair, `insert into fin_legacy_imports (business_id, source, source_ref, outcome) values ('biz_dy', 'inbox', 'z', 'saved') returning 1`)), 'string', '0089: 옮김 기록 표에 직접 썼다')
+  assert.equal(typeof (await as(U.chair, `delete from fin_legacy_imports returning 1`)), 'string', '0089: 옮김 기록을 직접 지웠다')
+  assert.equal(typeof (await as(null, `select 1 from fin_legacy_imports`)), 'string', '0089: 익명이 옮김 기록 표를 읽는다')
   await db.close()
-  return '0089 열 맞춤(장부 쓰는 사람만 읽기 · 저장 · 직원 · AI Agent · 익명 · 다른 회사 거부 · 직접 쓰기 없음 · 더하기 · 칸 이름 모양 · 숫자 거부) · 다시 맞출 줄(권한 · 모양 · 통째로 바꿈 · 밀려난 결산 거부 · 읽기 범위 · 직접 쓰기 없음) · 스위치 finance_upload_ai'
+  return '0089 열 맞춤(장부 쓰는 사람만 읽기 · 저장 · 직원 · AI Agent · 익명 · 다른 회사 거부 · 직접 쓰기 없음 · 더하기 · 칸 이름 모양 · 숫자 거부) · 다시 맞출 줄(권한 · 모양 · 통째로 바꿈 · 밀려난 결산 거부 · 읽기 범위 · 직접 쓰기 없음) · 스위치 finance_upload_ai · finance_legacy_import · 옮김 기록(대표만 · 두 번 안 적힘 · 실패만 다시 · 모양 · 직접 쓰기 없음)'
 }

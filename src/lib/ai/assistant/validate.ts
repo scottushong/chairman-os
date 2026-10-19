@@ -108,7 +108,7 @@ async function run(ctx: ToolContext) {
             check: 'provisional_vs_confirmed',
             what: `${c.business_id} · ${c.period} · 계정 ${c.account_code}`,
             detail: `잠정 ${krw(c.provisional_amount)} → 확정 ${krw(c.amount)} (차이 ${krw(c.amount - c.provisional_amount)})`,
-            link: `/finance/${c.business_id}/monthly`,
+            link: `/finance?biz=${c.business_id}&tab=pl&month=${c.period}`,
           })
         }
       }

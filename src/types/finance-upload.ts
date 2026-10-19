@@ -128,6 +128,19 @@ export interface FinColumnMap {
   updated_at?: string
 }
 
+/** 0089 «예전 자료 가져오기»(A2) 옮김 기록 한 줄 — 원천 자리마다 하나(숫자 · 내용 없음). */
+export type FinLegacySource = 'inbox' | 'pending' | 'evidence' | 'monthly' | 'run'
+export type FinLegacyOutcome = 'saved' | 'held' | 'failed' | 'already' | 'skipped'
+export interface FinLegacyImport {
+  business_id: string
+  source: FinLegacySource
+  source_ref: string
+  outcome: FinLegacyOutcome
+  upload_id: string | null
+  note: string | null
+  created_at: string
+}
+
 /**
  * 0089 공식 결산의 «다시 맞출 줄» — 저장할 때 계정을 못 맞춰 «기타 …(자동)»(또는 묶음 계정)에 넣은 줄.
  * 계정과목표가 올라오면 이 줄만 다시 맞춰 결산을 바꾼다(official-rematch.ts). printed = 문서에 찍힌 값(사람이 읽는 양수).

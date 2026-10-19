@@ -3,7 +3,7 @@ import { ledgerScope } from '@/lib/ledger/scope'
 import type { ChairmanRepository } from '@/lib/repository'
 import type { FinRow, FinUpload, OverviewLineKind } from '@/types'
 
-import { buildChecklist, type ChecklistItem } from './checklist'
+import { buildChecklist, MONTHLY_MEMO, type ChecklistItem } from './checklist'
 import { addMonths, monthsOfYear, type Ctx, type MonthData, type OfficialYear } from './engine'
 import { parseKpiSettings } from './settings'
 
@@ -109,7 +109,9 @@ export async function loadOverview(repo: ChairmanRepository, businessId: string,
   const auto = new Set(autoCodes)
   const accountsState = human.length === 0 ? 'none' : human.every((a) => auto.has(a.account_code)) ? 'auto' : 'file'
   const slip = slips.find((x) => x.month === period && !x.superseded_at)
-  const slipAt = slip ? (ledger.entries.find((e) => e.business_id === businessId && e.slip_no === slip.slip_no) as { created_at?: string } | undefined)?.created_at ?? `${period}-01T00:00:00Z` : null
+  // ECOUNT 월별 손익 전표가 없으면 (지운) «월별 입력» 손입력 전표(«YYYY-MM 월별 간이 손익») — 둘 다 장부에 있다(2026-10-20 A2 · A5).
+  const manual = slip ? null : ledger.entries.find((e) => e.business_id === businessId && !e.correction_kind && MONTHLY_MEMO.exec(e.memo)?.[1] === period)
+  const slipAt = slip ? (ledger.entries.find((e) => e.business_id === businessId && e.slip_no === slip.slip_no) as { created_at?: string } | undefined)?.created_at ?? `${period}-01T00:00:00Z` : manual ? manual.created_at ?? `${period}-01T00:00:00Z` : null
   const checklist = buildChecklist({
     period,
     uploads,

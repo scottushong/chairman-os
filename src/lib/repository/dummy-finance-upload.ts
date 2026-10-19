@@ -15,6 +15,7 @@ import type {
   FinUploadPending,
   FinUploadShape,
   FinColumnMap,
+  FinLegacyImport,
   FinValuation,
   FinValuationWarning,
   Role,
@@ -87,6 +88,9 @@ type Methods = Pick<
   | 'finInboxRemove'
   | 'finInboxSweep'
   | 'finInboxPut'
+  | 'finInboxList'
+  | 'listFinLegacyImports'
+  | 'markFinLegacyImport'
 >
 
 interface Line {
@@ -163,6 +167,18 @@ store.groups ??= []
 store.members ??= []
 store.dedupe ??= new Map()
 store.flags ??= []
+
+/** 0089 «예전 자료 가져오기» 옮김 기록 거울(fin_legacy_imports · fin_legacy_import_mark — 대표만). */
+const gl = globalThis as unknown as { __chairmanDummyFinLegacy?: FinLegacyImport[] }
+const legacyLog: FinLegacyImport[] = (gl.__chairmanDummyFinLegacy ??= [])
+
+/** 시험 · dummy 화면 — 수신함 파일의 올린 시각을 옛날로(«예전 방식으로 남은 파일» 흉내 — 1시간 넘은 파일 치우기를 본다). */
+export function dummyFinInboxAge(path: string, agoMs: number): boolean {
+  const o = inbox.get(path)
+  if (!o) return false
+  o.at = Date.now() - agoMs
+  return true
+}
 
 /** 0074 — 바꾸기 · 되돌리기를 대표 · CFO만 하는 종류. */
 const RESTRICTED = new Set<string>(['material_issue', 'inventory'])
@@ -521,6 +537,31 @@ export function dummyFinanceUpload(d: DummyFinUploadDeps): Methods {
         }
       }
       return n
+    },
+    async finInboxList(folder) {
+      return [...inbox.entries()]
+        .filter(([p]) => p.startsWith(`${folder}/`) && p.split('/').length === 3 && inboxOk(p))
+        .sort((a, b) => a[1].at - b[1].at)
+        .map(([p, o]) => ({ path: p, created_at: new Date(o.at).toISOString() }))
+    },
+
+    /* ───── 0089 «예전 자료 가져오기» 옮김 기록(대표만) ───── */
+    async listFinLegacyImports(businessId) {
+      if (d.viewer().role !== 'Chairman') return []
+      return legacyLog.filter((r) => r.business_id === businessId).map((r) => ({ ...r }))
+    },
+    async markFinLegacyImport(r) {
+      if (d.viewer().role !== 'Chairman') throw new Error('fin_legacy_denied')
+      if (!['inbox', 'pending', 'evidence', 'monthly', 'run'].includes(r.source) || !['saved', 'held', 'failed', 'already', 'skipped'].includes(r.outcome) || !r.source_ref || r.source_ref.length > 300) throw new Error('fin_legacy_shape')
+      const cur = legacyLog.find((x) => x.business_id === r.business_id && x.source === r.source && x.source_ref === r.source_ref)
+      const row: FinLegacyImport = { ...r, note: r.note?.trim().slice(0, 300) || null, created_at: new Date().toISOString() }
+      if (!cur) {
+        legacyLog.push(row)
+        return true
+      }
+      if (cur.outcome !== 'failed') return false
+      Object.assign(cur, row)
+      return true
     },
 
     /* ───── 0072 ───── */

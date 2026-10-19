@@ -559,6 +559,20 @@ export async function putOfficialEvidence(businessId: string, path: string, byte
   return path
 }
 
+/** 0083 그 회사 증빙 경로(장부를 읽는 사람) — «예전 자료 가져오기»(A2). */
+export async function listOfficialEvidence(businessId: string): Promise<string[]> {
+  if (!canReadBooks(businessId)) return []
+  return [...officialEvidence.keys()].filter((p) => evidenceBusiness(p) === businessId).sort()
+}
+
+/** 0083 증빙 바이트(장부를 읽는 사람). */
+export async function readOfficialEvidence(path: string): Promise<Uint8Array> {
+  const b = evidenceBusiness(path)
+  const bytes = officialEvidence.get(path)
+  if (!b || !canReadBooks(b) || !bytes) throw new Error('official_evidence_missing')
+  return bytes.slice()
+}
+
 /** 0083 증빙 열기 — dummy는 보관만 흉내 낸다(주소 없음). */
 export async function officialEvidenceUrl(path: string): Promise<string | null> {
   const b = evidenceBusiness(path)

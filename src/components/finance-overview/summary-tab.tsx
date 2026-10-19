@@ -14,7 +14,7 @@ import { Card, Lack, Note, Stat, T, Td, Th } from './parts'
  * «요약» 탭 — 시안 finance-overview-mock.html 그대로: 위 다섯 칸 → ①~⑥ 두 줄 → ⑦ 이번 달 자료 → ⑧ 12가지 지표.
  * 보는 화면이 없던 종류(급여 부서별 · 카드 · 해외법인 · 해외판촉 · 절감목표)는 맨 아래 «그 밖 자료 표»에.
  */
-export function SummaryTab({ ctx, period, grain, kpis, checklist, links }: { ctx: Ctx; period: string; grain: Grain; kpis: Kpi[]; checklist: ChecklistItem[]; links: { upload: string; pl: string; calendar: string; daily: string; statements: string; customers: string; kpi: string } }) {
+export function SummaryTab({ ctx, period, grain, kpis, checklist, links }: { ctx: Ctx; period: string; grain: Grain; kpis: Kpi[]; checklist: ChecklistItem[]; links: { upload: string; pl: string; calendar: string; daily: string; statements: string | null; customers: string; kpi: string } }) {
   const cur = plSum(ctx, grainMonths(period, grain))
   const prevEnd = prevGrainEnd(period, grain)
   const prev = plSum(ctx, grainMonths(prevEnd, grain))
@@ -113,7 +113,7 @@ export function SummaryTab({ ctx, period, grain, kpis, checklist, links }: { ctx
           ) : null}
         </Card>
 
-        <Card title="② 재무상태" more={{ href: links.statements }}>
+        <Card title="② 재무상태" more={links.statements ? { href: links.statements } : null}>
           {bs.totalAssets === null ? (
             <Lack need={bs.note ?? '장부 또는 전년 공식 결산'} upload={links.upload} />
           ) : (

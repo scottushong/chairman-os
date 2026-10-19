@@ -5,12 +5,14 @@ import { NavSelect } from '@/components/finance-overview/nav-select'
 import { FinanceTxPanel } from '@/components/finance/finance-tx-panel'
 import { describeGroup, TX_SOURCE_KO } from '@/lib/finance-upload/dedupe'
 import { won } from '@/lib/finance-upload/v21-text'
+import { LegacyImportButton } from '@/components/finance-overview/legacy-import-button'
 import { UploadBoard, type HeldView } from '@/components/finance-overview/upload-board'
 import { canCloseBooks, canKeepBooks } from '@/lib/auth/roles'
 import { currentUser } from '@/lib/auth/session'
 import { kstToday } from '@/lib/chairman-project'
-import { buildChecklist } from '@/lib/finance-overview/checklist'
+import { buildChecklist, MONTHLY_MEMO } from '@/lib/finance-overview/checklist'
 import { addMonths } from '@/lib/finance-overview/engine'
+import { inboxSweepAllowed } from '@/lib/finance-upload/legacy-import'
 import { crossMonthFor, MSG_HOLD, revertableIds } from '@/lib/finance-upload/process'
 import { featureOn } from '@/lib/features-server'
 import { firstParam } from '@/lib/query'
@@ -51,7 +53,10 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
   }
 
   const uploads = await repo.listFinUploads(business_id).catch(() => [])
-  if (user) await repo.finInboxSweep(`${business_id}/${user.user_id}`).catch(() => 0)
+  // 2026-10-20 A2 «예전 자료 가져오기» — 대표 · 스위치일 때만 단추. 그동안 대표의 수신함 1시간 넘은 파일은 치우지 않는다(단추가 가져갈 몫).
+  const legacyOn = user?.role === 'Chairman' && (await featureOn(user, 'finance_legacy_import', business_id))
+  const legacyDone = legacyOn ? (await repo.listFinLegacyImports(business_id).catch(() => [])).filter((r) => r.source !== 'run').length : 0
+  if (user && inboxSweepAllowed(user.role, legacyOn)) await repo.finInboxSweep(`${business_id}/${user.user_id}`).catch(() => 0)
   const held: HeldView[] = []
   for (const u of uploads.filter((x) => x.status === 'needs_review').slice(0, 30)) {
     const p = await repo.finUploadPending(u.upload_id).catch(() => null)
@@ -67,7 +72,8 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
     uploads,
     accounts: accts.length === 0 ? 'none' : accts.every((a) => autoCodes.includes(a.account_code)) ? 'auto' : 'file',
     accountsAt: null,
-    plMonthlyAt: slips.some((s) => s.month === month && !s.superseded_at) ? `${month}-01` : null,
+    // ECOUNT 월별 손익 전표 또는 (지운) «월별 입력» 손입력 전표 — 둘 다 장부에 있고 재무 현황이 그대로 읽는다(A2 · A5).
+    plMonthlyAt: slips.some((s) => s.month === month && !s.superseded_at) || (ledger?.entries ?? []).some((e) => e.business_id === business_id && !e.correction_kind && MONTHLY_MEMO.exec(e.memo)?.[1] === month) ? `${month}-01` : null,
     valuationAt: vals.some((v) => !v.voided_at) ? `${month}-01` : null,
   })
   const official = await repo.listOfficialStatements(business_id).catch(() => [])
@@ -100,6 +106,7 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
             </Link>
           </div>
         </div>
+        {legacyOn ? <LegacyImportButton businessId={business_id} done={legacyDone} /> : null}
         <UploadBoard
           businessId={business_id}
           month={month}

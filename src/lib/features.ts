@@ -69,7 +69,7 @@ export const FEATURES = [
   {
     key: 'monthly_pl',
     label: '월별 손익 재고 반영',
-    description: '월별 간이 손익 화면(/finance/<회사>/monthly) 아래 «월별 손익 — 재고 반영»: 재고 반영 매출원가 · 원료별 월 가중평균 · 손익과 현금 분리 · 재고 조정 · 내부 마감 · 다시 열기. 꺼지면 화면이 예전 그대로.',
+    description: '재무 현황 «손익계산서» 탭(/finance?tab=pl) 아래 «내부 마감 · 재고 조정 · 설정»: 재고 반영 손익의 잠정 저장 · 내부 마감 확정 · 다시 열기 · 재고 조정 제안 · 승인 · 평가방법 · 허용오차(2026-10-20 — 예전 /finance/<회사>/monthly 화면 아래에서 옮김). 꺼지면 그 칸이 사라지고 RPC(fin_pl_*)도 거부.',
     defaultAudience: 'chairman',
     from: 'feat/monthly-pl · 0075',
   },
@@ -169,6 +169,13 @@ export const FEATURES = [
     label: '엑셀 열 맞추기 AI',
     description: '자료 올리기에서 ECOUNT 엑셀의 열 이름이 우리 낱말 · 비슷한 이름 표로 맞지 않을 때만 AI를 한 번 부른다(기존 파일당 · 하루 한도 안). 맞춘 결과는 회사 · 종류마다 저장해 다음부터 AI 없이 읽는다. 꺼지면 비슷한 이름 · 저장된 맞춤 · «이 열은 무엇입니까?»로만(PDF · 사진은 «PDF · 사진 읽기» 스위치가 따로).',
     defaultAudience: 'all',
+    from: 'release/2026-10-20 · 0089',
+  },
+  {
+    key: 'finance_legacy_import',
+    label: '예전 자료 가져오기',
+    description: '자료 올리기(/finance/<회사>/upload)의 «예전 자료 가져오기» 단추 — 예전 방식(0082 수신함에 남은 파일 · «확인 필요» 대기 · 공식 결산 증빙 PDF · 월별 입력)을 지금 저장 방식으로 한 번에 옮긴다(AI 없음 · 두 번 눌러도 다시 넣지 않음). 범위와 관계없이 대표만 누른다(서버 · DB가 대표만 받는다). 꺼지면 단추가 사라지고 수신함 정리는 예전대로.',
+    defaultAudience: 'chairman',
     from: 'release/2026-10-20 · 0089',
   },
   {

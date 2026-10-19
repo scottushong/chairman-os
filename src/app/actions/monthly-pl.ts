@@ -35,7 +35,11 @@ async function guard(businessId: string, need: Need): Promise<string | null> {
   return null
 }
 
-const touch = (businessId: string) => revalidatePath(`/finance/${businessId}/monthly`)
+// 2026-10-20 A5 — 마감 · 조정 · 설정 칸은 재무 현황 «손익계산서» 탭 아래로 옮겼다(예전 /finance/<회사>/monthly는 그 탭으로 넘긴다).
+const touch = (businessId: string) => {
+  revalidatePath('/finance')
+  revalidatePath(`/finance/${businessId}`)
+}
 
 /** 잠정 저장(final = false · 장부 쓰기) · 내부 마감 확정(final = true · 마감 권한). */
 export async function recordMonthlyPl(x: { businessId: unknown; period: unknown; final: unknown; reason?: unknown }): Promise<Result> {

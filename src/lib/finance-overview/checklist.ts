@@ -26,6 +26,9 @@ export const CHECKLIST: readonly { key: string; label: string }[] = [
   { key: 'shipment', label: '출하집계표' },
 ]
 
+/** (지운 2026-10-20) «월별 입력(CH-026)» 손입력이 장부에 넣은 전표의 적요 — «YYYY-MM 월별 간이 손익». 체크표 «월별 손익계산서»가 ECOUNT 전표와 함께 센다. */
+export const MONTHLY_MEMO = /^(\d{4}-(?:0[1-9]|1[0-2])) 월별 간이 손익$/
+
 export interface ChecklistItem {
   key: string
   label: string

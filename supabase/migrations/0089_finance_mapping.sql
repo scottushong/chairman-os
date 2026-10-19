@@ -14,7 +14,9 @@
 --        쓰기는 정의자 함수 fin_column_map_save만(표에 직접 쓰기 grant 없음 · 있는 맞춤에 더한다 · 값 모양을 본다).
 --   2절 official_unmatched_lines — 공식 결산(official_statements.id)마다 «다시 맞출 줄»(std_key · 줄 이름 · 묶음 · 문서 값 · 지금 들어 있는 계정).
 --        읽기는 장부를 읽는 사람(can_read_books — 결산 줄과 같다) · 쓰기는 official_unmatched_save(장부를 쓰는 사람 · 활성 결산만 · 통째로 바꾸기).
---   3절 기능 스위치 finance_upload_ai(엑셀 열 맞추기 AI · 기본 전원 — 0089 전과 같은 동작. 대표가 회사 줄로 끈다).
+--   3절 기능 스위치 finance_upload_ai(엑셀 열 맞추기 AI · 기본 전원 — 0089 전과 같은 동작. 대표가 회사 줄로 끈다)
+--        · finance_legacy_import(«예전 자료 가져오기» 단추 · 기본 대표만).
+--   4절 fin_legacy_imports — «예전 자료 가져오기»(A2) 옮김 기록(원천 자리마다 한 줄 · 대표만 · 쓰기는 fin_legacy_import_mark만).
 --
 -- 0035 규칙: force를 새로 걸지 않는다 · FORCE를 내리지 않는다 · 0001~0088을 고치지 않는다. 새 정책 · grant는 늘 to authenticated.
 -- 정의자 함수는 auth.uid()가 없으면(익명 · service) 거부한다.
@@ -138,12 +140,68 @@ $fn$;
 -- 3절. 기능 스위치(0073) — 엑셀 열 맞추기 AI(기본 전원: 0089 전에도 엑셀 해석 AI는 한도 안에서 누구에게나 돌았다)
 -- =====================================================================
 insert into feature_switches (business_id, feature_key, enabled, audience, reason) values
-  (null, 'finance_upload_ai', true, 'all', '기본값(0089)')
+  (null, 'finance_upload_ai', true, 'all', '기본값(0089)'),
+  (null, 'finance_legacy_import', true, 'chairman', '기본값(0089)')
 on conflict do nothing;
+
+-- =====================================================================
+-- 4절. «예전 자료 가져오기» 옮김 기록(A2 — 2026-10-20 · docs/decisions/2026-10-20-finance-legacy.md)
+--   0082 · 0083 방식으로 들어온 것(수신함에 남은 파일 · «확인 필요»에 있던 예전 대기 · 공식 결산 증빙 PDF · 월별 입력 전표)을
+--   0085 저장(fin_upload_save · 공식 결산 «놓으면 저장»)으로 옮길 때, 무엇을 이미 옮겼는지 적는다 — 두 번 눌러도 다시 넣지 않게.
+--   숫자 · 파일 내용은 두지 않는다(원천 자리 · 결과 · 짧은 메모만). 대표만 적고 읽는다(단추가 대표만).
+--   실패(failed)로 적힌 것만 다음 누름에서 다시 해 본다(그때 결과로 바꾼다). 'run'은 «한 번이라도 눌렀다»는 표시(수신함 정리 재개).
+-- =====================================================================
+create table fin_legacy_imports (
+  business_id text not null references businesses(business_id) on delete restrict,             -- [일반]
+  source      text not null check (source in ('inbox', 'pending', 'evidence', 'monthly', 'run')), -- [일반] 원천 종류
+  source_ref  text not null check (length(source_ref) between 1 and 300),                       -- [일반] 수신함 경로 · 올리기 id · 증빙 경로 · 달 · 누른 시각
+  outcome     text not null check (outcome in ('saved', 'held', 'failed', 'already', 'skipped')), -- [일반]
+  upload_id   uuid,                                                                               -- [일반] 만든 · 쓴 fin_uploads(있으면)
+  note        text check (note is null or length(note) <= 300),                                   -- [일반] 사람 말 한 줄(숫자 원문 없음)
+  created_by  uuid not null default auth.uid(),
+  created_at  timestamptz not null default now(),
+  primary key (business_id, source, source_ref)
+);
+comment on table fin_legacy_imports is
+  '0089. «예전 자료 가져오기» 옮김 기록 — 원천 자리마다 한 줄(두 번 눌러도 다시 넣지 않음). 쓰기는 fin_legacy_import_mark(대표)만.';
+alter table fin_legacy_imports enable row level security;
+revoke all on table fin_legacy_imports from public, anon, authenticated;
+grant select on table fin_legacy_imports to authenticated;
+create policy fin_legacy_imports_read on fin_legacy_imports for select to authenticated
+  using (coalesce(auth_role()::text, '') = 'Chairman' and is_active());
+
+/** 옮김 한 줄 — 대표(활성 · 사람)만. 같은 자리가 이미 있으면 그 줄이 실패였을 때만 새 결과로 바꾼다. 돌려주는 값 = 적었나. */
+create or replace function fin_legacy_import_mark(p_business text, p_source text, p_ref text, p_outcome text, p_upload uuid, p_note text) returns boolean
+language plpgsql security definer set search_path = public, pg_temp as $fn$
+declare
+  v_n int;
+begin
+  if auth.uid() is null or coalesce(auth_role()::text, '') <> 'Chairman' or not is_active() then
+    raise exception 'fin_legacy_denied' using errcode = '42501';
+  end if;
+  if not exists (select 1 from businesses b where b.business_id = p_business) then
+    raise exception 'fin_legacy_shape' using errcode = '22023';
+  end if;
+  if coalesce(p_source, '') not in ('inbox', 'pending', 'evidence', 'monthly', 'run')
+     or coalesce(p_outcome, '') not in ('saved', 'held', 'failed', 'already', 'skipped')
+     or length(coalesce(p_ref, '')) not between 1 and 300 then
+    raise exception 'fin_legacy_shape' using errcode = '22023';
+  end if;
+  insert into fin_legacy_imports as l (business_id, source, source_ref, outcome, upload_id, note)
+  values (p_business, p_source, p_ref, p_outcome, p_upload, left(nullif(btrim(coalesce(p_note, '')), ''), 300))
+  on conflict (business_id, source, source_ref) do update
+     set outcome = excluded.outcome, upload_id = excluded.upload_id, note = excluded.note, created_by = auth.uid(), created_at = now()
+   where l.outcome = 'failed';
+  get diagnostics v_n = row_count;
+  return v_n > 0;
+end;
+$fn$;
 
 revoke all on function fin_column_map_save(text, text, jsonb, text) from public, anon;
 revoke all on function official_unmatched_save(bigint, jsonb) from public, anon;
+revoke all on function fin_legacy_import_mark(text, text, text, text, uuid, text) from public, anon;
 grant execute on function fin_column_map_save(text, text, jsonb, text) to authenticated;
 grant execute on function official_unmatched_save(bigint, jsonb) to authenticated;
+grant execute on function fin_legacy_import_mark(text, text, text, text, uuid, text) to authenticated;
 
 commit;
