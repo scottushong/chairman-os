@@ -46,6 +46,7 @@
     "check:staging-sql-cost": "tsx scripts/check-staging-sql-0061.ts",
     "check:finance-upload": "tsx --conditions=react-server scripts/check-finance-upload.ts",
     "check:finance-pdf": "tsx --conditions=react-server scripts/check-finance-pdf.ts",
+    "check:price-report": "tsx --conditions=react-server scripts/check-price-report.ts",
     "check:official-pdf": "tsx --conditions=react-server scripts/check-official-pdf.ts",
     "check:ai-schemas": "tsx --conditions=react-server scripts/check-ai-schemas.ts",
     "check:features": "tsx scripts/check-features.ts",
