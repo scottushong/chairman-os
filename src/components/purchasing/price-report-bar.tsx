@@ -13,7 +13,8 @@ import { pollPriceReportUpdate, requestPriceReportUpdate } from '@/app/actions/p
 export function PriceReportBar(props: {
   businessId: string
   last: { label: string; slot: string; status: 'ok' | 'unconfirmed' } | null
-  nextAuto: string
+  /** null = 자동 회차 꺼짐(2026-10-20 — 손으로만) */
+  nextAuto: string | null
   /** null = 버튼 없음(권한 없음) */
   canRequest: boolean
   /** GITHUB_DISPATCH_TOKEN 있음 */
@@ -63,11 +64,17 @@ export function PriceReportBar(props: {
           </>
         ) : null}
       </span>
-      <span>
-        <span className="text-ink-muted">다음 자동 </span>
-        <span className="tnum">{props.nextAuto}</span>
-        <span className="text-t10 text-ink-muted"> (매일 08 · 18시)</span>
-      </span>
+      {props.nextAuto ? (
+        <span>
+          <span className="text-ink-muted">다음 자동 </span>
+          <span className="tnum">{props.nextAuto}</span>
+          <span className="text-t10 text-ink-muted"> (매일 08 · 18시)</span>
+        </span>
+      ) : (
+        <span className="text-ink-muted" data-testid="price-report-auto-off">
+          자동 업데이트 꺼짐 — «지금 업데이트»로 받습니다
+        </span>
+      )}
       {props.canRequest ? (
         props.ready ? (
           <button
@@ -94,7 +101,7 @@ export function PriceReportBar(props: {
           </button>
         ) : (
           <span className="ml-auto text-t11h text-ink-muted" data-testid="price-report-not-ready">
-            설정 전 — 자동 업데이트만 됩니다
+            {props.nextAuto ? '설정 전 — 자동 업데이트만 됩니다' : '설정 전 — 업데이트 버튼 준비 중'}
           </span>
         )
       ) : null}
