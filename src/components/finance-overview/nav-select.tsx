@@ -13,7 +13,7 @@ export function NavSelect({ label, value, options }: { label: string; value: str
         const o = options.find((x) => x.value === e.target.value)
         if (o) router.push(o.href)
       }}
-      className="min-h-9 rounded-lg border border-[#d7ddda] bg-white px-3 py-1.5 text-[14px] text-[#1a211e] outline-none focus:border-[#0f6b5c]"
+      className="min-h-11 lg:min-h-9 rounded-lg border border-[#d7ddda] bg-white px-3 py-1.5 text-[14px] text-[#1a211e] outline-none focus:border-[#0f6b5c]"
     >
       {options.map((o) => (
         <option key={o.value} value={o.value}>

@@ -280,7 +280,7 @@ export function SummaryTab({ ctx, period, grain, kpis, checklist, links }: { ctx
             ) : (
               <div key={c.key} className="rounded-lg border border-dashed border-[#c9d1cd] bg-white px-2.5 py-2 text-[13px] text-[#6b7772]">
                 · {c.label}{' '}
-                <Link href={links.upload} className="text-[#0f6b5c] hover:underline">
+                <Link href={links.upload} className="inline-flex items-center text-[#0f6b5c] hover:underline">
                   올리기
                 </Link>
               </div>

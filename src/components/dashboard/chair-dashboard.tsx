@@ -160,14 +160,14 @@ export async function ChairDashboard({
         </div>
       ) : null}
       {products.length ? (
-        <p className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-t11">
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-t11">
           <span className="text-ink-muted">제품 진단</span>
           {products.map((p) => (
             <Link key={p.product_id} href={`/costs/${encodeURIComponent(biz.business_id)}/products/${encodeURIComponent(p.product_id)}`} className="text-accent hover:underline">
               {p.name}
             </Link>
           ))}
-        </p>
+        </div>
       ) : null}
 
       <h3 className="mt-4 text-t12 font-semibold text-ink">14가지 자료 — 받은 것 / 없는 것</h3>

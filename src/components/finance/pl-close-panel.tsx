@@ -50,7 +50,7 @@ export function PlClosePanel({
 }
 
 const box = 'rounded-xl border border-line-soft bg-panel p-3'
-const btn = 'min-h-9 rounded-md border border-line px-3 text-t11h text-ink-dim hover:border-accent disabled:opacity-40'
+const btn = 'min-h-11 lg:min-h-9 rounded-md border border-line px-3 text-t11h text-ink-dim hover:border-accent disabled:opacity-40'
 const input = 'min-w-0 rounded-md border border-line bg-panel px-2 py-1.5 text-t12h text-ink'
 
 function Status({ businessId, period, view, settings, canKeep, canClose, isTop }: { businessId: string; period: string; view: MonthlyPlView; settings: PlSettings | null; canKeep: boolean; canClose: boolean; isTop: boolean }) {
@@ -136,7 +136,7 @@ function Status({ businessId, period, view, settings, canKeep, canClose, isTop }
             {!final && canClose ? (
               <button
                 type="button"
-                className="min-h-9 rounded-md bg-accent px-3 text-t11h font-semibold text-white disabled:opacity-40"
+                className="min-h-11 lg:min-h-9 rounded-md bg-accent px-3 text-t11h font-semibold text-white disabled:opacity-40"
                 disabled={busy || !r.closable}
                 title={r.closable ? undefined : '막는 까닭을 먼저 해결하세요'}
                 onClick={() => run(() => recordMonthlyPl({ businessId, period, final: true, reason }), '내부 마감 확정했습니다.')}
@@ -164,7 +164,7 @@ function Status({ businessId, period, view, settings, canKeep, canClose, isTop }
               <label className="text-t10h text-ink-muted">금액(원, 손실은 양수)
                 <input value={adj.amount} onChange={(e) => setAdj({ ...adj, amount: e.target.value })} inputMode="numeric" className={`${input} block w-32`} />
               </label>
-              <label className="min-w-0 flex-1 text-t10h text-ink-muted">사유
+              <label className="min-w-48 flex-1 text-t10h text-ink-muted">사유
                 <input value={adj.reason} onChange={(e) => setAdj({ ...adj, reason: e.target.value })} maxLength={500} className={`${input} block w-full`} />
               </label>
               <button className={btn} disabled={busy}>조정 제안</button>
@@ -209,7 +209,7 @@ function Settings({ businessId, settings, onDone }: { businessId: string; settin
             <option value="statement">재고금액명세서 금액 그대로</option>
           </select>
         </label>
-        <label className="flex items-center gap-1 text-t10h text-ink-muted">
+        <label className="flex min-h-11 items-center gap-1 text-t10h text-ink-muted">
           <input type="checkbox" checked={f.confirmed} onChange={(e) => setF({ ...f, confirmed: e.target.checked })} /> 세무사가 확인함(끄면 «관리용 잠정 기준»)
         </label>
         <label className="text-t10h text-ink-muted">대사 허용오차(원)

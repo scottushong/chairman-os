@@ -43,7 +43,7 @@ export function PlTab({ ctx, period, hrefFor, selected, officials, upload }: { c
           <h2 className="text-[15px] font-bold">
             손익계산서 — {yr}년 {Number(period.slice(5, 7))}월 (단위: 원)
           </h2>
-          <div className="flex items-center gap-2 text-[12px] text-[#6b7772]">
+          <div className="flex items-center gap-2 text-[14px] lg:text-[12px] text-[#6b7772]">
             줄을 누르면 계정별 원장의 그 줄로
             <CsvButton rows={csv} fileName={`손익계산서_${period}.csv`} />
           </div>
@@ -53,7 +53,7 @@ export function PlTab({ ctx, period, hrefFor, selected, officials, upload }: { c
             <thead>
               <tr>
                 {['과목', '이번 달', '전월', '증감', '올해 누계', '매출 대비'].map((h, i) => (
-                  <th key={h} className={`border-b border-[#e1e6e3] px-2 py-1.5 text-[12px] font-medium text-[#6b7772] ${i ? 'text-right' : 'text-left'}`}>{h}</th>
+                  <th key={h} className={`border-b border-[#e1e6e3] px-2 py-1.5 text-[14px] lg:text-[12px] font-medium text-[#6b7772] ${i ? 'text-right' : 'text-left'}`}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -100,15 +100,15 @@ export function PlTab({ ctx, period, hrefFor, selected, officials, upload }: { c
       <div className="flex min-w-0 flex-col gap-4">
         <section className="flex flex-col gap-2.5 rounded-[10px] border border-[#e1e6e3] bg-white px-[18px] py-4">
           <h2 className="text-[15px] font-bold">월별 흐름 — 올해 1~{Number(period.slice(5, 7))}월</h2>
-          <div className="text-[12px] text-[#6b7772]">막대 = 매출 · 위 숫자 = 영업이익률</div>
+          <div className="text-[14px] lg:text-[12px] text-[#6b7772]">막대 = 매출 · 위 숫자 = 영업이익률</div>
           <div className="flex h-[150px] items-end gap-1.5 border-b border-[#e1e6e3] px-0.5">
             {bars.map((b, i) => {
               const last = i === bars.length - 1
               return (
                 <div key={b.p} className="flex flex-1 flex-col items-center gap-[3px]" title={`${monthKo(b.p)} 매출 ${eok(b.rev)}`}>
-                  <div className={`text-[10px] ${last ? 'font-semibold text-[#1a211e]' : 'text-[#6b7772]'}`}>{b.margin === null ? '' : `${b.margin.toFixed(1)}%`}</div>
+                  <div className={`text-[14px] lg:text-[10px] ${last ? 'font-semibold text-[#1a211e]' : 'text-[#6b7772]'}`}>{b.margin === null ? '' : `${b.margin.toFixed(1)}%`}</div>
                   <div className={`w-full rounded-t-[3px] ${last ? 'bg-[#0f6b5c]' : 'bg-[#b9d8d0]'}`} style={{ height: `${b.rev ? Math.max(4, Math.round((b.rev / maxRev) * 120)) : 2}px` }} />
-                  <div className={`text-[11px] ${last ? 'font-semibold text-[#1a211e]' : 'text-[#6b7772]'}`}>{Number(b.p.slice(5, 7))}</div>
+                  <div className={`text-[14px] lg:text-[11px] ${last ? 'font-semibold text-[#1a211e]' : 'text-[#6b7772]'}`}>{Number(b.p.slice(5, 7))}</div>
                 </div>
               )
             })}
@@ -144,7 +144,7 @@ export function PlTab({ ctx, period, hrefFor, selected, officials, upload }: { c
             <thead>
               <tr>
                 {['연도', '매출 (공식)', '영업이익', '이익률'].map((h, i) => (
-                  <th key={h} className={`border-b border-[#e1e6e3] px-2 py-1.5 text-[12px] font-medium text-[#6b7772] ${i ? 'text-right' : 'text-left'}`}>{h}</th>
+                  <th key={h} className={`border-b border-[#e1e6e3] px-2 py-1.5 text-[14px] lg:text-[12px] font-medium text-[#6b7772] ${i ? 'text-right' : 'text-left'}`}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -204,7 +204,7 @@ function LedgerLines({ ctx, period, line, clear }: { ctx: Ctx; period: string; l
     <div id="ledger" className="mt-2 rounded-md border border-[#0f6b5c] px-3 py-2" data-testid="ledger-lines">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div className="text-[14px] font-semibold">계정별 원장 — {line.label}</div>
-        <Link href={clear} scroll={false} className="text-[13px] text-[#0f6b5c] hover:underline">
+        <Link href={clear} scroll={false} className="inline-flex items-center text-[13px] text-[#0f6b5c] hover:underline">
           닫기
         </Link>
       </div>
@@ -213,7 +213,7 @@ function LedgerLines({ ctx, period, line, clear }: { ctx: Ctx; period: string; l
           <thead>
             <tr>
               {['일자', '계정', '거래처', '적요', '차변', '대변'].map((h, i) => (
-                <th key={h} className={`border-b border-[#e1e6e3] px-2 py-1 text-[12px] font-medium text-[#6b7772] ${i >= 4 ? 'text-right' : 'text-left'}`}>{h}</th>
+                <th key={h} className={`border-b border-[#e1e6e3] px-2 py-1 text-[14px] lg:text-[12px] font-medium text-[#6b7772] ${i >= 4 ? 'text-right' : 'text-left'}`}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -245,7 +245,7 @@ function LedgerLines({ ctx, period, line, clear }: { ctx: Ctx; period: string; l
       ) : (
         <div className="mt-1 text-[13px] text-[#6b7772]">이 달 원장 줄이 없습니다(장부 전표에서 온 값이면 «전표» 화면에서 봅니다).</div>
       )}
-      {detail.length > 50 ? <div className="text-[12px] text-[#6b7772]">앞 50줄만 — 전체는 원장 파일에서</div> : null}
+      {detail.length > 50 ? <div className="text-[14px] lg:text-[12px] text-[#6b7772]">앞 50줄만 — 전체는 원장 파일에서</div> : null}
     </div>
   )
 }
