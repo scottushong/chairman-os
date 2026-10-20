@@ -3,6 +3,7 @@ import { ledgerScope } from '@/lib/ledger/scope'
 import type { ChairmanRepository } from '@/lib/repository'
 import type { FinRow, FinUpload, OverviewLineKind } from '@/types'
 
+import { applyAuto, decisionsFor, type AutoDecision } from './auto'
 import { buildChecklist, MONTHLY_MEMO, type ChecklistItem } from './checklist'
 import { addMonths, monthsOfYear, type Ctx, type MonthData, type OfficialYear } from './engine'
 import { parseKpiSettings } from './settings'
@@ -41,22 +42,29 @@ export interface LoadedOverview {
   checklist: ChecklistItem[]
   lastUploadAt: string | null
   officialStatements: { year: string; revenue: number | null; op: number | null }[]
+  /** 0091 이 달의 «자동으로 정한 것»(스위치가 꺼지면 빈 목록) */
+  decisions: AutoDecision[]
 }
 
-export async function loadOverview(repo: ChairmanRepository, businessId: string, period: string, today: string): Promise<LoadedOverview> {
+/**
+ * opts.auto — 0091 자동 판단(스위치 finance_auto). 기본 켬. 끄면 0089까지의 계산 그대로.
+ */
+export async function loadOverview(repo: ChairmanRepository, businessId: string, period: string, today: string, opts: { auto?: boolean } = {}): Promise<LoadedOverview> {
+  const autoOn = opts.auto !== false
   const todayMonth = today.slice(0, 7)
   const from = [`${period.slice(0, 4)}-01`, addMonths(todayMonth, -12), addMonths(period, -13)].sort()[0]
   const to = [period, addMonths(todayMonth, 3)].sort().at(-1)!
   const all = range(from, to)
   const heavy = [...new Set([...monthsOfYear(period), addMonths(period, -1), addMonths(period, -12), addMonths(period, -13), todayMonth, addMonths(todayMonth, -1), ...monthsOfYear(addMonths(period, -12))])].filter((p) => p >= from && p <= to)
 
-  const [ledger, uploads, officials, settingsRaw, autoCodes, slips, ...lineSets] = await Promise.all([
+  const [ledger, uploads, officials, settingsRaw, autoCodes, slips, fixes, ...lineSets] = await Promise.all([
     repo.loadFinanceLedger(),
     repo.listFinUploads(businessId).catch(() => [] as FinUpload[]),
     repo.listOfficialStatements(businessId).catch(() => []),
     repo.finKpiSettings(businessId).catch(() => null),
     repo.listAutoAccounts(businessId).catch(() => [] as string[]),
     repo.listFinanceImportSlips(businessId).catch(() => []),
+    autoOn ? repo.listFinAutoFixes(businessId).catch(() => []) : Promise.resolve([]),
     ...KINDS.map((k) => repo.listFinLines(k.kind, businessId, all).catch(() => [] as FinRow[])),
   ])
   const perMonth = await Promise.all(
@@ -75,7 +83,7 @@ export async function loadOverview(repo: ChairmanRepository, businessId: string,
     const extra = perMonth.find((x) => x.p === p)
     const md: MonthData = {
       period: p, ledgerSums: [], ledgerLines: [], sales: [], shipment: [], payroll: [], cashflow: [], card: [], overseas: [], promo: [], loans: [], borrowings: [], savings: [], taxInvoice: [], production: [],
-      material: extra?.material ?? null, valuation: extra?.valuation ?? { wip: null, finished: null }, received: new Set(uploads.filter((u) => u.period === p && u.status === 'applied').map((u) => u.kind)),
+      material: extra?.material ?? null, valuation: extra?.valuation ?? { wip: null, finished: null }, valuationKnown: !!extra, valuationAt: extra?.valuationAt ?? null, received: new Set(uploads.filter((u) => u.period === p && u.status === 'applied').map((u) => u.kind)),
     }
     months.set(p, md)
   }
@@ -122,11 +130,8 @@ export async function loadOverview(repo: ChairmanRepository, businessId: string,
   })
   const lastUploadAt = uploads.filter((u) => u.status === 'applied').map((u) => u.applied_at ?? u.created_at).sort().at(-1) ?? null
 
-  return {
-    ctx: { businessId, today, scope: ledgerScope(ledger, [businessId]), accounts, months, officials: officialYears, settings, usdKrw },
-    uploads,
-    checklist,
-    lastUploadAt,
-    officialStatements,
-  }
+  const ctx: Ctx = { businessId, today, scope: ledgerScope(ledger, [businessId]), accounts, months, officials: officialYears, settings, usdKrw }
+  // 0091 자동 판단 — 평가 · 귀속월 · 중복을 ctx에 입힌다(원천 줄은 그대로). 계산 화면 · 다시 계산 · 지표가 모두 같은 ctx를 읽는다.
+  const decisions = autoOn ? decisionsFor(ctx, applyAuto(ctx, fixes), period) : []
+  return { ctx, uploads, checklist, lastUploadAt, officialStatements, decisions }
 }

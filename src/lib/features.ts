@@ -206,6 +206,13 @@ export const FEATURES = [
     defaultAudience: 'chairman',
     from: 'release/2026-10-20 · 0089',
   },
+  {
+    key: 'finance_auto',
+    label: '재무 자동 판단',
+    description: '재무 현황(/finance)이 자료를 보고 스스로 정한다 — 재공품 · 완제품 평가(파일 → 제조지시 · 출하로 추정 → 앞 달 이월), 귀속월(«N월분» · 기간 · 연납 N등분), 중복(같은 금액 · ±3일 · 같은 거래처면 법인카드 쪽 제외), 원금/이자 출처(대출현황 열 → 원장 이자비용). 위에 «자동으로 정한 것 N건 ›» 한 줄, 틀리면 그 목록에서 고친다(원장 원본은 그대로). 꺼지면 0089까지의 계산 그대로.',
+    defaultAudience: 'all',
+    from: 'feat/finance-auto-0091 · 0091',
+  },
 ] as const satisfies readonly FeatureDef[]
 
 export type FeatureKey = (typeof FEATURES)[number]['key']

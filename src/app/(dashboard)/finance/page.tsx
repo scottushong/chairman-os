@@ -1,6 +1,7 @@
 import Link from 'next/link'
 import { after } from 'next/server'
 
+import { AutoList } from '@/components/finance-overview/auto-list'
 import { CalendarTab } from '@/components/finance-overview/calendar-tab'
 import { DailyTab } from '@/components/finance-overview/daily-tab'
 import { KpiGrid } from '@/components/finance-overview/kpi-grid'
@@ -71,7 +72,9 @@ export default async function FinancePage(props: PageProps<'/finance'>) {
   const defaultMonth = tab === 'calendar' ? todayMonth : addMonths(todayMonth, -1)
   const period = askedMonth && /^\d{4}-(0[1-9]|1[0-2])$/.test(askedMonth) ? askedMonth : defaultMonth
 
-  const loaded = await loadOverview(repo, biz, period, today)
+  // 0091 자동 판단(평가 · 귀속월 · 중복 · 원금/이자) — 스위치 finance_auto(기본 전원). 꺼지면 0089까지의 계산 그대로.
+  const autoOn = await featureOn(user, 'finance_auto', biz)
+  const loaded = await loadOverview(repo, biz, period, today, { auto: autoOn })
   const { ctx } = loaded
   const kpis = computeKpis(ctx, period)
   const canKeep = canKeepBooks(user, biz)
@@ -158,8 +161,11 @@ export default async function FinancePage(props: PageProps<'/finance'>) {
           ))}
         </nav>
 
+        {tab !== 'daily' && tab !== 'calendar' ? <AutoList decisions={loaded.decisions} businessId={biz} canFix={canKeep && autoOn} upload={uploadHref} /> : null}
+
         {tab === 'summary' ? (
           <SummaryTab
+            withdraw={canKeep ? { businessId: biz } : null}
             ctx={ctx}
             period={period}
             grain={grain}
@@ -181,7 +187,7 @@ export default async function FinancePage(props: PageProps<'/finance'>) {
           <CalendarTab cal={computeCalendar(ctx, period)} />
         ) : tab === 'pl' ? (
           <div className="flex flex-col gap-4">
-            <PlTab ctx={ctx} period={period} officials={loaded.officialStatements} upload={uploadHref} selected={firstParam(params.acct) ?? null} hrefFor={(acct) => `${q({ tab: 'pl', acct })}${acct ? '#ledger' : ''}`} />
+            <PlTab ctx={ctx} period={period} officials={loaded.officialStatements} upload={uploadHref} businessId={biz} canFix={canKeep && autoOn} selected={firstParam(params.acct) ?? null} hrefFor={(acct) => `${q({ tab: 'pl', acct })}${acct ? '#ledger' : ''}`} />
             {plClose ? (
               <PlClosePanel businessId={biz} period={period} view={plClose.view} error={plClose.error} settings={plClose.settings} canKeep={canKeep} canClose={canCloseBooks(user, biz)} isTop={top} />
             ) : null}

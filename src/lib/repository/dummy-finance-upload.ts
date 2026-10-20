@@ -1,5 +1,6 @@
 import { OVERVIEW_LINE_KINDS } from '@/types'
 import type {
+  FinAutoFix,
   FinDedupeSetting,
   FinOverviewMonthRow,
   FinPayrollHeld,
@@ -51,6 +52,8 @@ export interface DummyFinUploadDeps {
   legacyImportOn?(businessId: string): Promise<boolean>
   /** 0080 fin_material_viewer 거울 — 대표 · 그룹 CFO · '/costing/<회사>' 줄. 없으면 대표 · CFO만으로 본다. */
   materialViewer?(businessId: string): boolean
+  /** 0091 스위치 finance_auto(그 회사). 없으면 켜짐. */
+  autoOn?(businessId: string): Promise<boolean>
 }
 
 type Methods = Pick<
@@ -1002,6 +1005,37 @@ function ensureDemo() {
   })
   // 재마감 대상(예시) — 앞 달 평가금액 확정이 마감 뒤에 들어온 경우의 표시.
   store.flags.push({ flag_id: crypto.randomUUID(), business_id: B, period: P, upload_id: null, cause: 'valuation', reason: '가짜 예시 — 마감 뒤 재공품 평가 확정', created_at: t(`${P}-30`), cleared_at: null })
+  // 0091 «자동으로 정한 것» 예시(스크린숏 — DUMMY_FIN_AUTO_DEMO=on일 때만 · 다른 시험 숫자를 바꾸지 않게 기본 꺼짐).
+  // 10월 = 평가 추정(제조지시 · 출하) · 귀속월(«9월분» · 기간) · 중복(카드 = 원장) · 이자 출처(대출현황에 이자 열 없음 → 원장 이자비용).
+  if (process.env.DUMMY_FIN_AUTO_DEMO === 'on') {
+    const O = '2026-10'
+    const many = (kind: string, period: string, file: string, rows: Record<string, unknown>[]) => {
+      const id = up(kind, period, file, 'applied', rows.length)
+      rows.forEach((row, i) => line(id, kind, period, { row_no: i + 4, ...row } as FinRow))
+    }
+    for (const p of [D, O]) {
+      many('ledger', p, `가짜 계정별 원장 ${Number(p.slice(5))}월.xlsx`, [
+        { account_code: '4040', account_name: '제품매출', debit: 0, credit: 100_000_000 },
+        { account_code: '4550', account_name: '제품매출원가', debit: 70_000_000, credit: 0 },
+        { account_code: '8300', account_name: '소모품비', debit: 500_000, credit: 0 },
+        { account_code: '8190', account_name: '지급임차료', debit: p === O ? 3_000_000 : 0, credit: 0 },
+        { account_code: '9310', account_name: '이자비용', debit: 3_500_000, credit: 0 },
+      ])
+    }
+    many('production', D, '가짜 제조지시명세서 9월.xlsx', [{ product: '가짜 제품 A', qty: 800 }])
+    many('production', O, '가짜 제조지시명세서 10월.xlsx', [{ product: '가짜 제품 A', qty: 1000 }])
+    many('shipment', O, '가짜 출하집계표 10월.xlsx', [{ ship_date: `${O}-20`, customer: '가짜 거래처 갑', product: '가짜 제품 A', qty: 900, amount: 9_000_000 }])
+    many('ledger_lines', O, '가짜 원장 거래 줄 10월.xlsx', [
+      { tx_date: `${O}-05`, account_code: '8300', account_name: '소모품비', counterparty: '가짜 문구점', memo: '9월분 사무용품', debit: 300_000, credit: 0 },
+      { tx_date: `${O}-25`, account_code: '8190', account_name: '지급임차료', counterparty: '가짜 빌딩', memo: '2026.11~2027.01 창고 임차료', debit: 3_000_000, credit: 0 },
+      { tx_date: `${O}-12`, account_code: '8310', account_name: '복리후생비', counterparty: '가짜 카페', memo: '회의 음료', debit: 45_000, credit: 0 },
+    ])
+    many('card', O, '가짜 법인카드 10월.xlsx', [
+      { used_on: `${O}-10`, merchant: '(주)가짜 카페', dept: '영업', amount: 45_000 },
+      { used_on: `${O}-11`, merchant: '가짜 마트', dept: '총무', amount: 120_000 },
+    ])
+    many('loans', O, '가짜 대출현황 10월.xlsx', [{ lender: '가짜 은행', principal: 1_000_000_000, rate: 4.5, principal_paid: 10_000_000, maturity: '2028-03-31' }])
+  }
 }
 
 /* ───────────────────────── 0085 재무 현황 · 저장 한 번(거울) ───────────────────────── */
@@ -1016,6 +1050,8 @@ interface Extra {
   jobs: FinRecalcJob[]
   overview: Map<string, FinOverviewMonthRow>
   kpi: Map<string, Record<string, unknown>>
+  /** 0091 사람이 고친 것(덧붙이기만) */
+  fixes?: FinAutoFix[]
 }
 const gx = globalThis as unknown as { __chairmanDummyFinOverview?: Extra }
 const extra: Extra = (gx.__chairmanDummyFinOverview ??= { held: [], jobs: [], overview: new Map(), kpi: new Map() })
@@ -1052,6 +1088,8 @@ type OverviewMethods = Pick<
   | 'listFinLines'
   | 'finKpiSettings'
   | 'saveFinKpiSettings'
+  | 'listFinAutoFixes'
+  | 'saveFinAutoFix'
 >
 
 const OVERVIEW_KINDS = new Set<string>(OVERVIEW_LINE_KINDS)
@@ -1166,6 +1204,29 @@ export function dummyFinanceOverview(d: DummyFinUploadDeps, up: Pick<ChairmanRep
       if (!d.canClose(businessId)) throw new Error('fin_kpi_settings_denied')
       if (!reasonOk(reason)) throw new Error('fin_kpi_settings_shape')
       extra.kpi.set(businessId, structuredClone(settings))
+    },
+    async listFinAutoFixes(businessId) {
+      return d.canRead(businessId) ? (extra.fixes ?? []).filter((f) => f.business_id === businessId).map((f) => structuredClone(f)) : []
+    },
+    async saveFinAutoFix(x) {
+      // 0091 fin_auto_fix 거울 — 장부 쓰기 · 사람 세션 · 스위치 · 규칙과 행동 짝 · 값 모양.
+      const v = d.viewer()
+      if (!d.canKeep(x.business_id) || v.role === 'AIAgent' || v.role === 'Integration') throw new Error('fin_auto_denied')
+      if (d.autoOn && !(await d.autoOn(x.business_id))) throw new Error('fin_auto_off')
+      const pairs: Record<string, string[]> = { valuation: ['value', 'auto'], period: ['month', 'keep_date', 'auto'], duplicate: ['restore', 'auto'] }
+      if (!pairs[x.rule]?.includes(x.action) || !PERIOD.test(x.period) || x.item_key.length < 3 || x.item_key.length > 200) throw new Error('fin_auto_shape')
+      if (x.action === 'value') {
+        const a = x.value?.amount
+        if (typeof a !== 'number' || !Number.isInteger(a) || a < 0 || a >= 1e12) throw new Error('fin_auto_shape')
+      } else if (x.action === 'month') {
+        if (!PERIOD.test(x.value?.to ?? '')) throw new Error('fin_auto_shape')
+      } else if (x.value !== null) throw new Error('fin_auto_shape')
+      if (x.prev && JSON.stringify(x.prev).length > 500) throw new Error('fin_auto_shape')
+      const list = (extra.fixes ??= [])
+      const fix: FinAutoFix = { fix_id: list.length + 1, business_id: x.business_id, rule: x.rule, item_key: x.item_key, period: x.period, action: x.action, value: x.value ? structuredClone(x.value) : null, prev: x.prev ? structuredClone(x.prev) : null, created_by: v.user_id, created_by_name: d.name(v.user_id), created_at: new Date().toISOString() }
+      list.push(fix)
+      dummyRecalcEnqueue(x.business_id, x.period, 'manual')
+      return fix.fix_id
     },
   }
 }

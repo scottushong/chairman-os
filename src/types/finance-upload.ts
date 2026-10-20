@@ -394,6 +394,25 @@ export interface FinRecalcJob {
   finished_at: string | null
 }
 
+/** 0091 재무 자동 판단을 사람이 고친 한 줄(덧붙이기만 — 같은 (규칙, 자리)는 마지막 줄이 이긴다). */
+export type FinAutoRule = 'valuation' | 'period' | 'duplicate'
+export type FinAutoAction = 'value' | 'month' | 'keep_date' | 'restore' | 'auto'
+export interface FinAutoFix {
+  fix_id: number
+  business_id: string
+  rule: FinAutoRule
+  item_key: string
+  period: string
+  action: FinAutoAction
+  /** value {amount} · month {to} */
+  value: { amount?: number; to?: string } | null
+  /** 고치기 전 화면 값 */
+  prev: Record<string, unknown> | null
+  created_by: string
+  created_by_name: string | null
+  created_at: string
+}
+
 /** 재무 현황 저장본(회사 합계만 — 원료별 · 개인 줄 없음). */
 export interface FinOverviewMonthRow {
   business_id: string

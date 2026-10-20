@@ -34,11 +34,22 @@ export interface MonthData {
   taxInvoice: FinRow[]
   production: FinRow[]
   material: FinMaterialTotals | null
-  /** 재공품 · 완제품 평가금액(살아 있는 줄) */
+  /** 재공품 · 완제품 평가금액(살아 있는 줄 — 0091 자동 판단이 켜지면 추정 · 이월 · 고친 값까지 채운다) */
   valuation: { wip: number | null; finished: number | null }
+  /** 0091 평가금액을 읽은 달인가(읽지 않은 달은 추정 · 이월하지 않는다) */
+  valuationKnown?: boolean
+  /** 0091 그 달 평가금액을 넣은 시각(사람이 고친 값보다 뒤에 온 파일이면 파일이 이긴다) */
+  valuationAt?: string | null
+  /** 0091 평가금액 출처 — 실측(파일 · 화면 입력) · 추정(제조지시 · 출하) · 이월(앞 달) · 고침(사람) */
+  valuationSource?: { wip: ValSource | null; finished: ValSource | null }
+  /** 0091 이월이면 어느 달 값인가 */
+  valuationFrom?: { wip: string | null; finished: string | null }
   /** 이 달 받은 자료 종류(18가지 체크표) */
   received: Set<string>
 }
+
+export type ValSource = 'measured' | 'estimated' | 'carried' | 'manual'
+export const VAL_SOURCE_KO: Record<ValSource, string> = { measured: '실측', estimated: '추정', carried: '이월', manual: '고침' }
 
 export interface OfficialYear {
   year: string
@@ -56,6 +67,10 @@ export interface Ctx {
   officials: OfficialYear[]
   settings: KpiSettings
   usdKrw: number | null
+  /** 0091 자동 판단이 켜졌나(평가는 같은 달 값만 — 이월은 auto.ts가 이미 채웠다 · 이자는 원장 이자비용으로 물러선다) */
+  auto?: boolean
+  /** 0091 귀속월 조정(달 → 계정별 더할 금액, 차변 − 대변). 원장 원본은 그대로 — 손익 · 지표만. */
+  plAdjust?: Map<string, AcctAmount[]>
 }
 
 /* ───────────────────────── 달 · 숫자 ───────────────────────── */
@@ -125,7 +140,17 @@ export function plAccounts(ctx: Ctx, period: string): AcctAmount[] | null {
       out.set(code, cur)
     }
   }
+  for (const adj of ctx.plAdjust?.get(period) ?? []) {
+    const cur = out.get(adj.code) ?? { ...adj, amount: 0 }
+    cur.amount += adj.amount
+    out.set(adj.code, cur)
+  }
   return [...out.values()]
+}
+
+/** 귀속월 조정 전 손익 계정 금액(0091 auto.ts가 원가율 · 이자비용을 볼 때 — 조정을 두 번 세지 않게). */
+export function plAccountsRaw(ctx: Ctx, period: string): AcctAmount[] | null {
+  return plAccounts({ ...ctx, plAdjust: undefined }, period)
 }
 
 /** 장부의 그 달 재무상태 잔액(없으면 null). */
@@ -246,7 +271,9 @@ const SGA_GROUPS: { key: string; label: string; re: RegExp }[] = [
 
 /** 앞 달까지 거슬러 가장 가까운 평가금액(재공품 · 완제품) — 몇 달 앞 값을 썼는지와. */
 function valuationAt(ctx: Ctx, period: string, cat: 'wip' | 'finished', back = 3): { value: number | null; from: string | null } {
-  for (let i = 0; i <= back; i += 1) {
+  // 0091 — 앞 달 이월은 auto.ts가 정하고(출처와 함께) 같은 달 칸에 채웠다.
+  const span = ctx.auto ? 0 : back
+  for (let i = 0; i <= span; i += 1) {
     const p = addMonths(period, -i)
     const v = ctx.months.get(p)?.valuation[cat]
     if (v !== null && v !== undefined) return { value: v, from: p }
@@ -263,6 +290,13 @@ export function inventoryAt(ctx: Ctx, period: string): { raw: number | null; wip
   const label = (p: string) => `${Number(p.slice(5, 7))}월`
   if (wip.from && wip.from !== period) notes.push(`${label(period)} 재공품 평가금액이 아직 없어 ${label(wip.from)} 값으로 계산했습니다.`)
   if (fin.from && fin.from !== period) notes.push(`${label(period)} 완제품 평가금액이 아직 없어 ${label(fin.from)} 값으로 계산했습니다.`)
+  const m = ctx.months.get(period)
+  for (const [cat, name] of [['wip', '재공품'], ['finished', '완제품']] as const) {
+    const src = m?.valuationSource?.[cat]
+    if (src === 'estimated') notes.push(`${label(period)} ${name}은 평가 파일이 없어 제조지시명세서 · 출하집계표로 추정했습니다.`)
+    else if (src === 'carried') notes.push(`${label(period)} ${name} 평가 파일 · 제조 자료가 없어 ${label(m?.valuationFrom?.[cat] ?? period)} 값을 이월했습니다.`)
+    else if (src === 'manual') notes.push(`${label(period)} ${name}은 사람이 고친 값입니다.`)
+  }
   const total = raw === null && wip.value === null && fin.value === null ? null : (raw ?? 0) + (wip.value ?? 0) + (fin.value ?? 0)
   return { raw, wip: wip.value, finished: fin.value, total, notes }
 }
@@ -576,7 +610,16 @@ export interface DebtRow {
   payDay: number | null
 }
 
-export function computeDebt(ctx: Ctx, period: string): { rows: DebtRow[]; total: number | null; monthlyPay: number | null; monthlyInterest: number | null; nextMaturity: DebtRow | null; asOf: string | null } {
+export type DebtSource = 'loans' | 'ledger' | 'estimate' | 'borrowings'
+export const DEBT_SOURCE_KO: Record<DebtSource, string> = { loans: '대출현황', ledger: '원장 이자비용', estimate: '잔액 × 금리 추정', borrowings: '차입금 상환' }
+
+/** 그 달 원장 이자비용(영업외 비용 중 «이자» — 귀속월 조정 전). 없으면 null. */
+export function ledgerInterest(ctx: Ctx, period: string): number | null {
+  const xs = (plAccountsRaw(ctx, period) ?? []).filter((a) => a.section === 'non_operating' && a.amount > 0 && /이자/.test(a.name) && !/수익/.test(a.name))
+  return xs.length ? xs.reduce((s, a) => s + a.amount, 0) : null
+}
+
+export function computeDebt(ctx: Ctx, period: string): { rows: DebtRow[]; total: number | null; monthlyPay: number | null; monthlyInterest: number | null; nextMaturity: DebtRow | null; asOf: string | null; interestSource: DebtSource | null; principalSource: DebtSource | null } {
   // 대출현황 — 그 달 또는 앞 12달 안의 마지막 한 벌.
   let loans: FinRow[] = []
   let asOf: string | null = null
@@ -624,10 +667,27 @@ export function computeDebt(ctx: Ctx, period: string): { rows: DebtRow[]; total:
     rows.push({ lender, type: '차입금', total: v.first || null, balance: v.bal, rate: null, maturity: null, monthlyPay: v.paid || null, monthlyInterest: null, payDay: null })
   }
   const total = sumOrNull(rows.map((r) => r.balance))
-  const monthlyPay = sumOrNull(rows.map((r) => r.monthlyPay))
-  const monthlyInterest = sumOrNull(rows.map((r) => r.monthlyInterest))
+  let monthlyPay = sumOrNull(rows.map((r) => r.monthlyPay))
+  let monthlyInterest = sumOrNull(rows.map((r) => r.monthlyInterest))
   const nextMaturity = [...rows].filter((r) => r.maturity && r.maturity >= ctx.today.slice(0, 10)).sort((a, b) => a.maturity!.localeCompare(b.maturity!))[0] ?? null
-  return { rows, total, monthlyPay, monthlyInterest, nextMaturity, asOf }
+  // 출처(0091) — 원금: 대출현황 «상환 원금» 열 → 차입금 상환 줄. 이자: 대출현황 «이자» 열 → (자동 판단이 켜지면) 원장 이자비용 → 잔액 × 금리.
+  const colInterest = loans.some((r) => has(r.interest_paid))
+  const principalSource: DebtSource | null = loans.some((r) => has(r.principal_paid)) ? 'loans' : rows.some((r) => r.type === '차입금' && r.monthlyPay) ? 'borrowings' : null
+  let interestSource: DebtSource | null = colInterest ? 'loans' : monthlyInterest !== null ? 'estimate' : null
+  if (ctx.auto && !colInterest) {
+    const li = ledgerInterest(ctx, period)
+    if (li !== null) {
+      // 대출마다 나누지 않는다(원장은 합계뿐) — 줄의 이자는 비우고 합계만 원장 값으로.
+      for (const r of rows) {
+        if (r.monthlyInterest !== null) r.monthlyPay = r.monthlyPay === null ? null : r.monthlyPay - r.monthlyInterest || null
+        r.monthlyInterest = null
+      }
+      monthlyInterest = li
+      monthlyPay = sumOrNull([sumOrNull(rows.map((r) => r.monthlyPay)), li])
+      interestSource = 'ledger'
+    }
+  }
+  return { rows, total, monthlyPay, monthlyInterest, nextMaturity, asOf, interestSource, principalSource }
 }
 
 /* ───────────────────────── ⑤ 비용 · ⑥ 매출 ───────────────────────── */

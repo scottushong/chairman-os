@@ -2,11 +2,12 @@ import Link from 'next/link'
 
 import type { ChecklistItem } from '@/lib/finance-overview/checklist'
 import { warnShort } from '@/lib/finance-overview/checklist'
-import { addMonths, computeBs, computeCash, computeCosts, computeDebt, computePl, computeSales, growth, monthsOfYear, pct, type Ctx } from '@/lib/finance-overview/engine'
+import { addMonths, computeBs, computeCash, computeCosts, computeDebt, computePl, computeSales, DEBT_SOURCE_KO, growth, monthsOfYear, pct, VAL_SOURCE_KO, type Ctx } from '@/lib/finance-overview/engine'
 import { eok, monthKo, pctText, ppText, ratio, won } from '@/lib/finance-overview/format'
 import { grainLabel, grainMonths, plSum, prevGrainEnd, type Grain } from '@/lib/finance-overview/grain'
 import type { Kpi } from '@/lib/finance-overview/kpis'
 
+import { ChecklistWithdraw } from './checklist-withdraw'
 import { KpiGrid } from './kpi-grid'
 import { Card, Lack, Note, Stat, T, Td, Th } from './parts'
 
@@ -14,7 +15,7 @@ import { Card, Lack, Note, Stat, T, Td, Th } from './parts'
  * «요약» 탭 — 시안 finance-overview-mock.html 그대로: 위 다섯 칸 → ①~⑥ 두 줄 → ⑦ 이번 달 자료 → ⑧ 12가지 지표.
  * 보는 화면이 없던 종류(급여 부서별 · 카드 · 해외법인 · 해외판촉 · 절감목표)는 맨 아래 «그 밖 자료 표»에.
  */
-export function SummaryTab({ ctx, period, grain, kpis, checklist, links }: { ctx: Ctx; period: string; grain: Grain; kpis: Kpi[]; checklist: ChecklistItem[]; links: { upload: string; pl: string; calendar: string; daily: string; statements: string | null; customers: string; kpi: string } }) {
+export function SummaryTab({ ctx, period, grain, kpis, checklist, links, withdraw = null }: { ctx: Ctx; period: string; grain: Grain; kpis: Kpi[]; checklist: ChecklistItem[]; links: { upload: string; pl: string; calendar: string; daily: string; statements: string | null; customers: string; kpi: string }; withdraw?: { businessId: string } | null }) {
   const cur = plSum(ctx, grainMonths(period, grain))
   const prevEnd = prevGrainEnd(period, grain)
   const prev = plSum(ctx, grainMonths(prevEnd, grain))
@@ -146,6 +147,9 @@ export function SummaryTab({ ctx, period, grain, kpis, checklist, links }: { ctx
             재고 합계 {eok(invNow)}
             {invNow !== null && invPrev !== null ? ` · 전월 대비 ${eok(invNow - invPrev, 1, true)}` : ''}
             {bs.inventory.raw === null && invNow !== null ? ' · 원재료 합계는 원료 3가지 미만이면 감춥니다' : ''}
+            {m?.valuationSource && (m.valuationSource.wip || m.valuationSource.finished)
+              ? ` · 재공품 ${m.valuationSource.wip ? VAL_SOURCE_KO[m.valuationSource.wip] : '없음'} · 완제품 ${m.valuationSource.finished ? VAL_SOURCE_KO[m.valuationSource.finished] : '없음'}`
+              : ''}
           </Note>
         </Card>
 
@@ -212,6 +216,12 @@ export function SummaryTab({ ctx, period, grain, kpis, checklist, links }: { ctx
             </T>
           )}
           {debt.asOf && debt.asOf !== period ? <Note>대출현황은 {monthKo(debt.asOf)} 기준입니다(이 달 자료 없음).</Note> : null}
+          {debt.interestSource || debt.principalSource ? (
+            <Note>
+              출처 — 원금 {debt.principalSource ? DEBT_SOURCE_KO[debt.principalSource] : '없음'} · 이자 {debt.interestSource ? DEBT_SOURCE_KO[debt.interestSource] : '없음'}
+              {debt.interestSource === 'ledger' ? ` ${won(debt.monthlyInterest)}(대출마다 나누지 않음)` : ''}
+            </Note>
+          ) : null}
         </Card>
 
         <Card title="⑤ 비용 상위" more={{ href: links.pl }}>
@@ -272,10 +282,14 @@ export function SummaryTab({ ctx, period, grain, kpis, checklist, links }: { ctx
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6" data-testid="checklist">
           {checklist.map((c) =>
             c.state === 'ok' ? (
-              <div key={c.key} className="rounded-lg bg-[#e1efeb] px-2.5 py-2 text-[13px] text-[#0f6b5c]">✓ {c.label}</div>
+              <div key={c.key} className="rounded-lg bg-[#e1efeb] px-2.5 py-2 text-[13px] text-[#0f6b5c]">
+                ✓ {c.label}
+                {withdraw && c.uploadId ? <ChecklistWithdraw uploadId={c.uploadId} businessId={withdraw.businessId} fileName={c.fileName ?? null} /> : null}
+              </div>
             ) : c.state === 'warn' ? (
               <div key={c.key} className="rounded-lg bg-[#fdf4ec] px-2.5 py-2 text-[13px] text-[#9a4b12]" title={c.warnings.join('\n')}>
                 ⚠ {c.label} ({warnShort(c.warnings)})
+                {withdraw && c.uploadId ? <ChecklistWithdraw uploadId={c.uploadId} businessId={withdraw.businessId} fileName={c.fileName ?? null} /> : null}
               </div>
             ) : (
               <div key={c.key} className="rounded-lg border border-dashed border-[#c9d1cd] bg-white px-2.5 py-2 text-[13px] text-[#6b7772]">

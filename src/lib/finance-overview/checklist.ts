@@ -36,6 +36,9 @@ export interface ChecklistItem {
   warnings: string[]
   /** 받은 시각(ISO) */
   at: string | null
+  /** 0091 체크표 «빼기» — 그 칸을 채운 올리기(파일). 장부 쪽(계정과목표 · 월별 손익) · 화면 입력 평가는 없음. */
+  uploadId?: string | null
+  fileName?: string | null
 }
 
 export interface ChecklistInput {
@@ -60,7 +63,7 @@ export function buildChecklist(x: ChecklistInput): ChecklistItem[] {
     if (key === 'valuation' && !u && x.valuationAt) return { key, label, state: 'ok', warnings: [], at: x.valuationAt }
     if (!u) return { key, label, state: 'missing', warnings: [], at: null }
     const w = u.warnings ?? []
-    return { key, label, state: w.length ? 'warn' : 'ok', warnings: w, at: u.applied_at }
+    return { key, label, state: w.length ? 'warn' : 'ok', warnings: w, at: u.applied_at, uploadId: u.upload_id, fileName: u.file_name }
   })
 }
 

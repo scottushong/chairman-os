@@ -5,12 +5,13 @@ import { eok, monthKo, ratio, won } from '@/lib/finance-overview/format'
 
 import { CsvButton } from './csv-button'
 import { Lack, Note } from './parts'
+import { ValuationEdit } from './valuation-edit'
 
 /**
  * «손익계산서» — 시안 finance-pl-mock.html: 과목 전부(재고 반영 원가 · 판관비 세부 · 영업외 · 법인세 · 당기순이익)를 이번 달 · 전월 · 증감 · 올해 누계 ·
  * 매출 대비로. 오른쪽: 월별 막대(매출 · 영업이익률) · 이익 변동 이유 · 공식 결산 3년 비교. 줄을 누르면 아래 «계정별 원장» 칸이 그 계정 줄로.
  */
-export function PlTab({ ctx, period, hrefFor, selected, officials, upload }: { ctx: Ctx; period: string; hrefFor: (acct: string | null) => string; selected: string | null; officials: { year: string; revenue: number | null; op: number | null }[]; upload: string }) {
+export function PlTab({ ctx, period, hrefFor, selected, officials, upload, businessId, canFix = false }: { ctx: Ctx; period: string; hrefFor: (acct: string | null) => string; selected: string | null; officials: { year: string; revenue: number | null; op: number | null }[]; upload: string; businessId?: string; canFix?: boolean }) {
   const cur = computePl(ctx, period)
   const prev = computePl(ctx, addMonths(period, -1))
   const ytd = plYtd(ctx, period)
@@ -94,6 +95,17 @@ export function PlTab({ ctx, period, hrefFor, selected, officials, upload }: { c
           {ytd.missing.length ? ` 올해 누계는 ${ytd.missing.map(monthKo).join(' · ')} 자료가 없어 비웠습니다.` : ''}
         </Note>
         {cur.notes.length ? <Note tone="warn">{cur.notes.join(' ')}</Note> : null}
+        {ctx.auto && businessId && ctx.months.get(period)?.valuationKnown ? (
+          <ValuationEdit
+            businessId={businessId}
+            period={period}
+            canFix={canFix}
+            rows={(['wip', 'finished'] as const).map((cat) => {
+              const m = ctx.months.get(period)!
+              return { cat, label: cat === 'wip' ? '재공품' : '완제품', value: m.valuation[cat], source: m.valuationSource?.[cat] ?? null }
+            })}
+          />
+        ) : null}
         <LedgerLines ctx={ctx} period={period} line={sel} clear={hrefFor(null)} />
       </section>
 

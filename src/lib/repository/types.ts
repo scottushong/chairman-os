@@ -196,6 +196,9 @@ import type {
   FinRow,
   FinPayrollHeld,
   FinRecalcJob,
+  FinAutoAction,
+  FinAutoFix,
+  FinAutoRule,
   FinOverviewMonthRow,
   OverviewLineKind,
   FinValuation,
@@ -895,6 +898,10 @@ export interface ChairmanRepository extends MemoryMethods, PriceReportMethods, P
   /** 공식 결산 줄(원장 규약 차변 − 대변) — 재무 현황의 전년 기말 · 3년 비교. 장부 읽기. */
   listOfficialStatementLines(businessId: string, statementIds: number[]): Promise<OfficialStatementLine[]>
   saveFinKpiSettings(businessId: string, settings: Record<string, unknown>, reason: string): Promise<void>
+  /** 0091 자동 판단을 사람이 고친 기록(그 회사 전부 · 오래된 것부터) — 장부 읽기. 0091 전 DB는 빈 목록. */
+  listFinAutoFixes(businessId: string): Promise<FinAutoFix[]>
+  /** 0091 fin_auto_fix — 장부 쓰기 · 사람 세션 · 스위치 finance_auto. 오류 낱말(fin_auto_*)을 그대로 던진다. 0091 전 DB는 'fin_upload_unavailable'. */
+  saveFinAutoFix(input: { business_id: string; rule: FinAutoRule; item_key: string; period: string; action: FinAutoAction; value: FinAutoFix['value']; prev: Record<string, unknown> | null }): Promise<number>
   /** 0070 회계 · 재무 자료 올리기 — 그 회사의 올리기 기록(최근 300). 0070 전 DB는 빈 목록. */
   listFinUploads(businessId: string): Promise<FinUpload[]>
   /** 0070 fin_upload_pending — 미리보기 대기 줄(급여 개인 줄은 대표 · CFO에게만). */
