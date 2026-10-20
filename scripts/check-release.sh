@@ -250,7 +250,7 @@ CASE="5 잘못된 옵션 → 시작 전 중단"
 make_repo c5 "0047 0048 0049 0054"
 run_release no FAKE_REMOTE="$IN_ORDER_REMOTE" -- --include 0054
 expect_code 1
-expect_out "옵션은 --include-all 하나뿐"
+expect_out "옵션은 --include-all · --app-only뿐"
 [ ! -s "$LOG" ] || fail "CLI가 불렸다"
 done_case
 

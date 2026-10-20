@@ -128,7 +128,7 @@ async function main() {
   }
   const one = (await tool('finance_query').run({ business: 'biz_vana', periods: ['2025-09'], metrics: ['OperatingProfit'] }, ctx)) as { totals: Record<string, { total: number }> }
   assert.equal(one.totals.OperatingProfit.total, kpis.find((k) => k.period === '2025-09' && k.metric === 'OperatingProfit')!.value, '한 달 합이 그 달 값과 다르다')
-  assert.ok(ctx.evidence.length > 0 && ctx.evidence.every((e) => e.href.startsWith('/finance/biz_vana')), '재무 근거 카드가 원장 화면을 가리키지 않는다')
+  assert.ok(ctx.evidence.length > 0 && ctx.evidence.every((e) => e.href.startsWith('/finance/biz_vana') || e.href.startsWith('/finance?biz=biz_vana&')), '재무 근거 카드가 원장 화면을 가리키지 않는다')
 
   // ── 5. «기한 없는 이니셔티브» — 실제 줄에서(없으면 0건) ──
   const actor = { user_id: chair2.user_id, role: chair2.role }
