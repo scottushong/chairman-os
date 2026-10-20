@@ -1,5 +1,6 @@
 import type { MemoryMethods } from '@/lib/memory/store'
 import type { FeatureAudience, FeatureSwitchRow } from '@/lib/features'
+import type { OwnerInputKey, OwnerInputRow } from '@/lib/owner-inputs'
 import type {
   CompetitorAssumption,
   CompetitorAssumptionInput,
@@ -862,6 +863,12 @@ export interface ChairmanRepository extends MemoryMethods, PriceReportMethods, P
   listFeatureSwitches(): Promise<FeatureSwitchRow[] | null>
   /** 0073 feature_switch_set — 대표만 · 이유 필수 · 감사. 오류 키(feature_switch_*)를 그대로 던진다. */
   setFeatureSwitch(input: { feature_key: string; business_id: string | null; enabled: boolean; audience: FeatureAudience; reason: string }): Promise<void>
+  /** 0089 5절 «받을 것» — 대표만 읽는다(그 밖 0줄). 0089 전 DB는 null. 키 · 파일 본문은 없다. */
+  listOwnerInputs(): Promise<OwnerInputRow[] | null>
+  /** 0089 owner_input_mark — 진짜 BOM 받음 · 재고평가방법 · 원가 관리 권한자. 대표만. 오류 낱말(owner_input_*)을 그대로 던진다. */
+  markOwnerInput(item: Exclude<OwnerInputKey, 'google_sa'>, scope: string, summary: Record<string, unknown>): Promise<void>
+  /** 0089 owner_input_google_sa_save — JSON 본문은 Vault에만. 돌려주는 것은 이메일 · 프로젝트 id뿐. 오류 낱말만 던진다(본문 없음). */
+  saveGoogleServiceAccount(json: string): Promise<{ client_email: string; project_id: string }>
   /**
    * 0085 «넣으면 쌓이고 · 알아서 계산하고 · 한 화면에» — 저장 한 번(같은 달은 바꾸기) · 급여 개인 줄 보류 · 다시 계산 큐 · 재무 현황 저장본 ·
    * 재무 현황이 읽는 줄(원료 숫자 종류는 없다 — 합계는 finMaterialTotals) · 공식 결산 되돌리기. 0085 전 DB: 저장은 0072 넣기로 물러서고

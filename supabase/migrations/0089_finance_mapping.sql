@@ -18,6 +18,8 @@
 --        · finance_legacy_import(«예전 자료 가져오기» 단추 · 기본 대표만).
 --   4절 fin_legacy_imports — «예전 자료 가져오기»(A2) 옮김 기록(원천 자리마다 한 줄 · 대표만 · 쓰기는 fin_legacy_import_mark만)
 --        · 수신함 읽기 정책 하나(fin_inbox_objects_legacy_read — 대표 + 스위치 켜짐일 때 그 회사 폴더 전체 select만, 쓰기 · 지우기 없음).
+--   5절 owner_inputs — «받을 것»(PHASE E: 진짜 BOM · 세무사 재고평가방법 · 구글 서비스 계정(Vault) · 원가 관리 권한자) 받음 기록 · 대표만
+--        · 쓰기는 owner_input_mark · owner_input_google_sa_save(키 본문은 Vault에만) · 스위치 owner_inputs(기본 대표만).
 --
 -- 0035 규칙: force를 새로 걸지 않는다 · FORCE를 내리지 않는다 · 0001~0088을 고치지 않는다. 새 정책 · grant는 늘 to authenticated.
 -- 정의자 함수는 auth.uid()가 없으면(익명 · service) 거부한다.
@@ -234,5 +236,146 @@ revoke all on function fin_legacy_import_mark(text, text, text, text, uuid, text
 grant execute on function fin_column_map_save(text, text, jsonb, text) to authenticated;
 grant execute on function official_unmatched_save(bigint, jsonb) to authenticated;
 grant execute on function fin_legacy_import_mark(text, text, text, text, uuid, text) to authenticated;
+
+-- =====================================================================
+-- 5절. «받을 것»(owner_inputs) — 사람이 줘야 하는 것 넷의 받는 자리(PHASE E · docs/decisions/2026-10-20-intake-items.md)
+--   /settings «받을 것» 카드 넷: 진짜 BOM(R2) · 세무사 재고평가방법 · 구글 서비스 계정 · 원가 관리 권한자.
+--   표 이름이 intake_items가 아닌 이유: intake_items는 0058 «자료 받는 입구»가 이미 쓴다.
+--   이 표는 «받았다 · 언제 · 누가 · 짧은 요약»만 둔다 — 파일 · 키 본문은 두지 않는다.
+--     real_bom         (회사)  {"rows": n}                         진짜 BOM은 기존 넣기 흐름(0068 · 0063 암호문)이 저장한다 — 여기는 «받음»만.
+--     inventory_method (회사)  {"method": total_avg|moving_avg|fifo, "memo": …}  0075 fin_pl_settings와 나란히 둔 «세무사 확인값»(바꾸지 않는다).
+--     google_sa        (group) {"client_email", "project_id", "secret"}  키 JSON은 Vault 'google_sheets_sa'에만. 이 표 · 응답 · 오류에 키 본문 없음.
+--     cost_manager     (회사)  {"user_id"}                         기존 원가 권한('/costing/<회사>' 줄 · 0061 셋까지)을 준 뒤에만 적힌다.
+--   읽기 · 쓰기 모두 대표(Chairman · 활성 · 사람)만 · 스위치 owner_inputs(기본 대표만). 표에 직접 쓰기 grant 없음.
+--   쓰기는 정의자 함수 둘(owner_input_mark · owner_input_google_sa_save)만 — 안에서 auth.uid() · 대표 · 활성을 본다.
+-- =====================================================================
+create table owner_inputs (
+  item_key    text not null check (item_key in ('real_bom', 'inventory_method', 'google_sa', 'cost_manager')), -- [일반]
+  scope       text not null check (scope ~ '^[a-z0-9_]{2,40}$'),                                               -- [일반] 'group' 또는 회사 id
+  summary     jsonb not null default '{}'::jsonb
+                check (jsonb_typeof(summary) = 'object' and length(summary::text) <= 2000),                     -- [일반] 짧은 요약(키 · 파일 본문 없음)
+  received_by uuid not null default auth.uid(),
+  received_at timestamptz not null default now(),
+  primary key (item_key, scope)
+);
+comment on table owner_inputs is
+  '0089. «받을 것» — 사람이 줘야 하는 것(진짜 BOM · 세무사 재고평가방법 · 구글 서비스 계정 · 원가 관리 권한자)을 받은 때 · 누가 · 짧은 요약. 키 · 파일 본문은 두지 않는다. 대표만 읽고, 쓰기는 owner_input_mark · owner_input_google_sa_save만.';
+alter table owner_inputs enable row level security;
+revoke all on table owner_inputs from public, anon, authenticated;
+grant select on table owner_inputs to authenticated;
+create policy owner_inputs_read on owner_inputs for select to authenticated
+  using (coalesce(auth_role()::text, '') = 'Chairman' and is_active() and feature_on('owner_inputs', null));
+
+insert into feature_switches (business_id, feature_key, enabled, audience, reason) values
+  (null, 'owner_inputs', true, 'chairman', '기본값(0089)')
+on conflict do nothing;
+
+/**
+ * 받음 한 줄(진짜 BOM · 재고평가방법 · 원가 관리 권한자). 대표(활성 · 사람) · 스위치 켜짐만. 같은 (항목, 회사)는 새 값으로 바꾼다.
+ * 구글 서비스 계정은 여기로 받지 않는다(owner_input_google_sa_save만 — 키는 Vault).
+ * 실패 낱말: owner_input_denied(42501) · owner_input_shape(22023) · owner_input_no_grant(22023 — 원가 권한을 먼저 주지 않았다).
+ */
+create or replace function owner_input_mark(p_item text, p_scope text, p_summary jsonb) returns void
+language plpgsql security definer set search_path = public, pg_temp as $fn$
+begin
+  if auth.uid() is null or coalesce(auth_role()::text, '') <> 'Chairman' or not is_active() or not feature_on('owner_inputs', null) then
+    raise exception 'owner_input_denied' using errcode = '42501';
+  end if;
+  if coalesce(p_item, '') not in ('real_bom', 'inventory_method', 'cost_manager')
+     or not exists (select 1 from businesses b where b.business_id = p_scope)
+     or p_summary is null or jsonb_typeof(p_summary) <> 'object' or length(p_summary::text) > 2000 then
+    raise exception 'owner_input_shape' using errcode = '22023';
+  end if;
+  if p_item = 'real_bom' then
+    -- 순서대로 본다(숫자 변환은 숫자인 것이 확인된 뒤에만 — or 안의 평가 순서는 정해져 있지 않다).
+    if exists (select 1 from jsonb_object_keys(p_summary) k where k <> 'rows') or jsonb_typeof(p_summary->'rows') is distinct from 'number' then
+      raise exception 'owner_input_shape' using errcode = '22023';
+    end if;
+    if (p_summary->>'rows')::numeric < 0 or (p_summary->>'rows')::numeric <> trunc((p_summary->>'rows')::numeric) then
+      raise exception 'owner_input_shape' using errcode = '22023';
+    end if;
+  end if;
+  if p_item = 'inventory_method' and (
+       exists (select 1 from jsonb_object_keys(p_summary) k where k not in ('method', 'memo'))
+       or coalesce(p_summary->>'method', '') not in ('total_avg', 'moving_avg', 'fifo')
+       or (p_summary ? 'memo' and (jsonb_typeof(p_summary->'memo') <> 'string' or length(p_summary->>'memo') > 500))) then
+    raise exception 'owner_input_shape' using errcode = '22023';
+  end if;
+  if p_item = 'cost_manager' then
+    if exists (select 1 from jsonb_object_keys(p_summary) k where k <> 'user_id')
+       or coalesce(p_summary->>'user_id', '') !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+      raise exception 'owner_input_shape' using errcode = '22023';
+    end if;
+    -- 기록만으로 권한이 생기지 않는다 — 기존 원가 권한 줄(0061 '/costing/<회사>' · 쓰기)이 이미 있어야 적힌다(거짓 «받음» 막기).
+    if not exists (select 1 from user_module_access m join user_profiles p on p.user_id = m.user_id
+                    where m.user_id = (p_summary->>'user_id')::uuid and m.module = '/costing/' || p_scope and m.can_write
+                      and p.revoked_at is null) then
+      raise exception 'owner_input_no_grant' using errcode = '22023';
+    end if;
+  end if;
+  insert into owner_inputs as o (item_key, scope, summary)
+  values (p_item, p_scope, p_summary)
+  on conflict (item_key, scope) do update
+     set summary = excluded.summary, received_by = auth.uid(), received_at = now();
+end;
+$fn$;
+
+/**
+ * 구글 서비스 계정 키(JSON 본문) → Vault 'google_sheets_sa'(있으면 바꾸기). 대표(활성 · 사람) · 스위치 켜짐만.
+ * 모양: JSON 객체 · type = service_account · private_key(글) · client_email(…gserviceaccount.com) · project_id. 하나라도 틀리면 owner_input_sa_shape.
+ * **키 본문은 어디에도 다시 나가지 않는다** — 돌려주는 값 · 이 표 · 오류 문장에는 client_email · project_id · 비밀 이름만.
+ * JSON 해석 오류(DETAIL에 원문 조각이 실린다)와 Vault 오류는 모두 삼켜 낱말 하나로 바꾼다. 이 함수에는 raise notice가 없다.
+ * Vault는 동적 SQL로 부른다(vault가 없는 DB — PGlite — 에서도 파일이 올라가게. 없으면 owner_input_vault_missing).
+ * 실패 낱말: owner_input_denied(42501) · owner_input_sa_shape(22023) · owner_input_vault_missing(55000).
+ */
+create or replace function owner_input_google_sa_save(p_json text) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $fn$
+declare
+  v       jsonb;
+  v_id    uuid;
+  v_sum   jsonb;
+begin
+  if auth.uid() is null or coalesce(auth_role()::text, '') <> 'Chairman' or not is_active() or not feature_on('owner_inputs', null) then
+    raise exception 'owner_input_denied' using errcode = '42501';
+  end if;
+  if p_json is null or length(p_json) not between 50 and 20000 then
+    raise exception 'owner_input_sa_shape' using errcode = '22023';
+  end if;
+  begin
+    v := p_json::jsonb;
+  exception when others then
+    v := null;
+  end;
+  if v is null or jsonb_typeof(v) <> 'object'
+     or (v->>'type') is distinct from 'service_account'
+     or jsonb_typeof(v->'private_key') is distinct from 'string' or length(v->>'private_key') < 20
+     or coalesce(v->>'client_email', '') !~ '^[a-z0-9._-]{1,100}@[a-z0-9.-]{1,100}\.gserviceaccount\.com$'
+     or coalesce(v->>'project_id', '') !~ '^[a-z0-9-]{1,64}$' then
+    raise exception 'owner_input_sa_shape' using errcode = '22023';
+  end if;
+  v_sum := jsonb_build_object('client_email', v->>'client_email', 'project_id', v->>'project_id', 'secret', 'google_sheets_sa');
+  v := null;
+  begin
+    execute 'select id from vault.secrets where name = $1 limit 1' into v_id using 'google_sheets_sa';
+    if v_id is null then
+      execute 'select vault.create_secret($1, $2, $3)' into v_id using p_json, 'google_sheets_sa', 'chairman-os 0089 구글 서비스 계정(시트 읽기) — /settings «받을 것»에서 대표가 올림';
+    else
+      execute 'select vault.update_secret($1, $2)' using v_id, p_json;
+    end if;
+  exception when others then
+    raise exception 'owner_input_vault_missing' using errcode = '55000';
+  end;
+  insert into owner_inputs as o (item_key, scope, summary)
+  values ('google_sa', 'group', v_sum)
+  on conflict (item_key, scope) do update
+     set summary = excluded.summary, received_by = auth.uid(), received_at = now();
+  return v_sum;
+end;
+$fn$;
+
+revoke all on function owner_input_mark(text, text, jsonb) from public, anon;
+revoke all on function owner_input_google_sa_save(text) from public, anon;
+grant execute on function owner_input_mark(text, text, jsonb) to authenticated;
+grant execute on function owner_input_google_sa_save(text) to authenticated;
 
 commit;

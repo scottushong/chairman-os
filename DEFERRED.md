@@ -2938,3 +2938,5 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - 메모리 엔진 2단계 이후 — 벡터 검색: memory_embeddings · EmbeddingAdapter 자리만, pgvector · 업체 · 키는 대표 결정 뒤 새 마이그레이션.
 - 메모리 엔진 2단계 이후 — 사람 상세 화면(People Memory): /memory «대상» 거르기로만.
 - 메모리 엔진 2단계 이후 — 처리 재시도 cron 경로: AI Agent가 기억을 못 읽어 대표 세션(/memory 열 때 최대 3건)이 대신한다.
+- 받을 것(0089 5절) — 시트 동기화가 Vault 'google_sheets_sa'를 읽게 바꾸기: 지금은 env GOOGLE_SHEETS_SA_JSON 그대로(동기화 계정이 키를 읽는 좁은 문 설계 필요). docs/decisions/2026-10-20-intake-items.md
+- 받을 것 — 재고평가방법 «세무사 확인값»을 0075 월별 손익 계산에 반영하기(이동평균 · 선입선출 계산기): 지금은 다르면 경고만.

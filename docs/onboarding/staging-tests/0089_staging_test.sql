@@ -2,7 +2,8 @@
 -- 0089 staging 검사(재무 보강 — 열 맞춤 · 공식 결산 «다시 맞출 줄») — 쓰지 않는다.
 -- build-staging-dryrun.mjs --tests가 0089와 같은 트랜잭션에서 돌리고 끝에 되돌린다(이 파일만 돌릴 때도 끝은 raise exception).
 -- 사람(이 시험 안에서만): 대표(Chairman) · rehearsal.member@example.com(직원 — 그 회사 장부를 쓰지 않으면 거부를 본다).
--- 기대: ERROR  0089 STAGING PASS a(열 맞춤 저장 · 더하기) b(모양 거부) c(직원 거부) d(다시 맞출 줄 · 통째로 바꿈) e(밀려난 결산 거부) f(스위치 기본 줄) g(anon 0) h(옮김 기록 …) i(남의 폴더 읽기 …)
+-- 기대: ERROR  0089 STAGING PASS a(열 맞춤 저장 · 더하기) b(모양 거부) c(직원 거부) d(다시 맞출 줄 · 통째로 바꿈) e(밀려난 결산 거부) f(스위치 기본 줄) g(anon 0) h(옮김 기록 …) i(남의 폴더 읽기 …) j(받을 것 …)
+-- j는 가짜 구글 키(FAKE — 진짜처럼 보이지 않음)를 Vault에 넣어 본다 — 같은 트랜잭션이 끝에 되돌리므로 staging Vault에는 남지 않는다.
 -- =====================================================================
 do $t$
 declare
@@ -210,7 +211,66 @@ begin
     if n <> 0 then raise exception 'FAIL i: 직원이 남의 수신함 파일을 본다'; end if;
     reset role;
   end if;
-  v_out := v_out || 'i(남의 폴더 읽기 — 대표 + 스위치 켬 보임 · 끔 안 보임 · 직원 안 보임 · 지우기 0)';
+  v_out := v_out || 'i(남의 폴더 읽기 — 대표 + 스위치 켬 보임 · 끔 안 보임 · 직원 안 보임 · 지우기 0) ';
+
+  -- ── j. «받을 것»(5절 owner_inputs) — 대표만 · 모양 · 가짜 구글 키(FAKE)는 Vault에만(이 트랜잭션 안에서만 — 끝에 되돌림) · 응답 · 표에 본문 없음 · 직원 · anon 거부 ──
+  perform set_config('request.jwt.claims', json_build_object('sub', v_chair, 'role', 'authenticated')::text, true);
+  perform set_config('request.jwt.claim.sub', v_chair::text, true);
+  set local role authenticated;
+  perform public.owner_input_mark('inventory_method', biz, '{"method":"total_avg","memo":"dryrun 0089"}'::jsonb);
+  perform public.owner_input_mark('real_bom', biz, '{"rows":1}'::jsonb);
+  begin
+    perform public.owner_input_mark('inventory_method', biz, '{"method":"lifo"}'::jsonb);
+    raise exception 'FAIL j: 모르는 방법을 받았다';
+  exception when invalid_parameter_value then null;
+  end;
+  begin
+    perform public.owner_input_google_sa_save('{"type":"service_account","private_key":"FAKE-NOT-A-REAL-KEY-0089-DRYRUN-xxxxxxxxxxxxxxxxxxxx"');
+    raise exception 'FAIL j: 깨진 JSON을 받았다';
+  exception when invalid_parameter_value then null;
+  end;
+  select public.owner_input_google_sa_save('{"type":"service_account","project_id":"fake-project-0089","private_key_id":"FAKE0089","private_key":"-----BEGIN FAKE KEY-----\nFAKE-NOT-A-REAL-KEY-0089-DRYRUN\n-----END FAKE KEY-----\n","client_email":"fake-reader@fake-project-0089.iam.gserviceaccount.com"}') into j;
+  if j::text ~ 'FAKE-NOT-A-REAL-KEY|private_key|BEGIN' or j->>'client_email' <> 'fake-reader@fake-project-0089.iam.gserviceaccount.com' then raise exception 'FAIL j: 응답에 키 본문이 있거나 이메일이 다르다'; end if;
+  select count(*) into n from public.owner_inputs where scope in (biz, 'group') and item_key in ('inventory_method', 'real_bom', 'google_sa');
+  if n <> 3 then raise exception 'FAIL j: 대표가 받을 것 %줄을 읽었다(3이어야)', n; end if;
+  if exists (select 1 from public.owner_inputs where summary::text ~ 'FAKE-NOT-A-REAL-KEY|private_key|BEGIN') then raise exception 'FAIL j: 표에 키 본문이 있다'; end if;
+  begin
+    insert into public.owner_inputs (item_key, scope) values ('real_bom', 'biz_vana');
+    raise exception 'FAIL j: 표에 직접 썼다';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform 1 from vault.secrets limit 1;
+    raise exception 'FAIL j: 대표 세션이 Vault를 직접 읽었다';
+  exception when insufficient_privilege then null;
+  end;
+  reset role;
+  select count(*) into n from vault.secrets where name = 'google_sheets_sa';
+  if n <> 1 then raise exception 'FAIL j: Vault에 google_sheets_sa가 한 개가 아니다(%)', n; end if;
+  if v_m is not null then
+    perform set_config('request.jwt.claims', json_build_object('sub', v_m, 'role', 'authenticated')::text, true);
+    perform set_config('request.jwt.claim.sub', v_m::text, true);
+    set local role authenticated;
+    begin
+      perform public.owner_input_mark('inventory_method', biz, '{"method":"fifo"}'::jsonb);
+      raise exception 'FAIL j: 직원이 받을 것을 적었다';
+    exception when insufficient_privilege then null;
+    end;
+    select count(*) into n from public.owner_inputs;
+    if n <> 0 then raise exception 'FAIL j: 직원이 받을 것 %줄을 읽었다', n; end if;
+    reset role;
+  end if;
+  set local role anon;
+  begin
+    perform public.owner_input_google_sa_save('{}');
+    raise exception 'FAIL j: anon이 구글 키를 올렸다';
+  exception when insufficient_privilege then null;
+  end;
+  reset role;
+  if not exists (select 1 from public.feature_switches where business_id is null and feature_key = 'owner_inputs' and enabled and audience::text = 'chairman') then
+    raise exception 'FAIL j: owner_inputs 기본 줄이 없다';
+  end if;
+  v_out := v_out || 'j(받을 것 — 대표만 · 모양 · 가짜 키 Vault에만 · 응답 · 표 본문 없음 · 직접 쓰기 · Vault 직접 읽기 거부 · 직원 · anon 거부 · 스위치)';
 
   raise exception '0089 STAGING PASS %', v_out;
 end

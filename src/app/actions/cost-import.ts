@@ -239,6 +239,15 @@ export async function commitCostImportAction(form: FormData): Promise<CostImport
       edits: result.edits,
       skipped: result.skipped,
     })
+    // 0089 «받을 것» — 진짜 BOM이 들어갔으면 /settings 카드에 «받음»만 적는다(판 수만 · 내용 없음). 실패해도 넣기는 그대로(기록은 덤).
+    if (input.target === 'bom' && input.decisions.realBom && done.inserted + done.replaced > 0) {
+      try {
+        await repo.markOwnerInput('real_bom', input.businessId, { rows: done.inserted + done.replaced })
+        revalidatePath('/settings')
+      } catch (e) {
+        console.warn('[cost-import] owner_input real_bom', (/owner_input_[a-z_]+/.exec(e instanceof Error ? e.message : '') ?? ['failed'])[0])
+      }
+    }
     const base = IMPORT_AREA[input.target]
     revalidatePath(base === 'purchasing' ? `/purchasing/${input.businessId}` : base === 'production' ? `/production/${input.businessId}` : `/costs/${input.businessId}`, 'layout')
     return { done: { inserted: done.inserted, replaced: done.replaced, skipped: result.skipped } }

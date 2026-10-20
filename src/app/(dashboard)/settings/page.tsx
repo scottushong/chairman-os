@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/layout/page-header'
 import { AiUsagePanel } from '@/components/settings/ai-usage'
 import { AccountSecurity } from '@/components/settings/account-security'
 import { CityMotionSwitch, NotifySwitches, ThemePicker } from '@/components/settings/display-prefs'
+import { OwnerInputs, type OwnerInputsProps } from '@/components/settings/owner-inputs'
 import { WorldCitiesEditor } from '@/components/settings/world-cities-editor'
 import { Icon, type IconName } from '@/components/ui/icon'
 import { canEditChairmanRoutine, canManageUsers } from '@/lib/auth/roles'
@@ -12,6 +13,8 @@ import { currentUser } from '@/lib/auth/session'
 import { featureOn } from '@/lib/features-server'
 import { boss } from '@/lib/boss'
 import { formatDateTime } from '@/lib/format'
+import type { OwnerInputRow } from '@/lib/owner-inputs'
+import { isSheetsConfigured } from '@/lib/process-sync/google'
 import { getRepository } from '@/lib/repository'
 import { readSessionInfo } from '@/lib/session-info'
 import { loadUiPrefs } from '@/lib/ui-prefs-server'
@@ -60,7 +63,9 @@ export default async function SettingsHubPage() {
   const isChairman = canEditChairmanRoutine(user)
   const isAdmin = canManageUsers(user)
   // 0073 기능 스위치 — 꺼진 기능의 줄은 이 목록에서도 뺀다.
-  const [feedbackOn, processOn] = await Promise.all([featureOn(user, 'ai_assist'), featureOn(user, 'process_charts')])
+  const [feedbackOn, processOn, ownerOn] = await Promise.all([featureOn(user, 'ai_assist'), featureOn(user, 'process_charts'), featureOn(user, 'owner_inputs')])
+  // 0089 «받을 것» — 대표(Chairman)만 · 스위치 owner_inputs. 다른 역할에게는 읽지도 그리지도 않는다(DB도 대표 외 0줄).
+  const owner = isChairman && ownerOn ? await loadOwnerInputs(repo) : null
   // 직원 화면 용어 원칙(CLAUDE.md): 회장 본인 = 회장, 그 외 = 대표.
   const bossName = boss(user.role)
 
@@ -230,6 +235,16 @@ export default async function SettingsHubPage() {
         </p>
       </Section>
 
+      {/* ───────── 받을 것 (0089 · 회장 전용 — 사람이 줘야 하는 것 넷) ───────── */}
+      {owner ? (
+        <Section icon="clipboard" title="받을 것" scope="회장 전용">
+          <p className="mb-2 text-t11 text-ink-dim">
+            사람이 줘야 하는 것 넷의 받는 자리입니다. 비어 있으면 «아직 없음», 받았으면 받은 때 · 누가 보입니다. 이 카드들은 AI를 부르지 않습니다.
+          </p>
+          <OwnerInputs {...owner} />
+        </Section>
+      ) : null}
+
       {/* ───────── AI 사용량 (Phase 11 · 회장 전용) ───────── */}
       {isChairman ? (
         <Section icon="sparkles" title="AI 사용량 · 비용" scope="회장 전용">
@@ -351,6 +366,53 @@ export default async function SettingsHubPage() {
       <div className="pb-6" />
     </div>
   )
+}
+
+/* ------------------------------------------------------------------ 받을 것 */
+
+const STAFF_ROLES = new Set(['GroupCFO', 'BusinessCEO', 'Executive', 'TeamLead', 'Member'])
+
+/**
+ * «받을 것» 카드 자료 — 대표 세션에서만 부른다. 하나가 실패해도 카드는 선다(못 읽은 칸은 '—').
+ * 구글 키 본문은 어디서도 읽지 않는다(owner_inputs에는 이메일 · 프로젝트 id만 있다).
+ */
+async function loadOwnerInputs(repo: Awaited<ReturnType<typeof getRepository>>): Promise<OwnerInputsProps> {
+  const [rows, businesses, people, bom] = await Promise.all([
+    repo.listOwnerInputs().catch((e) => {
+      console.error('[settings] owner_inputs', e instanceof Error ? e.message.slice(0, 80) : 'failed')
+      return [] as OwnerInputRow[]
+    }),
+    repo.listBusinesses().catch(() => []),
+    repo.listUserAccounts().catch(() => []),
+    repo.bomStatus().catch(() => null),
+  ])
+  const plMethods: Record<string, string | null> = {}
+  await Promise.all(
+    businesses.map(async (b) => {
+      plMethods[b.business_id] = await repo
+        .finPlSettings(b.business_id)
+        .then((s) => s?.method ?? 'monthly_wa')
+        .catch(() => null)
+    }),
+  )
+  return {
+    rows,
+    businesses: businesses.map((b) => ({ business_id: b.business_id, name: b.name })),
+    people: people
+      .filter((x) => !x.revoked_at && STAFF_ROLES.has(x.role))
+      .map((x) => ({
+        user_id: x.user_id,
+        name: x.display_name,
+        role: x.title_ko || ROLE_LABEL_KO[x.role],
+        business_ids: x.business_ids,
+        group: x.role === 'GroupCFO',
+        costing: x.modules.filter((m) => m.module.startsWith('/costing/') && m.can_write).map((m) => m.module.slice('/costing/'.length)),
+      })),
+    names: Object.fromEntries(people.map((x) => [x.user_id, x.display_name])),
+    plMethods,
+    bom: bom ? { keyReady: bom.key_ready, realAllowed: bom.real_allowed } : null,
+    sheetsEnv: isSheetsConfigured(),
+  }
 }
 
 /* ------------------------------------------------------------------ 조각들 */

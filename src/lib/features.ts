@@ -199,6 +199,13 @@ export const FEATURES = [
     defaultAudience: 'chairman',
     from: 'feat/memory-engine · 0088',
   },
+  {
+    key: 'owner_inputs',
+    label: '받을 것',
+    description: '설정(/settings)의 «받을 것» 카드 넷 — 진짜 BOM(R2 엑셀 · 기존 BOM 넣기 화면으로) · 세무사 재고평가방법(총평균 · 이동평균 · 선입선출 + 메모 — 월별 손익 설정과 다르면 경고) · 구글 서비스 계정(JSON → Vault, 화면에는 이메일 · 프로젝트만) · 원가 관리 권한자(원가 권한을 준다). 범위와 관계없이 대표만(서버 · DB가 대표만 받는다). 꺼지면 카드가 사라지고 RPC(owner_input_*)도 거부.',
+    defaultAudience: 'chairman',
+    from: 'release/2026-10-20 · 0089',
+  },
 ] as const satisfies readonly FeatureDef[]
 
 export type FeatureKey = (typeof FEATURES)[number]['key']

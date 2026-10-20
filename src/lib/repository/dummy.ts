@@ -50,6 +50,7 @@ import { dummyBlueprintEngine, dummyCostProduct, dummyCostReadAudit, dummyCosts,
 import { dummyBlueprint } from './dummy-blueprint'
 import { dummyPriceReport } from './dummy-price-report'
 import { dummyMemory } from './dummy-memory'
+import { dummyOwnerInputs } from './dummy-owner-inputs'
 import * as books from './dummy-books'
 import { dummyAssistant } from './dummy-assistant'
 import { dummyFeatures } from './dummy-features'
@@ -907,6 +908,13 @@ export const dummyRepository: ChairmanRepository = {
     businesses: async () => (await dummyRepository.listBusinesses()).map((b) => ({ business_id: b.business_id, name: b.name })),
     projects: async () => (await dummyRepository.listProjects()).map((p) => ({ project_id: p.project_id, name: p.name, business_id: p.business_id })),
     people: () => memoryPeople,
+  }),
+  // 0089 5절 — «받을 것»(dummy-owner-inputs.ts). 대표만 · 스위치 'owner_inputs' · 원가 권한 줄 먼저 · 구글 키 본문은 버린다.
+  ...dummyOwnerInputs({
+    viewer: () => dummyViewer(),
+    featureOn: async () => featureOnFor(await dummyRepository.listFeatureSwitches(), 'owner_inputs', dummyViewer().role, null),
+    businesses: async () => [...businesses, ...memoryBusinesses].map((b) => b.business_id),
+    hasCostGrant: (u, b) => !memoryPeople.find((p) => p.user_id === u)?.revoked_at && dummyModuleGrants(u).some((m) => m.module === `/costing/${b}` && m.can_write),
   }),
   // 0081 — 청사진 뼈대(dummy-blueprint.ts). 문은 dummy 원가 엔진 문 · 스위치 7개. 원가 엔진 손잡이는 여기서만 넘긴다(가짜 BOM은 dummy 어댑터 안).
   ...dummyBlueprint({
