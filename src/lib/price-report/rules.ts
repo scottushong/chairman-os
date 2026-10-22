@@ -29,7 +29,15 @@ export function manualPerDay(): number {
   return Number.isFinite(n) && n >= 1 ? Math.min(Math.floor(n), 12) : 6
 }
 
-/** 자동 회차 시각(KST) — .github/workflows/macro-briefing.yml의 cron(UTC 23:00 · 09:00)과 같다. */
+/**
+ * 자동 회차가 켜져 있는가 — 2026-10-20 macro-briefing.yml에서 schedule을 뺐다(1회 비용 확인 전 · docs/decisions/2026-10-20-price-report-cost.md).
+ * cron 두 줄을 되살리면 Vercel env PRICE_REPORT_AUTO=1을 함께 넣는다. 꺼져 있으면 화면은 «다음 자동»을 그리지 않는다.
+ */
+export function autoScheduleOn(): boolean {
+  return process.env.PRICE_REPORT_AUTO?.trim() === '1'
+}
+
+/** 자동 회차 시각(KST) — 되살릴 cron(UTC 23:00 · 09:00)과 같다. */
 export const AUTO_HOURS_KST = [8, 18] as const
 
 /** 다음 자동 시각(KST «M/D HH:00»). GitHub 일정은 몇 분 늦을 수 있다. */
@@ -60,7 +68,7 @@ export function liveRun(runs: PriceRun[], now = Date.now()): PriceRun | null {
 }
 
 /** 버튼이 잠긴 이유(화면 안내 — DB가 같은 판정을 한 번 더 한다). null = 누를 수 있음. */
-export function buttonLock(runs: PriceRun[], perDay: number, now = Date.now()): string | null {
+export function buttonLock(runs: PriceRun[], perDay: number, now = Date.now(), auto = autoScheduleOn()): string | null {
   if (liveRun(runs, now)) return '수집 중 — 끝나면 다시 누를 수 있습니다'
   const last = runs[0]
   if (last && Date.parse(last.created_at) > now - 10 * 60_000) {
@@ -69,7 +77,7 @@ export function buttonLock(runs: PriceRun[], perDay: number, now = Date.now()): 
   }
   const today = new Date(now + 9 * 3_600_000).toISOString().slice(0, 10)
   const n = runs.filter((r) => r.trigger === 'manual' && new Date(Date.parse(r.created_at) + 9 * 3_600_000).toISOString().slice(0, 10) === today).length
-  if (n >= perDay) return `오늘 ${perDay}번을 다 썼습니다 — 다음 자동 회차를 기다려 주세요`
+  if (n >= perDay) return `오늘 ${perDay}번을 다 썼습니다 — ${auto ? '다음 자동 회차를 기다려 주세요' : '내일 다시 누를 수 있습니다'}`
   return null
 }
 

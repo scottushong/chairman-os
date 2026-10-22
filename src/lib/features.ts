@@ -69,7 +69,7 @@ export const FEATURES = [
   {
     key: 'monthly_pl',
     label: '월별 손익 재고 반영',
-    description: '월별 간이 손익 화면(/finance/<회사>/monthly) 아래 «월별 손익 — 재고 반영»: 재고 반영 매출원가 · 원료별 월 가중평균 · 손익과 현금 분리 · 재고 조정 · 내부 마감 · 다시 열기. 꺼지면 화면이 예전 그대로.',
+    description: '재무 현황 «손익계산서» 탭(/finance?tab=pl) 아래 «내부 마감 · 재고 조정 · 설정»: 재고 반영 손익의 잠정 저장 · 내부 마감 확정 · 다시 열기 · 재고 조정 제안 · 승인 · 평가방법 · 허용오차(2026-10-20 — 예전 /finance/<회사>/monthly 화면 아래에서 옮김). 꺼지면 그 칸이 사라지고 RPC(fin_pl_*)도 거부.',
     defaultAudience: 'chairman',
     from: 'feat/monthly-pl · 0075',
   },
@@ -165,11 +165,53 @@ export const FEATURES = [
     from: 'feat/finance-overview · 0085',
   },
   {
+    key: 'finance_upload_ai',
+    label: '엑셀 열 맞추기 AI',
+    description: '자료 올리기에서 ECOUNT 엑셀의 열 이름이 우리 낱말 · 비슷한 이름 표로 맞지 않을 때만 AI를 한 번 부른다(기존 파일당 · 하루 한도 안). 맞춘 결과는 회사 · 종류마다 저장해 다음부터 AI 없이 읽는다. 꺼지면 비슷한 이름 · 저장된 맞춤 · «이 열은 무엇입니까?»로만(PDF · 사진은 «PDF · 사진 읽기» 스위치가 따로).',
+    defaultAudience: 'all',
+    from: 'release/2026-10-20 · 0089',
+  },
+  {
+    key: 'finance_legacy_import',
+    label: '예전 자료 가져오기',
+    description: '자료 올리기(/finance/<회사>/upload)의 «예전 자료 가져오기» 단추 — 예전 방식(0082 수신함에 남은 파일 · «확인 필요» 대기 · 공식 결산 증빙 PDF · 월별 입력)을 지금 저장 방식으로 한 번에 옮긴다(AI 없음 · 두 번 눌러도 다시 넣지 않음). 범위와 관계없이 대표만 누른다(서버 · DB가 대표만 받는다). 꺼지면 단추가 사라지고 수신함 정리는 예전대로.',
+    defaultAudience: 'chairman',
+    from: 'release/2026-10-20 · 0089',
+  },
+  {
     key: 'approvals',
     label: '전자결재',
     description: '«전자결재»(/e-approval) — 결재할 문서 · 결재 예정 · 내가 올린 문서 · 임시저장 · 내 처리 이력 · 참조 · 공유 · 후속 처리, 양식 여섯 · 합의 · 대결 · 회수 · 재상신. 꺼지면 메뉴 · 화면이 사라지고 RPC(ea_*)도 거부. 예전 «결재»(/approvals · 결재 대장)는 그대로.',
     defaultAudience: 'chairman',
     from: 'feat/approvals-0087 · 0087',
+  },
+  {
+    key: 'home_widgets',
+    label: '내 홈(위젯)',
+    description: '«내 홈»(/home) — 직원마다 위젯(내 업무 · 전자결재 · 일정 · 요청한 업무 · 공지 · 최근 문서 · 즐겨찾기 등)의 종류 · 순서 · 크기 · 표시 범위를 고르고 서버에 저장(본인만 · 다른 탭 덮어쓰기 막음). 위젯 내용은 각 기능의 기존 권한 그대로. 꺼지면 메뉴 · 화면이 사라지고 저장 RPC(home_layout_save)도 거부. 예전 직원 홈(/me)은 그대로.',
+    defaultAudience: 'chairman',
+    from: 'release/2026-10-20 · 0086',
+  },
+  {
+    key: 'memory_engine',
+    label: '기억 엔진',
+    description: '모든 화면의 «빠른 기록» 단추 · /memory(기록 · 검색 · 약속 · 검토함) · 회사/프로젝트 화면의 «관련 기억» · 주의 화면 «기억에서 나온 주의» · 어시스턴트 «기억 검색» 도구. 기록은 쓴 사람 본인만 본다(직원용을 열어도 개인 기록은 공유되지 않음). 꺼지면 화면 · 단추 · 도구가 사라지고 표 · RPC도 0행 · 거부.',
+    defaultAudience: 'chairman',
+    from: 'feat/memory-engine · 0088',
+  },
+  {
+    key: 'owner_inputs',
+    label: '받을 것',
+    description: '설정(/settings)의 «받을 것» 카드 넷 — 진짜 BOM(R2 엑셀 · 기존 BOM 넣기 화면으로) · 세무사 재고평가방법(총평균 · 이동평균 · 선입선출 + 메모 — 월별 손익 설정과 다르면 경고) · 구글 서비스 계정(JSON → Vault, 화면에는 이메일 · 프로젝트만) · 원가 관리 권한자(원가 권한을 준다). 범위와 관계없이 대표만(서버 · DB가 대표만 받는다). 꺼지면 카드가 사라지고 RPC(owner_input_*)도 거부.',
+    defaultAudience: 'chairman',
+    from: 'release/2026-10-20 · 0089',
+  },
+  {
+    key: 'finance_auto',
+    label: '재무 자동 판단',
+    description: '재무 현황(/finance)이 자료를 보고 스스로 정한다 — 재공품 · 완제품 평가(파일 → 제조지시 · 출하로 추정 → 앞 달 이월), 귀속월(«N월분» · 기간 · 연납 N등분), 중복(같은 금액 · ±3일 · 같은 거래처면 법인카드 쪽 제외), 원금/이자 출처(대출현황 열 → 원장 이자비용). 위에 «자동으로 정한 것 N건 ›» 한 줄, 틀리면 그 목록에서 고친다(원장 원본은 그대로). 꺼지면 0089까지의 계산 그대로.',
+    defaultAudience: 'all',
+    from: 'feat/finance-auto-0091 · 0091',
   },
 ] as const satisfies readonly FeatureDef[]
 
@@ -260,6 +302,8 @@ export function closedFeatureRows(): FeatureSwitchRow[] {
 export const FEATURE_NAV: Partial<Record<FeatureKey, string>> = {
   process_charts: 'nav_process_charts',
   approvals: 'nav_eapproval',
+  home_widgets: 'nav_home',
+  memory_engine: 'nav_memory',
 }
 
 /**

@@ -23,7 +23,7 @@ export function CalendarTab({ cal }: { cal: CashCalendar }) {
         <Box label="이달 들어올 돈" value={eok(cal.inflow, 1, true)} tone="up" />
         <Box label="이달 나갈 돈" value={eok(-cal.outflow, 1, true)} tone="down" />
         <div className={`rounded-[10px] border px-4 py-3 ${lowWarn ? 'border-[#e8d2bf] bg-[#fdf4ec]' : 'border-[#e1e6e3] bg-white'}`}>
-          <div className={`text-[12px] ${lowWarn ? 'text-[#9a4b12]' : 'text-[#6b7772]'}`}>월말 예상 잔액 · 이달 최저</div>
+          <div className={`text-[14px] lg:text-[12px] ${lowWarn ? 'text-[#9a4b12]' : 'text-[#6b7772]'}`}>월말 예상 잔액 · 이달 최저</div>
           <div className="text-[20px] font-bold tnum">
             {eok(cal.closing)}{' '}
             {cal.low ? <span className={`text-[13px] font-medium ${lowWarn ? 'text-[#9a4b12]' : 'text-[#6b7772]'}`}>최저 {eok(cal.low.balance)} ({Number(cal.low.date.slice(5, 7))}/{Number(cal.low.date.slice(8, 10))})</span> : null}
@@ -32,7 +32,7 @@ export function CalendarTab({ cal }: { cal: CashCalendar }) {
       </div>
 
       <div className="flex flex-col gap-2 rounded-[10px] border border-[#e1e6e3] bg-white px-4 py-3.5">
-        <div className="grid grid-cols-7 gap-1.5 text-center text-[12px] text-[#6b7772]">
+        <div className="grid grid-cols-7 gap-1.5 text-center text-[14px] lg:text-[12px] text-[#6b7772]">
           <div className="text-[#b4432b]">일</div>
           <div>월</div>
           <div>화</div>
@@ -53,22 +53,22 @@ export function CalendarTab({ cal }: { cal: CashCalendar }) {
                 aria-pressed={open === d.date}
                 className={`flex min-h-[64px] min-w-0 flex-col gap-0.5 overflow-hidden rounded-md border px-1.5 py-1.5 text-left sm:min-h-[104px] sm:px-2 ${d.big === 'out' ? 'bg-[#fdf4ec]' : d.big === 'in' ? 'bg-[#e1efeb]' : 'bg-white'} ${open === d.date ? 'border-[#0f6b5c]' : 'border-[#e1e6e3]'}`}
               >
-                <div className="text-[12px] font-semibold text-[#6b7772]">{Number(d.date.slice(8, 10))}</div>
+                <div className="text-[14px] lg:text-[12px] font-semibold text-[#6b7772]">{Number(d.date.slice(8, 10))}</div>
                 {d.items.slice(0, 3).map((x, j) => (
-                  <div key={j} className={`hidden truncate text-[12px] sm:block ${x.kind === 'in' ? 'text-[#0f6b5c]' : 'text-[#b4432b]'} ${x.planned ? 'opacity-70' : 'font-medium'}`}>
+                  <div key={j} className={`hidden truncate text-[14px] lg:text-[12px] sm:block ${x.kind === 'in' ? 'text-[#0f6b5c]' : 'text-[#b4432b]'} ${x.planned ? 'opacity-70' : 'font-medium'}`}>
                     {x.kind === 'in' ? '+' : '−'}
                     {(x.krw / 1e8).toFixed(x.krw >= 1e8 ? 1 : 2)}억 {x.label}
                     {x.planned ? ' (예정)' : ''}
                   </div>
                 ))}
-                {d.items.length > 3 ? <div className="hidden text-[11px] text-[#6b7772] sm:block">+{d.items.length - 3}건</div> : null}
-                {d.items.length ? <div className="mt-auto hidden text-[12px] font-semibold text-[#1a211e] sm:block">잔액 {d.balance === null ? '—' : eok(d.balance)}</div> : null}
+                {d.items.length > 3 ? <div className="hidden text-[14px] lg:text-[11px] text-[#6b7772] sm:block">+{d.items.length - 3}건</div> : null}
+                {d.items.length ? <div className="mt-auto hidden text-[14px] lg:text-[12px] font-semibold text-[#1a211e] sm:block">잔액 {d.balance === null ? '—' : eok(d.balance)}</div> : null}
                 {d.items.length ? <div className="mt-auto h-1.5 w-1.5 rounded-full bg-[#0f6b5c] sm:hidden" /> : null}
               </button>
             ),
           )}
         </div>
-        <div className="flex flex-wrap gap-4 text-[12px] text-[#6b7772]">
+        <div className="flex flex-wrap gap-4 text-[14px] lg:text-[12px] text-[#6b7772]">
           <span><span className="text-[#0f6b5c]">■</span> 들어오는 돈</span>
           <span><span className="text-[#b4432b]">■</span> 나가는 돈</span>
           <span><span className="inline-block size-2.5 border border-[#e8d2bf] bg-[#fdf4ec] align-middle" /> 큰 지출 날</span>
@@ -105,9 +105,9 @@ export function CalendarTab({ cal }: { cal: CashCalendar }) {
           <table className="w-full border-collapse tnum">
             <thead>
               <tr>
-                <th className="border-b border-[#e1e6e3] px-2 py-1.5 text-left text-[12px] font-medium text-[#6b7772]">구분</th>
-                <th className="border-b border-[#e1e6e3] px-2 py-1.5 text-right text-[12px] font-medium text-[#6b7772]">들어옴</th>
-                <th className="border-b border-[#e1e6e3] px-2 py-1.5 text-right text-[12px] font-medium text-[#6b7772]">나감</th>
+                <th className="border-b border-[#e1e6e3] px-2 py-1.5 text-left text-[14px] lg:text-[12px] font-medium text-[#6b7772]">구분</th>
+                <th className="border-b border-[#e1e6e3] px-2 py-1.5 text-right text-[14px] lg:text-[12px] font-medium text-[#6b7772]">들어옴</th>
+                <th className="border-b border-[#e1e6e3] px-2 py-1.5 text-right text-[14px] lg:text-[12px] font-medium text-[#6b7772]">나감</th>
               </tr>
             </thead>
             <tbody>
@@ -138,7 +138,7 @@ export function CalendarTab({ cal }: { cal: CashCalendar }) {
             <thead>
               <tr>
                 {['달', '들어옴', '나감', '월말 잔액', '최저'].map((h, i) => (
-                  <th key={h} className={`border-b border-[#e1e6e3] px-2 py-1.5 text-[12px] font-medium text-[#6b7772] ${i ? 'text-right' : 'text-left'}`}>{h}</th>
+                  <th key={h} className={`border-b border-[#e1e6e3] px-2 py-1.5 text-[14px] lg:text-[12px] font-medium text-[#6b7772] ${i ? 'text-right' : 'text-left'}`}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -149,7 +149,7 @@ export function CalendarTab({ cal }: { cal: CashCalendar }) {
                   <tr key={f.period} className={tight ? 'bg-[#fdf4ec]' : ''}>
                     <td className="border-b border-[#eef1ef] px-2 py-2 text-[14px]">
                       {monthKo(f.period)}
-                      {f.estimated ? <span className="text-[12px] text-[#6b7772]"> (추정)</span> : null}
+                      {f.estimated ? <span className="text-[14px] lg:text-[12px] text-[#6b7772]"> (추정)</span> : null}
                     </td>
                     <td className="border-b border-[#eef1ef] px-2 py-2 text-right text-[14px]">{eok(f.inflow)}</td>
                     <td className="border-b border-[#eef1ef] px-2 py-2 text-right text-[14px]">{eok(-f.outflow)}</td>
@@ -160,14 +160,14 @@ export function CalendarTab({ cal }: { cal: CashCalendar }) {
               })}
             </tbody>
           </table>
-          <div className="text-[12px] text-[#9a4b12]">
+          <div className="text-[14px] lg:text-[12px] text-[#9a4b12]">
             안전선 {safe === null ? '없음(기준값에서 정함)' : eok(safe)}
             {cal.safety.from === 'average' ? ' — 기준값이 없어 최근 3개월 한 달 평균 지출' : ''}
             {safe !== null && cal.forecast.some((f) => f.low !== null && f.low < safe) ? ' · 안전선 아래로 내려가는 달이 있습니다 — 수금을 당기거나 지출을 미루세요.' : ''}
           </div>
         </section>
       </div>
-      {cal.missing.length ? <div className="text-[12px] text-[#6b7772]">자료 부족: {cal.missing.join(' · ')}</div> : null}
+      {cal.missing.length ? <div className="text-[14px] lg:text-[12px] text-[#6b7772]">자료 부족: {cal.missing.join(' · ')}</div> : null}
     </div>
   )
 }
@@ -175,7 +175,7 @@ export function CalendarTab({ cal }: { cal: CashCalendar }) {
 function Box({ label, value, tone }: { label: string; value: string; tone?: 'up' | 'down' }) {
   return (
     <div className="rounded-[10px] border border-[#e1e6e3] bg-white px-4 py-3">
-      <div className="text-[12px] text-[#6b7772]">{label}</div>
+      <div className="text-[14px] lg:text-[12px] text-[#6b7772]">{label}</div>
       <div className={`text-[20px] font-bold tnum ${tone === 'up' ? 'text-[#0f6b5c]' : tone === 'down' ? 'text-[#b4432b]' : ''}`}>{value}</div>
     </div>
   )

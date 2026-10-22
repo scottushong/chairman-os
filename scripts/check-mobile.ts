@@ -48,7 +48,7 @@ export const ROUTES = [
   { key: '07-finance', path: '/finance' },
   { key: '08-finance-biz', path: '/finance/biz_vana' },
   { key: '09-journal', path: '/finance/biz_vana/journal' },
-  { key: '10-monthly', path: '/finance/biz_vana/monthly' },
+  { key: '10-finance-pl', path: '/finance?biz=biz_vana&tab=pl' },
   { key: '11-group-city', path: '/group' },
   { key: '12-business', path: '/business/biz_vana' },
   { key: '13-dependency', path: '/dependency/biz_vana' },
@@ -59,6 +59,8 @@ export const ROUTES = [
   { key: '18-users', path: '/settings/users' },
   { key: '19-activity', path: '/settings/activity' },
   { key: '20-me', path: '/me' },
+  // 0086 내 홈 — 기본 스위치(대표만)라 기본 dummy 서버(회장)에서 위젯이 선다. 직원으로 볼 때는 DUMMY_HOME_OPEN=biz_dy.
+  { key: '21-home', path: '/home' },
 ] as const
 
 export interface Finding {

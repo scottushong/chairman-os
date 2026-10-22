@@ -55,7 +55,11 @@ export async function finUploadInbox(): Promise<string> {
   assert.equal(await put(U.ceo, `biz_dy/${U.ceo}/x/y.xlsx`), 'denied', '0082: 네 칸 경로를 받았다')
   assert.equal(await put(U.member, `biz_dy/${U.member}/d.xlsx`), 'denied', '0082: 재무 줄 없는 직원이 올렸다')
   assert.equal(await put(U.agent, `biz_dy/${U.agent}/e.xlsx`), 'denied', '0082: AI Agent가 올렸다')
-  assert.equal(await see(U.chair, mine), 0, '0082: 대표가 남의 수신함 파일을 본다')
+  // 0089 «예전 자료 가져오기» 읽기 정책 — 스위치 finance_legacy_import가 꺼지면 0082 그대로(대표도 남의 것 못 봄), 켜지면 읽기만.
+  await db.exec("update feature_switches set enabled = false where business_id is null and feature_key = 'finance_legacy_import'")
+  assert.equal(await see(U.chair, mine), 0, '0082: 대표가 남의 수신함 파일을 본다(0089 스위치 끔)')
+  await db.exec("update feature_switches set enabled = true where business_id is null and feature_key = 'finance_legacy_import'")
+  assert.equal(await see(U.chair, mine), 1, '0089: 대표 + 스위치 켬인데 남의 수신함 파일이 안 보인다')
   assert.equal(await see(U.member, mine), 0, '0082: 직원이 남의 수신함 파일을 본다')
   assert.equal(await put(U.chair, `biz_vana/${U.chair}/f.pdf`), 1, '0082: 대표가 본인 폴더(어느 회사든)에 못 올린다')
   assert.equal(await q(U.ceo, `update storage.objects set name = 'biz_dy/${U.ceo}/z.xlsx' where name = '${mine}'`), 0, '0082: 수신함 파일을 옮겼다(update 정책 없음)')
@@ -64,5 +68,5 @@ export async function finUploadInbox(): Promise<string> {
   // 다른 버킷의 같은 모양 경로는 이 정책으로 열리지 않는다(attachments는 0045 규칙 — 줄이 없으면 거부).
   assert.equal(await put(U.ceo, `biz_dy/${U.ceo}/g.xlsx`, 'attachments'), 'denied', '0082: 수신함 규칙이 attachments 버킷을 열었다')
   await db.close()
-  return '0082 수신함(본인 폴더 · 장부 권한 · 남의 폴더 · 다른 회사 · 직원 · AI Agent · 경로 모양 · 대표도 남의 것 못 봄 · update 없음 · 지우기 본인 · 다른 버킷 안 열림 · 비공개)'
+  return '0082 수신함(본인 폴더 · 장부 권한 · 남의 폴더 · 다른 회사 · 직원 · AI Agent · 경로 모양 · 대표도 남의 것 못 봄(0089 스위치 끔 — 켜면 읽기만) · update 없음 · 지우기 본인 · 다른 버킷 안 열림 · 비공개)'
 }

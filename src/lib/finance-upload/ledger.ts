@@ -106,6 +106,8 @@ const BUILTIN: { role: RowRole; re: RegExp }[] = [
   { role: 'cumulative', re: /^(누계|누적|누적계|누적합계|당기누계|당월누계|월누계|누계합계|누적액)$/ },
   { role: 'subtotal', re: /^(소계|subtotal)$/ },
   { role: 'total', re: /^(합계|총계|총합계|계|합|총액|total|grandtotal|sum)$/ },
+  // 묶음별 부분 합 — «가나상사 소계»(ECOUNT 거래처별 · 품목별 묶음). «… 합계»는 넣지 않는다 — 원장 적요(«급여(판관) 9월 합계»)가 거래 줄이다(0092).
+  { role: 'subtotal', re: /^.+(소계|subtotal)$/ },
 ]
 
 /** 기본 규칙만으로 낱말 하나의 줄 종류. 거래 낱말이면 null. */

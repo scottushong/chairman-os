@@ -31,6 +31,15 @@ if (eaOpen && /^[a-z0-9_]{2,40}$/.test(eaOpen)) {
   memory.push({ business_id: eaOpen, feature_key: 'approvals', enabled: true, audience: 'all', reason: 'dummy 시험 — 회사 줄 전원', updated_by: null, updated_at: new Date().toISOString() })
 }
 
+/**
+ * 0086 내 홈 — dummy 전용 손잡이. DUMMY_HOME_OPEN=biz_dy면 «대표가 그 회사 줄을 켠» 상태(회사 줄 · 전원)로 시작한다(직원 A · B 화면 시험).
+ * 없으면 기본값(대표만) — 직원에게는 «내 홈» 메뉴가 없다. live에는 이 길이 없다.
+ */
+const homeOpen = process.env.DUMMY_HOME_OPEN?.trim()
+if (homeOpen && /^[a-z0-9_]{2,40}$/.test(homeOpen)) {
+  memory.push({ business_id: homeOpen, feature_key: 'home_widgets', enabled: true, audience: 'all', reason: 'dummy 시험 — 회사 줄 전원', updated_by: null, updated_at: new Date().toISOString() })
+}
+
 export function dummyFeatures(deps: { viewer(): UserAccount; businesses(): string[] }): Methods {
   return {
     async listFeatureSwitches() {

@@ -76,6 +76,7 @@ import type {
   OfficialStatement,
   OfficialStatementBasis,
   OfficialAccountMapRow,
+  OfficialUnmatchedLine,
   ProcessChart,
   ProcessChartInput,
   CityLayout,
@@ -154,6 +155,8 @@ import { monthlyPlMethods } from './supabase-monthly-pl'
 import { salesMarginsMethods } from './supabase-sales-margins'
 import { blueprintMethods } from './supabase-blueprint'
 import { priceReportMethods } from './supabase-price-report'
+import { memoryMethods } from './supabase-memory'
+import { ownerInputMethods } from './supabase-owner-inputs'
 import { costCandidatesMethods } from './supabase-cost-candidates'
 import { ledgerPostMethods } from './supabase-ledger-post'
 import { attachmentMethods } from './supabase-attachments'
@@ -860,6 +863,10 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     ...blueprintMethods(sb),
     // 0084 DY 구매팀 가격 리포트. 0084 전 DB면 'price_report_unavailable'.
     ...priceReportMethods(sb),
+    // 0088 기억 엔진(대표 본인 기록만 — memory_me). 0088 전 DB면 'memory_unavailable'.
+    ...memoryMethods(sb),
+    // 0089 5절 «받을 것»(대표만 · 구글 키는 Vault에만). 0089 전 DB면 읽기 null · 쓰기 'owner_input_unavailable'.
+    ...ownerInputMethods(sb),
     // ECOUNT 엑셀 업로드(0050 finance_imports) — 읽기는 0050 전 DB를 견딘다(supabase-finance-imports.ts 머리 주석).
     ...financeImportMethods(sb),
     // 0058 자료 받는 입구.
@@ -1224,6 +1231,23 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       return (data ?? []) as OfficialAccountMapRow[]
     },
 
+    /** 0089 공식 결산 «다시 맞출 줄» — 활성 결산만(밀려난 결산의 줄은 앱에서 거른다). 0089 전 DB는 빈 목록. */
+    async listOfficialUnmatched(businessId) {
+      const { data, error } = await sb.from('official_unmatched_lines').select('statement_id,business_id,std_key,label,grp,printed,from_code').eq('business_id', businessId).limit(5000)
+      if (error && ['PGRST205', '42P01'].includes(error.code ?? '')) return []
+      if (error) throw new Error(`Supabase official_unmatched_lines ${error.code ?? '?'}: ${error.message}`)
+      const { data: live, error: e2 } = await sb.from('official_statements').select('id').eq('business_id', businessId).is('superseded_at', null)
+      if (e2) throw new Error(`Supabase official_statements ${e2.code ?? '?'}: ${e2.message}`)
+      const ids = new Set((live ?? []).map((r) => Number((r as { id: number }).id)))
+      return ((data ?? []) as OfficialUnmatchedLine[]).map((r) => ({ ...r, statement_id: Number(r.statement_id), printed: Number(r.printed) })).filter((r) => ids.has(r.statement_id))
+    },
+
+    async saveOfficialUnmatched(statementId, lines) {
+      const { error } = await sb.rpc('official_unmatched_save', { p_statement: statementId, p_lines: lines })
+      if (error && ['PGRST202', '42883'].includes(error.code ?? '')) throw new Error('official_unmatched_unavailable')
+      if (error) throw new Error(/official_unmatched_[a-z_]+/.exec(error.message)?.[0] ?? `Supabase official_unmatched_save ${error.code ?? '?'}: ${error.message}`)
+    },
+
     async putOfficialEvidence(businessId, path, bytes) {
       if (!path.startsWith(`${businessId}/`)) throw new Error('official_evidence_denied')
       const type = /\.pdf$/.test(path) ? 'application/pdf' : /\.png$/.test(path) ? 'image/png' : 'image/jpeg'
@@ -1234,6 +1258,17 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
       if (/409|duplicate|already exists/i.test(m)) return path
       if (/bucket not found|404/i.test(m)) throw new Error('official_evidence_unavailable')
       throw new Error(`official_evidence_denied ${m.slice(0, 120)}`)
+    },
+
+    async listOfficialEvidence(businessId) {
+      const { data, error } = await sb.storage.from('fin-official-evidence').list(businessId, { limit: 200 })
+      if (error || !data) return []
+      return data.filter((o) => o.id && /^[0-9a-f]{64}\.(pdf|jpg|jpeg|png)$/.test(o.name)).map((o) => `${businessId}/${o.name}`)
+    },
+    async readOfficialEvidence(path) {
+      const { data, error } = await sb.storage.from('fin-official-evidence').download(path)
+      if (error || !data) throw new Error('official_evidence_missing')
+      return new Uint8Array(await data.arrayBuffer())
     },
 
     async officialEvidenceUrl(path) {
@@ -1873,6 +1908,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         project_id: r.project_id,
         title: r.title,
         owner: ownerName(names, r.owner_user_id),
+        owner_user_id: r.owner_user_id ?? null,
         priority: r.priority,
         status: r.status,
         blocked_since: r.blocked_since,

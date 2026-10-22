@@ -22,6 +22,25 @@ export interface Kpi {
   need: string | null
 }
 
+/**
+ * «자료 부족: 무엇이 필요» — 공식이 실제로 읽는 입력만 이름으로(2026-10-22 점검). 같은 입력은 같은 말로 — 검사 check:kpi-needs가
+ * 입력을 하나씩 빼 보고 그 이름이 나오는지 잰다.
+ */
+export const KPI_NEED = {
+  /** 손익(이익 · 원가) — 장부 전표 · ECOUNT 월별 손익 전표 또는 올린 계정별 원장 */
+  books: '계정별 원장 또는 월별 손익계산서',
+  /** 매출 — 위 둘이 없으면 판매현황 합계라도 */
+  revenue: '판매현황 또는 계정별 원장 · 월별 손익계산서',
+  /** 손익은 있는데 매출이 0 */
+  revenueZero: '매출 계정 — 계정별 원장 · 월별 손익계산서에 이 달 매출이 0',
+  /** 잔액 — 자금흐름표 잔액 칸이 없으면 재무상태 현금 계정(장부, 또는 원장 + 전년 공식 결산) */
+  balance: '월별 자금흐름표의 잔액 칸 또는 현금 계정 잔액(장부 · 계정별 원장 + 전년 공식 결산)',
+  receivable: '외상매출금 잔액 — 장부 재무상태 또는 계정별 원장 + 전년 공식 결산',
+  inventory: '재고금액명세서 또는 재공품 · 완제품 평가',
+  debt: '대출현황(잔액 칸) 또는 차입금',
+  safety: '기준값 «안전선 잔액» 또는 최근 6개월 월별 자금흐름표 실제 줄(한 달 평균 지출)',
+} as const
+
 const lack = (no: number, title: string, question: string, need: string): Kpi => ({ no, title, value: '자료 부족', aside: null, asideTone: 'muted', detail: `필요한 것: ${need}`, question, answer: '계산하지 못함', tone: 'none', need })
 
 export function computeKpis(ctx: Ctx, period: string): Kpi[] {
@@ -36,7 +55,7 @@ export function computeKpis(ctx: Ctx, period: string): Kpi[] {
   const out: Kpi[] = []
 
   // 1 매출
-  if (pl.revenue === null) out.push(lack(1, '매출', '장사가 커지는가, 줄어드는가', '판매현황 또는 계정별 원장'))
+  if (pl.revenue === null) out.push(lack(1, '매출', '장사가 커지는가, 줄어드는가', KPI_NEED.revenue))
   else {
     const mom = growth(pl.revenue, plPrev.revenue)
     const yoy = growth(pl.revenue, plLy.revenue)
@@ -49,7 +68,7 @@ export function computeKpis(ctx: Ctx, period: string): Kpi[] {
   }
 
   // 2 이익
-  if (pl.op === null || !pl.revenue) out.push(lack(2, '이익', '팔아서 남는가', '계정별 원장(또는 월별 손익계산서)'))
+  if (pl.op === null || !pl.revenue) out.push(lack(2, '이익', '팔아서 남는가', pl.op === null ? KPI_NEED.books : KPI_NEED.revenueZero))
   else {
     const m = pct(pl.op, pl.revenue)!
     const pm = plPrev.op !== null && plPrev.revenue ? pct(plPrev.op, plPrev.revenue) : null
@@ -65,28 +84,30 @@ export function computeKpis(ctx: Ctx, period: string): Kpi[] {
   // 3 예상 실적(연말까지)
   const year = monthsOfYear(period).map((p) => computePl(ctx, p))
   const done = year.filter((r) => r.revenue !== null)
-  if (done.length < 2) out.push(lack(3, '예상 실적 (연말까지)', '목표 달성 가능한가', '올해 두 달 이상의 손익(계정별 원장)'))
+  if (done.length < 2) out.push(lack(3, '예상 실적 (연말까지)', '목표 달성 가능한가', `${year.length < 2 ? '2월부터 계산 — ' : ''}올해 두 달 이상의 매출(${KPI_NEED.revenue}) — 지금 ${done.length}달`))
   else {
     const ytdRev = done.reduce((a, r) => a + (r.revenue ?? 0), 0)
-    const ytdOp = done.reduce((a, r) => a + (r.op ?? 0), 0)
+    // 이익 전망은 매출이 있는 달 모두에 이익(원장)이 있을 때만 — 판매현황만 있는 달의 이익을 0으로 더하지 않는다.
+    const opKnown = done.every((r) => r.op !== null)
+    const ytdOp = opKnown ? done.reduce((a, r) => a + (r.op ?? 0), 0) : null
     const last3 = done.slice(-3)
     const left = 12 - Number(period.slice(5, 7))
     const fRev = ytdRev + (last3.reduce((a, r) => a + (r.revenue ?? 0), 0) / last3.length) * left
-    const fOp = ytdOp + (last3.reduce((a, r) => a + (r.op ?? 0), 0) / last3.length) * left
+    const fOp = ytdOp === null ? null : ytdOp + (last3.reduce((a, r) => a + (r.op ?? 0), 0) / last3.length) * left
     const rt = s.annual_revenue_target
-    const ot = s.annual_op_target
+    const ot = fOp === null ? null : s.annual_op_target
     const rp = rt ? (fRev / rt) * 100 : null
-    const op = ot ? (fOp / ot) * 100 : null
+    const op = ot && fOp !== null ? (fOp / ot) * 100 : null
     const tone: Tone = rp === null && op === null ? 'none' : Math.min(rp ?? 100, op ?? 100) >= 95 ? 'good' : Math.min(rp ?? 100, op ?? 100) >= 85 ? 'warn' : 'bad'
     out.push({
       no: 3, title: '예상 실적 (연말까지)', value: `매출 ${eok(fRev, 0)}`, aside: rt ? `목표 ${eok(rt, 0)} · ${rp!.toFixed(0)}%` : '목표 없음', asideTone: 'muted',
-      detail: `영업이익 전망 ${eok(fOp)}${ot ? ` (목표 ${eok(ot)} · ${op!.toFixed(0)}%)` : ''} · 1~${Number(period.slice(5, 7))}월 실적 + 최근 ${last3.length}개월 평균 × 남은 ${left}개월`,
+      detail: `${fOp === null ? `영업이익 전망은 ${KPI_NEED.books}가 매출 있는 달마다 있으면` : `영업이익 전망 ${eok(fOp)}${ot ? ` (목표 ${eok(ot)} · ${op!.toFixed(0)}%)` : ''}`} · 1~${Number(period.slice(5, 7))}월 실적${done.length < year.length ? `(${done.length}달)` : ''} + 최근 ${last3.length}개월 평균 × 남은 ${left}개월`,
       question: '목표 달성 가능한가', answer: rp === null && op === null ? '목표가 없음 — 기준값에 올해 목표를 넣으면 판단' : `${rp === null ? '' : rp >= 95 ? '매출은 근접' : '매출은 미달'}${rp !== null && op !== null ? ', ' : ''}${op === null ? '' : op >= 95 ? '이익도 근접' : '이익은 미달 예상'}`, tone, need: null,
     })
   }
 
   // 4 원가
-  if (pl.cogs === null || !pl.revenue) out.push(lack(4, '원가', '원가가 오르고 있는가', '계정별 원장 · 재고금액명세서'))
+  if (pl.cogs === null || !pl.revenue) out.push(lack(4, '원가', '원가가 오르고 있는가', pl.cogs === null ? KPI_NEED.books : KPI_NEED.revenueZero))
   else {
     const r = pct(pl.cogs, pl.revenue)!
     const rp = plPrev.cogs !== null && plPrev.revenue ? pct(plPrev.cogs, plPrev.revenue) : null
@@ -102,13 +123,17 @@ export function computeKpis(ctx: Ctx, period: string): Kpi[] {
   }
 
   // 5 · 6 제품 · 거래처 수익성 — 제품 원가가 이 화면 입력에 없다(원가 엔진 «제품 원가»는 원가 관리 · 대표 화면).
-  out.push(lack(5, '제품 수익성', '무엇을 밀고 무엇을 접을지', '제품별 원가(원가 관리 «제품 원가») + 판매현황 제품별 매출'))
-  out.push(lack(6, '거래처 수익성', '누가 돈이 되는 손님인가', '거래처별 판매 제품 · 제품 원가(원가 관리) · 물류비 · 할인'))
+  // 무엇을 올려도 여기서는 계산하지 않는다 — «올리면 된다»고 말하지 않는다.
+  out.push(lack(5, '제품 수익성', '무엇을 밀고 무엇을 접을지', '제품별 원가 — 이 화면은 아직 읽지 않음(원가 관리 «제품 원가»에서 봄)'))
+  out.push(lack(6, '거래처 수익성', '누가 돈이 되는 손님인가', '거래처별 제품 원가 · 물류비 · 할인 — 이 화면은 아직 읽지 않음(원가 관리에서 봄)'))
 
   // 7 현금
   const daily = computeDaily(ctx)
-  const cashNow = daily.totalConverted ?? cash.closing
-  if (cashNow === null) out.push(lack(7, '현금', '돈이 돌아가는가', '월별 자금흐름표(계좌 · 잔액) 또는 장부 현금 계정'))
+  // 달러 계좌만 있고 환율이 없으면 합계가 0원으로 보인다 — 0이 아니라 «환율 필요».
+  const usdOnly = daily.totalKrw === null && daily.totalUsd !== null && !ctx.usdKrw
+  const cashNow = usdOnly ? null : daily.totalConverted ?? cash.closing
+  if (usdOnly) out.push(lack(7, '현금', '돈이 돌아가는가', '달러 환율(기준값 «달러 환율» 또는 공개 고시)'))
+  else if (cashNow === null) out.push(lack(7, '현금', '돈이 돌아가는가', KPI_NEED.balance))
   else {
     const opcf = cash.operating
     const tone: Tone = opcf !== null && opcf < 0 ? 'bad' : (cash.net ?? 0) < 0 ? 'warn' : 'good'
@@ -122,7 +147,7 @@ export function computeKpis(ctx: Ctx, period: string): Kpi[] {
   // 8 자금 전망(3개월)
   const cal = computeCalendar(ctx, ctx.today.slice(0, 7))
   const lows = cal.forecast.filter((f) => f.low !== null)
-  if (!lows.length) out.push(lack(8, '자금 전망 (3개월)', '모자랄 때가 오는가', '자금흐름표(잔액 · 예정 줄) 또는 최근 3개월 실제 흐름'))
+  if (!lows.length) out.push(lack(8, '자금 전망 (3개월)', '모자랄 때가 오는가', `이번 달 초 잔액 — ${KPI_NEED.balance}`))
   else {
     const min = lows.reduce((a, f) => (f.low! < a.low! ? f : a))
     const safe = cal.safety.value
@@ -135,7 +160,7 @@ export function computeKpis(ctx: Ctx, period: string): Kpi[] {
   }
 
   // 9 매출채권
-  if (bs.receivable === null && daily.sales.receivable === null) out.push(lack(9, '매출채권', '받을 돈이 잘 들어오는가', '장부 외상매출금(재무상태) 또는 원장 거래 줄'))
+  if (bs.receivable === null && daily.sales.receivable === null) out.push(lack(9, '매출채권', '받을 돈이 잘 들어오는가', KPI_NEED.receivable))
   else {
     const ar = bs.receivable ?? daily.sales.receivable!
     const dso = daily.sales.dso
@@ -151,7 +176,7 @@ export function computeKpis(ctx: Ctx, period: string): Kpi[] {
 
   // 10 재고
   const inv = bs.inventory
-  if (inv.total === null) out.push(lack(10, '재고', '돈이 창고에 묶여 있는가', '재고금액명세서 · 재공품 · 완제품 평가'))
+  if (inv.total === null) out.push(lack(10, '재고', '돈이 창고에 묶여 있는가', KPI_NEED.inventory))
   else {
     const days = pl.cogs ? Math.round(inv.total / (pl.cogs / 30)) : null
     const tone: Tone = days === null ? 'none' : days >= s.inventory_days_bad ? 'bad' : days >= s.inventory_days_warn ? 'warn' : 'good'
@@ -163,7 +188,7 @@ export function computeKpis(ctx: Ctx, period: string): Kpi[] {
   }
 
   // 11 차입금
-  if (debt.total === null) out.push(lack(11, '차입금', '빚이 감당되는가', '대출현황 · 차입금'))
+  if (debt.total === null) out.push(lack(11, '차입금', '빚이 감당되는가', KPI_NEED.debt))
   else {
     const ratio = bs.totalLiabilities !== null && bs.equity ? (bs.totalLiabilities / bs.equity) * 100 : null
     const cover = pl.op !== null && debt.monthlyInterest ? pl.op / debt.monthlyInterest : null
@@ -177,11 +202,11 @@ export function computeKpis(ctx: Ctx, period: string): Kpi[] {
   }
 
   // 12 투자 여력
-  if (!lows.length) out.push(lack(12, '투자 여력', '새 설비 · 사업에 얼마나 쓸 수 있나', '자금 전망(자금흐름표) · 안전선 잔액'))
+  if (!lows.length) out.push(lack(12, '투자 여력', '새 설비 · 사업에 얼마나 쓸 수 있나', `이번 달 초 잔액 — ${KPI_NEED.balance}`))
   else {
     const min = Math.min(...lows.map((f) => f.low!))
     const safe = cal.safety.value
-    if (safe === null) out.push(lack(12, '투자 여력', '새 설비 · 사업에 얼마나 쓸 수 있나', '기준값 «안전선 잔액»'))
+    if (safe === null) out.push(lack(12, '투자 여력', '새 설비 · 사업에 얼마나 쓸 수 있나', KPI_NEED.safety))
     else {
       const room = min - safe + s.unused_credit
       const yearlyOp = cash.operating !== null ? cash.operating * 12 : null

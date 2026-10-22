@@ -1,3 +1,4 @@
+import { featureOnFor } from '@/lib/features'
 import type { ChairmanRepository } from '@/lib/repository'
 
 import { addMonths, computeCash, computeDebt, computePl } from './engine'
@@ -28,8 +29,11 @@ export async function processRecalc(repo: ChairmanRepository, o: { businessId: s
   })
   let months = 0
   let failed = 0
+  // 0091 자동 판단 — 저장본은 여럿이 읽으니 «전원»에게 켜진 회사만(범위가 좁으면 0089 계산 그대로).
+  const switches = jobs.length ? await repo.listFeatureSwitches().catch(() => null) : null
   for (const job of jobs) {
     try {
+      const auto = featureOnFor(switches, 'finance_auto', 'Member', job.business_id)
       const end = today.slice(0, 7) > job.from_period ? today.slice(0, 7) : job.from_period
       const periods: string[] = []
       for (let p = job.from_period; p <= end && periods.length < 15; p = addMonths(p, 1)) periods.push(p)
@@ -37,7 +41,7 @@ export async function processRecalc(repo: ChairmanRepository, o: { businessId: s
       const years = [...new Set(periods.map((p) => p.slice(0, 4)))]
       for (const y of years) {
         const last = periods.filter((p) => p.startsWith(y)).at(-1)!
-        const { ctx } = await loadOverview(repo, job.business_id, last, today)
+        const { ctx } = await loadOverview(repo, job.business_id, last, today, { auto })
         // 저장본은 여럿이 읽는다 — 원료 줄이 셋 미만인 달의 원료 합계는 (돌리는 사람이 대표여도) 감춘 것으로 계산한다(0080과 같은 문).
         for (const m of ctx.months.values()) {
           if (!m.material) continue

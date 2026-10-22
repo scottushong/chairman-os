@@ -294,7 +294,9 @@ function statics() {
   const repoSb = read('src/lib/repository/supabase-finance-upload.ts')
   assert.match(repoSb, /rpc\('fin_material_lines'/, '저장소가 입고 줄을 fin_material_lines로 읽지 않는다')
   assert.match(repoSb, /rpc\('fin_material_totals'/, '저장소에 합계 RPC가 없다')
-  assert.match(read('src/app/actions/finance-upload.ts'), /if \(pending\.masked\) return \{ error: MATERIAL_HIDDEN \}/, '넣기 액션이 가려진 대기를 거르지 않는다')
+  // 2026-10-20 A2: 넣기 한 건은 lib/finance-upload/pending-save.ts(«예전 자료 가져오기»와 같은 길)로 옮겨졌다.
+  assert.match(read('src/app/actions/finance-upload.ts'), /await savePending\(/, '넣기 액션이 savePending을 거치지 않는다')
+  assert.match(read('src/lib/finance-upload/pending-save.ts'), /if \(pending\.masked\) return \{ error: MATERIAL_HIDDEN/, '넣기 액션이 가려진 대기를 거르지 않는다')
   const page = read('src/app/(dashboard)/finance/[business_id]/upload/page.tsx')
   assert.match(page, /l\.hidden \? '금액 가림'/, '같은 거래 줄 이름에 가린 금액 표시가 없다')
   assert.match(page, /masked: !!p\?\.masked/, '화면이 대기 가림을 넘기지 않는다')

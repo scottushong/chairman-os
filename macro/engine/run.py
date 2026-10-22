@@ -47,7 +47,9 @@ def main():
         with open(args.dry_run, encoding="utf-8") as f:
             briefing = json.load(f)
     else:
+        from briefing import estimate
         from briefing.collect import collect
+        print("비용 추정(상한값 기준 — 실제는 아래 «사용량»의 usd):\n" + estimate.table(estimate.plan_for(config.SETTINGS)))
         try:
             briefing = collect(prompt_slot, last)
         except Exception as exc:  # 실패해도 기존 데이터로 리포트 생성(«이번 회차 미확인»)

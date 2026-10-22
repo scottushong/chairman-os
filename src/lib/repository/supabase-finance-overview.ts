@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-import type { FinOverviewMonthRow, FinPayrollHeld, FinRecalcJob, FinRow, OverviewLineKind } from '@/types'
+import type { FinAutoFix, FinOverviewMonthRow, FinPayrollHeld, FinRecalcJob, FinRow, OverviewLineKind } from '@/types'
 
 import type { ChairmanRepository } from './types'
 
@@ -37,6 +37,8 @@ type Methods = Pick<
   | 'saveFinKpiSettings'
   | 'listAutoAccounts'
   | 'listOfficialStatementLines'
+  | 'listFinAutoFixes'
+  | 'saveFinAutoFix'
 >
 
 /** 재무 현황이 읽는 표와 칸(원료 숫자 표는 없다). 0085 칸은 따로 — 0085 전 DB는 그 칸 없이 다시 읽는다. */
@@ -192,6 +194,18 @@ export function financeOverviewMethods(sb: SupabaseClient, fallback: Pick<Chairm
     async saveFinKpiSettings(businessId, settings, reason) {
       const { error } = await sb.rpc('fin_kpi_settings_save', { p_business: businessId, p_settings: settings, p_reason: reason })
       if (error) fail('fin_kpi_settings_save', error)
+    },
+    async listFinAutoFixes(businessId) {
+      const { data, error } = await sb.from('fin_auto_fixes').select('*').eq('business_id', businessId).order('fix_id').limit(5000)
+      if (error && MISSING.has(error.code ?? '')) return []
+      if (error) fail('fin_auto_fixes', error)
+      return ((data ?? []) as FinAutoFix[]).map((r) => ({ ...r, fix_id: Number(r.fix_id) }))
+    },
+    async saveFinAutoFix(x) {
+      const { data, error } = await sb.rpc('fin_auto_fix', { p_business: x.business_id, p_rule: x.rule, p_key: x.item_key, p_period: x.period, p_action: x.action, p_value: x.value, p_prev: x.prev })
+      if (error && !MISSING.has(error.code ?? '') && /fin_auto_(denied|off|shape)/.test(error.message)) throw new Error(/fin_auto_(denied|off|shape)/.exec(error.message)![0])
+      if (error) fail('fin_auto_fix', error)
+      return Number(data)
     },
   }
 }

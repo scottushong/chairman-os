@@ -14,7 +14,7 @@ export function Card({ title, more, children, className = '', id }: { title?: Re
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           {title ? <h2 className="text-[15px] font-bold text-[#1a211e]">{title}</h2> : <span />}
           {more ? (
-            <Link href={more.href} className="text-[13px] text-[#0f6b5c] hover:underline">
+            <Link href={more.href} className="inline-flex items-center text-[13px] text-[#0f6b5c] hover:underline">
               {more.label ?? '자세히 ›'}
             </Link>
           ) : null}
@@ -28,11 +28,11 @@ export function Card({ title, more, children, className = '', id }: { title?: Re
 export function Stat({ label, value, aside, sub, tone = 'muted' }: { label: string; value: string; aside?: string | null; sub?: string | null; tone?: 'up' | 'down' | 'muted' }) {
   return (
     <div className="flex min-w-0 flex-col gap-1 rounded-[10px] border border-[#e1e6e3] bg-white px-4 py-3.5">
-      <div className="text-[12px] text-[#6b7772]">{label}</div>
+      <div className="text-[14px] lg:text-[12px] text-[#6b7772]">{label}</div>
       <div className="text-[22px] font-bold leading-tight text-[#1a211e] tnum">
         {value} {aside ? <span className="text-[13px] font-medium text-[#6b7772]">{aside}</span> : null}
       </div>
-      {sub ? <div className={`text-[12px] ${tone === 'up' ? 'text-[#0f6b5c]' : tone === 'down' ? 'text-[#b4432b]' : 'text-[#6b7772]'}`}>{sub}</div> : null}
+      {sub ? <div className={`text-[14px] lg:text-[12px] ${tone === 'up' ? 'text-[#0f6b5c]' : tone === 'down' ? 'text-[#b4432b]' : 'text-[#6b7772]'}`}>{sub}</div> : null}
     </div>
   )
 }
@@ -46,7 +46,7 @@ export function T({ children, className = '' }: { children: ReactNode; className
   )
 }
 export function Th({ children, n, className = '' }: { children?: ReactNode; n?: boolean; className?: string }) {
-  return <th className={`border-b border-[#e1e6e3] px-2 py-1.5 text-[12px] font-medium whitespace-nowrap text-[#6b7772] ${n ? 'text-right' : 'text-left'} ${className}`}>{children}</th>
+  return <th className={`border-b border-[#e1e6e3] px-2 py-1.5 text-[14px] lg:text-[12px] font-medium whitespace-nowrap text-[#6b7772] ${n ? 'text-right' : 'text-left'} ${className}`}>{children}</th>
 }
 export function Td({ children, n, bold, className = '', title }: { children?: ReactNode; n?: boolean; bold?: boolean; className?: string; title?: string }) {
   return (
@@ -57,8 +57,8 @@ export function Td({ children, n, bold, className = '', title }: { children?: Re
 }
 
 export function Note({ tone = 'muted', children }: { tone?: 'muted' | 'warn' | 'bad'; children: ReactNode }) {
-  if (tone === 'warn') return <div className="rounded-md bg-[#fdf4ec] px-2.5 py-1.5 text-[12px] text-[#9a4b12]">{children}</div>
-  return <div className={`text-[12px] ${tone === 'bad' ? 'text-[#b4432b]' : 'text-[#6b7772]'}`}>{children}</div>
+  if (tone === 'warn') return <div className="rounded-md bg-[#fdf4ec] px-2.5 py-1.5 text-[14px] lg:text-[12px] text-[#9a4b12]">{children}</div>
+  return <div className={`text-[14px] lg:text-[12px] ${tone === 'bad' ? 'text-[#b4432b]' : 'text-[#6b7772]'}`}>{children}</div>
 }
 
 /** 자료 부족 — 빈칸 대신 무엇이 필요한지. */
@@ -69,7 +69,7 @@ export function Lack({ need, upload }: { need: string; upload?: string | null })
       {upload ? (
         <>
           {' '}
-          <Link href={upload} className="text-[#0f6b5c] hover:underline">
+          <Link href={upload} className="inline-flex items-center text-[#0f6b5c] hover:underline">
             올리기
           </Link>
         </>

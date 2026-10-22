@@ -137,7 +137,7 @@ export function DailyTab({ d, upload }: { d: DailyReport; upload: string }) {
       </div>
 
       <Card title="④ 최근 10일 잔액 추이 · 오늘 들어오고 나간 돈">
-        <div className="-mt-1 text-[12px] text-[#6b7772]">원화 + 달러 환산</div>
+        <div className="-mt-1 text-[14px] lg:text-[12px] text-[#6b7772]">원화 + 달러 환산</div>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {d.trend.length ? (
             <div className="flex h-[140px] items-end gap-1.5 border-b border-[#e1e6e3] px-1" aria-label="최근 잔액 막대">
@@ -146,7 +146,7 @@ export function DailyTab({ d, upload }: { d: DailyReport; upload: string }) {
                 return (
                   <div key={t.date} className="flex flex-1 flex-col items-center gap-1" title={`${t.date} ${eok(t.krw)}`}>
                     <div className={`w-full rounded-t-[3px] ${today ? 'bg-[#0f6b5c]' : 'bg-[#b9d8d0]'}`} style={{ height: `${h(t.krw)}px` }} />
-                    <div className={`text-[11px] ${today ? 'font-semibold text-[#1a211e]' : 'text-[#6b7772]'}`}>{today ? '오늘' : `${Number(t.date.slice(5, 7))}/${Number(t.date.slice(8, 10))}`}</div>
+                    <div className={`text-[14px] lg:text-[11px] ${today ? 'font-semibold text-[#1a211e]' : 'text-[#6b7772]'}`}>{today ? '오늘' : `${Number(t.date.slice(5, 7))}/${Number(t.date.slice(8, 10))}`}</div>
                   </div>
                 )
               })}

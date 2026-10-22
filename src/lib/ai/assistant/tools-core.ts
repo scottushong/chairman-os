@@ -131,7 +131,7 @@ export const financeTool: AssistantTool = {
       const op = rows.find((r) => r.period === p && r.metric === 'OperatingProfit') ?? rows.find((r) => r.period === p)
       addEvidence(ctx, {
         label: `${biz.name} · ${p} 재무`,
-        href: `/finance/${biz.business_id}/monthly`,
+        href: `/finance?biz=${biz.business_id}&tab=pl&month=${p}`,
         detail: op ? `${op.metric} ${krw(op.value)} (${op.basis})` : undefined,
       })
     }

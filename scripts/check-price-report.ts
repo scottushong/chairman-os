@@ -7,8 +7,9 @@
  *      dispatch_failed는 자기 «대기»만 · 자동 회차 같은 날 바꿈
  *   ② 버튼 흐름(dummy + 가짜 GitHub) — 토큰 없음 문구 · 204 → «대기» · 500 → «실패» + 직전 리포트 그대로 · 완료 → 새 리포트 · 새 사건 수
  *   ③ 화면 규칙 — 잠김 이유 · 다음 자동 시각 · 안내 문 = DB 문
- *   ④ 엔진(python) — 메모 정화 · 범위 검사 · 스크립트 없는 html · 요약 카드
- *   ⑤ 정적 — 워크플로(커밋 · push 없음 · cron 08/18 KST · concurrency · dispatch 입력 · 비밀값 없음) · 대표 홈 iframe 없음 · «회장» 없음
+ *   ④ 엔진(python) — 메모 정화 · 범위 검사 · 스크립트 없는 html · 요약 카드 · 1회 비용(test_cost.py — 가짜 클라이언트 · low 최악 < $1)
+ *   ⑤ 정적 — 워크플로(커밋 · push 없음 · schedule 없음(10-20) · preset 입력 · concurrency · dispatch 입력 · 비밀값 없음) · 되살릴 cron 두 줄은 반영 문서에 ·
+ *      대표 홈 iframe 없음 · «회장» 없음
  */
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
@@ -222,7 +223,11 @@ async function buttonFlow() {
     resetDummyPriceReport()
     process.env.DUMMY_USER = 'chairman'
     delete process.env.GITHUB_DISPATCH_TOKEN
+    delete process.env.PRICE_REPORT_AUTO
+    assert.match((await requestPriceReport(repo, 'biz_dy', 6, gh(204))).error ?? '', /설정 전 — 업데이트 버튼/, '자동이 꺼졌는데 «자동 업데이트만 됩니다»')
+    process.env.PRICE_REPORT_AUTO = '1'
     assert.match((await requestPriceReport(repo, 'biz_dy', 6, gh(204))).error ?? '', /설정 전 — 자동 업데이트/)
+    delete process.env.PRICE_REPORT_AUTO
     assert.equal(calls.length, 0, '토큰 없이 GitHub를 불렀다')
     process.env.GITHUB_DISPATCH_TOKEN = 'test-token-not-real'
     const before = await repo.getPriceReport('biz_dy')
@@ -260,13 +265,18 @@ async function buttonFlow() {
 }
 
 async function rules() {
-  const { buttonLock, canReadPriceReport, canRequestPriceReport, nextAutoKst } = await import('../src/lib/price-report/rules')
+  const { autoScheduleOn, buttonLock, canReadPriceReport, canRequestPriceReport, nextAutoKst } = await import('../src/lib/price-report/rules')
   await group('③ 화면 규칙 — 잠김 이유 · 다음 자동 · 안내 문(DB 문과 같은 사람)', () => {
     const t = Date.parse('2026-10-15T01:00:00Z') // KST 10:00
     const run = (o: Partial<{ status: string; trigger: string; created_at: string }>) => ({ run_id: 'x', trigger: 'manual', slot: 'manual', requested_by: null, status: 'done', created_at: '2026-10-14T00:00:00Z', started_at: null, finished_at: null, error: null, report_id: null, new_events: null, points: null, ...o }) as never
     assert.match(buttonLock([run({ status: 'collecting', created_at: '2026-10-15T00:55:00Z' })], 6, t) ?? '', /수집 중/)
     assert.match(buttonLock([run({ created_at: '2026-10-15T00:55:00Z' })], 6, t) ?? '', /5분 뒤/)
     assert.match(buttonLock(Array.from({ length: 6 }, () => run({ created_at: '2026-10-15T00:20:00Z' })), 6, t) ?? '', /6번을 다 썼습니다/)
+    // 10-20 schedule 뺌 — 자동 꺼짐이 기본, 꺼져 있으면 «다음 자동 회차»를 말하지 않는다
+    delete process.env.PRICE_REPORT_AUTO
+    assert.equal(autoScheduleOn(), false, '자동 회차 기본이 켜짐')
+    assert.match(buttonLock(Array.from({ length: 6 }, () => run({ created_at: '2026-10-15T00:20:00Z' })), 6, t, false) ?? '', /내일 다시/)
+    assert.match(buttonLock(Array.from({ length: 6 }, () => run({ created_at: '2026-10-15T00:20:00Z' })), 6, t, true) ?? '', /다음 자동 회차/)
     assert.equal(buttonLock([run({ status: 'collecting', created_at: '2026-10-15T00:10:00Z' }), run({ created_at: '2026-10-15T00:10:00Z' })], 6, t), null, '30분 넘은 수집 중이 잠근다')
     assert.equal(nextAutoKst(t).label, '10/15 18:00')
     assert.equal(nextAutoKst(Date.parse('2026-10-15T10:00:00Z')).label, '10/16 08:00')
@@ -305,6 +315,10 @@ print('ok')
     // supa.py — 가짜 PostgREST로 읽기 · 쓰기 순서 · 메모 정화 · javascript: 주소 버림 · «미확인»은 가격 수집 실패일 때만
     const t = spawnSync('python', ['-I', 'macro/engine/tests/test_supa.py'], { encoding: 'utf8', env: { ...process.env, PYTHONIOENCODING: 'utf-8' } })
     assert.equal(t.status, 0, `supa.py 시험 실패: ${t.stderr || t.stdout}`)
+    // 1회 비용 — 가짜 Anthropic 클라이언트(진짜 호출 0): low 요청 수 · 도구 천장 · 캐싱 · 요청 크기 · 상한값 최악 < $1
+    const c = spawnSync('python', ['-I', 'macro/engine/tests/test_cost.py'], { encoding: 'utf8' })
+    assert.equal(c.status, 0, `비용 시험 실패: ${c.stderr || c.stdout}`)
+    console.log(`  ${c.stdout.trim().split('\n').pop()}`)
   })
 }
 
@@ -312,8 +326,13 @@ async function statics() {
   await group('⑤ 정적 — 워크플로 · 대표 홈 · 문구 · 원가 경로 분리', () => {
     const wf = readFileSync('.github/workflows/macro-briefing.yml', 'utf8')
     assert.ok(!/git (push|commit)|contents: write|public\/macro/.test(wf), '워크플로가 저장소에 쓴다')
-    assert.match(wf, /cron: "0 23 \* \* \*"/)
-    assert.match(wf, /cron: "0 9 \* \* \*"/)
+    // 10-20 — 자동 일정 없음(손으로만) · 비용 프리셋 입력 · 엔진에 넘김
+    assert.ok(!/^\s*schedule:|^\s*- cron:/m.test(wf), '워크플로에 schedule(cron)이 살아 있다')
+    assert.match(wf, /preset:[\s\S]*options: \[low, normal\][\s\S]*default: low/)
+    assert.match(wf, /BRIEFING_PRESET: \$\{\{ github\.event\.inputs\.preset \|\| vars\.BRIEFING_PRESET \|\| 'low' \}\}/)
+    const doc = readFileSync('docs/onboarding/release-price-report.md', 'utf8')
+    assert.match(doc, /- cron: "0 23 \* \* \*"/, '반영 문서에 되살릴 cron(08시)이 없다')
+    assert.match(doc, /- cron: "0 9 \* \* \*"/, '반영 문서에 되살릴 cron(18시)이 없다')
     assert.match(wf, /concurrency:\s*\n\s*group: macro-briefing/)
     assert.match(wf, /workflow_dispatch:[\s\S]*run_id:[\s\S]*slot:/)
     assert.match(wf, /python run\.py "\$\{args\[@\]\}"/)

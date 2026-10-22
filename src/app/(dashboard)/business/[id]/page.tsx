@@ -27,6 +27,7 @@ import {
   type Task,
 } from '@/types'
 import { decisionStatusLabel } from '@/lib/decision-status'
+import { MemoryRelated } from '@/components/memory/memory-sections'
 
 /**
  * CH-023 회사 상세 + CH-024 전략 좌표.
@@ -102,10 +103,10 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
         description={`${business.industry} · ${STATUS_LABEL_KO[business.status]} · ${business.business_id}`}
       >
         <Link
-          href={`/finance/${encodeURIComponent(id)}`}
+          href={`/finance?biz=${encodeURIComponent(id)}`}
           className="rounded-md border border-line bg-panel px-2.5 py-1.5 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
-          재무제표
+          재무 현황
         </Link>
         <Link
           href="/"
@@ -217,6 +218,8 @@ export default async function BusinessDetailPage(props: PageProps<'/business/[id
           ))}
         </Card>
       </div>
+      {/* 0088 관련 기억 — 대표 · 스위치일 때만 그린다(직원에게는 아무것도 없음). */}
+      <MemoryRelated targetType="business" targetId={id} />
     </div>
   )
 }

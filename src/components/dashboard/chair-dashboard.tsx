@@ -110,7 +110,7 @@ export async function ChairDashboard({
         </div>
       )}
       <p className="mt-2 text-t11">
-        <Link href={`/finance/${biz.business_id}/monthly`} className="text-accent hover:underline">월별 손익 자세히</Link>
+        <Link href={`/finance?biz=${encodeURIComponent(biz.business_id)}&tab=pl`} className="text-accent hover:underline">월별 손익 자세히</Link>
         <span className="mx-2 text-ink-muted">·</span>
         <Link href={`/costs/${biz.business_id}/margins?by=product`} className="text-accent hover:underline">제품별 판매 kg · 매출 · 등급 · 견적 마진 vs 실제(권한자만)</Link>
       </p>
@@ -160,14 +160,14 @@ export async function ChairDashboard({
         </div>
       ) : null}
       {products.length ? (
-        <p className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-t11">
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-t11">
           <span className="text-ink-muted">제품 진단</span>
           {products.map((p) => (
             <Link key={p.product_id} href={`/costs/${encodeURIComponent(biz.business_id)}/products/${encodeURIComponent(p.product_id)}`} className="text-accent hover:underline">
               {p.name}
             </Link>
           ))}
-        </p>
+        </div>
       ) : null}
 
       <h3 className="mt-4 text-t12 font-semibold text-ink">14가지 자료 — 받은 것 / 없는 것</h3>

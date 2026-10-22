@@ -13,6 +13,8 @@ import {
   type FinUpload,
   type FinUploadPending,
   type FinUploadShape,
+  type FinColumnMap,
+  type FinLegacyImport,
   type FinValuation,
   type FinValuationWarning,
   type TxSourceTable,
@@ -47,6 +49,8 @@ type Methods = Pick<
   | 'finMonthClosed'
   | 'listFinUploadShapes'
   | 'saveFinUploadShape'
+  | 'listFinColumnMaps'
+  | 'saveFinColumnMap'
   | 'listFinValuations'
   | 'finValuationSave'
   | 'finValuationConfirm'
@@ -70,6 +74,10 @@ type Methods = Pick<
   | 'finInboxRead'
   | 'finInboxRemove'
   | 'finInboxSweep'
+  | 'finInboxList'
+  | 'finInboxListBusiness'
+  | 'listFinLegacyImports'
+  | 'markFinLegacyImport'
 >
 
 /** 0082 수신함 버킷(브라우저가 바로 올린다 — 화면 finance-upload-board.tsx와 같은 이름). */
@@ -162,6 +170,18 @@ export function financeUploadMethods(sb: SupabaseClient): Methods {
       const { error } = await sb.rpc('fin_upload_shape_save', { p_business: s.business_id, p_sig: s.header_sig, p_sheet: s.sheet_name, p_kind: s.kind, p_map: s.column_map })
       if (error) fail('fin_upload_shape_save', error)
     },
+    /* ───── 0089 열 맞춤 ───── */
+    async listFinColumnMaps(businessId) {
+      const { data, error } = await sb.from('fin_column_maps').select('business_id,kind,label_map,source,updated_at').eq('business_id', businessId).limit(100)
+      if (error && MISSING.has(error.code ?? '')) return []
+      if (error) fail('fin_column_maps', error)
+      return (data ?? []) as FinColumnMap[]
+    },
+    async saveFinColumnMap(m) {
+      const { error } = await sb.rpc('fin_column_map_save', { p_business: m.business_id, p_kind: m.kind, p_map: m.label_map, p_source: m.source })
+      if (error && /fin_column_map_[a-z]+/.test(error.message)) throw new Error(/fin_column_map_[a-z]+/.exec(error.message)![0])
+      if (error) fail('fin_column_map_save', error)
+    },
 
     /* ───── 0082 수신함 ───── */
     async finInboxRead(path) {
@@ -186,6 +206,40 @@ export function financeUploadMethods(sb: SupabaseClient): Methods {
       if (!old.length) return 0
       const { error: rmErr } = await sb.storage.from(FIN_INBOX_BUCKET).remove(old)
       return rmErr ? 0 : old.length
+    },
+    async finInboxList(folder) {
+      const { data, error } = await sb.storage.from(FIN_INBOX_BUCKET).list(folder, { limit: 200, sortBy: { column: 'created_at', order: 'asc' } })
+      if (error || !data) return []
+      // 폴더(id 없음) · 자리표(.emptyFolderPlaceholder)는 뺀다.
+      return data.filter((o) => o.id && !o.name.startsWith('.')).map((o) => ({ path: `${folder}/${o.name}`, created_at: o.created_at ?? null }))
+    },
+
+    async finInboxListBusiness(businessId) {
+      // 첫 단은 사람 폴더(id 없음) — 보이는 폴더마다 한 번 더(정책이 보이는 파일만 돌려준다).
+      const { data, error } = await sb.storage.from(FIN_INBOX_BUCKET).list(businessId, { limit: 200 })
+      if (error || !data) return []
+      const out: { path: string; created_at: string | null }[] = []
+      for (const d of data.filter((o) => !o.id && /^[0-9a-f-]{36}$/.test(o.name))) {
+        const folder = `${businessId}/${d.name}`
+        const { data: files } = await sb.storage.from(FIN_INBOX_BUCKET).list(folder, { limit: 200, sortBy: { column: 'created_at', order: 'asc' } })
+        for (const o of files ?? []) if (o.id && !o.name.startsWith('.')) out.push({ path: `${folder}/${o.name}`, created_at: o.created_at ?? null })
+      }
+      return out
+    },
+
+    /* ───── 0089 «예전 자료 가져오기» 옮김 기록 ───── */
+    async listFinLegacyImports(businessId) {
+      const { data, error } = await sb.from('fin_legacy_imports').select('business_id,source,source_ref,outcome,upload_id,note,created_at').eq('business_id', businessId).limit(2000)
+      if (error && MISSING.has(error.code ?? '')) return []
+      if (error) fail('fin_legacy_imports', error)
+      return (data ?? []) as FinLegacyImport[]
+    },
+    async markFinLegacyImport(r) {
+      const { data, error } = await sb.rpc('fin_legacy_import_mark', { p_business: r.business_id, p_source: r.source, p_ref: r.source_ref, p_outcome: r.outcome, p_upload: r.upload_id, p_note: r.note })
+      if (error && MISSING.has(error.code ?? '')) throw new Error('fin_legacy_unavailable')
+      if (error && /fin_legacy_[a-z]+/.test(error.message)) throw new Error(/fin_legacy_[a-z]+/.exec(error.message)![0])
+      if (error) fail('fin_legacy_import_mark', error)
+      return data === true
     },
 
     /* ───── 0072 ───── */

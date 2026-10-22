@@ -92,7 +92,8 @@ export default async function MePage({ searchParams }: PageProps<'/me'>) {
   const tab: Tab = (['tasks', 'requests', 'team', ...(hasInbox ? ['inbox'] : []), ...(isLead ? ['bundle'] : [])] as Tab[]).includes(raw) ? raw : 'tasks'
 
   const today = kstToday()
-  const myTasks = tasks.filter((t) => t.owner === me && t.status !== 'Done').sort((a, b) => (a.deadline ?? '9').localeCompare(b.deadline ?? '9'))
+  // owner는 어댑터가 이름으로 바꾼 이름표다 — 사람 비교는 owner_user_id(0086 블록에서 고침: 예전에는 늘 비어 보였다).
+  const myTasks = tasks.filter((t) => (t.owner_user_id ?? t.owner) === me && t.status !== 'Done').sort((a, b) => (a.deadline ?? '9').localeCompare(b.deadline ?? '9'))
   const myRequests = decisions.filter((d) => d.created_by === me && d.template_key).sort((a, b) => b.decision_id.localeCompare(a.decision_id))
   const bundleable = decisions.filter(
     (d) => !d.step_chain && d.lead_status === 'approved' && d.approval_line?.[0]?.user_id === me && d.status === 'Open' && d.chairman_required && !d.bundle_id,

@@ -26,6 +26,9 @@ export const CHECKLIST: readonly { key: string; label: string }[] = [
   { key: 'shipment', label: '출하집계표' },
 ]
 
+/** (지운 2026-10-20) «월별 입력(CH-026)» 손입력이 장부에 넣은 전표의 적요 — «YYYY-MM 월별 간이 손익». 체크표 «월별 손익계산서»가 ECOUNT 전표와 함께 센다. */
+export const MONTHLY_MEMO = /^(\d{4}-(?:0[1-9]|1[0-2])) 월별 간이 손익$/
+
 export interface ChecklistItem {
   key: string
   label: string
@@ -33,6 +36,9 @@ export interface ChecklistItem {
   warnings: string[]
   /** 받은 시각(ISO) */
   at: string | null
+  /** 0091 체크표 «빼기» — 그 칸을 채운 올리기(파일). 장부 쪽(계정과목표 · 월별 손익) · 화면 입력 평가는 없음. */
+  uploadId?: string | null
+  fileName?: string | null
 }
 
 export interface ChecklistInput {
@@ -50,14 +56,15 @@ export interface ChecklistInput {
 export function buildChecklist(x: ChecklistInput): ChecklistItem[] {
   return CHECKLIST.map(({ key, label }) => {
     if (key === 'accounts') {
-      return { key, label, state: x.accounts === 'none' ? 'missing' : x.accounts === 'auto' ? 'warn' : 'ok', warnings: x.accounts === 'auto' ? ['자동 생성 계정만 있음 — 계정과목표를 올리면 덮어씁니다'] : [], at: x.accountsAt }
+      // 자동 생성 계정(원장이 만든 것)만 있으면 계정과목표는 아직 받지 않은 것 — «자료 N/18»에 세지 않는다(2026-10-22).
+      return { key, label, state: x.accounts === 'file' ? 'ok' : 'missing', warnings: x.accounts === 'auto' ? ['자동 생성 계정만 있음 — 계정과목표를 올리면 덮어씁니다'] : [], at: x.accounts === 'file' ? x.accountsAt : null }
     }
     if (key === 'pl_monthly') return { key, label, state: x.plMonthlyAt ? 'ok' : 'missing', warnings: [], at: x.plMonthlyAt }
     const u = x.uploads.filter((v) => v.kind === key && v.period === x.period && v.status === 'applied').sort((a, b) => (b.applied_at ?? '').localeCompare(a.applied_at ?? ''))[0]
     if (key === 'valuation' && !u && x.valuationAt) return { key, label, state: 'ok', warnings: [], at: x.valuationAt }
     if (!u) return { key, label, state: 'missing', warnings: [], at: null }
     const w = u.warnings ?? []
-    return { key, label, state: w.length ? 'warn' : 'ok', warnings: w, at: u.applied_at }
+    return { key, label, state: w.length ? 'warn' : 'ok', warnings: w, at: u.applied_at, uploadId: u.upload_id, fileName: u.file_name }
   })
 }
 

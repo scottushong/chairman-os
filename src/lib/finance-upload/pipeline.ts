@@ -6,6 +6,7 @@ import type { EcountSheet } from '@/lib/ecount/excel/workbook'
 
 import { AI_KIND_SPECS, KIND_SPECS, kindSpec, type KindSpec, type UploadKind } from './kinds'
 import { accountHead, cellDate, cellNum, ledgerLayoutByCode, readLedgerWith, rowRole, type LedgerLayout, type LedgerRead, type RowLabel } from './ledger'
+import { labelKey, SKIP_COLUMN, synonymsOf, type ColumnLabelMap } from './synonyms'
 
 /**
  * «회계 · 재무 자료 올리기» v2 — 파일 한 장의 처리(2b ~ 2f). **AI 없이 도는 부분 전부**가 여기 있다(순수 함수 — check:finance-upload가 잰다).
@@ -64,10 +65,11 @@ function sheetText(sheet: EcountSheet, rows = 8): string {
 export function scrubSheet(sheet: EcountSheet): Scrubbed {
   const text = sheetText(sheet)
   const production = PRODUCTION_HINT.test(normalizeLabel(text))
-  const payrollish = PAYROLL_HINT.test(normalizeLabel(text))
   let materialRows = 0
   let cardNumbers = 0
   const header = findHeader(sheet.rows)
+  // 0092: 급여 모양은 시트명 · 머리글까지의 줄로만 본다 — 자료 줄의 «급여 지급»(자금흐름표 · 전표 적요)이 «계좌» 칸을 통째로 비우지 않게.
+  const payrollish = PAYROLL_HINT.test(normalizeLabel(header ? sheetText(sheet, header.row + 1) : text))
   const personCols = new Set<number>()
   const acctCols = new Set<number>()
   // 머리글 줄의 이름 · 주민 · 계좌 칸을 비운다 — 급여 모양이면 이름 · 연락처까지, 아니면 주민 · 계좌만(카드 · 판촉의 담당자 이름은 남긴다).
@@ -112,42 +114,120 @@ export function scrubSheet(sheet: EcountSheet): Scrubbed {
 
 const SKIP_LINE = /회사명|출력일|출력시간|인쇄|page|페이지|^\s*\d{4}\/\d{2}\/\d{2}\s*(오전|오후)/i
 
-/** 머리글 줄 — 제목 · 출력 시각 · 회사명 줄을 건너뛰고 낱말(어느 종류든 칸 이름)이 가장 많이 모인 줄. */
-export function findHeader(rows: EcountCell[][], maxRows = 30): { row: number; hits: number } | null {
-  const words = [...new Set(KIND_SPECS.flatMap((k) => k.fields.flatMap((f) => f.keywords)).concat(['일자', '적요', '잔액', '합계']))]
+/** 머리글 낱말(종류 칸 낱말 + 0089 비슷한 이름) — 머리글 줄 찾기에 쓴다. */
+const HEADER_WORDS = [
+  ...new Set(
+    KIND_SPECS.flatMap((k) => k.fields.flatMap((f) => [...f.keywords, ...synonymsOf(k.kind, f.key)]))
+      .concat(['일자', '적요', '잔액', '합계'])
+      .map((w) => normalizeLabel(w).toLowerCase()),
+  ),
+]
+
+/**
+ * 머리글 줄 — 제목 · 출력 시각 · 회사명 줄을 건너뛰고 낱말(어느 종류든 칸 이름)이 가장 많이 모인 줄.
+ * extra = 이 회사가 저장한 머리글 열쇠(0089 fin_column_maps) — 우리 낱말에 없는 이름도 머리글로 센다.
+ */
+export function findHeader(rows: EcountCell[][], maxRows = 30, extra?: ReadonlySet<string>): { row: number; hits: number } | null {
   let best: { row: number; hits: number } | null = null
   for (let r = 0; r < Math.min(maxRows, rows.length); r += 1) {
     const cells = rows[r].map((c) => normalizeLabel(cellText(c))).filter(Boolean)
     if (cells.length < 2) continue
     if (SKIP_LINE.test(cells.join(' '))) continue
-    const hits = cells.filter((t) => t.length <= 20 && words.some((w) => t.toLowerCase().includes(normalizeLabel(w).toLowerCase()))).length
+    const hits = cells.filter((t) => t.length <= 20 && (HEADER_WORDS.some((w) => t.toLowerCase().includes(w)) || !!extra?.has(labelKey(t)))).length
     if (hits >= 2 && (!best || hits > best.hits)) best = { row: r, hits }
   }
   return best
 }
 
-/** 그 종류의 칸을 머리글 줄에서 찾는다 — 낱말 목록 앞쪽(더 구체적인 말)이 이긴다, 한 열은 한 칸만. */
-export function mapColumns(spec: KindSpec, headerCells: EcountCell[]): Record<string, number> {
+/** 칸을 어떻게 찾았나 — learned(이 회사가 저장한 맞춤) · keyword(kinds.ts 낱말) · synonym(비슷한 이름 표). */
+export type ColumnVia = 'learned' | 'keyword' | 'synonym'
+
+/**
+ * 그 종류의 칸을 머리글 줄에서 찾는다 — 낱말 목록 앞쪽(더 구체적인 말)이 이긴다, 한 열은 한 칸만.
+ * 순서: ① 저장된 맞춤(같은 글) ② kinds.ts 낱말(같음 → 포함) ③ 비슷한 이름 표(같음 → 포함). ②까지는 0089 전과 같다 — 저장된 맞춤 · 비슷한 이름은 남은 칸만 채운다.
+ * 저장된 맞춤의 '-'(«쓰지 않음»)는 그 열을 비워 둔다(다시 묻지 않는다).
+ */
+export function mapColumnsHow(spec: KindSpec, headerCells: EcountCell[], learned?: ColumnLabelMap): { columns: Record<string, number>; via: Record<string, ColumnVia>; skipped: number[] } {
   const labels = headerCells.map((c) => normalizeLabel(cellText(c)).toLowerCase())
   const used = new Set<number>()
   const out: Record<string, number> = {}
+  const via: Record<string, ColumnVia> = {}
+  const skipped: number[] = []
+  if (learned) {
+    const keys = new Set(spec.fields.map((f) => f.key))
+    labels.forEach((l, i) => {
+      if (!l) return
+      const k = learned[labelKey(l)]
+      if (k === SKIP_COLUMN) {
+        used.add(i)
+        skipped.push(i)
+      } else if (k && keys.has(k) && !(k in out)) {
+        out[k] = i
+        via[k] = 'learned'
+        used.add(i)
+      }
+    })
+  }
   // 두 번 돈다: 먼저 글이 똑같은 칸(«AMOUNT» = amount · «원화금액» = amount_krw), 그다음 포함(«공급가액» ⊃ «가액»).
   // 한 번에 포함으로 찾으면 넓은 낱말(«금액»)이 더 구체적인 칸(«원화금액»)을 먼저 가져간다.
-  for (const exact of [true, false]) {
+  for (const [how, exact] of [['keyword', true], ['keyword', false], ['synonym', true], ['synonym', false]] as const) {
     for (const field of spec.fields) {
       if (field.key in out) continue
-      for (const kw of field.keywords) {
+      for (const kw of how === 'keyword' ? field.keywords : synonymsOf(spec.kind, field.key)) {
         const k = normalizeLabel(kw).toLowerCase()
         const i = labels.findIndex((l, idx) => !used.has(idx) && l !== '' && (exact ? l === k : l.includes(k)))
         if (i >= 0) {
           out[field.key] = i
+          via[field.key] = how
           used.add(i)
           break
         }
       }
     }
   }
+  return { columns: out, via, skipped }
+}
+
+export function mapColumns(spec: KindSpec, headerCells: EcountCell[], learned?: ColumnLabelMap): Record<string, number> {
+  return mapColumnsHow(spec, headerCells, learned).columns
+}
+
+/** (회사, 종류)별 저장된 맞춤 — 0089 fin_column_maps를 읽은 것. */
+export type ColumnMaps = ReadonlyMap<string, ColumnLabelMap>
+
+/** 맞춘 칸 → 저장할 맞춤(머리글 열쇠 → 칸 이름). 빈 머리글 · 40자 넘는 글은 뺀다. */
+export function labelMapOf(headerCells: EcountCell[], columns: Record<string, number>): ColumnLabelMap {
+  const out: ColumnLabelMap = {}
+  for (const [key, col] of Object.entries(columns)) {
+    const t = normalizeLabel(cellText(headerCells[col] ?? EMPTY_CELL))
+    if (t && t.length <= 40) out[labelKey(t)] = key
+  }
   return out
+}
+
+/**
+ * «이 열은 무엇입니까?» — 머리글이 있고 아래에 값이 있는데 어느 칸에도 맞추지 못한 열(그 종류에 아직 빈 칸이 있을 때만 묻는다).
+ * 저장된 '-'(쓰지 않음)는 다시 묻지 않는다. 숫자는 싣지 않는다(머리글 글 · 열 번호만).
+ */
+export function unmatchedColumns(sheet: EcountSheet, cls: Pick<Classification, 'kind' | 'headerRow' | 'columns'>, learned?: ColumnLabelMap): { col: number; label: string }[] {
+  if (cls.kind === 'unknown' || cls.kind === 'ledger') return []
+  const spec = kindSpec(cls.kind)
+  const open = spec.fields.filter((f) => !(f.key in cls.columns))
+  if (!open.length) return []
+  const usedCols = new Set(Object.values(cls.columns))
+  const head = sheet.rows[cls.headerRow] ?? []
+  const body = sheet.rows.slice(cls.headerRow + 1, cls.headerRow + 200)
+  const out: { col: number; label: string }[] = []
+  head.forEach((c, i) => {
+    const label = cellText(c).trim()
+    if (!label || usedCols.has(i) || label.length > 40) return
+    if (learned?.[labelKey(label)] === SKIP_COLUMN) return
+    // 사람 · 계좌 칸(버리기에서 비운 열)은 묻지 않는다.
+    if (PERSON_COLS.test(normalizeLabel(label))) return
+    if (!body.some((r) => r[i] && r[i].t !== 'empty')) return
+    out.push({ col: i, label: label.slice(0, 40) })
+  })
+  return out.slice(0, 8)
 }
 
 /** 시트 모양 서명(분류 학습 키) — 시트명 · 머리글 줄 글 · 회사. 숫자는 넣지 않는다. */
@@ -156,20 +236,31 @@ export function shapeSignature(businessId: string, sheet: EcountSheet, headerRow
   return createHash('sha256').update(`${businessId}\n${normalizeLabel(sheet.name)}\n${head}`).digest('hex').slice(0, 32)
 }
 
-export function classifyByCode(sheet: EcountSheet): Classification {
-  const header = findHeader(sheet.rows)
+/**
+ * 코드 분류. maps(0089 — 이 회사가 종류마다 저장한 머리글 맞춤)가 있으면 그 글로도 칸을 찾고, 저장된 맞춤이 머리글 대부분과 같으면
+ * 시트명 · 제목에 종류 낱말이 없어도 그 종류로 본다(«지난번 이 회사의 같은 양식» — AI 없이).
+ */
+export function classifyByCode(sheet: EcountSheet, maps?: ColumnMaps): Classification {
+  const extra = maps?.size ? new Set([...maps.values()].flatMap((m) => Object.keys(m))) : undefined
+  const header = findHeader(sheet.rows, 30, extra)
   const title = normalizeLabel(sheetText(sheet, 5))
   const name = normalizeLabel(sheet.name)
   // ⑤ 계정별 원장은 계정 코드가 칸이 아니라 계정 제목 줄(«1509(제품)»)에 있다 — 제목 줄이 있으면 «계정코드 칸 있음»과 같게 센다.
   const noLayout = { cols: {}, headCol: null }
   const ledgerHeads = sheet.rows.slice(0, 400).filter((r) => accountHead(r, noLayout)).length
   const scored = KIND_SPECS.map((spec) => {
-    const hint = spec.hints.some((h) => name.includes(normalizeLabel(h))) ? 3 : spec.hints.some((h) => title.includes(normalizeLabel(h))) ? 2 : 0
-    const cols = header ? mapColumns(spec, sheet.rows[header.row]) : {}
+    const learned = maps?.get(spec.kind)
+    const how = header ? mapColumnsHow(spec, sheet.rows[header.row], learned) : { columns: {} as Record<string, number>, via: {} as Record<string, ColumnVia> }
+    const cols = how.columns
     const headAsCode = spec.kind === 'ledger' && !('account_code' in cols) && ledgerHeads > 0 && 'debit' in cols && 'credit' in cols
     const required = spec.fields.filter((f) => f.required).every((f) => f.key in cols || (headAsCode && f.key === 'account_code'))
+    // 저장된 맞춤과 같은 글의 칸이 저장된 맞춤의 60% 이상(2칸 이상) · 필수 칸이 다 있으면 «이 회사의 그 양식».
+    const learnedHits = Object.values(how.via).filter((v) => v === 'learned').length
+    const learnedSize = learned ? Object.values(learned).filter((v) => v !== SKIP_COLUMN).length : 0
+    const known = learnedSize > 0 && required && learnedHits >= Math.max(2, Math.ceil(learnedSize * 0.6))
+    const hint = spec.hints.some((h) => name.includes(normalizeLabel(h))) ? 3 : spec.hints.some((h) => title.includes(normalizeLabel(h))) ? 2 : known ? 3 : 0
     const matched = Object.keys(cols).length + (headAsCode ? 1 : 0)
-    return { spec, cols, score: hint * 2 + matched + (required ? 2 : -3), hint, required, matched }
+    return { spec, cols, score: hint * 2 + matched + (required ? 2 : -3), hint, required, matched, known }
   }).sort((a, b) => b.score - a.score)
   const [a, b] = scored
   if (!header || !a || a.score <= 0) {
@@ -178,12 +269,13 @@ export function classifyByCode(sheet: EcountSheet): Classification {
   const margin = a.score - (b?.score ?? 0)
   const confidence: Confidence =
     a.hint > 0 && a.required && a.matched >= Math.min(3, a.spec.fields.length) && margin >= 2 ? 'high' : a.required && margin >= 1 ? 'medium' : 'low'
+  const hintWord = a.spec.hints.find((h) => title.includes(normalizeLabel(h)) || name.includes(normalizeLabel(h)))
   return {
     kind: a.spec.kind,
     confidence,
     headerRow: header.row,
     columns: a.cols,
-    reason: `${a.hint ? '시트명 · 제목에 «' + a.spec.hints.find((h) => title.includes(normalizeLabel(h)) || name.includes(normalizeLabel(h))) + '»' : '종류 낱말 없음'} · 칸 ${a.matched}개(${a.spec.fields.length}개 중)`,
+    reason: `${hintWord ? '시트명 · 제목에 «' + hintWord + '»' : a.known ? '이 회사가 저장한 열 맞춤과 같은 머리글' : '종류 낱말 없음'} · 칸 ${a.matched}개(${a.spec.fields.length}개 중)`,
     source: 'code',
   }
 }

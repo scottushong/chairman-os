@@ -2896,3 +2896,48 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - 임시저장 삭제 때 버킷 객체 지우기 — 지우기 정책을 두지 않아 객체가 남는다(첨부 줄이 없어 아무도 못 읽음). 치우는 일은 나중에 정리 작업으로.
 - 병렬 결재(합의 동시 진행) · 선결재 — 초기 정책대로 없음.
 - 0086 직원 홈 위젯 — `src/lib/approvals/widget.ts` 세 함수(release-approvals.md «홈 위젯 연결»)를 0086 브랜치가 부른다.
+- 0089 «이 열은 무엇입니까?» 답은 다음 올리기부터 — 이번 파일을 그 자리에서 다시 읽으려면 원본(수신함)을 처리 뒤에도 잠깐 둬야 한다(0070 «원본을 두지 않는다»와 부딪힘). 고른 열까지 지금 넣으려면 «되돌리기» 뒤 다시 올리기.
+- 0089 보류 «종류 모름»에서 사람이 종류를 고를 때(applyPendingUpload)는 저장된 열 맞춤을 아직 쓰지 않는다(kinds.ts 낱말 · 비슷한 이름만) — 대기 칸 격자로 다시 읽을 때 maps를 넘기면 된다.
+
+## 2026-10-20 내 홈 위젯(0086)
+- 근태·휴가(출근 · 잔여 연차 · 부서 부재자) — 근태 기능이 없어 «연동 준비 중». 휴가 신청은 전자결재 휴가신청 양식으로만 잇는다.
+- 일정의 시간 · 장소 · «내 일정 / 부서 일정» — calendar_items에 시간 · 참석자 칸이 없어 오늘 · 이번 주만.
+- 요청한 업무 — 업무(tasks)에 «요청자» 칸이 없어 내가 올린 결재 요청(/me «내 요청»)만. 업무에 요청자가 생기면 같은 위젯에 더한다.
+- 부서 공지 · 필독 «읽음 확인» — 공지(0038)는 회사 · 그룹 단위만. 필수 공지 = «맨 앞 고정»(pinned) 공지로 대신(관리자 = 공지 쓰기 권한자).
+- 안전·설비 요청 — 설비 대장이 없어 «설비수리 품의»(전자결재)만. 설비명 · 위치 · 조치 기한은 연동 준비 중.
+- 즐겨찾기의 «승인된 외부 업무 시스템 링크» — 승인 목록(관리자 지정)이 없어 넣지 않음.
+- 위젯 끌어 놓기는 데스크톱 마우스만(HTML5 DnD). 폰 · 키보드는 앞/뒤 버튼.
+- /coming-soon «지금 쓸 수 있는 화면»(readyItems)은 스위치를 모른다 — 꺼진 사람에게도 «내 홈» · «전자결재»가 목록에 뜬다(0087과 같은 문제).
+- 스테이징 반영 명령 `npm run db:push:staging`(db-push.mjs)은 --include-all을 받지 않는다(check:db-safety가 막음) — 순서 밖 번호(0086)는 손 명령으로. 필요하면 db-push.mjs에 번호 지정 --include-all을 release-production.sh처럼 넣는다.
+
+## 2026-10-19 기억 엔진 0088(처음 0086 · feat/memory-engine) — 미룸 · 리뷰 Minor
+- (끝남 · 10-20) 청사진 보강 0085 자리 — 0085는 재무 현황이 썼고 기억 엔진은 0088로(docs/decisions/2026-10-20-memory-engine.md).
+- (Phase 2 · 구현 안 됨) 음성 전사(STT 업체 · 키 없음 — 음성은 «원본 보관 · 전사 대기») · 브라우저 안 녹음(MediaRecorder) · 메모-녹음 시점 맞추기 · 발언자 구분(표 memory_segments 자리만) · Meeting Workspace 화면(회의는 기록 종류 + memory_meetings 머리만) · 스캔 PDF/사진 읽기(AI 문서 읽기 길 재사용 예정).
+- (Phase 3 · 구현 안 됨) Google Calendar · Gmail · Meet · Zoom · WhatsApp 연동(ExternalSourceAdapter 자리) — 카카오톡 내보내기 txt를 파일로 올리면 «이름: 내용»으로 펴는 것만 있다.
+- (Phase 4 · 구현 안 됨) 바뀜 지능(AI) · 약속 감시 알림 · 관계 이력 · AI 아침 요약 · 선제 주의 — 지금은 규칙(같은 대상 + 낱말 겹침 + 기한/금액/담당 차이)과 코드로 센 칸.
+- (Phase 1 일부) 벡터 검색 — 표 memory_embeddings와 EmbeddingAdapter만. pgvector 켜기 · 업체 · 키는 대표 결정 뒤 새 마이그레이션.
+- (Phase 1 일부) 사람 상세 화면(People Memory) — 사람 화면이 없어 /memory «대상» 거르기로만. 회사 · 프로젝트는 상세에 «관련 기억».
+- (리뷰 Minor) memory_apply · memory_fail이 큐를 잡은 쪽인지 보지 않는다(10분 넘긴 늦은 처리가 새 결과 뒤에 앞 결과를 넣을 수 있음 — 같은 열쇠라 겹치지는 않음).
+- (리뷰 Minor) memory_requeue는 돌고 있으면 아무것도 안 하고 true · 처리 상태 칸을 되돌리지 않음.
+- (리뷰 Minor) memory_item_set · memory_apply는 감사 줄을 안 쓴다(이력은 memory_revisions · runs) · memory_revisions.review_id FK 없음.
+- (리뷰 Minor) 버킷 memory-assets: 지우기 정책 없음(올림 성공 · 등록 실패 파일이 남을 수 있음) · allowed_mime_types 미설정 · memory_object_ok가 기록 id 존재를 보지 않음.
+- (리뷰 Minor) create_entity가 같은 이름의 rejected · merged 바깥 인물을 다시 확정한다 · 새 업무의 owner_user_id가 그 회사 사람인지 보지 않는다.
+- (판단) 직원 화면에서 스위치 키 이름 'memory_engine'은 feature_switches 표(0073 — 누구나 읽음)로 보인다 — intake 등 다른 대표 전용 기능과 같아 그대로.
+
+## 2026-10-20 메모리 엔진 0088 — 1단계(저장 · 검색 · 화면)까지만, 2단계 이후 미룸
+- 메모리 엔진 2단계 이후 — 음성 올리기 뒤 전사(Speech-to-Text): STT 업체 · 키는 대표 결정 뒤. 지금은 «원본 보관 · 전사 대기»(SttAdapter 자리만).
+- 메모리 엔진 2단계 이후 — 브라우저 안 녹음(MediaRecorder): 지금은 휴대폰 녹음기(capture 속성) 파일 올리기만.
+- 메모리 엔진 2단계 이후 — Meeting Workspace 화면 · 메모/녹음 통합 · 회의 AI 요약: 표 memory_meetings 머리만.
+- 메모리 엔진 2단계 이후 — 발언자 구분: 표 memory_segments 자리만.
+- 메모리 엔진 2단계 이후 — 스캔 PDF · 사진 글 읽기(AI 문서 읽기 길 재사용): 지금은 «건너뜀».
+- 메모리 엔진 2단계 이후 — Google Calendar · Gmail · Google Meet · Zoom 연동(ExternalSourceAdapter 자리만 · 공식 API · 권한 확인 뒤).
+- 메모리 엔진 2단계 이후 — WhatsApp 내보내기 · 추가 파일 형식: 카카오톡 내보내기 txt 펴기만 있다.
+- 메모리 엔진 2단계 이후 — 바뀜 지능(AI) · 충돌 분석: 지금은 규칙(같은 대상 + 낱말 겹침 + 기한/금액/담당 차이)만.
+- 메모리 엔진 2단계 이후 — 약속 감시 알림 · 관계 이력 · 선제 주의: 지금은 주의 화면 칸을 코드로 센다.
+- 메모리 엔진 2단계 이후 — AI 아침 요약(Executive Morning Briefing): 아침 루틴 칸은 코드로 센 숫자만 · 야간 브리핑(AI Agent)은 기억을 못 읽는다.
+- 메모리 엔진 2단계 이후 — 벡터 검색: memory_embeddings · EmbeddingAdapter 자리만, pgvector · 업체 · 키는 대표 결정 뒤 새 마이그레이션.
+- 메모리 엔진 2단계 이후 — 사람 상세 화면(People Memory): /memory «대상» 거르기로만.
+- 메모리 엔진 2단계 이후 — 처리 재시도 cron 경로: AI Agent가 기억을 못 읽어 대표 세션(/memory 열 때 최대 3건)이 대신한다.
+- 받을 것(0089 5절) — 시트 동기화가 Vault 'google_sheets_sa'를 읽게 바꾸기: 지금은 env GOOGLE_SHEETS_SA_JSON 그대로(동기화 계정이 키를 읽는 좁은 문 설계 필요). docs/decisions/2026-10-20-intake-items.md
+- 받을 것 — 재고평가방법 «세무사 확인값»을 0075 월별 손익 계산에 반영하기(이동평균 · 선입선출 계산기): 지금은 다르면 경고만.
+- 0092 점검(전자결재) — 폰 하단 탭: 대표(회장) 칸은 «결정»(/approvals) 그대로 둠(회장 결정함이 그 자리) · 전자결재는 «더보기» 서랍으로. 다른 선택지: 회장도 전자결재가 켜지면 «결재»(/e-approval)로 — 회장 결정함 자리를 잃어 버림. 결재 이력의 대표 단계 행위자는 이름(ea_name)으로 보임 — 결재선은 «대표»; 맞추려면 새 마이그레이션에서 ea_doc events의 actor를 대표 단계면 «대표»로.

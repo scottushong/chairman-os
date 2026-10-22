@@ -23,6 +23,7 @@ import { parseValue } from '../src/lib/finance-upload/v21-text'
 import { checkAiSchemas } from './check-ai-schemas'
 import { runLedgerChecks } from './check-finance-upload-ledger'
 import { runHardeningChecks } from './check-upload-hardening'
+import { runMappingChecks } from './check-finance-mapping'
 import type { FinTxLine } from '../src/types'
 import { dummyRepository as repo } from '../src/lib/repository/dummy'
 import { dummyFinLines } from '../src/lib/repository/dummy-finance-upload'
@@ -108,10 +109,10 @@ async function main() {
   const run = (fileName: string, bytes: Uint8Array) => processUpload({ repo, businessId: BIZ, fileName, bytes, classify: mockAi, aiBudget: 2, today: new Date('2099-06-15') })
 
   // ── 0. 0070 칸 = kinds.ts 칸 ──
-  const sql70 = readFileSync('supabase/migrations/0070_finance_upload.sql', 'utf8')
-  const sql72 = readFileSync('supabase/migrations/0072_finance_v21.sql', 'utf8')
+  const sql70 = readFileSync('supabase/migrations/0070_finance_upload.sql', 'utf8').replace(/\r/g, '')
+  const sql72 = readFileSync('supabase/migrations/0072_finance_v21.sql', 'utf8').replace(/\r/g, '')
   // 0085 — 출하집계표(새 표 · fin_upload_save가 넣는다) · 자금흐름표 · 대출 칸(저장 직후 같은 거래에서 채운다).
-  const sql85 = readFileSync('supabase/migrations/0085_finance_overview.sql', 'utf8')
+  const sql85 = readFileSync('supabase/migrations/0085_finance_overview.sql', 'utf8').replace(/\r/g, '')
   const sql = sql70 + sql72 + sql85
   for (const k of KIND_SPECS) {
     const block = new RegExp(`create table ${k.table} \\(([\\s\\S]*?)\\n\\);`).exec(sql)?.[1] ?? ''
@@ -437,6 +438,8 @@ async function main() {
 
   // ── 17. 2026-10-14 운영 첫 사용 고침 — ⑤ 원장 구조 해석 ──
   const ledgerPass = `${await runLedgerChecks()} · ${checkAiSchemas()} · ${await runHardeningChecks()}`
+  // ── 18. 0089 재무 보강 — ECOUNT 엑셀 그대로(열 맞추기 · 시트 찾기) · 공식 결산 다시 맞춤 ──
+  const mappingPass = await runMappingChecks()
 
   console.log(
     `PASS: 0070 칸 = kinds.ts · 14가지 자동 넣기(분류 · 기간 · 상태) · 시트명 달라도 내용으로 · ④ 원료 줄 DB 0 · AI 요청 0 · 급여 이름 · 주민 · 계좌 0 · 개인 줄 사번 · ` +
@@ -445,7 +448,7 @@ async function main() {
       `0072: 18가지 자동 넣기 · 평가금액 입력자 확정 거부 · 다른 사람 확정 · 미입력 확정 거부 · 범위 다름 경고 · 빈칸 = 미입력 · 0 = 확인된 0 · 기초 = 앞 달 확정 · 미연결 · 첫 달 출처 · 이유 필수 · ` +
       `출고 구분 칸 없음 = 확인 필요 · 규칙 엇갈림 = 확인 필요 · 출고 kg 대기 읽기 0(대표 포함) · 넣을 때 kg 붙음 · 요약 보류 · 원료별 kg 0 · 출고명세 AI 0 · 모름 시트 kg 칸 비움 · ` +
       `같은 매입 = same 하나 · 금액만 = suspect · 중복 의심 → 저장 + 경고 · 다른 거래로 풀기 · 기준 출처 · 자동 넣기 뒤 마감 · 월별 손익 그대로 · 재마감 대상${closed ? '' : '(마감 달 없음 — 건너뜀)'} · 직원 세션 예시 0. ` +
-      `${ledgerPass}. 진짜 AI 호출 0회(가짜 AI ${sent.length}회).`,
+      `${ledgerPass}. ${mappingPass}. 진짜 AI 호출 0회(가짜 AI ${sent.length}회).`,
   )
 }
 

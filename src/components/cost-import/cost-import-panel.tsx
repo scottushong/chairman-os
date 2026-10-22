@@ -59,7 +59,7 @@ function sameMapping(a: Mapping | undefined, b: Mapping | undefined): boolean {
 
 /**
  * 0081 ⑦ «진짜 BOM 넣기» 화면용 미리보기 — 제품(파일에 적힌 이름)마다 줄 수 · 상태 수만. 원료 · 비율 칸을 그리지 않는다.
- * 고치기 · 충돌 고르기는 이 모양에서 하지 않는다(필요하면 파일을 고쳐 다시 올리거나 BOM 화면의 넣기 칸을 쓴다).
+ * 고치기 · 충돌 고르기는 이 모양에서 하지 않는다(필요하면 BOM 화면의 넣기 칸을 쓴다 — 엑셀은 받은 그대로).
  */
 function BomSummary({ rows }: { rows: PreviewRow[] }) {
   const by = new Map<string, Record<RowStatus, number>>()

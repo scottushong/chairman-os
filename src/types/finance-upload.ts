@@ -116,6 +116,46 @@ export interface FinUploadShape {
   column_map: Record<string, number>
 }
 
+/**
+ * 0089 (회사, 종류)마다 저장한 열 맞춤 — 머리글 글(띄어쓰기 없는 소문자) → 칸 이름 또는 '-'(쓰지 않음). 숫자 없음.
+ * 비슷한 이름 · AI · 사람(«이 열은 무엇입니까?»)이 맞춘 것을 두고, 다음 올리기부터 AI 없이 쓴다.
+ */
+export interface FinColumnMap {
+  business_id: string
+  kind: string
+  label_map: Record<string, string>
+  source: 'code' | 'ai' | 'person'
+  updated_at?: string
+}
+
+/** 0089 «예전 자료 가져오기»(A2) 옮김 기록 한 줄 — 원천 자리마다 하나(숫자 · 내용 없음). */
+export type FinLegacySource = 'inbox' | 'pending' | 'evidence' | 'monthly' | 'run'
+export type FinLegacyOutcome = 'saved' | 'held' | 'failed' | 'already' | 'skipped'
+export interface FinLegacyImport {
+  business_id: string
+  source: FinLegacySource
+  source_ref: string
+  outcome: FinLegacyOutcome
+  upload_id: string | null
+  note: string | null
+  created_at: string
+}
+
+/**
+ * 0089 공식 결산의 «다시 맞출 줄» — 저장할 때 계정을 못 맞춰 «기타 …(자동)»(또는 묶음 계정)에 넣은 줄.
+ * 계정과목표가 올라오면 이 줄만 다시 맞춰 결산을 바꾼다(official-rematch.ts). printed = 문서에 찍힌 값(사람이 읽는 양수).
+ */
+export interface OfficialUnmatchedLine {
+  statement_id: number
+  business_id: string
+  std_key: string
+  label: string
+  grp: string | null
+  printed: number
+  /** 지금 이 줄이 들어 있는 계정(기타 · 묶음 계정) */
+  from_code: string
+}
+
 /* ───────────────────────── 0072 회계 · 재무 v2.1 차이분 ───────────────────────── */
 
 /** 값 상태 — 빈칸(missing, 값 null) · 0 확인(confirmed_zero) · 값(value). 빈칸은 0이 되지 않는다. */
@@ -352,6 +392,25 @@ export interface FinRecalcJob {
   requested_at: string
   started_at: string | null
   finished_at: string | null
+}
+
+/** 0091 재무 자동 판단을 사람이 고친 한 줄(덧붙이기만 — 같은 (규칙, 자리)는 마지막 줄이 이긴다). */
+export type FinAutoRule = 'valuation' | 'period' | 'duplicate'
+export type FinAutoAction = 'value' | 'month' | 'keep_date' | 'restore' | 'auto'
+export interface FinAutoFix {
+  fix_id: number
+  business_id: string
+  rule: FinAutoRule
+  item_key: string
+  period: string
+  action: FinAutoAction
+  /** value {amount} · month {to} */
+  value: { amount?: number; to?: string } | null
+  /** 고치기 전 화면 값 */
+  prev: Record<string, unknown> | null
+  created_by: string
+  created_by_name: string | null
+  created_at: string
 }
 
 /** 재무 현황 저장본(회사 합계만 — 원료별 · 개인 줄 없음). */

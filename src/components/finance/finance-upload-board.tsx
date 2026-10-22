@@ -736,7 +736,7 @@ export function OfficialPanel({
       setSaved((s) => [...s, year])
       setExists((e) => (e.includes(year) ? e : [...e, year]))
       const next = draft.years.filter((y) => y && y !== year && !saved.includes(y))
-      setMsg(`${year}년을 공식 결산으로 저장했습니다(그 해의 월별 입력이 잠깁니다 · 고른 계정은 다음에 자동으로 맞춥니다).${next.length ? ` 남은 해: ${next.join(' · ')}` : ''}`)
+      setMsg(`${year}년을 공식 결산으로 저장했습니다(그 해의 ECOUNT 월별 손익 올리기가 잠깁니다 · 고른 계정은 다음에 자동으로 맞춥니다).${next.length ? ` 남은 해: ${next.join(' · ')}` : ''}`)
       router.refresh()
     })
   return (
@@ -898,8 +898,8 @@ export function OfficialPanel({
       </div>
       <p data-testid="official-evidence" className="mt-1 text-t10h text-ink-muted">
         {hasFile
-          ? `올린 원본(${fileName})이 증빙으로 붙습니다 — 그 회사 장부를 읽는 사람만 열 수 있는 보관함에 둡니다. 저장하면 그 해의 월별 입력이 잠깁니다.`
-          : `${draft.evidence_note ?? '올린 원본을 보관하지 못했습니다.'} 저장하면 그 해의 월별 입력이 잠깁니다.`}
+          ? `올린 원본(${fileName})이 증빙으로 붙습니다 — 그 회사 장부를 읽는 사람만 열 수 있는 보관함에 둡니다. 저장하면 그 해의 ECOUNT 월별 손익 올리기가 잠깁니다.`
+          : `${draft.evidence_note ?? '올린 원본을 보관하지 못했습니다.'} 저장하면 그 해의 ECOUNT 월별 손익 올리기가 잠깁니다.`}
       </p>
       {clash && !saved.includes(year) ? (
         <label className="mt-1 flex items-start gap-2 text-t11h text-gold">

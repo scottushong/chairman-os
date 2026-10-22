@@ -28,6 +28,7 @@
 | 0077~0079 | feat/sales-margins · feat/cost-candidates · feat/ledger-post | 0073 · 0067 · 0075 · 0070/0072 | 각 절 참고 |
 | (마이그레이션 없음) | feat/chair-dashboard | 0073(chairman_dashboard 기본 줄) · 0075(fin_pl_month) · 0070(fin_uploads) | 없음 |
 | 0081 | feat/blueprint-skeleton | 0061~0067(원가 엔진 표 · cost_secret 문 · 판매) · **0073**(feature_on · 스위치 표) · 0015(fx_rates) — 0075 · 0080은 쓰지 않는다(번호만 이어짐) | 없음(스위치 일곱 · 표 넷 · RPC 열일곱이 함께 빠진다) |
+| 0088(처음 0086) | feat/memory-engine | **0073**(feature_on · 스위치 표) · 0001/0031(audit_log) · 0002(auth_role · is_active · tasks) · 0009(pg_trgm — 색인만) — 0082~0087은 쓰지 않는다(번호만 이어짐 · 0086 홈 · 0087 전자결재와 독립) | 없음(표 열셋 · RPC 열 · 버킷 memory-assets · tasks 넣기 정책 하나가 함께 빠진다) |
 
 번호를 건너뛰어 올리면 안 된다: Supabase는 번호 순서로 올린다. 가운데를 빼려면 그 뒤 번호의 파일 이름을 다시 매기는 작업이 필요하다 — 그 일은 이 안내서 밖(반영 담당이 브랜치를 다시 짠다).
 
@@ -148,6 +149,13 @@
 - 끄는 법: «가격 리포트(구매)» 끄기(기본 «전원» — DB 읽기 규칙이 구매 줄 · 대표 · 임원 이상으로 거른다). 끄면 표 넷이 대표에게도 0행, 버튼 RPC(price_report_request)가 'price_report_denied'. AI Agent(GitHub Actions)는 계속 수집 · 저장한다 — 자동 수집까지 멈추려면 GitHub → Actions → «Macro briefing» → «Disable workflow».
 - 빼는 법(브랜치): feat/purchase-price-report를 합치지 않는다 — 0084 · macro/ · .github/workflows/macro-briefing.yml이 함께 빠진다.
 - 남는 데이터: (끄기) purchase_price_reports · points · events · runs 줄 그대로. 원가 엔진 표(cost_market_prices)에는 아무것도 들어가지 않았다.
+
+### memory_engine — 기억 엔진(대표 전용 · 0088)
+- 숨기는 것: 모든 화면 오른쪽 아래 «빠른 기록» 단추(Alt+M) · 메뉴 «기억»(/memory · /memory/<기록> · /memory/review) · 회사 · 프로젝트 화면 «관련 기억» · 주의 화면 «기억에서 나온 주의» · 아침 루틴 «어제 기억 · 열린 약속» · 어시스턴트 «기억 검색» 도구.
+- 끄는 법: /settings/features «기억 엔진» 끄기. 끄면 대표도 표 열셋 0행 · RPC 'memory_denied' · 화면 404 · 단추 · 도구 없음.
+- 직원에게 열기: 범위를 바꿔도 **직원에게는 열리지 않는다** — DB 판정(memory_me)이 역할 Chairman을 못 박았다(개인 기록은 주인만). 직원용은 새 마이그레이션으로 판정을 바꾸는 별도 블록.
+- 빼는 법(브랜치): feat/memory-engine을 합치지 않는다 — 0088 · src/lib/memory · 화면 · 액션이 함께 빠진다.
+- 남는 데이터: (끄기) memory_* 줄 · 버킷 memory-assets 파일 그대로. 검토함에서 만든 업무(tasks)는 일반 업무로 남는다(출처는 memory_links에만).
 
 ### 다음 단계 기능(스위치 줄만 먼저 있음 — 화면은 아직 없다)
 - 0081 일곱(cost_forecast · purchase_performance · customer_profit · margin_bridge · competitor_price · work_orders · product_diagnosis) — DB · RPC · 스위치만 있고 화면은 다음 블록.

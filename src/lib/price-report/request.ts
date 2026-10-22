@@ -4,14 +4,14 @@ import type { ChairmanRepository } from '@/lib/repository'
 import type { PriceRun } from '@/types'
 
 import { dispatchPriceReport, dispatchReady } from './dispatch'
-import { REQUEST_ERROR_KO } from './rules'
+import { autoScheduleOn, REQUEST_ERROR_KO } from './rules'
 
 /**
  * «지금 업데이트» 한 번: ① DB RPC(권한 · 수집 중 잠김 · 10분 · 하루 n번 → 실행 기록 «대기» + 감사) → ② GitHub workflow_dispatch(run_id) →
  * 호출이 실패하면 그 기록을 «실패»(오류 한 줄)로 — 직전 리포트는 그대로. 서버 액션과 check:price-report가 같은 함수를 부른다.
  */
 export async function requestPriceReport(repo: ChairmanRepository, businessId: string, perDay: number, fetchImpl?: typeof fetch): Promise<{ runId?: string; error?: string }> {
-  if (!dispatchReady()) return { error: '설정 전 — 자동 업데이트(08 · 18시)만 됩니다.' }
+  if (!dispatchReady()) return { error: autoScheduleOn() ? '설정 전 — 자동 업데이트(08 · 18시)만 됩니다.' : '설정 전 — 업데이트 버튼이 아직 준비되지 않았습니다.' }
   let runId: string
   try {
     runId = await repo.priceReportRequest(businessId, perDay)

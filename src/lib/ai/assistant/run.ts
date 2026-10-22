@@ -36,6 +36,8 @@ import {
   searchDocumentsTool,
 } from './tools-staff'
 import { validateTool } from './validate'
+import { memoryTool } from './tools-memory'
+import { featureOn } from '@/lib/features-server'
 
 /**
  * AI 어시스턴트의 한 번(질문 하나 → 답 하나). Phase 9 «AI에게 묻기»(lib/ai/ask.ts)를 대신한다.
@@ -138,6 +140,8 @@ export const ALL_TOOLS: AssistantTool[] = [
   financeInputHelpTool,
   searchDocumentsTool,
   myTasksTool,
+  // 0088 기억 검색 — 대표 · 웹 · 스위치(ctx.memoryOn)만. 직원에게는 도구 자체가 없다.
+  memoryTool,
 ]
 
 export interface AssistantAnswer {
@@ -306,6 +310,7 @@ async function runAssistantCore(req: AssistantRequest): Promise<AssistantAnswer>
   const en = req.user.language === 'en'
   const q = req.question.trim()
   const ctx = makeContext(req)
+  if (req.user.role === 'Chairman' && ctx.channel === 'web') ctx.memoryOn = await featureOn(req.user, 'memory_engine').catch(() => false)
 
   if (isAppChangeRequest(q)) return ruled(DEV_SESSION_LINE)
   // ⑥ 0069 «X 권한은?» — 코드가 표로 답한다(모델 없이 · 돈 들지 않음). 범위는 DB가 자른다.

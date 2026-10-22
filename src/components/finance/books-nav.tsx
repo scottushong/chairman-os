@@ -1,16 +1,16 @@
 import Link from 'next/link'
 
 /**
- * 회사 재무의 세 화면 — 재무제표 / 전표 / 계정과목 (Phase 2-B).
+ * 회사 재무의 원본 화면 — 재무제표 / 공식 결산 / 전표 / 계정과목 / 자료 올리기 / 재고 · 평가 (Phase 2-B).
+ * 2026-10-20 A5: 이 화면들은 사이드 메뉴 · 재무 현황 탭에서 빠지고 재무 현황 «원본 보기 ›»(대표 · CFO) 아래에만 있다 — 원본끼리 오가는 탭은 그대로.
  * 셋은 같은 원장의 다른 면이라 같은 자리에서 오간다. 머리글 오른쪽(PageHeader children)에 선다.
  */
 
-export type BooksTab = 'statements' | 'monthly' | 'official' | 'journal' | 'accounts' | 'import' | 'valuation'
+export type BooksTab = 'statements' | 'official' | 'journal' | 'accounts' | 'import' | 'valuation'
 
 const TABS: { tab: BooksTab; label: string; suffix: string }[] = [
   { tab: 'statements', label: '재무제표', suffix: '' },
-  // Phase 2-C. 장부에 쓰는 두 입구 — 월별 간이 손익(잠정)과 공식 결산(확정).
-  { tab: 'monthly', label: '월별 입력', suffix: '/monthly' },
+  // Phase 2-C 공식 결산(확정). «월별 입력(CH-026)»은 지웠다(2026-10-20 A5 — 옛 주소는 재무 현황 손익계산서 탭으로).
   { tab: 'official', label: '공식 결산', suffix: '/statements/new' },
   { tab: 'journal', label: '전표', suffix: '/journal' },
   { tab: 'accounts', label: '계정과목', suffix: '/accounts' },

@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useRef, useState, useTransition } from 'react'
 
-import { applyPendingUpload, releasePayrollHold, revertUpload, uploadFinanceFile, withdrawOfficialSave } from '@/app/actions/finance-upload'
+import { answerColumns, applyPendingUpload, releasePayrollHold, revertUpload, uploadFinanceFile, withdrawOfficialSave } from '@/app/actions/finance-upload'
 import { OfficialPanel, type AccountOption } from '@/components/finance/finance-upload-board'
 import { FIN_INBOX, inboxPath } from '@/lib/finance-upload/inbox'
 import { CHECKLIST } from '@/lib/finance-overview/checklist'
@@ -165,7 +165,7 @@ export function UploadBoard({
               <CardRow key={`${c.file_name}-${c.sheet}-${i}`} c={c} businessId={businessId} />
             ))}
             {cards.length > shown.length ? (
-              <Row muted cells={[`… ${cards.length - shown.length}개 더`, '', '', cards.slice(7).every((c) => c.status === 'applied') ? '모두 저장됨' : '아래 표에서', <button key="x" type="button" onClick={() => setExpand(true)} className="text-[#0f6b5c] hover:underline">펼치기</button>]} />
+              <Row muted cells={[`… ${cards.length - shown.length}개 더`, '', '', cards.slice(7).every((c) => c.status === 'applied') ? '모두 저장됨' : '아래 표에서', <button key="x" type="button" onClick={() => setExpand(true)} className="inline-flex items-center text-[#0f6b5c] hover:underline">펼치기</button>]} />
             ) : null}
           </FileTable>
           <div className="text-[13px] text-[#6b7772]">저장되면 재무 현황이 바로 다시 계산됩니다(보통 1분 안). 잘못 올린 파일은 7일 안에 «되돌리기»로 무효 처리할 수 있습니다.</div>
@@ -206,7 +206,7 @@ export function UploadBoard({
           <button className="rounded-md border border-[#d7ddda] px-2 py-1 text-[#6b7772]">달 바꾸기</button>
         </form>
         <div className="ml-auto text-[13px]">
-          <Link href={overviewHref} className="text-[#0f6b5c] hover:underline">
+          <Link href={overviewHref} className="inline-flex items-center text-[#0f6b5c] hover:underline">
             재무 현황 보기 ›
           </Link>
         </div>
@@ -219,7 +219,7 @@ export function UploadBoard({
             {recentShown.map((u) => (
               <RecentRow key={u.upload_id} u={u} businessId={businessId} canRevert={revertable.includes(u.upload_id)} />
             ))}
-            {recent.length > recentShown.length ? <Row muted cells={[`… ${recent.length - recentShown.length}개 더`, '', '', '', <button key="x" type="button" onClick={() => setExpand(true)} className="text-[#0f6b5c] hover:underline">펼치기</button>]} /> : null}
+            {recent.length > recentShown.length ? <Row muted cells={[`… ${recent.length - recentShown.length}개 더`, '', '', '', <button key="x" type="button" onClick={() => setExpand(true)} className="inline-flex items-center text-[#0f6b5c] hover:underline">펼치기</button>]} /> : null}
           </FileTable>
         ) : (
           <div className="text-[13px] text-[#6b7772]">아직 없습니다.</div>
@@ -234,7 +234,7 @@ const GRID = 'grid grid-cols-[1.6fr_1fr_0.8fr_1.2fr_0.7fr] gap-3 px-3.5 py-2.5 m
 function FileTable({ children }: { children: React.ReactNode }) {
   return (
     <div className="overflow-hidden rounded-[10px] border border-[#e1e6e3] bg-white">
-      <div className={`${GRID} border-b border-[#e1e6e3] text-[12px] text-[#6b7772] max-md:hidden`}>
+      <div className={`${GRID} border-b border-[#e1e6e3] text-[14px] lg:text-[12px] text-[#6b7772] max-md:hidden`}>
         <div>파일</div>
         <div>알아본 종류</div>
         <div>달</div>
@@ -275,11 +275,11 @@ function CardRow({ c, businessId }: { c: FileCard; businessId: string }) {
         : c.message
   const action =
     c.status === 'applied' && c.upload_id ? (
-      <button type="button" disabled={busy} onClick={() => start(async () => { const r = await revertUpload(c.upload_id, businessId, '방금 올린 파일 되돌리기'); setMsg(r.error ?? '되돌렸습니다'); router.refresh() })} className="text-[#0f6b5c] hover:underline disabled:opacity-50">
+      <button type="button" disabled={busy} onClick={() => start(async () => { const r = await revertUpload(c.upload_id, businessId, '방금 올린 파일 되돌리기'); setMsg(r.error ?? '되돌렸습니다'); router.refresh() })} className="inline-flex items-center text-[#0f6b5c] hover:underline disabled:opacity-50">
         되돌리기
       </button>
     ) : c.status === 'applied' && c.official_ids?.length ? (
-      <button type="button" disabled={busy} onClick={() => start(async () => { const r = await withdrawOfficialSave(c.official_ids, businessId); setMsg(r.error ?? '되돌렸습니다'); router.refresh() })} className="text-[#0f6b5c] hover:underline disabled:opacity-50">
+      <button type="button" disabled={busy} onClick={() => start(async () => { const r = await withdrawOfficialSave(c.official_ids, businessId); setMsg(r.error ?? '되돌렸습니다'); router.refresh() })} className="inline-flex items-center text-[#0f6b5c] hover:underline disabled:opacity-50">
         되돌리기
       </button>
     ) : null
@@ -287,13 +287,70 @@ function CardRow({ c, businessId }: { c: FileCard; businessId: string }) {
     <>
       <Row tone={tone} cells={[`${c.file_name}${c.sheet && c.sheet !== 'Sheet1' ? ` «${c.sheet}»` : ''}`, kindOf(c), c.period ?? '—', state, action]} />
       {w.length || msg ? (
-        <div className="border-b border-[#eef1ef] px-3.5 pb-2 text-[12px] text-[#9a4b12]">
+        <div className="border-b border-[#eef1ef] px-3.5 pb-2 text-[14px] lg:text-[12px] text-[#9a4b12]">
           {msg ? <span className="text-[#6b7772]">{msg} · </span> : null}
           {w.slice(0, 4).join(' · ')}
           {w.length > 4 ? ` 외 ${w.length - 4}건` : ''}
         </div>
       ) : null}
+      {c.ask?.length && c.ask_fields?.length && c.kind !== 'unknown' ? <AskColumns c={c} businessId={businessId} /> : null}
     </>
+  )
+}
+
+/**
+ * 0089 «이 열은 무엇입니까?» — 못 맞춘 열만 한 번 묻는다(나머지는 이미 저장됨). 고르면 (회사, 종류) 열 맞춤에 저장 → 다음 올리기부터 그 열을 읽는다.
+ * «쓰지 않음»도 저장한다(다시 묻지 않는다).
+ */
+function AskColumns({ c, businessId }: { c: FileCard; businessId: string }) {
+  const [picks, setPicks] = useState<Record<string, string>>({})
+  const [busy, start] = useTransition()
+  const [done, setDone] = useState<string | null>(null)
+  const chosen = Object.entries(picks).filter(([, v]) => v)
+  return (
+    <div className="border-b border-[#eef1ef] bg-[#f7faf9] px-3.5 py-2.5 text-[13px]" data-testid="ask-columns">
+      <div className="font-semibold">이 열은 무엇입니까?</div>
+      <div className="mt-0.5 text-[14px] lg:text-[12px] text-[#6b7772]">나머지 칸은 이미 저장했습니다. 고르면 이 회사 {KIND_KO[c.kind] ?? '자료'}는 다음 올리기부터 그 열까지 읽습니다(엑셀은 받은 그대로 두셔도 됩니다).</div>
+      <div className="mt-2 flex flex-col gap-1.5">
+        {c.ask!.map((a) => (
+          <label key={a.col} className="flex flex-wrap items-center gap-2">
+            <span className="min-w-[7rem] rounded border border-[#d7ddda] bg-white px-2 py-1 font-medium">«{a.label}»</span>
+            <span className="text-[#6b7772]">→</span>
+            <select
+              aria-label={`${a.label} 열`}
+              value={picks[a.label] ?? ''}
+              disabled={!!done}
+              onChange={(e) => setPicks((p) => ({ ...p, [a.label]: e.target.value }))}
+              className="min-h-11 lg:min-h-9 rounded-md border border-[#d7ddda] bg-white px-2 py-1"
+            >
+              <option value="">고르기</option>
+              {c.ask_fields!.map((f) => (
+                <option key={f.key} value={f.key}>
+                  {f.label}
+                </option>
+              ))}
+              <option value="-">쓰지 않음(다시 묻지 않음)</option>
+            </select>
+          </label>
+        ))}
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          disabled={busy || !chosen.length || !!done}
+          onClick={() =>
+            start(async () => {
+              const r = await answerColumns(businessId, c.kind, chosen.map(([label, key]) => ({ label, key })))
+              setDone(r.error ?? `저장했습니다 — 열 ${r.saved ?? chosen.length}개. 다음 올리기부터 이렇게 읽습니다.`)
+            })
+          }
+          className="min-h-11 lg:min-h-9 rounded-md border border-[#0f6b5c] bg-[#0f6b5c] px-3 text-[13px] font-semibold text-white disabled:opacity-50"
+        >
+          {busy ? '저장 중…' : '열 맞춤 저장'}
+        </button>
+        {done ? <span role="status" className="text-[14px] lg:text-[12px] text-[#6b7772]">{done}</span> : null}
+      </div>
+    </div>
   )
 }
 
@@ -317,13 +374,13 @@ function RecentRow({ u, businessId, canRevert }: { u: FinUpload; businessId: str
           u.period ?? '—',
           state,
           canRevert ? (
-            <button type="button" disabled={busy} onClick={() => start(async () => { const r = await revertUpload(u.upload_id, businessId, '화면에서 되돌림'); setMsg(r.error ?? '되돌렸습니다(지우지 않고 무효 처리).'); router.refresh() })} className="text-[#0f6b5c] hover:underline disabled:opacity-50">
+            <button type="button" disabled={busy} onClick={() => start(async () => { const r = await revertUpload(u.upload_id, businessId, '화면에서 되돌림'); setMsg(r.error ?? '되돌렸습니다(지우지 않고 무효 처리).'); router.refresh() })} className="inline-flex items-center text-[#0f6b5c] hover:underline disabled:opacity-50">
               되돌리기
             </button>
           ) : null,
         ]}
       />
-      {w.length || msg ? <div className="border-b border-[#eef1ef] px-3.5 pb-2 text-[12px] text-[#9a4b12]">{msg ? <span className="text-[#6b7772]">{msg} · </span> : null}{w.slice(0, 3).join(' · ')}</div> : null}
+      {w.length || msg ? <div className="border-b border-[#eef1ef] px-3.5 pb-2 text-[14px] lg:text-[12px] text-[#9a4b12]">{msg ? <span className="text-[#6b7772]">{msg} · </span> : null}{w.slice(0, 3).join(' · ')}</div> : null}
     </>
   )
 }
@@ -350,7 +407,7 @@ function HeldRow({ h, businessId, month, boss }: { h: HeldView; businessId: stri
       {canDo ? (
         <div className="mt-1.5 flex flex-wrap items-center gap-2">
           {needKind ? (
-            <select aria-label="종류" value={kind} onChange={(e) => setKind(e.target.value)} className="min-h-9 rounded-md border border-[#d7ddda] bg-white px-2 text-[14px]">
+            <select aria-label="종류" value={kind} onChange={(e) => setKind(e.target.value)} className="min-h-11 lg:min-h-9 rounded-md border border-[#d7ddda] bg-white px-2 text-[14px]">
               <option value="">종류 고르기</option>
               {KIND_SPECS.map((k) => (
                 <option key={k.kind} value={k.kind}>
@@ -359,8 +416,8 @@ function HeldRow({ h, businessId, month, boss }: { h: HeldView; businessId: stri
               ))}
             </select>
           ) : null}
-          {needPeriod ? <input aria-label="달" type="month" value={period} onChange={(e) => setPeriod(e.target.value)} className="min-h-9 rounded-md border border-[#d7ddda] px-2 text-[14px]" /> : null}
-          {needReason ? <input aria-label="이유" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="마감 달에 넣는 이유" className="min-h-9 min-w-0 flex-1 rounded-md border border-[#d7ddda] px-2 text-[14px]" /> : null}
+          {needPeriod ? <input aria-label="달" type="month" value={period} onChange={(e) => setPeriod(e.target.value)} className="min-h-11 lg:min-h-9 rounded-md border border-[#d7ddda] px-2 text-[14px]" /> : null}
+          {needReason ? <input aria-label="이유" value={reason} onChange={(e) => setReason(e.target.value)} placeholder="마감 달에 넣는 이유" className="min-h-11 lg:min-h-9 min-w-0 flex-1 rounded-md border border-[#d7ddda] px-2 text-[14px]" /> : null}
           <button
             type="button"
             disabled={busy || (needKind && !kind)}
@@ -371,16 +428,16 @@ function HeldRow({ h, businessId, month, boss }: { h: HeldView; businessId: stri
                 if (r.ok) router.refresh()
               })
             }
-            className="min-h-9 rounded-lg bg-[#0f6b5c] px-4 text-[14px] font-semibold text-white disabled:opacity-50"
+            className="min-h-11 lg:min-h-9 rounded-lg bg-[#0f6b5c] px-4 text-[14px] font-semibold text-white disabled:opacity-50"
           >
             {busy ? '저장 중…' : '저장'}
           </button>
           {msg ? <span role="status" className="text-[13px] text-[#6b7772]">{msg}</span> : null}
         </div>
       ) : (
-        <div className="mt-1 text-[12px] text-[#6b7772]">{h.masked ? '원료 단가 · 수량은 올린 사람(올린 뒤 1시간) · 대표 · CFO · 원가 관리만 봅니다 — 파일을 다시 올려 주세요.' : h.hold === 'closed' || h.hold === 'restricted' ? '대표 · CFO가 이 화면에서 풉니다.' : '파일을 고쳐 다시 올려 주세요.'}</div>
+        <div className="mt-1 text-[14px] lg:text-[12px] text-[#6b7772]">{h.masked ? '원료 단가 · 수량은 올린 사람(올린 뒤 1시간) · 대표 · CFO · 원가 관리만 봅니다 — 파일을 다시 올려 주세요.' : h.hold === 'closed' || h.hold === 'restricted' ? '대표 · CFO가 이 화면에서 풉니다.' : h.hold === 'final_exists' ? '«재고 · 평가» 화면에서 이유를 적고 바꿉니다.' : '엑셀은 받은 그대로 두셔도 됩니다 — 대표 · CFO가 이 파일을 확인합니다.'}</div>
       )}
-      {h.warnings.length ? <div className="mt-1 text-[12px] text-[#9a4b12]">{h.warnings.slice(0, 3).join(' · ')}</div> : null}
+      {h.warnings.length ? <div className="mt-1 text-[14px] lg:text-[12px] text-[#9a4b12]">{h.warnings.slice(0, 3).join(' · ')}</div> : null}
     </div>
   )
 }
@@ -406,10 +463,10 @@ function PayrollRow({ p, businessId, boss, recent }: { p: FinPayrollHeld; busine
       </div>
       {boss ? (
         <div className="mt-1.5 flex flex-wrap items-center gap-2">
-          <button type="button" disabled={busy} onClick={() => act(true)} className="min-h-9 rounded-lg bg-[#0f6b5c] px-4 text-[14px] font-semibold text-white disabled:opacity-50">
+          <button type="button" disabled={busy} onClick={() => act(true)} className="min-h-11 lg:min-h-9 rounded-lg bg-[#0f6b5c] px-4 text-[14px] font-semibold text-white disabled:opacity-50">
             개인 줄 저장
           </button>
-          <button type="button" disabled={busy} onClick={() => act(false)} className="min-h-9 rounded-lg border border-[#d7ddda] px-3 text-[14px] text-[#6b7772] disabled:opacity-50">
+          <button type="button" disabled={busy} onClick={() => act(false)} className="min-h-11 lg:min-h-9 rounded-lg border border-[#d7ddda] px-3 text-[14px] text-[#6b7772] disabled:opacity-50">
             버리기
           </button>
           {msg ? <span role="status" className="text-[13px] text-[#6b7772]">{msg}</span> : null}

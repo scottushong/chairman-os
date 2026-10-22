@@ -52,6 +52,9 @@ export const NAV: readonly NavGroup[] = [
   {
     items: [
       { key: 'nav_dashboard', label: '대시보드', href: '/', icon: 'home', ready: true },
+      // 0086 내 홈 — 직원마다 위젯 배치(/home). 스위치 home_widgets가 켜진 사람에게만(FEATURE_NAV). 켜지면 직원의 예전 «내 홈»(/me)은
+      // «내 업무함»으로 이름을 바꿔 둘이 같은 이름이 되지 않게 한다(navFor — 0087 «결재 요청»과 같은 방식).
+      { key: 'nav_home', label: '내 홈', href: '/home', icon: 'grid', ready: true },
       {
         // Phase 8 G-1 — 그룹 시티. key는 그대로 둔다: 사이드바 주머니(0030)가 이 key로 순서·숨김을 기억한다.
         key: 'nav_group', label: '그룹',
@@ -83,6 +86,8 @@ export const NAV: readonly NavGroup[] = [
       // 대시보드 최상단 카드의 «전체 보기»가 가는 곳이고, 회장이 매일 여는 항목이다.
       // 블록 E가 사이드바를 10개로 갈아 끼울 때 «ATTENTION»이 된다.
       { key: 'nav_attention', label: '주의', href: '/attention', icon: 'bell', badge: 'NEW', ready: true },
+      // 0088 기억 엔진 — 빠른 기록 · 회의 · 약속 · 검토함 · 검색. 대표 전용(CHAIRMAN_ONLY_NAV) + 스위치 memory_engine(FEATURE_NAV).
+      { key: 'nav_memory', label: '기억', href: '/memory', icon: 'book', badge: 'NEW', ready: true },
       {
         key: 'nav_projects', label: '프로젝트',
         href: '/projects',
@@ -270,7 +275,7 @@ export const SYSTEM_LINKS: readonly NavItem[] = [
  * «회사»는 여기 없다 — 펼치면 그 사람이 볼 수 있는 회사(0002 has_business)만 나온다.
  * **화면 안내일 뿐 권한이 아니다** — 주소로 들어가면 각 화면과 RLS가 판정한다.
  */
-const CHAIRMAN_ONLY_NAV: ReadonlySet<string> = new Set(['nav_group', 'nav_morning', 'nav_dependency', 'nav_attention', 'nav_chairman'])
+const CHAIRMAN_ONLY_NAV: ReadonlySet<string> = new Set(['nav_group', 'nav_morning', 'nav_dependency', 'nav_attention', 'nav_chairman', 'nav_memory'])
 
 /**
  * 이니셔티브를 읽는 역할 — 0017 can_read_initiatives()(Chairman · GroupCFO · AIAgent)의 거울.
@@ -329,13 +334,15 @@ export function navFor(role: Role | null | undefined, opts: NavOptions = {}): re
   // 0059 «결재 대장 열람» 줄(SessionUser.ledger)이 없으면 대장 메뉴를 뺀다. 화면은 누구나 열 수 있다(본인 · 결재선 줄만 보인다).
   const ledgerMenu = (opts.ledger?.length ?? 0) > 0
   const eapproval = !(opts.hidden ?? []).includes('nav_eapproval')
+  const homeWidgets = !(opts.hidden ?? []).includes('nav_home')
   return NAV.map((group) => ({
     ...group,
     items: group.items
       .filter((item) => !CHAIRMAN_ONLY_NAV.has(item.key) && (initiatives || item.key !== 'nav_initiatives') && (ledgerMenu || item.key !== 'nav_ledger'))
       .filter(purchasingFilter)
       .map((item) => (STAFF_NAV_OVERRIDE[item.key] ? { ...item, ...STAFF_NAV_OVERRIDE[item.key] } : item))
-      .map((item) => (item.key === 'nav_decisions' && eapproval ? { ...item, label: '결재 요청' } : item)),
+      .map((item) => (item.key === 'nav_decisions' && eapproval ? { ...item, label: '결재 요청' } : item))
+      .map((item) => (item.key === 'nav_dashboard' && homeWidgets ? { ...item, label: '내 업무함' } : item)),
   })).filter((group) => group.items.length > 0)
 }
 

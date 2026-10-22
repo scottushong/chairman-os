@@ -37,6 +37,8 @@ export interface ToolContext {
   actionIds: string[]
   /** 요청 하나 안에서 회사 목록을 한 번만 읽는다. */
   businesses(): Promise<Business[]>
+  /** 0088 기억 엔진 스위치가 이 사람에게 켜졌나(대표 · 웹에서만 계산 — 아니면 undefined). */
+  memoryOn?: boolean
 }
 
 export interface AssistantTool {

@@ -784,7 +784,7 @@ export function planImport(
   else if (missingRequired.length > 0) hardLocked = `꼭 있어야 하는 칸이 지정되지 않았습니다: ${missingRequired.join(' · ')}`
   else if (twice) hardLocked = '한 열을 두 칸에 지정했습니다.'
   else if (tooMany) hardLocked = `한 파일에 ${max.toLocaleString('ko-KR')}줄까지입니다(지금 ${lines.length.toLocaleString('ko-KR')}줄). 나눠서 넣으세요.`
-  else if (counts.error > 0) hardLocked = `오류 줄 ${counts.error}개를 고치세요(칸을 눌러 고치거나 엑셀을 고쳐 다시 올리세요).`
+  else if (counts.error > 0) hardLocked = `오류 줄 ${counts.error}개 — 칸을 눌러 이 화면에서 고르세요(엑셀은 받은 그대로 두셔도 됩니다).`
   let locked: string | null = hardLocked
   if (locked) {
     // 위에서 정했다

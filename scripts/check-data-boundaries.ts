@@ -327,6 +327,8 @@ async function renderPage(path: string, repo: ChairmanRepository) {
     // 로그인하지 않은 상태면 어차피 안 그리므로 같은 결과로 비운다. PageHeader는 그 SpecCode를 품고 있어
     // 제목 · 설명 · 버튼만 그리는 같은 모양으로 세운다 — 이 검사가 재는 것은 마감 칸이다.
     if (name === '@/components/layout/spec-code') return { SpecCode: () => null }
+    // 0088 기억 엔진 «관련 기억» 칸 — server-only · 세션을 읽는 async 칸이고 로그인하지 않은 상태면 아무것도 안 그린다. 같은 결과로 비운다.
+    if (name === '@/components/memory/memory-sections') return { MemoryRelated: () => null }
     if (name === '@/components/layout/page-header') {
       return { PageHeader: ({ title, description, children }: { title: string; description: string; children?: ReactNode }) =>
         createElement('div', null, createElement('h1', null, title), createElement('p', null, description), children) }

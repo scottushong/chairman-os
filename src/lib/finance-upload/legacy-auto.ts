@@ -4,7 +4,7 @@ import { planAccounts, readAccountRows, suggestAccountClass, type ExistingAccoun
 import { annualLedgerLines, planAnnual } from '@/lib/ecount/excel/annual-import'
 import { cellText } from '@/lib/ecount/excel/cells'
 import { normalizeLabel } from '@/lib/ecount/excel/detect'
-import { guessMapping, mappingProblems, monthOfLabel, withLabels, type EcountMapping } from '@/lib/ecount/excel/mapping'
+import { COLUMN_SPECS, guessColumnsAt, guessMapping, MONTH_KEYS, mappingProblems, monthOfLabel, withLabels, type EcountMapping } from '@/lib/ecount/excel/mapping'
 import { monthlyLedgerMonths, planMonthly } from '@/lib/ecount/excel/monthly-import'
 import { ecountImportErrorMessage } from '@/lib/ecount/import-errors'
 import type { EcountSheet } from '@/lib/ecount/excel/workbook'
@@ -14,6 +14,7 @@ import type { AuditActor, ChairmanRepository } from '@/lib/repository'
 import type { FinanceImportKind, FinanceLedger, SessionUser } from '@/types'
 
 import { ensureAccounts } from './auto-accounts'
+import { rematchNote, rematchOfficial, type RematchResult } from './official-rematch'
 
 /**
  * 0085 — 계정과목표 · 월별 손익계산서 · 재무제표(연간)도 칸 하나에 놓으면 저장한다(예전 «그 밖» 칸의 미리보기 → 열 지정 → 등록을 사람 없이).
@@ -37,6 +38,8 @@ export interface LegacyResult {
   importId: string | null
   /** 계정과목표 — 덮어쓴 자동 생성 계정 수 */
   overwritten?: number
+  /** 0089 계정과목표 — 공식 결산 미매칭 줄 다시 맞춤 결과 */
+  rematch?: RematchResult
 }
 
 const MONTH_HEAD = (s: string) => {
@@ -80,6 +83,23 @@ async function monthlyPlan(repo: ChairmanRepository, businessId: string, sheets:
   })
 }
 
+/**
+ * 0092 머리글을 못 찾았을 때 «어느 열»을 못 알아봤는지 — 시트마다 앞 30줄 중 열이 가장 많이 맞은 줄을 머리글로 보고, 그 줄에 없는 꼭 있어야 하는 열의 이름.
+ * (월별 손익은 월 열도 하나 있어야 한다.)
+ */
+export function missingLegacyColumns(sheets: readonly EcountSheet[], kind: LegacyKind): string[] {
+  let best: Record<string, number> = {}
+  for (const s of sheets) {
+    for (let r = 0; r < Math.min(30, s.rows.length); r += 1) {
+      const cols = guessColumnsAt(s, kind, r)
+      if (Object.keys(cols).length > Object.keys(best).length) best = cols
+    }
+  }
+  const out = COLUMN_SPECS[kind].filter((c) => c.required && best[c.key] === undefined).map((c) => c.label)
+  if (kind === 'monthly' && !MONTH_KEYS.some((k) => best[k] !== undefined)) out.push('월(1월 ~ 12월)')
+  return out.length ? out : COLUMN_SPECS[kind].filter((c) => c.required).map((c) => c.label)
+}
+
 const held = (kind: LegacyKind, message: string, warnings: string[] = [], importId: string | null = null): LegacyResult => ({ kind, status: 'held', message, warnings, months: [], importId })
 
 export async function runLegacyImport(o: {
@@ -97,7 +117,7 @@ export async function runLegacyImport(o: {
   if (!canImportEcount(user, businessId)) return held(kind, '보류 — 계정과목표 · 월별 손익 · 재무제표(ECOUNT 양식)는 ECOUNT를 쓰는 회사만 받습니다.')
   if (!/\.xlsx$/i.test(o.fileName)) return held(kind, '보류 — 이 자료는 xlsx 파일만 받습니다. ECOUNT에서 «엑셀(xlsx)»로 저장해 올려 주세요.')
   const guess = guessMapping(o.sheets, kind)
-  if (!guess.found) return held(kind, '보류 — 머리글(과목 · 금액 열)을 찾지 못했습니다.')
+  if (!guess.found) return held(kind, `보류 — ${missingLegacyColumns(o.sheets, kind).map((l) => `«${l}»`).join(' · ')} 열을 못 알아봤습니다 — «ECOUNT 올리기» 화면 미리보기에서 그 열을 지정하면 저장됩니다(엑셀은 받은 그대로 두셔도 됩니다).`)
   const mapping = withLabels(guess.mapping, o.sheets)
   const problems = mappingProblems(mapping, o.sheets)
   if (problems.length) return held(kind, `보류 — ${problems[0]}`)
@@ -126,7 +146,7 @@ export async function runLegacyImport(o: {
       const plan = planAccounts({ rows, ignored, existing })
       if (plan.blockCount > 0) {
         await cancel()
-        return held(kind, `보류 — 계정과목표 ${plan.blockCount}줄이 막혔습니다(분류를 모름 · 코드 모양). 그 줄을 고쳐 다시 올려 주세요.`, plan.lines.flatMap((l) => l.blocks.map((b) => `${l.rowNo}행 ${b}`)).slice(0, 10))
+        return held(kind, `보류 — 계정과목표 ${plan.blockCount}줄이 막혔습니다(분류를 모름 · 코드 모양). «ECOUNT 올리기»(/finance/<회사>/import) 미리보기에서 그 줄의 분류를 고르면 등록됩니다 — 엑셀은 받은 그대로 두셔도 됩니다.`, plan.lines.flatMap((l) => l.blocks.map((b) => `${l.rowNo}행 ${b}`)).slice(0, 10))
       }
       await repo.recordFinanceImportPreview(imp.import_id, { file_sha256: o.sha, summary: { stage: 'preview', mapping, counts: { rows: rows.length, creates: plan.creates.length, blocks: 0, warnings: plan.warningCount }, auto: true }, period_key: null }, actor)
       const r = await repo.registerEcountAccounts(imp.import_id, { file_sha256: o.sha, creates: plan.creates, renames: plan.renames }, actor)
@@ -143,7 +163,13 @@ export async function runLegacyImport(o: {
           warnings.push(`자동 생성 계정 ${row.code}을 계정과목표 값으로 바꾸지 못했습니다(${e instanceof Error ? e.message.slice(0, 60) : '?'}).`)
         }
       }
-      return { kind, status: 'applied', message: `저장됨 · 계정 ${rows.length}개(새 ${r.added} · 이름 ${r.renamed}${overwritten ? ` · 자동 생성 ${overwritten}개 덮어씀` : ''})`, warnings: [...warnings, ...plan.lines.flatMap((l) => l.warnings).slice(0, 10)], months: [], importId, overwritten }
+      // 0089 A3 — 공식 결산에서 계정을 못 맞춰 «기타»에 둔 줄을 새 계정과목표로 다시 맞춘다(같은 해 결산을 «바꾸기»로 새로 세운다).
+      const rm = await rematchOfficial({ repo, user, businessId }).catch((e) => {
+        console.error('[legacy-auto] rematch', e instanceof Error ? e.message : e)
+        return null
+      })
+      const rmNote = rm ? rematchNote(rm) : ''
+      return { kind, status: 'applied', message: `저장됨 · 계정 ${rows.length}개(새 ${r.added} · 이름 ${r.renamed}${overwritten ? ` · 자동 생성 ${overwritten}개 덮어씀` : ''})${rmNote ? ` · ${rmNote}` : ''}`, warnings: [...warnings, ...(rm?.warnings ?? []), ...plan.lines.flatMap((l) => l.warnings).slice(0, 10)], months: [], importId, overwritten, rematch: rm ?? undefined }
     }
 
     if (kind === 'monthly') {

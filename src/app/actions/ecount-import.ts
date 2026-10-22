@@ -41,6 +41,7 @@ import {
 } from '@/lib/ecount/excel/workbook'
 import { periodOfDate } from '@/lib/ledger/basis'
 import { lastClosedPeriod } from '@/lib/ledger/journal'
+import { rematchOfficial } from '@/lib/finance-upload/official-rematch'
 import { getRepository, type ChairmanRepository } from '@/lib/repository'
 import {
   FINANCE_IMPORT_KIND,
@@ -512,6 +513,9 @@ export async function commitEcountImport(importId: unknown, choices?: EcountComm
       { file_sha256: original.sha, creates: plan.creates, renames: plan.renames },
       actor,
     )
+    // 0089 A3 — 공식 결산에서 «기타»에 둔 줄을 새 계정과목표로 다시 맞춘다(실패해도 등록은 그대로).
+    await rematchOfficial({ repo, user, businessId: imp.business_id }).catch((e) => console.error('[ecount-import] rematch', e instanceof Error ? e.message : e))
+    revalidatePath(`${base}/statements`)
     revalidatePath(importPath(imp.business_id))
     revalidatePath(`${base}/accounts`)
     revalidatePath(base, 'layout')

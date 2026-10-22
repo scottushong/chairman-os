@@ -9,21 +9,21 @@ import { aiLimits, realClassifier } from '@/lib/finance-upload/ai'
 import { realDocReader } from '@/lib/finance-upload/ai-doc'
 import { realOfficialSuggester } from '@/lib/finance-upload/official-ai'
 import { isUploadKind, kindSpec } from '@/lib/finance-upload/kinds'
-import { encodeShape, ledgerLayoutByCode, ROW_ROLES, type LedgerLayout, type RowLabel } from '@/lib/finance-upload/ledger'
 import { inboxPathOk } from '@/lib/finance-upload/inbox'
+import { labelKey, SKIP_COLUMN } from '@/lib/finance-upload/synonyms'
 import { MSG, UPLOAD_MAX_BYTES } from '@/lib/finance-upload/open'
-import { mapColumns, readRows, validate, type Classification } from '@/lib/finance-upload/pipeline'
-import { finUploadError, fromGrid, processUpload, reinterpretPending, saveTxGroupsFor, type DocOptions, type FileCard } from '@/lib/finance-upload/process'
+import { importLegacy, inboxSweepAllowed, legacySummary, LEGACY_OUTCOME_KO, LEGACY_SOURCE_KO } from '@/lib/finance-upload/legacy-import'
+import { savePending } from '@/lib/finance-upload/pending-save'
+import { finUploadError, processUpload, reinterpretPending, type DocOptions, type FileCard } from '@/lib/finance-upload/process'
 import { AUDIENCE_LABEL } from '@/lib/features'
 import { featureOn, featureWhy } from '@/lib/features-server'
 import { getRepository, type ChairmanRepository } from '@/lib/repository'
 import { processRecalc } from '@/lib/finance-overview/recalc'
 import { parseKpiSettings } from '@/lib/finance-overview/settings'
-import type { FinRow, FinUpload } from '@/types'
+import type { FinUpload } from '@/types'
 
 /** 0073 기능 스위치로 꺼진 기능의 문장. */
 const OFF = '지금은 쓸 수 없는 기능입니다.'
-const MATERIAL_HIDDEN = '원료 단가 · 수량은 올린 사람(올린 뒤 1시간) · 대표 · CFO · 원가 관리만 봅니다 — 이 미리보기는 넣을 수 없습니다. 파일을 다시 올려 주세요.'
 
 /**
  * «회계 · 재무 자료 올리기» v2 서버 액션 — 올리기(여러 파일) · 미리보기 넣기(종류 · 칸 · 기간 · 겹침 · 이유) · 되돌리기 · 취소.
@@ -90,7 +90,9 @@ export async function uploadFinanceFile(form: FormData): Promise<UploadResult> {
     const usedToday = (await repo.listFinUploads(businessId).catch(() => [] as FinUpload[])).filter((u) => kstDay(u.created_at) === today).reduce((a, u) => a + u.ai_used, 0)
     const budget = Math.max(0, Math.min(perFile, perDay - usedToday))
     const docs = await docOptions(user, repo, businessId, fileName, perFile > 0 && perDay > 0)
-    const cards = await processUpload({ repo, businessId, fileName, bytes, classify: budget > 0 ? realClassifier(repo, businessId) : null, aiBudget: budget, docs, deadline, boss: user.role === 'Chairman' || user.role === 'GroupCFO', user })
+    // 0089 기능 스위치 «엑셀 열 맞추기 AI»(finance_upload_ai) — 꺼진 회사 · 사람은 엑셀 해석에 AI를 부르지 않는다(비슷한 이름 · 저장된 맞춤만). PDF · 사진은 finance_docs가 따로.
+    const excelAi = budget > 0 && (await featureOn(user, 'finance_upload_ai', businessId)) ? realClassifier(repo, businessId) : null
+    const cards = await processUpload({ repo, businessId, fileName, bytes, classify: excelAi, aiBudget: budget, docs, deadline, boss: user.role === 'Chairman' || user.role === 'GroupCFO', user })
     recalcAfter(repo, businessId)
     revalidatePath(`/finance/${businessId}/upload`)
     revalidatePath('/finance')
@@ -102,7 +104,10 @@ export async function uploadFinanceFile(form: FormData): Promise<UploadResult> {
     if (mine) {
       await repo.finInboxRemove([path]).catch(() => false)
       // 처리 중 끊겨 남은 본인 파일(1시간 넘은 것)도 치운다(화면을 열 때도 — upload/page.tsx).
-      await repo.finInboxSweep(path.slice(0, path.lastIndexOf('/'))).catch(() => 0)
+      // 대표는 «예전 자료 가져오기»가 켜져 있는 동안 치우지 않는다 — 그 단추가 가져갈 몫이다(2026-10-20 A2).
+      if (inboxSweepAllowed(user.role, await featureOn(user, 'finance_legacy_import', businessId).catch(() => false))) {
+        await repo.finInboxSweep(path.slice(0, path.lastIndexOf('/'))).catch(() => 0)
+      }
     }
   }
 }
@@ -164,65 +169,18 @@ export async function applyPendingUpload(input: ApplyInput): Promise<{ ok?: true
   const id = text(input.uploadId, 64)
   const businessId = text(input.businessId, 40)
   if (!(await featureOn(user, 'finance_upload', businessId))) return { error: OFF }
-  const reason = text(input.reason, 500) || null
   if (!UUID.test(id) || !BIZ.test(businessId)) return { error: '올리기를 알 수 없습니다.' }
-  try {
-    const repo = await getRepository()
-    const pending = await repo.finUploadPending(id)
-    if (!pending) return { error: '이미 처리했거나 볼 수 없는 올리기입니다.' }
-    if (pending.masked) return { error: MATERIAL_HIDDEN }
-    const upload = (await repo.listFinUploads(businessId)).find((u) => u.upload_id === id)
-    if (!upload) return { error: '이미 처리했거나 볼 수 없는 올리기입니다.' }
-    const meta = pending.meta ?? {}
-    const kind = text(input.kind, 30) || upload.kind
-    const period = text(input.period, 7) || upload.period || ''
-    if (!isUploadKind(kind)) return { error: '종류를 골라 주세요.' }
-    if (!YM.test(period)) return { error: '달(YYYY-MM)을 골라 주세요.' }
-    let rows = pending.rows
-    let people = pending.people ?? null
-    let warnings = [...(meta.warnings ?? []), ...(meta.errors ?? [])]
-    if ((kind !== upload.kind || !rows.length) && pending.grid) {
-      const sheet = fromGrid(upload.sheet_name ?? 'sheet', pending.grid)
-      const headerRow = meta.header_row ?? 0
-      const columns = mapColumns(kindSpec(kind), sheet.rows[headerRow] ?? [])
-      const labels = (meta.labels ?? []).filter((l): l is RowLabel => (ROW_ROLES as readonly string[]).includes(l.role))
-      const base = kind === 'ledger' ? ledgerLayoutByCode(sheet) : null
-      const ledger: LedgerLayout | undefined = kind === 'ledger' ? { headerRow: base?.headerRow ?? headerRow, cols: base?.cols ?? {}, labels, headCol: base?.headCol ?? null } : undefined
-      const cls: Classification = { kind, confidence: 'medium', headerRow, columns, reason: '사람이 고름', source: 'code', labels, ledger }
-      const read = readRows(sheet, cls)
-      if (!read.rows.length) return { error: '고른 종류로 읽었더니 넣을 줄이 없습니다 — 종류를 다시 고르거나 파일을 고쳐 올려 주세요.' }
-      rows = read.rows as FinRow[]
-      people = kind === 'payroll' ? (read.people as FinRow[]) : null
-      const check = validate(kind, read, period)
-      warnings = [...new Set([...check.errors, ...check.warnings])]
-      // 배우기 — 시트 모양 → 사람이 고른 종류 · 칸(숫자 없음).
-      if (meta.sig) await repo.saveFinUploadShape({ business_id: businessId, header_sig: meta.sig, sheet_name: upload.sheet_name ?? null, kind, column_map: encodeShape(columns, ledger ?? null) }).catch((e) => console.error('[applyPendingUpload] shape', e))
-    } else if (kind !== upload.kind) {
-      return { error: '이 올리기는 칸 격자가 없어 종류를 바꿀 수 없습니다 — 파일을 다시 올려 주세요.' }
-    }
-    const boss = user.role === 'Chairman' || user.role === 'GroupCFO'
-    const saved = await repo.finUploadSave({
-      business_id: businessId, kind, period, file_name: upload.file_name, file_sha256: upload.file_sha256, sheet_name: upload.sheet_name ?? null,
-      ai_confidence: upload.ai_confidence, ai_used: upload.ai_used, rows, people: boss && people?.length ? people : null, reason, upload_id: id,
-      warnings: warnings.slice(0, 40),
-    })
-    if (!boss && people?.length) await repo.finPayrollHold(saved, people).catch((e) => console.error('[applyPendingUpload] payroll hold', e))
-    await saveTxGroupsFor(repo, businessId, kind, period, saved, reason).catch((e) => console.error('[applyPendingUpload] tx groups', e))
-    recalcAfter(repo, businessId)
-    revalidatePath(`/finance/${businessId}/upload`)
-    revalidatePath('/finance')
-    return { ok: true }
-  } catch (e) {
-    console.error('[applyPendingUpload]', e)
-    const m = e instanceof Error ? e.message : ''
-    if (m.includes('fin_upload_closed')) return { error: '마감된 달입니다 — 대표 · CFO가 이유(2자 이상)를 적어야 저장됩니다.' }
-    if (m.includes('ledger_post_live') || m.includes('cost_candidate_live')) return { error: '이 자료의 줄이 장부 반영 · 원가 LOT로 이미 쓰였습니다 — 그쪽을 먼저 무효로 하세요.' }
-    if (m.includes('fin_replace_restricted')) return { error: '이미 넣은 달의 재고 · 원료 출고를 바꾸는 것은 대표 · CFO만 합니다.' }
-    if (m.includes('fin_material_hidden')) return { error: MATERIAL_HIDDEN }
-    if (m.includes('fin_valuation_final_exists')) return { error: '그 구분의 확정된 평가금액이 이미 있습니다 — «재고 · 평가» 화면에서 이유를 적고 바꾸세요.' }
-    if (m.includes('fin_value_state')) return { error: '빈칸 · 0 표시가 맞지 않는 칸이 있습니다(빈칸은 0이 아닙니다).' }
-    return { error: finUploadError(e) }
-  }
+  const kind = text(input.kind, 30)
+  const period = text(input.period, 7)
+  if (period && !YM.test(period)) return { error: '달(YYYY-MM)을 골라 주세요.' }
+  const repo = await getRepository()
+  // 저장 한 건(lib/finance-upload/pending-save.ts — «예전 자료 가져오기»와 같은 길).
+  const r = await savePending(repo, user, businessId, id, { kind: kind || null, period: period || null, reason: text(input.reason, 500) || null })
+  if (!r.ok) return { error: r.error }
+  recalcAfter(repo, businessId)
+  revalidatePath(`/finance/${businessId}/upload`)
+  revalidatePath('/finance')
+  return { ok: true }
 }
 
 /** 0085 급여 개인 줄 보류 — 대표 · CFO의 저장 · 버리기. */
@@ -340,7 +298,7 @@ export async function reinterpretUpload(uploadId: unknown, businessId: unknown):
     const sha = all.find((u) => u.upload_id === id)?.file_sha256
     const usedOnFile = sha ? all.filter((u) => u.file_sha256 === sha).reduce((a, u) => a + u.ai_used, 0) : 0
     const budget = Math.max(0, Math.min(perFile - usedOnFile, perDay - usedToday))
-    const out = await reinterpretPending({ repo, businessId: biz, classify: budget > 0 ? realClassifier(repo, biz) : null, aiBudget: budget, deadline: Date.now() + 280_000 }, id)
+    const out = await reinterpretPending({ repo, businessId: biz, classify: budget > 0 && (await featureOn(user, 'finance_upload_ai', biz)) ? realClassifier(repo, biz) : null, aiBudget: budget, deadline: Date.now() + 280_000 }, id)
     revalidatePath(`/finance/${biz}/upload`)
     return out
   } catch (e) {
@@ -363,5 +321,78 @@ export async function cancelUpload(uploadId: unknown, businessId: unknown): Prom
     return { ok: true }
   } catch (e) {
     return { error: finUploadError(e) }
+  }
+}
+
+/**
+ * 0089 «이 열은 무엇입니까?»의 답 — (회사, 종류) 열 맞춤에 더한다(머리글 글 → 칸 이름 · '-' = 쓰지 않음). 다음 올리기부터 그 열을 그 칸으로 읽는다.
+ * 숫자는 받지 않는다. 판정은 DB(fin_column_map_save — 그 회사 장부를 쓰는 사람).
+ */
+export async function answerColumns(businessId: unknown, kind: unknown, answers: unknown): Promise<{ ok?: true; error?: string; saved?: number }> {
+  const user = await currentUser()
+  if (!user) return { error: '세션이 만료되었습니다.' }
+  const biz = text(businessId, 40)
+  if (!BIZ.test(biz)) return { error: '회사를 알 수 없습니다.' }
+  if (!(await featureOn(user, 'finance_upload', biz))) return { error: OFF }
+  if (!canKeepBooks(user, biz)) return { error: '이 회사의 재무를 넣을 권한이 없습니다.' }
+  if (!isUploadKind(kind) || kind === 'ledger') return { error: '자료 종류를 알 수 없습니다.' }
+  const keys = new Set(kindSpec(kind).fields.map((f) => f.key))
+  const list = Array.isArray(answers) ? answers.slice(0, 20) : []
+  const map: Record<string, string> = {}
+  for (const a of list) {
+    const label = labelKey(text((a as { label?: unknown })?.label, 60))
+    const key = text((a as { key?: unknown })?.key, 40)
+    if (!label || !(key === SKIP_COLUMN || keys.has(key))) continue
+    map[label] = key
+  }
+  if (!Object.keys(map).length) return { error: '고른 열이 없습니다.' }
+  try {
+    const repo = await getRepository()
+    await repo.saveFinColumnMap({ business_id: biz, kind, label_map: map, source: 'person' })
+    revalidatePath(`/finance/${biz}/upload`)
+    return { ok: true, saved: Object.keys(map).length }
+  } catch (e) {
+    const m = e instanceof Error ? e.message : ''
+    if (/unavailable/.test(m)) return { error: '아직 준비 중입니다(0089 반영 전) — 이번 파일은 그대로 저장되어 있습니다.' }
+    return { error: finUploadError(e) }
+  }
+}
+
+export interface LegacyImportView {
+  ok?: true
+  error?: string
+  summary?: string
+  items?: { source: string; outcome: string; message: string; fresh: boolean }[]
+}
+
+/**
+ * 2026-10-20 A2 «예전 자료 가져오기» — 대표만(서버에서 다시 본다 · DB fin_legacy_import_mark도 대표만). 기능 스위치 finance_legacy_import.
+ * AI 0회 · 한 번 누르면 전부 · 두 번 눌러도 다시 넣지 않음(lib/finance-upload/legacy-import.ts).
+ */
+export async function importLegacyFinance(businessId: unknown): Promise<LegacyImportView> {
+  const user = await currentUser()
+  if (!user) return { error: '세션이 만료되었습니다. 다시 로그인하세요.' }
+  const biz = text(businessId, 40)
+  if (!BIZ.test(biz)) return { error: '회사를 알 수 없습니다.' }
+  if (user.role !== 'Chairman') return { error: '예전 자료 가져오기는 대표만 합니다.' }
+  if (!(await featureOn(user, 'finance_upload', biz)) || !(await featureOn(user, 'finance_legacy_import', biz))) return { error: OFF }
+  if (!canKeepBooks(user, biz)) return { error: '이 회사의 재무를 넣을 권한이 없습니다.' }
+  try {
+    const repo = await getRepository()
+    const r = await importLegacy({ repo, user, businessId: biz, deadline: Date.now() + 270_000 })
+    recalcAfter(repo, biz)
+    revalidatePath(`/finance/${biz}/upload`)
+    revalidatePath('/finance')
+    return {
+      ok: true,
+      summary: legacySummary(r),
+      items: r.items.map((i) => ({ source: LEGACY_SOURCE_KO[i.source], outcome: LEGACY_OUTCOME_KO[i.outcome], message: i.message, fresh: i.fresh })),
+    }
+  } catch (e) {
+    console.error('[importLegacyFinance]', e)
+    const m = e instanceof Error ? e.message : ''
+    if (/fin_legacy_unavailable/.test(m)) return { error: '아직 준비 중입니다(0089 반영 전).' }
+    if (/fin_legacy_denied/.test(m)) return { error: '예전 자료 가져오기는 대표만 합니다.' }
+    return { error: '가져오지 못했습니다 — 다시 눌러 주세요(이미 옮긴 것은 다시 넣지 않습니다).' }
   }
 }

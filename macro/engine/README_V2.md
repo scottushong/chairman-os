@@ -1,6 +1,6 @@
 # 가격 리포트 엔진 v2 — DY 구매팀 (Chairman OS 방식)
 
-채팅에서 "최신 사건 뉴스 가격"으로 받던 price_report(HTML)를 **하루 2번 자동(08:00 · 18:00 KST) + 화면 «지금 업데이트»**로 만든다.
+채팅에서 "최신 사건 뉴스 가격"으로 받던 price_report(HTML)를 **화면 «지금 업데이트» · Actions «Run workflow»**로 만든다(자동 08 · 18시는 2026-10-20 뺌 — 비용 확인 뒤 되살림).
 화면: `/purchasing/biz_dy/price-report` (구매 메뉴 «가격 리포트»). 대표 홈에는 넣지 않는다.
 
 ## 화면 구성 (채팅 리포트와 같다)
@@ -23,7 +23,8 @@
 | 파일 | 역할 |
 |---|---|
 | briefing/config.py | 모델(BRIEFING_MODEL, 기본 claude-sonnet-5-5) · 도구(web_search/web_fetch _20260209) · 출처 · 8.9 환산 · 크랙 +10 · 출처 끄기(BRIEFING_SOURCES_OFF=te) · 페이지 글 천장(BRIEFING_FETCH_MAX_TOKENS) |
-| briefing/collect.py | Claude API: 오피넷 · TE 페이지 web_fetch + 사건 web_search → JSON(events 포함). 단위 오류 검증 · 사용량 |
+| briefing/collect.py | Claude API: low = ① 오피넷 · TE 페이지 web_fetch → ② 사건 web_search + 글(두 단계) · normal = 한 번에. 캐싱 · 단위 오류 검증 · 사용량(usd) |
+| briefing/estimate.py | 가격표(2026-10-20) · 상한값으로 1회 최악 · 보통 비용 추정(`python -m briefing.estimate`) |
 | briefing/store.py | 로컬 작업 파일(엔진 한 번 도는 동안) — upsert · 메모 누적 |
 | briefing/render.py | HTML(SVG 차트 · 메모 정화: <b> · <br>만) |
 | briefing/supa.py | Supabase: AI Agent 로그인 · 앞 데이터 읽기(pull) · 결과 쓰기(push) |
@@ -31,6 +32,7 @@
 | data/seed_v2.json | 1월~10/14 누적(가격 87 · ③표 고정행 6 · 메모 1) — 0084가 한 번 적재 · ③표 고정행은 이 파일에서 읽는다 |
 | tools/seed_sql.py | seed_v2.json → 0084 적재 SQL |
 | tests/test_supa.py | 가짜 PostgREST로 supa.py 시험(check:price-report가 부른다) |
+| tests/test_cost.py | 가짜 Anthropic 클라이언트로 low 요청 수 · 천장 · 캐싱 · 최악 < $1 시험(check:price-report가 부른다) |
 
 ## 로컬에서 화면만 보기(API · DB 없음)
 ```bash
@@ -45,9 +47,9 @@ python macro/engine/run.py --dry-run macro/engine/sample_briefing.json --slot PM
 → `public/macro/latest.html`(gitignore — 로컬 확인용).
 
 ## 자동 실행
-`.github/workflows/macro-briefing.yml` — cron 08:00 · 18:00 KST + workflow_dispatch(run_id · slot=manual, 화면 버튼이 부른다) · concurrency 한 줄 · 커밋 없음.
+`.github/workflows/macro-briefing.yml` — (2026-10-20 cron 뺌 — 손으로만) workflow_dispatch(preset low/normal · run_id · slot=manual — 화면 버튼은 run_id · slot만, preset은 low) · concurrency 한 줄 · 커밋 없음.
 Secrets 이름: ANTHROPIC_API_KEY · SUPABASE_URL · SUPABASE_ANON_KEY · AI_AGENT_EMAIL · AI_AGENT_PASSWORD. 절차: `docs/onboarding/release-price-report.md`.
 
 ## 비용(2026-10-14 진짜 1회 측정 — Sonnet 5.5)
 입력 105만 토큰(웹 페이지 · 검색 결과) · 출력 1.3만 · 검색 12 · 페이지 6 → **약 $2.36/회**. Opus 5.5면 약 $4.60/회.
-줄이려면 `BRIEFING_MAX_SEARCHES=8` · `BRIEFING_FETCH_MAX_TOKENS=20000`(Actions Variables — 효과 미측정, 결정 기록 참고).
+2026-10-20: 기본 low 프리셋(두 단계 · 검색 4 · 페이지 천장 6,000 · 캐싱) — 추정 보통 $0.26 · 최악 $0.94/회(`python -m briefing.estimate`, 시험 `tests/test_cost.py`). 예전 방식은 BRIEFING_PRESET=normal.

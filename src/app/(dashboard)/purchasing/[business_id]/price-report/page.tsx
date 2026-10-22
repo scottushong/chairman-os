@@ -16,6 +16,7 @@ import {
   liveRun,
   manualPerDay,
   nextAutoKst,
+  autoScheduleOn,
   SLOT_KO,
 } from "@/lib/price-report/rules";
 import { getRepository } from "@/lib/repository";
@@ -89,6 +90,7 @@ export default async function PriceReportPage(
   const latest = reports[0] ?? null;
   const live = liveRun(runs);
   const perDay = manualPerDay();
+  const auto = autoScheduleOn();
   const canRequest = canRequestPriceReport(user, business_id);
   const lastFail = runs[0]?.status === "failed" ? runs[0] : null;
   // «새로» — 보고 있는 리포트를 만든 실행이 처음 본 사건.
@@ -100,7 +102,7 @@ export default async function PriceReportPage(
         icon="cart"
         title={`${business.name} 가격 리포트`}
         code="PRICE-R1"
-        description="오피넷 정산가 · 나프타 · 장중가 · 사건 메모 · 크랙 — 하루 2번 자동(08 · 18시) + «지금 업데이트»"
+        description={`오피넷 정산가 · 나프타 · 장중가 · 사건 메모 · 크랙 — ${auto ? "하루 2번 자동(08 · 18시) + " : ""}«지금 업데이트»`}
       >
         <PurchasingNav businessId={business_id} current="price-report" />
       </PageHeader>
@@ -122,7 +124,7 @@ export default async function PriceReportPage(
                   }
                 : null
             }
-            nextAuto={nextAutoKst().label}
+            nextAuto={auto ? nextAutoKst().label : null}
             canRequest={canRequest}
             ready={dispatchReady()}
             lock={buttonLock(runs, perDay)}
@@ -186,8 +188,9 @@ export default async function PriceReportPage(
               />
             ) : (
               <p className="rounded-xl border border-line-soft bg-panel px-4 py-10 text-center text-t13 text-ink-dim">
-                아직 리포트가 없습니다 — 다음 자동 회차({nextAutoKst().label})에
-                만들어집니다.
+                {auto
+                  ? `아직 리포트가 없습니다 — 다음 자동 회차(${nextAutoKst().label})에 만들어집니다.`
+                  : "아직 리포트가 없습니다 — 위 «지금 업데이트»로 만듭니다."}
               </p>
             )}
           </div>

@@ -1,4 +1,6 @@
+import type { MemoryMethods } from '@/lib/memory/store'
 import type { FeatureAudience, FeatureSwitchRow } from '@/lib/features'
+import type { OwnerInputKey, OwnerInputRow } from '@/lib/owner-inputs'
 import type {
   CompetitorAssumption,
   CompetitorAssumptionInput,
@@ -187,10 +189,16 @@ import type {
   FinUploadRecordInput,
   FinUploadApplyInput,
   FinUploadShape,
+  FinColumnMap,
+  FinLegacyImport,
+  OfficialUnmatchedLine,
   FinUploadSaveInput,
   FinRow,
   FinPayrollHeld,
   FinRecalcJob,
+  FinAutoAction,
+  FinAutoFix,
+  FinAutoRule,
   FinOverviewMonthRow,
   OverviewLineKind,
   FinValuation,
@@ -451,7 +459,7 @@ export interface PriceReportMethods {
   priceReportDispatchFailed(runId: string, error: string): Promise<boolean>
 }
 
-export interface ChairmanRepository extends PriceReportMethods, PurchasingMethods, SalesCostMethods, ProductionMethods, CostsMethods, QuoteMethods, CostImportMethods, ProcessSyncMethods, SalesMarginsMethods, CostCandidatesMethods, LedgerPostMethods, BlueprintMethods {
+export interface ChairmanRepository extends MemoryMethods, PriceReportMethods, PurchasingMethods, SalesCostMethods, ProductionMethods, CostsMethods, QuoteMethods, CostImportMethods, ProcessSyncMethods, SalesMarginsMethods, CostCandidatesMethods, LedgerPostMethods, BlueprintMethods {
   /** 어느 쪽을 보고 있는지. 화면이 아니라 DUMMY DATA 뱃지와 로그가 쓴다. */
   readonly mode: 'dummy' | 'live'
 
@@ -858,6 +866,12 @@ export interface ChairmanRepository extends PriceReportMethods, PurchasingMethod
   listFeatureSwitches(): Promise<FeatureSwitchRow[] | null>
   /** 0073 feature_switch_set — 대표만 · 이유 필수 · 감사. 오류 키(feature_switch_*)를 그대로 던진다. */
   setFeatureSwitch(input: { feature_key: string; business_id: string | null; enabled: boolean; audience: FeatureAudience; reason: string }): Promise<void>
+  /** 0089 5절 «받을 것» — 대표만 읽는다(그 밖 0줄). 0089 전 DB는 null. 키 · 파일 본문은 없다. */
+  listOwnerInputs(): Promise<OwnerInputRow[] | null>
+  /** 0089 owner_input_mark — 진짜 BOM 받음 · 재고평가방법 · 원가 관리 권한자. 대표만. 오류 낱말(owner_input_*)을 그대로 던진다. */
+  markOwnerInput(item: Exclude<OwnerInputKey, 'google_sa'>, scope: string, summary: Record<string, unknown>): Promise<void>
+  /** 0089 owner_input_google_sa_save — JSON 본문은 Vault에만. 돌려주는 것은 이메일 · 프로젝트 id뿐. 오류 낱말만 던진다(본문 없음). */
+  saveGoogleServiceAccount(json: string): Promise<{ client_email: string; project_id: string }>
   /**
    * 0085 «넣으면 쌓이고 · 알아서 계산하고 · 한 화면에» — 저장 한 번(같은 달은 바꾸기) · 급여 개인 줄 보류 · 다시 계산 큐 · 재무 현황 저장본 ·
    * 재무 현황이 읽는 줄(원료 숫자 종류는 없다 — 합계는 finMaterialTotals) · 공식 결산 되돌리기. 0085 전 DB: 저장은 0072 넣기로 물러서고
@@ -884,6 +898,10 @@ export interface ChairmanRepository extends PriceReportMethods, PurchasingMethod
   /** 공식 결산 줄(원장 규약 차변 − 대변) — 재무 현황의 전년 기말 · 3년 비교. 장부 읽기. */
   listOfficialStatementLines(businessId: string, statementIds: number[]): Promise<OfficialStatementLine[]>
   saveFinKpiSettings(businessId: string, settings: Record<string, unknown>, reason: string): Promise<void>
+  /** 0091 자동 판단을 사람이 고친 기록(그 회사 전부 · 오래된 것부터) — 장부 읽기. 0091 전 DB는 빈 목록. */
+  listFinAutoFixes(businessId: string): Promise<FinAutoFix[]>
+  /** 0091 fin_auto_fix — 장부 쓰기 · 사람 세션 · 스위치 finance_auto. 오류 낱말(fin_auto_*)을 그대로 던진다. 0091 전 DB는 'fin_upload_unavailable'. */
+  saveFinAutoFix(input: { business_id: string; rule: FinAutoRule; item_key: string; period: string; action: FinAutoAction; value: FinAutoFix['value']; prev: Record<string, unknown> | null }): Promise<number>
   /** 0070 회계 · 재무 자료 올리기 — 그 회사의 올리기 기록(최근 300). 0070 전 DB는 빈 목록. */
   listFinUploads(businessId: string): Promise<FinUpload[]>
   /** 0070 fin_upload_pending — 미리보기 대기 줄(급여 개인 줄은 대표 · CFO에게만). */
@@ -896,6 +914,14 @@ export interface ChairmanRepository extends PriceReportMethods, PurchasingMethod
   finMonthClosed(businessId: string, period: string): Promise<boolean>
   listFinUploadShapes(businessId: string): Promise<FinUploadShape[]>
   saveFinUploadShape(shape: FinUploadShape): Promise<void>
+  /** 0089 (회사, 종류) 열 맞춤 — 그 회사 장부를 쓰는 사람만. 0089 전 DB는 빈 목록. */
+  listFinColumnMaps(businessId: string): Promise<FinColumnMap[]>
+  /** 0089 열 맞춤 저장(정의자 함수 fin_column_map_save — 있는 맞춤에 더한다). 0089 전 DB는 'fin_upload_unavailable'. */
+  saveFinColumnMap(input: Omit<FinColumnMap, 'updated_at'>): Promise<void>
+  /** 0089 공식 결산의 «다시 맞출 줄»(활성 결산만) — 장부를 읽는 사람. 0089 전 DB는 빈 목록. */
+  listOfficialUnmatched(businessId: string): Promise<OfficialUnmatchedLine[]>
+  /** 0089 그 결산의 «다시 맞출 줄»을 통째로 바꾼다(빈 목록 = 지움) — 장부를 쓰는 사람 · 활성 결산만. */
+  saveOfficialUnmatched(statementId: number, lines: Omit<OfficialUnmatchedLine, 'statement_id' | 'business_id'>[]): Promise<void>
   /**
    * 0082 자료 올리기 수신함(fin-upload-inbox) — 브라우저가 바로 올린 파일을 사람 세션(RLS)으로 읽는다. 본인 폴더 · 장부 권한 밖이면
    * 'fin_inbox_denied', 없으면 'fin_inbox_missing'. 0082 전 DB(버킷 없음)도 'fin_inbox_missing'.
@@ -907,6 +933,18 @@ export interface ChairmanRepository extends PriceReportMethods, PurchasingMethod
   finInboxSweep(folder: string): Promise<number>
   /** dummy 전용 흉내(시험) — live는 브라우저가 Storage로 바로 올린다. */
   finInboxPut?(path: string, bytes: Uint8Array): Promise<void>
+  /** 0082 본인 폴더(«<회사>/<uid>»)에 남은 파일 — 이름(경로)과 올린 시각. 못 보면 빈 목록(«예전 자료 가져오기» A2). */
+  finInboxList(folder: string): Promise<{ path: string; created_at: string | null }[]>
+  /** 0089 그 회사 수신함 전체(«<회사>/<누구든>/<이름>») — 대표 + 스위치 finance_legacy_import 켬일 때만 남의 폴더까지(읽기만 · fin_inbox_objects_legacy_read). 아니면 본인 것만 · 못 보면 빈 목록. */
+  finInboxListBusiness(businessId: string): Promise<{ path: string; created_at: string | null }[]>
+  /** 0083 그 회사의 공식 결산 증빙 파일 경로(장부를 읽는 사람). 0083 전 DB · 못 보면 빈 목록(A2). */
+  listOfficialEvidence(businessId: string): Promise<string[]>
+  /** 0083 증빙 파일 바이트(장부를 읽는 사람). 없거나 못 보면 'official_evidence_missing'(A2 — 코드로 다시 읽는다 · AI 없음). */
+  readOfficialEvidence(path: string): Promise<Uint8Array>
+  /** 0089 «예전 자료 가져오기» 옮김 기록 — 대표만 읽는다(아니면 빈 목록). 0089 전 DB는 빈 목록. */
+  listFinLegacyImports(businessId: string): Promise<FinLegacyImport[]>
+  /** 0089 옮김 한 줄(fin_legacy_import_mark — 대표만 · 같은 자리는 실패였을 때만 바꿈). 적었으면 true. 0089 전 DB는 'fin_legacy_unavailable'. */
+  markFinLegacyImport(row: Omit<FinLegacyImport, 'created_at'>): Promise<boolean>
   /**
    * 0072 회계 · 재무 v2.1 차이분. 0072 전 DB는 읽기가 빈 목록 · null, 쓰기는 'fin_upload_unavailable'.
    * 판정은 DB(can_keep_books · can_read_books · can_close_books · 마감 문 · 확정자 ≠ 입력자)다 — dummy는 그 거울.

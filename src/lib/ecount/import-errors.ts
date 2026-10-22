@@ -44,7 +44,7 @@ export const ECOUNT_IMPORT_ERRORS: readonly (readonly [code: string, message: st
   ['statement_empty', '실을 금액 줄이 없습니다. 열 지정(과목명 · 금액)을 확인하세요.'],
   // 0052 월별
   ['ecount_month_reversed', '그 달의 업로드 전표가 이미 정정(역분개)되어 있습니다. 전표 화면에서 그 정정을 확인한 뒤 다시 올리세요 — 두 번 뒤집지 않습니다.'],
-  ['ecount_monthly_bs_account', '재무상태표 계정이 섞여 있습니다. 월별 업로드는 손익 계정만 싣습니다 — 열 지정이나 파일을 고친 뒤 다시 하세요.'],
+  ['ecount_monthly_bs_account', '재무상태표 계정이 섞여 있습니다. 월별 업로드는 손익 계정만 싣습니다 — 열 지정에서 그 줄을 빼고 다시 하세요(엑셀은 받은 그대로).'],
   ['official_month_locked', '세무사 확정 결산이 덮은 달이 있습니다 — 그 달의 월별 손익은 받지 않습니다.'],
   ['closed_period', '마감된 달이 있습니다 — 마감된 달의 월별 손익은 받지 않습니다(고칠 것은 당월 정정 전표로).'],
   ['inactive_account', '비활성 계정에 금액이 있습니다. 계정과목에서 다시 쓰기로 바꾸거나 열 지정을 고친 뒤 다시 하세요.'],

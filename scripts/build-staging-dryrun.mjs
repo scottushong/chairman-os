@@ -20,7 +20,9 @@ if (!/^\d{4}$/.test(from ?? '') || !/^\d{4}$/.test(to ?? '') || from > to) {
   process.exit(2)
 }
 const dir = join(root, 'supabase', 'migrations')
-const files = readdirSync(dir).filter((f) => /^\d{4}_.*\.sql$/.test(f) && f.slice(0, 4) >= from && f.slice(0, 4) <= to).sort()
+// --skip=0087[,…]: 범위 안이지만 staging에 이미 들어간 번호(순서 밖 반영 — 2026-10-20 0086 · 0088이 0087 뒤에 들어감)는 빼고 돌린다.
+const skip = new Set((process.argv.find((a) => a.startsWith('--skip='))?.slice(7) ?? '').split(',').filter(Boolean))
+const files = readdirSync(dir).filter((f) => /^\d{4}_.*\.sql$/.test(f) && f.slice(0, 4) >= from && f.slice(0, 4) <= to && !skip.has(f.slice(0, 4))).sort()
 if (files.length === 0) {
   console.error(`${from}~${to} 마이그레이션이 없다`)
   process.exit(2)

@@ -49,6 +49,8 @@ import { dummyQuotes } from './dummy-quotes'
 import { dummyBlueprintEngine, dummyCostProduct, dummyCostReadAudit, dummyCosts, dummyGrantedAt, dummyProduction, dummySalesCost, noteDummyGrant } from './dummy-sales-cost'
 import { dummyBlueprint } from './dummy-blueprint'
 import { dummyPriceReport } from './dummy-price-report'
+import { dummyMemory } from './dummy-memory'
+import { dummyOwnerInputs } from './dummy-owner-inputs'
 import * as books from './dummy-books'
 import { dummyAssistant } from './dummy-assistant'
 import { dummyFeatures } from './dummy-features'
@@ -657,6 +659,8 @@ seedDummyIntake(dummySeedAttachment, { salesStaff: DUMMY_UID.salesStaff, support
 const FIN_UPLOAD_DEPS: DummyFinUploadDeps = {
     viewer: () => dummyViewer(),
     featureOn: async (b) => featureOnFor(await dummyRepository.listFeatureSwitches(), 'finance_upload', dummyViewer().role, b),
+    legacyImportOn: async (b) => featureOnFor(await dummyRepository.listFeatureSwitches(), 'finance_legacy_import', dummyViewer().role, b),
+    autoOn: async (b) => featureOnFor(await dummyRepository.listFeatureSwitches(), 'finance_auto', dummyViewer().role, b),
     canKeep: (b) => dummyCanKeepBooks(b),
     canRead: (b) => dummyCanKeepBooks(b) || ['Chairman', 'GroupCFO', 'BusinessCEO', 'Executive'].includes(dummyViewer().role),
     materialViewer: (b) => dummyMaterialViewer(b),
@@ -815,8 +819,12 @@ export const dummyRepository: ChairmanRepository = {
   saveOfficialStatement: books.saveOfficialStatement,
   listOfficialStatements: books.listOfficialStatements,
   listOfficialAccountMap: books.listOfficialAccountMap,
+  listOfficialUnmatched: books.listOfficialUnmatched,
+  saveOfficialUnmatched: books.saveOfficialUnmatched,
   putOfficialEvidence: books.putOfficialEvidence,
   officialEvidenceUrl: books.officialEvidenceUrl,
+  listOfficialEvidence: books.listOfficialEvidence,
+  readOfficialEvidence: books.readOfficialEvidence,
   withdrawOfficialStatement: books.withdrawOfficialStatement,
   listAutoAccounts: books.listAutoAccounts,
   listOfficialStatementLines: books.listOfficialStatementLines,
@@ -894,6 +902,21 @@ export const dummyRepository: ChairmanRepository = {
   }),
   // 0084 — DY 구매팀 가격 리포트(dummy-price-report.ts). 문은 스위치 'purchase_price_report' · 대표 · 임원 이상 · 구매 줄.
   ...dummyPriceReport({ featureOn: async (b) => featureOnFor(await dummyRepository.listFeatureSwitches(), 'purchase_price_report', dummyViewer().role, b) }),
+  // 0088 — 기억 엔진(dummy-memory.ts). 문은 memory_me 거울(주인 본인 · 대표 · 스위치 'memory_engine').
+  ...dummyMemory({
+    viewer: () => dummyViewer(),
+    featureOn: async () => featureOnFor(await dummyRepository.listFeatureSwitches(), 'memory_engine', dummyViewer().role, null),
+    businesses: async () => (await dummyRepository.listBusinesses()).map((b) => ({ business_id: b.business_id, name: b.name })),
+    projects: async () => (await dummyRepository.listProjects()).map((p) => ({ project_id: p.project_id, name: p.name, business_id: p.business_id })),
+    people: () => memoryPeople,
+  }),
+  // 0089 5절 — «받을 것»(dummy-owner-inputs.ts). 대표만 · 스위치 'owner_inputs' · 원가 권한 줄 먼저 · 구글 키 본문은 버린다.
+  ...dummyOwnerInputs({
+    viewer: () => dummyViewer(),
+    featureOn: async () => featureOnFor(await dummyRepository.listFeatureSwitches(), 'owner_inputs', dummyViewer().role, null),
+    businesses: async () => [...businesses, ...memoryBusinesses].map((b) => b.business_id),
+    hasCostGrant: (u, b) => !memoryPeople.find((p) => p.user_id === u)?.revoked_at && dummyModuleGrants(u).some((m) => m.module === `/costing/${b}` && m.can_write),
+  }),
   // 0081 — 청사진 뼈대(dummy-blueprint.ts). 문은 dummy 원가 엔진 문 · 스위치 7개. 원가 엔진 손잡이는 여기서만 넘긴다(가짜 BOM은 dummy 어댑터 안).
   ...dummyBlueprint({
     featureOn: async (key, b) => featureOnFor(await dummyRepository.listFeatureSwitches(), key, dummyViewer().role, b),
@@ -1025,12 +1048,13 @@ export const dummyRepository: ChairmanRepository = {
     ).map((t) => ({
       ...t.task,
       owner: ownerLabel(t.owner_user_id),
+      owner_user_id: t.owner_user_id,
       ...memoryTaskPatches.get(t.task.task_id),
     }))
     // 0071 시트에서 온 업무 — tasks_read(0026 식) AND tasks_external_scope(담당자 본인 또는 그 탭을 보는 사람).
     const synced = dummyProcessTasks()
       .filter((t) => (canSeeRow(t.business_id, t.owner_user_id) || dummySharedWithMe(memoryShares, viewer.user_id, 'tasks', t.task.task_id)) && dummyProcessTaskVisible(viewer, t))
-      .map((t) => ({ ...t.task }))
+      .map((t) => ({ ...t.task, owner_user_id: t.owner_user_id }))
     return [...seeded, ...owned, ...synced]
   },
   async listDecisions() {

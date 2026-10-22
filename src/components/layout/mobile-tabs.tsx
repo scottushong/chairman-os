@@ -26,7 +26,11 @@ const TABS: { href: string; label: string; icon: IconName }[] = [
 
 const TAB = 'flex min-h-14 flex-col items-center justify-center gap-0.5 text-t10h'
 
-export function MobileTabs({ role }: { role: Role | null | undefined }) {
+/**
+ * eapproval — 0087 전자결재 스위치가 이 사람에게 켜져 있나(그룹 줄 또는 내 회사 줄 — 레이아웃이 사이드바와 같은 판정 hiddenNav로 넘긴다).
+ * 켜진 직원의 «결재» 칸은 새 전자결재(/e-approval)로 간다(0086 블록 지시). 꺼져 있거나 대표면 예전 주소(/approvals) 그대로.
+ */
+export function MobileTabs({ role, eapproval = false }: { role: Role | null | undefined; eapproval?: boolean }) {
   const path = usePathname()
   const home = homeHref(role)
   const tabs = TABS.map((t) =>
@@ -35,7 +39,7 @@ export function MobileTabs({ role }: { role: Role | null | undefined }) {
       : t.href === '/initiatives' && !canReadInitiatives(role)
         ? { href: '/tasks', label: '업무', icon: 'clipboard' as IconName }
         : t.href === '/approvals' && role !== 'Chairman'
-          ? { ...t, label: '결재' } // «결정»은 회장의 말이다(사이드바 «전자결재»와 같은 이유 — lib/nav.ts STAFF_NAV_OVERRIDE).
+          ? { ...t, label: '결재', href: eapproval ? '/e-approval' : t.href } // «결정»은 회장의 말이다(사이드바 «전자결재»와 같은 이유 — lib/nav.ts STAFF_NAV_OVERRIDE).
           : t,
   )
   return (

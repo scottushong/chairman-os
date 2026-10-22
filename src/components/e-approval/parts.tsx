@@ -12,8 +12,9 @@ export const C = {
   ink: 'text-[#1f2329]',
   muted: 'text-[#6b7280]',
   blue: 'text-[#2f5bd3]',
-  btn: 'inline-flex min-h-10 items-center justify-center rounded-md bg-[#3361e0] px-4 text-[14px] font-semibold text-white hover:bg-[#2a52c4] disabled:opacity-50',
-  btnLine: 'inline-flex min-h-10 items-center justify-center rounded-md border border-[#d5d9e0] bg-white px-4 text-[14px] text-[#1f2329] hover:bg-[#f4f6f9] disabled:opacity-50',
+  // 폰은 누르는 칸 44px(min-h-11) · 넓은 화면은 시안의 40px.
+  btn: 'inline-flex min-h-11 lg:min-h-10 items-center justify-center rounded-md bg-[#3361e0] px-4 text-[14px] font-semibold text-white hover:bg-[#2a52c4] disabled:opacity-50',
+  btnLine: 'inline-flex min-h-11 lg:min-h-10 items-center justify-center rounded-md border border-[#d5d9e0] bg-white px-4 text-[14px] text-[#1f2329] hover:bg-[#f4f6f9] disabled:opacity-50',
   input: 'w-full rounded-md border border-[#d5d9e0] bg-white px-3 py-2 text-[14px] text-[#1f2329] placeholder:text-[#9aa1ab] focus:border-[#3361e0] focus:outline-none',
 } as const
 
