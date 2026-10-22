@@ -4,7 +4,7 @@ import { planAccounts, readAccountRows, suggestAccountClass, type ExistingAccoun
 import { annualLedgerLines, planAnnual } from '@/lib/ecount/excel/annual-import'
 import { cellText } from '@/lib/ecount/excel/cells'
 import { normalizeLabel } from '@/lib/ecount/excel/detect'
-import { guessMapping, mappingProblems, monthOfLabel, withLabels, type EcountMapping } from '@/lib/ecount/excel/mapping'
+import { COLUMN_SPECS, guessColumnsAt, guessMapping, MONTH_KEYS, mappingProblems, monthOfLabel, withLabels, type EcountMapping } from '@/lib/ecount/excel/mapping'
 import { monthlyLedgerMonths, planMonthly } from '@/lib/ecount/excel/monthly-import'
 import { ecountImportErrorMessage } from '@/lib/ecount/import-errors'
 import type { EcountSheet } from '@/lib/ecount/excel/workbook'
@@ -83,6 +83,23 @@ async function monthlyPlan(repo: ChairmanRepository, businessId: string, sheets:
   })
 }
 
+/**
+ * 0092 머리글을 못 찾았을 때 «어느 열»을 못 알아봤는지 — 시트마다 앞 30줄 중 열이 가장 많이 맞은 줄을 머리글로 보고, 그 줄에 없는 꼭 있어야 하는 열의 이름.
+ * (월별 손익은 월 열도 하나 있어야 한다.)
+ */
+export function missingLegacyColumns(sheets: readonly EcountSheet[], kind: LegacyKind): string[] {
+  let best: Record<string, number> = {}
+  for (const s of sheets) {
+    for (let r = 0; r < Math.min(30, s.rows.length); r += 1) {
+      const cols = guessColumnsAt(s, kind, r)
+      if (Object.keys(cols).length > Object.keys(best).length) best = cols
+    }
+  }
+  const out = COLUMN_SPECS[kind].filter((c) => c.required && best[c.key] === undefined).map((c) => c.label)
+  if (kind === 'monthly' && !MONTH_KEYS.some((k) => best[k] !== undefined)) out.push('월(1월 ~ 12월)')
+  return out.length ? out : COLUMN_SPECS[kind].filter((c) => c.required).map((c) => c.label)
+}
+
 const held = (kind: LegacyKind, message: string, warnings: string[] = [], importId: string | null = null): LegacyResult => ({ kind, status: 'held', message, warnings, months: [], importId })
 
 export async function runLegacyImport(o: {
@@ -100,7 +117,7 @@ export async function runLegacyImport(o: {
   if (!canImportEcount(user, businessId)) return held(kind, '보류 — 계정과목표 · 월별 손익 · 재무제표(ECOUNT 양식)는 ECOUNT를 쓰는 회사만 받습니다.')
   if (!/\.xlsx$/i.test(o.fileName)) return held(kind, '보류 — 이 자료는 xlsx 파일만 받습니다. ECOUNT에서 «엑셀(xlsx)»로 저장해 올려 주세요.')
   const guess = guessMapping(o.sheets, kind)
-  if (!guess.found) return held(kind, '보류 — 머리글(과목 · 금액 열)을 찾지 못했습니다.')
+  if (!guess.found) return held(kind, `보류 — ${missingLegacyColumns(o.sheets, kind).map((l) => `«${l}»`).join(' · ')} 열을 못 알아봤습니다 — «ECOUNT 올리기» 화면 미리보기에서 그 열을 지정하면 저장됩니다(엑셀은 받은 그대로 두셔도 됩니다).`)
   const mapping = withLabels(guess.mapping, o.sheets)
   const problems = mappingProblems(mapping, o.sheets)
   if (problems.length) return held(kind, `보류 — ${problems[0]}`)

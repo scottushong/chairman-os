@@ -302,7 +302,7 @@ export function StatementEditor({
       ) : null}
       {saved !== null ? (
         <p className="rounded-md bg-ok/10 px-3 py-2 text-t12 text-ok">
-          {businessName} {periodKey} 결산을 저장했습니다. 이 기간의 월별 입력은 이제 잠깁니다.
+          {businessName} {periodKey} 결산을 저장했습니다. 이 기간의 ECOUNT 월별 손익 올리기는 이제 잠깁니다.
         </p>
       ) : null}
 

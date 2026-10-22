@@ -2940,3 +2940,4 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - 메모리 엔진 2단계 이후 — 처리 재시도 cron 경로: AI Agent가 기억을 못 읽어 대표 세션(/memory 열 때 최대 3건)이 대신한다.
 - 받을 것(0089 5절) — 시트 동기화가 Vault 'google_sheets_sa'를 읽게 바꾸기: 지금은 env GOOGLE_SHEETS_SA_JSON 그대로(동기화 계정이 키를 읽는 좁은 문 설계 필요). docs/decisions/2026-10-20-intake-items.md
 - 받을 것 — 재고평가방법 «세무사 확인값»을 0075 월별 손익 계산에 반영하기(이동평균 · 선입선출 계산기): 지금은 다르면 경고만.
+- 0092 점검(전자결재) — 폰 하단 탭: 대표(회장) 칸은 «결정»(/approvals) 그대로 둠(회장 결정함이 그 자리) · 전자결재는 «더보기» 서랍으로. 다른 선택지: 회장도 전자결재가 켜지면 «결재»(/e-approval)로 — 회장 결정함 자리를 잃어 버림. 결재 이력의 대표 단계 행위자는 이름(ea_name)으로 보임 — 결재선은 «대표»; 맞추려면 새 마이그레이션에서 ea_doc events의 actor를 대표 단계면 «대표»로.

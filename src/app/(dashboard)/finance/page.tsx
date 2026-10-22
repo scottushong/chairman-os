@@ -187,7 +187,7 @@ export default async function FinancePage(props: PageProps<'/finance'>) {
           <CalendarTab cal={computeCalendar(ctx, period)} />
         ) : tab === 'pl' ? (
           <div className="flex flex-col gap-4">
-            <PlTab ctx={ctx} period={period} officials={loaded.officialStatements} upload={uploadHref} businessId={biz} canFix={canKeep && autoOn} selected={firstParam(params.acct) ?? null} hrefFor={(acct) => `${q({ tab: 'pl', acct })}${acct ? '#ledger' : ''}`} />
+            <PlTab ctx={ctx} period={period} officials={loaded.officialStatements} upload={uploadHref} businessId={biz} canFix={canKeep && autoOn} selected={firstParam(params.acct) ?? null} hrefFor={(acct) => `${q({ tab: 'pl', acct, month: period })}${acct ? '#ledger' : ''}`} />
             {plClose ? (
               <PlClosePanel businessId={biz} period={period} view={plClose.view} error={plClose.error} settings={plClose.settings} canKeep={canKeep} canClose={canCloseBooks(user, biz)} isTop={top} />
             ) : null}

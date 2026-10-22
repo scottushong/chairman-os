@@ -26,12 +26,12 @@ export function ChecklistWithdraw({ uploadId, businessId, fileName }: { uploadId
             if (r.ok) router.refresh()
           })
         }
-        className="ml-1 inline-flex min-h-11 items-center text-[12px] text-[#6b7772] underline-offset-2 hover:text-[#b4432b] hover:underline disabled:opacity-50 lg:min-h-0"
+        className="ml-1 inline-flex min-h-11 items-center text-[14px] lg:text-[12px] text-[#6b7772] underline-offset-2 hover:text-[#b4432b] hover:underline disabled:opacity-50 lg:min-h-0"
       >
         {busy ? '빼는 중…' : '빼기'}
       </button>
       {msg ? (
-        <span role="status" className="block text-[12px] text-[#b4432b]">
+        <span role="status" className="block text-[14px] lg:text-[12px] text-[#b4432b]">
           {msg}
         </span>
       ) : null}

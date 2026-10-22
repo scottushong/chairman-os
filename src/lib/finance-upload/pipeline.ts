@@ -65,10 +65,11 @@ function sheetText(sheet: EcountSheet, rows = 8): string {
 export function scrubSheet(sheet: EcountSheet): Scrubbed {
   const text = sheetText(sheet)
   const production = PRODUCTION_HINT.test(normalizeLabel(text))
-  const payrollish = PAYROLL_HINT.test(normalizeLabel(text))
   let materialRows = 0
   let cardNumbers = 0
   const header = findHeader(sheet.rows)
+  // 0092: 급여 모양은 시트명 · 머리글까지의 줄로만 본다 — 자료 줄의 «급여 지급»(자금흐름표 · 전표 적요)이 «계좌» 칸을 통째로 비우지 않게.
+  const payrollish = PAYROLL_HINT.test(normalizeLabel(header ? sheetText(sheet, header.row + 1) : text))
   const personCols = new Set<number>()
   const acctCols = new Set<number>()
   // 머리글 줄의 이름 · 주민 · 계좌 칸을 비운다 — 급여 모양이면 이름 · 연락처까지, 아니면 주민 · 계좌만(카드 · 판촉의 담당자 이름은 남긴다).

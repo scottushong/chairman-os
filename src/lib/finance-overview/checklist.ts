@@ -56,7 +56,8 @@ export interface ChecklistInput {
 export function buildChecklist(x: ChecklistInput): ChecklistItem[] {
   return CHECKLIST.map(({ key, label }) => {
     if (key === 'accounts') {
-      return { key, label, state: x.accounts === 'none' ? 'missing' : x.accounts === 'auto' ? 'warn' : 'ok', warnings: x.accounts === 'auto' ? ['자동 생성 계정만 있음 — 계정과목표를 올리면 덮어씁니다'] : [], at: x.accountsAt }
+      // 자동 생성 계정(원장이 만든 것)만 있으면 계정과목표는 아직 받지 않은 것 — «자료 N/18»에 세지 않는다(2026-10-22).
+      return { key, label, state: x.accounts === 'file' ? 'ok' : 'missing', warnings: x.accounts === 'auto' ? ['자동 생성 계정만 있음 — 계정과목표를 올리면 덮어씁니다'] : [], at: x.accounts === 'file' ? x.accountsAt : null }
     }
     if (key === 'pl_monthly') return { key, label, state: x.plMonthlyAt ? 'ok' : 'missing', warnings: [], at: x.plMonthlyAt }
     const u = x.uploads.filter((v) => v.kind === key && v.period === x.period && v.status === 'applied').sort((a, b) => (b.applied_at ?? '').localeCompare(a.applied_at ?? ''))[0]

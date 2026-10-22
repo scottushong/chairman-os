@@ -46,6 +46,7 @@
     "check:sales-cost": "tsx scripts/check-sales-cost.ts",
     "check:staging-sql-cost": "tsx scripts/check-staging-sql-0061.ts",
     "check:finance-upload": "tsx --conditions=react-server scripts/check-finance-upload.ts",
+    "check:upload-variants": "tsx --conditions=react-server scripts/check-upload-variants.ts",
     "check:finance-pdf": "tsx --conditions=react-server scripts/check-finance-pdf.ts",
     "check:price-report": "tsx --conditions=react-server scripts/check-price-report.ts",
     "check:official-pdf": "tsx --conditions=react-server scripts/check-official-pdf.ts",
@@ -59,6 +60,7 @@
     "check:material-lock": "tsx --conditions=react-server scripts/check-material-lock.ts",
     "check:monthly-pl": "tsx --conditions=react-server scripts/check-monthly-pl.ts",
     "check:finance-auto": "tsx --conditions=react-server scripts/check-finance-auto.ts",
+    "check:kpi-needs": "tsx --conditions=react-server scripts/check-kpi-needs.ts",
     "check:finance-overview": "tsx --conditions=react-server scripts/check-finance-overview.ts && tsx --conditions=react-server scripts/check-finance-legacy.ts"
   },
   "dependencies": {

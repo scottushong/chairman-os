@@ -388,7 +388,7 @@ export function computePl(ctx: Ctx, period: string): PlResult {
     lines.push({ key: 'cogs-open', label: '기초 재고 (원재료 · 재공 · 제품)', level: 'sub', amount: basis.opening, codes: [] })
     lines.push({ key: 'cogs-buy', label: '+ 당기 원재료 매입', level: 'sub', amount: basis.purchases, codes: [] })
   } else if (rawExpense) lines.push({ key: 'cogs-raw', label: '원재료비 (장부)', level: 'sub', amount: rawExpense, codes: codes(cogsAccts.filter((a) => a.category === 'raw_material' || /원재료비|재료비/.test(a.name))) })
-  if (labor) lines.push({ key: 'cogs-labor', label: '+ 노무비 (제조)', level: 'sub', amount: labor, codes: codes(cogsAccts.filter((a) => a.category === 'labor')) })
+  if (labor) lines.push({ key: 'cogs-labor', label: '+ 노무비 (제조)', level: 'sub', amount: labor, codes: codes(cogsAccts.filter((a) => a.category === 'labor' && !merchAccts.includes(a))) })
   if (overhead) lines.push({ key: 'cogs-oh', label: '+ 제조경비 (전력 · 외주 · 감가)', level: 'sub', amount: overhead, codes: codes(overheadAccts) })
   if (merchandise) lines.push({ key: 'cogs-merch', label: '+ 상품 매출원가', level: 'sub', amount: merchandise, codes: codes(merchAccts) })
   if (basis.method === 'inventory') lines.push({ key: 'cogs-close', label: '− 기말 재고 (재고금액명세서 · 평가)', level: 'sub', amount: basis.closing, codes: [] })

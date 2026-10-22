@@ -9,9 +9,10 @@ import type { UploadKind } from './kinds'
  */
 export const SYNONYMS: Partial<Record<UploadKind, Record<string, string[]>>> = {
   sales: {
-    customer: ['매출처', '판매처', '납품처', '거래처코드명', '고객사', '고객명'],
-    product: ['상품명', '제품명', '품목코드명', '품번'],
-    qty: ['판매량', '출고수량', '출고량', 'qty'],
+    customer: ['매출처', '판매처', '납품처', '거래처코드명', '고객사', '고객명', 'customer', 'client'],
+    product: ['상품명', '제품명', '품목코드명', '품번', 'product', 'item'],
+    // 0092: «Q'ty» · «Quantity»(영어 섞인 양식)
+    qty: ['판매량', '출고수량', '출고량', 'qty', "q'ty", 'quantity'],
     unit_price: ['판매단가', '단가(원)', 'price'],
     amount: ['매출액', '매출금액', '공급가', '판매액', '금액합계'],
     tx_date: ['전표일자', '매출일자', '매출일', '출고일자'],
@@ -19,7 +20,7 @@ export const SYNONYMS: Partial<Record<UploadKind, Record<string, string[]>>> = {
   },
   purchase_in: {
     material: ['원재료명', '원자재명', '품목코드명', '입고품목', '상품명'],
-    supplier: ['구매처', '매입처명', '공급업체', '공급사'],
+    supplier: ['구매처', '매입처명', '공급업체', '공급사', 'supplier', 'vendor'],
     material_kind: ['품목그룹', '자재그룹', '재료구분'],
     qty: ['입고량', '구매수량', '매입수량'],
     amount: ['구매금액', '매입금액', '매입액', '입고액', '공급가'],
@@ -114,9 +115,9 @@ export const SYNONYMS: Partial<Record<UploadKind, Record<string, string[]>>> = {
   },
   shipment: {
     ship_date: ['출고일자', '납품일자', '배송일'],
-    customer: ['납품처명', '출하처', '매출처'],
-    product: ['제품명', '상품명'],
-    qty: ['출고량', '납품수량', '출하kg'],
+    customer: ['납품처명', '출하처', '매출처', 'customer'],
+    product: ['제품명', '상품명', 'product', 'item'],
+    qty: ['출고량', '납품수량', '출하kg', "q'ty", 'qty', 'quantity'],
     amount: ['출하액', '납품금액', '매출액'],
   },
 }

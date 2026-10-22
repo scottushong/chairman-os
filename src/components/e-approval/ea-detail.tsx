@@ -180,14 +180,14 @@ export function EaDetail({ view, box, mode, backHref, today }: { view: EaDocView
           <ul className="flex flex-col gap-1 text-[13px]">
             {view.versions.map((v) => (
               <li key={v.doc_id}>
-                <Link className="text-[#2f5bd3] hover:underline" href={`/e-approval?box=${box}&doc=${v.doc_id}`}>
+                <Link className="inline-flex items-center text-[#2f5bd3] hover:underline" href={`/e-approval?box=${box}&doc=${v.doc_id}`}>
                   {v.version}판 {v.doc_no ?? ''} · {DOC_STATUS_LABEL[v.status]}
                 </Link>
               </li>
             ))}
             {view.next_version ? (
               <li>
-                <Link className="text-[#2f5bd3] hover:underline" href={`/e-approval?box=${box}&doc=${view.next_version}`}>
+                <Link className="inline-flex items-center text-[#2f5bd3] hover:underline" href={`/e-approval?box=${box}&doc=${view.next_version}`}>
                   보완본(다음 판) 보기
                 </Link>
               </li>
@@ -195,7 +195,7 @@ export function EaDetail({ view, box, mode, backHref, today }: { view: EaDocView
             {view.related
               .filter((r) => !view.versions.some((v) => v.doc_id === r.doc_id))
               .map((r) => (
-                <li key={r.doc_id}>{r.title ? <Link className="text-[#2f5bd3] hover:underline" href={`/e-approval?box=${box}&doc=${r.doc_id}`}>{r.doc_no ?? ''} {r.title}</Link> : <span className="text-[#6b7280]">권한 없는 관련 문서 1건</span>}</li>
+                <li key={r.doc_id}>{r.title ? <Link className="inline-flex items-center text-[#2f5bd3] hover:underline" href={`/e-approval?box=${box}&doc=${r.doc_id}`}>{r.doc_no ?? ''} {r.title}</Link> : <span className="text-[#6b7280]">권한 없는 관련 문서 1건</span>}</li>
               ))}
           </ul>
         </Section>
@@ -282,10 +282,13 @@ function FollowupPanel({ view, mode, onDone }: { view: EaDocView; mode: 'live' |
   const [error, setError] = useState<string | null>(null)
   const [req, setReq] = useState<string>(newReq)
   const [file, setFile] = useState<File | null>(null)
+  const [fileKey, setFileKey] = useState(0)
   const docId = view.doc.doc_id
 
   function save(status: EaFollowupStatus) {
     setError(null)
+    // 완료는 결과 필수(서버도 막는다) — 증빙부터 올려 두고 막히면 증빙만 문서에 붙어 남는다. 올리기 전에 먼저 본다.
+    if (status === 'done' && result.trim().length < 2) return setError('처리 결과를 두 글자 이상 적어 주세요.')
     start(async () => {
       if (file) {
         const path = `${docId}/fu-${newReq()}${/\.[a-z0-9]{1,5}$/i.exec(file.name)?.[0]?.toLowerCase() ?? ''}`
@@ -302,6 +305,7 @@ function FollowupPanel({ view, mode, onDone }: { view: EaDocView; mode: 'live' |
         const a = await eaAddFile(form)
         if (!a.ok) return setError(a.error ?? '증빙을 붙이지 못했습니다.')
         setFile(null)
+        setFileKey((k) => k + 1) // 고른 파일 칸도 비운다 — 남아 있으면 «다시 올라간다»로 읽힌다.
       }
       const r = await eaFollowup(docId, status, result, slip, req)
       if (!r.ok) return setError(r.error ?? '저장하지 못했습니다.')
@@ -336,8 +340,12 @@ function FollowupPanel({ view, mode, onDone }: { view: EaDocView; mode: 'live' |
         <div className="flex flex-col gap-2">
           <textarea value={result} onChange={(e) => setResult(e.target.value)} rows={2} maxLength={2000} placeholder="처리 결과(완료 시 필수) — 예: 발주서 발송" className={C.input} />
           <input value={slip} onChange={(e) => setSlip(e.target.value)} maxLength={60} placeholder="이카운트 전표번호(있으면 · 글자만 기록)" className={C.input} />
-          <input type="file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="text-[13px]" aria-label="증빙 파일" />
-          {error ? <div className="rounded-md bg-[#fdecea] px-3 py-2 text-[13px] text-[#b4372b]">{error}</div> : null}
+          <input key={fileKey} type="file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} className="text-[13px]" aria-label="증빙 파일" />
+          {error ? (
+            <div role="alert" className="rounded-md bg-[#fdecea] px-3 py-2 text-[13px] text-[#b4372b]">
+              {error}
+            </div>
+          ) : null}
           <div className="flex flex-wrap gap-2">
             {f.status === 'waiting' ? (
               <button type="button" disabled={pending} className={C.btnLine} onClick={() => save('doing')}>

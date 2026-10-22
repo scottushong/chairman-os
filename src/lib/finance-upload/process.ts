@@ -212,6 +212,20 @@ function readNotes(read: ReadResult): string[] | undefined {
   return n.length ? n : undefined
 }
 
+/** 0092 꼭 있어야 하는 칸(kinds.ts required) 중 머리글에서 못 알아본 것의 이름. ⑤ 원장은 구조 해석이 따로라 뺀다. */
+export function missingColumns(cls: Pick<Classification, 'kind' | 'columns'>): string[] {
+  if (cls.kind === 'unknown' || cls.kind === 'ledger') return []
+  return kindSpec(cls.kind).fields.filter((f) => f.required && !(f.key in cls.columns)).map((f) => f.label)
+}
+
+/** 0092 줄을 하나도 못 읽은 까닭이 못 알아본 칸일 때의 카드 문구(엑셀 탓을 하지 않고 칸 이름 · 머리글 줄을 말한다). */
+export function missingMessage(labels: string[], headerRow: number, canAsk: boolean): string {
+  const names = labels.map((l) => `«${l}»`).join(' · ')
+  return canAsk
+    ? `${names} 열을 못 알아봤습니다 — 머리글(${headerRow + 1}행)에서 그 열을 찾지 못해 줄을 읽지 못했습니다. 아래 «이 열은 무엇입니까?»에서 그 열을 고른 뒤 같은 파일을 다시 올려 주세요(엑셀은 받은 그대로 두셔도 됩니다).`
+    : `${names} 열을 못 알아봤습니다 — 머리글(${headerRow + 1}행)에 그 열로 보이는 칸이 없어 줄을 읽지 못했습니다. 그 열이 든 양식으로 내려받아 올려 주세요.`
+}
+
 export async function processUpload(o: ProcessOptions): Promise<FileCard[]> {
   // 0. 배합비 · 구성표로 보이는 파일 — 이름만으로, 여는 것보다 먼저. 기록 줄도 남기지 않는다(저장 없음 · AI 없음).
   const formula = refuseFormula(o.fileName)
@@ -551,10 +565,13 @@ async function processSheets(o: ProcessOptions, sha: string, sheets: EcountSheet
       grid: cls.kind === 'material_issue' ? stripKgGrid(toGrid(sheet), cls.headerRow, true).grid : toGrid(sheet),
       meta: { ...meta, hold, hold_message: message },
     })
+    // 0092: 꼭 있어야 하는 칸을 머리글에서 못 알아봤으면 파일 탓(«제목 · 빈 줄만»)이 아니라 그 칸 이름을 말한다.
+    const missing = missingColumns(cls)
     if (!read.rows.length) {
-      cards.push({ ...base, status: 'failed', upload_id: null, rows: 0, message: '넣을 줄이 없습니다 — 제목 · 빈 줄만 있는 시트입니다.', why: check.errors.slice(0, 5) })
+      cards.push({ ...base, status: 'failed', upload_id: null, rows: 0, message: missing.length ? missingMessage(missing, cls.headerRow, ask.length > 0) : '넣을 줄이 없습니다 — 제목 · 빈 줄만 있는 시트입니다.', why: check.errors.slice(0, 5) })
       continue
     }
+    if (missing.length) warnings.unshift(`${missing.map((m) => `«${m}»`).join(' · ')} 열을 못 알아봤습니다 — 그 칸은 비운 채 저장했습니다${ask.length ? '(아래 «이 열은 무엇입니까?»에서 고르면 다음 올리기부터 읽습니다)' : ''}.`)
     if (!month.period) {
       cards.push(await holdCard(o, sha, base, read.rows.length, 'period', MSG_HOLD.period, pendingOf('period', MSG_HOLD.period), warnings))
       continue
