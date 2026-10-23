@@ -6,6 +6,7 @@ import type { EcountSheet } from '@/lib/ecount/excel/workbook'
 
 import { AI_KIND_SPECS, KIND_SPECS, kindSpec, type KindSpec, type UploadKind } from './kinds'
 import { accountHead, cellDate, cellNum, ledgerLayoutByCode, readLedgerWith, rowRole, type LedgerLayout, type LedgerRead, type RowLabel } from './ledger'
+import { blankRequired, blankWarning, type BlankField } from './read-stats'
 import { labelKey, SKIP_COLUMN, synonymsOf, type ColumnLabelMap } from './synonyms'
 
 /**
@@ -64,12 +65,14 @@ function sheetText(sheet: EcountSheet, rows = 8): string {
  */
 export function scrubSheet(sheet: EcountSheet): Scrubbed {
   const text = sheetText(sheet)
-  const production = PRODUCTION_HINT.test(normalizeLabel(text))
   let materialRows = 0
   let cardNumbers = 0
   const header = findHeader(sheet.rows)
+  const headText = normalizeLabel(header ? sheetText(sheet, header.row + 1) : text)
+  // 0093: 생산 모양도 시트명 · 머리글까지의 줄로만 본다 — 원장 자료 줄의 적요 «작업지시»가 원료 줄을 통째로 버리지 않게(머리글을 못 찾으면 앞 8줄).
+  const production = PRODUCTION_HINT.test(headText)
   // 0092: 급여 모양은 시트명 · 머리글까지의 줄로만 본다 — 자료 줄의 «급여 지급»(자금흐름표 · 전표 적요)이 «계좌» 칸을 통째로 비우지 않게.
-  const payrollish = PAYROLL_HINT.test(normalizeLabel(header ? sheetText(sheet, header.row + 1) : text))
+  const payrollish = PAYROLL_HINT.test(headText)
   const personCols = new Set<number>()
   const acctCols = new Set<number>()
   // 머리글 줄의 이름 · 주민 · 계좌 칸을 비운다 — 급여 모양이면 이름 · 연락처까지, 아니면 주민 · 계좌만(카드 · 판촉의 담당자 이름은 남긴다).
@@ -322,6 +325,10 @@ export interface ReadResult {
   skipped?: number
   /** ⑤ 원장 — 줄 종류 · 계정 대조 결과 */
   ledger?: LedgerRead
+  /** 0093 읽어 넣은 거래 줄 수(급여 개인 줄 · 원장 거래 줄 — 묶기 전) */
+  read?: number
+  /** 0093 꼭 있어야 하는 칸이 빈 줄(칸 이름별) */
+  blanks?: BlankField[]
 }
 
 /** 원장 구조: 사람이 · AI가 · 학습이 준 것 → 없으면 코드가 머리글에서 → 그것도 없으면 칸 대응만. */
@@ -337,7 +344,7 @@ export function readRows(sheet: EcountSheet, cls: Classification): ReadResult {
   if (cls.kind === 'unknown') return { rows: [], people: [], fileTotal: null, problems: ['종류를 모릅니다.'], dates: [] }
   if (cls.kind === 'ledger') {
     const ledger = readLedgerWith(sheet, ledgerLayoutOf(sheet, cls))
-    return { rows: ledger.rows, people: [], fileTotal: null, problems: ledger.problems, dates: ledger.dates, ledger }
+    return { rows: ledger.rows, people: [], fileTotal: null, problems: ledger.problems, dates: ledger.dates, ledger, read: ledger.roles.tx ?? ledger.rows.length, blanks: blankRequired('ledger', ledger.rows) }
   }
   const spec = kindSpec(cls.kind)
   const rows: Rec[] = []
@@ -405,6 +412,7 @@ export function readRows(sheet: EcountSheet, cls: Classification): ReadResult {
     }
     rows.push(rec)
   }
+  const blanks = blankRequired(cls.kind, rows, cls.columns, firstText)
   if (cls.kind === 'payroll') {
     // 부서 합계 줄 · 개인 줄로 나눈다. 개인 줄에는 이름이 없다(버리기 뒤) — 사번 · 줄 번호만.
     const people = rows.map((x) => ({ row_no: x.row_no, dept: x.dept, person_ref: x.person_ref, salary: x.salary, bonus: x.bonus, severance: x.severance }))
@@ -415,9 +423,9 @@ export function readRows(sheet: EcountSheet, cls: Classification): ReadResult {
       for (const k of ['salary', 'bonus', 'severance'] as const) cur[k] = Number(cur[k] ?? 0) + Number(p[k] ?? 0)
       byDept.set(d, cur)
     }
-    return { rows: [...byDept.values()], people, fileTotal, problems, dates, skipped }
+    return { rows: [...byDept.values()], people, fileTotal, problems, dates, skipped, read: people.length, blanks }
   }
-  return { rows, people: [], fileTotal, problems, dates, skipped }
+  return { rows, people: [], fileTotal, problems, dates, skipped, read: rows.length, blanks }
 }
 
 /* ───────────────────────── 0072: 값 상태 · 종류별 마무리 · 원료 출고 구분 ───────────────────────── */
@@ -610,6 +618,9 @@ export function validate(kind: UploadKind, read: ReadResult, period: string | nu
   const errors = [...read.problems]
   const warnings: string[] = []
   if (!read.rows.length) errors.push('넣을 줄이 없습니다.')
+  // 0093: 꼭 있어야 하는 칸이 빈 채 저장될 줄 — 경고로(조용히 저장하지 않는다). 못 알아본 열은 0092 문구가 따로 말한다.
+  const blankW = blankWarning(read.blanks ?? [])
+  if (blankW) warnings.push(blankW)
   if (!period) errors.push('기간(달)을 찾지 못했습니다 — 골라 주세요.')
   if (spec.sumField && read.fileTotal !== null) {
     const sum = read.rows.reduce((a, r) => a + Number(r[spec.sumField!] ?? 0), 0)

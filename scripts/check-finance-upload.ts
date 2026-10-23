@@ -20,6 +20,8 @@ import { MSG } from '../src/lib/finance-upload/open'
 import { autoDecision, classifyByCode, classifyIssue, readRows, scrubSheet } from '../src/lib/finance-upload/pipeline'
 import { fromGrid, processUpload, saveTxGroupsFor, type AiClassify } from '../src/lib/finance-upload/process'
 import { parseValue } from '../src/lib/finance-upload/v21-text'
+import { splitStats, statsText } from '../src/lib/finance-upload/read-stats'
+import { buildChecklist, warnShort } from '../src/lib/finance-overview/checklist'
 import { checkAiSchemas } from './check-ai-schemas'
 import { runLedgerChecks } from './check-finance-upload-ledger'
 import { runHardeningChecks } from './check-upload-hardening'
@@ -148,6 +150,28 @@ async function main() {
     applied[kind] = c.upload_id!
   }
 
+  // ── 1b. 0093 «읽은 줄 N · 비운 칸 M» — 전 종류 저장 기록 맨 앞 한 줄 · 체크표가 떼어 읽고 경고로 세지 않음 ──
+  const ups = await repo.listFinUploads(BIZ)
+  for (const kind of kinds) {
+    const u = ups.find((x) => x.upload_id === applied[kind])!
+    const { stats, warnings: rest } = splitStats(u.warnings)
+    // 비운 칸은 못 알아본 꼭 필요한 열(0092 문구 — 예시 대출현황엔 «잔액» 열이 없다)이 있을 때만 0이 아니다.
+    const unmapped = rest.some((w) => /열을 못 알아봤습니다/.test(w))
+    assert.ok(stats && stats.read > 0 && (unmapped ? stats.blank > 0 : stats.blank === 0), `0093 ${kind}: 저장 기록의 «읽은 줄 · 비운 칸»이 틀리다 — ${JSON.stringify(u.warnings)}`)
+    assert.ok(!rest.some((w) => w.startsWith('ⓘ')), `0093 ${kind}: 통계 줄이 경고로 남았다`)
+  }
+  assert.equal(splitStats(ups.find((x) => x.upload_id === applied.payroll)!.warnings).stats?.read, 3, '0093: 급여 «읽은 줄»이 개인 줄 수(3)가 아니다')
+  assert.equal(splitStats(ups.find((x) => x.upload_id === applied.ledger)!.warnings).stats?.read, 3, '0093: 원장 «읽은 줄»이 거래 줄 수(3)가 아니다')
+  // 꼭 있어야 하는 칸(금액)이 빈 줄 → 저장은 하되 경고(조용히 저장 금지) · 체크표 «⚠» + «비운 칸 1»
+  const blankSales = { name: '판매현황', rows: [title('판매현황', '2097-03'), stamp, ['거래처명', '품목명', '수량', '단가', '공급가액'], ['가짜 거래처 A', '가짜 제품 1', 10, 1000, 10000], ['가짜 거래처 B', '가짜 제품 2', 5, 2000, null], ['가짜 거래처 C', '가짜 제품 3', 1, 500, 500], ['합계', null, 16, null, 10500]] as Cell[][] }
+  const bc = (await run('가짜 판매 빈칸.xlsx', await xlsx([blankSales])))[0]
+  assert.equal(bc.status, 'applied', `0093: 빈칸 파일이 저장되지 않았다(${bc.message})`)
+  assert.deepEqual(bc.stats, { read: 3, blank: 1 }, `0093: 카드 «읽은 줄 3 · 비운 칸 1»이 아니다 — ${JSON.stringify(bc.stats)}`)
+  assert.ok(bc.warnings?.some((w) => /^꼭 있어야 하는 칸이 빈 줄 — «금액» 1칸/.test(w)), `0093: 꼭 있어야 하는 칸 빔 경고가 없다(조용히 저장) — ${JSON.stringify(bc.warnings)}`)
+  const bcl = buildChecklist({ period: '2097-03', uploads: await repo.listFinUploads(BIZ), accounts: 'none', accountsAt: null, plMonthlyAt: null, valuationAt: null }).find((c) => c.key === 'sales')!
+  assert.deepEqual([bcl.state, bcl.stats, warnShort(bcl.warnings)], ['warn', { read: 3, blank: 1 }, '꼭 있어야 하는 칸 빔'], `0093: 체크표 판매현황 — ${JSON.stringify(bcl)}`)
+  assert.equal(statsText(bcl.stats ?? null), '읽은 줄 3 · 비운 칸 1')
+
   // ── 2. ④ 원료 줄: DB · AI 요청 어디에도 없음 / ⑥ 이름 · 주민 · 계좌 없음 / ⑨ 카드번호 뒤 4자리 ──
   const lines = dummyFinLines().filter((l) => l.period.startsWith('2099')) // 화면 확인용 예시(2026-08 · 09)는 뺀다
   const prod = lines.filter((l) => l.kind === 'production').map((l) => JSON.stringify(l.row))
@@ -172,6 +196,24 @@ async function main() {
   assert.ok(!/원료 투입|원재료 1|가짜이름|900101|110-123|1234-5678-9012/.test(aiText), `AI 요청에 원료 줄 · 이름 · 주민 · 계좌 · 카드번호가 갔다: ${aiText.slice(0, 300)}`)
   const scrubbed = scrubSheet({ name: '법인카드', colCount: 1, rows: [[{ t: 'text', v: '카드 1234 5678 9012 3456 사용' }]] })
   assert.equal(scrubbed.sheet.rows[0][0].t === 'text' && scrubbed.sheet.rows[0][0].v, '카드 ****-****-****-3456 사용')
+  // 0093: 원장 앞 8줄 안의 적요 «작업지시»는 생산 모양이 아니다 — 머리글까지만 본다. 원료 줄(적요에 «원료 · 투입»)이 버려지지 않고 원장에 들어간다.
+  const wo = (ym: string) => ({
+    name: '계정별원장',
+    rows: [
+      [`회사명 : (주)가짜산업 / ${ym.replace('-', '/')}/01 ~ ${ym.replace('-', '/')}/28 / 계정별원장 / 1530(원재료)`], stamp, ['일자-No.', '적요', '차변', '대변', '잔액'], ['이월잔액', null, null, null, 100000],
+      [`${ym}-03`, '작업지시 WO-12 원료 투입', 0, 40000, 60000], [`${ym}-04`, '작업지시 WO-13 원재료 출고', 0, 10000, 50000], [`${ym}-09`, '가짜 원료 입고', 30000, 0, 80000], ['합계', null, 30000, 50000, null],
+    ] as Cell[][],
+  })
+  const woScrub = scrubSheet({ name: '계정별원장', colCount: 5, rows: wo('2099-05').rows.map((r) => r.map((v) => (v === null ? { t: 'empty' as const } : typeof v === 'number' ? { t: 'number' as const, v } : { t: 'text' as const, v: String(v) }))) })
+  assert.equal(woScrub.dropped.materialRows, 0, `0093: 원장 적요 «작업지시»로 원료 줄 ${woScrub.dropped.materialRows}개를 버렸다`)
+  const woCard = (await run('가짜 원재료 원장.xlsx', await xlsx([wo('2098-05')])))[0]
+  assert.equal(woCard.kind, 'ledger', `0093: 작업지시 적요 원장이 원장으로 읽히지 않았다(${woCard.kind}: ${woCard.message})`)
+  // 원장은 계정별 그 달 합계(fin_ledger_sums) — 작업지시 두 줄(대변 4만 + 1만)이 버려지면 대변이 0이 된다.
+  const woSum = dummyFinLines().filter((l) => l.upload_id === woCard.upload_id).map((l) => l.row)
+  assert.deepEqual(woSum.map((r) => [r.account_code, r.debit, r.credit]), [['1530', 30000, 50000]], `0093: 작업지시 원료 줄이 원장 합계에서 빠졌다 — ${woCard.status} · ${JSON.stringify(woSum)}`)
+  // 진짜 제조지시명세서(머리글 위 제목)는 그대로 원료 줄을 버린다.
+  const prodScrub = scrubSheet({ name: 'Sheet1', colCount: 3, rows: sample('production', '2099-05').rows.map((r) => r.map((v) => (v === null ? { t: 'empty' as const } : typeof v === 'number' ? { t: 'number' as const, v } : { t: 'text' as const, v: String(v) }))) })
+  assert.equal(prodScrub.dropped.materialRows, 2, '0093: 제조지시명세서(제목 낱말)의 원료 줄을 버리지 않았다')
 
   // ── 3. 두 번 올리기 → 늘지 않음 ──
   const before = dummyFinLines().length
