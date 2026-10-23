@@ -269,6 +269,16 @@ export class EaEngine {
   private name(uid: string | null) {
     return this.person(uid)?.name ?? '—'
   }
+
+  /** 0093 ea_shown_name 거울 — 대표 본인 화면은 실명, 그 밖은 대표를 «대표»로(결재선 칸과 같은 규칙). */
+  private shown(uid: string | null) {
+    if (this.person(this.me.uid)?.role !== 'Chairman' && this.person(uid)?.role === 'Chairman') return '대표'
+    return this.name(uid)
+  }
+
+  private drafterShown(d: { drafter: string; drafter_name: string }) {
+    return this.shown(d.drafter) === '대표' ? '대표' : d.drafter_name
+  }
   private doc(id: string) {
     return this.s.docs.find((d) => d.doc_id === id)
   }
@@ -528,7 +538,7 @@ export class EaEngine {
     const rows: EaListRow[] = []
     for (const d of this.s.docs) {
       if (!this.feature(d.business_id)) continue
-      if (needle && !d.title.toLowerCase().includes(needle) && !d.drafter_name.toLowerCase().includes(needle)) continue
+      if (needle && !d.title.toLowerCase().includes(needle) && !this.drafterShown(d).toLowerCase().includes(needle)) continue
       const steps = this.s.steps.filter((x) => x.doc_id === d.doc_id)
       const mine = steps
         .map((x) => ({ x, own: this.stepOwner(x) === this.me.uid }))
@@ -550,7 +560,7 @@ export class EaEngine {
       rows.push({
         doc_id: d.doc_id, doc_no: d.doc_no, title: d.title, form_key: d.form_key,
         form_name: d.form_snapshot?.name ?? this.s.forms.find((f) => f.form_key === d.form_key)?.name_ko ?? d.form_key,
-        drafter_name: d.drafter_name, drafter_dept: d.drafter_dept, submitted_at: d.submitted_at, status: d.status,
+        drafter_name: this.drafterShown(d), drafter_dept: d.drafter_dept, submitted_at: d.submitted_at, status: d.status,
         current_label: d.status === 'in_progress' ? `${cur?.approver_name ?? ''} ${cur?.kind === 'agree' ? '합의' : '검토'}` : d.status === 'approved' ? '승인 완료' : d.status === 'rejected' ? '반려' : d.status === 'withdrawn' ? '회수' : '임시저장',
         due_date: d.due_date, overdue: !!d.due_date && d.status === 'in_progress' && d.due_date < seoulToday(),
         my_role: mine?.x.kind ?? null, my_result: mine?.x.status ?? null,
@@ -591,21 +601,21 @@ export class EaEngine {
         doc_id: d.doc_id, doc_no: d.doc_no, business_id: d.business_id, form_key: d.form_key,
         form_name: d.form_snapshot?.name ?? this.s.forms.find((f) => f.form_key === d.form_key)?.name_ko ?? d.form_key,
         form_version: d.form_version, form_snapshot: d.form_snapshot, title: d.title, body: d.body, fields: d.fields, amount: d.amount, status: d.status,
-        current_seq: d.current_seq, version: d.version, prev_doc_id: d.prev_doc_id, drafter: d.drafter, drafter_name: d.drafter_name, drafter_dept: d.drafter_dept,
-        due_date: d.due_date, wish_date: d.wish_date, followup_assignee: d.followup_assignee, followup_assignee_name: d.followup_assignee ? this.name(d.followup_assignee) : null,
+        current_seq: d.current_seq, version: d.version, prev_doc_id: d.prev_doc_id, drafter: d.drafter, drafter_name: this.drafterShown(d), drafter_dept: d.drafter_dept,
+        due_date: d.due_date, wish_date: d.wish_date, followup_assignee: d.followup_assignee, followup_assignee_name: d.followup_assignee ? this.shown(d.followup_assignee) : null,
         related: d.related, created_at: d.created_at, submitted_at: d.submitted_at, decided_at: d.decided_at,
         line: d.status === 'draft' ? d.line : null, refs_draft: d.status === 'draft' ? d.refs : null,
       },
       steps: steps.map((x) => ({
         seq: x.seq, kind: x.kind, name: x.approver_name, role: x.approver_role, user_id: x.approver_user, status: x.status,
-        acted_by_name: x.acted_by ? this.name(x.acted_by) : null, as_proxy: x.acted_as_proxy, comment: x.comment, acted_at: x.acted_at,
+        acted_by_name: x.acted_by ? this.shown(x.acted_by) : null, as_proxy: x.acted_as_proxy, comment: x.comment, acted_at: x.acted_at,
         mine: this.stepOwner(x) === this.me.uid,
         can_act: d.status === 'in_progress' && x.status === 'waiting' && d.current_seq === x.seq && (this.stepOwner(x) === this.me.uid || this.proxyFor(this.stepOwner(x), d.form_key, d.amount)),
       })),
-      refs: this.s.refs.filter((r) => r.doc_id === id).map((r) => ({ name: this.name(r.user_id), kind: r.kind, seen: !!r.seen_at, confirmed: !!r.confirmed_at, me: r.user_id === this.me.uid })),
+      refs: this.s.refs.filter((r) => r.doc_id === id).map((r) => ({ name: this.shown(r.user_id), kind: r.kind, seen: !!r.seen_at, confirmed: !!r.confirmed_at, me: r.user_id === this.me.uid })),
       files: this.s.files.filter((f) => f.doc_id === id).map((f) => ({ file_id: f.file_id, name: f.name, size: f.size_bytes, kind: f.kind, path: f.path })),
-      events: this.s.events.filter((e) => e.doc_id === id && e.action !== 'draft').map((e) => ({ action: e.action, actor: this.name(e.actor), as_proxy: e.as_proxy, original: e.original_user ? this.name(e.original_user) : null, comment: e.comment, seq: e.seq, at: e.at })),
-      followup: fu ? { kind: fu.kind, status: fu.status, assignee: this.name(fu.assignee), mine: fu.assignee === this.me.uid, due_date: fu.due_date, result: fu.result, ecount_slip: fu.ecount_slip, done_by: fu.done_by ? this.name(fu.done_by) : null, done_at: fu.done_at } : null,
+      events: this.s.events.filter((e) => e.doc_id === id && e.action !== 'draft').map((e) => ({ action: e.action, actor: this.shown(e.actor), as_proxy: e.as_proxy, original: e.original_user ? this.shown(e.original_user) : null, comment: e.comment, seq: e.seq, at: e.at })),
+      followup: fu ? { kind: fu.kind, status: fu.status, assignee: this.shown(fu.assignee), mine: fu.assignee === this.me.uid, due_date: fu.due_date, result: fu.result, ecount_slip: fu.ecount_slip, done_by: fu.done_by ? this.shown(fu.done_by) : null, done_at: fu.done_at } : null,
       related: d.related.map((r) => (this.canRead(r) ? { doc_id: r, title: this.doc(r)!.title, doc_no: this.doc(r)!.doc_no } : { doc_id: r, title: null, doc_no: null })),
       versions,
       next_version: next?.doc_id ?? null,
@@ -633,8 +643,8 @@ export class EaEngine {
     if (!this.human()) return null
     const t = seoulToday()
     return {
-      proxies: this.s.proxies.filter((x) => x.owner === this.me.uid).map((x) => ({ proxy_id: x.proxy_id, proxy: this.name(x.proxy), proxy_id_user: x.proxy, from: x.date_from, to: x.date_to, forms: x.forms, max_amount: x.max_amount, active: x.active })),
-      proxy_for: this.s.proxies.filter((x) => x.proxy === this.me.uid && x.active && x.date_from <= t && t <= x.date_to).map((x) => ({ owner: this.name(x.owner), from: x.date_from, to: x.date_to })),
+      proxies: this.s.proxies.filter((x) => x.owner === this.me.uid).map((x) => ({ proxy_id: x.proxy_id, proxy: this.shown(x.proxy), proxy_id_user: x.proxy, from: x.date_from, to: x.date_to, forms: x.forms, max_amount: x.max_amount, active: x.active })),
+      proxy_for: this.s.proxies.filter((x) => x.proxy === this.me.uid && x.active && x.date_from <= t && t <= x.date_to).map((x) => ({ owner: this.shown(x.owner), from: x.date_from, to: x.date_to })),
       favorites: this.s.favorites.filter((f) => f.owner === this.me.uid).map(({ fav_id, name, line, refs }) => ({ fav_id, name, line, refs })),
       notify: this.s.settings.get(this.me.uid) ?? { turn: true, result: true, followup: true, ref: true },
     }
