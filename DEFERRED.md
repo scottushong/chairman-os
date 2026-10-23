@@ -2941,3 +2941,4 @@ create policy attachments_journal_delete on attachments as restrictive for delet
 - 받을 것(0089 5절) — 시트 동기화가 Vault 'google_sheets_sa'를 읽게 바꾸기: 지금은 env GOOGLE_SHEETS_SA_JSON 그대로(동기화 계정이 키를 읽는 좁은 문 설계 필요). docs/decisions/2026-10-20-intake-items.md
 - 받을 것 — 재고평가방법 «세무사 확인값»을 0075 월별 손익 계산에 반영하기(이동평균 · 선입선출 계산기): 지금은 다르면 경고만.
 - 0092 점검(전자결재) — 폰 하단 탭: 대표(회장) 칸은 «결정»(/approvals) 그대로 둠(회장 결정함이 그 자리) · 전자결재는 «더보기» 서랍으로. 다른 선택지: 회장도 전자결재가 켜지면 «결재»(/e-approval)로 — 회장 결정함 자리를 잃어 버림. 결재 이력의 대표 단계 행위자는 이름(ea_name)으로 보임 — 결재선은 «대표»; 맞추려면 새 마이그레이션에서 ea_doc events의 actor를 대표 단계면 «대표»로.
+- 0093 보수 — 결재 이력 대표 이름은 0093(ea_shown_name)으로 «대표» 처리 끝(위 0092 줄 해소). 남은 것: 원료 출고명세 모양 판정(looksLikeMaterialIssue)도 앞 8줄 자료를 본다 — 원장 적요 «원료 출고»가 있으면 AI에 안 보내고 kg 칸을 지운다(이번엔 그대로). «읽은 줄 · 비운 칸»은 fin_uploads.warnings 맨 앞 «ⓘ» 줄 — 칸을 따로 두려면 새 마이그레이션(fin_upload_save 인자). docs/decisions/2026-10-23-repair-0093.md
