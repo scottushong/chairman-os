@@ -1,3 +1,4 @@
+import { splitStats, type ReadStats } from '@/lib/finance-upload/read-stats'
 import type { FinUpload } from '@/types'
 
 /**
@@ -39,6 +40,8 @@ export interface ChecklistItem {
   /** 0091 체크표 «빼기» — 그 칸을 채운 올리기(파일). 장부 쪽(계정과목표 · 월별 손익) · 화면 입력 평가는 없음. */
   uploadId?: string | null
   fileName?: string | null
+  /** 0093 그 파일의 «읽은 줄 N · 비운 칸 M»(0093 전 올리기는 null) */
+  stats?: ReadStats | null
 }
 
 export interface ChecklistInput {
@@ -63,8 +66,8 @@ export function buildChecklist(x: ChecklistInput): ChecklistItem[] {
     const u = x.uploads.filter((v) => v.kind === key && v.period === x.period && v.status === 'applied').sort((a, b) => (b.applied_at ?? '').localeCompare(a.applied_at ?? ''))[0]
     if (key === 'valuation' && !u && x.valuationAt) return { key, label, state: 'ok', warnings: [], at: x.valuationAt }
     if (!u) return { key, label, state: 'missing', warnings: [], at: null }
-    const w = u.warnings ?? []
-    return { key, label, state: w.length ? 'warn' : 'ok', warnings: w, at: u.applied_at, uploadId: u.upload_id, fileName: u.file_name }
+    const { stats, warnings: w } = splitStats(u.warnings)
+    return { key, label, state: w.length ? 'warn' : 'ok', warnings: w, at: u.applied_at, uploadId: u.upload_id, fileName: u.file_name, stats }
   })
 }
 
@@ -73,6 +76,7 @@ export function warnShort(w: string[]): string {
   if (!w.length) return ''
   const sum = w.filter((x) => /합계/.test(x)).length
   if (sum) return `합계 차이 ${sum}건`
+  if (w.some((x) => x.startsWith('꼭 있어야 하는 칸이 빈 줄'))) return '꼭 있어야 하는 칸 빔'
   const dup = w.find((x) => /중복 의심/.test(x))
   if (dup) return '중복 의심'
   return `경고 ${w.length}`

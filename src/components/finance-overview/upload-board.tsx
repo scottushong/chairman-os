@@ -8,6 +8,7 @@ import { answerColumns, applyPendingUpload, releasePayrollHold, revertUpload, up
 import { OfficialPanel, type AccountOption } from '@/components/finance/finance-upload-board'
 import { FIN_INBOX, inboxPath } from '@/lib/finance-upload/inbox'
 import { CHECKLIST } from '@/lib/finance-overview/checklist'
+import { splitStats, statsText } from '@/lib/finance-upload/read-stats'
 import { KIND_SPECS } from '@/lib/finance-upload/kinds'
 import type { FileCard } from '@/lib/finance-upload/process'
 import { sendEach } from '@/lib/finance-upload/send-each'
@@ -269,7 +270,7 @@ function CardRow({ c, businessId }: { c: FileCard; businessId: string }) {
   const tone = c.status === 'applied' ? (w.length ? 'warn' : 'ok') : c.status === 'held' || c.status === 'official' || c.status === 'later' || c.status === 'duplicate' ? 'warn' : 'bad'
   const state =
     c.status === 'applied'
-      ? `${c.message.replace(/^저장됨 · /, '저장됨 · ')}${w.length ? ` · 경고 ${w.length}` : ''}`
+      ? `${c.message.replace(/^저장됨 · /, '저장됨 · ')}${c.stats ? ` · ${statsText(c.stats)}` : ''}${w.length ? ` · 경고 ${w.length}` : ''}`
       : c.status === 'duplicate'
         ? '이미 올림 — 늘지 않음'
         : c.message
@@ -358,12 +359,12 @@ function RecentRow({ u, businessId, canRevert }: { u: FinUpload; businessId: str
   const router = useRouter()
   const [busy, start] = useTransition()
   const [msg, setMsg] = useState<string | null>(null)
-  const w = u.warnings ?? []
+  const { stats, warnings: w } = splitStats(u.warnings)
   const st: Record<string, string> = { applied: '저장됨', reverted: '되돌림', replaced: '새 값으로 바뀜', skipped: '기존 값 둠', cancelled: '취소', failed: '실패', needs_review: '보류' }
   const official = u.status === 'failed' && !!u.error?.startsWith('공식 결산으로 보냄')
   const hold = u.status === 'failed' && !!u.error?.startsWith('보류 — ')
   const tone = u.status === 'applied' ? (w.length ? 'warn' : 'ok') : u.status === 'failed' && !official && !hold ? 'bad' : 'muted'
-  const state = official ? '공식 결산으로 보냄' : hold ? u.error!.slice(5) : u.status === 'failed' ? `실패 — ${u.error ?? ''}` : `${st[u.status] ?? u.status}${u.status === 'applied' ? ` · ${u.row_count}줄${w.length ? ` · 경고 ${w.length}` : ''}` : ''}`
+  const state = official ? '공식 결산으로 보냄' : hold ? u.error!.slice(5) : u.status === 'failed' ? `실패 — ${u.error ?? ''}` : `${st[u.status] ?? u.status}${u.status === 'applied' ? ` · ${stats ? statsText(stats) : `${u.row_count}줄`}${w.length ? ` · 경고 ${w.length}` : ''}` : ''}`
   return (
     <>
       <Row

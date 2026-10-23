@@ -4,7 +4,8 @@ import type { FinRow, SessionUser } from '@/types'
 import { isUploadKind, kindSpec } from './kinds'
 import { encodeShape, ledgerLayoutByCode, ROW_ROLES, type LedgerLayout, type RowLabel } from './ledger'
 import { mapColumns, readRows, validate, type Classification } from './pipeline'
-import { finUploadError, fromGrid, saveTxGroupsFor } from './process'
+import { finUploadError, fromGrid, readStatsOf, saveTxGroupsFor } from './process'
+import { blankRequired, blankWarning, withStats, type ReadStats } from './read-stats'
 
 /**
  * 대기(needs_review) 한 건을 0085 방식으로 저장 — «보류» 카드의 «저장»(actions/finance-upload.ts applyPendingUpload)과
@@ -40,6 +41,7 @@ export async function savePending(
     let rows = pending.rows
     let people = pending.people ?? null
     let warnings = [...(meta.warnings ?? []), ...(meta.errors ?? [])]
+    let stats: ReadStats | null = null
     if ((kind !== upload.kind || !rows.length) && pending.grid) {
       const sheet = fromGrid(upload.sheet_name ?? 'sheet', pending.grid)
       const headerRow = meta.header_row ?? 0
@@ -54,16 +56,25 @@ export async function savePending(
       people = kind === 'payroll' ? (read.people as FinRow[]) : null
       const check = validate(kind, read, period)
       warnings = [...new Set([...check.errors, ...check.warnings])]
+      stats = readStatsOf(read)
       // 배우기 — 시트 모양 → 사람이 고른 종류 · 칸(숫자 없음).
       if (meta.sig) await repo.saveFinUploadShape({ business_id: businessId, header_sig: meta.sig, sheet_name: upload.sheet_name ?? null, kind, column_map: encodeShape(columns, ledger ?? null) }).catch((e) => console.error('[savePending] shape', e))
     } else if (kind !== upload.kind) {
       return { error: '이 올리기는 칸 격자가 없어 종류를 바꿀 수 없습니다 — 파일을 다시 올려 주세요.', code: 'kind' }
     }
+    if (!stats) {
+      // 0093: 대기에 읽혀 있던 줄 그대로 — 꼭 있어야 하는 칸이 빈 줄을 다시 세고, 경고가 없으면 붙인다(조용히 저장하지 않는다).
+      const lines = kind === 'payroll' && people?.length ? people : rows
+      const blanks = blankRequired(kind, lines)
+      const w = blankWarning(blanks)
+      if (w && !warnings.some((x) => x.startsWith('꼭 있어야 하는 칸이 빈 줄'))) warnings.unshift(w)
+      stats = { read: lines.length, blank: blanks.reduce((a, b) => a + b.count, 0) }
+    }
     const boss = user.role === 'Chairman' || user.role === 'GroupCFO'
     const saved = await repo.finUploadSave({
       business_id: businessId, kind, period, file_name: upload.file_name, file_sha256: upload.file_sha256, sheet_name: upload.sheet_name ?? null,
       ai_confidence: upload.ai_confidence, ai_used: upload.ai_used, rows, people: boss && people?.length ? people : null, reason, upload_id: id,
-      warnings: warnings.slice(0, 40),
+      warnings: withStats(warnings, stats),
     })
     if (!boss && people?.length) await repo.finPayrollHold(saved, people).catch((e) => console.error('[savePending] payroll hold', e))
     await saveTxGroupsFor(repo, businessId, kind, period, saved, reason).catch((e) => console.error('[savePending] tx groups', e))

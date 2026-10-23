@@ -6,6 +6,7 @@ import { addMonths, computeBs, computeCash, computeCosts, computeDebt, computePl
 import { eok, monthKo, pctText, ppText, ratio, won } from '@/lib/finance-overview/format'
 import { grainLabel, grainMonths, plSum, prevGrainEnd, type Grain } from '@/lib/finance-overview/grain'
 import type { Kpi } from '@/lib/finance-overview/kpis'
+import { statsText } from '@/lib/finance-upload/read-stats'
 
 import { ChecklistWithdraw } from './checklist-withdraw'
 import { KpiGrid } from './kpi-grid'
@@ -284,11 +285,13 @@ export function SummaryTab({ ctx, period, grain, kpis, checklist, links, withdra
             c.state === 'ok' ? (
               <div key={c.key} className="rounded-lg bg-[#e1efeb] px-2.5 py-2 text-[13px] text-[#0f6b5c]">
                 ✓ {c.label}
+                <FileStats c={c} />
                 {withdraw && c.uploadId ? <ChecklistWithdraw uploadId={c.uploadId} businessId={withdraw.businessId} fileName={c.fileName ?? null} /> : null}
               </div>
             ) : c.state === 'warn' ? (
               <div key={c.key} className="rounded-lg bg-[#fdf4ec] px-2.5 py-2 text-[13px] text-[#9a4b12]" title={c.warnings.join('\n')}>
                 ⚠ {c.label} ({warnShort(c.warnings)})
+                <FileStats c={c} />
                 {withdraw && c.uploadId ? <ChecklistWithdraw uploadId={c.uploadId} businessId={withdraw.businessId} fileName={c.fileName ?? null} /> : null}
               </div>
             ) : (
@@ -308,6 +311,12 @@ export function SummaryTab({ ctx, period, grain, kpis, checklist, links, withdra
       <OtherTables ctx={ctx} period={period} />
     </div>
   )
+}
+
+/** 0093 파일마다 «읽은 줄 N · 비운 칸 M» 한 줄(0093 전 올리기는 없음). */
+function FileStats({ c }: { c: ChecklistItem }) {
+  const t = statsText(c.stats ?? null)
+  return t ? <div className="mt-0.5 text-[14px] lg:text-[12px] opacity-80 tnum" data-testid="checklist-stats">{t}</div> : null
 }
 
 function cashSentence(op: number | null, c: ReturnType<typeof computeCash>): string {

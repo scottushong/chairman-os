@@ -28,6 +28,7 @@ import { autoSaveOfficial } from './official-auto'
 import { linesToAsk, type OfficialSuggester } from './official-suggest'
 import { decodeShape, encodeShape, fixByBalance, LEDGER_COLS, ledgerFeedback, ledgerLayoutByCode, ROLE_KO, type LedgerCol, type LedgerLayout, type RowLabel } from './ledger'
 import { MSG, openUpload } from './open'
+import { withStats, type ReadStats } from './read-stats'
 import type { ColumnLabelMap } from './synonyms'
 import {
   aiSample,
@@ -116,6 +117,8 @@ export interface FileCard {
   ask_fields?: { key: string; label: string }[]
   /** 0089 이번에 (회사, 종류) 열 맞춤을 새로 저장했나(비슷한 이름 · AI) */
   map_saved?: 'code' | 'ai'
+  /** 0093 «읽은 줄 N · 비운 칸 M» */
+  stats?: ReadStats
 }
 
 /** C단계 PDF · 사진 설정 — 없으면(검사 · 옛 호출) PDF · 사진은 «준비 중». */
@@ -202,6 +205,11 @@ export function sameFileCard(fileName: string, u: FinUpload): FileCard {
       : `${ERR_KO.fin_upload_duplicate} 이미 넣은 파일입니다 — 다시 넣으려면 «최근 올리기»에서 되돌린 뒤 올려 주세요.`,
     ...(pending ? { reinterpret_id: u.upload_id } : {}),
   }
+}
+
+/** 0093 «읽은 줄 N · 비운 칸 M» — 비운 칸은 꼭 있어야 하는 칸만(못 알아본 열의 빈칸도 센다). */
+export function readStatsOf(read: Pick<ReadResult, 'rows' | 'read' | 'blanks'>): ReadStats {
+  return { read: read.read ?? read.rows.length, blank: (read.blanks ?? []).reduce((a, b) => a + b.count, 0) }
 }
 
 /** 읽기에서 넣지 않은 줄 · 해가 없는 날짜를 카드에 — 조용히 버리지 않는다. */
@@ -576,10 +584,11 @@ async function processSheets(o: ProcessOptions, sha: string, sheets: EcountSheet
       cards.push(await holdCard(o, sha, base, read.rows.length, 'period', MSG_HOLD.period, pendingOf('period', MSG_HOLD.period), warnings))
       continue
     }
+    const stats = readStatsOf(read)
     try {
       const id = await o.repo.finUploadSave({
         business_id: o.businessId, kind: cls.kind, period: month.period, file_name: o.fileName, file_sha256: opened.sha256, sheet_name: sheet.name,
-        ai_confidence: cls.confidence, ai_used: aiUsed, rows: read.rows as FinRow[], people: o.boss && people.length ? people : null, reason: null, upload_id: null, warnings,
+        ai_confidence: cls.confidence, ai_used: aiUsed, rows: read.rows as FinRow[], people: o.boss && people.length ? people : null, reason: null, upload_id: null, warnings: withStats(warnings, stats),
       })
       // 같은 거래(same) 묶음 저장 — 원천 줄은 고치지 않는다. 실패해도 저장은 그대로.
       await saveTxGroupsFor(o.repo, o.businessId, cls.kind, month.period, id, null).catch((e) => console.error('[finance-upload] tx groups', e))
@@ -596,7 +605,7 @@ async function processSheets(o: ProcessOptions, sha: string, sheets: EcountSheet
       }
       const what = cls.kind === 'payroll' ? `부서 합계 ${read.rows.length}` : `${read.rows.length}줄`
       cards.push({
-        ...base, status: 'applied', upload_id: id, rows: read.rows.length, why: [], warnings,
+        ...base, status: 'applied', upload_id: id, rows: read.rows.length, why: [], warnings, stats,
         message: `저장됨 · ${what}${held ? ` (개인 줄 ${held}개는 대표 · CFO 확인 뒤 저장)` : cls.kind === 'payroll' && people.length ? ` · 개인 줄 ${people.length}` : ''}${doc?.byAi ? ` (${doc.format === 'image' ? '사진 · ' : ''}AI 읽음)` : ''}`,
       })
     } catch (e) {
