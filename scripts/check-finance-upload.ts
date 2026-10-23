@@ -172,6 +172,24 @@ async function main() {
   assert.ok(!/원료 투입|원재료 1|가짜이름|900101|110-123|1234-5678-9012/.test(aiText), `AI 요청에 원료 줄 · 이름 · 주민 · 계좌 · 카드번호가 갔다: ${aiText.slice(0, 300)}`)
   const scrubbed = scrubSheet({ name: '법인카드', colCount: 1, rows: [[{ t: 'text', v: '카드 1234 5678 9012 3456 사용' }]] })
   assert.equal(scrubbed.sheet.rows[0][0].t === 'text' && scrubbed.sheet.rows[0][0].v, '카드 ****-****-****-3456 사용')
+  // 0093: 원장 앞 8줄 안의 적요 «작업지시»는 생산 모양이 아니다 — 머리글까지만 본다. 원료 줄(적요에 «원료 · 투입»)이 버려지지 않고 원장에 들어간다.
+  const wo = (ym: string) => ({
+    name: '계정별원장',
+    rows: [
+      [`회사명 : (주)가짜산업 / ${ym.replace('-', '/')}/01 ~ ${ym.replace('-', '/')}/28 / 계정별원장 / 1530(원재료)`], stamp, ['일자-No.', '적요', '차변', '대변', '잔액'], ['이월잔액', null, null, null, 100000],
+      [`${ym}-03`, '작업지시 WO-12 원료 투입', 0, 40000, 60000], [`${ym}-04`, '작업지시 WO-13 원재료 출고', 0, 10000, 50000], [`${ym}-09`, '가짜 원료 입고', 30000, 0, 80000], ['합계', null, 30000, 50000, null],
+    ] as Cell[][],
+  })
+  const woScrub = scrubSheet({ name: '계정별원장', colCount: 5, rows: wo('2099-05').rows.map((r) => r.map((v) => (v === null ? { t: 'empty' as const } : typeof v === 'number' ? { t: 'number' as const, v } : { t: 'text' as const, v: String(v) }))) })
+  assert.equal(woScrub.dropped.materialRows, 0, `0093: 원장 적요 «작업지시»로 원료 줄 ${woScrub.dropped.materialRows}개를 버렸다`)
+  const woCard = (await run('가짜 원재료 원장.xlsx', await xlsx([wo('2098-05')])))[0]
+  assert.equal(woCard.kind, 'ledger', `0093: 작업지시 적요 원장이 원장으로 읽히지 않았다(${woCard.kind}: ${woCard.message})`)
+  // 원장은 계정별 그 달 합계(fin_ledger_sums) — 작업지시 두 줄(대변 4만 + 1만)이 버려지면 대변이 0이 된다.
+  const woSum = dummyFinLines().filter((l) => l.upload_id === woCard.upload_id).map((l) => l.row)
+  assert.deepEqual(woSum.map((r) => [r.account_code, r.debit, r.credit]), [['1530', 30000, 50000]], `0093: 작업지시 원료 줄이 원장 합계에서 빠졌다 — ${woCard.status} · ${JSON.stringify(woSum)}`)
+  // 진짜 제조지시명세서(머리글 위 제목)는 그대로 원료 줄을 버린다.
+  const prodScrub = scrubSheet({ name: 'Sheet1', colCount: 3, rows: sample('production', '2099-05').rows.map((r) => r.map((v) => (v === null ? { t: 'empty' as const } : typeof v === 'number' ? { t: 'number' as const, v } : { t: 'text' as const, v: String(v) }))) })
+  assert.equal(prodScrub.dropped.materialRows, 2, '0093: 제조지시명세서(제목 낱말)의 원료 줄을 버리지 않았다')
 
   // ── 3. 두 번 올리기 → 늘지 않음 ──
   const before = dummyFinLines().length
