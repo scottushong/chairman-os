@@ -231,7 +231,7 @@ function FavoritesView({ widget, options }: { widget: HomeWidget; options: reado
   const byKey = new Map(options.map((o) => [o.key, o]))
   const items = (widget.settings.items ?? []).map((k) => byKey.get(k)).filter((o): o is FavoriteOption => !!o)
   if (items.length === 0) {
-    return <p className="px-4 py-4 text-[14px] text-ink-dim">즐겨찾기가 없습니다. «홈 편집»에서 결재 양식이나 메뉴를 더하세요.</p>
+    return <p className="px-4 py-4 text-[14px] text-ink-dim">즐겨찾기가 없습니다. «편집 모드»에서 결재 양식이나 메뉴를 더하세요.</p>
   }
   return (
     <div className="flex flex-wrap gap-2 px-4 py-3">

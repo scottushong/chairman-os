@@ -9,7 +9,7 @@ import { loadBoardProps } from '@/lib/home/board-server'
 import { homeAccess, requiredNotices } from '@/lib/home/data'
 
 /**
- * 0086 «내 홈»(/home) — 시안 docs/specs/2026-10-20-home-widgets-mock.png: 날짜 · 이름 · «홈 편집» · 필수 공지 · 개인 위젯.
+ * 0086 «내 홈»(/home) — 시안 docs/specs/2026-10-20-home-widgets-mock.png: 날짜 · 이름 · «편집 모드» · 필수 공지 · 개인 위젯.
  * 스위치 home_widgets(기본 대표만 · 회사 줄을 켜면 그 회사 전원). 꺼져 있으면 안내만(메뉴도 없다).
  * 배치는 서버(0086 home_layouts — 본인만)에서 읽고, 위젯 내용은 위젯마다 서버 액션으로 따로 부른다(기존 기능의 권한 그대로).
  * 직원 화면이다 — «회장»이 들어가지 않는다. 급여 · 원가 · BOM · 재무 숫자 · 원료 단가를 싣지 않는다(check:home-widgets).
