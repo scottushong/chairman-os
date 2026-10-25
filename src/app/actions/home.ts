@@ -1,7 +1,8 @@
 'use server'
 
 import { currentUser } from '@/lib/auth/session'
-import { homeAccess, widgetData } from '@/lib/home/data'
+import { boardForSave, boardValid, normalizeBoard, personaOf, type BoardSection } from '@/lib/home/board'
+import { homeAccess, kindAllowed, widgetData } from '@/lib/home/data'
 import { homeStore } from '@/lib/home/store'
 import { filterOf, homeErrorText, layoutForSave, layoutValid, normalizeLayout, widgetDef, type HomeWidget, type WidgetData } from '@/lib/home/widgets'
 
@@ -57,4 +58,41 @@ export async function loadHomeWidget(kind: string, filter?: string): Promise<Wid
   const def = widgetDef(String(kind))
   if (!def) return { state: 'error', text: '알 수 없는 위젯입니다.' }
   return widgetData(user, access, def.kind, filterOf({ kind: def.kind, settings: { filter: typeof filter === 'string' ? filter : undefined } }))
+}
+
+/* ------------------------------------------------------------------ 0097 구역 배치 */
+
+/**
+ * 구역 배치 저장 — 본 판(expected) + 구역들. 0086 충돌 규칙 그대로. 이 사람이 넣을 수 없는 위젯(직원의 재무 · 투자 위젯)이 있으면
+ * 저장하지 않는다(DB home_kind_allowed가 한 번 더 본다). 모르는 종류(없어진 위젯)는 그대로 둔다.
+ */
+export async function saveBoardLayout(expected: number, sections: BoardSection[]): Promise<SaveResult> {
+  const user = await currentUser()
+  if (!user) return { ok: false, error: homeErrorText('home_denied') }
+  const access = await homeAccess(user)
+  if (!access.home) return { ok: false, error: homeErrorText('home_denied') }
+  if (!Number.isInteger(expected) || expected < 0 || !Array.isArray(sections)) return { ok: false, error: homeErrorText('home_invalid') }
+  const body = boardForSave(sections.map((s) => ({ ...s, widgets: Array.isArray(s?.widgets) ? s.widgets : [], unknown: Array.isArray(s?.unknown) ? s.unknown : [] })))
+  if (!boardValid(body)) return { ok: false, error: homeErrorText('home_invalid') }
+  if (body.some((s) => s.widgets.some((w) => !kindAllowed(access, w.kind)))) return { ok: false, error: homeErrorText('home_kind_denied') }
+  try {
+    const revision = await (await homeStore()).saveSections(expected, body, (kind) => kindAllowed(access, kind))
+    return { ok: true, revision }
+  } catch (e) {
+    console.error('[home] 구역 배치 저장 실패', e)
+    const msg = e instanceof Error ? e.message : String(e)
+    return { ok: false, conflict: /home_conflict/.test(msg), error: homeErrorText(e) }
+  }
+}
+
+export async function reloadBoard(): Promise<{ ok: boolean; revision?: number; sections?: BoardSection[]; error?: string }> {
+  const user = await currentUser()
+  if (!user || !(await homeAccess(user)).home) return { ok: false, error: homeErrorText('home_denied') }
+  try {
+    const r = await (await homeStore()).read()
+    return { ok: true, revision: r.revision, sections: normalizeBoard(r, personaOf(user.role)).sections }
+  } catch (e) {
+    console.error('[home] 배치 읽기 실패', e)
+    return { ok: false, error: '최신 배치를 불러오지 못했습니다.' }
+  }
 }

@@ -16,6 +16,7 @@ import { InitiativeStat } from '@/components/dashboard/initiative-stat'
 import { InitiativeSummaryRow } from '@/components/dashboard/initiative-summary-row'
 import { StrategicCoordinates } from '@/components/dashboard/strategic-coordinates'
 import { WaitingOnMe } from '@/components/dashboard/waiting-on-me'
+import { HomeBoard } from '@/components/home/home-board'
 import { Icon } from '@/components/ui/icon'
 import { recordScreenRead } from '@/lib/activity-record'
 import { summarizeAttention } from '@/lib/attention/screen'
@@ -27,6 +28,8 @@ import { citySky } from '@/lib/city-phase'
 import { summarizeDependency } from '@/lib/dependency'
 import { orderInitiatives } from '@/lib/initiative'
 import { resolveLocation } from '@/lib/geo'
+import { loadBoardProps } from '@/lib/home/board-server'
+import { homeAccess } from '@/lib/home/data'
 import { firstParam } from '@/lib/query'
 import { getRepository, loadDashboard } from '@/lib/repository'
 import { loadUiPrefs } from '@/lib/ui-prefs-server'
@@ -56,6 +59,50 @@ export default async function DashboardPage(props: PageProps<'/'>) {
   await recordScreenRead({ path: '/', kind: 'page' })
 
   const repo = await getRepository()
+  const sp0 = await props.searchParams
+
+  /*
+   * 0097 대표 첫 화면 = 구역 · 위젯 판(0086 엔진 · 스위치 home_widgets — 기본 대표 켬). 기존 대시보드(아래 전부)는 지우지 않고
+   * «기존 대시보드»(/?classic=1)로 그대로 둔다 — 그 자리의 무거운 조회(도시 · 의존 · 주의 · 원장)는 그때만 읽는다.
+   * 긴급(Critical) 띠만 판 위에 남긴다(CH-018 «즉시 상단 노출» — 개인 편집으로 숨기지 못한다).
+   */
+  if (viewer && firstParam(sp0.classic) !== '1' && (await homeAccess(viewer)).home) {
+    const [board, loadedTop] = await Promise.all([loadBoardProps(viewer), loadDashboard(repo)])
+    const todayLong = new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' }).format(new Date())
+    return (
+      <div id="dash-top" className="mx-auto max-w-[1600px] px-4 py-5 pb-24 sm:px-6 lg:pb-8">
+        <HomeBoard
+          initial={board.sections}
+          revision={board.revision}
+          usedDefault={board.usedDefault}
+          library={board.library}
+          addable={board.addable}
+          defaults={board.defaults}
+          favorites={board.favorites}
+          loadFailed={board.loadFailed}
+          businesses={board.businesses}
+          projects={board.projects}
+          title={
+            <>
+              안녕하세요, {viewer.name}님
+              <Icon name="crown" className="size-5 text-gold" filled />
+            </>
+          }
+          sub="오늘도 중요한 결정을 함께하겠습니다."
+          aside={
+            <span className="flex flex-col items-end gap-1">
+              <span>{todayLong}</span>
+              <Link href="/?classic=1" data-testid="classic-link" className="inline-flex min-h-11 items-center text-t13 text-ink-dim underline-offset-2 hover:text-ink hover:underline">
+                기존 대시보드 보기 →
+              </Link>
+            </span>
+          }
+          top={<CriticalBanner alerts={loadedTop.alerts} decisions={loadedTop.decisions} businesses={loadedTop.businesses} />}
+        />
+      </div>
+    )
+  }
+
   // 위치는 요청 헤더 조회라 왕복이 없다. 날씨·프로세스차트는 나머지와 나란히 기다린다.
   const location = await resolveLocation()
   // 0072 시드 정리 A안 — «예시 숨기기»(보는 사람마다 · URL 칸 ?examples=hide). 예시 줄은 대표 세션에만 온다(지우지 않는다).
@@ -210,7 +257,7 @@ export default async function DashboardPage(props: PageProps<'/'>) {
         <div className="flex items-center gap-3">
           {exampleCount > 0 ? (
             <Link
-              href={hideExamples ? '/' : '/?examples=hide'}
+              href={hideExamples ? '/?classic=1' : '/?classic=1&examples=hide'}
               className="rounded-md border border-line px-2 py-1 text-t11 text-ink-dim hover:border-accent"
               data-testid="examples-toggle"
             >
@@ -218,6 +265,12 @@ export default async function DashboardPage(props: PageProps<'/'>) {
             </Link>
           ) : null}
           <span className="text-t12 text-ink-dim tnum">{today}</span>
+          {/* 0097 — 구역 판(첫 화면)으로 돌아가기. 판이 꺼진 사람에게는 이 화면이 첫 화면이라 링크를 두지 않는다. */}
+          {firstParam(sp.classic) === '1' ? (
+            <Link href="/" className="rounded-md border border-line px-2 py-1 text-t11 text-ink-dim hover:border-accent" data-testid="board-link">
+              ← 내 대시보드
+            </Link>
+          ) : null}
         </div>
       </div>
 

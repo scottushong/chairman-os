@@ -12,7 +12,9 @@ import { getRepository } from '@/lib/repository'
 import { loadSidebarData } from '@/lib/sidebar-data'
 import { CALENDAR_ITEM_LABEL_KO, TASK_STATUS_LABEL_KO, type SessionUser, type Task } from '@/types'
 
-import { pickMyTasks, pickRequested, weekEnd, widgetDef, type FavoriteOption, type Tone, type WidgetData, type WidgetItem } from './widgets'
+import { canSeeInvestment } from '@/lib/investment/screen-rules'
+
+import { audienceOf, pickMyTasks, pickRequested, weekEnd, widgetDef, WIDGETS, type FavoriteOption, type Tone, type WidgetData, type WidgetItem } from './widgets'
 
 /**
  * 0086 «내 홈» 위젯 내용 — 위젯마다 **기존 기능의 조회 · 기존 권한** 그대로 부른다(위젯을 더한다고 볼 수 있는 것이 늘지 않는다).
@@ -26,6 +28,10 @@ import { pickMyTasks, pickRequested, weekEnd, widgetDef, type FavoriteOption, ty
  *   근태 · 휴가   이 시스템에 없다 → «연동 준비 중»(예시를 지어내지 않는다).
  * 목록과 건수는 같은 조건으로 센다(지시문 4절 끝). 결재 금액 · 재무 숫자는 싣지 않는다.
  * 한 위젯이 실패해도 다른 위젯은 선다 — 위젯마다 따로 부르고(서버 액션), 실패는 그 위젯의 «다시 시도»로.
+ *
+ * 0097: 프로젝트 현황(repo.listProjects — 0027 RLS) · 데이터 범위(구역 · 위젯 scope — 회사 · 프로젝트)를 더했다. 범위는 보여 줄 것을
+ * 좁힐 뿐이다(읽기는 위 조회 그대로). 대표 첫 화면 전용 위젯(재무 · 투자 · 아침 루틴 판단 · 기억 검토함)은 여기 없다 —
+ * lib/dashboard/widgets.ts가 그 기능의 문을 지난 뒤에만 읽는다.
  */
 
 const LIST_MAX = 5
@@ -33,14 +39,59 @@ const LIST_MAX = 5
 export interface HomeAccess {
   home: boolean
   approvals: boolean
+  /** 0097 — 대표 · 그룹 CFO(재무 위젯). */
+  top?: boolean
+  /** 0097 — 대표만(아침 루틴 판단 · 준비 중 칸). */
+  chair?: boolean
+  /** 0097 — 대표 · «/investment» 지정자 + 스위치 investment. */
+  investment?: boolean
+  /** 0097 — 대표 + 스위치 memory_engine. */
+  memory?: boolean
 }
 
 /** 이 사람에게 «내 홈» · 전자결재가 켜져 있나 — 그룹 줄 또는 내가 볼 수 있는 회사 줄 하나라도(사이드바 메뉴와 같은 판정). */
 export async function homeAccess(user: SessionUser | null): Promise<HomeAccess> {
   if (!user) return { home: false, approvals: false }
   const hidden = (await loadSidebarData(user.role)).hiddenNav
-  return { home: !hidden.includes('nav_home'), approvals: !hidden.includes('nav_eapproval') }
+  const human = user.role !== 'AIAgent' && user.role !== 'Integration'
+  const chair = human && user.role === 'Chairman'
+  return {
+    home: !hidden.includes('nav_home'),
+    approvals: !hidden.includes('nav_eapproval'),
+    top: chair || (human && user.role === 'GroupCFO'),
+    chair,
+    investment: human && !hidden.includes('nav_investment') && canSeeInvestment(user),
+    memory: chair && !hidden.includes('nav_memory'),
+  }
 }
+
+/** 0097 — 이 위젯을 넣을 수 있나(라이브러리 «추가» · 서버 저장 · API가 같은 판정). 준비 중(listOnly)은 넣을 수 없다. DB home_kind_allowed가 한 번 더 본다. */
+export function kindAllowed(access: HomeAccess, kind: string): boolean {
+  const def = widgetDef(kind)
+  if (!def) return true // 모르는 종류(없어진 위젯)는 배치에서 지우지 않는다 — 그리지 않을 뿐.
+  if (def.listOnly) return false
+  if (def.needsApprovals && !access.approvals) return false
+  if (def.kind === 'memory_review' && !access.memory) return false
+  const a = audienceOf(def)
+  return a === 'all' ? true : a === 'top' ? !!access.top : a === 'chair' ? !!access.chair : !!access.investment
+}
+
+/** 0097 — 라이브러리에 보일 위젯(넣을 수 있는 것 + 이 사람에게 해당하는 «준비 중»). 직원에게는 재무 · 투자 위젯이 목록에도 없다. */
+export function libraryKinds(access: HomeAccess): string[] {
+  return WIDGETS.filter((w) => {
+    const a = audienceOf(w)
+    const mine = a === 'all' || (a === 'top' && access.top) || (a === 'chair' && access.chair) || (a === 'invest' && access.investment)
+    if (!mine) return false
+    return w.listOnly ? true : kindAllowed(access, w.kind)
+  }).map((w) => w.kind)
+}
+
+/** 0097 위젯 데이터 범위(서버가 이미 «볼 수 있는 회사 · 프로젝트»인지 본 값). */
+export interface DataScope {
+  biz: string
+  project: string | null
+}
+const ALL: DataScope = { biz: 'all', project: null }
 
 const md = (d: string | null | undefined) => (d ? `${d.slice(5, 7)}.${d.slice(8, 10)}` : '')
 
@@ -79,9 +130,11 @@ function eaItem(r: EaListRow, box: 'todo' | 'mine'): WidgetItem {
 }
 
 /** 위젯 하나의 내용. kind · filter는 서버 액션이 카탈로그로 먼저 거른다. */
-export async function widgetData(user: SessionUser, access: HomeAccess, kind: string, filter: string | undefined): Promise<WidgetData> {
+export async function widgetData(user: SessionUser, access: HomeAccess, kind: string, filter: string | undefined, scope: DataScope = ALL): Promise<WidgetData> {
   const def = widgetDef(kind)
   if (!def) return { state: 'error', text: '알 수 없는 위젯입니다.' }
+  if (audienceOf(def) !== 'all') return { state: 'denied', text: '이 화면에서 쓸 수 없는 위젯입니다.' }
+  const inBiz = (b: string | null | undefined) => scope.biz === 'all' || b === scope.biz
   if (def.needsApprovals && !access.approvals) return { state: 'denied', text: '전자결재를 쓸 수 없는 계정입니다(회사에서 켜면 보입니다).' }
   const today = kstToday()
   const repo = await getRepository()
@@ -90,7 +143,11 @@ export async function widgetData(user: SessionUser, access: HomeAccess, kind: st
     if (DATA_MODE === 'dummy' && process.env.DUMMY_HOME_WIDGET_FAIL === kind) throw new Error('dummy 위젯 실패(시험)')
     switch (kind) {
       case 'my_tasks': {
-        const rows = pickMyTasks(await repo.listTasks(), user.user_id, today, filter ?? 'open')
+        const scoped = scope.biz !== 'all' || scope.project
+        const projectBiz = scoped ? new Map((await repo.listProjects()).map((p) => [p.project_id, p.business_id])) : null
+        const rows = pickMyTasks(await repo.listTasks(), user.user_id, today, filter ?? 'open').filter((t) =>
+          !projectBiz ? true : scope.project ? t.project_id === scope.project : inBiz(projectBiz.get(t.project_id)),
+        )
         return { state: 'ok', count: rows.length, items: rows.slice(0, LIST_MAX).map((t) => taskItem(t, today)) }
       }
       case 'approvals': {
@@ -105,7 +162,9 @@ export async function widgetData(user: SessionUser, access: HomeAccess, kind: st
       }
       case 'schedule': {
         const to = filter === 'week' ? weekEnd(today) : today
-        const rows = (await repo.listCalendarItems(today as never, to as never)).sort((a, b) => a.on_date.localeCompare(b.on_date) || a.title.localeCompare(b.title))
+        const rows = (await repo.listCalendarItems(today as never, to as never))
+          .filter((c) => scope.biz === 'all' || c.business_id === scope.biz)
+          .sort((a, b) => a.on_date.localeCompare(b.on_date) || a.title.localeCompare(b.title))
         return {
           state: 'ok',
           count: rows.length,
@@ -121,7 +180,7 @@ export async function widgetData(user: SessionUser, access: HomeAccess, kind: st
         }
       }
       case 'requested': {
-        const rows = pickRequested(await repo.listDecisions(), user.user_id, filter ?? 'open')
+        const rows = pickRequested(await repo.listDecisions(), user.user_id, filter ?? 'open').filter((d) => inBiz(d.business_id))
         return {
           state: 'ok',
           count: rows.length,
@@ -185,6 +244,27 @@ export async function widgetData(user: SessionUser, access: HomeAccess, kind: st
           items: mine.slice(0, LIST_MAX).map((r) => eaItem(r, 'mine')),
           note: '설비 대장 · 위치 · 조치 기한은 연동 준비 중입니다.',
           links: [{ href: '/e-approval?box=drafts&new=repair', label: '설비수리 품의 쓰기' }],
+        }
+      }
+      case 'projects': {
+        const [projects, businesses] = await Promise.all([repo.listProjects(), repo.listBusinesses()])
+        const bizName = new Map(businesses.map((b) => [b.business_id, b.name]))
+        const rows = projects
+          .filter((p) => (scope.project ? p.project_id === scope.project : inBiz(p.business_id)))
+          .filter((p) => (filter === 'all' ? true : p.status !== 'Done'))
+          .sort((a, b) => (a.deadline ?? '9999').localeCompare(b.deadline ?? '9999') || a.name.localeCompare(b.name))
+        return {
+          state: 'ok',
+          count: rows.length,
+          items: rows.slice(0, LIST_MAX).map((p) => ({
+            id: p.project_id,
+            title: p.name,
+            href: `/projects/${encodeURIComponent(p.project_id)}`,
+            badge: p.deadline && p.deadline < today && p.status !== 'Done' ? { text: '기한 지남', tone: 'red' as Tone } : { text: TASK_STATUS_LABEL_KO[p.status], tone: p.status === 'Done' ? ('green' as Tone) : ('blue' as Tone) },
+            meta: [bizName.get(p.business_id) ?? p.business_id, p.deadline ? `${md(p.deadline)} 마감` : null].filter(Boolean).join(' · '),
+            right: `${Math.round(Number(p.progress_pct) || 0)}%`,
+            example: p.is_example || undefined,
+          })),
         }
       }
       case 'attendance':
