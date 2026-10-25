@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { canSeeInvestment } from '@/lib/investment/screen-rules'
 
 import { C } from '@/components/e-approval/parts'
 import { EaPersonal } from '@/components/e-approval/ea-settings'
@@ -22,7 +23,7 @@ export default async function EApprovalSettingsPage() {
           ← 전자결재
         </Link>
         <h1 className="text-[22px] font-bold text-[#1f2329]">전자결재 개인 설정</h1>
-        {settings ? <EaPersonal settings={settings} people={people} forms={forms.filter((f) => f.active)} today={kstToday()} /> : <div className={`${C.card} px-4 py-6 text-[14px] text-[#6b7280]`}>설정을 불러오지 못했습니다.</div>}
+        {settings ? <EaPersonal settings={settings} people={people} forms={forms.filter((f) => f.active && (f.form_key !== 'investment' || canSeeInvestment(user)))} today={kstToday()} /> : <div className={`${C.card} px-4 py-6 text-[14px] text-[#6b7280]`}>설정을 불러오지 못했습니다.</div>}
       </div>
     </div>
   )

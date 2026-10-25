@@ -54,6 +54,16 @@
   - 배포 뒤 검증: 운영 cron 1회 — 수집(Integration: 환율 · NBIM, 13F는 «SEC_USER_AGENT 필요»로 호출 안 함) → 분석(AIAgent): 브리핑 1 ·
     알림 6 · **AI 요약 실제 호출 성공**(claude-sonnet-5-5, 한도 예약 → 기록). 권한: 수집 계정 추천 0행 · 점수 INSERT 42501 · AI 계정 추천 UPDATE/DELETE 42501.
 
+- 2026-10-25 17:30 KST — 3단계 구현 · 검사 끝(브랜치 feat/investment-0094).
+  - check:investment 53 · check-investment-db 0096(PGlite, 지정자 기안 → 대표 승인 → 거래) · check:mobile 새 화면 2 × 6기기 12/12.
+  - staging 시험 `0096-0096 DRYRUN PASS (1 files · tests 1/1 · 0096)`(되돌림).
+
+### 3단계 DB 변경 목록(0096_investment_portfolio) — 새 것만
+- 새 칸: investment_settings.plan_equity_security · plan_bond_security(null)
+- 표: corporate_investment_accounts · corporate_investment_approvals · corporate_transactions · paper_portfolios(시드 1) · paper_transactions · recommendation_outcomes
+- 함수: corporate_transaction_guard(트리거) · investment_approval_states
+- 줄: ea_forms ('investment', '투자 승인')
+
 ## 다음 할 일
 
-3단계(Phase 6·7 → 0096) — worktree에서 진행 중(코드 대부분 작성, 검사 · staging 시험 · 배포 남음).
+3단계 배포(merge → master 검사 → staging push → 직전 코드 호환 → 릴리스 → health → 배포 뒤 검증) → 최종 보고.

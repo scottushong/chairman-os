@@ -198,3 +198,74 @@ export async function investmentDb95(): Promise<string> {
   await db.close()
   return '0095 분석 이력(AI · 대표 INSERT만 · UPDATE/DELETE grant 없음 + 소유자도 트리거로 거부 · BUY는 system 줄 + 조건 전부 · AI/사람 BUY 거부 · CONFIRMED는 공식 문서 + 사람 · 출처 없는 전망 거부 · 수집 계정 0행 · 쓰기 거부 · 직원/anon 0행 · 지정자 읽기만 · 알림 읽음만 · 시드 5산업 25요소)'
 }
+
+/**
+ * 0096 DY Portfolio — Real · 승인 · 거래는 대표(쓰기) · 지정자(읽기 · 승인 올리기)만, 시스템 계정 · 직원 0행 ·
+ * 매수/매도는 승인 완료 결재(전자결재 «투자 승인»)가 있어야 · 승인자/시각을 결재에서 옮겨 적음 · 덧붙이기만 · Paper/성과는 AI INSERT만.
+ */
+export async function investmentDb96(): Promise<string> {
+  const { db, as } = await investmentDbSetup()
+  const must = async (uid: string | null, sql: string) => {
+    const r = await as(uid, sql)
+    assert.equal(r.error, null, `거부되면 안 됨: ${sql.slice(0, 140)} — ${r.error}`)
+    return r
+  }
+  const deny = async (uid: string | null, sql: string, what: string, re?: RegExp) => {
+    const r = await as(uid, sql)
+    assert.ok(r.error !== null || r.affected === 0, `${what}: 막혀야 함 — ${sql.slice(0, 120)}`)
+    if (re) assert.match(r.error ?? '', re, what)
+  }
+  await db.exec(`insert into user_business_access (user_id, business_id) values ('${U.designee}', 'biz_dy'), ('${U.member}', 'biz_dy') on conflict do nothing`)
+  await must(U.chair, `select feature_switch_set('approvals', 'biz_dy', true, 'all', '시험 — 0096')`)
+  const sec = (await db.query<{ id: string }>(`insert into securities (kind, name, ticker, source) values ('etf', 'iShares MSCI ACWI ETF', 'ACWI', 'seed') returning security_id as id`)).rows[0].id
+  // 양식
+  assert.equal((await db.query<{ n: number }>(`select count(*)::int n from ea_forms where form_key = 'investment' and active`)).rows[0].n, 1)
+  // 계좌(대표만)
+  const acc = ((await must(U.chair, `insert into corporate_investment_accounts (name, broker, account_last4) values ('DY 장기투자', '시험증권', '1234') returning account_id`)).rows[0] as { account_id: string }).account_id
+  await deny(U.designee, `insert into corporate_investment_accounts (name, broker) values ('x계좌', 'x증권')`, '지정자 계좌 등록')
+  await deny(U.chair, `insert into corporate_investment_accounts (name, broker, account_last4) values ('x계좌', 'x증권', '123456')`, '번호 전체 저장 거부')
+  // 입금(승인 없이)
+  await must(U.chair, `insert into corporate_transactions (account_id, trade_date, kind, amount, amount_krw) values ('${acc}', '2026-11-01', 'deposit', 1000000, 1000000)`)
+  // 지정자 기안 → 대표 승인
+  const fields = `'{"kind":"월 정기 적립","target":"ACWI · AGG","total":"1000000","rationale":"월 100만 원 60/30/10 계획 — 원문 12.2"}'::jsonb`
+  const doc = ((await must(U.designee, `select ea_save_draft(null, 'biz_dy', 'investment', '2026-11 정기 적립', '근거', ${fields}, '[{"role":"Chairman","kind":"approve"}]'::jsonb, '[]'::jsonb, null, null, null, null) as id`)).rows[0] as { id: string }).id
+  await must(U.designee, `select ea_submit('${doc}', 'inv96-sub-0001')`)
+  const ap = ((await must(U.designee, `insert into corporate_investment_approvals (kind, title, amount_krw, ea_doc_id) values ('monthly_plan', '2026-11 정기 적립', 1000000, '${doc}') returning approval_id`)).rows[0] as { approval_id: string }).approval_id
+  const buy = (who: string) => `insert into corporate_transactions (account_id, trade_date, kind, security_id, shares, price, currency, fx_rate, amount, amount_krw, approval_id) values ('${acc}', '2026-11-03', 'buy', '${sec}', 4, 110, 'USD', 1400, 440, 616000, '${who}')`
+  await deny(U.chair, buy(ap), '결재 진행 중이면 매수 거부', /investment_trade_not_approved/)
+  await deny(U.chair, `insert into corporate_transactions (account_id, trade_date, kind, security_id, shares, price, amount, amount_krw) values ('${acc}', '2026-11-03', 'buy', '${sec}', 1, 1, 1, 1)`, '결재 없는 매수 거부', /investment_trade_not_approved|corporate_transactions_trade/)
+  await must(U.chair, `select ea_act('${doc}', 1, 'approve', '승인', 'inv96-act-0001')`)
+  await must(U.chair, buy(ap))
+  const row = (await db.query<{ approved_by_name: string; approved_at: string | null }>(`select approved_by_name, approved_at from corporate_transactions where kind = 'buy'`)).rows[0]
+  assert.equal(row.approved_by_name, '대표', '승인자 = 결재 마지막 승인 단계(대표 단계는 «대표» — 0093)')
+  assert.ok(row.approved_at, '승인 시각 = 결재 decided_at')
+  await deny(U.designee, buy(ap), '지정자는 거래를 적지 못함')
+  // 덧붙이기만
+  await deny(U.chair, `update corporate_transactions set amount_krw = 1`, '거래 고치기 없음')
+  await deny(U.chair, `delete from corporate_transactions`, '거래 지우기 없음')
+  await assert.rejects(db.query(`update corporate_transactions set amount_krw = 1`), /investment_append_only/)
+  await deny(U.chair, `insert into corporate_transactions (account_id, trade_date, kind, amount, amount_krw) values ('${acc}', '2026-11-05', 'adjust', 0, 0)`, '사유 없는 정정 거부', /corporate_transactions_adjust/)
+  // 읽기 — 대표 · 지정자만 · 시스템 계정 · 직원 0행
+  assert.equal((await must(U.designee, `select * from corporate_transactions`)).rows.length, 2)
+  for (const uid of [U.agent, U.integ, U.member, U.cfo, null]) {
+    for (const t of ['corporate_transactions', 'corporate_investment_accounts', 'corporate_investment_approvals']) {
+      const r = await as<{ n: number }>(uid, `select count(*)::int n from ${t}`)
+      assert.ok(r.error !== null || r.rows[0].n === 0, `${uid ?? 'anon'} ${t} 0행`)
+    }
+  }
+  assert.equal(((await must(U.member, `select count(*)::int n from investment_approval_states()`)).rows[0] as { n: number }).n, 0, '직원은 승인 상태 0행')
+  const st = (await must(U.chair, `select * from investment_approval_states()`)).rows[0] as { status: string; approver_name: string }
+  assert.equal(st.status, 'approved')
+  await deny(U.agent, `insert into corporate_transactions (account_id, trade_date, kind, amount, amount_krw) values ('${acc}', '2026-11-05', 'deposit', 1, 1)`, 'AI 계정 거래 쓰기')
+  // Paper · 성과 — AI INSERT만 · 수집 계정 0행
+  const pf = (await db.query<{ id: string }>(`select portfolio_id as id from paper_portfolios limit 1`)).rows[0].id
+  await must(U.agent, `insert into paper_transactions (portfolio_id, security_id, side, signal_at, trade_date, shares, price, price_source, created_kind) values ('${pf}', '${sec}', 'buy', '2026-11-01T01:00:00Z', '2026-11-02', 10, 100, 'twelvedata', 'system')`)
+  await deny(U.agent, `insert into paper_transactions (portfolio_id, security_id, side, signal_at, trade_date, shares, price, price_source, created_kind) values ('${pf}', '${sec}', 'buy', '2026-11-01T01:00:00Z', '2026-11-01', 10, 100, 'twelvedata', 'system')`, '신호 당일 매매 거부(매매 가능 시각 ≠ 신호 시각)', /paper_transactions_after_signal/)
+  await deny(U.agent, `update paper_transactions set price = 1`, 'Paper 고치기')
+  const p0 = await as<{ n: number }>(U.integ, `select count(*)::int n from paper_transactions`)
+  assert.ok(p0.error !== null || p0.rows[0].n === 0, '수집 계정 Paper 0행')
+  await deny(U.integ, `insert into paper_transactions (portfolio_id, security_id, side, signal_at, trade_date, shares, price, price_source, created_kind) values ('${pf}', '${sec}', 'buy', '2026-11-01T01:00:00Z', '2026-11-02', 1, 1, 'x', 'system')`, '수집 계정 Paper 쓰기')
+  await deny(U.chair, `insert into recommendation_outcomes (rec_id, security_id, horizon_months, calculation_version, created_kind, failure_cause) values (gen_random_uuid(), '${sec}', 2, 'x', 'human', null)`, '기간은 1·3·6·12·24·36·60만')
+  await db.close()
+  return '0096 DY Portfolio(계좌 · 거래 대표만 · 번호 끝 4자리만 · 입금은 승인 없이 · 매수/매도는 승인 완료 결재만 — 진행 중 · 결재 없음 거부 · 지정자 기안 → 대표 승인 → 승인자 «대표» · 시각 옮김 · 덧붙이기만(소유자도) · 사유 없는 정정 거부 · 지정자 읽기만 · AI/수집/직원/임원/anon 0행 · 승인 상태 함수 직원 0행 · Paper AI INSERT만 · 신호 당일 매매 거부 · 수집 계정 Paper 0행 · 성과 기간 제약)'
+}

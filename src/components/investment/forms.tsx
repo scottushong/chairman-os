@@ -3,6 +3,11 @@
 import { useActionState, useState, useTransition } from 'react'
 
 import {
+  investmentAddAccount,
+  investmentAddCorpTx,
+  investmentRequestApproval,
+  investmentSavePlan,
+  investmentSetFailureCause,
   investmentAddMarketData,
   investmentAddMetric,
   investmentAddScore,
@@ -364,6 +369,163 @@ export function WeightsForm({ weights }: { weights: Record<string, number> }) {
         </fieldset>
       ))}
       <div><button className={BTN} disabled={pending}>가중치 저장</button></div>
+      <Msg r={r} />
+    </form>
+  )
+}
+
+// ── 0096 ──
+
+export function ApprovalForm({ chairman, people, securities }: { chairman: boolean; people: { id: string; name: string }[]; securities: { id: string; label: string }[] }) {
+  const [r, action, pending] = useActionState(investmentRequestApproval, null)
+  return (
+    <form action={action} className="flex flex-col gap-2">
+      <div className="grid gap-2 sm:grid-cols-4">
+        <select className={INPUT} name="kind" defaultValue="monthly_plan" aria-label="구분">
+          <option value="monthly_plan">월 정기 적립</option>
+          <option value="trade">개별 매매</option>
+          <option value="plan_change">계획 변경</option>
+        </select>
+        <select className={INPUT} name="side" defaultValue="" aria-label="매수 · 매도">
+          <option value="">매수/매도(개별 매매만)</option>
+          <option value="buy">매수</option>
+          <option value="sell">매도</option>
+        </select>
+        <select className={INPUT} name="security_id" defaultValue="" aria-label="종목">
+          <option value="">종목(개별 매매만)</option>
+          {securities.map((s) => (
+            <option key={s.id} value={s.id}>{s.label}</option>
+          ))}
+        </select>
+        <input className={INPUT} name="amount_krw" placeholder="금액(원)" aria-label="금액" />
+      </div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <input className={INPUT} name="title" placeholder="제목(예: 2026-11 정기 적립 100만 원)" aria-label="제목" />
+        <input className={INPUT} name="target" placeholder="대상(종목 · ETF · 계좌)" aria-label="대상" />
+      </div>
+      <textarea className={`${INPUT} min-h-20 py-2`} name="rationale" placeholder="근거 — 추천 버전 · 매수 기준가 · 출처 · 자산배분 계획" aria-label="근거" />
+      {chairman ? (
+        <select className={INPUT} name="approver" defaultValue="" aria-label="승인자">
+          <option value="">승인자(대표 본인 문서는 본인이 결재할 수 없음)</option>
+          {people.map((p) => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+      ) : (
+        <p className="text-[13px] text-ink-muted">결재선: 대표 승인</p>
+      )}
+      <div><button className={BTN} disabled={pending}>투자 승인 결재 올리기</button></div>
+      <Msg r={r} />
+    </form>
+  )
+}
+
+export function AccountForm() {
+  const [r, action, pending] = useActionState(investmentAddAccount, null)
+  return (
+    <form action={action} className="grid gap-2 sm:grid-cols-5">
+      <input className={INPUT} name="name" placeholder="계좌 이름" aria-label="계좌 이름" />
+      <input className={INPUT} name="broker" placeholder="증권사" aria-label="증권사" />
+      <input className={INPUT} name="account_last4" placeholder="번호 끝 4자리" aria-label="끝 4자리" />
+      <input className={INPUT} name="opened_at" placeholder="개설일 YYYY-MM-DD" aria-label="개설일" />
+      <button className={BTN} disabled={pending}>계좌 등록</button>
+      <div className="sm:col-span-5"><Msg r={r} /></div>
+    </form>
+  )
+}
+
+export function CorpTxForm({ accounts, securities, approvals }: { accounts: { id: string; label: string }[]; securities: { id: string; label: string }[]; approvals: { id: string; label: string }[] }) {
+  const [r, action, pending] = useActionState(investmentAddCorpTx, null)
+  return (
+    <form action={action} className="flex flex-col gap-2">
+      <div className="grid gap-2 sm:grid-cols-4">
+        <select className={INPUT} name="account_id" aria-label="계좌">
+          {accounts.map((a) => (
+            <option key={a.id} value={a.id}>{a.label}</option>
+          ))}
+        </select>
+        <select className={INPUT} name="kind" defaultValue="deposit" aria-label="종류">
+          <option value="deposit">입금(월 적립)</option>
+          <option value="buy">매수</option>
+          <option value="sell">매도</option>
+          <option value="dividend">배당 · 분배금</option>
+          <option value="fee">수수료</option>
+          <option value="tax">세금</option>
+          <option value="withdraw">인출</option>
+          <option value="adjust">정정</option>
+        </select>
+        <input className={INPUT} name="trade_date" placeholder="거래일 YYYY-MM-DD" aria-label="거래일" />
+        <select className={INPUT} name="approval_id" defaultValue="" aria-label="승인 결재">
+          <option value="">승인 결재(매수 · 매도만)</option>
+          {approvals.map((a) => (
+            <option key={a.id} value={a.id}>{a.label}</option>
+          ))}
+        </select>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-4">
+        <select className={INPUT} name="security_id" defaultValue="" aria-label="종목">
+          <option value="">종목(매수 · 매도 · 배당)</option>
+          {securities.map((s) => (
+            <option key={s.id} value={s.id}>{s.label}</option>
+          ))}
+        </select>
+        <input className={INPUT} name="shares" placeholder="수량" aria-label="수량" />
+        <input className={INPUT} name="price" placeholder="가격(그 통화)" aria-label="가격" />
+        <input className={INPUT} name="currency" placeholder="통화 KRW · USD" defaultValue="KRW" aria-label="통화" />
+      </div>
+      <div className="grid gap-2 sm:grid-cols-4">
+        <input className={INPUT} name="fx_rate" placeholder="환율(1단위 = 원, 외화만)" aria-label="환율" />
+        <input className={INPUT} name="amount" placeholder="금액(입금 · 배당 등)" aria-label="금액" />
+        <input className={INPUT} name="fees_krw" placeholder="수수료(원)" aria-label="수수료" />
+        <input className={INPUT} name="tax_krw" placeholder="세금(원)" aria-label="세금" />
+      </div>
+      <input className={INPUT} name="note" placeholder="메모(정정은 사유 필수)" aria-label="메모" />
+      <div><button className={BTN} disabled={pending}>거래 적기</button></div>
+      <Msg r={r} />
+    </form>
+  )
+}
+
+export function PlanForm({ securities, equity, bond }: { securities: { id: string; label: string }[]; equity: string | null; bond: string | null }) {
+  const [r, action, pending] = useActionState(investmentSavePlan, null)
+  return (
+    <form action={action} className="grid gap-2 sm:grid-cols-3">
+      <select className={INPUT} name="plan_equity_security" defaultValue={equity ?? ''} aria-label="Global Equity ETF">
+        <option value="">Global Equity ETF 고르기</option>
+        {securities.map((s) => (
+          <option key={s.id} value={s.id}>{s.label}</option>
+        ))}
+      </select>
+      <select className={INPUT} name="plan_bond_security" defaultValue={bond ?? ''} aria-label="Investment-Grade Bond ETF">
+        <option value="">Investment-Grade Bond ETF 고르기</option>
+        {securities.map((s) => (
+          <option key={s.id} value={s.id}>{s.label}</option>
+        ))}
+      </select>
+      <button className={BTN} disabled={pending}>계획 ETF 저장</button>
+      <div className="sm:col-span-3"><Msg r={r} /></div>
+    </form>
+  )
+}
+
+export function FailureCauseForm({ outcomeId, suggested }: { outcomeId: number; suggested: string | null }) {
+  const [r, action, pending] = useActionState(investmentSetFailureCause, null)
+  return (
+    <form action={action} className="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="outcome_id" value={outcomeId} />
+      <select className={INPUT} name="failure_cause" defaultValue={suggested ?? ''} aria-label="실패 원인">
+        <option value="">원인 고르기</option>
+        <option value="market_forecast">1. 산업 성장 전망 오류</option>
+        <option value="competitiveness">2. 기업 경쟁력 전망 오류</option>
+        <option value="earnings_cashflow">3. 실적 · 현금흐름 전망 오류</option>
+        <option value="buy_price_overestimated">4. 매수가 과대평가</option>
+        <option value="multiple_contraction">5. 밸류에이션 배수 축소</option>
+        <option value="macro">6. 거시경제 변화</option>
+        <option value="fx">7. 환율 변동</option>
+        <option value="data_error">8. 데이터 오류</option>
+        <option value="thesis_broken">9. 투자 가설 훼손</option>
+      </select>
+      <button className={BTN} disabled={pending}>원인 기록</button>
       <Msg r={r} />
     </form>
   )

@@ -5,6 +5,12 @@
  */
 import type {
   ChangeStatus,
+  InvAccount,
+  InvApproval,
+  InvCorpTx,
+  InvOutcome,
+  InvPaperPortfolio,
+  InvPaperTx,
   InvAiUsage,
   InvAlert,
   InvBrief,
@@ -120,4 +126,20 @@ export interface InvestmentMethods {
   invAddRecommendation(r: Omit<InvRecommendation, 'rec_id' | 'created_at'>): Promise<string>
   invAddAlerts(a: readonly Omit<InvAlert, 'alert_id' | 'created_at' | 'read_at'>[]): Promise<number>
   invAddBrief(b: Omit<InvBrief, 'brief_id' | 'created_at'>): Promise<void>
+
+  // ── 0096 DY Portfolio · Performance ──
+  invAccounts(): Promise<InvAccount[]>
+  /** 결재 상태(investment_approval_states)를 붙여서 */
+  invApprovals(): Promise<InvApproval[]>
+  invCorpTxs(): Promise<InvCorpTx[]>
+  invPaperPortfolios(): Promise<InvPaperPortfolio[]>
+  invPaperTxs(): Promise<InvPaperTx[]>
+  invOutcomes(): Promise<InvOutcome[]>
+  invAddAccount(a: Omit<InvAccount, 'account_id' | 'owner_entity'>): Promise<string>
+  invAddApproval(a: Omit<InvApproval, 'approval_id' | 'created_at' | 'status' | 'decided_at' | 'doc_no' | 'approver_name'>): Promise<string>
+  /** 매수 · 매도는 승인 완료 결재가 있어야(DB 트리거가 판정 · 승인자/시각을 옮겨 적음) */
+  invAddCorpTx(t: Omit<InvCorpTx, 'tx_id' | 'approved_by_name' | 'approved_at' | 'entered_at'>): Promise<void>
+  invAddPaperTx(t: Omit<InvPaperTx, 'tx_id' | 'created_at'>): Promise<void>
+  invAddOutcome(o: Omit<InvOutcome, 'outcome_id' | 'created_at'>): Promise<void>
+  invSavePlan(equity: string | null, bond: string | null): Promise<void>
 }

@@ -48,6 +48,9 @@ export interface InvSettings {
   weights?: import('./scores').Weights
   ai_daily_calls?: number
   ai_monthly_usd?: number
+  /** 0096 월 적립 계획 ETF */
+  plan_equity_security?: string | null
+  plan_bond_security?: string | null
   collect_daily_limit: number
   data_quality_min: number
   monthly_budget_krw: number
@@ -468,4 +471,105 @@ export interface InvAiUsage {
   month_usd: number
   daily_limit: number
   monthly_limit: number
+}
+
+// ── 0096 DY Portfolio · Performance & Learning ──
+
+export interface InvAccount {
+  account_id: string
+  name: string
+  broker: string
+  account_last4: string | null
+  owner_entity: string
+  currency: string
+  opened_at: string | null
+  note: string | null
+}
+
+export interface InvApproval {
+  approval_id: string
+  kind: 'monthly_plan' | 'trade' | 'plan_change'
+  title: string
+  amount_krw: number
+  security_id: string | null
+  side: 'buy' | 'sell' | null
+  ea_doc_id: string
+  rec_id: string | null
+  created_at: string
+  /** 결재 상태(investment_approval_states) */
+  status?: 'draft' | 'in_progress' | 'rejected' | 'approved' | 'withdrawn' | null
+  decided_at?: string | null
+  doc_no?: string | null
+  approver_name?: string | null
+}
+
+export type CorpTxKind = 'deposit' | 'withdraw' | 'buy' | 'sell' | 'dividend' | 'fee' | 'tax' | 'fx' | 'adjust'
+
+export interface InvCorpTx {
+  tx_id?: number
+  account_id: string
+  trade_date: string
+  kind: CorpTxKind
+  security_id: string | null
+  shares: number | null
+  price: number | null
+  currency: string
+  fx_rate: number | null
+  amount: number
+  amount_krw: number
+  fees_krw: number
+  tax_krw: number
+  approval_id: string | null
+  approved_by_name?: string | null
+  approved_at?: string | null
+  note: string | null
+  entered_at?: string
+}
+
+export interface InvPaperPortfolio {
+  portfolio_id: string
+  name: string
+  rule: string
+  base_currency: string
+  notional: number
+  started_at: string
+}
+
+export interface InvPaperTx {
+  tx_id?: number
+  portfolio_id: string
+  security_id: string
+  side: 'buy' | 'sell'
+  signal_at: string
+  trade_date: string
+  shares: number
+  price: number
+  price_source: string
+  rec_id: string | null
+  note: string | null
+  created_kind: CreatedKind
+  created_at?: string
+}
+
+export type FailureCause = 'market_forecast' | 'competitiveness' | 'earnings_cashflow' | 'buy_price_overestimated' | 'multiple_contraction' | 'macro' | 'fx' | 'data_error' | 'thesis_broken'
+
+export interface InvOutcome {
+  outcome_id?: number
+  rec_id: string
+  security_id: string
+  horizon_months: 1 | 3 | 6 | 12 | 24 | 36 | 60
+  entry_date: string | null
+  entry_price: number | null
+  exit_date: string | null
+  exit_price: number | null
+  return_pct: number | null
+  benchmark_return_pct: number | null
+  excess_pct: number | null
+  delisted: boolean
+  failure_cause: FailureCause | null
+  cause_basis: 'human' | 'ai_inferred' | null
+  note: string | null
+  calculation_version: string
+  created_kind: CreatedKind
+  created_at?: string
 }
