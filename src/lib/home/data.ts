@@ -206,7 +206,7 @@ export async function widgetData(user: SessionUser, access: HomeAccess, kind: st
 /** 즐겨찾기 후보 — 그 사람의 메뉴(사이드바와 같은 navFor) · 쓸 수 있는 결재 양식. 외부 시스템 링크는 승인 목록이 없어 넣지 않는다. */
 export async function favoriteOptions(user: SessionUser, access: HomeAccess): Promise<FavoriteOption[]> {
   const hidden = (await loadSidebarData(user.role)).hiddenNav
-  const menu = navFor(user.role, { purchasing: showsPurchasingNav(user), ledger: user.ledger, sales: showsSalesNav(user), production: showsProductionNav(user), costs: showsCostsNav(user), hidden })
+  const menu = navFor(user.role, { purchasing: showsPurchasingNav(user), ledger: user.ledger, sales: showsSalesNav(user), production: showsProductionNav(user), costs: showsCostsNav(user), investment: user.investment, hidden })
     .flatMap((g) => g.items)
     .filter((i) => i.ready && i.key !== 'nav_home')
     .map((i) => ({ key: `nav:${i.key}`, label: i.label, href: i.href, group: '메뉴' as const }))

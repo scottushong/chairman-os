@@ -155,6 +155,7 @@ import { monthlyPlMethods } from './supabase-monthly-pl'
 import { salesMarginsMethods } from './supabase-sales-margins'
 import { blueprintMethods } from './supabase-blueprint'
 import { priceReportMethods } from './supabase-price-report'
+import { investmentMethods } from './supabase-investment'
 import { memoryMethods } from './supabase-memory'
 import { ownerInputMethods } from './supabase-owner-inputs'
 import { costCandidatesMethods } from './supabase-cost-candidates'
@@ -865,6 +866,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     ...priceReportMethods(sb),
     // 0088 기억 엔진(대표 본인 기록만 — memory_me). 0088 전 DB면 'memory_unavailable'.
     ...memoryMethods(sb),
+    // 0094 Investment Intelligence(supabase-investment.ts) — 판정은 RLS inv_reader · inv_admin.
+    ...investmentMethods(sb),
     // 0089 5절 «받을 것»(대표만 · 구글 키는 Vault에만). 0089 전 DB면 읽기 null · 쓰기 'owner_input_unavailable'.
     ...ownerInputMethods(sb),
     // ECOUNT 엑셀 업로드(0050 finance_imports) — 읽기는 0050 전 DB를 견딘다(supabase-finance-imports.ts 머리 주석).

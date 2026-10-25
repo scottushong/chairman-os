@@ -76,7 +76,7 @@ export const currentUser = cache(async function currentUser(): Promise<SessionUs
     // 0061. 원가 엔진 네 영역('/purchasing/<biz>' 등)도 같은 질의로 — 사이드바 «구매»와 구매 화면 안내가 쓴다(판정은 DB cost_can).
     .or(
       `module.like./finance/%,module.like./documents/%,module.like.${LEDGER_MODULE_PREFIX}/%,module.eq.${LEGACY_DOCUMENTS_MODULE},module.eq.${DRAFT_DECISION_MODULE},` +
-        'module.like./purchasing/%,module.like./production/%,module.like./sales/%,module.like./costing/%',
+        'module.like./purchasing/%,module.like./production/%,module.like./sales/%,module.like./costing/%,module.eq./investment',
     )
     .returns<{ module: string; can_write: boolean; can_approve: boolean }[]>()
 
@@ -95,6 +95,7 @@ export const currentUser = cache(async function currentUser(): Promise<SessionUs
     approvals_write: data.role === 'Chairman' || (grantsError ? undefined : hasDraftGrant(grants ?? [])),
     ledger: ledgerBusinesses(grants ?? []),
     cost: costByBusiness(grants ?? []),
+    investment: data.role === 'Chairman' || (grants ?? []).some((g) => g.module === '/investment'),
   }
 })
 
@@ -136,5 +137,6 @@ function dummyUser(): SessionUser | null {
     approvals_write: person.role === 'Chairman' || hasDraftGrant(grants),
     ledger: ledgerBusinesses(grants),
     cost: costByBusiness(grants),
+    investment: person.role === 'Chairman' || grants.some((g) => g.module === '/investment'),
   }
 }

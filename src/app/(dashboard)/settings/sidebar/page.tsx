@@ -21,7 +21,7 @@ export default async function SidebarSettingsPage() {
   const [prefs, user] = await Promise.all([loadUiPrefs(), currentUser()])
 
   // 사이드바와 같은 목록 — 회장이 아니면 회장 전용 메뉴는 여기에도 없다(lib/nav.ts navFor).
-  const rows: MenuRow[] = navFor(user?.role, { purchasing: showsPurchasingNav(user), ledger: user?.ledger, sales: showsSalesNav(user), production: showsProductionNav(user), costs: showsCostsNav(user), hidden: await hiddenNavFor(user?.role) }).flatMap((group) =>
+  const rows: MenuRow[] = navFor(user?.role, { purchasing: showsPurchasingNav(user), ledger: user?.ledger, sales: showsSalesNav(user), production: showsProductionNav(user), costs: showsCostsNav(user), investment: user?.investment, hidden: await hiddenNavFor(user?.role) }).flatMap((group) =>
     group.items.map((item) => ({
       key: item.key,
       label: item.label,

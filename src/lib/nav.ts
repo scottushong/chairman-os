@@ -111,6 +111,16 @@ export const NAV: readonly NavGroup[] = [
     ],
   },
   {
+    // 0094 Investment Intelligence — architecture v1의 CAPITAL 영역(블록 E 사이드바 그림)이 실제로 선 첫 항목.
+    // 펼치면 하위 8개(+ 데이터 상태)가 나온다(sidebar-sections.tsx InvestmentSection · lib/investment/menu.ts).
+    // 대표와 «/investment» 지정자에게만(CHAIRMAN_ONLY_NAV + NavOptions.investment) · 스위치 investment(FEATURE_NAV).
+    key: 'grp_capital',
+    title: 'CAPITAL',
+    items: [
+      { key: 'nav_investment', label: 'Investment Intelligence', href: '/investment', icon: 'trending-up', expandable: true, ready: true },
+    ],
+  },
+  {
     key: 'grp_systems',
     title: '기능 시스템',
     items: [
@@ -275,7 +285,7 @@ export const SYSTEM_LINKS: readonly NavItem[] = [
  * «회사»는 여기 없다 — 펼치면 그 사람이 볼 수 있는 회사(0002 has_business)만 나온다.
  * **화면 안내일 뿐 권한이 아니다** — 주소로 들어가면 각 화면과 RLS가 판정한다.
  */
-const CHAIRMAN_ONLY_NAV: ReadonlySet<string> = new Set(['nav_group', 'nav_morning', 'nav_dependency', 'nav_attention', 'nav_chairman', 'nav_memory'])
+const CHAIRMAN_ONLY_NAV: ReadonlySet<string> = new Set(['nav_group', 'nav_morning', 'nav_dependency', 'nav_attention', 'nav_chairman', 'nav_memory', 'nav_investment'])
 
 /**
  * 이니셔티브를 읽는 역할 — 0017 can_read_initiatives()(Chairman · GroupCFO · AIAgent)의 거울.
@@ -311,6 +321,8 @@ export interface NavOptions {
   production?: boolean
   /** 원가 관리 화면을 볼 회사가 하나라도 있는가(lib/auth/roles.ts costsBusinessIds). 대표는 늘 참. */
   costs?: boolean
+  /** 0094 «/investment» 지정자(SessionUser.investment). 대표는 늘 참. 안내일 뿐 판정은 DB inv_reader. */
+  investment?: boolean
 }
 
 /**
@@ -338,7 +350,7 @@ export function navFor(role: Role | null | undefined, opts: NavOptions = {}): re
   return NAV.map((group) => ({
     ...group,
     items: group.items
-      .filter((item) => !CHAIRMAN_ONLY_NAV.has(item.key) && (initiatives || item.key !== 'nav_initiatives') && (ledgerMenu || item.key !== 'nav_ledger'))
+      .filter((item) => (!CHAIRMAN_ONLY_NAV.has(item.key) || (item.key === 'nav_investment' && opts.investment === true)) && (initiatives || item.key !== 'nav_initiatives') && (ledgerMenu || item.key !== 'nav_ledger'))
       .filter(purchasingFilter)
       .map((item) => (STAFF_NAV_OVERRIDE[item.key] ? { ...item, ...STAFF_NAV_OVERRIDE[item.key] } : item))
       .map((item) => (item.key === 'nav_decisions' && eapproval ? { ...item, label: '결재 요청' } : item))

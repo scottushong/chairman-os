@@ -146,4 +146,8 @@ export interface SessionUser {
    * 안내용이다(판정은 DB cost_can). 대표(Chairman)는 역할로 전부 되므로 비어 있을 수 있다. 없으면(옛 세션 객체) 빈 값으로 본다.
    */
   cost?: CostGrants
+  /**
+   * 0094 Investment Intelligence — 대표이거나 user_module_access '/investment' 줄(지정자)이 있는가. 안내용이다(판정은 DB inv_reader).
+   */
+  investment?: boolean
 }

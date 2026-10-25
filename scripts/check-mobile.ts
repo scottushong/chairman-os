@@ -61,6 +61,13 @@ export const ROUTES = [
   { key: '20-me', path: '/me' },
   // 0086 내 홈 — 기본 스위치(대표만)라 기본 dummy 서버(회장)에서 위젯이 선다. 직원으로 볼 때는 DUMMY_HOME_OPEN=biz_dy.
   { key: '21-home', path: '/home' },
+  // 0094 Investment Intelligence — dummy는 실제 공개 자료 스냅숏(fixtures/snapshot.json). 종목 상세는 AAPL(CUSIP 037833100)을 찾아 간다.
+  { key: '22-investment', path: '/investment' },
+  { key: '23-inv-radar', path: '/investment/radar' },
+  { key: '24-inv-manager', path: '/investment/radar/nbim' },
+  { key: '25-inv-securities', path: '/investment/securities' },
+  { key: '26-inv-security', path: '@security' },
+  { key: '27-inv-sources', path: '/investment/sources' },
 ] as const
 
 export interface Finding {
@@ -73,6 +80,11 @@ export interface Finding {
 }
 
 async function resolvePath(page: Page, path: string): Promise<string> {
+  if (path === '@security') {
+    await page.goto(`${BASE}/investment/securities?q=AAPL`, { waitUntil: 'networkidle' })
+    const href = await page.$$eval('a[href^="/investment/securities/"]', (as) => as.map((a) => a.getAttribute('href') ?? '')[0])
+    return href || '/investment/securities'
+  }
   if (path !== '@initiative') return path
   await page.goto(`${BASE}/initiatives`, { waitUntil: 'networkidle' })
   const href = await page.$$eval('a[href^="/initiatives/"]', (as) => as.map((a) => a.getAttribute('href') ?? '')[0])

@@ -6,7 +6,7 @@ import { useState, useTransition } from 'react'
 
 import { signOut } from '@/app/actions/auth'
 import { saveGroupCollapsed } from '@/app/actions/ui-prefs'
-import { CompaniesSection, InitiativesSection } from '@/components/layout/sidebar-sections'
+import { CompaniesSection, InitiativesSection, InvestmentSection } from '@/components/layout/sidebar-sections'
 import { Icon } from '@/components/ui/icon'
 import { showsCostsNav, showsProductionNav, showsPurchasingNav, showsSalesNav } from '@/lib/auth/roles'
 import { brandFor } from '@/lib/brand'
@@ -102,7 +102,7 @@ export function Sidebar({
 
       <nav className="flex-1 overflow-y-auto px-2.5 pb-3">
         {/* 회장 전용 메뉴(아침 루틴 · 의존 · 주의 · 회장 루틴)는 회장에게만, 이니셔티브는 읽는 역할에게만 — lib/nav.ts navFor. */}
-        {navFor(user?.role, { purchasing: showsPurchasingNav(user), ledger: user?.ledger, sales: showsSalesNav(user), production: showsProductionNav(user), costs: showsCostsNav(user), hidden: sections.hiddenNav }).map((group, i) => {
+        {navFor(user?.role, { purchasing: showsPurchasingNav(user), ledger: user?.ledger, sales: showsSalesNav(user), production: showsProductionNav(user), costs: showsCostsNav(user), investment: user?.investment, hidden: sections.hiddenNav }).map((group, i) => {
           // 숨긴 항목은 아예 그리지 않는다. 회색으로 죽여 두면 '숨김'이 아니라 '고장'으로 읽힌다.
           // 지금 보고 있는 화면의 메뉴는 숨겨도 남는다 — 길을 잃지 않게(isHidden의 active).
           const items = group.items.filter(
@@ -162,6 +162,13 @@ export function Sidebar({
                             titleActive={active}
                             chairman={isChairman}
                           />
+                        </li>
+                      )
+                    }
+                    if (user && item.key === 'nav_investment') {
+                      return (
+                        <li key={item.key}>
+                          <InvestmentSection item={item} userId={user.user_id} pathname={pathname} titleActive={active} />
                         </li>
                       )
                     }
