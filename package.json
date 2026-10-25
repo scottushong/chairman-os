@@ -61,6 +61,7 @@
     "check:monthly-pl": "tsx --conditions=react-server scripts/check-monthly-pl.ts",
     "check:finance-auto": "tsx --conditions=react-server scripts/check-finance-auto.ts",
     "check:kpi-needs": "tsx --conditions=react-server scripts/check-kpi-needs.ts",
+    "check:investment": "tsx scripts/check-investment.ts",
     "check:finance-overview": "tsx --conditions=react-server scripts/check-finance-overview.ts && tsx --conditions=react-server scripts/check-finance-legacy.ts"
   },
   "dependencies": {

@@ -200,6 +200,13 @@ export const FEATURES = [
     from: 'feat/memory-engine · 0088',
   },
   {
+    key: 'investment',
+    label: 'Investment Intelligence',
+    description: '«CAPITAL › Investment Intelligence» 메뉴와 화면(/investment — 기관 보유 레이더 · 종목 360 · 데이터 상태 · 손 입력). 화면 노출만 정한다 — 표 · API는 대표와 «/investment» 지정자만 읽는다(직원 · anon 0행 · 403). 수집 cron은 스위치와 별개로 돈다.',
+    defaultAudience: 'chairman',
+    from: 'feat/investment-0094 · 0094',
+  },
+  {
     key: 'owner_inputs',
     label: '받을 것',
     description: '설정(/settings)의 «받을 것» 카드 넷 — 진짜 BOM(R2 엑셀 · 기존 BOM 넣기 화면으로) · 세무사 재고평가방법(총평균 · 이동평균 · 선입선출 + 메모 — 월별 손익 설정과 다르면 경고) · 구글 서비스 계정(JSON → Vault, 화면에는 이메일 · 프로젝트만) · 원가 관리 권한자(원가 권한을 준다). 범위와 관계없이 대표만(서버 · DB가 대표만 받는다). 꺼지면 카드가 사라지고 RPC(owner_input_*)도 거부.',
@@ -304,6 +311,7 @@ export const FEATURE_NAV: Partial<Record<FeatureKey, string>> = {
   approvals: 'nav_eapproval',
   home_widgets: 'nav_home',
   memory_engine: 'nav_memory',
+  investment: 'nav_investment',
 }
 
 /**

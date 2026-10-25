@@ -2,6 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "regions": ["icn1"],
   "crons": [
-    { "path": "/api/cron/process-sync", "schedule": "0 18 * * *" }
+    { "path": "/api/cron/process-sync", "schedule": "0 18 * * *" },
+    { "path": "/api/cron/investment-collect", "schedule": "30 21 * * *" }
   ]
 }

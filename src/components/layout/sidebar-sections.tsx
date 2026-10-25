@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useState, useSyncExternalStore } from 'react'
 
 import { Icon } from '@/components/ui/icon'
+import { investmentMenu, menuActive } from '@/lib/investment/menu'
 import { navHref, type NavItem } from '@/lib/nav'
 import type { SidebarCompany, SidebarInitiative, SidebarLevel } from '@/lib/sidebar-data'
 
@@ -19,9 +20,9 @@ import type { SidebarCompany, SidebarInitiative, SidebarLevel } from '@/lib/side
  * 저장소가 막혀 있으면(사생활 보호 모드 등) 이번 세션 메모리로만 기억한다.
  */
 
-export type SectionKey = 'companies' | 'initiatives'
+export type SectionKey = 'companies' | 'initiatives' | 'investment'
 
-const DEFAULT_OPEN: Record<SectionKey, boolean> = { companies: true, initiatives: false }
+const DEFAULT_OPEN: Record<SectionKey, boolean> = { companies: true, initiatives: false, investment: false }
 
 const storageKey = (userId: string, section: SectionKey) => `chairman-os:sidebar-section:${userId}:${section}`
 
@@ -240,6 +241,32 @@ export function InitiativesSection({
               <Icon name="chevron-right" className="size-3 shrink-0" />
             </Link>
           </li>
+        </ul>
+      ) : null}
+    </>
+  )
+}
+
+/** 0094 «CAPITAL › Investment Intelligence» 하위 메뉴(lib/investment/menu.ts). 그 화면 안에 있으면 저절로 펼친다. */
+export function InvestmentSection({ item, userId, pathname, titleActive }: { item: NavItem; userId: string; pathname: string; titleActive: boolean }) {
+  const inside = pathname === '/investment' || pathname.startsWith('/investment/')
+  const { open, toggle } = useSectionOpen(userId, 'investment', inside, pathname)
+  const listId = 'sidebar-investment'
+  return (
+    <>
+      <SectionHead item={item} titleActive={titleActive && pathname === '/investment'} open={open} onToggle={toggle} controls={listId} />
+      {open ? (
+        <ul id={listId} className="mt-0.5 mb-1 ml-[18px] space-y-px border-l border-line-soft pl-1.5">
+          {investmentMenu().map((m) => {
+            const active = menuActive(pathname, m)
+            return (
+              <li key={m.key}>
+                <Link href={m.href} aria-current={active ? 'page' : undefined} className={`${CHILD} ${active ? ROW_ACTIVE : ROW_IDLE}`}>
+                  <span className="truncate">{m.no ? `${m.no}. ` : ''}{m.label}</span>
+                </Link>
+              </li>
+            )
+          })}
         </ul>
       ) : null}
     </>

@@ -1,3 +1,4 @@
+import type { InvestmentMethods } from '@/lib/investment/store'
 import type { MemoryMethods } from '@/lib/memory/store'
 import type { FeatureAudience, FeatureSwitchRow } from '@/lib/features'
 import type { OwnerInputKey, OwnerInputRow } from '@/lib/owner-inputs'
@@ -459,7 +460,7 @@ export interface PriceReportMethods {
   priceReportDispatchFailed(runId: string, error: string): Promise<boolean>
 }
 
-export interface ChairmanRepository extends MemoryMethods, PriceReportMethods, PurchasingMethods, SalesCostMethods, ProductionMethods, CostsMethods, QuoteMethods, CostImportMethods, ProcessSyncMethods, SalesMarginsMethods, CostCandidatesMethods, LedgerPostMethods, BlueprintMethods {
+export interface ChairmanRepository extends InvestmentMethods, MemoryMethods, PriceReportMethods, PurchasingMethods, SalesCostMethods, ProductionMethods, CostsMethods, QuoteMethods, CostImportMethods, ProcessSyncMethods, SalesMarginsMethods, CostCandidatesMethods, LedgerPostMethods, BlueprintMethods {
   /** 어느 쪽을 보고 있는지. 화면이 아니라 DUMMY DATA 뱃지와 로그가 쓴다. */
   readonly mode: 'dummy' | 'live'
 
