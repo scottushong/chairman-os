@@ -34,12 +34,13 @@ async function main() {
   process.env.DUMMY_HOME_OPEN = 'biz_dy'
   process.env.DUMMY_EA_OPEN = 'biz_dy'
   const H = await import('../src/lib/home/widgets')
-  const { WIDGETS, defaultLayout, normalizeLayout, layoutForSave, layoutValid, saveLayoutIn, moveWidget, dropWidget, sameLayout, newWidgetId, pickMyTasks, pickRequested, weekEnd } = H
+  // 0097 — 직원 카탈로그는 audience 'all'(대표 첫 화면 위젯은 check:dashboard가 본다).
+  const { STAFF_WIDGETS: WIDGETS, defaultLayout, normalizeLayout, layoutForSave, layoutValid, saveLayoutIn, moveWidget, dropWidget, sameLayout, newWidgetId, pickMyTasks, pickRequested, weekEnd } = H
 
   console.log('카탈로그 · 기본 배치')
-  await ok('위젯 아홉 · 종류 겹침 없음 · 이름 · 설명에 «회장» 없음 · 급여/원가/BOM/재무 위젯 없음', () => {
+  await ok('직원 위젯 열(0086 아홉 + 0097 프로젝트 현황) · 종류 겹침 없음 · 이름 · 설명에 «회장» 없음 · 급여/원가/BOM/재무 위젯 없음', () => {
     assert.equal(new Set(WIDGETS.map((w) => w.kind)).size, WIDGETS.length)
-    assert.deepEqual(WIDGETS.map((w) => w.kind), ['my_tasks', 'approvals', 'schedule', 'requested', 'attendance', 'favorites', 'notices', 'recent_docs', 'facility'])
+    assert.deepEqual(WIDGETS.map((w) => w.kind), ['my_tasks', 'approvals', 'schedule', 'requested', 'attendance', 'favorites', 'notices', 'recent_docs', 'facility', 'projects'])
     for (const w of WIDGETS) {
       assert.doesNotMatch(`${w.label} ${w.description}`, /회장|Chairman/, w.kind)
       assert.doesNotMatch(`${w.kind} ${w.label} ${w.description}`, /급여|원가|BOM|bom|단가|매출|손익|재무|payroll|cost|price/i, w.kind)
@@ -180,8 +181,9 @@ async function main() {
   const A = await as('sales_staff')
   const B = await as('buy_staff')
   await ok('스위치: 회사 줄(biz_dy) 켬 = A · B 둘 다 «내 홈» · 전자결재 · 대표가 아닌 다른 회사 사람 없음', async () => {
-    assert.deepEqual(A.access, { home: true, approvals: true })
-    assert.deepEqual(B.access, { home: true, approvals: true })
+    // 0097 — 직원은 대표 첫 화면 문(top · chair · investment · memory)이 전부 닫혀 있다.
+    assert.deepEqual(A.access, { home: true, approvals: true, top: false, chair: false, investment: false, memory: false })
+    assert.deepEqual(B.access, { home: true, approvals: true, top: false, chair: false, investment: false, memory: false })
   })
   await ok('위젯 아홉 — 금액 칸 · 금지 낱말 없음 · 건수 ≥ 목록 · 목록 ≤ 5 · 연동 준비 중은 예시 없이', async () => {
     for (const who of [A, B]) {
