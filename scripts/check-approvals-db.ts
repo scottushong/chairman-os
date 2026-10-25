@@ -77,7 +77,7 @@ export async function approvalsDb(): Promise<string> {
 
   // ── 스위치: 기본 대표만 ──
   await deny(U.a, `select ea_save_draft(null, 'biz_dy', 'general', 't', 'b', '{}'::jsonb, '[]'::jsonb, '[]'::jsonb, null, null, null, null)`, /ea_denied/, '스위치가 꺼진 회사(기본 대표만)에서 직원이 작성했다')
-  assert.equal((await su<{ n: number }>(`select count(*)::int n from ea_forms`))[0].n, 6, '초기 양식 여섯이 아니다')
+  assert.equal((await su<{ n: number }>(`select count(*)::int n from ea_forms where form_key <> 'investment'`))[0].n, 6, '초기 양식 여섯이 아니다(0096 «투자 승인»은 따로)')
   await one(U.chair, `select feature_switch_set('approvals', 'biz_dy', true, 'all', '시험 — DY 전원') as x`)
 
   // ── 상신 검증 ──
