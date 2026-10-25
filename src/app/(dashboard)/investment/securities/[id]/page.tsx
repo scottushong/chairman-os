@@ -16,7 +16,7 @@ export default async function SecurityPage(props: PageProps<'/investment/securit
   const { repo, admin } = await investmentViewer()
   const s = await repo.invSecurity(id)
   if (!s) notFound()
-  const [prices, actions, facts, metricsRows, etf, positions, changes, disclosures, managers, securities, settings] = await Promise.all([
+  const [prices, actions, facts, metricsRows, etf, positions, changes, disclosures, managers, securities, settings, recs] = await Promise.all([
     repo.invPrices(id),
     repo.invActions(id),
     repo.invFacts(id),
@@ -28,7 +28,12 @@ export default async function SecurityPage(props: PageProps<'/investment/securit
     repo.invManagers(),
     repo.invSecurities(),
     repo.invSettings(),
+    repo.invRecommendations({ securityId: id }),
   ])
+  const rec = recs[0] ?? null
+  const vals = (rec?.inputs.valuations ?? {}) as Partial<Record<'bear' | 'base' | 'bull', { futurePrice: number; presentValue: number; buyPrice: number; upsidePct: number }>>
+  const baseV = vals.base ?? null
+  const scorePart = (k: 'market' | 'leader') => (rec?.inputs[k] as { aiEstimated?: boolean } | null | undefined)?.aiEstimated ?? false
   const fxSec = securities.find((x) => x.kind === 'fx' && x.ticker === 'USDKRW')
   const bench = securities.find((x) => x.kind === 'etf' && x.ticker === (s.benchmark_ticker ?? (s.kind === 'etf' ? 'ACWI' : 'SPY')))
   const [fx, benchPrices] = await Promise.all([fxSec ? repo.invPrices(fxSec.security_id) : Promise.resolve([]), bench && bench.security_id !== id ? repo.invPrices(bench.security_id) : Promise.resolve([])])
@@ -73,9 +78,9 @@ export default async function SecurityPage(props: PageProps<'/investment/securit
           value={price ? usd(price.value) : 'NEED DATA'}
           sub={price ? `${price.as_of} · ${price.source === 'sec13f_implied' ? '13F 분기말 파생(일별 아님)' : price.source === 'twelvedata' ? 'Twelve Data 일봉' : '손 입력'}${prevDaily && price.source === 'twelvedata' ? ` · 전일비 ${pct(((price.value - prevDaily.close) / prevDaily.close) * 100, 2, true)}` : ''}` : '가격 경로 없음'}
         />
-        <Kpi label="Buy Below" value="NEED DATA" sub="가치평가 가정(FCF/주 · 성장률 · 배수 · 요구수익률 · 안전마진) 입력 전" />
-        <Kpi label="Opportunity Score" value="NEED DATA" sub="Market · Leader · Valuation 점수 전" />
-        <Kpi label="Risk State" value="NEED DATA" sub={`BUY는 검증 입력이 모두 LIVE · 품질 ${settings.data_quality_min} 이상일 때만`} />
+        <Kpi label="Buy Below" value={rec?.buy_price !== null && rec?.buy_price !== undefined ? usd(rec.buy_price) : 'NEED DATA'} sub={rec?.buy_price !== null && rec?.buy_price !== undefined ? `현재가 대비 ${pct(rec.gap_pct, 1, true)} · Base 5년 모델` : '가치평가 가정(FCF/주 · 성장률 · 배수 · 요구수익률 · 안전마진) 입력 전'} href={`/investment/engine?security=${s.security_id}`} />
+        <Kpi label="Opportunity Score" value={rec?.opportunity_score !== null && rec?.opportunity_score !== undefined ? `${rec.opportunity_score} / 100` : 'NEED DATA'} sub={rec ? `데이터 품질 ${rec.data_quality ?? '—'} · 추천 v${rec.version}` : 'Market · Leader · Valuation 점수 전'} tone="ok" href={`/investment/engine?security=${s.security_id}`} />
+        <Kpi label="Risk State" value={rec?.status ?? 'NEED DATA'} sub={`BUY는 검증 입력이 모두 LIVE · 품질 ${settings.data_quality_min} 이상일 때만`} tone={rec?.status === 'BUY ZONE' ? 'ok' : rec?.status === 'THESIS BROKEN' || rec?.status === 'OVERVALUED' ? 'bad' : 'warn'} href={`/investment/recommendations?security=${s.security_id}`} />
       </div>
 
       <InvCard title="Price vs Fair Value" sub="기간 · 겹쳐 보기 · KRW 환산(ECB 기준환율). 일별 주가가 없으면 13F 분기말 파생 점만 — 없는 날을 채우지 않는다.">
@@ -86,12 +91,59 @@ export default async function SecurityPage(props: PageProps<'/investment/securit
           fx={fx.map((p) => ({ d: p.d, v: p.close }))}
           institutional={[...instTotals].sort((a, b) => a[0].localeCompare(b[0])).map(([d, v]) => ({ d, shares: v }))}
           events={events}
-          fairValue={null}
-          buyBelow={null}
+          fairValue={baseV ? { low: baseV.buyPrice, high: baseV.presentValue } : null}
+          buyBelow={baseV?.buyPrice ?? null}
           currency={s.currency}
         />
         <SourceLine url={prices.at(-1)?.source_url} label={daily.length ? 'Twelve Data' : 'SEC 13F 평가액 ÷ 주식 수'} asOf={price?.as_of ?? null} />
       </InvCard>
+
+      <div className="grid min-w-0 gap-4 xl:grid-cols-2">
+        <InvCard title="Valuation Scenarios" sub="5-Year Price Outlook — 최신 추천에 저장된 Bear · Base · Bull(그 시점 값)" more={{ href: `/investment/engine?security=${s.security_id}`, label: '시나리오 ›' }}>
+          {Object.keys(vals).length === 0 ? (
+            <NoData need="시나리오가 없습니다 — AI Investment Engine에서 Bear · Base · Bull 가정을 출처와 함께 저장." href={`/investment/engine?security=${s.security_id}`} hrefLabel="입력하기" />
+          ) : (
+            <ul className="flex flex-col gap-2">
+              {(['bear', 'base', 'bull'] as const).map((k) => {
+                const x = vals[k]
+                const max = Math.max(...Object.values(vals).map((y) => y?.futurePrice ?? 0), 1)
+                return (
+                  <li key={k} className="grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-2">
+                    <span className="text-[14px] font-semibold">{k[0].toUpperCase() + k.slice(1)}</span>
+                    <div className="h-3 rounded bg-raised"><div className={`h-3 rounded ${k === 'bear' ? 'bg-ink-muted/60' : k === 'base' ? 'bg-[#3b74d6]/70' : 'bg-[#1e3a8a]'}`} style={{ width: `${x ? (x.futurePrice / max) * 100 : 0}%` }} /></div>
+                    <span className="text-[14px] tnum">{x ? `${usd(x.futurePrice)} (${pct(x.upsidePct, 0, true)})` : '—'}</span>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </InvCard>
+        <InvCard title="Why AI Is Watching" sub="점수는 결정론 계산 — «AI 추정» 요소는 표시">
+          {!rec ? (
+            <NoData need="추천이 아직 없습니다(«지금 분석»)." href="/investment/recommendations" hrefLabel="Recommendations" />
+          ) : (
+            <>
+              <ul className="flex flex-col gap-2">
+                {[
+                  ['Industry outlook(Market)', rec.market_score, scorePart('market')],
+                  ['Business quality(Leader)', rec.leader_score, scorePart('leader')],
+                  ['Valuation', rec.valuation_score, false],
+                  ['Institutional Signal', rec.institutional_signal, false],
+                ].map(([label, val, ai]) => (
+                  <li key={String(label)} className="grid grid-cols-[minmax(0,12rem)_auto_minmax(0,1fr)] items-center gap-2">
+                    <span className="text-[14px]">{String(label)}{ai ? ' · AI 추정 포함' : ''}</span>
+                    <span className="w-16 text-right text-[14px] font-semibold tnum">{val === null ? (label === 'Institutional Signal' ? 'UNKNOWN' : '—') : `${val} / 100`}</span>
+                    <div className="h-2.5 rounded-full bg-raised"><div className="h-2.5 rounded-full bg-ok/70" style={{ width: `${typeof val === 'number' ? val : 0}%` }} /></div>
+                  </li>
+                ))}
+              </ul>
+              <p className="rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-[14px]">
+                <strong>Decision:</strong> {rec.status === 'BUY ZONE' ? '검증 조건 전부 통과 — 매수 검토(실제 매매는 사람이 결정 · 투자 승인 결재)' : rec.status === 'WATCH' ? 'WATCH — 가격이 안전마진 안으로 들어오거나 남은 조건이 채워질 때까지' : rec.status === 'OVERVALUED' ? 'OVERVALUED — 현재가가 추정 현재가치 위' : rec.status === 'THESIS BROKEN' ? 'THESIS BROKEN — 가설 재검토' : `NEED DATA — ${rec.checks.filter((c) => c.required && !c.pass).map((c) => c.label).join(' · ')}`}
+              </p>
+            </>
+          )}
+        </InvCard>
+      </div>
 
       <InvCard title="Institutional Positions" sub="기관별 공시 기준일 주식 수(최근 5기) · 최신 판정 — 마지막 공개 보유이지 실시간 매매가 아니다">
         <T minWidth={560}>

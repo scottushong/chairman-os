@@ -1,3 +1,4 @@
+import { DEFAULT_WEIGHTS } from './scores'
 import type { InvManager, InvSettings, InvSource } from './types'
 
 /**
@@ -91,5 +92,8 @@ export const SEED_SETTINGS: InvSettings = {
   alloc_equity_pct: 60,
   alloc_bond_pct: 30,
   alloc_cash_pct: 10,
+  weights: { ...DEFAULT_WEIGHTS },
+  ai_daily_calls: 20,
+  ai_monthly_usd: 30,
   updated_at: '2026-10-25T00:00:00Z',
 }

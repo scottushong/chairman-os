@@ -117,9 +117,17 @@ export async function runCollect(sink: CollectorSink, opts: CollectOptions): Pro
 
   // ── 2. SEC 13F ──
   const ua = secUserAgent()
+  /** sec.gov 문서 서버(Archives · company_tickers)는 연락 이메일 없는 User-Agent를 403으로 막는다(2026-10-25 운영 확인). 헛호출하지 않는다. */
+  const UA_NEEDED = 'SEC_USER_AGENT 필요(회사명 + 연락 이메일, 예: «DY Industry admin@회사도메인») — sec.gov가 연락처 없는 요청을 403으로 막는다'
   for (const m of managers) {
     if (!m.sec_cik) continue
     const sid = `sec13f:${m.manager_id}`
+    if (!ua.configured) {
+      const s0 = src(sid)
+      await sink.markSource(sid, { status: s0?.last_success_at ? s0.status : 'UNAVAILABLE', status_note: UA_NEEDED })
+      steps.push({ step: `13F ${m.name}`, ok: false, calls: 0, note: UA_NEEDED })
+      continue
+    }
     await step(`13F ${m.name}`, sid, async () => {
       const refs = await listFilings(http, m.sec_cik!)
       const periods = [...new Set(refs.map((r) => r.report_date))].sort().reverse().slice(0, opts.quarters ?? 5)
@@ -179,13 +187,7 @@ export async function runCollect(sink: CollectorSink, opts: CollectOptions): Pro
       newDisclosures += added
       const all = await sink.disclosures(sid)
       const latest = all.sort((a, b) => a.data_as_of.localeCompare(b.data_as_of)).at(-1)
-      if (latest) {
-        await ok(
-          sid,
-          'LIVE',
-          `최근 기준일 ${latest.data_as_of} · 공개 ${latest.source_published_at ?? '—'} · 쌓인 공시 ${all.length}건${ua.configured ? '' : ' · SEC_USER_AGENT 비어 있음(기본 이름으로 호출)'}`,
-        )
-      }
+      if (latest) await ok(sid, 'LIVE', `최근 기준일 ${latest.data_as_of} · 공개 ${latest.source_published_at ?? '—'} · 쌓인 공시 ${all.length}건`)
       return `새 공시 ${added}건${todo.length > added ? ` · 남은 ${todo.length - added}건은 다음 실행` : ''}`
     })
   }
@@ -298,7 +300,7 @@ export async function runCollect(sink: CollectorSink, opts: CollectOptions): Pro
   await step('OpenFIGI 티커', 'openfigi', async () => {
     const need = securities.filter((s) => s.cusip && !s.figi && s.exchange !== 'UNMAPPED').slice(0, opts.figiPerRun ?? 60)
     if (need.length === 0) {
-      await ok('openfigi', 'LIVE', '모든 관심 종목에 티커가 있다')
+      if (securities.some((s) => s.figi)) await ok('openfigi', 'LIVE', '모든 관심 종목에 티커가 있다')
       return '할 것 없음'
     }
     const hits = await figiMap(http, need.map((s) => s.cusip!))
@@ -392,13 +394,22 @@ export async function runCollect(sink: CollectorSink, opts: CollectOptions): Pro
         points += rows.length
       }
     }
-    await ok('prices:sec13f', 'PARTIAL', `분기말 파생 가격 ${points}점 — 일별 주가는 Twelve Data 키 필요`)
+    if (points > 0 || src('prices:sec13f')?.last_success_at) await ok('prices:sec13f', 'PARTIAL', `분기말 파생 가격 ${points}점 — 일별 주가는 Twelve Data 키 필요`)
+    else await sink.markSource('prices:sec13f', { status: 'UNAVAILABLE', status_note: '13F 보유 종목이 아직 없음(13F 수집 뒤)' })
     return `${points}점`
   })
 
   // ── 9. XBRL 재무 ──
   await step('XBRL 재무', 'sec:xbrl', async () => {
     const stocks = securities.filter((s) => s.watch && s.kind === 'stock' && s.ticker)
+    if (!ua.configured) {
+      await sink.markSource('sec:xbrl', { status: src('sec:xbrl')?.last_success_at && securities.some((s) => s.facts_checked_at) ? 'LIVE' : 'UNAVAILABLE', status_note: UA_NEEDED })
+      return UA_NEEDED
+    }
+    if (stocks.length === 0) {
+      await sink.markSource('sec:xbrl', { status: 'UNAVAILABLE', status_note: '관심 종목(13F 보유)이 아직 없음' })
+      return '관심 종목 없음'
+    }
     if (stocks.some((s) => !s.cik)) {
       const map = await fetchTickerMap(http)
       for (const s of stocks) {

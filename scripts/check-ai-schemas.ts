@@ -8,6 +8,7 @@
  * 구조 강제를 쓰는 모든 스키마를 모아 API 규칙(모든 object에 additionalProperties: false · 숫자 · 글 길이 · 배열 길이 제약 없음)을 본다.
  * check:finance-upload도 이 검사를 부른다.
  */
+import { BRIEF_SCHEMA as INV_BRIEF_SCHEMA, EXPLAIN_SCHEMA, REASONS_SCHEMA } from '../src/lib/investment/ai'
 import assert from 'node:assert/strict'
 
 import { BRIEF_JSON_SCHEMA, DAILY_BRIEF_JSON_SCHEMA } from '../src/lib/ai/brief-schema'
@@ -56,6 +57,9 @@ export const AI_SCHEMAS: Record<string, unknown> = {
   'finance-upload/ai-doc DOC_SCHEMA': DOC_SCHEMA,
   'finance-upload/official-ai OFFICIAL_MATCH_SCHEMA': OFFICIAL_MATCH_SCHEMA,
   'memory/schema MEMORY_SCHEMA': MEMORY_SCHEMA,
+  'investment/ai EXPLAIN_SCHEMA': EXPLAIN_SCHEMA,
+  'investment/ai REASONS_SCHEMA': REASONS_SCHEMA,
+  'investment/ai BRIEF_SCHEMA': INV_BRIEF_SCHEMA,
 }
 
 export function checkAiSchemas(): string {

@@ -9,6 +9,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+import { investmentDbSetup } from './check-investment-db'
 import { runCollect } from '../src/lib/investment/collect/run'
 import { memorySink } from '../src/lib/investment/collect/sink'
 import { SEED_MANAGERS, SEED_SETTINGS, SEED_SOURCES } from '../src/lib/investment/seed'
@@ -62,8 +63,21 @@ async function main() {
   }
   const fx = state.securities.find((s) => s.kind === 'fx')
   const prices = [...state.prices].map(([id, xs]) => [id, id === fx?.security_id ? xs.slice(-780) : xs] as const)
+  // 0095 산업 시드 — SQL이 원천(PGlite에 마이그레이션을 올려 그대로 떠 온다 · TS로 베끼지 않는다)
+  const { db } = await investmentDbSetup()
+  const dump = async (t: string) => (await db.query(`select * from ${t}`)).rows
+  const seed95 = {
+    markets: await dump('future_markets'),
+    market_sources: await dump('market_research_sources'),
+    forecasts: await dump('market_forecasts'),
+    value_chains: await dump('market_value_chains'),
+    scores: await dump('investment_scores'),
+    philosophy: await dump('investment_manager_philosophy'),
+  }
+  await db.close()
   const out = {
     generated_at: new Date().toISOString(),
+    seed95,
     sources: state.sources,
     runs: state.runs.map((x) => ({ ...x })),
     disclosures: state.disclosures,

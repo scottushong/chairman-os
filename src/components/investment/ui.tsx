@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 
 import { GlassCard } from '@/components/ui/glass-card'
 import { day } from '@/lib/investment/format'
-import type { ChangeStatus, DataStatus } from '@/lib/investment/types'
+import type { ChangeStatus, DataStatus, RecStatusT } from '@/lib/investment/types'
 
 /**
  * Investment Intelligence 공통 조각 — 앱 테마 토큰(밝은 · 어두운 화면 둘 다)과 GlassCard를 그대로 쓴다(새 디자인 시스템 없음).
@@ -165,4 +165,16 @@ export function PageTitle({ title, sub, right }: { title: string; sub?: ReactNod
       {right ? <div className="flex flex-wrap items-center gap-2">{right}</div> : null}
     </div>
   )
+}
+
+export const REC_STATUS_CLASS: Record<RecStatusT, string> = {
+  'BUY ZONE': 'bg-ok/15 text-ok',
+  WATCH: 'bg-[#2f6fd0]/12 text-[#3b74d6]',
+  OVERVALUED: 'bg-warning/12 text-warning',
+  'THESIS BROKEN': 'bg-critical/12 text-critical',
+  'NEED DATA': 'bg-raised text-ink-dim',
+}
+
+export function RecBadge({ status }: { status: RecStatusT }) {
+  return <span className={`inline-flex rounded px-1.5 py-0.5 text-[13px] font-bold whitespace-nowrap ${REC_STATUS_CLASS[status]}`}>{status}</span>
 }
