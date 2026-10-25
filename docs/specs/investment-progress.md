@@ -47,6 +47,13 @@
 - 함수: inv_analysis_reader · investment_recommendation_guard(트리거) · investment_append_only(트리거) · investment_ai_reserve · investment_ai_finish
 - 줄: feature_switches (null, 'investment_ai', true, 'chairman')
 
+- **2026-10-25 15:45 KST — 2단계 배포 완료(0095 · `0b70ab4`).**
+  - master 검사: typecheck · eslint · build · check:* 전부(check:investment 42 · check:investment-ai-cap 포함). check:mobile 새 화면 7개 × 6기기(worktree).
+  - staging 0095 push · 호환: 직전 운영 SHA `e827b5f`를 staging(0095) 위에서 빌드 · 기동 — health ok · rls_closed · 오류 0.
+  - 리허설 기대 = 대기(0095) → 릴리스 → 배포 success · health ok:true · anon 0 · rls_closed true.
+  - 배포 뒤 검증: 운영 cron 1회 — 수집(Integration: 환율 · NBIM, 13F는 «SEC_USER_AGENT 필요»로 호출 안 함) → 분석(AIAgent): 브리핑 1 ·
+    알림 6 · **AI 요약 실제 호출 성공**(claude-sonnet-5-5, 한도 예약 → 기록). 권한: 수집 계정 추천 0행 · 점수 INSERT 42501 · AI 계정 추천 UPDATE/DELETE 42501.
+
 ## 다음 할 일
 
-2단계 배포(merge → master 검사 → staging push → 직전 코드 호환 → 릴리스 → health → 배포 뒤 검증 — 운영 cron 1회로 수집 + AI 분석).
+3단계(Phase 6·7 → 0096) — worktree에서 진행 중(코드 대부분 작성, 검사 · staging 시험 · 배포 남음).
