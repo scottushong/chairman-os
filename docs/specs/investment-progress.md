@@ -25,6 +25,15 @@
 - 줄: feature_switches (null, 'investment', true, 'chairman')
 - 기존 표 · 칸 변경 없음.
 
+- **2026-10-25 14:40 KST — 1단계 배포 완료(0094 · `e827b5f`).**
+  - master 검사: typecheck · eslint · build · check:* 49개 전부 · check:release · check:mobile 162/162(27화면 × 6기기).
+  - staging `npm run db:push:staging` → 0094. 호환: 직전 운영 SHA `611def9`를 staging(0094) 위에서 빌드 · 기동 — health ok · rls_closed · 화면 로그인 리다이렉트 · 오류 로그 없음.
+  - `RELEASE_DRY_RUN=1` 기대 = 대기(0094) → 릴리스 → 배포 success · health ok:true · anon 0 · rls_closed true.
+  - 배포 뒤 검증: 운영 cron 수동 호출(Integration) — 환율 LIVE · NBIM 2기 LIVE(NEW 466 · EXIT 590 = 로컬 계산과 같음) ·
+    **SEC 13F 네 곳 403 = 막힘**: sec.gov 문서 서버가 연락 이메일 없는 User-Agent를 막음(data.sec.gov는 통과). Vercel 환경변수
+    `SEC_USER_AGENT`(회사명 + 연락 이메일)가 필요 — 회장 몫. 권한: anon 0행 · 수집 계정 설정/기관 고치기 0줄 · 지우기 42501 · AI 계정 원천 고치기 0줄.
+  - 대표 · 직원 계정 로그인 검증은 자격증명이 없어 못 함(직원 0행 · 403은 PGlite + staging SQL 시험으로).
+
 ## 다음 할 일
 
-1단계 배포(merge → master 검사 → staging push → 직전 코드 호환 → 릴리스 → health → 배포 뒤 검증).
+2단계(Phase 3·4·5 → 0095) — worktree에서 진행 중. 고칠 것: SEC_USER_AGENT 없으면 13F · XBRL 단계를 부르지 않고 «필요» 표시 · 한 일 없는 단계를 LIVE로 찍지 않기.
