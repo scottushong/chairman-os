@@ -1,0 +1,1333 @@
+0094~0096 Investment Intelligence — 지시문 하나, 단계 셋, 각 단계 끝에 운영 배포. 묻지 말고 끝까지. 마지막에 한 번만 보고.
+예상 24시간. 이 메시지 아래 «───── 원문 ─────» 다음이 지시문 원문(PART 0~20)이다. 파일을 찾지 말고 이 메시지에서 읽어
+docs/specs/2026-10-24-investment-intelligence.txt 로 저장한다.
+
+■ 멈추지 않는 규칙 (이 블록의 최우선)
+- 어떤 이유로도 «이어서 해라»를 기다리며 멈추지 않는다. 묻지 않는다. 회장은 자리에 없다.
+- 이 블록에 한해 회장이 허용한 것: 운영 DB push · git push origin master · 운영 배포 · 진짜 AI 호출(한도 안). 
+  CLAUDE.md·메모리·AGENTS.md의 «운영 쓰기·git push 금지»는 이 블록에서는 적용하지 않는다. 명령이 거부되면 같은 일을 하는 다른
+  경로(npx supabase 직접, git push 직접)로 시도하고, 그래도 막히면 그 단계만 progress 파일에 «막힘: 명령·오류»로 적고 다음 단계 작업을 계속한다.
+  배포가 막힌 채 3단계가 끝나면 보고에 «회장이 칠 명령»으로 정리한다.
+- 파일이 없으면(참고 이미지 등) 없이 진행하고 보고에 적는다. 외부 API가 막히면 UNAVAILABLE로 두고 진행한다.
+- 주간 한도만은 막을 수 없다. 그래서 단계마다 끝나면 즉시 커밋·배포하고 docs/specs/investment-progress.md 에 «N단계 배포 완료»를 적는다.
+  한도 뒤 새 세션에서 이 블록이 다시 들어오면 progress 파일을 읽고 그 자리부터 묻지 않고 이어간다.
+
+■ 화면 참고 이미지 7장 (디자인 참고 — 규칙·데이터 구조보다 우선하지 않음; 없는 파일은 없이 진행)
+  전부 C:\Users\Edison Hong\projects\ 에 있고 docs/specs/ 로 복사한다.
+- investment-mock-dashboard.png — Investment Intelligence 메인(KPI 4칸 · Investor Radar NEW/ADD/TRIM · Future Market Signals ·
+  AI Watchlist · 5Y Value Forecast). 메인 화면의 기준.
+- investment-mock-stock.png — Stock & ETF 360 상세(현재가 · Buy Below · Opportunity · Risk State · Price vs Fair Value 띠 ·
+  Bear/Base/Bull · 기관 포지션 4분기 추이 · Why AI Is Watching · Decision 한 줄). 상세 화면의 기준.
+- investment-mock-simulator.png — «DY 장기투자 시뮬레이터»: 매년 적립 · 기간 · 가정 수익률 슬라이더 3개 → 예상 최종자산 · 납입원금 ·
+  누적수익. DY Portfolio 화면에 한 칸으로 넣는다(원문 PART 12). 단순 복리이며 세금·수수료·환율 미반영 문구를 그대로.
+- investment-mock-cashflow.png — 영업현금흐름 → 세금·차입금·운전자금·설비투자 확보 → 확정 잉여현금 → 일정 비율 장기 적립 →
+  DY 장기투자 계정 → 주식/채권/제한적 인출 → 수익 재투자. DY Portfolio 상단에 이 흐름도를 넣고, «잉여현금» 칸은 /finance의
+  자금 전망(지표 8·12)과 숫자로 연결한다(읽기만, 재무 쪽 수정 금지).
+- investment-mock-fund-areas.png — 자금 4영역: A 운영자금 · B 유동성 준비금 · C 전략사업 자금(셋 다 «투자 금지») · D 장기투자 자산
+  (DY Capital Fund). Capital Allocation 화면의 기준. A~C 금액은 /finance에서 읽고, D만 투자 가능 금액으로.
+- investment-ref-style.png — 카드·차트 배치 분위기 참고용(글자는 의미 없음). 기존 Chairman OS 색·글꼴을 따른다.
+- investment-ref-fairvalue.png — 외부 서비스의 «Price vs Fair Value» 화면. 개념(가격선 + 적정가치선 + 과대/적정/저평가 띠 + 연도별
+  P/FV·수익률 표)만 참고. 그대로 베끼지 않는다 — 우리 것은 FCF 모델 기반 Buy Below 선과 Bear/Base/Bull 띠.
+- 공통: 기존 Chairman OS 디자인과 통일. 이미지 속 숫자는 전부 가상 — 실제 데이터로 쓰지 않음. 기관 포트폴리오·종목 그래프·AI 추천·
+  미래 산업 점수는 실제 기능과 연결. 기존 CAPITAL 메뉴 안에. 똑같이 그리는 것보다 사용성과 수치 정확성 우선. PC와 폰 390px 둘 다.
+
+■ 완료 기준
+- 시간은 목표이지 완료 판정 기준이 아니다. 기능을 줄이거나 Demo로 바꿔 «완료» 처리하지 않는다.
+  못 끝낸 것은 실제 상태·원인·재개 방법을 적는다. «나중에»·«준비 중»으로 미루지 않는다.
+- 단계마다 아래 «완료 조건»과 «배포 전·후 검증»을 전부 통과해야 다음 단계로 간다. 통과 못 하면 고쳐서 통과시킨다.
+
+■ 단계 (한 번의 실행 안에서 순서대로) — 원문과 이 머리말이 충돌하면 머리말이 우선. 틀·메뉴 8개·공식·테이블 이름·Phase 순서는 원문 그대로.
+1단계 = Phase 0·1·2 → 검증 → 배포(마이그레이션 0094)
+  완료 조건: 기존 OS·CAPITAL 정상 / 메뉴 연결 / 4개 기관 실제 공개 자료 수집 / 최소 1개 기관에서 이전·현재 보유수량 비교
+  검증(NEW·ADD·TRIM·EXIT, 주식분할 보정) / 종목 상세와 그래프 / Demo·Live 구분 / check:investment 통과.
+  네 기관이 다 완전하지 않아도 됨 — 빠진 것은 PARTIAL·UNAVAILABLE로 표시하고 다음 단계로.
+  전자결재(0087) 연결은 이 단계에서 인터페이스 조사·설계만.
+2단계 = Phase 3·4·5 → 검증 → 배포(0095)
+  완료 조건: 산업 5개 데이터(출처·발표일 있음) / Market·Leader·Opportunity Score가 저장된 입력값으로 재계산됨 /
+  계산기 원문 8.3 예시가 $201.14 · $114.13 · $91.30 정확히 / Bear·Base·Bull / 추천 이력 불변 / BUY는 점수와 별개 조건.
+  AI 예측이 맞는지 입증하려 하지 않는다. 2단계 목표는 공식과 근거의 완성이다.
+3단계 = Phase 6·7 → 검증 → 배포(0096)
+  완료 조건: Real·Paper 분리 / 손 입력 거래와 승인 기록 / 투자 승인은 전자결재(0087) 양식 하나 / 성과 지표 계산 /
+  백테스트에 미래 정보 사용 금지·상장폐지 포함 / 실패 원인 9분류.
+  (6개월 Paper 성과가 좋아도 개별 종목 투자를 자동 확대하지 않는다 — 화면에 그 문장을 둔다.)
+
+■ BUY 금지 조건 (원문 PART 9·10 위에 얹는 수치 조건)
+- 개별 주식의 필수 입력값 = 검증된 주가 · 기업 재무 · 가치평가 핵심 가정(FCF/주, 성장률, 배수, 요구수익률, 안전마진).
+  각각 LIVE이고 출처·기준일이 있으며 data_quality가 settings 기준(기본 70) 이상이어야 BUY ZONE 가능.
+- 기관 보유 데이터는 보조 지표다. 기관이 보유하지 않거나 공개 자료가 없다는 이유로 BUY를 막지 않는다.
+  기관 데이터가 없으면 Institutional Signal을 UNKNOWN으로 두고 추천 근거에 그 사실을 적는다.
+- ETF는 기업 재무 대신 가격 · 기초지수 · 총보수 · 구성 종목 · 추적오차를 필수 검증 항목으로.
+- 필수 정보가 하나라도 부족하면 BUY ZONE 금지 → WATCH 또는 NEED DATA. AI는 분석 글을 쓸 수 있어도 BUY를 붙일 수 없다.
+
+■ DB
+- 전체 논리 구조(원문 PART 14)는 docs/specs 에 설계도로. 실제 migration은 그 단계에 필요한 테이블만.
+- Expand-only: 새 표·새 칸 추가만. 기존 표·칸 삭제, 이름 바꾸기, 자료 옮기기·덮어쓰기, 이전 코드와 호환되지 않는 변경 금지.
+  코드 롤백(직전 SHA)과 DB 롤백은 별개다 — 직전 코드가 새 DB 위에서도 돌아야 한다. check:migrations 에 drop·rename 감지를 넣는다.
+- supabase/migrations 끝 번호가 0093이므로 0094·0095·0096을 쓴다(실행 시 다시 확인).
+  0096의 투자 승인이 0093(결재 이력 «대표» 표기)에 기대는지 코드로 확인 — 기대면 투자 승인 양식에 한해 맞춘다.
+- 배포 전 그 단계의 DB 변경 목록(표·칸)을 progress 파일에 적는다. --include-all이 필요하면 적용될 목록을 먼저 보고,
+  이 블록 것이 아닌 migration이 섞이면 그 단계 배포를 건너뛰고 progress에 적는다.
+
+■ 데이터 — 무료·공식만, 가짜 Live 금지
+- SEC 13F 보유 내역과 XBRL companyfacts 재무정보는 별개의 수집 경로. SEC Fair Access 준수:
+  User-Agent는 환경변수 SEC_USER_AGENT(회사명 + 연락 이메일, 코드에 박지 않음; 비어 있으면 «DY Industry chairman-os» + 안내), 초당 요청 제한 준수, 재시도 간격.
+- NBIM 보유 목록(반기), Fundsmith Factsheet(월), Pershing 공개 자료 — 각각 공시 기준일과 공개일을 따로 저장.
+- 주가·ETF·환율은 무료 API 중 이용조건이 허용하는 것. 키가 필요하면 코드와 환경변수 이름까지 만들고, 키가 비면
+  그 칸만 «UNAVAILABLE — 키 필요: 발급처·무료 한도». 키를 넣으면 바로 돈다.
+- 무료 데이터가 없는 종목의 그래프를 꾸며 채우지 않는다. 데이터마다 상태를 보인다: LIVE · PARTIAL · DEMO · UNAVAILABLE · DISABLED.
+- 수집은 기존 cron 틀(vercel.json crons + 기존 cron 인증) 안에서. 새 스케줄러·GitHub Actions 금지. 하루 호출 한도 settings.
+  실패하면 마지막 성공 시각 표시. 기존 아침 루틴을 건드리지 않는다 — 투자 브리핑은 독립 칸으로 넣고 따로 검증.
+
+■ 권한 — 화면 숨김 · 서버 API · RLS 셋 다, 프로세스는 셋으로 분리
+- 기능 스위치 investment 기본 «대표만» — 이것은 화면 노출만이다. 서버 API와 Supabase RLS에서도 대표(와 지정자) 전용.
+  직원·anon은 읽기도 0행. check:investment 에 «직원이 URL 직접 쳐도 0행 · API 직접 불러도 403» 포함.
+- 자동 프로세스는 야간 브리핑(0046)·재무 재계산(0085)이 쓰는 시스템 계정 + restrictive 정책 방식 그대로, 단 권한을 둘로 나눈다:
+  · 수집 프로세스: 원천 표(공시·보유·가격·재무)에만 insert/update. 추천·승인·Real Portfolio·거래 표는 0행.
+  · AI 분석 프로세스: 검증된 투자정보 읽기 + 추천·분석 이력 표에 INSERT만. UPDATE·DELETE 없음 — 과거 추천의 수치·근거·
+    생성 시각은 바꿀 수 없고, 재분석은 새 버전 행으로. Real Portfolio·전자결재 승인·거래 표는 0행.
+  · 대표: 조회·관리·투자 승인. 직원: 없음.
+  이 구조를 못 만들면 RLS를 풀거나 service_role로 우회하지 말고 그 기능만 미완성으로 보고.
+- service_role 금지. 비밀값을 코드·문서·로그에 쓰지 않는다. 직원 화면 «회장» 금지 → «대표».
+- 실거래·증권사 API·자동 주문 금지. Real Portfolio는 손 입력.
+
+■ AI
+- 결정론적 계산(점수·가치평가·변화 판정)은 AI 없이.
+- LLM 호출(투자 논리 설명·브리핑 요약·CONFIRMED/INFERRED 분류)은 기존 ANTHROPIC_API_KEY로 진짜 호출.
+  스위치 investment_ai 기본 «대표 켬» — 단, check:investment-ai-cap(아래 차단 시험)을 통과하기 전엔 켜지지 않는다.
+- 한도는 서버에서 강제, 둘 다 따로: 하루 20회 · 월 $30(settings). 호출 전 예상 비용(입력·출력 상한 × 단가)을 계산해
+  DB 함수로 원자적으로 예약(동시 호출·재시도 포함) → 호출 → 실제 사용량을 ai_usage_log(0045)에 기록.
+  월 비용은 이 기능의 기록으로 계산하고, 같은 키를 다른 기능도 쓰므로 «청구액과 다를 수 있음»을 화면에.
+  한도 도달이면 LLM만 DISABLED, 계산기·공시·주가·점수는 그대로. check:ai-schemas · BadRequest 되돌림(0073 방식).
+
+■ 환경
+- 메모리 1.5GB 미만이면 10분까지 기다렸다 재시도, 그래도 안 되면 메모리 적게 드는 순서(검사를 하나씩)로 계속한다. 멈추지 않는다.
+- worktree 하나, Phase마다 커밋, merge -m. 다른 세션 금지.
+
+■ 배포 (단계마다, 검증 전부 통과한 뒤)
+1. 로컬 master에 merge -m. typecheck · eslint · build · check:* 전부 통과. 실패하면 고쳐서 통과시킨다.
+2. staging: npm run db:push:staging (띄엄띄엄이면 --include-all 손 명령: SUPABASE_DB_PASSWORD를 .env.staging.local에서 읽어 npx supabase db push --linked --include-all).
+   staging 되돌리는 시험 «009x STAGING PASS».
+3. 배포 전 DB 호환성: staging에 새 migration을 적용한 상태에서 직전 운영 코드(origin/master SHA)를 빌드해 staging DB로
+   주요 화면·API가 오류 없이 도는지 확인. 실패하면 Expand-only 위반을 찾아 고친 뒤 다시.
+4. RELEASE_DRY_RUN=1 bash scripts/release-production.sh <번호> — «기대 = 대기»가 아니면 원인을 고치고 다시.
+5. bash scripts/release-production.sh <번호> — YES 두 번 자동 입력(예: printf 'YES\nYES\n' | …, 또는 expect). «기록용» 줄을 docs/OPERATIONS §9에 붙인다.
+6. health: ok:true · anon 전부 0 · rls_closed true. 아니면 §9 «되돌리는 길»대로 직전 SHA로 되돌리고 원인을 고친 뒤 다시 배포.
+7. 배포 뒤 검증(전부 통과해야 다음 단계): 운영에서 수집 1회(cron 경로 수동 호출) → 화면 숫자가 실제 수집값 ·
+   대표 계정 조회 · 직원 계정 0행·403 · 수집 계정이 추천·승인 표에 쓰기 거부 · AI 계정이 추천 UPDATE·DELETE 거부.
+
+■ 보고 한 번 (3단계 끝에; 중간 단계는 progress 파일에만)
+- 원문 PART 20 형식: 구현 기능 · 기관별·데이터별 LIVE/PARTIAL/DEMO/UNAVAILABLE/DISABLED · 스크린샷(PC·폰 390) ·
+  검증 18개 결과 · 키·비용 표(발급처·한도·월 비용·실제 쓴 AI 비용) · 변경 파일 · 배포 3건의 SHA·health · 막힌 명령이 있으면 그 목록.
+- 회장이 할 일 표(순서·담당·상태·방법): 키 넣기 · 스위치 · 첫 투자 승인 결재 · 월 100만 원 첫 입력.
+
+───── 원문 (여기부터 PART 0~20, 한 글자도 바꾸지 않음) ─────
+CLAUDE CODE 개발 지시문
+
+Chairman OS — Investment Intelligence System
+
+DY Industrial Long-Term Investment Intelligence
+
+0. 프로젝트 목표
+
+기존 Chairman OS의 "CAPITAL" 영역 안에 "Investment Intelligence"라는 글로벌 장기투자 분석 시스템을 개발한다.
+
+본 시스템은 대양산업(DAE YANG Industry) 법인의 장기 투자 의사결정을 지원하기 위한 것이다.
+
+초기 투자 예산은 월 100만 원이며, 수익률·추천 정확도·운영 안정성이 충분히 검증되면 투자 규모를 확대할 예정이다.
+
+시스템의 핵심 목표는 다음 5가지다.
+
+1. 글로벌 우수 투자기관의 보유 종목과 포트폴리오 변화를 지속적으로 추적한다.
+2. 미래에 성장할 산업과 해당 산업의 유력 리더 기업을 정량적으로 발굴한다.
+3. 기업의 미래 현금흐름과 가치평가를 통해 합리적인 매수가를 계산한다.
+4. AI가 투자 후보를 추천하되 모든 판단에 수치·출처·계산 근거를 제시한다.
+5. 투자 후 실제 성과를 평가하여 투자 모델의 정확도를 지속적으로 검증한다.
+
+단순한 주식 추천 서비스가 아니다.
+
+미래 산업 발견 → 기업 경쟁력 분석 → 미래 가치평가 → 매수가 결정 → 성과 검증까지 연결되는 장기투자 의사결정 시스템을 개발한다.
+
+---
+
+PART 1. 기존 Chairman OS 확인 및 개발 원칙
+
+1.1. 기존 프로젝트
+
+작업 대상:
+
+"C:\Users\Edison Hong\projects\chairman-os"
+
+기존 GitHub 저장소:
+
+"https://github.com/scottushong/chairman-os"
+
+기존 프로젝트는 Next.js, React, App Router, Supabase PostgreSQL, Tailwind CSS 및 repository adapter 구조를 사용해 개발되어 왔다.
+
+단, 실제 현재 코드가 이전 상태와 달라졌을 수 있으므로 반드시 프로젝트 내부 파일을 먼저 확인한다.
+
+개발 전 다음 내용을 조사한다.
+
+- 현재 폴더 구조
+- "CLAUDE.md"
+- "DEFERRED.md"
+- "package.json"
+- 기존 CAPITAL 관련 라우트와 컴포넌트
+- 기존 Sidebar 및 Dashboard 레이아웃
+- Supabase 테이블과 migration
+- Repository Adapter 패턴
+- Dummy 데이터와 실제 데이터의 분리 방식
+- 사용자 권한 및 RLS 정책
+- 기존 차트 컴포넌트
+- 기존 API 및 스케줄러
+
+기존 코드를 이해한 뒤 추가 구현한다.
+
+1.2. 절대 준수할 원칙
+
+1. Chairman OS를 새로 만들지 않는다.
+2. 기존 UI/UX, 메뉴 체계, 디자인 언어를 유지한다.
+3. 기존 CAPITAL 관련 기능을 삭제하거나 임의로 변경하지 않는다.
+4. 기존 Supabase와 인증체계를 사용한다.
+5. 기존 repository adapter 패턴을 유지한다.
+6. 실제 데이터와 Dummy 데이터를 명확하게 분리한다.
+7. 기존 파일을 수정할 때 관련 기능에 미치는 영향을 확인한다.
+8. 새로운 기능을 위한 데이터베이스 migration은 안전하게 추가한다.
+9. 기존 데이터가 손상될 수 있는 destructive migration은 실행하지 않는다.
+10. 외부 서비스의 API key는 서버 측 환경변수로 관리한다.
+11. 개발 중 발생한 오류는 가능한 범위에서 스스로 수정하고 테스트한다.
+12. 사용자 승인 없이 production 배포, 원격 push 또는 실거래를 실행하지 않는다.
+
+기존 로컬 작업과 커밋되지 않은 변경사항을 보존할 것.
+
+---
+
+PART 2. 시스템 메뉴 및 사용자 흐름
+
+2.1. 메뉴 구조
+
+기존 CAPITAL 메뉴에 다음 하위 메뉴를 추가한다.
+
+CHAIRMAN OS
+└── CAPITAL
+    └── INVESTMENT INTELLIGENCE
+        ├── 1. Dashboard
+        ├── 2. Investor Radar
+        ├── 3. Future Markets
+        ├── 4. Stock & ETF 360
+        ├── 5. AI Investment Engine
+        ├── 6. Recommendations
+        ├── 7. DY Portfolio
+        └── 8. Performance & Learning
+
+기존 CAPITAL에 유사한 기능이 있으면 중복 메뉴를 만들지 말고 자연스럽게 통합한다.
+
+2.2. 핵심 데이터 흐름
+
+flowchart TD
+    A["글로벌 기관 공시 및 시장 데이터"] --> B["Data Collection"]
+    B --> C["Validation & Normalization"]
+    C --> D["Investor Portfolio Tracker"]
+    C --> E["Future Market Research"]
+    C --> F["Stock & ETF Financial Analysis"]
+    D --> G["AI Investment Engine"]
+    E --> G
+    F --> G
+    G --> H["Investment Ranking"]
+    H --> I["Valuation & Buy Zone"]
+    I --> J["Recommendations"]
+    J --> K["Paper Portfolio"]
+    J --> L["DY Corporate Portfolio"]
+    K --> M["Performance Evaluation"]
+    L --> M
+    M --> G
+
+사용자가 Dashboard에서 종목이나 산업을 클릭하면 관련 상세 페이지로 이동하도록 연결한다.
+
+---
+
+PART 3. Dashboard
+
+3.1. 첫 화면
+
+대시보드 상단에 다음 KPI를 표시한다.
+
+KPI| 초기 Demo 값
+추적 중인 투자기관| 4
+분석 대상 투자 후보| 28
+새로 편입된 종목| 4
+보유 수량 증가 종목| 11
+보유 수량 감소 종목| 7
+매수가 도달 종목| 3
+월 투자 예정액| 1,000,000 KRW
+연간 예정 납입액| 12,000,000 KRW
+
+이 숫자는 반드시 "DEMO" 표시를 한다.
+
+실제 데이터를 연결한 후에는 실측된 숫자만 표시한다.
+
+실제 데이터가 아직 없으면 0 또는 "DATA NOT AVAILABLE" 상태로 표시한다.
+
+Demo 숫자를 실제 데이터인 것처럼 보여주면 안 된다.
+
+3.2. Morning Investment Brief
+
+매일 오전 9시(Asia/Seoul) 기준으로 요약 보고서를 생성하도록 설계한다.
+
+다만 데이터가 해당 시각까지 도착하지 않았다면 마지막 성공 수집 시점을 표시한다.
+
+보고서 내용:
+
+1. 신규 공시된 기관 투자 내역
+2. 신규 편입 종목
+3. 보유수량 확대 종목
+4. 보유수량 축소 종목
+5. 관심종목 주가 변화
+6. 목표 매수가 접근 종목
+7. 미래 산업 전망 변화
+8. 실적 발표와 핵심 재무지표 변화
+9. 투자 가설이 약화된 종목
+10. DY Portfolio 현황
+
+모든 요약에는 원본 데이터의 최신 기준일과 AI 분석 시각을 표시한다.
+
+---
+
+PART 4. Investor Radar
+
+4.1. 추적 투자기관
+
+초기에는 다음 4개 기관을 등록한다.
+
+A. Norway Government Pension Fund Global
+
+운용기관: Norges Bank Investment Management (NBIM)
+
+공식 데이터:
+
+https://www.nbim.no/en/investments
+
+추적 항목:
+
+- 전체 공개 주식 보유 종목
+- 기업별 보유 가치
+- 국가별 투자 비중
+- 산업별 투자 비중
+- 종목별 보유 규모 변화
+- 신규 편입 종목
+- 투자 대상 제외 종목
+- 장기 투자전략
+
+전체 보유 자료는 반기 단위 공개를 기준으로 설계한다.
+
+B. Berkshire Hathaway
+
+공식 자료:
+
+https://www.berkshirehathaway.com
+
+SEC 13F:
+
+https://www.sec.gov/data-research/sec-markets-data/form-13f-data-sets
+
+추적 항목:
+
+- 13F 대상 미국 증권 보유 현황
+- 분기별 보유수량
+- 신규 편입
+- 보유수량 증가·감소
+- 공개 범위 내 포지션 제외
+- 주주서한 및 투자 철학
+- 기업 내재가치 및 자본배분 논리
+
+주의사항:
+
+SEC 13F는 분기 말 기준 보유 내역이며 통상 분기 종료 후 최대 45일 이내 공개된다.
+
+13F가 버크셔의 현금, 비상장 기업, 전체 해외투자, 공매도 및 모든 파생상품을 보여주는 것은 아니다.
+
+따라서 "Berkshire Total Portfolio"라고 잘못 표시하지 않는다.
+
+C. Fundsmith
+
+공식 자료:
+
+https://www.fundsmith.co.uk
+
+추적 항목:
+
+- 정기 공개 보유 종목
+- 월간 Factsheet
+- 정기 보고서
+- Top Holdings
+- 장기 보유 종목
+- 기업의 ROIC
+- FCF 성장
+- 투자철학과 실제 포트폴리오의 일치 여부
+
+Fundsmith가 공개하지 않은 포지션을 임의로 추정 매수한 것으로 표시하지 않는다.
+
+D. Pershing Square Holdings
+
+공식 자료:
+
+https://pershingsquareholdings.com
+
+추적 항목:
+
+- 공개 투자 종목
+- 투자 비중
+- 정기 투자자 발표자료
+- 기업별 투자 논리
+- 신규 투자 및 청산 발표
+- 기업가치 개선 요인
+- 경영진 및 자본배분 관련 관점
+
+월간 자료는 공개 범위가 제한될 수 있으므로 실제 전체 포지션과 공개 포지션을 구별한다.
+
+4.2. 기관별 변화 분류
+
+다음 상태를 사용한다.
+
+- "NEW": 이전 공시에 없고 최신 공시에 등장
+- "ADD": 주식분할 등 기업행위 보정 후 보유수량 증가
+- "TRIM": 기업행위 보정 후 보유수량 감소
+- "EXIT": 이전에는 공시되었으나 최신 공개 범위에서 확인되지 않음
+- "HOLD": 보유수량 변화 없음
+- "UNKNOWN": 공개 범위나 기업행위 때문에 변화를 판단할 수 없음
+
+수량 변화를 다음과 같이 계산한다.
+
+Net Share Change
+= Adjusted Current Shares
+- Adjusted Previous Shares
+
+Share Change %
+= Net Share Change / Adjusted Previous Shares × 100
+
+공시 사이의 순보유 변화만 계산한다.
+
+실제 장중 매수 날짜, 평균 매수가 또는 총 거래 횟수는 공개되지 않았다면 추정 사실로 표시하지 않는다.
+
+평가액 증가와 주식 수 증가를 혼동하지 않는다.
+
+4.3. 화면 예시
+
+기관| 종목| 이전 수량| 현재 수량| 변화
+Berkshire| Company A| 1,000,000| 1,250,000| ADD +25%
+Fundsmith| Company B| 800,000| 880,000| ADD +10%
+NBIM| Company C| 2,000,000| 2,000,000| HOLD
+Pershing| Company D| 400,000| 320,000| TRIM −20%
+
+모두 Demo 값이다.
+
+각 행을 클릭하면 해당 종목의 Stock & ETF 360 화면으로 이동한다.
+
+4.4. 기관 공통 보유 종목 분석
+
+다음 항목도 구현한다.
+
+- 2개 이상 기관이 보유한 기업
+- 3개 이상 기관이 보유한 기업
+- 기관별 보유수량 증가 추이
+- 서로 다른 투자철학에서 동시에 선택한 기업
+- 산업별 기관 투자 집중도
+
+다만 노르웨이의 지수기반 투자는 집중투자 기관보다 낮은 확신 신호로 취급한다.
+
+---
+
+PART 5. Stock & ETF 360
+
+모든 종목의 상세 페이지에 주가 그래프와 기관 변화, 기업 재무정보, 적정가치를 한눈에 보여준다.
+
+5.1. 그래프
+
+지원 기간:
+
+- 1일
+- 1주
+- 1개월
+- 3개월
+- 6개월
+- 1년
+- 3년
+- 5년
+- 전체
+
+차트에 다음 데이터를 선택적으로 겹쳐 표시한다.
+
+1. 주가
+2. 거래량
+3. 이동평균
+4. 벤치마크 ETF
+5. 기관 보유수량 변화
+6. AI 추정 기업가치
+7. 매수 기준가격
+8. 주요 실적 발표 날짜
+9. 배당 및 주식분할 이벤트
+
+가격 데이터는 가능하면 수정주가와 총수익률 기준을 구분한다.
+
+환율을 적용한 KRW 기준 수익률도 제공한다.
+
+5.2. 기업 재무정보
+
+필수 지표:
+
+- Revenue
+- Revenue CAGR
+- Gross Margin
+- Operating Margin
+- EBITDA
+- EPS
+- FCF
+- FCF per Share
+- ROIC
+- ROE
+- Net Debt
+- Net Debt/EBITDA
+- P/E
+- EV/EBITDA
+- P/FCF
+- EV/FCF
+- Market Capitalization
+- Share Count
+- 5-Year Historical Valuation Range
+
+실적 수치는 분기 및 연간으로 확인 가능하도록 한다.
+
+5.3. ETF 상세정보
+
+ETF에는 추가적으로 다음 항목을 표시한다.
+
+- ETF 운용사
+- 기초지수
+- 총보수
+- 순자산(AUM)
+- 상위 10개 구성 종목
+- 산업·국가별 비중
+- ETF 구성 종목 변경
+- 추적오차
+- 환헤지 여부
+- 분배금
+- 기초지수 대비 수익률
+
+ETF 구성 종목의 공개 주기는 각 운용사의 공식 데이터 기준으로 한다.
+
+ETF 가격 변화와 ETF 구성 종목 교체도 구별한다.
+
+---
+
+PART 6. Future Markets
+
+미래 성장 산업을 탐색하는 메뉴를 만든다.
+
+초기 산업 카테고리는 다음 5개다.
+
+1. AI Infrastructure
+2. Robotics & Humanoid
+3. Healthcare & Longevity
+4. Energy & Power Infrastructure
+5. Advanced Materials & Manufacturing
+
+향후 새로운 산업을 자유롭게 추가할 수 있도록 설계한다.
+
+6.1. 산업별 필수 데이터
+
+각 산업에 다음 항목을 저장한다.
+
+- 현재 시장 규모
+- 2030년 예상 시장 규모
+- 2035년 예상 시장 규모
+- 과거 시장 성장률
+- 미래 CAGR
+- 주요 성장 원인
+- 시장 침투율
+- 기술 채택률
+- 제품 또는 서비스 단위원가 변화
+- 산업 전체의 이익 규모
+- 공급 병목
+- 주요 경쟁기업
+- 예상 글로벌 리더
+- 산업 성장 위험
+- 예측 출처와 발표일
+- AI 가정
+- 실제 데이터와 전망치 구분
+
+데이터 출처가 확인되지 않는 숫자는 실측 수치로 표시하지 않는다.
+
+6.2. Market Score
+
+초기 평가 공식을 다음과 같이 구성한다.
+
+Market Score =
+  Demand Growth × 25%
++ Profit Pool Expansion × 20%
++ Adoption Evidence × 20%
++ Supply Bottleneck × 20%
++ Structural Durability × 15%
+
+각 요소는 0~100점으로 평가한다.
+
+점수 기준은 각 산업에서 비교 가능한 정량 지표를 우선 적용한다.
+
+초기 가중치는 관리자 설정에서 변경할 수 있도록 한다.
+
+6.3. 산업별 리더 기업
+
+각 산업 페이지에는 가치사슬을 구성한다.
+
+예시:
+
+HUMANOID ROBOTICS
+├── Complete Robot Manufacturers
+├── AI & Control Software
+├── Semiconductors
+├── Sensors
+├── Actuators
+├── Motors & Reducers
+├── Battery & Power
+└── Manufacturing Equipment
+
+각 영역의 시장 규모, 수익성, 진입장벽, 선도기업을 비교한다.
+
+단순히 시장 규모가 큰 영역이 아니라 실제 이익이 누적되는 공급망을 찾아야 한다.
+
+---
+
+PART 7. Future Leader Score
+
+기업 경쟁력 평가 공식을 만든다.
+
+Leader Score =
+  Market Share Competitiveness × 25%
++ Competitive Moat × 25%
++ Cash Flow Quality × 20%
++ Balance Sheet Strength × 15%
++ Management & Capital Allocation × 15%
+
+각 요소의 판단에 사용된 데이터와 계산식을 저장한다.
+
+예를 들어:
+
+Company A
+Market Share Score: 82
+Moat Score: 88
+Cash Flow Score: 84
+Balance Sheet Score: 79
+Management Score: 81
+
+이를 기반으로 최종 Leader Score를 계산한다.
+
+정성적 정보만 존재하는 경우에는 AI 추정 점수임을 명시한다.
+
+기업의 장기 경쟁력을 평가할 때 다음 요소를 우선적으로 검토한다.
+
+- 방어 가능한 핵심 기술
+- 높은 고객 전환비용
+- 반복적인 매출
+- 산업 내 독점적 또는 과점적 위치
+- 강한 고객관계
+- 높은 ROIC
+- 지속적인 FCF 증가
+- 건전한 재무구조
+
+이는 대양산업의 기존 제조업 경험과도 연결되는 중요한 투자 기준이다.
+
+---
+
+PART 8. AI Investment Engine
+
+8.1. 목적
+
+미래 시장이 성장한다는 이유만으로 투자하지 않는다.
+
+다음 질문에 답해야 한다.
+
+1. 미래 산업이 실제로 성장할 가능성이 높은가?
+2. 해당 기업이 그 성장에서 이익을 가져갈 수 있는가?
+3. 앞으로 주당 FCF가 얼마나 증가할 것인가?
+4. 현재 주가에 얼마나 많은 미래 기대가 반영되어 있는가?
+5. 목표 수익률과 안전마진을 만족하는 매수가격은 얼마인가?
+
+8.2. 기업가치 계산
+
+MVP에는 주당 FCF 성장과 미래 P/FCF를 이용한 5년 가치평가 모델을 구현한다.
+
+Future FCF per Share
+= Current FCF per Share × (1 + FCF CAGR)^5
+
+Future Share Price
+= Future FCF per Share × Exit P/FCF
+
+Present Value
+= Future Share Price / (1 + Required Return)^5
+
+Buy Price
+= Present Value × (1 - Margin of Safety)
+
+향후 정교한 DCF 모델을 추가할 수 있도록 독립된 계산 모듈로 구현한다.
+
+8.3. 계산 예시
+
+다음 데이터를 기본 Demo로 사용한다.
+
+Current Share Price: $100
+Current FCF per Share: $5
+FCF CAGR: 15%
+Exit P/FCF: 20
+Required Return: 12%
+Margin of Safety: 20%
+Investment Horizon: 5 years
+
+예상 결과:
+
+5-Year Future Price: $201.14
+Present Value: $114.13
+Buy Price: $91.30
+Current Price: $100.00
+
+Status: WATCH
+
+이 계산은 배당, 증자·희석, 세금 및 환율 등을 생략한 단순 모델이다.
+
+값이 변하면 결과가 즉시 재계산되어야 한다.
+
+8.4. 사용자 조절 항목
+
+Slider 또는 Input을 제공한다.
+
+- 현재 FCF per Share
+- 예상 성장률
+- 예상 미래 가치배수
+- 투자 기간
+- 요구 수익률
+- 안전마진
+- 현재 주가
+
+입력을 변경하면 미래 주가, 현재 가치, 매수 기준가, 예상 수익률을 실시간 계산한다.
+
+8.5. 3가지 시나리오
+
+모든 기업에 다음 시나리오를 저장한다.
+
+- Bear
+- Base
+- Bull
+
+각 시나리오의 성장률과 가치배수는 개별적으로 설정한다.
+
+결과에는 다음을 표시한다.
+
+- 시나리오별 미래 주가
+- 현재가 대비 예상 수익률
+- 연복리 수익률
+- 주요 전제
+- 전제가 틀릴 경우의 위험
+- 데이터 신뢰도
+
+확률을 사용한다면 반드시 AI 추정 확률이라는 표시를 한다.
+
+---
+
+PART 9. 종합 투자 기회 점수
+
+다음 초기 공식을 구현한다.
+
+Opportunity Score =
+  Market Score × 30%
++ Leader Score × 35%
++ Valuation Score × 30%
++ Institutional Signal × 5%
+
+가중치는 관리자 설정에서 조정할 수 있게 한다.
+
+점수와 별개로 데이터 품질 등급을 표시한다.
+
+예시:
+
+Company A
+
+Market Score:        80
+Leader Score:        85
+Valuation Score:     65
+Institutional Score: 70
+
+Opportunity Score: 76.75
+
+Data Quality: 88/100
+
+중요한 점:
+
+Opportunity Score가 높다고 자동으로 BUY를 부여하지 않는다.
+
+BUY는 별도의 조건을 충족해야 한다.
+
+- 투자 가설의 근거 충분
+- 재무정보의 신뢰도 확보
+- 심각한 재무·유동성 위험 없음
+- 예상 수익률 기준 충족
+- 안전마진 기준 충족
+- 기업 전망을 무너뜨리는 핵심 사건 없음
+
+조건이 부족한 종목은 WATCH 또는 NEED DATA로 분류한다.
+
+---
+
+PART 10. Recommendations
+
+종합 점수와 매수가를 기반으로 종목별 추천 상태를 표시한다.
+
+추천 상태:
+
+- "BUY ZONE"
+- "WATCH"
+- "OVERVALUED"
+- "THESIS BROKEN"
+- "NEED DATA"
+
+추천 목록의 필수 열:
+
+항목
+순위
+기업명
+Ticker
+산업
+Market Score
+Leader Score
+Valuation Score
+Opportunity Score
+현재 주가
+매수 기준가
+기준가 대비 차이
+5년 예상 수익률
+Data Quality
+추천 상태
+최종 분석일
+
+추천에는 반드시 다음 설명이 포함되어야 한다.
+
+WHY THIS COMPANY?
+WHY THIS MARKET?
+WHY NOW?
+WHAT IS THE BUY PRICE?
+WHAT COULD GO WRONG?
+WHAT WOULD INVALIDATE THE THESIS?
+
+추천 시점의 입력 데이터와 결과는 변경 불가능한 이력으로 저장한다.
+
+이후 모델이 변경되어도 과거 추천이 소급 수정되면 안 된다.
+
+---
+
+PART 11. 투자기관의 철학 분석
+
+기관별 공개 투자철학을 데이터베이스에 저장한다.
+
+예시:
+
+NBIM
+
+- 장기 투자
+- 분산투자
+- 자산배분
+- 리스크 관리
+- 투자 대상의 지속가능성
+
+Berkshire Hathaway
+
+- 기업 내재가치
+- 장기 현금창출력
+- 경쟁우위
+- 자본배분
+- 합리적인 매수가
+
+Fundsmith
+
+- 고품질 기업
+- 높은 자본수익률
+- 복제하기 어려운 경쟁력
+- 적정 가격
+- 장기 보유
+
+Pershing Square
+
+- 높은 품질의 기업
+- 예측 가능한 현금흐름
+- 강한 진입장벽
+- 경영 및 사업구조 개선
+- 집중투자
+
+중요한 구현 원칙:
+
+기관이 특정 기업을 매수한 이유를 AI가 임의로 사실처럼 단정하지 않는다.
+
+투자 이유를 다음과 같이 분류한다.
+
+CONFIRMED
+- 공식 주주서한, 발표자료, 인터뷰 등에서 직접 확인
+
+INFERRED
+- 공식 철학과 기업 재무정보를 비교한 AI 추론
+
+HYPOTHESIS
+- 추가 검증이 필요한 가설
+
+UNKNOWN
+- 확인된 투자 이유 없음
+
+각 투자 논리에는 출처 URL과 문서 기준일을 기록한다.
+
+---
+
+PART 12. DY Corporate Portfolio
+
+12.1. 운용 주체
+
+DAE YANG Industry 법인
+
+개인 투자 계좌와 혼합하지 않는다.
+
+12.2. 초기 운용 계획
+
+월 투자 한도: 1,000,000 KRW
+
+초기 자산배분:
+
+Global Equity ETF: 60%
+Investment-Grade Bond ETF: 30%
+Cash / Short-Term Reserve: 10%
+
+월 금액:
+
+Equity ETF: 600,000 KRW
+Bond ETF: 300,000 KRW
+Cash Reserve: 100,000 KRW
+
+이 설정은 초기 계획이며 자동매매 승인으로 간주하지 않는다.
+
+12.3. 실거래와 가상투자 구분
+
+포트폴리오를 두 가지로 분리한다.
+
+Real Portfolio
+
+대양산업 법인 명의 증권계좌의 실제 자산.
+
+Research / Paper Portfolio
+
+AI가 추천한 종목을 실제 돈을 사용하지 않고 검증하는 가상 포트폴리오.
+
+두 포트폴리오의 성과를 혼합하지 않는다.
+
+12.4. 실제 포트폴리오 KPI
+
+- 누적 투자원금
+- 현재 평가금액
+- 실현손익
+- 미실현손익
+- 배당수익
+- 총수익률
+- 연복리 수익률
+- 환차손익
+- 거래비용
+- 세금
+- 자산배분 비중
+- Benchmark 대비 성과
+
+개별 매매에는 승인자와 승인 시각을 기록한다.
+
+AI가 자동으로 실제 매수·매도 주문을 실행하지 않는다.
+
+---
+
+PART 13. Performance & Learning
+
+AI 추천 이후 성과를 자동 평가한다.
+
+평가 기간:
+
+- 1개월
+- 3개월
+- 6개월
+- 12개월
+- 24개월
+- 36개월
+- 60개월
+
+핵심 지표:
+
+Hit Rate
+Excess Return
+Annualized Return
+Maximum Drawdown
+Volatility
+Sharpe Ratio
+Benchmark Relative Return
+Forecast Revenue Error
+Forecast FCF Error
+Valuation Forecast Error
+
+성과 계산에는 배당, 주식분할, 상장폐지, 환율, 거래비용 등을 가능한 범위에서 반영한다.
+
+백테스트에서 과거 공시 자료를 해당 공시가 실제 공개되기 전부터 알고 있었던 것처럼 사용하지 않는다.
+
+추천 신호의 생성 시각과 실제 매매 가능 시각을 구분한다.
+
+생존자 편향을 방지하기 위해 상장폐지 종목도 과거 분석에서 제외하지 않는다.
+
+실패 원인 분석
+
+AI 추천 실패를 다음과 같이 분류한다.
+
+1. 산업 성장 전망 오류
+2. 기업 경쟁력 전망 오류
+3. 실적·현금흐름 전망 오류
+4. 매수가 과대평가
+5. 밸류에이션 배수 축소
+6. 거시경제 변화
+7. 환율 변동
+8. 데이터 오류
+9. 투자 가설 훼손
+
+이는 향후 모델 가중치 조정과 투자 철학 개선에 활용한다.
+
+단, 충분한 데이터 없이 적중률만으로 모델의 우수성을 단정하지 않는다.
+
+---
+
+PART 14. 데이터베이스 구조
+
+기존 DB 구조를 조사한 후 필요한 테이블만 추가한다.
+
+우선 다음 논리적 데이터 모델을 설계한다.
+
+investment_managers
+investment_sources
+investment_disclosures
+investment_positions
+investment_position_changes
+
+securities
+security_prices
+security_corporate_actions
+etf_holdings
+
+company_financials
+company_metrics
+
+future_markets
+market_research_sources
+market_forecasts
+market_value_chains
+
+investment_theses
+investment_thesis_evidence
+investment_scenarios
+investment_valuations
+investment_scores
+investment_recommendations
+
+paper_portfolios
+paper_transactions
+
+corporate_investment_accounts
+corporate_transactions
+corporate_investment_approvals
+
+recommendation_outcomes
+investment_audit_logs
+
+필요하면 기존 테이블과 통합한다.
+
+중복 스키마를 생성하지 않는다.
+
+핵심 테이블에는 다음 속성을 고려한다.
+
+source_url
+source_type
+source_published_at
+data_as_of
+ingested_at
+updated_at
+currency
+data_quality
+is_demo
+calculation_version
+model_version
+
+원본 데이터와 계산 결과, AI 추론 결과를 구분한다.
+
+종목 식별은 단순 기업명만 사용하지 않고 가능한 범위에서 ISIN, CUSIP, FIGI 및 거래소·Ticker를 연결한다.
+
+---
+
+PART 15. 실제 데이터 수집 규칙
+
+15.1. 우선순위
+
+1. 공식 공시
+2. 기관 공식 보고서
+3. 기업 공식 IR 자료
+4. 거래소 데이터
+5. 사용 허가된 금융 데이터 공급사
+6. 검증된 보조 데이터
+
+투자 관련 핵심 수치를 단순 AI 생성값으로 채우지 않는다.
+
+15.2. 데이터 수집 정책
+
+- 공개 데이터 범위를 준수한다.
+- API 이용조건과 데이터 재배포 제한을 확인한다.
+- 동일 공시 중복 수집을 방지한다.
+- 수정공시가 있을 경우 이력 관리한다.
+- 기업명 및 주식분할 문제를 보정한다.
+- 누락 데이터는 누락으로 표시한다.
+- 수집 실패 시 마지막 성공 데이터와 그 시각을 표시한다.
+- 실제 데이터 미연결 상태에서는 Demo 모드와 Live 모드를 명확히 구분한다.
+
+초기에는 불필요하게 고가의 Bloomberg 등 데이터 서비스를 요구하지 않는다.
+
+합법적으로 사용할 수 있는 공식 데이터와 저비용 API를 우선 검토한다.
+
+---
+
+PART 16. 알림 시스템
+
+다음 이벤트에서 알림을 생성한다.
+
+투자기관 알림
+
+- 신규 공시
+- 신규 종목 편입
+- 보유수량 증가
+- 보유수량 감소
+- 공개 범위 내 포지션 제외
+
+기업 알림
+
+- 실적 발표
+- FCF 전망 변경
+- ROIC 급변
+- 부채 증가
+- 경영진 또는 사업구조의 중요한 변경
+
+주가 및 가치평가 알림
+
+- 목표 매수가 접근
+- 목표 매수가 도달
+- 추정 가치 대비 지나친 프리미엄
+- 투자 가설 훼손
+
+포트폴리오 알림
+
+- 월 투자 예산 초과
+- 기업별 투자 한도 초과
+- 산업별 집중도 증가
+- 데이터 갱신 실패
+- 운용 승인 필요
+
+각 알림은 투자 판단 근거와 해당 종목 분석 페이지로 연결한다.
+
+---
+
+PART 17. UI/UX 요구사항
+
+기존 Chairman OS 디자인을 유지한다.
+
+새로운 독립 디자인 시스템을 만들지 않는다.
+
+추가 화면은 기존 Sidebar, Header, Card, Chart, Table 및 Typography 패턴을 사용한다.
+
+필요한 UI 요소:
+
+- KPI Cards
+- 종목 검색
+- 기관별 필터
+- 국가 및 산업 필터
+- 날짜 선택
+- 주가 Line Chart
+- 기관 보유 추이 Chart
+- 미래 산업 성장 Chart
+- 재무 지표 비교
+- 가치평가 계산기
+- 점수 Breakdown
+- 추천 상태 Badge
+- 공시 출처 링크
+- 데이터 최신성 Badge
+- AI 분석 근거
+- 투자 승인 상태
+
+Mobile과 Desktop 모두 대응한다.
+
+숫자는 금액 단위, 통화, 기준일, 백분율 표시를 일관되게 처리한다.
+
+---
+
+PART 18. 구현 순서
+
+다음 순서로 실제 개발한다.
+
+Phase 0 — 코드 점검
+
+- 기존 프로젝트 분석
+- 메뉴 연결 위치 확인
+- 데이터 접근 방법 확인
+- DB migration 계획
+- 기존 컴포넌트 재사용 계획
+
+Phase 1 — Investor Radar
+
+- 4개 투자기관 등록
+- 공식 공시 데이터 구조
+- 보유 종목 비교
+- NEW / ADD / TRIM / EXIT
+- 출처 및 공시일 표시
+- 기관별 포트폴리오 화면
+
+Phase 2 — Stock & ETF 360
+
+- 종목 마스터
+- 과거 가격 데이터
+- 주가 그래프
+- ETF 정보
+- 재무정보
+- 기관 보유 추이
+- Benchmark 비교
+
+Phase 3 — Future Markets
+
+- 산업 데이터베이스
+- 산업 성장 전망
+- Market Score
+- 가치사슬
+- Future Leader Score
+
+Phase 4 — AI Investment Engine
+
+- Valuation Simulator
+- Bear / Base / Bull
+- Buy Price
+- Opportunity Score
+- 투자 논리 및 출처 관리
+
+Phase 5 — Recommendations
+
+- 추천 순위
+- BUY ZONE / WATCH / OVERVALUED 등 상태
+- 알림
+- 투자 가설 기록
+- AI 분석 설명
+
+Phase 6 — DY Portfolio
+
+- 월 100만 원 예산
+- ETF 60/30/10 배분
+- Real / Paper 분리
+- 거래 및 승인 기록
+- 수익률 Dashboard
+
+Phase 7 — Performance & Learning
+
+- 추천별 성과 추적
+- 벤치마크 비교
+- 백테스트
+- 예측 오차 분석
+- 실패 원인 분류
+
+각 Phase의 기능을 구현한 후 검증하고 다음 단계로 진행한다.
+
+단순 UI 목업이 아니라 가능한 범위에서 실제 데이터 연결까지 완료한다.
+
+---
+
+PART 19. 검증 조건
+
+다음 항목이 정상 작동하는지 확인한다.
+
+1. 기존 Chairman OS가 정상 실행된다.
+2. 기존 CAPITAL 기능이 유지된다.
+3. Investment Intelligence 메뉴에 접근할 수 있다.
+4. 기관별 보유 데이터를 저장하고 조회할 수 있다.
+5. 신규·증가·감소·제외 판정이 정확하다.
+6. 주가 상승을 추가 매수로 오인하지 않는다.
+7. 주식분할을 잘못된 매수·매도 신호로 처리하지 않는다.
+8. 공시 기준일과 공개일이 구분된다.
+9. 모든 실제 수치에 출처가 연결된다.
+10. Stock & ETF 그래프가 정상 표시된다.
+11. 가치평가 계산기의 수학적 결과가 정확하다.
+12. Dummy 숫자가 Live 숫자로 표시되지 않는다.
+13. 추천 결과가 모델·근거·기준일과 함께 보존된다.
+14. 실거래와 가상거래가 분리된다.
+15. 권한이 없는 사용자가 투자 기록을 수정할 수 없다.
+16. 자동 실거래가 실행되지 않는다.
+17. 기존 빌드 및 주요 테스트가 통과한다.
+18. 배포 없이 로컬에서 주요 화면을 확인할 수 있다.
+
+---
+
+PART 20. 완료 시 보고 방식
+
+개발 결과를 다음 순서로 보고한다.
+
+1. 실제 구현한 기능
+
+완료된 화면과 핵심 기능을 정리한다.
+
+2. 데이터 연결 상태
+
+기관별로 구분한다.
+
+- LIVE
+- PARTIAL
+- DEMO
+- UNAVAILABLE
+
+실제 데이터가 없는 부분은 명확히 표시한다.
+
+3. 화면별 미리보기
+
+가능하면 각 화면을 실행하고 스크린샷을 제공한다.
+
+4. 검증 결과
+
+- 통과한 테스트
+- 실패한 테스트
+- 미구현 사항
+- 알려진 제한사항
+
+5. 추가 비용 및 설정
+
+- API key 필요 여부
+- 금융 데이터 이용료
+- Supabase 설정
+- Cron 설정
+- 세무·법인 계좌 연결 시 필요한 추가 검토
+
+6. 변경 파일과 DB Migration
+
+추가 또는 변경한 파일, 데이터베이스 변경사항, 실행 방법을 정리한다.
+
+---
+
+FINAL PRINCIPLE
+
+이 프로젝트의 핵심 투자철학은 다음과 같다.
+
+We invest in the future, but pay for the present.
+
+미래 성장에 투자하되, 기업의 가치는 숫자로 검증하고 매수 가격은 합리적인 안전마진을 확보한 수준에서 결정한다.
+
+세계적인 투자기관들의 포트폴리오는 중요한 연구 자료이지만, 맹목적으로 따라 사지 않는다.
+
+시장의 미래를 분석하고, 그 시장에서 이익을 가장 많이 축적할 기업을 찾고, 적정한 가격에 투자하는 자체적인 판단 체계를 만든다.
+
+모든 AI 추천에는 다음을 요구한다.
+
+DATA → LOGIC → ASSUMPTIONS → VALUATION → RECOMMENDATION → VERIFICATION
+
+이 여섯 단계 중 하나라도 근거가 부족하면 확정적 추천을 생성하지 않는다.
+
+최종적으로 Chairman OS는 단순한 투자정보 조회 도구가 아니라, 대양산업이 장기간 축적하고 개선해 나갈 수 있는 독립적인 투자 의사결정 시스템이 되어야 한다.
+
+이제 기존 프로젝트를 점검하고, 위 요구사항을 기존 구조에 맞게 구현하라. 기존 변경사항과 설계를 보존하면서 가능한 단계까지 자율적으로 개발·테스트하되, 데이터 손실 위험, 인증·권한 문제, 외부 서비스 비용 발생, 실거래 및 production 배포는 별도 승인 대상으로 남겨둔다.
