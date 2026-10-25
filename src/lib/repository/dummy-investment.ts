@@ -2,6 +2,12 @@ import { countChanges } from '@/lib/investment/changes'
 import { SEED_MANAGERS, SEED_SETTINGS, SEED_SOURCES } from '@/lib/investment/seed'
 import type { InvestmentMethods } from '@/lib/investment/store'
 import type {
+  InvAccount,
+  InvApproval,
+  InvCorpTx,
+  InvOutcome,
+  InvPaperPortfolio,
+  InvPaperTx,
   InvAlert,
   InvBrief,
   InvEvidence,
@@ -101,6 +107,12 @@ function load() {
     recs: [] as InvRecommendation[],
     alerts: [] as InvAlert[],
     briefs: [] as InvBrief[],
+    accounts: [] as InvAccount[],
+    approvals: [] as InvApproval[],
+    corpTxs: [] as InvCorpTx[],
+    paperPortfolios: [{ portfolio_id: 'paper-1', name: 'AI 추천 검증(Research)', rule: '추천이 처음 WATCH · BUY ZONE이 된 다음 거래일에 종목당 USD 10,000 가상 매수, OVERVALUED · THESIS BROKEN이면 가상 매도.', base_currency: 'USD', notional: 10000, started_at: '2026-10-25' }] as InvPaperPortfolio[],
+    paperTxs: [] as InvPaperTx[],
+    outcomes: [] as InvOutcome[],
   }
 }
 let cached: ReturnType<typeof load> | null = null
@@ -338,5 +350,55 @@ export const dummyInvestmentMethods: InvestmentMethods = {
   },
   async invAddBrief(b) {
     S().briefs.push({ ...b, brief_id: S().briefs.length + 1, created_at: new Date().toISOString() })
+  },
+  // ── 0096 ──
+  async invAccounts() {
+    return S().accounts
+  },
+  async invApprovals() {
+    return S().approvals
+  },
+  async invCorpTxs() {
+    return S().corpTxs
+  },
+  async invPaperPortfolios() {
+    return S().paperPortfolios
+  },
+  async invPaperTxs() {
+    return S().paperTxs
+  },
+  async invOutcomes() {
+    return S().outcomes
+  },
+  async invAddAccount(a) {
+    const id = crypto.randomUUID()
+    S().accounts.push({ ...a, account_id: id, owner_entity: 'DAE YANG Industry' })
+    return id
+  },
+  async invAddApproval(a) {
+    const id = crypto.randomUUID()
+    // dummy: 결재 문서는 바로 «승인»으로 둔다(실제는 전자결재에서 결재자가 승인) — 화면 흐름 확인용
+    S().approvals.unshift({ ...a, approval_id: id, created_at: new Date().toISOString(), status: 'approved', decided_at: new Date().toISOString(), doc_no: null, approver_name: '대표(dummy)' })
+    return id
+  },
+  async invAddCorpTx(t) {
+    let approved_by_name: string | null = null
+    let approved_at: string | null = null
+    if (t.kind === 'buy' || t.kind === 'sell') {
+      const a = S().approvals.find((x) => x.approval_id === t.approval_id)
+      if (!a || a.status !== 'approved') throw new Error('investment_trade_not_approved')
+      approved_by_name = a.approver_name ?? null
+      approved_at = a.decided_at ?? null
+    }
+    S().corpTxs.push({ ...t, tx_id: S().corpTxs.length + 1, approved_by_name, approved_at, entered_at: new Date().toISOString() })
+  },
+  async invAddPaperTx(t) {
+    S().paperTxs.push({ ...t, tx_id: S().paperTxs.length + 1, created_at: new Date().toISOString() })
+  },
+  async invAddOutcome(o) {
+    S().outcomes.push({ ...o, outcome_id: S().outcomes.length + 1, created_at: new Date().toISOString() })
+  },
+  async invSavePlan(equity, bond) {
+    Object.assign(S().settings, { plan_equity_security: equity, plan_bond_security: bond })
   },
 }

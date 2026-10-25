@@ -1,4 +1,5 @@
 import { effectivePeriods } from './changes'
+import { runPaperAndOutcomes } from './learn'
 import { COMPARABLE_QUALITY } from './collect/run'
 import { computeMetrics, latestPrice, sharesOutstanding } from './metrics'
 import { RECOMMEND_VERSION, decide, etfChecks, stockChecks, type Check } from './recommend'
@@ -300,6 +301,13 @@ export async function runAnalysis(repo: InvestmentMethods, opts: AnalyzeOptions)
   }
   out.alerts = alerts.length ? await repo.invAddAlerts(alerts) : 0
 
+  // 3단계 — Paper 가상 매매 · 추천 성과(0096 전 DB면 건너뜀)
+  const learned = await runPaperAndOutcomes(repo, opts.today).catch((e: unknown) => {
+    out.notes.push(`Paper · 성과 실패: ${e instanceof Error ? e.message.slice(0, 80) : '알 수 없음'}`)
+    return null
+  })
+  if (learned) out.notes.push(`Paper 가상 매매 ${learned.paper} · 성과 줄 ${learned.outcomes}`)
+
   // 아침 투자 브리핑(하루 한 번)
   const briefs = await repo.invBriefs(1)
   if (!briefs[0] || briefs[0].brief_date !== opts.today) {
@@ -358,8 +366,18 @@ export async function briefContent(
       '7 미래 산업 전망 변화': markets.map((m) => m.name),
       '8 실적 발표 · 재무 변화': 'SEC XBRL 수집분(종목 화면)',
       '9 투자 가설 약화': broken,
-      '10 DY Portfolio': '3단계(0096)에서 연결',
+      '10 DY Portfolio': await portfolioLine(repo),
     },
     collect_failed: failed,
+  }
+}
+
+async function portfolioLine(repo: InvestmentMethods): Promise<string> {
+  try {
+    const [txs, paper] = await Promise.all([repo.invCorpTxs(), repo.invPaperTxs()])
+    const dep = txs.filter((t) => t.kind === 'deposit').reduce((a, t) => a + t.amount_krw, 0)
+    return `Real 입금 누계 ${Math.round(dep).toLocaleString('ko-KR')}원 · 거래 ${txs.length}줄 · Paper 가상 매매 ${paper.length}줄`
+  } catch {
+    return 'DY Portfolio 표 없음(0096 전)'
   }
 }

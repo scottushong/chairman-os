@@ -62,6 +62,7 @@ export function investmentMethods(sb: SupabaseClient): InvestmentMethods {
               ai_monthly_usd: Number(data.ai_monthly_usd),
             }
           : {}),
+        ...(data.plan_equity_security !== undefined ? { plan_equity_security: data.plan_equity_security, plan_bond_security: data.plan_bond_security } : {}),
       }
     },
     async invRuns(limit) {
@@ -468,6 +469,72 @@ export function investmentMethods(sb: SupabaseClient): InvestmentMethods {
     async invAddBrief(b) {
       const { error } = await sb.from('investment_briefs').insert(b)
       check('investment_briefs insert', error)
+    },
+
+    // ── 0096 ──
+    async invAccounts() {
+      const { data, error } = await sb.from('corporate_investment_accounts').select('account_id, name, broker, account_last4, owner_entity, currency, opened_at, note').order('created_at')
+      check('corporate_investment_accounts', error)
+      return data ?? []
+    },
+    async invApprovals() {
+      const { data, error } = await sb.from('corporate_investment_approvals').select('approval_id, kind, title, amount_krw, security_id, side, ea_doc_id, rec_id, created_at').order('created_at', { ascending: false })
+      check('corporate_investment_approvals', error)
+      const { data: st, error: e2 } = await sb.rpc('investment_approval_states')
+      check('investment_approval_states', e2)
+      const by = new Map(((st ?? []) as { approval_id: string; status: string; decided_at: string | null; doc_no: string | null; approver_name: string | null }[]).map((x) => [x.approval_id, x]))
+      return (data ?? []).map((a) => ({ ...a, amount_krw: Number(a.amount_krw), ...(by.get(a.approval_id) ?? {}) })) as never
+    },
+    async invCorpTxs() {
+      const { data, error } = await sb.from('corporate_transactions').select('*').order('trade_date').order('tx_id')
+      check('corporate_transactions', error)
+      return (data ?? []).map((r) => ({ ...r, shares: num(r.shares), price: num(r.price), fx_rate: num(r.fx_rate), amount: Number(r.amount), amount_krw: Number(r.amount_krw), fees_krw: Number(r.fees_krw), tax_krw: Number(r.tax_krw) }))
+    },
+    async invPaperPortfolios() {
+      const { data, error } = await sb.from('paper_portfolios').select('portfolio_id, name, rule, base_currency, notional, started_at').order('created_at')
+      check('paper_portfolios', error)
+      return (data ?? []).map((r) => ({ ...r, notional: Number(r.notional) }))
+    },
+    async invPaperTxs() {
+      const { data, error } = await sb.from('paper_transactions').select('*').order('trade_date').order('tx_id')
+      check('paper_transactions', error)
+      return (data ?? []).map((r) => ({ ...r, shares: Number(r.shares), price: Number(r.price) }))
+    },
+    async invOutcomes() {
+      const { data, error } = await sb.from('recommendation_outcomes').select('*').order('created_at')
+      check('recommendation_outcomes', error)
+      return (data ?? []).map((r) => ({ ...r, entry_price: num(r.entry_price), exit_price: num(r.exit_price), return_pct: num(r.return_pct), benchmark_return_pct: num(r.benchmark_return_pct), excess_pct: num(r.excess_pct) }))
+    },
+    async invAddAccount(a) {
+      const { data, error } = await sb.from('corporate_investment_accounts').insert(a).select('account_id').single()
+      check('corporate_investment_accounts insert', error)
+      await self.invAudit('portfolio.account', 'corporate_investment_accounts', String(data!.account_id), { name: a.name, broker: a.broker })
+      return String(data!.account_id)
+    },
+    async invAddApproval(a) {
+      const { data, error } = await sb.from('corporate_investment_approvals').insert(a).select('approval_id').single()
+      check('corporate_investment_approvals insert', error)
+      await self.invAudit('portfolio.approval', 'corporate_investment_approvals', String(data!.approval_id), { kind: a.kind, amount_krw: a.amount_krw, ea_doc_id: a.ea_doc_id })
+      return String(data!.approval_id)
+    },
+    async invAddCorpTx(t) {
+      const { error } = await sb.from('corporate_transactions').insert(t)
+      if (error && /investment_trade_not_approved/.test(error.message)) throw new Error('investment_trade_not_approved')
+      check('corporate_transactions insert', error)
+      await self.invAudit('portfolio.tx', 'corporate_transactions', t.account_id, { kind: t.kind, amount_krw: t.amount_krw, approval_id: t.approval_id })
+    },
+    async invAddPaperTx(t) {
+      const { error } = await sb.from('paper_transactions').insert(t)
+      check('paper_transactions insert', error)
+    },
+    async invAddOutcome(o) {
+      const { error } = await sb.from('recommendation_outcomes').insert(o)
+      check('recommendation_outcomes insert', error)
+    },
+    async invSavePlan(equity, bond) {
+      const { error } = await sb.from('investment_settings').update({ plan_equity_security: equity, plan_bond_security: bond, updated_at: new Date().toISOString() }).eq('id', 1)
+      check('investment_settings plan', error)
+      await self.invAudit('settings.plan', 'investment_settings', '1', { equity, bond })
     },
   }
   return self

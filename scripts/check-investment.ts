@@ -21,13 +21,15 @@ import { memorySink } from '../src/lib/investment/collect/sink'
 import { factsFromCompanyFacts } from '../src/lib/investment/collect/xbrl'
 import { estimateUsd, investmentAi } from '../src/lib/investment/ai'
 import { DEMO_KPIS, DEMO_VALUATION } from '../src/lib/investment/demo'
+import { FAILURE_LABEL, backtest, maxDrawdown, metricsFor, outcomesFor, suggestCause } from '../src/lib/investment/performance'
+import { longTermSim, monthlyPlan, paperSummary, realSummary, xirr } from '../src/lib/investment/portfolio'
 import { decide, etfChecks, stockChecks } from '../src/lib/investment/recommend'
 import { demandGrowthScore, institutionalSignal, latestFactors, marketScore, opportunityScore, r2 } from '../src/lib/investment/scores'
 import { round2, valuate, validateInput } from '../src/lib/investment/valuation'
 import { annualRows, computeMetrics, quarterRows } from '../src/lib/investment/metrics'
 import { INVESTMENT_MENU } from '../src/lib/investment/menu'
 import { SEED_MANAGERS, SEED_SETTINGS, SEED_SOURCES } from '../src/lib/investment/seed'
-import type { InvDisclosure, InvFact, InvPosition } from '../src/lib/investment/types'
+import type { InvCorpTx, InvDisclosure, InvFact, InvPosition, InvPrice } from '../src/lib/investment/types'
 
 let passed = 0
 const round6 = (n: number) => Math.round(n * 1e6) / 1e6
@@ -550,6 +552,107 @@ async function main() {
   })
   await ok('예상 비용 = 입력 상한 + 출력 상한 × 단가(sonnet-5 $2/$10)', () => {
     assert.equal(estimateUsd('claude-sonnet-5', 2000, 1000), round6((1300 * 2 + 1000 * 10) / 1e6))
+  })
+
+
+  console.log('3단계 — DY Portfolio · Performance(원문 12 · 13)')
+  await ok('월 100만 원 = 60만 · 30만 · 10만(60/30/10)', () => {
+    assert.deepEqual(monthlyPlan(1_000_000, { equity: 60, bond: 30, cash: 10 }), { equity: 600_000, bond: 300_000, cash: 100_000 })
+  })
+  await ok('장기투자 시뮬레이터 — 시안 2억 · 20년 · 6% = 73.6억 · 원금 40억 · 수익 33.6억', () => {
+    const r = longTermSim(200_000_000, 20, 6)
+    assert.equal(Math.round(r.final / 1e7) / 10, 73.6)
+    assert.equal(r.principal, 4_000_000_000)
+    assert.equal(Math.round(r.gains / 1e7) / 10, 33.6)
+    assert.equal(longTermSim(100, 3, 0).final, 300)
+  })
+  await ok('XIRR — 1년 뒤 10% → 10%', () => {
+    assert.ok(Math.abs(xirr([{ date: '2025-01-01', amount: -100 }, { date: '2026-01-01', amount: 110 }])! - 0.1) < 1e-3)
+    assert.equal(xirr([{ date: '2025-01-01', amount: 100 }]), null)
+  })
+  const tx = (o: Partial<InvCorpTx>): InvCorpTx => ({ account_id: 'a', trade_date: '2026-01-02', kind: 'deposit', security_id: null, shares: null, price: null, currency: 'KRW', fx_rate: 1, amount: 0, amount_krw: 0, fees_krw: 0, tax_krw: 0, approval_id: null, note: null, ...o })
+  await ok('Real 계산 — 입금 · 매수(외화) · 일부 매도 · 배당 · 수수료 · 평가 · 환차', () => {
+    const txs = [
+      tx({ kind: 'deposit', amount: 1_000_000, amount_krw: 1_000_000 }),
+      tx({ kind: 'buy', security_id: 's', shares: 10, price: 50, currency: 'USD', fx_rate: 1300, amount: 500, amount_krw: 650_000, fees_krw: 1000 }),
+      tx({ kind: 'sell', trade_date: '2026-02-01', security_id: 's', shares: 4, price: 60, currency: 'USD', fx_rate: 1300, amount: 240, amount_krw: 312_000 }),
+      tx({ kind: 'dividend', trade_date: '2026-03-01', amount: 5000, amount_krw: 5000 }),
+    ]
+    const r = realSummary(txs, () => ({ price: 70, currency: 'USD', as_of: '2026-10-24' }), 1400, '2026-10-25')
+    assert.equal(r.deposits, 1_000_000)
+    assert.equal(r.holdings[0].shares, 6)
+    assert.ok(Math.abs(r.realized - (312_000 - 651_000 * 0.4)) < 1e-6) // 평균 원가(수수료 포함) 40%
+    assert.equal(r.dividends, 5000)
+    assert.equal(r.fees, 1000)
+    const mv = 6 * 70 * 1400
+    assert.equal(r.marketValue, mv + r.cash)
+    assert.ok(Math.abs(r.fxPnl! - 300 * (1400 - 1300)) < 1e-6) // 남은 원가 USD 300 × 환율 차
+    assert.ok(r.totalReturnPct !== null && r.cagrPct !== null)
+  })
+  await ok('Real · Paper 분리 — Real 계산은 Paper 거래를 받지 않고, Paper는 USD 가상', () => {
+    const p = paperSummary([{ portfolio_id: 'p', security_id: 's', side: 'buy', signal_at: '2026-01-01T00:00:00Z', trade_date: '2026-01-02', shares: 100, price: 100, price_source: 'twelvedata', rec_id: null, note: null, created_kind: 'system' }], () => ({ d: '2026-10-24', close: 110, adj_close: null, volume: null, source: 'twelvedata', source_url: null }))
+    assert.equal(p.invested, 10000)
+    assert.equal(p.returnPct, 10)
+    const src = readFileSync('src/lib/investment/portfolio.ts', 'utf8')
+    assert.ok(!/InvPaperTx/.test(src.slice(src.indexOf('export function realSummary'), src.indexOf('export function monthlyPlan'))))
+  })
+  const P = (d: string, close: number, source: InvPrice['source'] = 'twelvedata'): InvPrice => ({ d, close, adj_close: null, volume: null, source, source_url: null })
+  await ok('성과 — 신호 당일 가격을 쓰지 않음(다음 날 이후 첫 가격) · 기간 미도래는 계산 안 함', () => {
+    const ps = [P('2026-01-01', 100), P('2026-01-02', 101), P('2026-02-02', 110), P('2026-04-02', 120)]
+    const o = outcomesFor('2026-01-01T09:00:00Z', ps, null, '2026-05-01', '2026-04-02')
+    assert.equal(o[0].entry.d, '2026-01-02')
+    assert.deepEqual(o.map((x) => x.horizon), [1, 3])
+    assert.ok(Math.abs(o[0].returnPct - (110 / 101 - 1) * 100) < 1e-9)
+  })
+  await ok('성과 — 가격이 끊긴 종목도 빼지 않고 마지막 가격 · delisted(생존자 편향 방지)', () => {
+    const ps = [P('2026-01-02', 100), P('2026-02-10', 50)]
+    const o = outcomesFor('2026-01-01T00:00:00Z', ps, null, '2026-10-25', '2026-10-24')
+    const m6 = o.find((x) => x.horizon === 6)!
+    assert.equal(m6.delisted, true)
+    assert.equal(m6.returnPct, -50)
+  })
+  await ok('백테스트 — 13F는 «공개일» 뒤 가격으로만(기준일 가격 아님) · 상장폐지 포함', () => {
+    const prices: Record<string, InvPrice[]> = {
+      a: [P('2026-03-31', 100, 'sec13f_implied'), P('2026-06-30', 120, 'sec13f_implied'), P('2026-09-30', 130, 'sec13f_implied')],
+      b: [P('2026-06-30', 50, 'sec13f_implied')],
+      c: [P('2026-03-31', 10, 'sec13f_implied'), P('2026-06-30', 11, 'sec13f_implied'), P('2026-09-30', 12, 'sec13f_implied')],
+    }
+    const r = backtest(
+      [
+        { security_id: 'a', data_as_of: '2026-03-31', published_at: '2026-05-15', kind: 'NEW' },
+        { security_id: 'b', data_as_of: '2026-03-31', published_at: '2026-05-15', kind: 'NEW' },
+      ],
+      (id) => prices[id] ?? [],
+      3,
+      '2026-10-25',
+      ['a', 'b', 'c'],
+    )
+    const a = r.trades.find((t) => t.security_id === 'a')!
+    assert.equal(a.entry, '2026-06-30', '기준일(3/31) 가격이 아니라 공개일(5/15) 뒤 첫 가격')
+    assert.equal(a.returnPct, (130 / 120 - 1) * 100)
+    const b = r.trades.find((t) => t.security_id === 'b')!
+    assert.equal(b.delisted, true, '가격이 끊긴 b도 빼지 않는다(다른 종목은 9/30 가격이 있음) — 마지막 가격으로 청산')
+    assert.equal(b.exit, '2026-06-30')
+  })
+  await ok('지표 — 적중률 · MDD · 표본 30 미만이면 판단 보류', () => {
+    const m = metricsFor([{ return_pct: 10, excess_pct: null, horizon_months: 12 }, { return_pct: -20, excess_pct: null, horizon_months: 12 }, { return_pct: 5, excess_pct: null, horizon_months: 12 }])
+    assert.equal(Math.round(m.hitRate!), 67)
+    assert.equal(m.enoughData, false)
+    assert.ok(Math.abs(maxDrawdown([0.1, -0.2, 0.05])! - -20) < 1e-9)
+  })
+  await ok('실패 원인 9분류 · 규칙 추정', () => {
+    assert.equal(Object.keys(FAILURE_LABEL).length, 9)
+    assert.equal(suggestCause({ returnPct: -5, thesisBroken: true, dataQuality: 90 }), 'thesis_broken')
+    assert.equal(suggestCause({ returnPct: -5, thesisBroken: false, dataQuality: 40 }), 'data_error')
+    assert.equal(suggestCause({ returnPct: 3, krwReturnPct: -2, thesisBroken: false, dataQuality: 90 }), 'fx')
+    assert.equal(suggestCause({ returnPct: -5, thesisBroken: false, dataQuality: 90, fcfForecastErrPct: -20 }), 'earnings_cashflow')
+    assert.equal(suggestCause({ returnPct: -5, thesisBroken: false, dataQuality: 90, multipleChangePct: -30 }), 'multiple_contraction')
+    assert.equal(suggestCause({ returnPct: -5, thesisBroken: false, dataQuality: 90, entryAboveBuy: true }), 'buy_price_overestimated')
+    assert.equal(suggestCause({ returnPct: 5, thesisBroken: false, dataQuality: 90 }), null)
+  })
+  await ok('Paper 확대 금지 문장 · 직원 전자결재에 «투자 승인» 양식 숨김', () => {
+    assert.match(readFileSync('src/app/(dashboard)/investment/portfolio/page.tsx', 'utf8'), /6개월 Paper 성과가 좋아도 개별 종목 투자를 자동으로 확대하지 않는다/)
+    assert.match(readFileSync('src/app/(dashboard)/e-approval/page.tsx', 'utf8'), /f\.form_key !== 'investment' \|\| canSeeInvestment\(user\)/)
   })
 
   console.log(`\nPASS: check:investment ${passed}개`)

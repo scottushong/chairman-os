@@ -74,6 +74,9 @@ export const ROUTES = [
   { key: '30-inv-engine', path: '/investment/engine' },
   { key: '31-inv-engine-sec', path: '@engine-security' },
   { key: '32-inv-recs', path: '/investment/recommendations' },
+  // 0096 — DY Portfolio · Performance & Learning
+  { key: '33-inv-portfolio', path: '/investment/portfolio' },
+  { key: '34-inv-performance', path: '/investment/performance' },
 ] as const
 
 export interface Finding {

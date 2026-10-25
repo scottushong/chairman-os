@@ -1,5 +1,6 @@
 import Link from 'next/link'
 import { redirect } from 'next/navigation'
+import { canSeeInvestment } from '@/lib/investment/screen-rules'
 
 import { EaCompose } from '@/components/e-approval/ea-compose'
 import { EaDetail } from '@/components/e-approval/ea-detail'
@@ -172,7 +173,7 @@ export default async function EApprovalPage(props: PageProps<'/e-approval'>) {
         ) : composing || editForm ? (
           <EaCompose
             form={(editForm ?? composing)!}
-            forms={forms.filter((f) => f.active)}
+            forms={forms.filter((f) => f.active && (f.form_key !== 'investment' || canSeeInvestment(user)))}
             people={await store.people().catch(() => [])}
             businesses={open.map((b) => ({ business_id: b.business_id, name: b.name }))}
             initial={editForm ? editView : null}

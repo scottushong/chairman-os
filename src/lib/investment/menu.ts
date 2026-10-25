@@ -12,7 +12,7 @@ export interface InvestmentMenuItem {
 }
 
 /** 지금 선 단계. 단계를 마칠 때 올린다. */
-export const INVESTMENT_STAGE: 1 | 2 | 3 = 2
+export const INVESTMENT_STAGE: 1 | 2 | 3 = 3
 
 export const INVESTMENT_MENU: readonly InvestmentMenuItem[] = [
   { key: 'dashboard', no: 1, label: 'Dashboard', href: '/investment', stage: 1 },

@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 
+import { eaStore } from '@/lib/approvals/store'
 import { currentUser } from '@/lib/auth/session'
 import { kstToday } from '@/lib/chairman-project'
 import { DATA_MODE } from '@/lib/env'
@@ -366,4 +367,153 @@ export async function investmentAiReasons(securityId: string, managerId: Manager
   }
   revalidatePath(`/investment/securities/${securityId}`)
   return { ok: true, message: `AI 추론 ${Math.min(3, r.json.reasons.length)}개 저장(비용 약 $${r.usd.toFixed(4)})` }
+}
+
+// ── 0096 DY Portfolio · Performance ──
+
+const KIND_LABEL = { monthly_plan: '월 정기 적립', trade: '개별 매수', plan_change: '계획 변경' } as const
+
+/**
+ * 투자 승인 결재 올리기 — 전자결재(0087) 양식 «투자 승인» 하나. 대표는 자기 문서를 결재할 수 없으므로(0087) 대표가 올리면
+ * 승인자를 고르고, 지정자가 올리면 대표 단계로 간다. 문서가 승인되어야 매수 · 매도 거래를 적을 수 있다(DB 트리거).
+ */
+export async function investmentRequestApproval(_: ActionResult | null, f: FormData): Promise<ActionResult> {
+  const user = await currentUser()
+  if (!user || !(user.role === 'Chairman' || user.investment)) return { ok: false, message: '대표 · 지정자만 올립니다.' }
+  if (!(await featureOn(user, 'investment'))) return { ok: false, message: '꺼진 기능입니다.' }
+  const kind = str(f, 'kind') as keyof typeof KIND_LABEL
+  const side = str(f, 'side') as 'buy' | 'sell' | ''
+  const title = str(f, 'title')
+  const amount = numOrNull(str(f, 'amount_krw'))
+  const target = str(f, 'target')
+  const rationale = str(f, 'rationale')
+  const security_id = str(f, 'security_id') || null
+  const rec_id = str(f, 'rec_id') || null
+  const approver = str(f, 'approver')
+  if (!(kind in KIND_LABEL)) return { ok: false, message: '구분을 고릅니다.' }
+  if (kind === 'trade' && (!security_id || !side)) return { ok: false, message: '개별 매매는 종목과 매수/매도를 고릅니다.' }
+  if (title.length < 2 || target.length < 2) return { ok: false, message: '제목 · 대상을 적습니다.' }
+  if (amount === null || Number.isNaN(amount) || amount <= 0 || !Number.isInteger(amount)) return { ok: false, message: '금액(원, 정수)을 적습니다.' }
+  if (rationale.length < 10) return { ok: false, message: '근거(추천 버전 · 매수 기준가 · 출처)를 10자 이상 적습니다.' }
+  if (user.role === 'Chairman' && !/^[0-9a-f-]{36}$/i.test(approver)) return { ok: false, message: '대표가 올릴 때는 승인자를 고릅니다(본인 문서는 본인이 결재할 수 없음).' }
+  const store = await eaStore()
+  let docId: string | null = null
+  try {
+    docId = await store.saveDraft({
+      doc_id: null,
+      business_id: 'biz_dy',
+      form_key: 'investment',
+      title,
+      body: rationale,
+      fields: {
+        kind: kind === 'trade' ? (side === 'sell' ? '개별 매도' : '개별 매수') : KIND_LABEL[kind],
+        target,
+        total: String(amount),
+        rationale,
+        rec_ref: rec_id ? `/investment/recommendations?security=${security_id ?? ''}` : '',
+      },
+      line: user.role === 'Chairman' ? [{ user_id: approver, kind: 'approve' }] : [{ role: 'Chairman', kind: 'approve' }],
+      refs: [],
+      due_date: null,
+      wish_date: null,
+      followup_assignee: null,
+      related: [],
+    })
+    await store.submit(docId, `inv-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`)
+    const repo = await getRepository()
+    await repo.invAddApproval({ kind, title, amount_krw: amount, security_id, side: side || null, ea_doc_id: docId, rec_id })
+    revalidatePath('/investment/portfolio')
+    revalidatePath('/e-approval')
+    return { ok: true, message: '투자 승인 결재를 올렸습니다 — 전자결재에서 승인되면 거래를 적을 수 있습니다.' }
+  } catch (e) {
+    const m = e instanceof Error ? e.message : String(e)
+    return { ok: false, message: `결재를 올리지 못했습니다: ${m.slice(0, 160)}${docId ? '(임시저장 문서가 남았을 수 있음 — 전자결재 › 임시저장)' : ''}` }
+  }
+}
+
+export async function investmentAddAccount(_: ActionResult | null, f: FormData): Promise<ActionResult> {
+  const denied = await admin()
+  if (denied) return denied
+  const name = str(f, 'name')
+  const broker = str(f, 'broker')
+  const last4 = str(f, 'account_last4')
+  const opened = str(f, 'opened_at')
+  if (name.length < 2 || broker.length < 2) return { ok: false, message: '계좌 이름 · 증권사를 적습니다.' }
+  if (last4 && !/^[0-9]{4}$/.test(last4)) return { ok: false, message: '계좌번호는 끝 4자리만(전체 번호는 저장하지 않음).' }
+  if (opened && !DATE_RE.test(opened)) return { ok: false, message: '개설일은 YYYY-MM-DD.' }
+  const repo = await getRepository()
+  await repo.invAddAccount({ name, broker, account_last4: last4 || null, currency: 'KRW', opened_at: opened || null, note: str(f, 'note') || null })
+  revalidatePath('/investment/portfolio')
+  return { ok: true, message: '법인 계좌를 등록했습니다(대양산업 명의 — 개인 계좌와 섞지 않음).' }
+}
+
+const TX_KINDS = ['deposit', 'withdraw', 'buy', 'sell', 'dividend', 'fee', 'tax', 'adjust'] as const
+
+/** 거래 손 입력(대표) — 덧붙이기만. 매수 · 매도는 승인 완료 결재를 고른다(DB가 확인하고 승인자 · 승인 시각을 옮겨 적는다). */
+export async function investmentAddCorpTx(_: ActionResult | null, f: FormData): Promise<ActionResult> {
+  const denied = await admin()
+  if (denied) return denied
+  const kind = str(f, 'kind') as (typeof TX_KINDS)[number]
+  const account_id = str(f, 'account_id')
+  const trade_date = str(f, 'trade_date')
+  const currency = (str(f, 'currency') || 'KRW').toUpperCase()
+  const shares = numOrNull(str(f, 'shares'))
+  const price = numOrNull(str(f, 'price'))
+  const fx = numOrNull(str(f, 'fx_rate'))
+  const amountIn = numOrNull(str(f, 'amount'))
+  const fees = numOrNull(str(f, 'fees_krw')) ?? 0
+  const tax = numOrNull(str(f, 'tax_krw')) ?? 0
+  const security_id = str(f, 'security_id') || null
+  const approval_id = str(f, 'approval_id') || null
+  if (!TX_KINDS.includes(kind)) return { ok: false, message: '종류를 고릅니다.' }
+  if (!account_id) return { ok: false, message: '계좌를 고릅니다(먼저 계좌 등록).' }
+  if (!DATE_RE.test(trade_date)) return { ok: false, message: '거래일은 YYYY-MM-DD.' }
+  if (!/^[A-Z]{3}$/.test(currency)) return { ok: false, message: '통화는 KRW · USD 처럼 세 글자.' }
+  if ([shares, price, fx, amountIn, fees, tax].some((x) => x !== null && Number.isNaN(x))) return { ok: false, message: '숫자를 확인합니다.' }
+  if (kind === 'buy' || kind === 'sell') {
+    if (!security_id || !shares || !price) return { ok: false, message: '매수 · 매도는 종목 · 수량 · 가격이 필요합니다.' }
+    if (!approval_id) return { ok: false, message: '매수 · 매도는 승인된 투자 승인 결재를 고릅니다.' }
+  }
+  if (kind === 'adjust' && str(f, 'note').length < 4) return { ok: false, message: '정정은 사유를 적습니다(원 거래는 고치지 않고 정정 줄을 더함).' }
+  const rate = currency === 'KRW' ? 1 : fx
+  if (rate === null || rate <= 0) return { ok: false, message: '외화 거래는 환율(1단위 = 원)을 적습니다.' }
+  const amount = kind === 'buy' || kind === 'sell' ? shares! * price! : (amountIn ?? NaN)
+  if (!Number.isFinite(amount) || amount < 0) return { ok: false, message: '금액을 적습니다.' }
+  const repo = await getRepository()
+  try {
+    await repo.invAddCorpTx({ account_id, trade_date, kind, security_id, shares, price, currency, fx_rate: rate, amount, amount_krw: Math.round(amount * rate), fees_krw: fees, tax_krw: tax, approval_id, note: str(f, 'note') || null })
+  } catch (e) {
+    if (e instanceof Error && e.message === 'investment_trade_not_approved') return { ok: false, message: '고른 결재가 아직 «승인»이 아닙니다 — 전자결재에서 승인된 뒤 적습니다.' }
+    throw e
+  }
+  revalidatePath('/investment/portfolio')
+  return { ok: true, message: '거래를 적었습니다(고치지 않고 덧붙이기만 — 틀리면 «정정» 줄).' }
+}
+
+export async function investmentSavePlan(_: ActionResult | null, f: FormData): Promise<ActionResult> {
+  const denied = await admin()
+  if (denied) return denied
+  const repo = await getRepository()
+  await repo.invSavePlan(str(f, 'plan_equity_security') || null, str(f, 'plan_bond_security') || null)
+  revalidatePath('/investment/portfolio')
+  return { ok: true, message: '월 적립 ETF를 저장했습니다(자동 주문 아님 — 실행은 승인 결재 뒤 사람이).' }
+}
+
+/** 실패 원인(대표 판단) — 성과 줄을 고치지 않고 같은 추천 · 기간의 새 줄로 원인을 단다. */
+export async function investmentSetFailureCause(_: ActionResult | null, f: FormData): Promise<ActionResult> {
+  const denied = await admin()
+  if (denied) return denied
+  const outcomeId = Number(str(f, 'outcome_id'))
+  const cause = str(f, 'failure_cause')
+  const CAUSES = ['market_forecast', 'competitiveness', 'earnings_cashflow', 'buy_price_overestimated', 'multiple_contraction', 'macro', 'fx', 'data_error', 'thesis_broken']
+  if (!CAUSES.includes(cause)) return { ok: false, message: '원인을 고릅니다(9분류).' }
+  const repo = await getRepository()
+  const o = (await repo.invOutcomes()).find((x) => x.outcome_id === outcomeId)
+  if (!o) return { ok: false, message: '성과 줄을 찾지 못했습니다.' }
+  const { outcome_id: _id, created_at: _at, ...rest } = o
+  void _id
+  void _at
+  await repo.invAddOutcome({ ...rest, failure_cause: cause as never, cause_basis: 'human', note: str(f, 'note') || o.note, created_kind: 'human' })
+  revalidatePath('/investment/performance')
+  return { ok: true, message: '원인을 기록했습니다(새 줄 — 앞 줄은 그대로).' }
 }
