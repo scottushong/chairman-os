@@ -64,6 +64,14 @@
 - 함수: corporate_transaction_guard(트리거) · investment_approval_states
 - 줄: ea_forms ('investment', '투자 승인')
 
+- **2026-10-25 16:40 KST — 3단계 배포 완료(0096 · `9b0c6b3`).**
+  - master 검사: typecheck · eslint · build · check:* 전부 · check:migrations 91개 · check:mobile 204/204(34화면 × 6기기).
+  - staging 0096 push · 호환: 직전 운영 SHA `0b70ab4`를 staging(0096) 위에서 빌드 · 기동 — health ok · rls_closed · 오류 0.
+  - 리허설 기대 = 대기(0096) → 릴리스 → 배포 success · health ok:true · anon 0 · rls_closed true.
+  - 배포 뒤 검증: 운영 cron 1회(수집 → 분석 → Paper · 성과 단계 동작) · anon 14표 0 · 수집 계정 Real · 승인 · Paper 0행 · AI 계정 Real 0행 · 추천 UPDATE/DELETE 42501.
+
+**블록 끝(0094~0096 배포 3건 완료).** 남은 것은 회장 몫(SEC_USER_AGENT · TWELVEDATA_API_KEY · 지정자 · 계좌 · 첫 결재 · 첫 입금).
+
 ## 다음 할 일
 
-3단계 배포(merge → master 검사 → staging push → 직전 코드 호환 → 릴리스 → health → 배포 뒤 검증) → 최종 보고.
+없음 — 최종 보고 완료. 회장이 할 일 표는 보고에.
