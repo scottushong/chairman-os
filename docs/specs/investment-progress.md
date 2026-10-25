@@ -34,6 +34,19 @@
     `SEC_USER_AGENT`(회사명 + 연락 이메일)가 필요 — 회장 몫. 권한: anon 0행 · 수집 계정 설정/기관 고치기 0줄 · 지우기 42501 · AI 계정 원천 고치기 0줄.
   - 대표 · 직원 계정 로그인 검증은 자격증명이 없어 못 함(직원 0행 · 403은 PGlite + staging SQL 시험으로).
 
+- 2026-10-25 16:00 KST — 2단계 구현 · 검사 끝(브랜치 feat/investment-0094).
+  - check:investment 42 · check:investment-ai-cap · check-investment-db 0095(PGlite) · check:ai-schemas 13 · check:mobile 새 화면.
+  - staging 시험 `0095-0095 DRYRUN PASS (1 files · tests 1/1 · 0095)`(되돌림).
+  - 8.3 예시 $201.14 · $114.13 · $91.30 · WATCH · 원문 9 예시 76.75 — 검사로 고정.
+
+### 2단계 DB 변경 목록(0095_investment_engine) — 새 것만
+- 새 칸: investment_settings(w_market_* 5 · w_leader_* 5 · w_opp_* 4 · ai_daily_calls · ai_monthly_usd — 기본값 · 합 100 제약) · securities.market_id
+- 표: future_markets(시드 5) · market_research_sources(16) · market_forecasts(24) · market_value_chains(24) · investment_scores(시드 25) ·
+  investment_manager_philosophy(20) · investment_theses · investment_thesis_evidence · investment_scenarios · investment_valuations ·
+  investment_recommendations · investment_alerts · investment_briefs · investment_ai_reservations
+- 함수: inv_analysis_reader · investment_recommendation_guard(트리거) · investment_append_only(트리거) · investment_ai_reserve · investment_ai_finish
+- 줄: feature_switches (null, 'investment_ai', true, 'chairman')
+
 ## 다음 할 일
 
-2단계(Phase 3·4·5 → 0095) — worktree에서 진행 중. 고칠 것: SEC_USER_AGENT 없으면 13F · XBRL 단계를 부르지 않고 «필요» 표시 · 한 일 없는 단계를 LIVE로 찍지 않기.
+2단계 배포(merge → master 검사 → staging push → 직전 코드 호환 → 릴리스 → health → 배포 뒤 검증 — 운영 cron 1회로 수집 + AI 분석).

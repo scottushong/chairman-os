@@ -44,6 +44,10 @@ export interface InvSource {
 }
 
 export interface InvSettings {
+  /** 0095 가중치 · AI 한도(0094 DB면 없음 — 기본값을 쓴다) */
+  weights?: import('./scores').Weights
+  ai_daily_calls?: number
+  ai_monthly_usd?: number
   collect_daily_limit: number
   data_quality_min: number
   monthly_budget_krw: number
@@ -152,6 +156,8 @@ export interface InvSecurity {
   benchmark_ticker: string | null
   watch: boolean
   watch_reason: string | null
+  /** 0095 — 속한 산업(Market Score 출처). 0094 DB면 없음. */
+  market_id?: string | null
   facts_checked_at: string | null
   prices_checked_at: string | null
   source: string
@@ -244,4 +250,222 @@ export interface InstitutionalRow {
   manager_id: ManagerId
   points: { as_of: string; shares: number | null; value: number | null; disclosure_id: string }[]
   latest: InvChange | null
+}
+
+// ── 0095 Future Markets · AI Investment Engine · Recommendations ──
+
+export type MarketId = string
+export type Classification = 'CONFIRMED' | 'INFERRED' | 'HYPOTHESIS' | 'UNKNOWN'
+export type CreatedKind = 'human' | 'ai' | 'system'
+
+export interface InvMarket {
+  market_id: MarketId
+  name: string
+  name_ko: string | null
+  description: string | null
+  sort_order: number
+}
+
+export interface InvMarketSource {
+  source_id: string
+  market_id: MarketId
+  publisher: string
+  title: string
+  url: string
+  published_date: string | null
+  verified: 'page' | 'snippet' | 'manual'
+  note: string | null
+}
+
+export interface InvForecast {
+  forecast_id?: number
+  market_id: MarketId
+  metric: 'market_size' | 'cagr' | 'historical_growth' | 'adoption' | 'penetration' | 'unit_cost' | 'profit_pool' | 'other'
+  label: string
+  year: number | null
+  value: number | null
+  unit: string | null
+  text_value: string | null
+  kind: 'actual' | 'forecast' | 'ai_assumption'
+  source_id: string | null
+  note: string | null
+}
+
+export interface InvValueChain {
+  chain_id?: number
+  market_id: MarketId
+  segment: string
+  size_value: number | null
+  size_unit: string | null
+  profitability: string | null
+  barrier: string | null
+  leaders: string[]
+  source_id: string | null
+  sort_order: number
+}
+
+export interface InvScoreRow {
+  score_id?: number
+  subject_type: 'market' | 'company'
+  subject_id: string
+  factor: string
+  score: number
+  method: 'formula' | 'judgment' | 'ai_estimate'
+  raw_value: number | null
+  raw_unit: string | null
+  evidence: string
+  source_url: string | null
+  as_of: string | null
+  data_quality: number | null
+  model_version: string | null
+  created_kind: CreatedKind
+  created_at?: string
+}
+
+export interface InvPhilosophy {
+  manager_id: ManagerId
+  principle: string
+  source_url: string
+  document_date: string | null
+  verified: boolean
+  sort_order: number
+}
+
+export interface InvThesis {
+  thesis_id?: string
+  security_id: string | null
+  manager_id: ManagerId | null
+  kind: 'company' | 'manager_reason' | 'invalidation'
+  statement: string
+  classification: Classification
+  state: 'active' | 'broken'
+  source_url: string | null
+  document_date: string | null
+  model_version: string | null
+  created_kind: CreatedKind
+  created_at?: string
+}
+
+export interface InvEvidence {
+  evidence_id?: number
+  thesis_id: string
+  label: string
+  value_text: string
+  source_url: string | null
+  as_of: string | null
+  created_kind: CreatedKind
+}
+
+export interface AssumptionValue {
+  value: number | null
+  source_url: string | null
+  as_of: string | null
+  quality: number | null
+}
+
+export type ScenarioInputs = Record<'fcf_per_share' | 'fcf_cagr' | 'exit_multiple' | 'required_return' | 'margin_of_safety', AssumptionValue>
+
+export interface InvScenario {
+  scenario_row_id?: number
+  security_id: string
+  scenario: 'bear' | 'base' | 'bull'
+  inputs: ScenarioInputs
+  years: number
+  probability: number | null
+  probability_is_ai: boolean
+  premise: string | null
+  risk: string | null
+  created_kind: CreatedKind
+  created_at?: string
+}
+
+export interface InvValuationRow {
+  valuation_id?: number
+  security_id: string
+  scenario: 'bear' | 'base' | 'bull'
+  scenario_row_id: number | null
+  calculation_version: string
+  inputs: Record<string, unknown>
+  future_fcf_ps: number
+  future_price: number
+  present_value: number
+  buy_price: number
+  current_price: number | null
+  price_as_of: string | null
+  price_source: string | null
+  upside_pct: number | null
+  expected_cagr_pct: number | null
+  created_kind: CreatedKind
+  created_at?: string
+}
+
+export type RecStatusT = 'BUY ZONE' | 'WATCH' | 'OVERVALUED' | 'THESIS BROKEN' | 'NEED DATA'
+
+export interface RecExplanation {
+  why_company?: string
+  why_market?: string
+  why_now?: string
+  buy_price?: string
+  what_could_go_wrong?: string
+  invalidation?: string
+  source?: 'ai' | 'template'
+}
+
+export interface InvRecommendation {
+  rec_id?: string
+  security_id: string
+  version: number
+  status: RecStatusT
+  market_id: MarketId | null
+  market_score: number | null
+  leader_score: number | null
+  valuation_score: number | null
+  institutional_signal: number | null
+  opportunity_score: number | null
+  data_quality: number | null
+  current_price: number | null
+  price_as_of: string | null
+  buy_price: number | null
+  gap_pct: number | null
+  expected_return_5y: number | null
+  checks: { key: string; label: string; pass: boolean; detail: string; required: boolean }[]
+  inputs: Record<string, unknown>
+  explanation: RecExplanation
+  calculation_version: string
+  model_version: string | null
+  data_as_of: string | null
+  created_kind: CreatedKind
+  created_at?: string
+}
+
+export interface InvAlert {
+  alert_id?: number
+  kind: string
+  severity: 'info' | 'warn' | 'critical'
+  title: string
+  body: string | null
+  security_id: string | null
+  manager_id: ManagerId | null
+  link: string | null
+  dedupe_key: string | null
+  created_at?: string
+  read_at?: string | null
+}
+
+export interface InvBrief {
+  brief_id?: number
+  brief_date: string
+  content: Record<string, unknown>
+  ai_summary: string | null
+  data_as_of: string | null
+  model_version: string | null
+  created_kind: CreatedKind
+  created_at?: string
+}
+
+export interface InvAiUsage {
+  today_calls: number
+  month_usd: number
+  daily_limit: number
+  monthly_limit: number
 }

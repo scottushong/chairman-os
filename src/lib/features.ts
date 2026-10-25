@@ -207,6 +207,13 @@ export const FEATURES = [
     from: 'feat/investment-0094 · 0094',
   },
   {
+    key: 'investment_ai',
+    label: 'Investment Intelligence — AI 설명',
+    description: '투자 추천의 설명 글 · 아침 투자 브리핑 요약 · 기관 보유 이유 추론(INFERRED · HYPOTHESIS)을 AI가 쓴다. 하루 20회 · 월 $30 한도를 서버가 예약으로 막는다. 끄거나 한도에 닿으면 AI만 멈추고 계산기 · 공시 · 주가 · 점수 · 추천 판정은 그대로다. AI는 BUY를 붙이지 못한다.',
+    defaultAudience: 'chairman',
+    from: 'feat/investment-0094 · 0095',
+  },
+  {
     key: 'owner_inputs',
     label: '받을 것',
     description: '설정(/settings)의 «받을 것» 카드 넷 — 진짜 BOM(R2 엑셀 · 기존 BOM 넣기 화면으로) · 세무사 재고평가방법(총평균 · 이동평균 · 선입선출 + 메모 — 월별 손익 설정과 다르면 경고) · 구글 서비스 계정(JSON → Vault, 화면에는 이메일 · 프로젝트만) · 원가 관리 권한자(원가 권한을 준다). 범위와 관계없이 대표만(서버 · DB가 대표만 받는다). 꺼지면 카드가 사라지고 RPC(owner_input_*)도 거부.',

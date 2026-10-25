@@ -68,6 +68,12 @@ export const ROUTES = [
   { key: '25-inv-securities', path: '/investment/securities' },
   { key: '26-inv-security', path: '@security' },
   { key: '27-inv-sources', path: '/investment/sources' },
+  // 0095 — Future Markets · AI Investment Engine(종목 열기) · Recommendations
+  { key: '28-inv-markets', path: '/investment/markets' },
+  { key: '29-inv-market', path: '/investment/markets/ai_infra' },
+  { key: '30-inv-engine', path: '/investment/engine' },
+  { key: '31-inv-engine-sec', path: '@engine-security' },
+  { key: '32-inv-recs', path: '/investment/recommendations' },
 ] as const
 
 export interface Finding {
@@ -80,6 +86,10 @@ export interface Finding {
 }
 
 async function resolvePath(page: Page, path: string): Promise<string> {
+  if (path === '@engine-security') {
+    const sec = await resolvePath(page, '@security')
+    return sec.startsWith('/investment/securities/') ? `/investment/engine?security=${sec.split('/').pop()}` : '/investment/engine'
+  }
   if (path === '@security') {
     await page.goto(`${BASE}/investment/securities?q=AAPL`, { waitUntil: 'networkidle' })
     const href = await page.$$eval('a[href^="/investment/securities/"]', (as) => as.map((a) => a.getAttribute('href') ?? '')[0])

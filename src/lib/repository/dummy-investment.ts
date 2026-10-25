@@ -2,6 +2,19 @@ import { countChanges } from '@/lib/investment/changes'
 import { SEED_MANAGERS, SEED_SETTINGS, SEED_SOURCES } from '@/lib/investment/seed'
 import type { InvestmentMethods } from '@/lib/investment/store'
 import type {
+  InvAlert,
+  InvBrief,
+  InvEvidence,
+  InvForecast,
+  InvMarket,
+  InvMarketSource,
+  InvPhilosophy,
+  InvRecommendation,
+  InvScenario,
+  InvScoreRow,
+  InvThesis,
+  InvValuationRow,
+  InvValueChain,
   InvChange,
   InvCorporateAction,
   InvDisclosure,
@@ -36,6 +49,23 @@ interface Snapshot {
   prices: [string, InvPrice[]][]
   actions: InvCorporateAction[]
   facts: InvFact[]
+  seed95?: Record<string, Record<string, unknown>[]>
+}
+
+const DATE_KEYS = new Set(['published_date', 'as_of', 'document_date', 'created_at'])
+const NUM_KEYS = new Set(['value', 'size_value', 'score', 'raw_value', 'data_quality', 'sort_order', 'year', 'forecast_id', 'chain_id', 'score_id'])
+/** PGlite가 떠 준 줄 — 날짜는 YYYY-MM-DD(created_at은 ISO), 숫자는 number로 */
+function norm<T>(rows: Record<string, unknown>[] | undefined): T[] {
+  return (rows ?? []).map((r) => {
+    const o: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(r)) {
+      if (v === null || v === undefined) o[k] = null
+      else if (DATE_KEYS.has(k)) o[k] = k === 'created_at' ? new Date(String(v)).toISOString() : String(v).slice(0, 10)
+      else if (NUM_KEYS.has(k)) o[k] = Number(v)
+      else o[k] = v
+    }
+    return o as T
+  })
 }
 
 /** 스냅숏은 처음 부를 때 한 번 읽는다(import하면 2MB JSON을 타입 검사가 끌어안는다). 없으면 시드만. */
@@ -56,6 +86,21 @@ function load() {
     metrics: [] as InvMetric[],
     etf: [] as InvEtfHolding[],
     audit: [] as { action: string; entity: string; entity_id: string | null; detail: Record<string, unknown>; at: string }[],
+    s95: {
+      markets: norm<InvMarket>(snap.seed95?.markets),
+      market_sources: norm<InvMarketSource>(snap.seed95?.market_sources),
+      forecasts: norm<InvForecast>(snap.seed95?.forecasts),
+      value_chains: norm<InvValueChain>(snap.seed95?.value_chains),
+      scores: norm<InvScoreRow>(snap.seed95?.scores),
+      philosophy: norm<InvPhilosophy>(snap.seed95?.philosophy),
+    },
+    theses: [] as InvThesis[],
+    evidence: [] as InvEvidence[],
+    scenarios: [] as InvScenario[],
+    valuations: [] as InvValuationRow[],
+    recs: [] as InvRecommendation[],
+    alerts: [] as InvAlert[],
+    briefs: [] as InvBrief[],
   }
 }
 let cached: ReturnType<typeof load> | null = null
@@ -186,5 +231,112 @@ export const dummyInvestmentMethods: InvestmentMethods = {
   },
   async invAudit(action, entity, entityId, detail) {
     S().audit.push({ action, entity, entity_id: entityId, detail, at: new Date().toISOString() })
+  },
+  // ── 0095 ──
+  async invMarkets() {
+    return S().s95.markets
+  },
+  async invMarketSources() {
+    return S().s95.market_sources
+  },
+  async invForecasts() {
+    return S().s95.forecasts
+  },
+  async invValueChains() {
+    return S().s95.value_chains
+  },
+  async invScores(subjectType, subjectId) {
+    return S().s95.scores.filter((r) => (!subjectType || r.subject_type === subjectType) && (!subjectId || r.subject_id === subjectId))
+  },
+  async invPhilosophy() {
+    return S().s95.philosophy
+  },
+  async invTheses(securityId) {
+    return S().theses.filter((t) => !securityId || t.security_id === securityId)
+  },
+  async invEvidence(ids) {
+    return S().evidence.filter((e) => ids.includes(e.thesis_id))
+  },
+  async invScenarios(securityId) {
+    return S().scenarios.filter((x) => !securityId || x.security_id === securityId)
+  },
+  async invValuations(securityId) {
+    return S().valuations.filter((v) => v.security_id === securityId).reverse()
+  },
+  async invRecommendations(opts = {}) {
+    const xs = S().recs.filter((r) => !opts.securityId || r.security_id === opts.securityId).sort((a, b) => a.security_id.localeCompare(b.security_id) || b.version - a.version)
+    if (!opts.latestOnly) return xs
+    const seen = new Set<string>()
+    return xs.filter((r) => {
+      if (seen.has(r.security_id)) return false
+      seen.add(r.security_id)
+      return true
+    })
+  },
+  async invAlerts(limit) {
+    return [...S().alerts].reverse().slice(0, limit)
+  },
+  async invBriefs(limit) {
+    return [...S().briefs].reverse().slice(0, limit)
+  },
+  async invAiUsage() {
+    return { today_calls: 0, month_usd: 0, daily_limit: S().settings.ai_daily_calls ?? 20, monthly_limit: S().settings.ai_monthly_usd ?? 30 }
+  },
+  async invAddMarketSource(src) {
+    const id = crypto.randomUUID()
+    S().s95.market_sources.push({ ...src, source_id: id })
+    return id
+  },
+  async invAddForecast(f) {
+    S().s95.forecasts.push({ ...f, forecast_id: S().s95.forecasts.length + 1 })
+  },
+  async invAddValueChain(c) {
+    S().s95.value_chains.push({ ...c, chain_id: S().s95.value_chains.length + 1 })
+  },
+  async invSetSecurityMarket(securityId, marketId) {
+    const s = S().securities.find((x) => x.security_id === securityId)
+    if (s) s.market_id = marketId
+  },
+  async invMarkAlertRead(alertId) {
+    const a = S().alerts.find((x) => x.alert_id === alertId)
+    if (a) a.read_at = new Date().toISOString()
+  },
+  async invSaveWeights(w) {
+    S().settings.weights = { ...w }
+  },
+  async invAddScore(r) {
+    S().s95.scores.push({ ...r, score_id: S().s95.scores.length + 1, created_at: new Date().toISOString() })
+  },
+  async invAddThesis(t, evidence) {
+    const id = crypto.randomUUID()
+    S().theses.push({ ...t, thesis_id: id, created_at: new Date().toISOString() })
+    for (const e of evidence) S().evidence.push({ ...e, thesis_id: id, evidence_id: S().evidence.length + 1 })
+    return id
+  },
+  async invAddScenario(x) {
+    const id = S().scenarios.length + 1
+    S().scenarios.push({ ...x, scenario_row_id: id, created_at: new Date().toISOString() })
+    return id
+  },
+  async invAddValuation(v) {
+    S().valuations.push({ ...v, valuation_id: S().valuations.length + 1, created_at: new Date().toISOString() })
+  },
+  async invAddRecommendation(r) {
+    if (r.status === 'BUY ZONE' && (r.created_kind !== 'system' || r.checks.some((c) => !c.pass))) throw new Error('investment_buy_only_system')
+    const id = crypto.randomUUID()
+    S().recs.push({ ...r, rec_id: id, created_at: new Date().toISOString() })
+    return id
+  },
+  async invAddAlerts(rows) {
+    let n = 0
+    for (const a of rows) {
+      if (a.dedupe_key && S().alerts.some((x) => x.dedupe_key === a.dedupe_key)) continue
+      S().alerts.push({ ...a, alert_id: S().alerts.length + 1, created_at: new Date().toISOString(), read_at: null })
+      n += 1
+    }
+    return n
+  },
+  async invAddBrief(b) {
+    S().briefs.push({ ...b, brief_id: S().briefs.length + 1, created_at: new Date().toISOString() })
   },
 }

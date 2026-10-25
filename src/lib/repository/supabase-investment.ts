@@ -11,7 +11,8 @@ import {
   toPosition,
 } from '@/lib/investment/collect/sink-supabase'
 import type { InvestmentMethods } from '@/lib/investment/store'
-import type { ChangeStatus, InvRun, InvSecurity, InvSettings } from '@/lib/investment/types'
+import { DEFAULT_WEIGHTS, type Weights } from '@/lib/investment/scores'
+import type { ChangeStatus, InvRecommendation, InvRun, InvScenario, InvSecurity, InvSettings } from '@/lib/investment/types'
 
 /**
  * 0094 Investment Intelligence의 live 어댑터 조각. supabase.ts가 펼쳐 넣는다. 사람 세션(쿠키) 그대로 — service_role 없음.
@@ -54,6 +55,13 @@ export function investmentMethods(sb: SupabaseClient): InvestmentMethods {
         alloc_bond_pct: Number(data.alloc_bond_pct),
         alloc_cash_pct: Number(data.alloc_cash_pct),
         updated_at: String(data.updated_at),
+        ...(data.w_market_demand !== undefined
+          ? {
+              weights: Object.fromEntries(Object.keys(DEFAULT_WEIGHTS).map((k) => [k, Number((data as Record<string, unknown>)[k])])) as unknown as Weights,
+              ai_daily_calls: Number(data.ai_daily_calls),
+              ai_monthly_usd: Number(data.ai_monthly_usd),
+            }
+          : {}),
       }
     },
     async invRuns(limit) {
@@ -243,6 +251,223 @@ export function investmentMethods(sb: SupabaseClient): InvestmentMethods {
     async invAudit(action, entity, entityId, detail) {
       const { error } = await sb.from('investment_audit_logs').insert({ action, entity, entity_id: entityId, detail })
       check('investment_audit_logs insert', error)
+    },
+
+    // ── 0095 ──
+    async invMarkets() {
+      const { data, error } = await sb.from('future_markets').select('market_id, name, name_ko, description, sort_order').order('sort_order')
+      check('future_markets', error)
+      return data ?? []
+    },
+    async invMarketSources() {
+      const { data, error } = await sb
+        .from('market_research_sources')
+        .select('source_id, market_id, publisher, title, url, published_date, verified, note')
+        .order('published_date', { ascending: false, nullsFirst: false })
+      check('market_research_sources', error)
+      return data ?? []
+    },
+    async invForecasts() {
+      const { data, error } = await sb.from('market_forecasts').select('forecast_id, market_id, metric, label, year, value, unit, text_value, kind, source_id, note').order('forecast_id')
+      check('market_forecasts', error)
+      return (data ?? []).map((r) => ({ ...r, value: num(r.value) }))
+    },
+    async invValueChains() {
+      const { data, error } = await sb.from('market_value_chains').select('chain_id, market_id, segment, size_value, size_unit, profitability, barrier, leaders, source_id, sort_order').order('sort_order')
+      check('market_value_chains', error)
+      return (data ?? []).map((r) => ({ ...r, size_value: num(r.size_value) }))
+    },
+    async invScores(subjectType, subjectId) {
+      let q = sb
+        .from('investment_scores')
+        .select('score_id, subject_type, subject_id, factor, score, method, raw_value, raw_unit, evidence, source_url, as_of, data_quality, model_version, created_kind, created_at')
+        .order('created_at')
+      if (subjectType) q = q.eq('subject_type', subjectType)
+      if (subjectId) q = q.eq('subject_id', subjectId)
+      const { data, error } = await q
+      check('investment_scores', error)
+      return (data ?? []).map((r) => ({ ...r, score: Number(r.score), raw_value: num(r.raw_value) }))
+    },
+    async invPhilosophy() {
+      const { data, error } = await sb.from('investment_manager_philosophy').select('manager_id, principle, source_url, document_date, verified, sort_order').order('manager_id').order('sort_order')
+      check('investment_manager_philosophy', error)
+      return data ?? []
+    },
+    async invTheses(securityId) {
+      let q = sb
+        .from('investment_theses')
+        .select('thesis_id, security_id, manager_id, kind, statement, classification, state, source_url, document_date, model_version, created_kind, created_at')
+        .order('created_at')
+      if (securityId) q = q.eq('security_id', securityId)
+      const { data, error } = await q
+      check('investment_theses', error)
+      return data ?? []
+    },
+    async invEvidence(ids) {
+      if (ids.length === 0) return []
+      const { data, error } = await sb
+        .from('investment_thesis_evidence')
+        .select('evidence_id, thesis_id, label, value_text, source_url, as_of, created_kind')
+        .in('thesis_id', [...ids])
+        .order('evidence_id')
+      check('investment_thesis_evidence', error)
+      return data ?? []
+    },
+    async invScenarios(securityId) {
+      let q = sb
+        .from('investment_scenarios')
+        .select('scenario_row_id, security_id, scenario, inputs, years, probability, probability_is_ai, premise, risk, created_kind, created_at')
+        .order('created_at')
+      if (securityId) q = q.eq('security_id', securityId)
+      const { data, error } = await q
+      check('investment_scenarios', error)
+      return (data ?? []).map((r) => ({ ...r, probability: num(r.probability) })) as InvScenario[]
+    },
+    async invValuations(securityId) {
+      const { data, error } = await sb.from('investment_valuations').select('*').eq('security_id', securityId).order('created_at', { ascending: false }).limit(60)
+      check('investment_valuations', error)
+      return (data ?? []).map((r) => ({
+        ...r,
+        future_fcf_ps: Number(r.future_fcf_ps),
+        future_price: Number(r.future_price),
+        present_value: Number(r.present_value),
+        buy_price: Number(r.buy_price),
+        current_price: num(r.current_price),
+        upside_pct: num(r.upside_pct),
+        expected_cagr_pct: num(r.expected_cagr_pct),
+      }))
+    },
+    async invRecommendations(opts = {}) {
+      const rows = await pageAll<Record<string, unknown>>((a, b) => {
+        let q = sb.from('investment_recommendations').select('*').order('security_id').order('version', { ascending: false })
+        if (opts.securityId) q = q.eq('security_id', opts.securityId)
+        return q.range(a, b)
+      }, 'investment_recommendations')
+      const out = rows.map(
+        (r) =>
+          ({
+            ...r,
+            market_score: num(r.market_score),
+            leader_score: num(r.leader_score),
+            valuation_score: num(r.valuation_score),
+            institutional_signal: num(r.institutional_signal),
+            opportunity_score: num(r.opportunity_score),
+            current_price: num(r.current_price),
+            buy_price: num(r.buy_price),
+            gap_pct: num(r.gap_pct),
+            expected_return_5y: num(r.expected_return_5y),
+          }) as InvRecommendation,
+      )
+      if (!opts.latestOnly) return out
+      const seen = new Set<string>()
+      return out.filter((r) => {
+        if (seen.has(r.security_id)) return false
+        seen.add(r.security_id)
+        return true
+      })
+    },
+    async invAlerts(limit) {
+      const { data, error } = await sb
+        .from('investment_alerts')
+        .select('alert_id, kind, severity, title, body, security_id, manager_id, link, dedupe_key, created_at, read_at')
+        .order('created_at', { ascending: false })
+        .limit(limit)
+      check('investment_alerts', error)
+      return data ?? []
+    },
+    async invBriefs(limit) {
+      const { data, error } = await sb
+        .from('investment_briefs')
+        .select('brief_id, brief_date, content, ai_summary, data_as_of, model_version, created_kind, created_at')
+        .order('brief_date', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(limit)
+      check('investment_briefs', error)
+      return data ?? []
+    },
+    async invAiUsage() {
+      const since = new Date(Date.now() - 40 * 86400_000).toISOString()
+      const { data, error } = await sb.from('investment_ai_reservations').select('est_usd, actual_usd, status, created_at').gte('created_at', since)
+      check('investment_ai_reservations', error)
+      if (!data) return null
+      const settings = await self.invSettings()
+      const kst = (iso: string) => new Date(Date.parse(iso) + 9 * 3600_000).toISOString()
+      const nowK = kst(new Date().toISOString())
+      const today = data.filter((r) => kst(r.created_at).slice(0, 10) === nowK.slice(0, 10))
+      const month = data.filter((r) => kst(r.created_at).slice(0, 7) === nowK.slice(0, 7))
+      return {
+        today_calls: today.length,
+        month_usd: month.reduce((t, r) => t + Number(r.status === 'reserved' ? r.est_usd : (r.actual_usd ?? r.est_usd)), 0),
+        daily_limit: settings.ai_daily_calls ?? 20,
+        monthly_limit: settings.ai_monthly_usd ?? 30,
+      }
+    },
+    async invAddMarketSource(src) {
+      const { data, error } = await sb.from('market_research_sources').insert(src).select('source_id').single()
+      check('market_research_sources insert', error)
+      await self.invAudit('market.source', 'market_research_sources', String(data!.source_id), { url: src.url })
+      return String(data!.source_id)
+    },
+    async invAddForecast(f) {
+      const { error } = await sb.from('market_forecasts').insert(f)
+      check('market_forecasts insert', error)
+      await self.invAudit('market.forecast', 'market_forecasts', f.market_id, { ...f })
+    },
+    async invAddValueChain(c) {
+      const { error } = await sb.from('market_value_chains').insert(c)
+      check('market_value_chains insert', error)
+    },
+    async invSetSecurityMarket(securityId, marketId) {
+      const { error } = await sb.from('securities').update({ market_id: marketId, updated_at: new Date().toISOString() }).eq('security_id', securityId)
+      check('securities market', error)
+      await self.invAudit('security.market', 'securities', securityId, { market_id: marketId })
+    },
+    async invMarkAlertRead(alertId) {
+      const { error } = await sb.from('investment_alerts').update({ read_at: new Date().toISOString() }).eq('alert_id', alertId)
+      check('investment_alerts read', error)
+    },
+    async invSaveWeights(w) {
+      const { error } = await sb.from('investment_settings').update({ ...w, updated_at: new Date().toISOString() }).eq('id', 1)
+      check('investment_settings weights', error)
+      await self.invAudit('settings.weights', 'investment_settings', '1', { ...w })
+    },
+    async invAddScore(r) {
+      const { error } = await sb.from('investment_scores').insert(r)
+      check('investment_scores insert', error)
+    },
+    async invAddThesis(t, evidence) {
+      const { data, error } = await sb.from('investment_theses').insert(t).select('thesis_id').single()
+      check('investment_theses insert', error)
+      const id = String(data!.thesis_id)
+      if (evidence.length) {
+        const { error: e2 } = await sb.from('investment_thesis_evidence').insert(evidence.map((e) => ({ ...e, thesis_id: id })))
+        check('investment_thesis_evidence insert', e2)
+      }
+      return id
+    },
+    async invAddScenario(x) {
+      const { data, error } = await sb.from('investment_scenarios').insert(x).select('scenario_row_id').single()
+      check('investment_scenarios insert', error)
+      return Number(data!.scenario_row_id)
+    },
+    async invAddValuation(v) {
+      const { error } = await sb.from('investment_valuations').insert(v)
+      check('investment_valuations insert', error)
+    },
+    async invAddRecommendation(r) {
+      const { data, error } = await sb.from('investment_recommendations').insert(r).select('rec_id').single()
+      check('investment_recommendations insert', error)
+      return String(data!.rec_id)
+    },
+    async invAddAlerts(rows) {
+      if (rows.length === 0) return 0
+      const { data, error } = await sb.from('investment_alerts').upsert(rows as never[], { onConflict: 'dedupe_key', ignoreDuplicates: true }).select('alert_id')
+      check('investment_alerts insert', error)
+      return data?.length ?? 0
+    },
+    async invAddBrief(b) {
+      const { error } = await sb.from('investment_briefs').insert(b)
+      check('investment_briefs insert', error)
     },
   }
   return self

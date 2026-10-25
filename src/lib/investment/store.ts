@@ -5,6 +5,20 @@
  */
 import type {
   ChangeStatus,
+  InvAiUsage,
+  InvAlert,
+  InvBrief,
+  InvEvidence,
+  InvForecast,
+  InvMarket,
+  InvMarketSource,
+  InvPhilosophy,
+  InvRecommendation,
+  InvScenario,
+  InvScoreRow,
+  InvThesis,
+  InvValuationRow,
+  InvValueChain,
   InvChange,
   InvCorporateAction,
   InvDisclosure,
@@ -71,4 +85,39 @@ export interface InvestmentMethods {
   invAddMetric(m: Omit<InvMetric, 'source_type'> & { source_type: 'manual_official' | 'factsheet' }): Promise<void>
   invSetWatch(securityId: string, watch: boolean, reason: string): Promise<void>
   invAudit(action: string, entity: string, entityId: string | null, detail: Record<string, unknown>): Promise<void>
+
+  // ── 0095 산업 · 점수 · 가설 · 시나리오 · 추천 · 알림 · 브리핑 ──
+  invMarkets(): Promise<InvMarket[]>
+  invMarketSources(): Promise<InvMarketSource[]>
+  invForecasts(): Promise<InvForecast[]>
+  invValueChains(): Promise<InvValueChain[]>
+  invScores(subjectType?: 'market' | 'company', subjectId?: string): Promise<InvScoreRow[]>
+  invPhilosophy(): Promise<InvPhilosophy[]>
+  invTheses(securityId?: string): Promise<InvThesis[]>
+  invEvidence(thesisIds: readonly string[]): Promise<InvEvidence[]>
+  invScenarios(securityId?: string): Promise<InvScenario[]>
+  invValuations(securityId: string): Promise<InvValuationRow[]>
+  /** latestOnly면 종목마다 최신 버전 한 줄 */
+  invRecommendations(opts?: { securityId?: string; latestOnly?: boolean }): Promise<InvRecommendation[]>
+  invAlerts(limit: number): Promise<InvAlert[]>
+  invBriefs(limit: number): Promise<InvBrief[]>
+  /** 대표만(RLS) — 지정자 · AI는 null */
+  invAiUsage(): Promise<InvAiUsage | null>
+
+  // 대표 손 입력(사람) — 산업 자료는 출처 필수
+  invAddMarketSource(s: Omit<InvMarketSource, 'source_id'>): Promise<string>
+  invAddForecast(f: Omit<InvForecast, 'forecast_id'>): Promise<void>
+  invAddValueChain(c: Omit<InvValueChain, 'chain_id'>): Promise<void>
+  invSetSecurityMarket(securityId: string, marketId: string | null): Promise<void>
+  invMarkAlertRead(alertId: number): Promise<void>
+  invSaveWeights(w: import('./scores').Weights): Promise<void>
+
+  // 분석 이력 — INSERT만(사람 · AI · system 공통, created_kind로 구분). 고치기 · 지우기 없음.
+  invAddScore(r: Omit<InvScoreRow, 'score_id' | 'created_at'>): Promise<void>
+  invAddThesis(t: Omit<InvThesis, 'thesis_id' | 'created_at'>, evidence: Omit<InvEvidence, 'evidence_id' | 'thesis_id'>[]): Promise<string>
+  invAddScenario(s: Omit<InvScenario, 'scenario_row_id' | 'created_at'>): Promise<number>
+  invAddValuation(v: Omit<InvValuationRow, 'valuation_id' | 'created_at'>): Promise<void>
+  invAddRecommendation(r: Omit<InvRecommendation, 'rec_id' | 'created_at'>): Promise<string>
+  invAddAlerts(a: readonly Omit<InvAlert, 'alert_id' | 'created_at' | 'read_at'>[]): Promise<number>
+  invAddBrief(b: Omit<InvBrief, 'brief_id' | 'created_at'>): Promise<void>
 }
