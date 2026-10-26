@@ -21,10 +21,10 @@ export default async function EApprovalAdminPage() {
   return (
     <div className={`${C.bg} min-h-full pb-20 lg:pb-6`}>
       <div className="mx-auto flex w-full max-w-[880px] flex-col gap-4 px-4 py-5 sm:px-6">
-        <Link href="/e-approval" className="text-[13px] text-[#2f5bd3]">
+        <Link href="/e-approval" className="text-[13px] text-link">
           ← 전자결재
         </Link>
-        <h1 className="text-[22px] font-bold text-[#1f2329]">전자결재 관리</h1>
+        <h1 className="text-[22px] font-bold text-ink">전자결재 관리</h1>
         <EaAdmin forms={forms} rules={rules} />
       </div>
     </div>

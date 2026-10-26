@@ -1,16 +1,17 @@
 import { krw } from '@/lib/sales/cost'
 import type { ProductTrendPoint } from '@/types'
+import { tok } from '@/lib/design/tokens'
 
 /**
  * ⑧ 제품 추이 차트(0081 product_trend) — 새 라이브러리 없이 인라인 SVG. 축 하나 원칙: 위 칸 = 원/kg 세 줄(판매가 · Actual · Market 원료비),
  * 아래 칸 = GM%(같은 가로축 · 따로 세로축 — 두 눈금을 한 칸에 겹치지 않는다). 점마다 <title>(마우스를 올리면 값). 표는 차트 아래(같은 값).
- * 색은 dataviz 기준 팔레트 1~3번(파랑 · 주황 · 청록) — 범례 + 줄 끝 이름이 늘 함께라 색만으로 구분하지 않는다.
+ * 색은 차트 계열 토큰 chart-3 · 4 · 1(파랑 · 주황 · 녹) — 범례 + 줄 끝 이름이 늘 함께라 색만으로 구분하지 않는다.
  */
 
 const SERIES = [
-  { key: 'price_krw_per_kg', label: '판매가', color: '#2a78d6' },
-  { key: 'actual_krw_per_kg', label: 'Actual', color: '#eb6834' },
-  { key: 'market_material_krw_per_kg', label: 'Market 원료비', color: '#1baf7a' },
+  { key: 'price_krw_per_kg', label: '판매가', color: tok('chart-3') },
+  { key: 'actual_krw_per_kg', label: 'Actual', color: tok('chart-4') },
+  { key: 'market_material_krw_per_kg', label: 'Market 원료비', color: tok('chart-1') },
 ] as const
 
 const W = 720

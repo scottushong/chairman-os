@@ -26,7 +26,7 @@ export function NoticeStrip({ notices, today, lang }: { notices: Notice[]; today
     <div className="mt-3 flex items-center gap-3 rounded-xl border border-line-soft bg-raised px-3.5 py-2" aria-label={tr(lang, '공지', 'Notices')}>
       <span className="shrink-0 text-t11h font-semibold">
         {tr(lang, '공지', 'Notices')}
-        {unread > 0 ? <span className="ml-1 rounded-full bg-accent px-1.5 text-t10 text-white tnum">{unread}</span> : null}
+        {unread > 0 ? <span className="ml-1 rounded-full bg-accent px-1.5 text-t10 text-on-accent tnum">{unread}</span> : null}
       </span>
       <ul className="flex min-w-0 flex-1 gap-4 overflow-hidden">
         {live.slice(0, 3).map((n) => (

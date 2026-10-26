@@ -17,7 +17,7 @@ export function CsvButton({ rows, fileName }: { rows: (string | number)[][]; fil
         a.click()
         setTimeout(() => URL.revokeObjectURL(a.href), 1000)
       }}
-      className="rounded-lg border border-[#0f6b5c] px-3.5 py-1.5 text-[13px] font-semibold text-[#0f6b5c] hover:bg-[#e1efeb]"
+      className="rounded-lg border border-accent px-3.5 py-1.5 text-[13px] font-semibold text-accent hover:bg-accent-soft"
     >
       엑셀로 받기
     </button>

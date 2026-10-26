@@ -186,14 +186,14 @@ export function QuickCapture({ mode, userId }: { mode: 'dummy' | 'live'; userId:
           onClick={() => openPanel()}
           aria-label="빠른 기록 열기 (Alt+M)"
           title="빠른 기록 (Alt+M)"
-          className="fixed right-5 bottom-[calc(env(safe-area-inset-bottom)+9.25rem)] z-40 flex size-12 items-center justify-center rounded-full border border-line bg-panel text-ink shadow-lg shadow-black/15 transition-transform hover:scale-105 lg:right-7 lg:bottom-32"
+          className="fixed right-5 bottom-[calc(env(safe-area-inset-bottom)+9.25rem)] z-40 flex size-12 items-center justify-center rounded-full border border-line bg-panel text-ink shadow-lg shadow-scrim/15 transition-transform hover:scale-105 lg:right-7 lg:bottom-32"
         >
           <Icon name="pencil" className="size-5" />
         </button>
       )}
 
       {open ? (
-        <div className="fixed inset-0 z-50 flex items-end bg-black/30 lg:items-stretch lg:justify-end lg:bg-transparent lg:pointer-events-none" role="dialog" aria-modal="true" aria-label="빠른 기록">
+        <div className="fixed inset-0 z-50 flex items-end bg-scrim/30 lg:items-stretch lg:justify-end lg:bg-transparent lg:pointer-events-none" role="dialog" aria-modal="true" aria-label="빠른 기록">
           <button type="button" aria-label="닫기" className="absolute inset-0 lg:hidden" onClick={() => setOpen(false)} />
           <section className="relative pointer-events-auto flex max-h-[88dvh] w-full flex-col rounded-t-2xl border-line-soft bg-app shadow-2xl lg:max-h-none lg:w-[420px] lg:rounded-none lg:border-l">
             <header className="flex items-center gap-2 border-b border-line-soft px-4 py-2.5">

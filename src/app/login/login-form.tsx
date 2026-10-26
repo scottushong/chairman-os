@@ -70,7 +70,7 @@ function SubmitButton() {
     <button
       type="submit"
       disabled={pending}
-      className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-lg bg-accent py-2.5 text-t13 font-semibold text-white transition-opacity disabled:opacity-50"
+      className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-lg bg-accent py-2.5 text-t13 font-semibold text-on-accent transition-opacity disabled:opacity-50"
     >
       {pending ? '확인 중…' : '로그인'}
     </button>

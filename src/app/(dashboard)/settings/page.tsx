@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation'
 import { PageHeader } from '@/components/layout/page-header'
 import { AiUsagePanel } from '@/components/settings/ai-usage'
 import { AccountSecurity } from '@/components/settings/account-security'
-import { CityMotionSwitch, NotifySwitches, ThemePicker } from '@/components/settings/display-prefs'
+import { CityMotionSwitch, NotifySwitches, ThemePicker, UiThemePicker } from '@/components/settings/display-prefs'
 import { OwnerInputs, type OwnerInputsProps } from '@/components/settings/owner-inputs'
 import { WorldCitiesEditor } from '@/components/settings/world-cities-editor'
 import { Icon, type IconName } from '@/components/ui/icon'
@@ -161,7 +161,10 @@ export default async function SettingsHubPage() {
 
       {/* ───────── 화면 ───────── */}
       <Section icon="grid" title="화면" scope="전 사용자 공통">
-        <p className="text-t11 text-ink-dim">테마</p>
+        <p className="text-t11 text-ink-dim">화면 모양</p>
+        <UiThemePicker value={prefs.ui} />
+
+        <p className="mt-3 text-t11 text-ink-dim">테마</p>
         <ThemePicker value={prefs.app.theme} chairman={isChairman} />
         {/* 그룹 시티는 회장 전용 화면이다 — 그 스위치도 회장에게만(직원 화면 용어 원칙, CLAUDE.md). */}
         {isChairman ? <CityMotionSwitch value={prefs.app.city_motion} /> : null}

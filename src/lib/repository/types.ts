@@ -1527,6 +1527,11 @@ export interface UserSettings {
   sidebar_prefs: unknown
   /** Phase 5-E 4절 (0030). 테마·알림 종류별 on/off. 같은 이유로 unknown이다. */
   app_prefs: unknown
+  /**
+   * 0098 화면 모양(new · classic). null = 고른 적 없음 = 새 모양. 값 검사는 lib/ui-prefs.ts readUiTheme 한 곳.
+   * 저장 패치에서 빠질 수 있다(다른 설정만 저장할 때) — 그래서 선택 칸이다.
+   */
+  ui_theme?: string | null
 }
 
 /**

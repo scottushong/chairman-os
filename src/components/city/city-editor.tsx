@@ -237,18 +237,18 @@ export function CityEditor({
               }}
               onFocus={() => setSelected(r.id)}
               className={`absolute cursor-move rounded-lg border-2 ${
-                active ? 'border-gold bg-gold/15' : lot ? 'border-dashed border-white/80 bg-black/10' : 'border-white/80 bg-black/10'
+                active ? 'border-gold bg-gold/15' : lot ? 'border-dashed border-on-dark/80 bg-scrim/10' : 'border-on-dark/80 bg-scrim/10'
               }`}
               style={{ left: `${r.x}%`, top: `${r.y}%`, width: `${r.w}%`, height: `${r.h}%` }}
             >
-              <span className="pointer-events-none absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded-md bg-black/70 px-1.5 py-0.5 text-t11 text-white">
+              <span className="pointer-events-none absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded-md bg-scrim/70 px-1.5 py-0.5 text-t11 text-on-dark">
                 {lot ? '터 · ' : ''}
                 {nameOf(r)}
               </span>
               <span
                 aria-hidden
                 onPointerDown={(e) => onPointerDown(e, r, 'resize')}
-                className="absolute -right-1.5 -bottom-1.5 size-3.5 cursor-nwse-resize rounded-sm border-2 border-white bg-gold"
+                className="absolute -right-1.5 -bottom-1.5 size-3.5 cursor-nwse-resize rounded-sm border-2 border-on-dark bg-gold"
               />
             </div>
           )
@@ -266,7 +266,7 @@ export function CityEditor({
                   aria-label={`${nameOf(current)} ${CITY_ANCHOR_LABEL_KO[name]} — 끌어서 옮긴다`}
                   onPointerDown={(e) => onPointerDown(e, current, name)}
                   className={`absolute z-10 flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-grab items-center justify-center rounded-full text-[10px] font-bold shadow-lg ${
-                    own ? 'border-2 border-white bg-accent text-white' : 'border-2 border-dashed border-white bg-black/60 text-white'
+                    own ? 'border-2 border-on-dark bg-accent text-on-accent' : 'border-2 border-dashed border-on-dark bg-scrim/60 text-on-dark'
                   }`}
                   style={{ left: `${p.x}%`, top: `${p.y}%` }}
                 >
@@ -283,7 +283,7 @@ export function CityEditor({
             type="button"
             onClick={save}
             disabled={!dirty || pending}
-            className="flex-1 rounded-lg bg-accent px-3 py-2 font-semibold text-white transition-opacity disabled:opacity-40"
+            className="flex-1 rounded-lg bg-accent px-3 py-2 font-semibold text-on-accent transition-opacity disabled:opacity-40"
           >
             {pending ? '저장 중…' : dirty ? '저장' : '저장됨'}
           </button>
@@ -369,7 +369,7 @@ export function CityEditor({
                     type="button"
                     onClick={() => promote(current.id)}
                     disabled={!promoteTo || current.id < 0 || dirty || pending}
-                    className="rounded-md bg-accent px-2.5 py-1.5 font-semibold text-white disabled:opacity-40"
+                    className="rounded-md bg-accent px-2.5 py-1.5 font-semibold text-on-accent disabled:opacity-40"
                   >
                     승격
                   </button>

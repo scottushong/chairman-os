@@ -1,6 +1,7 @@
 import type { MetadataRoute } from 'next'
 
 import { STAFF_BRAND } from '@/lib/brand'
+import { LITERAL } from '@/lib/design/tokens'
 
 /**
  * PWA manifest (Phase 6-2 블록 1). 폰에서 «홈 화면에 추가»하면 직원 홈(/me)으로 바로 열린다.
@@ -17,8 +18,9 @@ export default function manifest(): MetadataRoute.Manifest {
     start_url: '/me',
     scope: '/',
     display: 'standalone',
-    background_color: '#1c1a17',
-    theme_color: '#1c1a17',
+    // 0098 — 새 모양 사이드바의 진녹(manifest는 CSS 변수를 못 읽어 값이 lib/design/tokens.ts에 있다).
+    background_color: LITERAL.pwaBackground,
+    theme_color: LITERAL.pwaTheme,
     lang: 'ko',
     icons: [
       { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },

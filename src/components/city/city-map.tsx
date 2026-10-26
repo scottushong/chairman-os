@@ -82,19 +82,19 @@ function Hotspot({ item, selected, href }: { item: CityItem; selected: boolean; 
           selected
             ? 'border-gold bg-gold/10'
             : lot
-              ? 'border-dashed border-white/70 group-hover:border-white'
-              : 'border-transparent group-hover:border-white/80 max-md:border-white/60'
+              ? 'border-dashed border-on-dark/70 group-hover:border-on-dark'
+              : 'border-transparent group-hover:border-on-dark/80 max-md:border-on-dark/60'
         }`}
       />
       {/* 라벨은 상자 위 가운데. 그림 위에 글자를 바로 놓지 않는다 — 어두운 유리 한 장을 깐다.
           폰(768px 미만)에서는 뺀다. 라벨끼리 겹쳐 그림을 덮었다 — 이름과 숫자는 그림 아래 CityHotspotList가 말한다. */}
       <span
-        className={`pointer-events-none absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded-md px-2 py-1 text-t11 max-md:hidden leading-tight text-white shadow-lg backdrop-blur-sm ${
-          selected ? 'bg-black/80 ring-1 ring-gold' : 'bg-black/60'
+        className={`pointer-events-none absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded-md px-2 py-1 text-t11 max-md:hidden leading-tight text-on-dark shadow-lg backdrop-blur-sm ${
+          selected ? 'bg-scrim/80 ring-1 ring-gold' : 'bg-scrim/60'
         }`}
       >
         <span className="font-semibold">{item.name}</span>
-        <span className="ml-1.5 text-white/80 tnum">{hotspotFacts(item).join(' · ')}</span>
+        <span className="ml-1.5 text-on-dark/80 tnum">{hotspotFacts(item).join(' · ')}</span>
       </span>
     </Link>
   )

@@ -197,7 +197,7 @@ export default async function DocumentsPage(props: PageProps<'/documents'>) {
                 <Link
                   key={t}
                   href={withParams(BASE, { folder: folderFilter ? String(folderFilter) : undefined, tag: tagFilter === t ? undefined : t })}
-                  className={`rounded px-1.5 py-0.5 text-t10h ${tagFilter === t ? 'bg-accent text-white' : 'bg-raised text-ink-dim hover:text-ink'}`}
+                  className={`rounded px-1.5 py-0.5 text-t10h ${tagFilter === t ? 'bg-accent text-on-accent' : 'bg-raised text-ink-dim hover:text-ink'}`}
                 >
                   #{t}
                 </Link>

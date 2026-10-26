@@ -82,7 +82,7 @@ export function ChainDecide({ decisionId }: { decisionId: string }) {
             type="button"
             disabled={pending}
             onClick={() => act(true)}
-            className="rounded-lg border border-accent bg-accent py-2 text-t12 font-semibold text-white disabled:opacity-40"
+            className="rounded-lg border border-accent bg-accent py-2 text-t12 font-semibold text-on-accent disabled:opacity-40"
           >
             {pending ? '처리 중…' : '승인'}
           </button>

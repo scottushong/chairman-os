@@ -22,7 +22,7 @@ export default async function MarketsPage() {
               <ul className="flex flex-col gap-1">
                 {key.map((f, i) => (
                   <li key={i} className="flex flex-wrap items-baseline justify-between gap-2 text-[14px]">
-                    <span className="min-w-0">{f.label}{f.year ? ` (${f.year})` : ''} <span className={`rounded px-1 text-[13px] ${f.kind === 'actual' ? 'bg-ok/12 text-ok' : f.kind === 'forecast' ? 'bg-[#2f6fd0]/12 text-[#3b74d6]' : 'bg-accent/15 text-accent'}`}>{f.kind === 'actual' ? '실측' : f.kind === 'forecast' ? '전망' : 'AI 가정'}</span></span>
+                    <span className="min-w-0">{f.label}{f.year ? ` (${f.year})` : ''} <span className={`rounded px-1 text-[13px] ${f.kind === 'actual' ? 'bg-ok/12 text-ok' : f.kind === 'forecast' ? 'bg-info/12 text-info' : 'bg-accent/15 text-accent'}`}>{f.kind === 'actual' ? '실측' : f.kind === 'forecast' ? '전망' : 'AI 가정'}</span></span>
                     <span className="tnum">{f.value?.toLocaleString('en-US') ?? f.text_value} {f.unit ?? ''}</span>
                     <span className="w-full text-[13px] text-ink-muted">{f.source ? `${f.source.publisher} · ${f.source.published_date ?? '발표일 미상'}${f.source.verified === 'snippet' ? ' · 검색 문장 확인' : ''}` : '출처 없음'}</span>
                   </li>

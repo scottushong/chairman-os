@@ -10,7 +10,9 @@ import {
   toggleCollapsed,
   withNotifySwitch,
   THEME_CHOICE,
+  UI_THEME,
   type ThemeChoice,
+  type UiTheme,
 } from '@/lib/ui-prefs'
 import { normalizeWorldCityIds } from '@/lib/world-cities'
 import { NOTIFICATION_KIND, type NotificationKind } from '@/types'
@@ -107,6 +109,23 @@ export async function saveTheme(theme: unknown): Promise<UiPrefsState> {
     const repo = await getRepository()
     const current = readAppPrefs((await repo.getUserSettings()).app_prefs)
     await repo.saveUserSettings({ app_prefs: { ...current, theme: theme as ThemeChoice } })
+  } catch (e) {
+    console.error('[ui-prefs]', e)
+    return FAILED
+  }
+  revalidatePath('/', 'layout')
+  return { saved: true }
+}
+
+/**
+ * 0098 화면 모양(새 모양 · 예전 모양). 본인 줄의 ui_theme 칸 하나만 — 주머니(app_prefs)를 건드리지 않는다.
+ * 어느 줄인지는 어댑터가 세션에서 꺼내고 0002 user_settings_own이 다시 막는다.
+ */
+export async function saveUiTheme(theme: unknown): Promise<UiPrefsState> {
+  if (!UI_THEME.includes(theme as UiTheme)) return { error: '잘못된 요청입니다.' }
+  try {
+    const repo = await getRepository()
+    await repo.saveUserSettings({ ui_theme: theme as UiTheme })
   } catch (e) {
     console.error('[ui-prefs]', e)
     return FAILED

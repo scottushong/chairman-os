@@ -38,7 +38,7 @@ function Row({ label, value, min, max, step, onChange, show, lo, hi }: { label: 
   return (
     <label className="flex flex-col gap-1">
       <span className="flex items-center justify-between text-[15px]"><span>{label}</span><strong className="tnum">{show}</strong></span>
-      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} className="h-11 w-full accent-[#b8862b] lg:h-6" aria-label={label} />
+      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))} className="h-11 w-full accent-gold lg:h-6" aria-label={label} />
       {lo ? <span className="flex justify-between text-[13px] text-ink-muted"><span>{lo}</span><span>{hi}</span></span> : null}
     </label>
   )

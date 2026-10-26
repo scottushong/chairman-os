@@ -67,10 +67,10 @@ export default async function ChatPage({ searchParams }: PageProps<'/chat'>) {
       />
 
       <div className="mt-3 flex gap-1.5" role="tablist">
-        <Link href="/chat" role="tab" aria-selected={tab === 'chat'} className={`rounded-lg px-3 py-1.5 text-t12h font-semibold ${tab === 'chat' ? 'bg-accent text-white' : 'border border-line bg-raised'}`}>
+        <Link href="/chat" role="tab" aria-selected={tab === 'chat'} className={`rounded-lg px-3 py-1.5 text-t12h font-semibold ${tab === 'chat' ? 'bg-accent text-on-accent' : 'border border-line bg-raised'}`}>
           {tr(lang, '메신저', 'Messenger')}
         </Link>
-        <Link href="/chat?tab=ai" role="tab" aria-selected={tab === 'ai'} className={`rounded-lg px-3 py-1.5 text-t12h font-semibold ${tab === 'ai' ? 'bg-accent text-white' : 'border border-line bg-raised'}`}>
+        <Link href="/chat?tab=ai" role="tab" aria-selected={tab === 'ai'} className={`rounded-lg px-3 py-1.5 text-t12h font-semibold ${tab === 'ai' ? 'bg-accent text-on-accent' : 'border border-line bg-raised'}`}>
           {tr(lang, 'AI에게 묻기', 'Ask AI')}
         </Link>
       </div>

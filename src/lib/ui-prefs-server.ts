@@ -4,7 +4,7 @@ import { connection } from 'next/server'
 import { cache } from 'react'
 
 import { getRepository } from '@/lib/repository'
-import { readAppPrefs, readSidebarPrefs, type AppPrefs, type SidebarPrefs } from '@/lib/ui-prefs'
+import { readAppPrefs, readSidebarPrefs, readUiTheme, type AppPrefs, type SidebarPrefs, type UiTheme } from '@/lib/ui-prefs'
 
 /**
  * 개인 화면 설정을 **요청 하나에 한 번만** 읽는다 (Phase 5-E, 0030).
@@ -19,6 +19,8 @@ import { readAppPrefs, readSidebarPrefs, type AppPrefs, type SidebarPrefs } from
 export interface UiPrefs {
   sidebar: SidebarPrefs
   app: AppPrefs
+  /** 0098 화면 모양 — 셸의 data-ui. */
+  ui: UiTheme
 }
 
 export const loadUiPrefs = cache(async function loadUiPrefs(): Promise<UiPrefs> {
@@ -36,11 +38,12 @@ export const loadUiPrefs = cache(async function loadUiPrefs(): Promise<UiPrefs> 
     return {
       sidebar: readSidebarPrefs(settings.sidebar_prefs),
       app: readAppPrefs(settings.app_prefs),
+      ui: readUiTheme(settings.ui_theme),
     }
   } catch (e) {
     // 설정을 못 읽는다고 셸이 서지 못하면 안 된다. 기본값으로 떨어지고 화면은 그대로 뜬다 —
     // 개인 설정은 '이 사람의 화면'이지 데이터가 아니라서, 없으면 기본 화면이 맞다.
     console.error('[ui-prefs]', e)
-    return { sidebar: readSidebarPrefs(null), app: readAppPrefs(null) }
+    return { sidebar: readSidebarPrefs(null), app: readAppPrefs(null), ui: readUiTheme(null) }
   }
 })

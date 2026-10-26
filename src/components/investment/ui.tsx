@@ -69,7 +69,7 @@ export function StatusBadge({ status, title }: { status: DataStatus; title?: str
 
 const CHANGE_CLASS: Record<ChangeStatus, string> = {
   NEW: 'bg-ok/15 text-ok',
-  ADD: 'bg-[#2f6fd0]/15 text-[#3b74d6]',
+  ADD: 'bg-info/15 text-info',
   TRIM: 'bg-critical/12 text-critical',
   EXIT: 'bg-ink-muted/20 text-ink-dim',
   HOLD: 'bg-raised text-ink-dim',
@@ -85,7 +85,7 @@ export function ChangeBadge({ status, pct }: { status: ChangeStatus; pct?: numbe
 export function DemoBanner({ children }: { children?: ReactNode }) {
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-[13px] text-ink">
-      <span className="rounded-full bg-accent px-2 py-0.5 text-[13px] font-bold text-white">DEMO DATA</span>
+      <span className="rounded-full bg-accent px-2 py-0.5 text-[13px] font-bold text-on-accent">DEMO DATA</span>
       <span>{children ?? '원문의 예시 숫자입니다 — 실제 데이터가 아닙니다.'}</span>
     </div>
   )
@@ -169,7 +169,7 @@ export function PageTitle({ title, sub, right }: { title: string; sub?: ReactNod
 
 export const REC_STATUS_CLASS: Record<RecStatusT, string> = {
   'BUY ZONE': 'bg-ok/15 text-ok',
-  WATCH: 'bg-[#2f6fd0]/12 text-[#3b74d6]',
+  WATCH: 'bg-info/12 text-info',
   OVERVALUED: 'bg-warning/12 text-warning',
   'THESIS BROKEN': 'bg-critical/12 text-critical',
   'NEED DATA': 'bg-raised text-ink-dim',

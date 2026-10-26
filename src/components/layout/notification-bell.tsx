@@ -80,7 +80,7 @@ export function NotificationBell({
         {/* 0건일 때는 뱃지를 아예 그리지 않는다. '0'이 적힌 동그라미는 읽는 순간
             "뭔가 있나?"로 한 번 더 보게 만든다 — 없는 것은 없는 모양이어야 한다. */}
         {unread > 0 ? (
-          <span className="absolute top-0.5 right-0.5 flex min-w-4 items-center justify-center rounded-full bg-critical px-1 text-t9 font-bold text-white tnum">
+          <span className="absolute top-0.5 right-0.5 flex min-w-4 items-center justify-center rounded-full bg-critical px-1 text-t9 font-bold text-on-status tnum">
             {unread > 99 ? '99+' : unread}
           </span>
         ) : null}

@@ -61,7 +61,7 @@ export function TodayAndWeek({
                 {it.kind === 'event' && videoRooms[it.source_id] ? (
                   <Link
                     href={`/meet?room=${videoRooms[it.source_id]}`}
-                    className="shrink-0 rounded bg-accent px-2 py-0.5 text-t11 font-semibold text-white"
+                    className="shrink-0 rounded bg-accent px-2 py-0.5 text-t11 font-semibold text-on-accent"
                   >
                     화상
                   </Link>

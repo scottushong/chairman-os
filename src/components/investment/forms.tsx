@@ -29,7 +29,7 @@ import {
 /** 대표 손 입력 폼들(0094) — 출처 주소 · 기준일 필수. 결과 한 줄을 폼 아래에 그대로 보여 준다. */
 
 const INPUT = 'min-h-11 min-w-0 max-w-full rounded-lg border border-line-soft bg-panel px-3 text-[14px] text-ink lg:min-h-9'
-const BTN = 'inline-flex min-h-11 items-center justify-center rounded-lg bg-accent px-4 text-[14px] font-semibold text-white disabled:opacity-50 lg:min-h-9'
+const BTN = 'inline-flex min-h-11 items-center justify-center rounded-lg bg-accent px-4 text-[14px] font-semibold text-on-accent disabled:opacity-50 lg:min-h-9'
 
 function Msg({ r }: { r: ActionResult | null }) {
   if (!r) return null

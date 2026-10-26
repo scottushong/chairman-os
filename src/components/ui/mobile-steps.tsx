@@ -81,7 +81,7 @@ export function StepNav({
         <button
           type="button"
           onClick={() => steps.go(steps.step + 1)}
-          className="flex-1 rounded-lg bg-accent px-3 py-2.5 text-t13 font-semibold text-white"
+          className="flex-1 rounded-lg bg-accent px-3 py-2.5 text-t13 font-semibold text-on-accent"
         >
           {nextLabel}
         </button>

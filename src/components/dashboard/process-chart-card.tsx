@@ -133,7 +133,7 @@ export function ProcessChartCard({
             aria-pressed={t.id === current?.id}
             className={`rounded px-2 py-0.5 text-t11 transition-colors ${
               t.id === current?.id
-                ? 'bg-white/80 font-semibold text-ink shadow-sm'
+                ? 'bg-card/80 font-semibold text-ink shadow-sm'
                 : 'text-ink-dim hover:bg-raised hover:text-ink'
             }`}
             >

@@ -87,7 +87,7 @@ function useSectionOpen(userId: string, section: SectionKey, autoOpen: boolean, 
 
 const ROW =
   'group flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-2.5 py-[7px] text-t13 transition-colors'
-const ROW_ACTIVE = 'bg-white/80 font-semibold text-ink shadow-sm'
+const ROW_ACTIVE = 'bg-nav-active font-semibold text-nav-active-ink shadow-sm'
 const ROW_IDLE = 'text-ink-dim hover:bg-raised hover:text-ink'
 const CHILD =
   'flex min-w-0 items-center gap-2 rounded-md py-[5px] pr-2 pl-2.5 text-t12h transition-colors'

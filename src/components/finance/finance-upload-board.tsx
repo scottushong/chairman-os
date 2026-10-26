@@ -202,7 +202,7 @@ export function FinanceUploadBoard({
             const u = received[k.kind]
             return (
               <li key={k.kind} className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-t11h ${u ? 'border-ok/30 bg-ok/5' : 'border-line-soft'}`}>
-                <span aria-hidden className={`grid size-5 shrink-0 place-items-center rounded-full text-t10 font-bold ${u ? 'bg-ok text-white' : 'bg-raised text-ink-muted'}`}>{u ? '✓' : ''}</span>
+                <span aria-hidden className={`grid size-5 shrink-0 place-items-center rounded-full text-t10 font-bold ${u ? 'bg-ok text-on-status' : 'bg-raised text-ink-muted'}`}>{u ? '✓' : ''}</span>
                 <span className="min-w-0 truncate">{k.no} {k.label}</span>
                 <span className="ml-auto shrink-0 text-t10 text-ink-muted">{u ? `${u.row_count}줄${u.auto ? ' · 자동' : ''}` : '아직 없음'}</span>
               </li>
@@ -249,7 +249,7 @@ export function FinanceUploadBoard({
           ) : null}
         </p>
         <input ref={input} type="file" multiple accept={ACCEPT} className="hidden" onChange={(e) => e.target.files && send(e.target.files)} />
-        <button type="button" disabled={busy} onClick={() => input.current?.click()} className="mt-3 min-h-11 rounded-md bg-accent px-4 text-t12 font-semibold text-white disabled:opacity-50">
+        <button type="button" disabled={busy} onClick={() => input.current?.click()} className="mt-3 min-h-11 rounded-md bg-accent px-4 text-t12 font-semibold text-on-accent disabled:opacity-50">
           {busy ? '읽는 중…' : '파일 고르기'}
         </button>
         {progress ? <p role="status" className="mt-2 text-t11h text-ink-dim tnum">올리고 읽는 중 — {progress} (긴 파일은 1~2분)</p> : null}
@@ -539,7 +539,7 @@ function PendingPanel({ businessId, p, role }: { businessId: string; p: PendingV
               }
             })
           }
-          className="min-h-10 rounded-md bg-accent px-4 text-t12 font-semibold text-white disabled:opacity-40"
+          className="min-h-10 rounded-md bg-accent px-4 text-t12 font-semibold text-on-accent disabled:opacity-40"
         >
           {busy ? '넣는 중…' : '확인하고 넣기'}
         </button>
@@ -768,7 +768,7 @@ export function OfficialPanel({
                 setReason('')
                 setMsg(null)
               }}
-              className={`min-h-9 rounded-md border px-3 text-t12 font-semibold ${y === yearKey ? 'border-accent bg-accent text-white' : 'border-line bg-panel text-ink'}`}
+              className={`min-h-9 rounded-md border px-3 text-t12 font-semibold ${y === yearKey ? 'border-accent bg-accent text-on-accent' : 'border-line bg-panel text-ink'}`}
             >
               {y}
               {saved.includes(y) ? ' ✓' : exists.includes(y) ? ' (있음)' : ''}
@@ -917,7 +917,7 @@ export function OfficialPanel({
           type="button"
           disabled={busy || blockers.length > 0}
           onClick={() => save(clash && replaceOk.includes(year))}
-          className="min-h-10 rounded-md bg-accent px-4 text-t12 font-semibold text-white disabled:opacity-40"
+          className="min-h-10 rounded-md bg-accent px-4 text-t12 font-semibold text-on-accent disabled:opacity-40"
         >
           {busy ? '저장 중…' : `확인하고 ${year ? `${year}년 ` : ''}공식 결산으로 ${clash ? '바꾸기' : '저장'}`}
         </button>

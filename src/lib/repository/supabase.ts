@@ -557,6 +557,8 @@ interface UserSettingsRow {
   /** 0030의 두 주머니. jsonb는 무엇이든 올 수 있어 unknown이다 — 모양은 lib/ui-prefs.ts가 본다. */
   sidebar_prefs: unknown
   app_prefs: unknown
+  /** 0098. 칸이 아직 없는 DB(마이그레이션 전)에서는 select *에 안 실려 undefined로 온다. */
+  ui_theme?: string | null
 }
 
 /** 0030. 본인 프로필 한 행(user_profiles). 회수된 계정은 질의가 이미 걸러 온다. */
@@ -4296,7 +4298,8 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
     async getUserSettings(): Promise<UserSettings> {
       const { data, error } = await sb
         .from('user_settings')
-        .select('hidden_businesses,pinned_businesses,sidebar_prefs,app_prefs')
+        // select * — 0098 ui_theme 칸이 없는 DB(배포 순서가 어긋났을 때)에서도 오류 없이 나머지를 읽는다.
+        .select('*')
         .maybeSingle<UserSettingsRow>()
 
       if (error) throw new Error(`Supabase user_settings ${error.code ?? '?'}: ${error.message}`)
@@ -4309,6 +4312,7 @@ export function createSupabaseRepository(sb: SupabaseClient): ChairmanRepository
         // 어댑터가 키를 알기 시작하면 Phase 7이 사이드바를 갈아 끼울 때 이 파일도 따라 바뀐다.
         sidebar_prefs: data?.sidebar_prefs ?? {},
         app_prefs: data?.app_prefs ?? {},
+        ui_theme: data?.ui_theme ?? null,
       }
     },
 

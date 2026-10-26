@@ -88,19 +88,31 @@ export function Sidebar({
   return (
     // glass-nav = --color-nav 면 + backdrop-blur. 셸은 배경 그라데이션 위에 얹힌 유리 틀이고,
     // 그림자는 주지 않는다 — 고정된 틀이 떠 보이면 그 위의 카드가 뜨지 못한다.
-    <aside className={`glass-nav flex shrink-0 flex-col border-r border-line-soft ${drawer ? 'h-full w-[min(84vw,320px)]' : 'w-[212px]'}`}>
+    // data-surface="sidebar" — 0098 새 모양에서 이 트리의 토큰이 진녹색 판으로 바뀐다(globals.css). 예전 모양은 그대로 유리 틀.
+    <aside
+      data-surface="sidebar"
+      className={`glass-nav flex shrink-0 flex-col border-r border-line-soft ${drawer ? 'h-full w-[min(84vw,320px)]' : 'w-[212px] ui-new:w-[236px]'}`}
+    >
       {/* 워드마크. 회장은 대시보드, 나머지는 직원 홈(/me)으로 간다. 높이 14는 헤더와 같아야 한다. 다르면 셸 두 장의 아랫선이 어긋난다. */}
       <Link
         href={homeHref(user?.role)}
-        className="flex h-14 items-center gap-2 border-b border-line-soft px-4 rounded-md transition-colors hover:bg-raised focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-accent"
+        className="flex h-14 items-center gap-2 border-b border-line-soft px-4 rounded-md transition-colors hover:bg-raised focus-visible:ring-2 focus-visible:ring-offset-1 focus-visible:ring-accent ui-new:h-[68px] ui-new:gap-2.5 ui-new:rounded-none ui-new:border-b-0 ui-new:px-5"
       >
         {/* 왕관은 회장 화면에만(회장 메모 2026-10). */}
-        {isChairman ? <Icon name="crown" className="size-5 text-gold" filled /> : null}
-        {/* 서비스 이름 — 회장은 Chairman OS, 그 밖은 DY 그룹웨어(lib/brand.ts). 대문자 표기는 예전 워드마크 그대로. */}
-        <span className="min-w-0 truncate text-t15 font-bold tracking-[0.04em] text-ink uppercase">{brandFor(user?.role)}</span>
+        {isChairman ? <Icon name="crown" className="size-5 text-gold ui-new:size-6" filled /> : null}
+        {/* 서비스 이름 — 회장은 Chairman OS, 그 밖은 DY 그룹웨어(lib/brand.ts). 대문자 표기는 예전 워드마크 그대로.
+            0098 새 모양: 세리프 워드마크 + 작은 둘째 줄(시안 «EXECUTIVE PLATFORM» — 회장에게만; 직원은 «WORKSPACE»). */}
+        <span className="min-w-0 leading-tight">
+          <span className="block truncate text-t15 font-bold tracking-[0.04em] text-ink uppercase ui-new:font-display ui-new:text-t17 ui-new:font-semibold">
+            {brandFor(user?.role)}
+          </span>
+          <span className="ui-new-only block truncate text-t9 tracking-[0.16em] text-ink-muted uppercase">
+            {isChairman ? 'Executive Platform' : 'Workspace'}
+          </span>
+        </span>
       </Link>
 
-      <nav className="flex-1 overflow-y-auto px-2.5 pb-3">
+      <nav className="flex-1 overflow-y-auto px-2.5 pb-3 ui-new:px-3 ui-new:pt-1">
         {/* 회장 전용 메뉴(아침 루틴 · 의존 · 주의 · 회장 루틴)는 회장에게만, 이니셔티브는 읽는 역할에게만 — lib/nav.ts navFor. */}
         {navFor(user?.role, { purchasing: showsPurchasingNav(user), ledger: user?.ledger, sales: showsSalesNav(user), production: showsProductionNav(user), costs: showsCostsNav(user), investment: user?.investment, hidden: sections.hiddenNav }).map((group, i) => {
           // 숨긴 항목은 아예 그리지 않는다. 회색으로 죽여 두면 '숨김'이 아니라 '고장'으로 읽힌다.
@@ -191,12 +203,11 @@ export function Sidebar({
                           href={navHref(item)}
                           aria-current={active ? 'page' : undefined}
                           className={[
-                            'group flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-t13 transition-colors',
-                            // 활성 메뉴는 골드 필이 아니라 흰 필이다. 라이트 글래스에서는
-                            // 유리가 한 겹 더 두꺼워진 것이 곧 '여기 있다'로 읽히고,
-                            // 골드 배경 위 흰 글자(2.23:1)를 보정하던 문제도 같이 사라진다.
+                            'group flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-t13 transition-colors ui-new:gap-3 ui-new:rounded-lg ui-new:py-2 ui-new:text-t14',
+                            // 활성 메뉴 칸 — 예전 모양은 흰 필(유리가 한 겹 더 두꺼워진 것이 '여기 있다'), 새 모양은 한 단계 밝은 녹색 칸.
+                            // 색은 토큰(nav-active · nav-active-ink)이 모양마다 정한다.
                             active
-                              ? 'bg-white/80 font-semibold text-ink shadow-sm'
+                              ? 'bg-nav-active font-semibold text-nav-active-ink shadow-sm'
                               : 'text-ink-dim hover:bg-raised hover:text-ink',
                             // 아직 없는 화면은 글자를 한 단계 죽인다. 눌러도 되지만 같은 무게는 아니다.
                             item.ready || active ? '' : 'opacity-60',
@@ -234,11 +245,26 @@ export function Sidebar({
        *
        * 그 자리에 '메뉴 설정'이 섰다 — 이 사이드바에서 무엇을 감출지 고르는 화면이다.
        */}
-      <div className="border-t border-line-soft p-2.5">
-        <ProfileBlock user={user} />
+      <div className="border-t border-line-soft p-2.5 ui-new:p-3">
+        {/* 0098 새 모양: 이름 · 역할은 헤더에 있다(시안) — 붙박이 사이드바에서는 빼고, 헤더에 이름이 안 서는 폰 서랍에만 둔다. */}
+        <div className={drawer ? '' : 'ui-classic-only'}>
+          <ProfileBlock user={user} />
+        </div>
+        {/* 0098 새 모양: 맨 아래 한 줄(시안의 «설정» 자리). 메뉴에 «설정»이 이미 있어(순서 그대로) 여기는 «메뉴 설정»을 메뉴 칸 모양으로.
+            예전 모양은 점선 «메뉴 설정» 그대로. */}
         <Link
           href="/settings/sidebar"
-          className="flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-line py-2 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
+          aria-current={pathname === '/settings/sidebar' ? 'page' : undefined}
+          className={`ui-new-only flex items-center gap-3 rounded-lg px-2.5 py-2 text-t14 transition-colors ${
+            pathname === '/settings/sidebar' ? 'bg-nav-active font-semibold text-nav-active-ink' : 'text-ink-dim hover:bg-raised hover:text-ink'
+          }`}
+        >
+          <Icon name="settings" className="size-[17px] shrink-0" />
+          메뉴 설정
+        </Link>
+        <Link
+          href="/settings/sidebar"
+          className="ui-classic-only flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-line py-2 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"
         >
           <Icon name="settings" className="size-3.5" />
           메뉴 설정

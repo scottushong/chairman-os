@@ -15,6 +15,7 @@ import {
 } from 'three'
 
 import type { CitySky } from '@/lib/city-live'
+import { ENV_LIGHT, FOG_START, SKY_TINT } from '@/lib/design/scene-palette'
 
 import { MAT, skyState } from './shared'
 
@@ -55,24 +56,24 @@ const DEG = Math.PI / 180
 const GRADE: Record<CitySky, Grade> = {
   day: {
     sunEl: 42, sunAz: -35, turbidity: 3.5, rayleigh: 1.0, mie: 0.004, mieG: 0.8,
-    lightEl: 42, lightAz: -35, light: '#fff3df', lightI: 2.6,
-    hemiSky: '#cfe0ff', hemiGround: '#5e5344', hemiI: 0.8, env: 1.0, fog: '#cfdbe8', night: 0,
+    lightEl: 42, lightAz: -35, light: SKY_TINT.day.light, lightI: 2.6,
+    hemiSky: SKY_TINT.day.hemiSky, hemiGround: SKY_TINT.day.hemiGround, hemiI: 0.8, env: 1.0, fog: SKY_TINT.day.fog, night: 0,
     // 낮도 돔을 반쯤 겹친다 — Sky 셰이더만으로는 지평선이 회색으로 떠서 도시가 흐려 보였다(스크린샷 확인).
-    dome: 0.55, domeLow: '#e3ecf5', domeMid: '#9cc3e8', domeTop: '#4a7fc0',
+    dome: 0.55, domeLow: SKY_TINT.day.domeLow, domeMid: SKY_TINT.day.domeMid, domeTop: SKY_TINT.day.domeTop,
   },
   // 해질녘 — 도시 뒤편 낮은 해, 보라 · 분홍 하늘. 승인된 목업의 기본 모습.
   // Sky 셰이더만으로는 회색빛 분홍에 그쳐서, 주황 → 분홍 → 남보라 돔을 반쯤 겹친다.
   dusk: {
     sunEl: 1.2, sunAz: -58, turbidity: 10, rayleigh: 3.4, mie: 0.02, mieG: 0.96,
-    lightEl: 13, lightAz: -58, light: '#ff9a5c', lightI: 2.2,
-    hemiSky: '#9a8fb4', hemiGround: '#3d2c22', hemiI: 0.42, env: 1.0, fog: '#6a4f6e', night: 0.12,
-    dome: 0.72, domeLow: '#ff8a4c', domeMid: '#c4688a', domeTop: '#2b2d63',
+    lightEl: 13, lightAz: -58, light: SKY_TINT.dusk.light, lightI: 2.2,
+    hemiSky: SKY_TINT.dusk.hemiSky, hemiGround: SKY_TINT.dusk.hemiGround, hemiI: 0.42, env: 1.0, fog: SKY_TINT.dusk.fog, night: 0.12,
+    dome: 0.72, domeLow: SKY_TINT.dusk.domeLow, domeMid: SKY_TINT.dusk.domeMid, domeTop: SKY_TINT.dusk.domeTop,
   },
   night: {
     sunEl: -8, sunAz: -58, turbidity: 2, rayleigh: 0.5, mie: 0.003, mieG: 0.7,
-    lightEl: 55, lightAz: 30, light: '#9db2ff', lightI: 0.6,
-    hemiSky: '#2c3a6e', hemiGround: '#0a0a10', hemiI: 0.42, env: 0.3, fog: '#0b1224', night: 1,
-    dome: 1, domeLow: '#1f2a55', domeMid: '#121a3c', domeTop: '#05081a',
+    lightEl: 55, lightAz: 30, light: SKY_TINT.night.light, lightI: 0.6,
+    hemiSky: SKY_TINT.night.hemiSky, hemiGround: SKY_TINT.night.hemiGround, hemiI: 0.42, env: 0.3, fog: SKY_TINT.night.fog, night: 1,
+    dome: 1, domeLow: SKY_TINT.night.domeLow, domeMid: SKY_TINT.night.domeMid, domeTop: SKY_TINT.night.domeTop,
   },
 }
 
@@ -198,7 +199,7 @@ export function SkyRig({ sky, shadowMap }: { sky: CitySky; shadowMap: number }) 
         />
       </mesh>
       {sky === 'night' && <Stars radius={300} depth={60} count={2500} factor={6} saturation={0} fade speed={0.4} />}
-      <fog ref={fog} attach="fog" args={['#6d5572', 120, 420]} />
+      <fog ref={fog} attach="fog" args={[FOG_START, 120, 420]} />
       <hemisphereLight ref={hemi} />
       <directionalLight
         ref={sun}
@@ -225,28 +226,28 @@ function EnvForms({ sky }: { sky: CitySky }) {
   if (sky === 'day') {
     return (
       <>
-        <Lightformer form="rect" intensity={2.2} color="#eaf2ff" position={[0, 12, 0]} rotation-x={Math.PI / 2} scale={[30, 30, 1]} />
-        <Lightformer form="rect" intensity={1.2} color="#cfe0ff" position={[0, 2, -12]} scale={[30, 6, 1]} />
-        <Lightformer form="rect" intensity={1.0} color="#fff2dc" position={[12, 3, 0]} rotation-y={-Math.PI / 2} scale={[20, 6, 1]} />
-        <Lightformer form="rect" intensity={0.6} color="#ffffff" position={[-12, 3, 0]} rotation-y={Math.PI / 2} scale={[20, 6, 1]} />
+        <Lightformer form="rect" intensity={2.2} color={ENV_LIGHT.day.top} position={[0, 12, 0]} rotation-x={Math.PI / 2} scale={[30, 30, 1]} />
+        <Lightformer form="rect" intensity={1.2} color={ENV_LIGHT.day.back} position={[0, 2, -12]} scale={[30, 6, 1]} />
+        <Lightformer form="rect" intensity={1.0} color={ENV_LIGHT.day.right} position={[12, 3, 0]} rotation-y={-Math.PI / 2} scale={[20, 6, 1]} />
+        <Lightformer form="rect" intensity={0.6} color={ENV_LIGHT.day.left} position={[-12, 3, 0]} rotation-y={Math.PI / 2} scale={[20, 6, 1]} />
       </>
     )
   }
   if (sky === 'dusk') {
     return (
       <>
-        <Lightformer form="rect" intensity={1.0} color="#8a6fb8" position={[0, 12, 0]} rotation-x={Math.PI / 2} scale={[30, 30, 1]} />
-        <Lightformer form="rect" intensity={3.0} color="#ff9a5c" position={[-8, 1.5, -10]} rotation-y={Math.PI / 5} scale={[26, 4, 1]} />
-        <Lightformer form="rect" intensity={0.8} color="#e89aa6" position={[10, 3, -6]} rotation-y={-Math.PI / 3} scale={[18, 5, 1]} />
-        <Lightformer form="rect" intensity={0.9} color="#fff0dc" position={[0, 3, 12]} rotation-y={Math.PI} scale={[30, 6, 1]} />
+        <Lightformer form="rect" intensity={1.0} color={ENV_LIGHT.dusk.top} position={[0, 12, 0]} rotation-x={Math.PI / 2} scale={[30, 30, 1]} />
+        <Lightformer form="rect" intensity={3.0} color={ENV_LIGHT.dusk.sun} position={[-8, 1.5, -10]} rotation-y={Math.PI / 5} scale={[26, 4, 1]} />
+        <Lightformer form="rect" intensity={0.8} color={ENV_LIGHT.dusk.side} position={[10, 3, -6]} rotation-y={-Math.PI / 3} scale={[18, 5, 1]} />
+        <Lightformer form="rect" intensity={0.9} color={ENV_LIGHT.dusk.front} position={[0, 3, 12]} rotation-y={Math.PI} scale={[30, 6, 1]} />
       </>
     )
   }
   return (
     <>
-      <Lightformer form="rect" intensity={0.5} color="#34427a" position={[0, 12, 0]} rotation-x={Math.PI / 2} scale={[30, 30, 1]} />
-      <Lightformer form="rect" intensity={0.9} color="#ffbf73" position={[0, 0.6, -12]} scale={[30, 1.2, 1]} />
-      <Lightformer form="ring" intensity={1.2} color="#dfe6ff" position={[8, 10, -6]} scale={2} />
+      <Lightformer form="rect" intensity={0.5} color={ENV_LIGHT.night.top} position={[0, 12, 0]} rotation-x={Math.PI / 2} scale={[30, 30, 1]} />
+      <Lightformer form="rect" intensity={0.9} color={ENV_LIGHT.night.horizon} position={[0, 0.6, -12]} scale={[30, 1.2, 1]} />
+      <Lightformer form="ring" intensity={1.2} color={ENV_LIGHT.night.ring} position={[8, 10, -6]} scale={2} />
     </>
   )
 }

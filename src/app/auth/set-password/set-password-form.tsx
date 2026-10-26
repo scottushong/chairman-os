@@ -22,7 +22,7 @@ export function SetPasswordForm() {
           {state.error}
         </p>
       ) : null}
-      <button type="submit" disabled={pending} className="w-full rounded-lg bg-accent px-3 py-2 text-t13 font-semibold text-white disabled:opacity-50">
+      <button type="submit" disabled={pending} className="w-full rounded-lg bg-accent px-3 py-2 text-t13 font-semibold text-on-accent disabled:opacity-50">
         {pending ? '확인 중…' : '비밀번호 정하고 시작하기'}
       </button>
     </form>

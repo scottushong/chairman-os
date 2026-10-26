@@ -138,15 +138,15 @@ export function EaCompose({
     <div className={`${C.card} flex flex-col gap-5 px-4 py-5 sm:px-6`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <div className="text-[12px] text-[#6b7280]">새 문서 · {form.name_ko}{d?.version && d.version > 1 ? ` · ${d.version}판(보완본)` : ''}</div>
-          <h2 className="text-[19px] font-bold text-[#1f2329]">{d ? '이어서 작성' : '새 문서 작성'}</h2>
+          <div className="text-[12px] text-ink-muted">새 문서 · {form.name_ko}{d?.version && d.version > 1 ? ` · ${d.version}판(보완본)` : ''}</div>
+          <h2 className="text-[19px] font-bold text-ink">{d ? '이어서 작성' : '새 문서 작성'}</h2>
         </div>
-        <div className="text-[13px] text-[#6b7280]">
+        <div className="text-[13px] text-ink-muted">
           기안자 {me.name}
           {me.dept ? ` · ${me.dept}` : ''}
         </div>
       </div>
-      {form.note ? <div className="rounded-md bg-[#f6f7f9] px-3 py-2 text-[13px] text-[#4b5563]">{form.note}</div> : null}
+      {form.note ? <div className="rounded-md bg-raised px-3 py-2 text-[13px] text-ink-dim">{form.note}</div> : null}
 
       <div className="grid gap-4 sm:grid-cols-2">
         {businesses.length > 1 ? (
@@ -205,9 +205,9 @@ export function EaCompose({
                   className={C.input}
                 />
               )}
-              {f.type === 'money' && fields[f.key] ? <span className="text-[12px] text-[#6b7280]">{won(Number(fields[f.key]))}</span> : null}
+              {f.type === 'money' && fields[f.key] ? <span className="text-[12px] text-ink-muted">{won(Number(fields[f.key]))}</span> : null}
               {f.key === 'total' && sumHint != null && String(sumHint) !== fields.total ? (
-                <button type="button" className="self-start text-[12px] text-[#2f5bd3] underline" onClick={() => setF('total', String(sumHint))}>
+                <button type="button" className="self-start text-[12px] text-link underline" onClick={() => setF('total', String(sumHint))}>
                   공급가 + 부가세 = {won(sumHint)}로 맞추기
                 </button>
               ) : null}
@@ -215,16 +215,16 @@ export function EaCompose({
           ))}
         </div>
       ) : null}
-      {form.form_key === 'vacation' ? <div className="text-[12px] text-[#6b7280]">잔여일수 · 중복 신청 검증: 근태 기능 연동 준비 중</div> : null}
+      {form.form_key === 'vacation' ? <div className="text-[12px] text-ink-muted">잔여일수 · 중복 신청 검증: 근태 기능 연동 준비 중</div> : null}
 
-      <fieldset className="flex flex-col gap-2 rounded-md border border-[#e3e6eb] p-3">
-        <legend className="px-1 text-[13px] font-semibold text-[#1f2329]">결재선 *</legend>
+      <fieldset className="flex flex-col gap-2 rounded-md border border-line p-3">
+        <legend className="px-1 text-[13px] font-semibold text-ink">결재선 *</legend>
         <ol className="flex flex-col gap-2">
           {line.map((s, i) => (
             <li key={i} className="flex flex-wrap items-center gap-2">
-              <span className="w-6 text-[13px] text-[#6b7280]">{i + 1}</span>
+              <span className="w-6 text-[13px] text-ink-muted">{i + 1}</span>
               {s.role === 'Chairman' ? (
-                <span className="min-w-[8rem] rounded-md bg-[#f3f4f6] px-3 py-2 text-[14px]">대표</span>
+                <span className="min-w-[8rem] rounded-md bg-raised px-3 py-2 text-[14px]">대표</span>
               ) : (
                 <select value={s.user_id ?? ''} onChange={(e) => setLine((x) => x.map((y, j) => (j === i ? { ...y, user_id: e.target.value } : y)))} className={`${C.input} w-auto min-w-[10rem] flex-1`}>
                   <option value="">사람 선택</option>
@@ -241,13 +241,13 @@ export function EaCompose({
                 <option value="approve">{i === line.length - 1 ? '승인' : '검토(승인)'}</option>
                 <option value="agree">합의</option>
               </select>
-              <button type="button" className="text-[13px] text-[#6b7280]" disabled={i === 0} onClick={() => setLine((x) => swap(x, i, i - 1))} aria-label="위로">
+              <button type="button" className="text-[13px] text-ink-muted" disabled={i === 0} onClick={() => setLine((x) => swap(x, i, i - 1))} aria-label="위로">
                 ↑
               </button>
-              <button type="button" className="text-[13px] text-[#6b7280]" disabled={i === line.length - 1} onClick={() => setLine((x) => swap(x, i, i + 1))} aria-label="아래로">
+              <button type="button" className="text-[13px] text-ink-muted" disabled={i === line.length - 1} onClick={() => setLine((x) => swap(x, i, i + 1))} aria-label="아래로">
                 ↓
               </button>
-              <button type="button" className="text-[13px] text-[#b4372b]" onClick={() => setLine((x) => x.filter((_, j) => j !== i))}>
+              <button type="button" className="text-[13px] text-critical" onClick={() => setLine((x) => x.filter((_, j) => j !== i))}>
                 빼기
               </button>
             </li>
@@ -286,7 +286,7 @@ export function EaCompose({
             </select>
           ) : null}
         </div>
-        <div className="text-[12px] text-[#6b7280]">
+        <div className="text-[12px] text-ink-muted">
           순서대로 처리합니다: {line.map((s) => (s.role === 'Chairman' ? '대표' : name(s.user_id)) + (s.kind === 'agree' ? '(합의)' : '')).join(' → ') || '—'}. 금액이 큰 구매 · 지출 · 수리는 대표 승인이 필요합니다(관리자가 정한 규칙).
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -308,8 +308,8 @@ export function EaCompose({
         </div>
       </fieldset>
 
-      <fieldset className="flex flex-col gap-2 rounded-md border border-[#e3e6eb] p-3">
-        <legend className="px-1 text-[13px] font-semibold text-[#1f2329]">참조 · 열람</legend>
+      <fieldset className="flex flex-col gap-2 rounded-md border border-line p-3">
+        <legend className="px-1 text-[13px] font-semibold text-ink">참조 · 열람</legend>
         {refs.map((r, i) => (
           <div key={i} className="flex flex-wrap items-center gap-2">
             <select value={r.user_id} onChange={(e) => setRefs((x) => x.map((y, j) => (j === i ? { ...y, user_id: e.target.value } : y)))} className={`${C.input} w-auto min-w-[10rem] flex-1`}>
@@ -325,7 +325,7 @@ export function EaCompose({
               <option value="cc">참조</option>
               <option value="viewer">열람</option>
             </select>
-            <button type="button" className="text-[13px] text-[#b4372b]" onClick={() => setRefs((x) => x.filter((_, j) => j !== i))}>
+            <button type="button" className="text-[13px] text-critical" onClick={() => setRefs((x) => x.filter((_, j) => j !== i))}>
               빼기
             </button>
           </div>
@@ -333,7 +333,7 @@ export function EaCompose({
         <button type="button" className={`${C.btnLine} self-start`} onClick={() => setRefs((x) => [...x, { user_id: '', kind: 'cc' }])}>
           + 참조자
         </button>
-        <div className="text-[12px] text-[#6b7280]">참조자는 문서를 보고 «확인»만 합니다 — 결재를 진행시키지 않습니다.</div>
+        <div className="text-[12px] text-ink-muted">참조자는 문서를 보고 «확인»만 합니다 — 결재를 진행시키지 않습니다.</div>
       </fieldset>
 
       <div className="grid gap-4 sm:grid-cols-3">
@@ -358,19 +358,19 @@ export function EaCompose({
         ) : null}
       </div>
 
-      <fieldset className="flex flex-col gap-2 rounded-md border border-[#e3e6eb] p-3">
-        <legend className="px-1 text-[13px] font-semibold text-[#1f2329]">첨부파일{form.attachment_required ? ' *' : ''}</legend>
+      <fieldset className="flex flex-col gap-2 rounded-md border border-line p-3">
+        <legend className="px-1 text-[13px] font-semibold text-ink">첨부파일{form.attachment_required ? ' *' : ''}</legend>
         {files.length ? (
           <ul className="flex flex-col gap-1">
             {files.map((f) => (
-              <li key={f.file_id} className="flex items-center justify-between gap-2 rounded-md bg-[#f6f7f9] px-3 py-2 text-[13px]">
+              <li key={f.file_id} className="flex items-center justify-between gap-2 rounded-md bg-raised px-3 py-2 text-[13px]">
                 <span className="min-w-0 break-all">
                   {f.name} · {Math.max(1, Math.round(f.size / 1024))}KB
                 </span>
                 {initial?.files.some((x) => x.file_id === f.file_id) ? (
                   <button
                     type="button"
-                    className="shrink-0 text-[#b4372b]"
+                    className="shrink-0 text-critical"
                     onClick={() =>
                       start(async () => {
                         const r = await eaRemoveFile(f.file_id)
@@ -387,15 +387,15 @@ export function EaCompose({
           </ul>
         ) : null}
         <input type="file" multiple onChange={(e) => attach(e.target.files)} disabled={pending} className="text-[13px]" aria-label="첨부파일 고르기" />
-        <div className="text-[12px] text-[#6b7280]">파일당 20MB. 이 문서를 볼 수 있는 사람만 내려받습니다. 상신 뒤에는 바꿀 수 없습니다.</div>
+        <div className="text-[12px] text-ink-muted">파일당 20MB. 이 문서를 볼 수 있는 사람만 내려받습니다. 상신 뒤에는 바꿀 수 없습니다.</div>
       </fieldset>
 
       {error ? (
-        <div role="alert" className="rounded-md bg-[#fdecea] px-3 py-2 text-[13px] text-[#b4372b]">
+        <div role="alert" className="rounded-md bg-critical/10 px-3 py-2 text-[13px] text-critical">
           {error}
         </div>
       ) : null}
-      {note ? <div className="rounded-md bg-[#e7f5ee] px-3 py-2 text-[13px] text-[#1f7a4d]">{note}</div> : null}
+      {note ? <div className="rounded-md bg-ok/10 px-3 py-2 text-[13px] text-ok">{note}</div> : null}
 
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" disabled={pending} className={C.btn} onClick={submit}>
@@ -411,7 +411,7 @@ export function EaCompose({
           <button
             type="button"
             disabled={pending}
-            className="ml-auto text-[13px] text-[#b4372b]"
+            className="ml-auto text-[13px] text-critical"
             onClick={() =>
               start(async () => {
                 const r = await eaDeleteDraft(docId)
@@ -431,7 +431,7 @@ export function EaCompose({
 function Label({ text, children, wide }: { text: string; children: React.ReactNode; wide?: boolean }) {
   return (
     <label className={`flex min-w-0 flex-col gap-1 ${wide ? 'sm:col-span-2' : ''}`}>
-      <span className="text-[13px] text-[#4b5563]">{text}</span>
+      <span className="text-[13px] text-ink-dim">{text}</span>
       {children}
     </label>
   )

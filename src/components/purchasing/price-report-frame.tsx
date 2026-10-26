@@ -40,7 +40,7 @@ export function PriceReportFrame({ html, title }: { html: string; title: string 
         // 글꼴이 늦게 붙으면 높이가 바뀐다 — 한 번 더.
         setTimeout(fit, 400)
       }}
-      className="block w-full rounded-xl border-0 bg-[#0b0d12]"
+      className="block w-full rounded-xl border-0 bg-scrim"
       style={{ height }}
       data-testid="price-report-frame"
     />

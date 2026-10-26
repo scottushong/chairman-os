@@ -13,11 +13,11 @@ export const C = {
 
 export function Pill({ tone, children }: { tone: 'blue' | 'orange' | 'green' | 'red' | 'gray'; children: ReactNode }) {
   const t = {
-    blue: 'bg-[#eaf0fd] text-[#2f5bd3]',
-    orange: 'bg-[#fdeee8] text-[#b5532a]',
-    green: 'bg-[#e7f5ee] text-[#1f7a4d]',
-    red: 'bg-[#fdecea] text-[#b4372b]',
-    gray: 'bg-[#eef0f3] text-[#4b5563]',
+    blue: 'bg-accent-soft text-accent',
+    orange: 'bg-warning/10 text-warning',
+    green: 'bg-ok/10 text-ok',
+    red: 'bg-critical/10 text-critical',
+    gray: 'bg-raised text-ink-dim',
   }[tone]
   return <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[13px] font-medium whitespace-nowrap ${t}`}>{children}</span>
 }

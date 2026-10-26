@@ -75,7 +75,7 @@ export function ProfileForm({ profile, bossName }: { profile: MyProfile; bossNam
         <button
           type="submit"
           disabled={pending}
-          className="rounded-md bg-accent px-3 py-1.5 text-t12 font-semibold text-white transition-colors hover:opacity-90 disabled:opacity-50"
+          className="rounded-md bg-accent px-3 py-1.5 text-t12 font-semibold text-on-accent transition-colors hover:opacity-90 disabled:opacity-50"
         >
           {pending ? '저장하는 중…' : '저장'}
         </button>

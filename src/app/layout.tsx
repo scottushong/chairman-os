@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from 'next'
-import { Noto_Serif_KR } from 'next/font/google'
+import { Noto_Sans_KR, Noto_Serif_KR } from 'next/font/google'
 
 import { STAFF_BRAND, STAFF_DESCRIPTION } from '@/lib/brand'
 
@@ -19,6 +19,28 @@ const notoSerifKR = Noto_Serif_KR({
   weight: ['400', '500'],
   variable: '--font-noto-serif-kr',
   display: 'swap',
+})
+
+/**
+ * 0098 새 모양의 글꼴 둘(globals.css --font-sans · --font-display). 둘 다 같은 방식으로 자체 호스팅한다.
+ *   본문 Noto Sans KR 400 · 500 · 700 — 산세리프 본문(시안). semibold(600)는 700으로 잡힌다.
+ *   제목 Noto Serif KR 600 · 700 — 세리프 제목(시안). 예전 모양의 명조(위 400 · 500)와 **다른 인스턴스**로 받는다:
+ *   같은 인스턴스에 굵기를 더하면 예전 모양의 굵은 글자(지금은 500을 두껍게 그린 것)까지 모양이 바뀐다.
+ * 한글은 unicode-range 조각이라 화면에 쓰인 글자 조각만 내려온다.
+ */
+const notoSansKR = Noto_Sans_KR({
+  subsets: ['latin'],
+  weight: ['400', '500', '700'],
+  variable: '--font-noto-sans-kr',
+  display: 'swap',
+})
+
+const notoSerifDisplay = Noto_Serif_KR({
+  subsets: ['latin'],
+  weight: ['600', '700'],
+  variable: '--font-noto-serif-display',
+  display: 'swap',
+  preload: false,
 })
 
 /**
@@ -65,7 +87,7 @@ export const viewport: Viewport = {
  */
 export default function RootLayout({ children }: LayoutProps<'/'>) {
   return (
-    <html lang="ko" data-theme="light" className={`${notoSerifKR.variable} h-full antialiased`}>
+    <html lang="ko" data-theme="light" className={`${notoSerifKR.variable} ${notoSansKR.variable} ${notoSerifDisplay.variable} h-full antialiased`}>
       <body className="h-full font-sans">{children}</body>
     </html>
   )

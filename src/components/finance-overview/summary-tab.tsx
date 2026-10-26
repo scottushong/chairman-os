@@ -169,7 +169,7 @@ export function SummaryTab({ ctx, period, grain, kpis, checklist, links, withdra
               <tbody>
                 <tr><Td>기초 현금</Td><Td n>{won(cash.opening)}</Td><Td n>{won(ytdOpening)}</Td></tr>
                 <tr><Td>영업활동</Td><Td n>{won(cash.operating, true)}</Td><Td n>{won(ytd('operating'), true)}</Td></tr>
-                <tr><Td className="pl-6 text-[#6b7772]">그중 원료대금 지급</Td><Td n className="text-[#6b7772]">{won(cash.materialPaid)}</Td><Td n className="text-[#6b7772]">{won(ytd('materialPaid'))}</Td></tr>
+                <tr><Td className="pl-6 text-ink-muted">그중 원료대금 지급</Td><Td n className="text-ink-muted">{won(cash.materialPaid)}</Td><Td n className="text-ink-muted">{won(ytd('materialPaid'))}</Td></tr>
                 <tr><Td>투자활동</Td><Td n>{won(cash.investing, true)}</Td><Td n>{won(ytd('investing'), true)}</Td></tr>
                 <tr><Td>재무활동</Td><Td n>{won(cash.financing, true)}</Td><Td n>{won(ytd('financing'), true)}</Td></tr>
                 <tr><Td bold>기말 현금</Td><Td n bold>{won(cash.closing)}</Td><Td n bold>{won(cash.closing)}</Td></tr>
@@ -242,7 +242,7 @@ export function SummaryTab({ ctx, period, grain, kpis, checklist, links, withdra
                   <tr key={i}>
                     <Td>{c.label}</Td>
                     <Td n>{won(c.amount)}</Td>
-                    <Td n className={c.change !== null && c.change >= 20 ? 'text-[#b4432b]' : ''}>{pctText(c.change)}</Td>
+                    <Td n className={c.change !== null && c.change >= 20 ? 'text-critical' : ''}>{pctText(c.change)}</Td>
                   </tr>
                 ))}
               </tbody>
@@ -283,21 +283,21 @@ export function SummaryTab({ ctx, period, grain, kpis, checklist, links, withdra
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6" data-testid="checklist">
           {checklist.map((c) =>
             c.state === 'ok' ? (
-              <div key={c.key} className="rounded-lg bg-[#e1efeb] px-2.5 py-2 text-[13px] text-[#0f6b5c]">
+              <div key={c.key} className="rounded-lg bg-ok/10 px-2.5 py-2 text-[13px] text-ok">
                 ✓ {c.label}
                 <FileStats c={c} />
                 {withdraw && c.uploadId ? <ChecklistWithdraw uploadId={c.uploadId} businessId={withdraw.businessId} fileName={c.fileName ?? null} /> : null}
               </div>
             ) : c.state === 'warn' ? (
-              <div key={c.key} className="rounded-lg bg-[#fdf4ec] px-2.5 py-2 text-[13px] text-[#9a4b12]" title={c.warnings.join('\n')}>
+              <div key={c.key} className="rounded-lg bg-warning/10 px-2.5 py-2 text-[13px] text-warning" title={c.warnings.join('\n')}>
                 ⚠ {c.label} ({warnShort(c.warnings)})
                 <FileStats c={c} />
                 {withdraw && c.uploadId ? <ChecklistWithdraw uploadId={c.uploadId} businessId={withdraw.businessId} fileName={c.fileName ?? null} /> : null}
               </div>
             ) : (
-              <div key={c.key} className="rounded-lg border border-dashed border-[#c9d1cd] bg-white px-2.5 py-2 text-[13px] text-[#6b7772]">
+              <div key={c.key} className="rounded-lg border border-dashed border-line bg-card px-2.5 py-2 text-[13px] text-ink-muted">
                 · {c.label}{' '}
-                <Link href={links.upload} className="inline-flex items-center text-[#0f6b5c] hover:underline">
+                <Link href={links.upload} className="inline-flex items-center text-accent hover:underline">
                   올리기
                 </Link>
               </div>
@@ -346,7 +346,7 @@ function OtherTables({ ctx, period }: { ctx: Ctx; period: string }) {
     { title: '절감목표 · 진행', empty: '절감목표 · 진행현황', head: ['항목', '목표', '실적', '달성'], rows: m.savings.map((r) => [String(r.item ?? ''), won(Number(r.target ?? 0)), won(Number(r.actual ?? 0)), ratio(pct(Number(r.actual ?? 0), Number(r.target ?? 0)), 0)]) },
   ]
   return (
-    <details className="rounded-[10px] border border-[#e1e6e3] bg-white px-[18px] py-3" data-testid="other-tables">
+    <details className="rounded-[10px] border border-line bg-card px-[18px] py-3" data-testid="other-tables">
       <summary className="cursor-pointer text-[15px] font-bold">그 밖 자료 표 — 급여 · 카드 · 해외법인 · 해외판촉 · 절감목표</summary>
       <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-2">
         {blocks.map((b) => (

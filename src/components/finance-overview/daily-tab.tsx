@@ -38,8 +38,8 @@ export function DailyTab({ d, upload }: { d: DailyReport; upload: string }) {
                 </tr>
                 {d.totalUsd !== null ? (
                   <tr>
-                    <Td className="text-[#6b7772]">원화 환산{d.usdKrw ? ` (${d.usdKrw.toLocaleString('ko-KR', { maximumFractionDigits: 1 })}원)` : ''}</Td>
-                    <Td n className="text-[#6b7772]">{d.usdKrw ? won(d.totalConverted) : '환율 없음'}</Td>
+                    <Td className="text-ink-muted">원화 환산{d.usdKrw ? ` (${d.usdKrw.toLocaleString('ko-KR', { maximumFractionDigits: 1 })}원)` : ''}</Td>
+                    <Td n className="text-ink-muted">{d.usdKrw ? won(d.totalConverted) : '환율 없음'}</Td>
                     <Td />
                   </tr>
                 ) : null}
@@ -75,8 +75,8 @@ export function DailyTab({ d, upload }: { d: DailyReport; upload: string }) {
                 <Td n>{d.sales.collected !== null && d.sales.revenue ? `매출 대비 ${Math.round((d.sales.collected / d.sales.revenue) * 100)}%` : '—'}</Td>
               </tr>
               <tr>
-                <Td className="pl-6 text-[#6b7772]">그중 전월 매출 수금</Td>
-                <Td n className="text-[#6b7772]">{won(d.sales.collectedPrevMonth)}</Td>
+                <Td className="pl-6 text-ink-muted">그중 전월 매출 수금</Td>
+                <Td n className="text-ink-muted">{won(d.sales.collectedPrevMonth)}</Td>
                 <Td n />
               </tr>
               <tr>
@@ -85,9 +85,9 @@ export function DailyTab({ d, upload }: { d: DailyReport; upload: string }) {
                 <Td n>{d.sales.dso !== null ? `평균 회수 ${d.sales.dso}일` : '—'}</Td>
               </tr>
               <tr>
-                <Td className="text-[#b4432b]">기준일 넘은 미수</Td>
-                <Td n className="text-[#b4432b]">{d.sales.overdue ? won(d.sales.overdue.amount) : '—'}</Td>
-                <Td n className="text-[#b4432b]">{d.sales.overdue ? `${d.sales.overdue.customers}곳` : '자료 부족'}</Td>
+                <Td className="text-critical">기준일 넘은 미수</Td>
+                <Td n className="text-critical">{d.sales.overdue ? won(d.sales.overdue.amount) : '—'}</Td>
+                <Td n className="text-critical">{d.sales.overdue ? `${d.sales.overdue.customers}곳` : '자료 부족'}</Td>
               </tr>
             </tbody>
           </T>
@@ -114,7 +114,7 @@ export function DailyTab({ d, upload }: { d: DailyReport; upload: string }) {
                 {d.loans.rows.map((r, i) => (
                   <tr key={i}>
                     <Td>
-                      {r.lender} {r.type !== '대출' && r.type !== '차입금' ? <span className="text-[#6b7772]">{r.type.replace(/자금$/, '')}</span> : null}
+                      {r.lender} {r.type !== '대출' && r.type !== '차입금' ? <span className="text-ink-muted">{r.type.replace(/자금$/, '')}</span> : null}
                     </Td>
                     <Td n>{won(r.total)}</Td>
                     <Td n>{won(r.balance)}</Td>
@@ -137,16 +137,16 @@ export function DailyTab({ d, upload }: { d: DailyReport; upload: string }) {
       </div>
 
       <Card title="④ 최근 10일 잔액 추이 · 오늘 들어오고 나간 돈">
-        <div className="-mt-1 text-[14px] lg:text-[12px] text-[#6b7772]">원화 + 달러 환산</div>
+        <div className="-mt-1 text-[14px] lg:text-[12px] text-ink-muted">원화 + 달러 환산</div>
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {d.trend.length ? (
-            <div className="flex h-[140px] items-end gap-1.5 border-b border-[#e1e6e3] px-1" aria-label="최근 잔액 막대">
+            <div className="flex h-[140px] items-end gap-1.5 border-b border-line px-1" aria-label="최근 잔액 막대">
               {d.trend.map((t, i) => {
                 const today = i === d.trend.length - 1
                 return (
                   <div key={t.date} className="flex flex-1 flex-col items-center gap-1" title={`${t.date} ${eok(t.krw)}`}>
-                    <div className={`w-full rounded-t-[3px] ${today ? 'bg-[#0f6b5c]' : 'bg-[#b9d8d0]'}`} style={{ height: `${h(t.krw)}px` }} />
-                    <div className={`text-[14px] lg:text-[11px] ${today ? 'font-semibold text-[#1a211e]' : 'text-[#6b7772]'}`}>{today ? '오늘' : `${Number(t.date.slice(5, 7))}/${Number(t.date.slice(8, 10))}`}</div>
+                    <div className={`w-full rounded-t-[3px] ${today ? 'bg-accent' : 'bg-accent-soft'}`} style={{ height: `${h(t.krw)}px` }} />
+                    <div className={`text-[14px] lg:text-[11px] ${today ? 'font-semibold text-ink' : 'text-ink-muted'}`}>{today ? '오늘' : `${Number(t.date.slice(5, 7))}/${Number(t.date.slice(8, 10))}`}</div>
                   </div>
                 )
               })}
@@ -166,17 +166,17 @@ export function DailyTab({ d, upload }: { d: DailyReport; upload: string }) {
               {d.today.length ? (
                 d.today.map((t, i) => (
                   <tr key={i}>
-                    <Td className={t.kind === 'in' ? 'text-[#0f6b5c]' : 'text-[#b4432b]'}>{t.kind === 'in' ? '입금' : '출금'}</Td>
+                    <Td className={t.kind === 'in' ? 'text-positive' : 'text-negative'}>{t.kind === 'in' ? '입금' : '출금'}</Td>
                     <Td>{t.label}</Td>
-                    <Td n className={t.kind === 'in' ? 'text-[#0f6b5c]' : 'text-[#b4432b]'}>
+                    <Td n className={t.kind === 'in' ? 'text-positive' : 'text-negative'}>
                       {t.usd !== null ? usd(t.kind === 'in' ? t.usd : -t.usd, true) : won(t.kind === 'in' ? t.krw : -(t.krw ?? 0), true)}
                     </Td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <Td className="text-[#6b7772]">—</Td>
-                  <Td className="text-[#6b7772]">오늘 입출금 줄이 아직 없습니다</Td>
+                  <Td className="text-ink-muted">—</Td>
+                  <Td className="text-ink-muted">오늘 입출금 줄이 아직 없습니다</Td>
                   <Td />
                 </tr>
               )}

@@ -172,7 +172,7 @@ export function LedgerFilterBar({ filters, options, today }: { filters: LedgerFi
           <input name="q" type="search" defaultValue={filters.q ?? ''} className={input} />
         </Field>
         <div className="col-span-2 flex items-end gap-2 md:col-span-4 xl:col-span-6">
-          <button type="submit" className="rounded-md border border-accent bg-accent px-3 py-1.5 text-t11h font-semibold text-white">
+          <button type="submit" className="rounded-md border border-accent bg-accent px-3 py-1.5 text-t11h font-semibold text-on-accent">
             거르기
           </button>
           <Link href={BASE} className="rounded-md border border-line px-3 py-1.5 text-t11h text-ink-dim hover:text-ink">

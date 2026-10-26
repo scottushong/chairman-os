@@ -15,7 +15,7 @@ type Src = keyof typeof SOURCE_KO
  */
 export function ValuationEdit({ businessId, period, rows, canFix }: { businessId: string; period: string; rows: { cat: 'wip' | 'finished'; label: string; value: number | null; source: Src | null }[]; canFix: boolean }) {
   return (
-    <div className="mt-1 rounded-md border border-[#e1e6e3] px-3 py-2" data-testid="valuation-edit">
+    <div className="mt-1 rounded-md border border-line px-3 py-2" data-testid="valuation-edit">
       <div className="text-[14px] font-semibold">
         {period.slice(0, 4)}년 {Number(period.slice(5, 7))}월 말 재고 평가
       </div>
@@ -34,20 +34,20 @@ function One({ businessId, period, row, canFix }: { businessId: string; period: 
   const [edit, setEdit] = useState(false)
   const [amount, setAmount] = useState(row.value === null ? '' : String(row.value))
   const [msg, setMsg] = useState<string | null>(null)
-  const tone = row.source === 'measured' ? 'bg-[#e1efeb] text-[#0f6b5c]' : row.source ? 'bg-[#f8eadf] text-[#9a4b12]' : 'bg-[#f4f5f3] text-[#6b7772]'
+  const tone = row.source === 'measured' ? 'bg-ok/10 text-ok' : row.source ? 'bg-warning/10 text-warning' : 'bg-raised text-ink-muted'
   return (
-    <div className="flex flex-wrap items-center gap-2 border-t border-[#eef1ef] py-1.5 first:border-t-0">
+    <div className="flex flex-wrap items-center gap-2 border-t border-line-soft py-1.5 first:border-t-0">
       <span className="w-16 text-[14px]">{row.label}</span>
       <span className="min-w-[120px] text-right text-[14px] tnum">{row.value === null ? '—' : `${row.value.toLocaleString('ko-KR')}원`}</span>
       <span className={`rounded-full px-2 py-[1px] text-[12px] font-semibold ${tone}`}>{row.source ? SOURCE_KO[row.source] : '자료 없음'}</span>
       {canFix && !edit ? (
-        <button type="button" onClick={() => setEdit(true)} className="inline-flex min-h-11 items-center text-[13px] text-[#0f6b5c] hover:underline lg:min-h-0">
+        <button type="button" onClick={() => setEdit(true)} className="inline-flex min-h-11 items-center text-[13px] text-accent hover:underline lg:min-h-0">
           고치기
         </button>
       ) : null}
       {canFix && edit ? (
         <>
-          <input aria-label={`${row.label} 금액`} inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} className="min-h-11 lg:min-h-8 w-36 rounded-md border border-[#d7ddda] px-2 text-right text-[13px] tnum" />
+          <input aria-label={`${row.label} 금액`} inputMode="numeric" value={amount} onChange={(e) => setAmount(e.target.value)} className="min-h-11 lg:min-h-8 w-36 rounded-md border border-line px-2 text-right text-[13px] tnum" />
           <button
             type="button"
             disabled={busy}
@@ -61,17 +61,17 @@ function One({ businessId, period, row, canFix }: { businessId: string; period: 
                 }
               })
             }
-            className="min-h-11 lg:min-h-8 rounded-md bg-[#0f6b5c] px-3 text-[13px] font-semibold text-white disabled:opacity-50"
+            className="min-h-11 lg:min-h-8 rounded-md bg-accent px-3 text-[13px] font-semibold text-on-accent disabled:opacity-50"
           >
             {busy ? '저장 중…' : '저장'}
           </button>
-          <button type="button" onClick={() => setEdit(false)} className="inline-flex min-h-11 items-center text-[13px] text-[#6b7772] hover:underline lg:min-h-0">
+          <button type="button" onClick={() => setEdit(false)} className="inline-flex min-h-11 items-center text-[13px] text-ink-muted hover:underline lg:min-h-0">
             그만
           </button>
         </>
       ) : null}
       {msg ? (
-        <span role="status" className="text-[12px] text-[#b4432b]">
+        <span role="status" className="text-[12px] text-critical">
           {msg}
         </span>
       ) : null}

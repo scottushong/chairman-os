@@ -29,23 +29,23 @@ export function EaPersonal({ settings, people, forms, today }: { settings: EaMyS
 
   return (
     <div className="flex flex-col gap-4">
-      {msg ? <div className={`rounded-md px-3 py-2 text-[13px] ${msg.ok ? 'bg-[#e7f5ee] text-[#1f7a4d]' : 'bg-[#fdecea] text-[#b4372b]'}`}>{msg.text}</div> : null}
+      {msg ? <div className={`rounded-md px-3 py-2 text-[13px] ${msg.ok ? 'bg-ok/10 text-ok' : 'bg-critical/10 text-critical'}`}>{msg.text}</div> : null}
 
       <section className={`${C.card} flex flex-col gap-3 px-4 py-4 sm:px-5`}>
-        <h2 className="text-[16px] font-semibold text-[#1f2329]">기간을 정한 대결자</h2>
-        <p className="text-[13px] text-[#6b7280]">내가 없는 동안 이 사람이 내 차례 문서를 대신 처리합니다(정한 기간 · 양식 · 금액 안에서만). 문서에는 나와 대결자가 둘 다 남습니다. 최대 90일.</p>
-        {settings.proxy_for.length ? <div className="text-[13px] text-[#2f5bd3]">지금 내가 대결하는 사람: {settings.proxy_for.map((p) => `${p.owner}(${p.from}~${p.to})`).join(', ')}</div> : null}
+        <h2 className="text-[16px] font-semibold text-ink">기간을 정한 대결자</h2>
+        <p className="text-[13px] text-ink-muted">내가 없는 동안 이 사람이 내 차례 문서를 대신 처리합니다(정한 기간 · 양식 · 금액 안에서만). 문서에는 나와 대결자가 둘 다 남습니다. 최대 90일.</p>
+        {settings.proxy_for.length ? <div className="text-[13px] text-accent">지금 내가 대결하는 사람: {settings.proxy_for.map((p) => `${p.owner}(${p.from}~${p.to})`).join(', ')}</div> : null}
         <ul className="flex flex-col gap-1.5">
           {settings.proxies.map((p) => (
-            <li key={p.proxy_id} className="flex flex-wrap items-center gap-2 rounded-md bg-[#f6f7f9] px-3 py-2 text-[13px]">
+            <li key={p.proxy_id} className="flex flex-wrap items-center gap-2 rounded-md bg-raised px-3 py-2 text-[13px]">
               <span className="font-medium">{p.proxy}</span>
               <span>
                 {p.from} ~ {p.to}
               </span>
-              <span className="text-[#6b7280]">{p.forms?.length ? p.forms.map((f) => forms.find((x) => x.form_key === f)?.name_ko ?? f).join(' · ') : '모든 양식'}</span>
-              <span className="text-[#6b7280]">{p.max_amount ? `${won(p.max_amount)} 이하` : '금액 제한 없음'}</span>
+              <span className="text-ink-muted">{p.forms?.length ? p.forms.map((f) => forms.find((x) => x.form_key === f)?.name_ko ?? f).join(' · ') : '모든 양식'}</span>
+              <span className="text-ink-muted">{p.max_amount ? `${won(p.max_amount)} 이하` : '금액 제한 없음'}</span>
               {p.active ? (
-                <button type="button" className="ml-auto text-[#b4372b]" disabled={pending} onClick={() => go(() => eaEndProxy(p.proxy_id), '대결을 끝냈습니다.')}>
+                <button type="button" className="ml-auto text-critical" disabled={pending} onClick={() => go(() => eaEndProxy(p.proxy_id), '대결을 끝냈습니다.')}>
                   끝내기
                 </button>
               ) : (
@@ -77,7 +77,7 @@ export function EaPersonal({ settings, people, forms, today }: { settings: EaMyS
               {f.name_ko}
             </label>
           ))}
-          <span className="text-[#6b7280]">(아무것도 안 고르면 모든 양식)</span>
+          <span className="text-ink-muted">(아무것도 안 고르면 모든 양식)</span>
         </div>
         <button type="button" disabled={pending || !proxy} className={`${C.btn} self-start`} onClick={() => go(() => eaSaveProxy(proxy, from, to, pForms, max ? Number(max) : null), '대결자를 정했습니다.')}>
           대결자 정하기
@@ -85,28 +85,28 @@ export function EaPersonal({ settings, people, forms, today }: { settings: EaMyS
       </section>
 
       <section className={`${C.card} flex flex-col gap-3 px-4 py-4 sm:px-5`}>
-        <h2 className="text-[16px] font-semibold text-[#1f2329]">자주 쓰는 결재선</h2>
+        <h2 className="text-[16px] font-semibold text-ink">자주 쓰는 결재선</h2>
         {settings.favorites.length ? (
           <ul className="flex flex-col gap-1.5">
             {settings.favorites.map((f) => (
-              <li key={f.fav_id} className="flex items-center justify-between gap-2 rounded-md bg-[#f6f7f9] px-3 py-2 text-[13px]">
+              <li key={f.fav_id} className="flex items-center justify-between gap-2 rounded-md bg-raised px-3 py-2 text-[13px]">
                 <span>
                   <span className="font-medium">{f.name}</span> · {f.line.map((s) => (s.role ? '대표' : (people.find((p) => p.user_id === s.user_id)?.name ?? '—')) + (s.kind === 'agree' ? '(합의)' : '')).join(' → ')}
                 </span>
-                <button type="button" className="text-[#b4372b]" disabled={pending} onClick={() => go(() => eaDeleteFavorite(f.fav_id), '지웠습니다.')}>
+                <button type="button" className="text-critical" disabled={pending} onClick={() => go(() => eaDeleteFavorite(f.fav_id), '지웠습니다.')}>
                   지우기
                 </button>
               </li>
             ))}
           </ul>
         ) : (
-          <p className="text-[13px] text-[#6b7280]">아직 없습니다. 새 문서 작성 화면의 결재선 아래에서 «이름 붙여 저장»합니다.</p>
+          <p className="text-[13px] text-ink-muted">아직 없습니다. 새 문서 작성 화면의 결재선 아래에서 «이름 붙여 저장»합니다.</p>
         )}
       </section>
 
       <section className={`${C.card} flex flex-col gap-3 px-4 py-4 sm:px-5`}>
-        <h2 className="text-[16px] font-semibold text-[#1f2329]">결재 알림</h2>
-        <p className="text-[13px] text-[#6b7280]">앱 안 알림(위쪽 종)으로만 갑니다. 메일 · 카톡은 보내지 않습니다.</p>
+        <h2 className="text-[16px] font-semibold text-ink">결재 알림</h2>
+        <p className="text-[13px] text-ink-muted">앱 안 알림(위쪽 종)으로만 갑니다. 메일 · 카톡은 보내지 않습니다.</p>
         {(
           [
             ['turn', '내 차례가 됐을 때'],
@@ -146,23 +146,23 @@ export function EaAdmin({ forms, rules }: { forms: EaForm[]; rules: EaLineRule[]
 
   return (
     <div className="flex flex-col gap-4">
-      {msg ? <div className={`rounded-md px-3 py-2 text-[13px] ${msg.ok ? 'bg-[#e7f5ee] text-[#1f7a4d]' : 'bg-[#fdecea] text-[#b4372b]'}`}>{msg.text}</div> : null}
+      {msg ? <div className={`rounded-md px-3 py-2 text-[13px] ${msg.ok ? 'bg-ok/10 text-ok' : 'bg-critical/10 text-critical'}`}>{msg.text}</div> : null}
 
       <section className={`${C.card} flex flex-col gap-3 px-4 py-4 sm:px-5`}>
-        <h2 className="text-[16px] font-semibold text-[#1f2329]">양식 관리</h2>
-        <p className="text-[13px] text-[#6b7280]">바꾸면 판(버전)이 하나 오릅니다. 이미 상신된 문서는 상신 때 판 그대로입니다.</p>
+        <h2 className="text-[16px] font-semibold text-ink">양식 관리</h2>
+        <p className="text-[13px] text-ink-muted">바꾸면 판(버전)이 하나 오릅니다. 이미 상신된 문서는 상신 때 판 그대로입니다.</p>
         <ul className="flex flex-col gap-1.5">
           {forms.map((f) => (
-            <li key={f.form_key} className="flex flex-wrap items-center gap-2 rounded-md bg-[#f6f7f9] px-3 py-2 text-[13px]">
+            <li key={f.form_key} className="flex flex-wrap items-center gap-2 rounded-md bg-raised px-3 py-2 text-[13px]">
               <span className="font-medium">{f.name_ko}</span>
               <Pill tone="gray">{f.version}판</Pill>
-              <span className="text-[#6b7280]">
+              <span className="text-ink-muted">
                 칸 {f.fields.length} · {f.attachment_required ? '첨부 필수' : '첨부 선택'} · {f.followup_kind ? `후속 ${f.followup_kind}` : '후속 없음'}
               </span>
               {!f.active ? <Pill tone="red">쓰지 않음</Pill> : null}
               <button
                 type="button"
-                className="ml-auto text-[#2f5bd3]"
+                className="ml-auto text-link"
                 onClick={() => {
                   setEdit(f)
                   setFieldsText(JSON.stringify(f.fields, null, 1))
@@ -174,7 +174,7 @@ export function EaAdmin({ forms, rules }: { forms: EaForm[]; rules: EaLineRule[]
           ))}
         </ul>
         {edit ? (
-          <div className="flex flex-col gap-2 rounded-md border border-[#e3e6eb] p-3">
+          <div className="flex flex-col gap-2 rounded-md border border-line p-3">
             <input value={edit.name_ko} onChange={(e) => setEdit({ ...edit, name_ko: e.target.value })} className={C.input} aria-label="양식 이름" />
             <input value={edit.followup_kind ?? ''} onChange={(e) => setEdit({ ...edit, followup_kind: e.target.value || null })} placeholder="후속 처리(비우면 없음) — 예: 관리부 지급" className={C.input} />
             <input value={edit.note ?? ''} onChange={(e) => setEdit({ ...edit, note: e.target.value || null })} placeholder="작성 화면 안내" className={C.input} />
@@ -189,7 +189,7 @@ export function EaAdmin({ forms, rules }: { forms: EaForm[]; rules: EaLineRule[]
                 <input type="checkbox" checked={edit.active} onChange={(e) => setEdit({ ...edit, active: e.target.checked })} /> 사용
               </label>
             </div>
-            <label className="text-[12px] text-[#6b7280]">
+            <label className="text-[12px] text-ink-muted">
               입력 칸(JSON — key · label · type[text · textarea · number · money · date · select] · required · options)
               <textarea value={fieldsText} onChange={(e) => setFieldsText(e.target.value)} rows={8} className={`${C.input} font-mono text-[12px]`} />
             </label>
@@ -222,16 +222,16 @@ export function EaAdmin({ forms, rules }: { forms: EaForm[]; rules: EaLineRule[]
       </section>
 
       <section className={`${C.card} flex flex-col gap-3 px-4 py-4 sm:px-5`}>
-        <h2 className="text-[16px] font-semibold text-[#1f2329]">결재선 · 전결 규칙</h2>
-        <p className="text-[13px] text-[#6b7280]">금액이 기준 이상이면 결재선 끝에 «대표» 승인이 있어야 상신됩니다. 기준 아래는 결재선의 마지막 승인자가 전결합니다.</p>
+        <h2 className="text-[16px] font-semibold text-ink">결재선 · 전결 규칙</h2>
+        <p className="text-[13px] text-ink-muted">금액이 기준 이상이면 결재선 끝에 «대표» 승인이 있어야 상신됩니다. 기준 아래는 결재선의 마지막 승인자가 전결합니다.</p>
         <ul className="flex flex-col gap-1.5">
           {rules.map((r) => (
-            <li key={r.rule_id} className="flex flex-wrap items-center gap-2 rounded-md bg-[#f6f7f9] px-3 py-2 text-[13px]">
+            <li key={r.rule_id} className="flex flex-wrap items-center gap-2 rounded-md bg-raised px-3 py-2 text-[13px]">
               <span className="font-medium">{forms.find((f) => f.form_key === r.form_key)?.name_ko ?? '모든 양식'}</span>
               <span>{won(r.min_amount)} 이상 → {r.require_chairman ? '대표 승인 필수' : '전결'}</span>
-              {r.note ? <span className="text-[#6b7280]">{r.note}</span> : null}
+              {r.note ? <span className="text-ink-muted">{r.note}</span> : null}
               {r.active ? null : <Pill tone="gray">끔</Pill>}
-              <button type="button" className="ml-auto text-[#2f5bd3]" disabled={pending} onClick={() => go(() => eaSaveRule({ ...r, active: !r.active }), r.active ? '규칙을 껐습니다.' : '규칙을 켰습니다.')}>
+              <button type="button" className="ml-auto text-link" disabled={pending} onClick={() => go(() => eaSaveRule({ ...r, active: !r.active }), r.active ? '규칙을 껐습니다.' : '규칙을 켰습니다.')}>
                 {r.active ? '끄기' : '켜기'}
               </button>
             </li>
@@ -261,7 +261,7 @@ export function EaAdmin({ forms, rules }: { forms: EaForm[]; rules: EaLineRule[]
 
       <section className={`${C.card} grid gap-2 px-4 py-4 sm:grid-cols-2 sm:px-5`}>
         {['문서 권한 · 보관 설정', '결재 · 변경 이력 조회', '처리자 바꾸기(퇴사 등 · 사유 필수)', '부서 문서함(별도 권한자만)'].map((t) => (
-          <div key={t} className="rounded-md border border-dashed border-[#d5d9e0] px-3 py-3 text-[13px] text-[#6b7280]">
+          <div key={t} className="rounded-md border border-dashed border-line px-3 py-3 text-[13px] text-ink-muted">
             {t} — 준비 중
           </div>
         ))}

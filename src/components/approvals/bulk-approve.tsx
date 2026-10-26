@@ -69,7 +69,7 @@ export function BulkApprove({
           type="button"
           disabled={pending || chosen.length === 0}
           onClick={approve}
-          className="rounded-md border border-accent bg-accent px-2.5 py-1 text-t11h font-semibold text-white disabled:opacity-40"
+          className="rounded-md border border-accent bg-accent px-2.5 py-1 text-t11h font-semibold text-on-accent disabled:opacity-40"
         >
           {pending ? '승인 중…' : `선택 승인${chosen.length ? ` (${chosen.length})` : ''}`}
         </button>

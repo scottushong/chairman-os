@@ -14,7 +14,7 @@ import type { FavoriteOption, HomeWidget, WidgetData, WidgetDef } from '@/lib/ho
  *   대표 첫 화면 위젯은 숫자 칸(stats) · 표(table) · 긴 글(text) · 기준(basis) · 데이터 상태(LIVE/PARTIAL/UNAVAILABLE)를 더 싣는다.
  */
 
-const LINK = 'inline-flex min-h-11 items-center text-[14px] text-[#2f5bd3] hover:underline'
+const LINK = 'inline-flex min-h-11 items-center text-[14px] text-link hover:underline'
 
 export function WidgetContent({ widget, def, favorites, scope }: { widget: HomeWidget; def: WidgetDef; favorites: readonly FavoriteOption[]; scope?: { biz: string; project: string | null } }) {
   if (def.kind === 'favorites') return <FavoritesView widget={widget} options={favorites} />
@@ -122,7 +122,7 @@ function Remote({ kind, filter, moreHref, biz, project }: { kind: string; filter
           ) : null}
         </span>
         {moreHref ? (
-          <Link href={moreHref} className="inline-flex min-h-11 items-center text-[13px] text-[#2f5bd3] hover:underline">
+          <Link href={moreHref} className="inline-flex min-h-11 items-center text-[13px] text-link hover:underline">
             전체 보기
           </Link>
         ) : null}

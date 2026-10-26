@@ -6,6 +6,7 @@ import { useRef, type RefObject } from 'react'
 import type { Group, Mesh } from 'three'
 
 import type { CityActor, CityCharacter } from '@/lib/city-live'
+import { PERSON_3D, ROBOT_3D, SKIN_3D } from '@/lib/design/scene-palette'
 
 import { PersonTag } from './labels'
 import { arcDelta, LANE_CAR, LANE_ROBOT, ringPoint, tangent, type SpotPos } from './layout3d'
@@ -27,17 +28,8 @@ interface Look {
   tie?: string
 }
 
-const LOOK: Record<Exclude<CityCharacter, 'robot'>, Look> = {
-  staff1: { shirt: '#3b6fb6', arms: '#3b6fb6', pants: '#2b2f3a' },
-  staff2: { shirt: '#d8c4a0', arms: '#d8c4a0', pants: '#4a4238' },
-  staff3: { shirt: '#4f8a5b', arms: '#4f8a5b', pants: '#2b2f3a' },
-  staff4: { shirt: '#c98a95', arms: '#c98a95', pants: '#3a3440' },
-  // 팀장 — 청록 조끼 위로 흰 셔츠 소매.
-  lead: { shirt: '#1f7a78', arms: '#f1efe9', pants: '#2b2f3a' },
-  ceo: { shirt: '#1c2a4a', arms: '#1c2a4a', pants: '#1c2a4a', tie: '#b3262d' },
-  chairman: { shirt: '#111114', arms: '#111114', pants: '#111114', tie: '#c9a35a' },
-}
-const SKIN = '#e0b894'
+const LOOK: Record<Exclude<CityCharacter, 'robot'>, Look> = PERSON_3D
+const SKIN = SKIN_3D
 
 interface Limbs {
   legL: Mesh | null
@@ -56,8 +48,8 @@ function useLimbs(): RefObject<Limbs> {
 function Figure({ character, rigRef }: { character: CityCharacter; rigRef: RefObject<Limbs> }) {
   const robot = character === 'robot'
   const look = robot ? null : LOOK[character]
-  const white = cloth('#eef0f2', 0.35, 0.1)
-  const grey = cloth('#8d9399', 0.5, 0.4)
+  const white = cloth(ROBOT_3D.shell, 0.35, 0.1)
+  const grey = cloth(ROBOT_3D.joint, 0.5, 0.4)
   return (
     <group>
       <mesh geometry={DISC} material={MAT.blob} position-y={0.03} scale={0.75} />

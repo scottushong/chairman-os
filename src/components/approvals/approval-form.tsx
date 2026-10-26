@@ -148,7 +148,7 @@ export function ApprovalForm({
                 }}
                 className={`rounded-lg border px-3 py-1.5 text-t12h font-semibold ${
                   t.template_key === key
-                    ? 'border-accent bg-accent text-white'
+                    ? 'border-accent bg-accent text-on-accent'
                     : 'border-line bg-raised hover:border-accent'
                 }`}
               >
@@ -234,10 +234,10 @@ export function ApprovalForm({
                   <span
                     className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-t10h font-bold ${
                       s.step === 'chairman'
-                        ? 'bg-gold text-white'
+                        ? 'bg-gold text-on-gold'
                         : s.step === 'rule'
                           ? 'bg-line-soft text-ink-dim'
-                          : 'bg-accent text-white'
+                          : 'bg-accent text-on-accent'
                     }`}
                   >
                     {i + 1}
@@ -283,7 +283,7 @@ export function ApprovalForm({
             type="button"
             onClick={submit}
             disabled={pending || missing.length > 0 || badAmount}
-            className="w-full rounded-lg bg-accent px-3 py-2 text-t13 font-semibold text-white disabled:opacity-40"
+            className="w-full rounded-lg bg-accent px-3 py-2 text-t13 font-semibold text-on-accent disabled:opacity-40"
           >
             {pending ? tr(lang, '올리는 중…', 'Submitting…') : tr(lang, '결재 올리기', 'Submit')}
           </button>

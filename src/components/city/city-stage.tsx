@@ -29,7 +29,7 @@ import { CITY_SKY_LABEL_KO, type CitySky, type CitySnapshot } from '@/lib/city-l
 const CityScene = dynamic(() => import('@/components/city/scene/city-scene'), {
   ssr: false,
   loading: () => (
-    <div className="flex aspect-video w-full items-center justify-center rounded-glass bg-[#0d1016] text-t12 text-white/60">
+    <div className="flex aspect-video w-full items-center justify-center rounded-glass bg-scrim text-t12 text-on-dark/60">
       3D 도시를 세우는 중…
     </div>
   ),
@@ -123,12 +123,12 @@ export function CityStage({
 
       {/* 하늘 표시 · 보기 전환. 3D가 설 수 있는 기기에서만 전환 단추가 선다. */}
       <div className="pointer-events-none absolute right-3 top-3 z-10 flex items-center gap-1.5 max-md:hidden">
-        <span className="rounded-md bg-black/55 px-2 py-1 text-t11 text-white/90 backdrop-blur-sm">{CITY_SKY_LABEL_KO[sky]}</span>
+        <span className="rounded-md bg-scrim/55 px-2 py-1 text-t11 text-on-dark/90 backdrop-blur-sm">{CITY_SKY_LABEL_KO[sky]}</span>
         {capable && !reduced ? (
           <button
             type="button"
             onClick={() => choose2d(!prefer2d)}
-            className="pointer-events-auto rounded-md bg-black/55 px-2 py-1 text-t11 text-white/90 backdrop-blur-sm transition-colors hover:bg-black/75"
+            className="pointer-events-auto rounded-md bg-scrim/55 px-2 py-1 text-t11 text-on-dark/90 backdrop-blur-sm transition-colors hover:bg-scrim/75"
           >
             {prefer2d ? '3D로 보기' : '그림으로 보기'}
           </button>

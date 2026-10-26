@@ -153,7 +153,7 @@
   position: absolute;
   width: clamp(11px, 1.55cqw, 34px);
   transform: translate(-50%, -100%);
-  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.35));
+  filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--color-scrim) 35%, transparent));
 }
 
 .label {
@@ -164,11 +164,11 @@
   transform: translateX(-50%);
   white-space: nowrap;
   border-radius: 4px;
-  background: rgba(0, 0, 0, 0.66);
+  background: color-mix(in srgb, var(--color-scrim) 66%, transparent);
   padding: 1px 4px;
   font-size: 10px;
   line-height: 1.3;
-  color: #fff;
+  color: var(--color-on-dark);
 }
 
 .bar {
@@ -180,19 +180,19 @@
   transform: translateX(-50%);
   overflow: hidden;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.45);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35);
+  background: color-mix(in srgb, var(--color-scrim) 45%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-on-dark) 35%, transparent);
 }
 .barFill {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #d8b46a, #f3dc9b);
+  background: linear-gradient(90deg, #d8b46a, #f3dc9b); /* design-allow: 진행바 금빛 — 그림 효과 색(테마 아님) */
 }
 .barFlow {
   height: 100%;
   width: 40%;
   border-radius: inherit;
-  background: linear-gradient(90deg, transparent, #f3dc9b, transparent);
+  background: linear-gradient(90deg, transparent, #f3dc9b, transparent); /* design-allow: 진행바 금빛 — 그림 효과 색(테마 아님) */
   animation: flow 1.6s linear infinite;
 }
 @keyframes flow {
@@ -209,7 +209,7 @@
   position: absolute;
   width: clamp(12px, 1.6cqw, 34px);
   transform: translate(-50%, -80%);
-  filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.45));
+  filter: drop-shadow(0 1px 1.5px color-mix(in srgb, var(--color-scrim) 45%, transparent));
 }
 
 /* ------------------------------------------------------------------ 하늘 · 물 */
@@ -219,14 +219,14 @@
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse at 60% 110%, rgba(40, 60, 120, 0.1), transparent 60%),
-    linear-gradient(180deg, rgba(6, 10, 34, 0.72), rgba(10, 16, 40, 0.58) 45%, rgba(8, 12, 30, 0.62));
+    radial-gradient(ellipse at 60% 110%, rgba(40, 60, 120, 0.1), transparent 60%), /* design-allow: 밤 하늘 남색 — 그림 효과 색(테마 아님) */
+    linear-gradient(180deg, rgba(6, 10, 34, 0.72), rgba(10, 16, 40, 0.58) 45%, rgba(8, 12, 30, 0.62)); /* design-allow: 밤 하늘 남색 — 그림 효과 색(테마 아님) */
   mix-blend-mode: multiply;
 }
 .nightTint {
   position: absolute;
   inset: 0;
-  background: rgba(20, 30, 70, 0.28);
+  background: rgba(20, 30, 70, 0.28); /* design-allow: 밤 하늘 남색 — 그림 효과 색(테마 아님) */
   mix-blend-mode: color;
 }
 
@@ -235,8 +235,8 @@
   width: clamp(1.5px, 0.22cqw, 5px);
   height: clamp(2px, 0.3cqw, 6px);
   border-radius: 1px;
-  background: #ffd98a;
-  box-shadow: 0 0 clamp(2px, 0.35cqw, 8px) rgba(255, 200, 110, 0.9);
+  background: #ffd98a; /* design-allow: 켜진 창 불빛 — 그림 효과 색(테마 아님) */
+  box-shadow: 0 0 clamp(2px, 0.35cqw, 8px) rgba(255, 200, 110, 0.9); /* design-allow: 켜진 창 불빛 — 그림 효과 색(테마 아님) */
   animation: twinkle 7s ease-in-out infinite;
 }
 @keyframes twinkle {
@@ -252,7 +252,11 @@
 .cloud {
   position: absolute;
   border-radius: 50%;
-  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0) 70%);
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in srgb, var(--color-on-dark) 55%, transparent),
+    color-mix(in srgb, var(--color-on-dark) 0%, transparent) 70%
+  );
   filter: blur(6px);
   animation: drift linear infinite;
 }
@@ -274,7 +278,7 @@
 }
 .riverLine {
   fill: none;
-  stroke: rgba(255, 255, 255, 0.22);
+  stroke: color-mix(in srgb, var(--color-on-dark) 22%, transparent);
   stroke-linecap: round;
   animation: current 9s linear infinite;
 }
@@ -292,7 +296,7 @@
   height: 4cqw;
   transform: translate(-50%, -50%);
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 226, 150, 0.95), rgba(255, 196, 80, 0.35) 40%, transparent 70%);
+  background: radial-gradient(circle, rgba(255, 226, 150, 0.95), rgba(255, 196, 80, 0.35) 40%, transparent 70%); /* design-allow: 오벨리스크 금빛 — 그림 효과 색(테마 아님) */
   mix-blend-mode: screen;
   animation: glow 2.4s ease-in-out infinite alternate;
 }
@@ -311,7 +315,7 @@
   position: absolute;
   width: clamp(12px, 1.5cqw, 30px);
   transform: translate(-50%, -100%);
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.4));
+  filter: drop-shadow(0 1px 2px color-mix(in srgb, var(--color-scrim) 40%, transparent));
   animation: float 2.2s ease-in-out infinite alternate;
 }
 @keyframes float {

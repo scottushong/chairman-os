@@ -15,7 +15,7 @@ export function LegacyImportButton({ businessId, done }: { businessId: string; d
   const [out, setOut] = useState<LegacyImportView | null>(null)
   const fresh = out?.items?.filter((i) => i.fresh) ?? []
   return (
-    <section className="rounded-[10px] border border-[#e1e6e3] bg-white px-[18px] py-3" data-testid="legacy-import">
+    <section className="rounded-[10px] border border-line bg-card px-[18px] py-3" data-testid="legacy-import">
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
@@ -27,22 +27,22 @@ export function LegacyImportButton({ businessId, done }: { businessId: string; d
               router.refresh()
             })
           }
-          className="min-h-11 rounded-lg border border-[#0f6b5c] bg-[#e1efeb] px-4 text-[14px] font-semibold text-[#0f6b5c] hover:bg-[#d3e8e2] disabled:opacity-50"
+          className="min-h-11 rounded-lg border border-accent bg-accent-soft px-4 text-[14px] font-semibold text-accent hover:bg-accent/15 disabled:opacity-50"
         >
           {busy ? '가져오는 중…' : '예전 자료 가져오기'}
         </button>
-        <p className="min-w-0 flex-1 text-[13px] text-[#6b7772]">
+        <p className="min-w-0 flex-1 text-[13px] text-ink-muted">
           예전 방식으로 올렸던 것(수신함에 남은 파일 · «확인 필요» 대기 · 공식 결산 PDF · 월별 입력)을 지금 저장 방식으로 한 번에 옮깁니다. AI를 쓰지 않고, 두 번 눌러도 다시 넣지 않습니다.
           {done ? ` 앞에서 ${done}건 처리함.` : ''}
         </p>
       </div>
       {out ? (
         <div className="mt-2 text-[13px]" role="status">
-          <p className={out.error ? 'text-[#b42318]' : 'font-semibold'}>{out.error ?? out.summary}</p>
+          <p className={out.error ? 'text-critical' : 'font-semibold'}>{out.error ?? out.summary}</p>
           {fresh.length ? (
-            <ul className="mt-1 max-h-60 space-y-0.5 overflow-y-auto text-[13px] text-[#3b4440]" aria-label="이번에 처리한 것">
+            <ul className="mt-1 max-h-60 space-y-0.5 overflow-y-auto text-[13px] text-ink-dim" aria-label="이번에 처리한 것">
               {fresh.map((i, n) => (
-                <li key={n} className="rounded bg-[#f4f5f3] px-2 py-0.5">
+                <li key={n} className="rounded bg-raised px-2 py-0.5">
                   <span className="font-semibold">{i.outcome}</span> · {i.source} · {i.message}
                 </li>
               ))}

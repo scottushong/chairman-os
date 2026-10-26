@@ -55,7 +55,7 @@ function sampleHtml(): string {
       "utf8",
     );
   } catch {
-    return '<!DOCTYPE html><html lang="ko"><body style="background:#0b0d12;color:#e8e8e8;font-family:sans-serif;padding:16px"><h1>가격 리포트(견본)</h1><p>견본 파일이 없습니다.</p></body></html>';
+    return '<!DOCTYPE html><html lang="ko"><body style="background:#0b0d12;color:#e8e8e8;font-family:sans-serif;padding:16px"><h1>가격 리포트(견본)</h1><p>견본 파일이 없습니다.</p></body></html>'; // design-allow: 견본 HTML 문자열(iframe 안 독립 문서)
   }
 }
 

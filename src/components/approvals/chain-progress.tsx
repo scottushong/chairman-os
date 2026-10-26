@@ -17,7 +17,7 @@ const STATUS_LABEL: Record<ApprovalStepStatus, string> = {
 }
 
 const STATUS_TONE: Record<ApprovalStepStatus, string> = {
-  pending: 'bg-accent text-white',
+  pending: 'bg-accent text-on-accent',
   waiting: 'bg-raised text-ink-muted',
   approved: 'bg-ok/15 text-ok',
   rejected: 'bg-critical/15 text-critical',

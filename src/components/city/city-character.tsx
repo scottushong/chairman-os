@@ -1,4 +1,5 @@
 import type { CityCharacter, CityMotion } from '@/lib/city-live'
+import { DESK_SVG, FIGURE_SVG, PERSON_SVG, ROBOT_SVG } from '@/lib/design/scene-palette'
 
 import s from './city-live.module.css'
 
@@ -25,13 +26,13 @@ interface Look {
 }
 
 const LOOK: Record<Exclude<CityCharacter, 'robot'>, Look> = {
-  staff1: { shirt: '#4f7cac', pants: '#2d3a4a', skin: '#f1c9a5', hair: '#2b2118', hairStyle: 'short' },
-  staff2: { shirt: '#d8a878', pants: '#3b3b3b', skin: '#f3d2b3', hair: '#4a2f1d', hairStyle: 'long' },
-  staff3: { shirt: '#7fa37a', pants: '#34423a', skin: '#e7b894', hair: '#1c1c1c', hairStyle: 'short' },
-  staff4: { shirt: '#c9737b', pants: '#3a3440', skin: '#f0c7a4', hair: '#6b4a2b', hairStyle: 'tail' },
-  lead: { shirt: '#f4f4f0', pants: '#26323d', skin: '#eec3a0', hair: '#231a14', hairStyle: 'short', extra: 'vest', extraColor: '#2a7f7a' },
-  ceo: { shirt: '#1f2a44', pants: '#1a2236', skin: '#eab99a', hair: '#8a8a8a', hairStyle: 'short', extra: 'tie', extraColor: '#b3303a' },
-  chairman: { shirt: '#15151a', pants: '#101014', skin: '#ecc0a0', hair: '#c9c9c9', hairStyle: 'short', extra: 'pin', extraColor: '#d4af61' },
+  staff1: { ...PERSON_SVG.staff1, hairStyle: 'short' },
+  staff2: { ...PERSON_SVG.staff2, hairStyle: 'long' },
+  staff3: { ...PERSON_SVG.staff3, hairStyle: 'short' },
+  staff4: { ...PERSON_SVG.staff4, hairStyle: 'tail' },
+  lead: { ...PERSON_SVG.lead, hairStyle: 'short', extra: 'vest' },
+  ceo: { ...PERSON_SVG.ceo, hairStyle: 'short', extra: 'tie' },
+  chairman: { ...PERSON_SVG.chairman, hairStyle: 'short', extra: 'pin' },
 }
 
 export function CityCharacterSvg({
@@ -51,18 +52,18 @@ export function CityCharacterSvg({
   return (
     <svg viewBox="0 0 20 36" className={cls} aria-hidden="true">
       {/* 그림자 */}
-      <ellipse cx="10" cy="35.2" rx="5.2" ry="1" fill="rgba(0,0,0,.28)" />
+      <ellipse cx="10" cy="35.2" rx="5.2" ry="1" className="fill-scrim" fillOpacity={0.28} />
 
       {/* 다리 — 앉으면 책상 뒤로 숨는다. */}
       {seated ? null : (
         <>
           <g className={s.legL}>
             <rect x="7.2" y="22" width="2.6" height="12" rx="1.2" fill={look.pants} />
-            <rect x="6.8" y="33" width="3.2" height="1.6" rx=".8" fill="#1a1a1a" />
+            <rect x="6.8" y="33" width="3.2" height="1.6" rx=".8" fill={FIGURE_SVG.shoe} />
           </g>
           <g className={s.legR}>
             <rect x="10.2" y="22" width="2.6" height="12" rx="1.2" fill={look.pants} />
-            <rect x="10" y="33" width="3.2" height="1.6" rx=".8" fill="#1a1a1a" />
+            <rect x="10" y="33" width="3.2" height="1.6" rx=".8" fill={FIGURE_SVG.shoe} />
           </g>
         </>
       )}
@@ -81,13 +82,13 @@ export function CityCharacterSvg({
         ) : null}
         {look.extra === 'tie' ? (
           <>
-            <path d="M8.6 11.6 L10 13.2 L11.4 11.6 Z" fill="#f2f2f2" />
+            <path d="M8.6 11.6 L10 13.2 L11.4 11.6 Z" fill={FIGURE_SVG.collar} />
             <path d="M9.4 13 L10.6 13 L11 19 L10 20.4 L9 19 Z" fill={look.extraColor} />
           </>
         ) : null}
         {look.extra === 'pin' ? (
           <>
-            <path d="M8.6 11.6 L10 13.2 L11.4 11.6 Z" fill="#f2f2f2" />
+            <path d="M8.6 11.6 L10 13.2 L11.4 11.6 Z" fill={FIGURE_SVG.collar} />
             <path d="M9.5 13 L10.5 13 L10.8 18.5 L10 19.6 L9.2 18.5 Z" fill={look.extraColor} />
             <circle cx="12.2" cy="14.2" r=".7" fill={look.extraColor} />
           </>
@@ -105,8 +106,8 @@ export function CityCharacterSvg({
         {/* 서류 — 들고 걷기 */}
         {motion === 'carry' ? (
           <g>
-            <rect x="8.4" y="14.6" width="7.4" height="5.6" rx=".5" fill="#fbfaf6" stroke="#b9b2a2" strokeWidth=".35" />
-            <path d="M9.4 16.2 H14.6 M9.4 17.5 H14 M9.4 18.8 H13" stroke="#b9b2a2" strokeWidth=".35" />
+            <rect x="8.4" y="14.6" width="7.4" height="5.6" rx=".5" fill={FIGURE_SVG.paper} stroke={FIGURE_SVG.paperLine} strokeWidth=".35" />
+            <path d="M9.4 16.2 H14.6 M9.4 17.5 H14 M9.4 18.8 H13" stroke={FIGURE_SVG.paperLine} strokeWidth=".35" />
           </g>
         ) : null}
 
@@ -126,12 +127,12 @@ export function CityCharacterSvg({
 function Desk() {
   return (
     <g>
-      <rect x="1" y="21.5" width="18" height="2" rx=".6" fill="#6b4f36" />
-      <rect x="2.2" y="23.5" width="1.4" height="11.5" fill="#57402b" />
-      <rect x="16.4" y="23.5" width="1.4" height="11.5" fill="#57402b" />
-      <rect x="5.5" y="15.8" width="9" height="5.4" rx=".6" fill="#20262e" />
-      <rect x="6.1" y="16.4" width="7.8" height="4.2" rx=".3" fill="#7fd3e6" className={s.screen} />
-      <rect x="9.4" y="21.1" width="1.2" height=".6" fill="#20262e" />
+      <rect x="1" y="21.5" width="18" height="2" rx=".6" fill={DESK_SVG.top} />
+      <rect x="2.2" y="23.5" width="1.4" height="11.5" fill={DESK_SVG.leg} />
+      <rect x="16.4" y="23.5" width="1.4" height="11.5" fill={DESK_SVG.leg} />
+      <rect x="5.5" y="15.8" width="9" height="5.4" rx=".6" fill={DESK_SVG.monitor} />
+      <rect x="6.1" y="16.4" width="7.8" height="4.2" rx=".3" fill={DESK_SVG.screen} className={s.screen} />
+      <rect x="9.4" y="21.1" width="1.2" height=".6" fill={DESK_SVG.monitor} />
     </g>
   )
 }
@@ -139,30 +140,30 @@ function Desk() {
 function RobotSvg({ className, motion }: { className: string; motion: CityMotion }) {
   return (
     <svg viewBox="0 0 20 36" className={className} aria-hidden="true">
-      <ellipse cx="10" cy="35.2" rx="5" ry="1" fill="rgba(0,0,0,.28)" />
+      <ellipse cx="10" cy="35.2" rx="5" ry="1" className="fill-scrim" fillOpacity={0.28} />
       {motion === 'desk' ? null : (
         <>
           <g className={s.legL}>
-            <rect x="7" y="24" width="2.6" height="10" rx="1" fill="#c9d2dc" />
+            <rect x="7" y="24" width="2.6" height="10" rx="1" fill={ROBOT_SVG.leg} />
           </g>
           <g className={s.legR}>
-            <rect x="10.4" y="24" width="2.6" height="10" rx="1" fill="#c9d2dc" />
+            <rect x="10.4" y="24" width="2.6" height="10" rx="1" fill={ROBOT_SVG.leg} />
           </g>
         </>
       )}
       <g className={s.torso}>
         <g className={s.armL}>
-          <rect x="3.6" y="14" width="2.2" height="8.5" rx="1.1" fill="#d7dee6" />
+          <rect x="3.6" y="14" width="2.2" height="8.5" rx="1.1" fill={ROBOT_SVG.arm} />
         </g>
-        <rect x="5.6" y="12.8" width="8.8" height="12" rx="3" fill="#eef2f6" stroke="#b9c4cf" strokeWidth=".4" />
-        <circle cx="10" cy="18.6" r="1.4" fill="#35d0e0" className={s.blink} />
-        <line x1="10" y1="2" x2="10" y2="4.8" stroke="#9aa7b4" strokeWidth=".6" />
-        <circle cx="10" cy="1.8" r="1" fill="#35d0e0" className={s.blink} />
-        <rect x="5.4" y="4.6" width="9.2" height="7.4" rx="2.6" fill="#eef2f6" stroke="#b9c4cf" strokeWidth=".4" />
-        <rect x="6.6" y="6.6" width="6.8" height="2.8" rx="1.4" fill="#12303a" />
-        <rect x="7.4" y="7.4" width="5.2" height="1.2" rx=".6" fill="#35d0e0" />
+        <rect x="5.6" y="12.8" width="8.8" height="12" rx="3" fill={ROBOT_SVG.shell} stroke={ROBOT_SVG.outline} strokeWidth=".4" />
+        <circle cx="10" cy="18.6" r="1.4" fill={ROBOT_SVG.light} className={s.blink} />
+        <line x1="10" y1="2" x2="10" y2="4.8" stroke={ROBOT_SVG.antenna} strokeWidth=".6" />
+        <circle cx="10" cy="1.8" r="1" fill={ROBOT_SVG.light} className={s.blink} />
+        <rect x="5.4" y="4.6" width="9.2" height="7.4" rx="2.6" fill={ROBOT_SVG.shell} stroke={ROBOT_SVG.outline} strokeWidth=".4" />
+        <rect x="6.6" y="6.6" width="6.8" height="2.8" rx="1.4" fill={ROBOT_SVG.visor} />
+        <rect x="7.4" y="7.4" width="5.2" height="1.2" rx=".6" fill={ROBOT_SVG.light} />
         <g className={s.armR}>
-          <rect x="14.2" y="14" width="2.2" height="8.5" rx="1.1" fill="#d7dee6" />
+          <rect x="14.2" y="14" width="2.2" height="8.5" rx="1.1" fill={ROBOT_SVG.arm} />
         </g>
       </g>
       {motion === 'desk' ? <Desk /> : null}

@@ -9,6 +9,8 @@
  */
 import sharp from 'sharp'
 
+import { LITERAL } from '@/lib/design/tokens'
+
 export type DocFormat = 'pdf_text' | 'pdf_scan' | 'image'
 
 export const DOC_MAX_PAGES = 30 // 2026-10-16: 10 → 30(결산서 · 부속 명세서). 첨부 스캔 한도(lib/attachments/limits.ts PDF_DOC_MAX_PAGES)와 같다
@@ -147,12 +149,12 @@ export async function normalizePhoto(bytes: Uint8Array): Promise<{ data: Uint8Ar
     throw new DocOpenError('사진이 깨져 열 수 없습니다 — 다시 찍거나 원본을 올려 주세요.')
   }
   if (meta.orientation && meta.orientation !== 1) fixes.push(`EXIF 방향 ${meta.orientation} → 바로 세움`)
-  const upright = await sharp(bytes).rotate().flatten({ background: '#ffffff' }).png().toBuffer()
+  const upright = await sharp(bytes).rotate().flatten({ background: LITERAL.paper }).png().toBuffer()
   const small = await sharp(upright).greyscale().resize({ width: 600, withoutEnlargement: true }).raw().toBuffer({ resolveWithObject: true })
   const skew = measureSkew(small.data, small.info.width, small.info.height)
   let img = sharp(upright)
   if (Math.abs(skew) >= 0.5) {
-    img = sharp(await sharp(upright).rotate(-skew, { background: '#ffffff' }).png().toBuffer())
+    img = sharp(await sharp(upright).rotate(-skew, { background: LITERAL.paper }).png().toBuffer())
     fixes.push(`기울기 ${Math.abs(skew)}° 폄`)
   }
   const data = await img.resize({ width: IMAGE_MAX_SIDE, height: IMAGE_MAX_SIDE, fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 85 }).toBuffer()

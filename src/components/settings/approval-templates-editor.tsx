@@ -245,7 +245,7 @@ function TemplateCard({ template }: { template: ApprovalTemplate }) {
           type="button"
           onClick={save}
           disabled={pending}
-          className="rounded-lg bg-accent px-4 py-2 text-t13 font-semibold text-white disabled:opacity-40"
+          className="rounded-lg bg-accent px-4 py-2 text-t13 font-semibold text-on-accent disabled:opacity-40"
         >
           {pending ? '저장 중…' : `${template.name_ko} 저장`}
         </button>

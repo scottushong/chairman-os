@@ -177,7 +177,7 @@ export default async function ApprovalsPage(props: PageProps<'/approvals'>) {
         {/* Phase 9 블록 2. 양식(지출 · 구매 · 휴가 · 계약 · 채용)과 결재선 미리보기. */}
         <Link
           href="/approvals/new"
-          className="rounded-md border border-accent bg-accent px-2.5 py-1.5 text-t11h font-semibold text-white"
+          className="rounded-md border border-accent bg-accent px-2.5 py-1.5 text-t11h font-semibold text-on-accent"
         >
           + 양식으로 올리기
         </Link>

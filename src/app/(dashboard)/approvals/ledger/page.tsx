@@ -70,7 +70,7 @@ export default async function ApprovalLedgerPage(props: PageProps<'/approvals/le
         {canExport ? (
           <a
             href={exportHref}
-            className={`inline-flex items-center gap-1 rounded-md border border-accent bg-accent px-2.5 py-1.5 text-t11h font-semibold text-white ${
+            className={`inline-flex items-center gap-1 rounded-md border border-accent bg-accent px-2.5 py-1.5 text-t11h font-semibold text-on-accent ${
               rows.length === 0 ? 'pointer-events-none opacity-50' : ''
             }`}
             aria-disabled={rows.length === 0 ? 'true' : undefined}

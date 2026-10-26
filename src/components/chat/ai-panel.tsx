@@ -108,7 +108,7 @@ export function AiPanel({
           placeholder={tr(lang, 'AI에게 묻기…', 'Ask AI…')}
           className="flex-1 rounded-md border border-line bg-panel px-2.5 py-2 text-t12h"
         />
-        <button type="submit" disabled={pending || !q.trim()} className="rounded-md bg-accent px-3 py-2 text-t12h font-semibold text-white disabled:opacity-40">
+        <button type="submit" disabled={pending || !q.trim()} className="rounded-md bg-accent px-3 py-2 text-t12h font-semibold text-on-accent disabled:opacity-40">
           {tr(lang, '묻기', 'Ask')}
         </button>
       </form>

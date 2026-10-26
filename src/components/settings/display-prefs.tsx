@@ -3,8 +3,8 @@
 import { useRouter } from 'next/navigation'
 import { useState, useTransition } from 'react'
 
-import { saveCityMotion, saveNotifySwitch, saveTheme } from '@/app/actions/ui-prefs'
-import { THEME_CHOICE, THEME_LABEL_KO, type ThemeChoice } from '@/lib/ui-prefs'
+import { saveCityMotion, saveNotifySwitch, saveTheme, saveUiTheme } from '@/app/actions/ui-prefs'
+import { THEME_CHOICE, THEME_LABEL_KO, UI_THEME, UI_THEME_LABEL_KO, type ThemeChoice, type UiTheme } from '@/lib/ui-prefs'
 import {
   NOTIFICATION_KIND,
   NOTIFICATION_KIND_LABEL_KO,
@@ -19,6 +19,67 @@ import {
  * 고르는 즉시 저장한다(BriefTimezone과 같은 규칙 — 저장 버튼을 따로 두면 고르고 안 누른 채
  * 나가는 날이 온다). 못 저장하면 화면도 되돌린다.
  */
+
+/**
+ * 0098 화면 모양 — 새 모양(기본) · 예전 모양. 고르는 즉시 저장하고 셸이 다시 그려진다(못 저장하면 되돌린다).
+ * 기능 · 메뉴 · 주소는 같고 색 · 글꼴 · 카드 모양만 바뀐다.
+ */
+export function UiThemePicker({ value }: { value: UiTheme }) {
+  const router = useRouter()
+  const [ui, setUi] = useState<UiTheme>(value)
+  const [error, setError] = useState<string | null>(null)
+  const [pending, start] = useTransition()
+
+  const choose = (next: UiTheme) => {
+    if (next === ui) return
+    const previous = ui
+    setUi(next)
+    setError(null)
+    start(async () => {
+      const result = await saveUiTheme(next)
+      if (result.error) {
+        setUi(previous)
+        setError(result.error)
+        return
+      }
+      router.refresh()
+    })
+  }
+
+  return (
+    <div className="mt-2">
+      <div role="radiogroup" aria-label="화면 모양" className="flex flex-wrap gap-1.5">
+        {UI_THEME.map((t) => (
+          <button
+            key={t}
+            type="button"
+            role="radio"
+            aria-checked={ui === t}
+            data-testid={`ui-theme-${t}`}
+            disabled={pending}
+            onClick={() => choose(t)}
+            className={[
+              'rounded-md border px-2.5 py-1.5 text-t11h transition-colors disabled:opacity-50',
+              ui === t
+                ? 'border-accent bg-accent-soft font-semibold text-ink'
+                : 'border-line bg-raised text-ink-dim hover:border-accent hover:text-ink',
+            ].join(' ')}
+          >
+            {UI_THEME_LABEL_KO[t]}
+          </button>
+        ))}
+      </div>
+      <p className="mt-1.5 text-t10h text-ink-muted">
+        메뉴 · 기능 · 주소는 그대로이고 색 · 글꼴 · 카드 모양만 바뀝니다. 사람마다 따로 저장됩니다.
+      </p>
+      {error ? (
+        <p role="alert" className="mt-1 text-t11 text-critical">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  )
+}
 
 /**
  * `chairman` — 아침 루틴(/ai)은 회장 전용 화면이라 그 안내도 회장에게만 그린다

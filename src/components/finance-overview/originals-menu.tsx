@@ -17,13 +17,13 @@ export function OriginalsMenu({ businessId, period, canImport }: { businessId: s
   ]
   return (
     <details className="relative" data-testid="originals-menu">
-      <summary className="flex min-h-11 cursor-pointer list-none items-center rounded-lg border border-[#d7ddda] bg-white px-3 text-[13px] text-[#3b4440] hover:border-[#0f6b5c] hover:text-[#0f6b5c] [&::-webkit-details-marker]:hidden">
+      <summary className="flex min-h-11 cursor-pointer list-none items-center rounded-lg border border-line bg-card px-3 text-[13px] text-ink-dim hover:border-accent hover:text-accent [&::-webkit-details-marker]:hidden">
         원본 보기 ›
       </summary>
-      <ul className="absolute right-0 z-20 mt-1 w-64 max-w-[calc(100vw-2rem)] max-sm:right-auto max-sm:left-0 max-sm:w-56 rounded-lg border border-[#d7ddda] bg-white py-1 text-[14px] shadow-lg" aria-label="원본 화면">
+      <ul className="absolute right-0 z-20 mt-1 w-64 max-w-[calc(100vw-2rem)] max-sm:right-auto max-sm:left-0 max-sm:w-56 rounded-lg border border-line bg-card py-1 text-[14px] shadow-lg" aria-label="원본 화면">
         {items.map((i) => (
           <li key={i.href}>
-            <Link href={i.href} className="flex min-h-11 items-center px-3 text-[#1a211e] hover:bg-[#e1efeb] hover:text-[#0f6b5c]">
+            <Link href={i.href} className="flex min-h-11 items-center px-3 text-ink hover:bg-accent-soft hover:text-accent">
               {i.label}
             </Link>
           </li>

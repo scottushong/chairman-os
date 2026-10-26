@@ -106,7 +106,7 @@ export function FolderCreate({
           type="button"
           onClick={submit}
           disabled={pending || !name.trim()}
-          className="rounded-md bg-accent px-2 py-1 text-t11 font-semibold text-white disabled:opacity-40"
+          className="rounded-md bg-accent px-2 py-1 text-t11 font-semibold text-on-accent disabled:opacity-40"
         >
           만들기
         </button>

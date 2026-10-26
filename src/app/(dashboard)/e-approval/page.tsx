@@ -54,8 +54,8 @@ export default async function EApprovalPage(props: PageProps<'/e-approval'>) {
     return (
       <div className={`${C.bg} min-h-full p-4 sm:p-6`}>
         <div className={`${C.card} max-w-xl px-5 py-6`}>
-          <h1 className="text-[18px] font-bold text-[#1f2329]">전자결재</h1>
-          <p className="mt-2 text-[14px] text-[#6b7280]">지금은 쓸 수 없는 기능입니다. 회사에서 전자결재를 켜면 이 자리에 결재할 문서가 보입니다.</p>
+          <h1 className="text-[18px] font-bold text-ink">전자결재</h1>
+          <p className="mt-2 text-[14px] text-ink-muted">지금은 쓸 수 없는 기능입니다. 회사에서 전자결재를 켜면 이 자리에 결재할 문서가 보입니다.</p>
         </div>
       </div>
     )
@@ -111,7 +111,7 @@ export default async function EApprovalPage(props: PageProps<'/e-approval'>) {
 
   return (
     <div className={`${C.bg} flex min-h-full flex-col pb-20 lg:pb-6`}>
-      <nav aria-label="전자결재 탭" className="border-b border-[#e3e6eb] bg-white">
+      <nav aria-label="전자결재 탭" className="border-b border-line bg-card">
         <div className="flex items-center gap-2 px-3 py-2.5 sm:px-5">
           <div className="-mx-1 flex min-w-0 flex-1 gap-1 overflow-x-auto px-1">
             {EA_BOXES.map((b) => (
@@ -119,7 +119,7 @@ export default async function EApprovalPage(props: PageProps<'/e-approval'>) {
                 key={b}
                 href={withParams(BASE, { box: b })}
                 aria-current={b === box && !newParam && !editParam ? 'page' : undefined}
-                className={`shrink-0 rounded-md px-3 py-2 text-[14px] whitespace-nowrap ${b === box && !newParam && !editParam ? 'bg-[#eaf0fd] font-semibold text-[#2f5bd3]' : 'text-[#1f2329] hover:bg-[#f4f6f9]'}`}
+                className={`shrink-0 rounded-md px-3 py-2 text-[14px] whitespace-nowrap ${b === box && !newParam && !editParam ? 'bg-accent-soft font-semibold text-accent' : 'text-ink hover:bg-raised'}`}
               >
                 {EA_BOX_LABEL[b]} <span className="ml-1 tnum">{counts ? counts[b] : '·'}</span>
               </Link>
@@ -134,16 +134,16 @@ export default async function EApprovalPage(props: PageProps<'/e-approval'>) {
       <div className="mx-auto flex w-full max-w-[1280px] flex-col gap-4 px-4 py-5 sm:px-6">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="text-[24px] font-bold text-[#1f2329]">{newParam || editParam ? '새 문서 작성' : EA_BOX_LABEL[box]}</h1>
-            <p className="mt-0.5 text-[14px] text-[#6b7280]">{newParam || editParam ? '양식을 고르고 내용을 채운 뒤 상신합니다.' : EA_BOX_HINT[box]}</p>
+            <h1 className="text-[24px] font-bold text-ink">{newParam || editParam ? '새 문서 작성' : EA_BOX_LABEL[box]}</h1>
+            <p className="mt-0.5 text-[14px] text-ink-muted">{newParam || editParam ? '양식을 고르고 내용을 채운 뒤 상신합니다.' : EA_BOX_HINT[box]}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2 text-[13px]">
             <Pill tone="blue">내 권한의 문서만 표시</Pill>
-            <Link href="/e-approval/settings" className="text-[#2f5bd3] hover:underline">
+            <Link href="/e-approval/settings" className="text-link hover:underline">
               개인 설정
             </Link>
             {isChair ? (
-              <Link href="/e-approval/admin" className="text-[#2f5bd3] hover:underline">
+              <Link href="/e-approval/admin" className="text-link hover:underline">
                 관리
               </Link>
             ) : null}
@@ -153,15 +153,15 @@ export default async function EApprovalPage(props: PageProps<'/e-approval'>) {
 
         {newParam === '1' ? (
           <section className={`${C.card} px-4 py-5 sm:px-6`}>
-            <h2 className="text-[16px] font-semibold text-[#1f2329]">양식 선택</h2>
+            <h2 className="text-[16px] font-semibold text-ink">양식 선택</h2>
             <ul className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
               {forms
                 .filter((f) => f.active)
                 .map((f) => (
                   <li key={f.form_key}>
-                    <Link href={withParams(BASE, { box: 'drafts', new: f.form_key })} className="flex h-full flex-col gap-1 rounded-md border border-[#e3e6eb] px-3 py-3 hover:border-[#3361e0] hover:bg-[#f7f9fe]">
-                      <span className="text-[15px] font-semibold text-[#1f2329]">{f.name_ko}</span>
-                      <span className="text-[12px] text-[#6b7280]">
+                    <Link href={withParams(BASE, { box: 'drafts', new: f.form_key })} className="flex h-full flex-col gap-1 rounded-md border border-line px-3 py-3 hover:border-accent hover:bg-accent-soft">
+                      <span className="text-[15px] font-semibold text-ink">{f.name_ko}</span>
+                      <span className="text-[12px] text-ink-muted">
                         {f.attachment_required ? '첨부 필요 · ' : ''}
                         {f.followup_kind ? `승인 뒤 ${f.followup_kind}` : '후속 처리 없음'}
                       </span>
@@ -188,11 +188,11 @@ export default async function EApprovalPage(props: PageProps<'/e-approval'>) {
         ) : (
           <div className="grid gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start">
             <section className={`${C.card} ${docId ? 'hidden lg:flex' : 'flex'} min-w-0 flex-col overflow-hidden`}>
-              <form action={BASE} className="flex flex-col gap-2 border-b border-[#eceef2] p-3">
+              <form action={BASE} className="flex flex-col gap-2 border-b border-line-soft p-3">
                 <input type="hidden" name="box" value={box} />
                 <input name="q" defaultValue={q} placeholder="제목·기안자 검색" className={C.input} aria-label="제목·기안자 검색" />
                 <details className="text-[13px]" open={!!(formFilter || from || to || st !== 'all')}>
-                  <summary className="cursor-pointer text-[#6b7280]">상태 · 양식 · 기간</summary>
+                  <summary className="cursor-pointer text-ink-muted">상태 · 양식 · 기간</summary>
                   <div className="mt-2 grid grid-cols-2 gap-2">
                     {box === 'mine' || box === 'refs' || box === 'followups' ? (
                       <select name="st" defaultValue={st} className={C.input} aria-label="상태">
@@ -220,34 +220,34 @@ export default async function EApprovalPage(props: PageProps<'/e-approval'>) {
                 </details>
               </form>
               {box === 'mine' || box === 'refs' || box === 'followups' ? (
-                <div className="flex gap-1 overflow-x-auto border-b border-[#eceef2] px-3 py-2">
+                <div className="flex gap-1 overflow-x-auto border-b border-line-soft px-3 py-2">
                   {(box === 'mine' ? MINE_FILTER : box === 'refs' ? REF_FILTER : FU_FILTER).map((k) => (
-                    <Link key={k} href={href({ st: k === 'all' ? null : k, doc: null })} className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] ${st === k ? 'bg-[#eaf0fd] text-[#2f5bd3]' : 'text-[#4b5563] hover:bg-[#f4f6f9]'}`}>
+                    <Link key={k} href={href({ st: k === 'all' ? null : k, doc: null })} className={`shrink-0 rounded-full px-2.5 py-1 text-[12px] ${st === k ? 'bg-accent-soft text-accent' : 'text-ink-dim hover:bg-raised'}`}>
                       {box === 'mine' ? MINE_LABEL[k as keyof typeof MINE_LABEL] : box === 'refs' ? REF_LABEL[k as keyof typeof REF_LABEL] : FU_LABEL[k as keyof typeof FU_LABEL]}
                     </Link>
                   ))}
                 </div>
               ) : null}
               {filtered.length === 0 ? (
-                <div className="px-4 py-10 text-center text-[14px] text-[#6b7280]">{q || formFilter || from || to || st !== 'all' ? '검색 결과가 없습니다.' : emptyText(box)}</div>
+                <div className="px-4 py-10 text-center text-[14px] text-ink-muted">{q || formFilter || from || to || st !== 'all' ? '검색 결과가 없습니다.' : emptyText(box)}</div>
               ) : (
                 <ul>
                   {filtered.map((r) => (
                     <li key={r.doc_id}>
                       <Link
                         href={href({ doc: r.doc_id })}
-                        className={`flex flex-col gap-1.5 border-b border-[#eceef2] px-4 py-3.5 ${r.doc_id === selectedId ? 'border-l-[3px] border-l-[#3361e0] bg-[#eef3fd] pl-[13px]' : 'hover:bg-[#f7f9fc]'}`}
+                        className={`flex flex-col gap-1.5 border-b border-line-soft px-4 py-3.5 ${r.doc_id === selectedId ? 'border-l-[3px] border-l-accent bg-accent-soft pl-[13px]' : 'hover:bg-raised'}`}
                       >
                         <div className="flex flex-wrap items-center gap-1.5">{rowBadges(box, r)}</div>
-                        <div className="text-[15px] break-words text-[#1f2329]">{r.title}</div>
-                        <div className="flex items-center justify-between gap-2 text-[12px] text-[#4b5563]">
+                        <div className="text-[15px] break-words text-ink">{r.title}</div>
+                        <div className="flex items-center justify-between gap-2 text-[12px] text-ink-dim">
                           <span className="min-w-0 truncate">
                             {r.drafter_name}
                             {r.drafter_dept ? ` · ${r.drafter_dept}` : ''} · {r.form_name}
                           </span>
                           <span className="shrink-0 tnum">{shortDate(r.submitted_at ?? r.updated_at)}</span>
                         </div>
-                        <div className="text-[13px] text-[#4b5563]">{rowLine(box, r)}</div>
+                        <div className="text-[13px] text-ink-dim">{rowLine(box, r)}</div>
                       </Link>
                     </li>
                   ))}
@@ -306,10 +306,10 @@ function rowLine(box: EaBox, r: EaListRow) {
 
 function Empty({ text, tone, back }: { text: string; tone?: 'bad'; back?: string }) {
   return (
-    <div className={`${C.card} flex flex-col items-center gap-3 px-4 py-12 text-center text-[14px] ${tone === 'bad' ? 'text-[#b4372b]' : 'text-[#6b7280]'}`}>
+    <div className={`${C.card} flex flex-col items-center gap-3 px-4 py-12 text-center text-[14px] ${tone === 'bad' ? 'text-critical' : 'text-ink-muted'}`}>
       {text}
       {back ? (
-        <Link href={back} className="text-[13px] text-[#2f5bd3] lg:hidden">
+        <Link href={back} className="text-[13px] text-link lg:hidden">
           ← 목록으로
         </Link>
       ) : null}
