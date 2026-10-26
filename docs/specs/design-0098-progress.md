@@ -20,9 +20,13 @@
 - 브랜치 검사: typecheck · eslint 0 오류 · check:design PASS · 직원 «회장» 크롤 sales_staff 160화면 · dy_ceo 160화면 0곳 · check:mobile 204/204(dev 서버가 메모리로 한 번 죽어 아이패드 둘은 다시 돌림).
 - 스크린숏: docs/onboarding/design-shots/ 72장(12화면 × PC · 폰 × 전 · 새 · 예전) + README 비교표.
 
+- **2026-10-26 16:22 KST — 배포 완료(0098 · `f5da0be`).**
+  - master 검사: typecheck · eslint(오류 0) · build · check:* 52개 전부(check:migrations 0098 포함 · check:design 포함) · check:mobile 204/204 · 직원 «회장» 크롤 2역할 × 160화면 0곳.
+  - staging: `0098-0098 DRYRUN PASS (1 files · tests 1/1 · 0098)` → `npm run db:push:staging` → 반영 뒤 `0098-0098 TESTS PASS (tests 1/1)`.
+  - 호환: 직전 운영 SHA `9352d90`를 staging(0098) 위에서 빌드 · 기동 — health ok · rls_closed · 화면 로그인 리다이렉트 · 오류 로그 없음.
+  - 리허설 기대 = 대기(0098) → 릴리스 → 배포 success · health ok:true · anon 0 · rls_closed true.
+  - 배포 뒤(운영): user_settings.ui_theme 칸 있음(없는 칸 42703 대조) · anon 0행 · /login · /privacy 새 모양(prod-*.jpg). 로그인 뒤 화면은 자격증명이 없어 운영에서 못 찍음(dummy 스크린숏으로 대신).
+
 ## 다음 할 일
 
-1. 화면 파일 이관 마무리(check:design 0건) → typecheck · eslint · build · check:* 전부.
-2. 직원 화면 «회장» 전수 검사(직원 dummy 크롤) · check:mobile 전체.
-3. 전 · 후 스크린숏(새 · 예전) → docs/onboarding/design-shots/.
-4. 배포 절차 1~7(0094 블록) · 운영 스크린숏.
+없음 — 최종 보고 완료.
