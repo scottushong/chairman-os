@@ -16,6 +16,10 @@
 - 새 칸: user_settings.ui_theme(text · null 허용 · 기본값 없음) + 제약 user_settings_ui_theme_shape(new · classic)
 - 기존 표 · 칸 · 정책 · 함수 변경 없음.
 
+- 이관: 화면 파일 133개(1차 커밋) — 재무 21 · 전자결재/결재 15 · 그룹 시티 16(+ scene-palette 약 155값) · 그 밖 46 · 셸 7. check:design 토큰 밖 995 → 0.
+- 브랜치 검사: typecheck · eslint 0 오류 · check:design PASS · 직원 «회장» 크롤 sales_staff 160화면 · dy_ceo 160화면 0곳 · check:mobile 204/204(dev 서버가 메모리로 한 번 죽어 아이패드 둘은 다시 돌림).
+- 스크린숏: docs/onboarding/design-shots/ 72장(12화면 × PC · 폰 × 전 · 새 · 예전) + README 비교표.
+
 ## 다음 할 일
 
 1. 화면 파일 이관 마무리(check:design 0건) → typecheck · eslint · build · check:* 전부.
