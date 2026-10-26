@@ -228,7 +228,7 @@ export function FeedbackInbox({
                 type="button"
                 disabled={busy || !pickable(r) || !aiConnected}
                 onClick={() => run(() => triageFeedback(r.feedback_id), 'AI 정리를 마쳤습니다.')}
-                className="min-h-9 rounded-md bg-accent px-3 text-t11h font-semibold text-white disabled:opacity-40"
+                className="min-h-9 rounded-md bg-accent px-3 text-t11h font-semibold text-on-accent disabled:opacity-40"
               >
                 {r.triage ? 'AI 정리 다시' : 'AI 정리'}
               </button>

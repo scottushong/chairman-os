@@ -33,14 +33,14 @@ export function PlClosePanel({
   isTop: boolean
 }) {
   return (
-    <section className="rounded-[10px] border border-[#e1e6e3] bg-white px-[18px] py-3" aria-labelledby="pl-close-h" data-testid="pl-close">
+    <section className="rounded-[10px] border border-line bg-card px-[18px] py-3" aria-labelledby="pl-close-h" data-testid="pl-close">
       <h2 id="pl-close-h" className="text-[15px] font-bold">
         내부 마감 · 재고 조정 · 설정 — {period.slice(0, 4)}년 {Number(period.slice(5, 7))}월
       </h2>
-      <p className="mt-0.5 text-[13px] text-[#6b7772]">재고 반영 손익의 잠정 저장 · 내부 마감 확정 · 재고 조정 제안 · 평가방법 · 허용오차. 장부 전표는 바꾸지 않습니다.</p>
+      <p className="mt-0.5 text-[13px] text-ink-muted">재고 반영 손익의 잠정 저장 · 내부 마감 확정 · 재고 조정 제안 · 평가방법 · 허용오차. 장부 전표는 바꾸지 않습니다.</p>
       <div className="mt-2">
         {error || !view ? (
-          <p className="rounded-md bg-[#f4f5f3] px-3 py-2 text-[13px] text-[#6b7772]">{error ?? '이 달의 재고 반영 손익을 읽지 못했습니다.'}</p>
+          <p className="rounded-md bg-raised px-3 py-2 text-[13px] text-ink-muted">{error ?? '이 달의 재고 반영 손익을 읽지 못했습니다.'}</p>
         ) : (
           <Status businessId={businessId} period={period} view={view} settings={settings} canKeep={canKeep} canClose={canClose} isTop={isTop} />
         )}
@@ -136,7 +136,7 @@ function Status({ businessId, period, view, settings, canKeep, canClose, isTop }
             {!final && canClose ? (
               <button
                 type="button"
-                className="min-h-11 lg:min-h-9 rounded-md bg-accent px-3 text-t11h font-semibold text-white disabled:opacity-40"
+                className="min-h-11 lg:min-h-9 rounded-md bg-accent px-3 text-t11h font-semibold text-on-accent disabled:opacity-40"
                 disabled={busy || !r.closable}
                 title={r.closable ? undefined : '막는 까닭을 먼저 해결하세요'}
                 onClick={() => run(() => recordMonthlyPl({ businessId, period, final: true, reason }), '내부 마감 확정했습니다.')}

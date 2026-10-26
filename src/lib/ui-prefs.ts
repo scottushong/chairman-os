@@ -84,6 +84,27 @@ export const APP_PREFS_DEFAULT: AppPrefs = {
   world_cities: normalizeWorldCityIds(undefined),
 }
 
+/* ------------------------------------------------------------------ 화면 모양 (0098) */
+
+/**
+ * 화면 모양 — 새 모양(0098 시안) · 예전 모양(0098 전 토큰). 사람마다 고르고 기본은 새 모양이다.
+ * 셸이 data-ui="new|classic"으로 달고, 토큰 두 벌은 app/globals.css에 있다.
+ * DB 칸(user_settings.ui_theme)이 null이면 «고른 적 없음» = 기본. 기본을 바꾸는 날은 이 상수 한 줄이다.
+ */
+export const UI_THEME = ['new', 'classic'] as const
+export type UiTheme = (typeof UI_THEME)[number]
+export const UI_THEME_DEFAULT: UiTheme = 'new'
+
+export const UI_THEME_LABEL_KO: Record<UiTheme, string> = {
+  new: '새 모양(기본)',
+  classic: '예전 모양',
+}
+
+/** 모르는 값 · null · undefined는 기본(새 모양)으로 떨어진다. */
+export function readUiTheme(raw: unknown): UiTheme {
+  return UI_THEME.find((t) => t === raw) ?? UI_THEME_DEFAULT
+}
+
 /* ------------------------------------------------------------------ 읽기 */
 
 /** DB에서 온 jsonb. 무엇이든 올 수 있다 — 그래서 unknown이고, 아래가 전부 방어한다. */

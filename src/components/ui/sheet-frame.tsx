@@ -124,7 +124,7 @@ export function SheetFrame({
         // allow-same-origin이 없으면 구글 스크립트가 안 돌아 표가 안 그려진다.
         sandbox="allow-scripts allow-same-origin allow-popups"
         referrerPolicy="no-referrer"
-        className="absolute top-0 left-0 border-0 bg-white"
+        className="absolute top-0 left-0 border-0 bg-card"
         style={{
           width: `${100 / scale}%`,
           height: `${100 / scale}%`,

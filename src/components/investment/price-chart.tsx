@@ -202,22 +202,22 @@ export function PriceChart(props: PriceChartProps) {
             {ticks.map((t, i) => (
               <line key={i} x1={0} x2={W} y1={view.y(t)} y2={view.y(t)} stroke="currentColor" className="text-line" strokeWidth={1} vectorEffect="non-scaling-stroke" />
             ))}
-            {view.fair && ccy === 'USD' ? <rect x={0} width={W} y={view.y(view.fair.high)} height={Math.max(1, view.y(view.fair.low) - view.y(view.fair.high))} fill="#3b74d6" opacity={0.12} /> : null}
-            {view.buy !== null && ccy === 'USD' ? <line x1={0} x2={W} y1={view.y(view.buy)} y2={view.y(view.buy)} stroke="#1f9d55" strokeDasharray="6 5" strokeWidth={1.5} vectorEffect="non-scaling-stroke" /> : null}
+            {view.fair && ccy === 'USD' ? <rect x={0} width={W} y={view.y(view.fair.high)} height={Math.max(1, view.y(view.fair.low) - view.y(view.fair.high))} className="fill-chart-3" opacity={0.12} /> : null}
+            {view.buy !== null && ccy === 'USD' ? <line x1={0} x2={W} y1={view.y(view.buy)} y2={view.y(view.buy)} className="stroke-positive" strokeDasharray="6 5" strokeWidth={1.5} vectorEffect="non-scaling-stroke" /> : null}
             {show.volume && hasDaily
               ? view.price.map((p) => (p.vol ? <rect key={`v${p.d}`} x={view.x(p.d)} width={Math.max(1, W / view.price.length - 0.5)} y={H - (p.vol / view.vmax) * 60} height={(p.vol / view.vmax) * 60} fill="currentColor" className="text-ink-muted" opacity={0.25} /> : null))
               : null}
             {view.inst.map((p) => (
-              <rect key={`i${p.d}`} x={view.x(p.d) - 6} width={12} y={H - (p.shares / view.imax) * 60} height={(p.shares / view.imax) * 60} fill="#b8862b" opacity={0.55} />
+              <rect key={`i${p.d}`} x={view.x(p.d) - 6} width={12} y={H - (p.shares / view.imax) * 60} height={(p.shares / view.imax) * 60} className="fill-chart-2" opacity={0.55} />
             ))}
             {view.events.map((e) => (
-              <line key={`e${e.d}${e.kind}`} x1={view.x(e.d)} x2={view.x(e.d)} y1={0} y2={PLOT_H} stroke={e.kind === 'split' ? '#b23a2a' : e.kind === 'dividend' ? '#2c6b2a' : '#6f6152'} strokeDasharray="3 4" strokeWidth={1} vectorEffect="non-scaling-stroke" opacity={0.7} />
+              <line key={`e${e.d}${e.kind}`} x1={view.x(e.d)} x2={view.x(e.d)} y1={0} y2={PLOT_H} className={e.kind === 'split' ? 'stroke-critical' : e.kind === 'dividend' ? 'stroke-ok' : 'stroke-ink-muted'} strokeDasharray="3 4" strokeWidth={1} vectorEffect="non-scaling-stroke" opacity={0.7} />
             ))}
-            {view.bench.length ? <path d={view.line(view.bench)} fill="none" stroke="#9453d1" strokeWidth={1.5} vectorEffect="non-scaling-stroke" opacity={0.8} /> : null}
-            {view.ma200.length ? <path d={view.line(view.ma200)} fill="none" stroke="#d1671e" strokeWidth={1.2} vectorEffect="non-scaling-stroke" /> : null}
-            {view.ma50.length ? <path d={view.line(view.ma50)} fill="none" stroke="#1a998b" strokeWidth={1.2} vectorEffect="non-scaling-stroke" /> : null}
-            <path d={view.line(view.price)} fill="none" stroke="#1e3a8a" strokeWidth={2} vectorEffect="non-scaling-stroke" />
-            {!hasDaily ? view.price.map((p) => <circle key={`q${p.d}`} cx={view.x(p.d)} cy={view.y(p.v)} r={4} fill="#1e3a8a" />) : null}
+            {view.bench.length ? <path d={view.line(view.bench)} fill="none" className="stroke-chart-6" strokeWidth={1.5} vectorEffect="non-scaling-stroke" opacity={0.8} /> : null}
+            {view.ma200.length ? <path d={view.line(view.ma200)} fill="none" className="stroke-chart-4" strokeWidth={1.2} vectorEffect="non-scaling-stroke" /> : null}
+            {view.ma50.length ? <path d={view.line(view.ma50)} fill="none" className="stroke-chart-5" strokeWidth={1.2} vectorEffect="non-scaling-stroke" /> : null}
+            <path d={view.line(view.price)} fill="none" className="stroke-chart-3" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+            {!hasDaily ? view.price.map((p) => <circle key={`q${p.d}`} cx={view.x(p.d)} cy={view.y(p.v)} r={4} className="fill-chart-3" />) : null}
             {h ? <line x1={view.x(h.d)} x2={view.x(h.d)} y1={0} y2={H} stroke="currentColor" className="text-ink-muted" strokeWidth={1} vectorEffect="non-scaling-stroke" /> : null}
           </svg>
           {h ? (
@@ -233,10 +233,10 @@ export function PriceChart(props: PriceChartProps) {
         </div>
       </div>
       <ul className="flex flex-wrap gap-x-3 gap-y-1 text-[13px] text-ink-muted">
-        <li><span className="mr-1 inline-block h-0.5 w-4 bg-[#1e3a8a] align-middle" />주가 {hasDaily ? '(일봉 · 분할 보정)' : '(13F 평가액 ÷ 주식 수 · 분기말만)'}</li>
-        {view.ma50.length ? <li><span className="mr-1 inline-block h-0.5 w-4 bg-[#1a998b] align-middle" />50일 · <span className="inline-block h-0.5 w-4 bg-[#d1671e] align-middle" /> 200일</li> : null}
-        {view.bench.length ? <li><span className="mr-1 inline-block h-0.5 w-4 bg-[#9453d1] align-middle" />{props.benchmark?.ticker}(시작점 맞춤)</li> : null}
-        {view.inst.length ? <li><span className="mr-1 inline-block h-2 w-3 bg-[#b8862b]/60 align-middle" />기관 보유 주식 수 합(13F 기준일)</li> : null}
+        <li><span className="mr-1 inline-block h-0.5 w-4 bg-chart-3 align-middle" />주가 {hasDaily ? '(일봉 · 분할 보정)' : '(13F 평가액 ÷ 주식 수 · 분기말만)'}</li>
+        {view.ma50.length ? <li><span className="mr-1 inline-block h-0.5 w-4 bg-chart-5 align-middle" />50일 · <span className="inline-block h-0.5 w-4 bg-chart-4 align-middle" /> 200일</li> : null}
+        {view.bench.length ? <li><span className="mr-1 inline-block h-0.5 w-4 bg-chart-6 align-middle" />{props.benchmark?.ticker}(시작점 맞춤)</li> : null}
+        {view.inst.length ? <li><span className="mr-1 inline-block h-2 w-3 bg-chart-2/60 align-middle" />기관 보유 주식 수 합(13F 기준일)</li> : null}
         {view.events.length ? <li>점선: 실적 공시 · 배당(초록) · 분할(빨강)</li> : null}
         {ccy === 'KRW' ? <li>KRW = 그날 ECB USD/KRW 기준환율 적용</li> : null}
       </ul>

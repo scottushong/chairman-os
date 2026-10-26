@@ -19,11 +19,11 @@ export default async function EApprovalSettingsPage() {
   return (
     <div className={`${C.bg} min-h-full pb-20 lg:pb-6`}>
       <div className="mx-auto flex w-full max-w-[880px] flex-col gap-4 px-4 py-5 sm:px-6">
-        <Link href="/e-approval" className="text-[13px] text-[#2f5bd3]">
+        <Link href="/e-approval" className="text-[13px] text-link">
           ← 전자결재
         </Link>
-        <h1 className="text-[22px] font-bold text-[#1f2329]">전자결재 개인 설정</h1>
-        {settings ? <EaPersonal settings={settings} people={people} forms={forms.filter((f) => f.active && (f.form_key !== 'investment' || canSeeInvestment(user)))} today={kstToday()} /> : <div className={`${C.card} px-4 py-6 text-[14px] text-[#6b7280]`}>설정을 불러오지 못했습니다.</div>}
+        <h1 className="text-[22px] font-bold text-ink">전자결재 개인 설정</h1>
+        {settings ? <EaPersonal settings={settings} people={people} forms={forms.filter((f) => f.active && (f.form_key !== 'investment' || canSeeInvestment(user)))} today={kstToday()} /> : <div className={`${C.card} px-4 py-6 text-[14px] text-ink-muted`}>설정을 불러오지 못했습니다.</div>}
       </div>
     </div>
   )

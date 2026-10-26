@@ -58,7 +58,7 @@ export default async function MeetPage({ searchParams }: PageProps<'/meet'>) {
         )}
       >
         <form action={startInstant}>
-          <button type="submit" className="rounded-md bg-accent px-3 py-1.5 text-t12 font-semibold text-white">
+          <button type="submit" className="rounded-md bg-accent px-3 py-1.5 text-t12 font-semibold text-on-accent">
             {tr(lang, '즉석 회의실 열기', 'Start instant room')}
           </button>
         </form>
@@ -66,7 +66,7 @@ export default async function MeetPage({ searchParams }: PageProps<'/meet'>) {
 
       <div className="mt-4 grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_300px]">
         {room ? (
-          <section className="overflow-hidden rounded-glass border border-line-soft bg-black" aria-label={tr(lang, '회의실', 'Room')}>
+          <section className="overflow-hidden rounded-glass border border-line-soft bg-scrim" aria-label={tr(lang, '회의실', 'Room')}>
             <iframe
               title={tr(lang, '화상회의', 'Video meeting')}
               src={`${JITSI_ORIGIN}/${room}${displayName}`}
@@ -79,7 +79,7 @@ export default async function MeetPage({ searchParams }: PageProps<'/meet'>) {
               <span className="mr-auto text-ink-muted">
                 {tr(lang, '공개 Jitsi 서버는 화면 안 통화를 몇 분 뒤 끊을 수 있습니다. 긴 회의는 새 탭으로 여세요.', 'Public Jitsi may cut embedded calls after a few minutes — use a new tab for long meetings.')}
               </span>
-              <a href={`${JITSI_ORIGIN}/${room}`} target="_blank" rel="noreferrer noopener" className="rounded bg-accent px-2.5 py-1 font-semibold text-white">
+              <a href={`${JITSI_ORIGIN}/${room}`} target="_blank" rel="noreferrer noopener" className="rounded bg-accent px-2.5 py-1 font-semibold text-on-accent">
                 {tr(lang, '새 탭으로 열기', 'Open in new tab')}
               </a>
               <Link href="/meet" className="text-ink-dim hover:text-ink hover:underline">

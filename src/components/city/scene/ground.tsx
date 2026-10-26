@@ -3,6 +3,8 @@
 import { MeshReflectorMaterial } from '@react-three/drei'
 import { useEffect, useMemo } from 'react'
 
+import { CANAL_WATER } from '@/lib/design/scene-palette'
+
 import { StaticInstances, type Inst } from './instances'
 import {
   CANAL_IN,
@@ -82,7 +84,7 @@ export function Ground({ placements }: { placements: Placement[] }) {
           depthScale={0}
           roughness={0.35}
           metalness={0.55}
-          color="#16242c"
+          color={CANAL_WATER}
         />
       </mesh>
       <mesh rotation-x={-Math.PI / 2} position-y={0.05} material={MAT.marbleShade}>

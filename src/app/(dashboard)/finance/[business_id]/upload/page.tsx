@@ -43,10 +43,10 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
 
   if (!canKeep) {
     return (
-      <div className="min-h-full bg-[#f4f5f3]">
+      <div className="min-h-full bg-app">
         <div className="mx-auto max-w-[1360px] px-4 py-6 sm:px-7">
           <h1 className="text-[22px] font-bold">회계 · 재무 자료 올리기</h1>
-          <p className="mt-4 rounded-md bg-white px-3 py-2 text-[14px] text-[#6b7772]">이 회사의 재무를 넣을 권한이 없습니다. (대표 · 그룹 CFO · 해당 회사 대표이사 · 대표가 재무 입력 권한을 준 사람)</p>
+          <p className="mt-4 rounded-md bg-card px-3 py-2 text-[14px] text-ink-muted">이 회사의 재무를 넣을 권한이 없습니다. (대표 · 그룹 CFO · 해당 회사 대표이사 · 대표가 재무 입력 권한을 준 사람)</p>
         </div>
       </div>
     )
@@ -95,13 +95,13 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
   const boss = user?.role === 'Chairman' || user?.role === 'GroupCFO'
 
   return (
-    <div className="min-h-full bg-[#f4f5f3] text-[#1a211e]" style={{ fontFamily: '"IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif' }}>
+    <div className="min-h-full bg-app text-ink">
       <div className="mx-auto flex max-w-[1360px] flex-col gap-5 px-4 pt-6 pb-12 sm:px-7">
         <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
           <h1 className="text-[22px] font-bold">회계 · 재무 자료 올리기</h1>
           <NavSelect label="회사" value={business_id} options={keepable.map((b) => ({ value: b.business_id, label: b.name, href: `/finance/${encodeURIComponent(b.business_id)}/upload?month=${month}` }))} />
           <div className="ml-auto">
-            <Link href={`/finance?biz=${encodeURIComponent(business_id)}&month=${month}`} className="text-[13px] text-[#0f6b5c] hover:underline">
+            <Link href={`/finance?biz=${encodeURIComponent(business_id)}&month=${month}`} className="text-[13px] text-accent hover:underline">
               재무 현황으로 ›
             </Link>
           </div>
@@ -126,12 +126,12 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
           officialYears={official.filter((s) => s.period_kind === 'year' && s.superseded_at === null).map((s) => s.period_key)}
         />
         {txGroups.length || cross.length || (matTotals && matTotals.purchase_lines + matTotals.inventory_lines + matTotals.import_lines > 0) ? (
-          <details className="rounded-[10px] border border-[#e1e6e3] bg-white px-[18px] py-3" open={suspects > 0} data-testid="tx-details">
+          <details className="rounded-[10px] border border-line bg-card px-[18px] py-3" open={suspects > 0} data-testid="tx-details">
             <summary className="cursor-pointer text-[15px] font-bold">
               같은 거래 · 원료 합계{suspects ? ` — 중복 의심 ${suspects}건(경고)` : ''}
             </summary>
             {matTotals && matTotals.purchase_lines + matTotals.inventory_lines + matTotals.import_lines > 0 ? (
-              <p className="mt-2 text-[13px] text-[#6b7772]" data-testid="material-totals">
+              <p className="mt-2 text-[13px] text-ink-muted" data-testid="material-totals">
                 {month} 원료 자료 합계 · 입고 {won(matTotals.purchase_amount)}({matTotals.purchase_lines}줄) · 재고 기말 {won(matTotals.inventory_closing)}({matTotals.inventory_lines}줄) · OFFER 원화 {won(matTotals.import_krw)} · 부대비 {won(matTotals.import_extra)}({matTotals.import_lines}줄)
                 <span className="block text-[12px]">원료별 단가 · 수량은 올린 사람(올린 뒤 1시간) · 대표 · CFO · 원가 관리만 봅니다.{matTotals.withheld?.length ? ' 원료가 3가지 미만인 자료는 합계도 «—»로 감춥니다(합계가 곧 원료 하나의 값이라서).' : ''}</span>
               </p>
@@ -142,8 +142,8 @@ export default async function FinanceUploadPage(props: PageProps<'/finance/[busi
             {cross.length ? (
               <ul className="mt-2 space-y-1 text-[13px]" data-testid="cross-month">
                 {cross.slice(0, 30).map((c) => (
-                  <li key={`${c.ref}|${c.other}`} className="rounded-md bg-[#f4f5f3] px-2 py-1">
-                    달 넘김 의심: {lineLabels[c.ref] ?? c.ref} ↔ {c.other_period} {TX_SOURCE_KO[c.other.slice(0, c.other.indexOf(':')) as keyof typeof TX_SOURCE_KO] ?? ''} {c.other_row_no}행 · {c.other_date} <span className="text-[#9a4b12]">{describeGroup(c)}</span>
+                  <li key={`${c.ref}|${c.other}`} className="rounded-md bg-raised px-2 py-1">
+                    달 넘김 의심: {lineLabels[c.ref] ?? c.ref} ↔ {c.other_period} {TX_SOURCE_KO[c.other.slice(0, c.other.indexOf(':')) as keyof typeof TX_SOURCE_KO] ?? ''} {c.other_row_no}행 · {c.other_date} <span className="text-warning">{describeGroup(c)}</span>
                   </li>
                 ))}
               </ul>

@@ -48,7 +48,7 @@ export function AssistantMessages({
       {messages.map((m) =>
         m.role === 'user' ? (
           <li key={m.id} className="flex justify-end">
-            <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-accent px-3 py-2 text-t12h text-white">{m.content}</p>
+            <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-sm bg-accent px-3 py-2 text-t12h text-on-accent">{m.content}</p>
           </li>
         ) : (
           <li key={m.id} className="max-w-[94%] rounded-2xl rounded-bl-sm border border-line-soft bg-raised px-3 py-2.5 text-t12h leading-relaxed">
@@ -233,7 +233,7 @@ function FeedbackBox({ chatId, messageId, path, lang }: { chatId: string; messag
           <button
             type="submit"
             disabled={busy || body.trim().length < 2}
-            className="min-h-9 rounded-md bg-accent px-3 text-t11h font-semibold text-white disabled:opacity-50"
+            className="min-h-9 rounded-md bg-accent px-3 text-t11h font-semibold text-on-accent disabled:opacity-50"
           >
             {busy ? tr(lang, '보내는 중…', 'Sending…') : tr(lang, '보내기', 'Send')}
           </button>

@@ -3,6 +3,8 @@
 import { Html } from '@react-three/drei'
 import { createContext, useContext, type CSSProperties, type RefObject } from 'react'
 
+import { SCENE_LABEL } from '@/lib/design/scene-palette'
+
 /**
  * 이름표는 drei <Html>(DOM)로 — 한글을 3D 글자(troika)로 그리면 원격 글꼴을 받아야 한다.
  * DOM 이면 앱 글꼴이 그대로 쓰인다. 포인터는 통과시켜 건물 클릭을 막지 않는다.
@@ -26,10 +28,10 @@ export function NameTag({ name, fact, strong }: { name: string; fact: string | n
     whiteSpace: 'nowrap',
     padding: '3px 8px 4px',
     borderRadius: 8,
-    background: 'rgba(18,16,14,0.72)',
-    border: `1px solid ${strong ? 'rgba(222,186,120,0.95)' : 'rgba(176,141,87,0.45)'}`,
-    boxShadow: strong ? '0 0 12px rgba(222,186,120,0.45)' : 'none',
-    color: '#f3eee4',
+    background: SCENE_LABEL.plate,
+    border: `1px solid ${strong ? SCENE_LABEL.edgeStrong : SCENE_LABEL.edge}`,
+    boxShadow: strong ? SCENE_LABEL.glowStrong : 'none',
+    color: SCENE_LABEL.text,
     textAlign: 'center',
     lineHeight: 1.25,
     transition: 'border-color 200ms, box-shadow 200ms',
@@ -39,7 +41,7 @@ export function NameTag({ name, fact, strong }: { name: string; fact: string | n
     <Html center portal={portal} zIndexRange={Z} style={{ pointerEvents: 'none' }}>
       <div style={box}>
         <div style={{ fontSize: 11, fontWeight: 600, letterSpacing: '-0.01em' }}>{name}</div>
-        {fact && <div style={{ fontSize: 10, color: '#d9c39a', fontVariantNumeric: 'tabular-nums' }}>{fact}</div>}
+        {fact && <div style={{ fontSize: 10, color: SCENE_LABEL.fact, fontVariantNumeric: 'tabular-nums' }}>{fact}</div>}
       </div>
     </Html>
   )
@@ -57,8 +59,8 @@ export function PersonTag({ label }: { label: string }) {
           fontSize: 9,
           padding: '1px 5px',
           borderRadius: 6,
-          background: 'rgba(18,16,14,0.6)',
-          color: '#f3eee4',
+          background: SCENE_LABEL.personPlate,
+          color: SCENE_LABEL.text,
         }}
       >
         {label}

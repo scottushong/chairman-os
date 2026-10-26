@@ -172,7 +172,7 @@ export default async function EnginePage(props: PageProps<'/investment/engine'>)
                 {[...theses].reverse().map((t) => (
                   <li key={t.thesis_id} className="rounded-lg border border-line-soft p-2.5">
                     <div className="flex flex-wrap items-center gap-2 text-[14px]">
-                      <span className={`rounded px-1.5 py-0.5 text-[13px] font-bold ${t.classification === 'CONFIRMED' ? 'bg-ok/15 text-ok' : t.classification === 'INFERRED' ? 'bg-[#2f6fd0]/12 text-[#3b74d6]' : t.classification === 'HYPOTHESIS' ? 'bg-warning/12 text-warning' : 'bg-raised text-ink-dim'}`}>{t.classification}</span>
+                      <span className={`rounded px-1.5 py-0.5 text-[13px] font-bold ${t.classification === 'CONFIRMED' ? 'bg-ok/15 text-ok' : t.classification === 'INFERRED' ? 'bg-info/12 text-info' : t.classification === 'HYPOTHESIS' ? 'bg-warning/12 text-warning' : 'bg-raised text-ink-dim'}`}>{t.classification}</span>
                       <span className="text-[13px] text-ink-muted">{KIND_LABEL[t.kind]}{t.manager_id ? ` · ${t.manager_id}` : ''}{t.created_kind === 'ai' ? ` · AI 작성(${t.model_version ?? ''})` : ''}{t.state === 'broken' ? ' · 훼손' : ''} · {day(t.created_at)}</span>
                     </div>
                     <p className="mt-1 text-[14px]">{t.statement}</p>

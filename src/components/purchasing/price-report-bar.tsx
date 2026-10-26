@@ -94,7 +94,7 @@ export function PriceReportBar(props: {
                 }
               })
             }
-            className="ml-auto min-h-10 rounded-md bg-accent px-4 text-t12 font-semibold text-white disabled:opacity-40"
+            className="ml-auto min-h-10 rounded-md bg-accent px-4 text-t12 font-semibold text-on-accent disabled:opacity-40"
             data-testid="price-report-update"
           >
             {runId ? '수집 중…' : busy ? '시작하는 중…' : '지금 업데이트'}

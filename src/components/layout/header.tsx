@@ -59,7 +59,8 @@ export async function Header({ user }: { user: SessionUser | null }) {
     // 폰(768px 미만)은 로고 · 검색 돋보기 · 알림 · 프로필만(회장 지시 2026-09-28). 1024px 미만은 햄버거로 서랍을 연다.
     // 태블릿 · 가로 폰(768~1023px)은 검색창을 펴고 나머지는 폰과 같다 — 환율 · 뱃지 · 톱니 · 이름 · 로그아웃까지 두면 검색창이 80px로 눌린다.
     // 노치 자리만큼 위를 비운다(safe-top) — iOS 홈 화면 앱은 상태 막대가 비치는 black-translucent다.
-    <header className="glass-nav safe-top box-content flex h-14 shrink-0 items-center gap-1 border-b border-line-soft px-2 md:gap-4 md:px-5">
+    // 0098 새 모양: PC에서 사이드바 워드마크 칸과 같은 높이(68px) — 셸 두 장의 아랫선이 맞아야 한다.
+    <header className="glass-nav safe-top box-content flex h-14 shrink-0 items-center gap-1 border-b border-line-soft px-2 md:gap-4 md:px-5 ui-new:lg:h-[68px] ui-new:lg:px-7">
       <MenuButton />
       <Link
         href={homeHref(user?.role)}

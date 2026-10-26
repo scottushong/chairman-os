@@ -124,7 +124,7 @@ export default async function MailPage({ searchParams }: PageProps<'/mail'>) {
           <p className="font-semibold text-ink">Gmail이 연결되어 있지 않습니다.</p>
           <p className="mt-1">읽기 전용으로 연결합니다. 보내기 · 수정 권한은 요청하지 않습니다.</p>
           {/* 라우트 핸들러로 가는 전체 이동이다(OAuth 리디렉션) — next/link가 아니다. */}
-          <a href="/api/google/auth" className="mt-3 inline-block rounded-lg bg-accent px-3 py-2 text-t12h font-semibold text-white">
+          <a href="/api/google/auth" className="mt-3 inline-block rounded-lg bg-accent px-3 py-2 text-t12h font-semibold text-on-accent">
             Gmail 연결
           </a>
         </section>

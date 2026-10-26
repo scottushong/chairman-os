@@ -76,7 +76,7 @@ function SuspectRow({ g, businessId, lines }: { g: FinTxGroup; businessId: strin
       <p className="mt-0.5 text-t10h text-ink-muted">맞은 열쇠: {Object.values(g.evidence ?? {}).map(String).join(' · ') || '—'}</p>
       <div className="mt-1.5 flex flex-wrap items-center gap-2">
         <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} placeholder="이유(필수)" aria-label="이유" className="min-w-0 flex-1 rounded-md border border-line bg-panel px-2 py-1.5 text-t12h" />
-        <button type="button" disabled={busy || reason.trim().length < 2} onClick={() => decide('same')} className="min-h-9 rounded-md bg-accent px-3 text-t11h font-semibold text-white disabled:opacity-40">
+        <button type="button" disabled={busy || reason.trim().length < 2} onClick={() => decide('same')} className="min-h-9 rounded-md bg-accent px-3 text-t11h font-semibold text-on-accent disabled:opacity-40">
           같은 거래
         </button>
         <button type="button" disabled={busy || reason.trim().length < 2} onClick={() => decide('rejected')} className="min-h-9 rounded-md border border-line px-3 text-t11h text-ink-dim disabled:opacity-40">

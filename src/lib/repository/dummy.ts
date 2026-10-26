@@ -548,6 +548,8 @@ const memorySettings: UserSettings = {
   // 프로세스 메모리에만 산다 — 서버를 재시작하면 사라지는 것이 이 어댑터의 계약이다.
   sidebar_prefs: {},
   app_prefs: {},
+  // 0098 화면 모양. null = 고른 적 없음 = 새 모양.
+  ui_theme: null,
 }
 
 /**

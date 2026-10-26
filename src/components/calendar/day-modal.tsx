@@ -294,7 +294,7 @@ export function DayModal({
                     <>
                       <Link
                         href={`/meet?room=${roomOf(e.video_url)}`}
-                        className="shrink-0 rounded bg-accent px-2 py-0.5 text-t11 font-semibold text-white"
+                        className="shrink-0 rounded bg-accent px-2 py-0.5 text-t11 font-semibold text-on-accent"
                       >
                         화상 입장
                       </Link>

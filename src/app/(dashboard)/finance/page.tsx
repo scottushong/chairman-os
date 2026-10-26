@@ -101,7 +101,7 @@ export default async function FinancePage(props: PageProps<'/finance'>) {
   const last = loaded.lastUploadAt ? new Date(Date.parse(loaded.lastUploadAt) + 9 * 3_600_000).toISOString() : null
 
   return (
-    <div className="min-h-full bg-[#f4f5f3] text-[#1a211e]" style={{ fontFamily: '"IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif' }}>
+    <div className="min-h-full bg-app text-ink">
       <div className="mx-auto flex max-w-[1360px] flex-col gap-5 px-4 pt-6 pb-12 sm:px-7">
         <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
           <h1 className="text-[22px] font-bold">재무 현황</h1>
@@ -109,7 +109,7 @@ export default async function FinancePage(props: PageProps<'/finance'>) {
             <NavSelect label="회사" value={biz} options={readable.map((b) => ({ value: b.business_id, label: b.name, href: q({ biz: b.business_id }) }))} />
             {tab !== 'daily' ? <NavSelect label="달" value={period} options={(months.includes(period) ? months : [period, ...months]).map((p) => ({ value: p, label: `${p.slice(0, 4)}년 ${Number(p.slice(5, 7))}월`, href: q({ month: p }) }))} /> : null}
             {tab === 'summary' ? (
-              <div className="flex overflow-hidden rounded-lg border border-[#d7ddda] bg-white text-[14px]" role="group" aria-label="월 · 분기 · 년">
+              <div className="flex overflow-hidden rounded-lg border border-line bg-card text-[14px]" role="group" aria-label="월 · 분기 · 년">
                 {(
                   [
                     ['month', '월'],
@@ -117,14 +117,14 @@ export default async function FinancePage(props: PageProps<'/finance'>) {
                     ['year', '년'],
                   ] as const
                 ).map(([g, l]) => (
-                  <Link key={g} href={q({ grain: g === 'month' ? null : g })} aria-current={grain === g ? 'true' : undefined} className={`px-3 py-1.5 ${grain === g ? 'bg-[#e1efeb] font-semibold text-[#0f6b5c]' : 'text-[#6b7772]'}`}>
+                  <Link key={g} href={q({ grain: g === 'month' ? null : g })} aria-current={grain === g ? 'true' : undefined} className={`px-3 py-1.5 ${grain === g ? 'bg-accent-soft font-semibold text-accent' : 'text-ink-muted'}`}>
                     {l}
                   </Link>
                 ))}
               </div>
             ) : null}
           </div>
-          <div className="ml-auto flex flex-wrap items-center gap-2.5 text-[13px] text-[#6b7772]">
+          <div className="ml-auto flex flex-wrap items-center gap-2.5 text-[13px] text-ink-muted">
             {tab === 'daily' ? (
               <span>
                 {today} ({'일월화수목금토'[new Date(`${today}T00:00:00Z`).getUTCDay()]}) 기준 · 자동 갱신
@@ -140,7 +140,7 @@ export default async function FinancePage(props: PageProps<'/finance'>) {
               </>
             )}
             {canKeep ? (
-              <Link href={uploadHref} className="rounded-lg bg-[#0f6b5c] px-3.5 py-[7px] font-semibold text-white hover:bg-[#0c5a4d]">
+              <Link href={uploadHref} className="rounded-lg bg-accent px-3.5 py-[7px] font-semibold text-on-accent hover:bg-accent/90">
                 자료 올리기
               </Link>
             ) : null}
@@ -148,13 +148,13 @@ export default async function FinancePage(props: PageProps<'/finance'>) {
           </div>
         </div>
 
-        <nav className="-mb-1 flex gap-1 overflow-x-auto border-b border-[#d7ddda] whitespace-nowrap" aria-label="재무 현황">
+        <nav className="-mb-1 flex gap-1 overflow-x-auto border-b border-line whitespace-nowrap" aria-label="재무 현황">
           {TABS.map((t) => (
             <Link
               key={t.key}
               href={q({ tab: t.key === 'summary' ? null : t.key, month: t.key === 'calendar' || tab === 'calendar' ? null : askedMonth ?? null })}
               aria-current={tab === t.key ? 'page' : undefined}
-              className={`shrink-0 px-4 py-2.5 text-[14px] max-sm:px-3 ${tab === t.key ? 'border-b-2 border-[#0f6b5c] font-bold text-[#0f6b5c]' : 'text-[#6b7772] hover:text-[#1a211e]'}`}
+              className={`shrink-0 px-4 py-2.5 text-[14px] max-sm:px-3 ${tab === t.key ? 'border-b-2 border-accent font-bold text-accent' : 'text-ink-muted hover:text-ink'}`}
             >
               {t.label}
             </Link>

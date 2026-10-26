@@ -19,15 +19,15 @@ export function ForecastChart({ points, buyPrice, currency = 'USD' }: { points: 
           <span>0</span>
         </div>
         <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-[180px] w-full sm:h-[200px]" role="img" aria-label="5년 가치 전망">
-          <line x1={0} x2={W} y1={y(buyPrice)} y2={y(buyPrice)} stroke="#1f9d55" strokeDasharray="6 5" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
-          <path d={points.map((p, i) => `${i ? 'L' : 'M'}${x(i)},${y(p.value)}`).join('')} fill="none" stroke="#3b74d6" strokeWidth={2} vectorEffect="non-scaling-stroke" />
-          {points.map((p, i) => <circle key={p.year} cx={x(i)} cy={y(p.value)} r={4} fill="#3b74d6" />)}
+          <line x1={0} x2={W} y1={y(buyPrice)} y2={y(buyPrice)} className="stroke-positive" strokeDasharray="6 5" strokeWidth={1.5} vectorEffect="non-scaling-stroke" />
+          <path d={points.map((p, i) => `${i ? 'L' : 'M'}${x(i)},${y(p.value)}`).join('')} fill="none" className="stroke-chart-3" strokeWidth={2} vectorEffect="non-scaling-stroke" />
+          {points.map((p, i) => <circle key={p.year} cx={x(i)} cy={y(p.value)} r={4} className="fill-chart-3" />)}
         </svg>
       </div>
       <div className="flex justify-between pl-10 text-[13px] text-ink-muted tnum">
         {points.map((p) => <span key={p.year}>{p.year}</span>)}
       </div>
-      <p className="text-[13px] text-ink-muted"><span className="mr-1 inline-block h-0.5 w-4 bg-[#3b74d6] align-middle" />추정 가치(Base) · <span className="mr-1 inline-block h-0.5 w-4 border-t-2 border-dashed border-[#1f9d55] align-middle" />매수 기준가 {money(buyPrice)}</p>
+      <p className="text-[13px] text-ink-muted"><span className="mr-1 inline-block h-0.5 w-4 bg-chart-3 align-middle" />추정 가치(Base) · <span className="mr-1 inline-block h-0.5 w-4 border-t-2 border-dashed border-positive align-middle" />매수 기준가 {money(buyPrice)}</p>
     </div>
   )
 }

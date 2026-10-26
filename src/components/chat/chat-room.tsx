@@ -103,7 +103,7 @@ export function ChatRoom({
           return (
             <li key={m.message_id} className={`flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
               {!mine ? <span className="px-1 text-t10h text-ink-muted">{m.sender_name}</span> : null}
-              <div className={`max-w-[78%] rounded-xl px-3 py-2 text-t12h leading-relaxed ${mine ? 'bg-accent text-white' : 'bg-raised'}`}>
+              <div className={`max-w-[78%] rounded-xl px-3 py-2 text-t12h leading-relaxed ${mine ? 'bg-accent text-on-accent' : 'bg-raised'}`}>
                 {m.body ? <p className="whitespace-pre-wrap break-words">{m.body}</p> : null}
                 {m.link ? (
                   m.link.startsWith('/') ? (
@@ -184,7 +184,7 @@ export function ChatRoom({
             type="button"
             onClick={send}
             disabled={pending || (!body.trim() && !link.trim() && !doc)}
-            className="rounded-md bg-accent px-3 py-2 text-t12h font-semibold text-white disabled:opacity-40"
+            className="rounded-md bg-accent px-3 py-2 text-t12h font-semibold text-on-accent disabled:opacity-40"
           >
             {tr(lang, '보내기', 'Send')}
           </button>

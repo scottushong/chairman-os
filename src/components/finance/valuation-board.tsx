@@ -144,7 +144,7 @@ function ValuationCard({ r, businessId, businessName, viewerId }: { r: FinValuat
                   if (x.ok) router.refresh()
                 })
               }
-              className="min-h-9 rounded-md bg-accent px-3 text-t11h font-semibold text-white disabled:opacity-40"
+              className="min-h-9 rounded-md bg-accent px-3 text-t11h font-semibold text-on-accent disabled:opacity-40"
             >
               확정
             </button>
@@ -224,7 +224,7 @@ function ValuationForm({ businessId, businessName, month, viewerName }: { busine
             if (r.ok) router.refresh()
           })
         }
-        className="mt-2 min-h-10 rounded-md bg-accent px-4 text-t12 font-semibold text-white disabled:opacity-40"
+        className="mt-2 min-h-10 rounded-md bg-accent px-4 text-t12 font-semibold text-on-accent disabled:opacity-40"
       >
         {busy ? '저장 중…' : '저장'}
       </button>
@@ -313,7 +313,7 @@ function OpeningConfirm({ businessId, openingId, confirmed, missing }: { busines
             if (x.ok) router.refresh()
           })
         }
-        className="min-h-7 rounded-md bg-accent px-2 text-t10h font-semibold text-white disabled:opacity-40"
+        className="min-h-7 rounded-md bg-accent px-2 text-t10h font-semibold text-on-accent disabled:opacity-40"
       >
         확인
       </button>
@@ -359,7 +359,7 @@ function OpeningForm({ businessId, month, categories }: { businessId: string; mo
             if (r.ok) router.refresh()
           })
         }
-        className="mt-2 min-h-10 rounded-md bg-accent px-4 text-t12 font-semibold text-white disabled:opacity-40"
+        className="mt-2 min-h-10 rounded-md bg-accent px-4 text-t12 font-semibold text-on-accent disabled:opacity-40"
       >
         저장
       </button>
@@ -430,7 +430,7 @@ function IssueRow({ businessId, month, material, lines }: { businessId: string; 
               if (r.ok) router.refresh()
             })
           }
-          className="min-h-9 rounded-md bg-accent px-3 text-t11h font-semibold text-white disabled:opacity-40"
+          className="min-h-9 rounded-md bg-accent px-3 text-t11h font-semibold text-on-accent disabled:opacity-40"
         >
           한꺼번에 정하기
         </button>

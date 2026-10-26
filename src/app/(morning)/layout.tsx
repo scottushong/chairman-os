@@ -51,7 +51,8 @@ export default async function MorningLayout({ children }: LayoutProps<'/'>) {
   const sections = await loadSidebarData(user?.role ?? null)
 
   return (
-    <div data-theme="dark" className="safe-x flex h-full">
+    // data-ui — 0098 화면 모양(새 모양 · 예전 모양, 설정 → 화면 모양). 다크는 그대로 늘 켜져 있고 모양마다 다크 판이 따로 있다(globals.css).
+    <div data-theme="dark" data-ui={prefs.ui} className="safe-x flex h-full">
       {/* (dashboard) 셸과 같은 이유로 여기에도 선다 — 회장이 아침에 여는 화면이 /ai라
           이 셸을 빼면 ①이 며칠씩 낡은 값으로 남는다(Phase 3-C 현지 시간). */}
       <TimezoneBeacon />

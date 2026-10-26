@@ -11,6 +11,7 @@ import {
   type MeshStandardMaterial,
 } from 'three'
 
+import { BUILDING } from '@/lib/design/scene-palette'
 import type { CityStage } from '@/types'
 
 import { StaticInstances, useInstances, writeInstances, type Inst } from './instances'
@@ -34,7 +35,7 @@ import {
 } from './shared'
 
 const EDGES = new EdgesGeometry(BOX_BASE)
-const GOLD = '#e8c27a'
+const GOLD = BUILDING.gold
 
 interface ItemProps {
   pl: Placement
@@ -272,11 +273,11 @@ export function Building({ pl, selected, onSelect, still, promoted }: ItemProps 
             <mesh geometry={BOX_BASE} scale={[w, 1, d]} castShadow receiveShadow>
               <meshStandardMaterial
                 ref={glassMat}
-                color="#3b5866"
+                color={BUILDING.glass}
                 metalness={0.75}
                 roughness={0.1}
                 envMapIntensity={1.8}
-                emissive="#ffffff"
+                emissive={BUILDING.glassGlow}
                 emissiveMap={tex}
                 emissiveIntensity={0}
               />
@@ -302,12 +303,12 @@ export function Building({ pl, selected, onSelect, still, promoted }: ItemProps 
         {/* 비계 — 목표 높이에 맞춰 짓고, 트윈 중에는 꼭대기를 따라 오르내린다. */}
         <group ref={scaffold} visible={stage === 'finishing'}>
           <StaticInstances geometry={BOX_BASE} list={scaffoldParts.tubes}>
-            <meshStandardMaterial ref={scaffoldMat} color="#9aa1a6" metalness={0.7} roughness={0.45} transparent />
+            <meshStandardMaterial ref={scaffoldMat} color={BUILDING.scaffold} metalness={0.7} roughness={0.45} transparent />
           </StaticInstances>
           <StaticInstances geometry={BOX_BASE} list={scaffoldParts.nets}>
             <meshStandardMaterial
               ref={netMat}
-              color="#56645e"
+              color={BUILDING.scaffoldNet}
               roughness={0.9}
               transparent
               opacity={0.32}
@@ -328,7 +329,7 @@ export function Building({ pl, selected, onSelect, still, promoted }: ItemProps 
             <mesh geometry={BOX_BASE} material={MAT.marble} scale={[w, 0.3, d - 1]} receiveShadow />
           </group>
           <instancedMesh ref={dust} args={[SPHERE_LO, undefined, dustDirs.length]}>
-            <meshBasicMaterial ref={dustMat} color="#b9ab95" transparent opacity={0} depthWrite={false} />
+            <meshBasicMaterial ref={dustMat} color={BUILDING.dust} transparent opacity={0} depthWrite={false} />
           </instancedMesh>
         </group>
       )}

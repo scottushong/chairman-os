@@ -39,12 +39,12 @@ export function PlTab({ ctx, period, hrefFor, selected, officials, upload, busin
 
   return (
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.7fr_1fr]">
-      <section className="flex min-w-0 flex-col gap-2.5 rounded-[10px] border border-[#e1e6e3] bg-white px-[18px] py-4">
+      <section className="flex min-w-0 flex-col gap-2.5 rounded-[10px] border border-line bg-card px-[18px] py-4">
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <h2 className="text-[15px] font-bold">
             손익계산서 — {yr}년 {Number(period.slice(5, 7))}월 (단위: 원)
           </h2>
-          <div className="flex items-center gap-2 text-[14px] lg:text-[12px] text-[#6b7772]">
+          <div className="flex items-center gap-2 text-[14px] lg:text-[12px] text-ink-muted">
             줄을 누르면 계정별 원장의 그 줄로
             <CsvButton rows={csv} fileName={`손익계산서_${period}.csv`} />
           </div>
@@ -54,7 +54,7 @@ export function PlTab({ ctx, period, hrefFor, selected, officials, upload, busin
             <thead>
               <tr>
                 {['과목', '이번 달', '전월', '증감', '올해 누계', '매출 대비'].map((h, i) => (
-                  <th key={h} className={`border-b border-[#e1e6e3] px-2 py-1.5 text-[14px] lg:text-[12px] font-medium text-[#6b7772] ${i ? 'text-right' : 'text-left'}`}>{h}</th>
+                  <th key={h} className={`border-b border-line px-2 py-1.5 text-[14px] lg:text-[12px] font-medium text-ink-muted ${i ? 'text-right' : 'text-left'}`}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -64,13 +64,13 @@ export function PlTab({ ctx, period, hrefFor, selected, officials, upload, busin
                 const d = l.amount !== null && p !== null ? l.amount - p : null
                 const sum = l.level === 'sum'
                 const costLike = /^(cogs|sga|nonop-out|tax)/.test(l.key)
-                const dTone = d === null || d === 0 || !sum ? '' : (d > 0) !== costLike ? 'text-[#0f6b5c]' : 'text-[#b4432b]'
+                const dTone = d === null || d === 0 || !sum ? '' : (d > 0) !== costLike ? 'text-positive' : 'text-negative'
                 const y = ytd.byKey.get(l.key) ?? null
                 const share = rev && l.amount !== null && !/open|close/.test(l.key) ? ratio(pct(l.amount, rev)) : ''
-                const cls = sum ? 'border-t border-[#d7ddda] bg-[#f7f9f8] font-bold' : 'text-[13px] text-[#6b7772]'
+                const cls = sum ? 'border-t border-line bg-raised font-bold' : 'text-[13px] text-ink-muted'
                 return (
-                  <tr key={l.key} className={`${cls} ${selected === l.key ? 'outline outline-1 outline-[#0f6b5c]' : ''}`}>
-                    <td className={`border-b border-[#eef1ef] px-2 py-[7px] whitespace-nowrap ${sum ? 'text-[14px]' : 'pl-7'}`}>
+                  <tr key={l.key} className={`${cls} ${selected === l.key ? 'outline outline-1 outline-accent' : ''}`}>
+                    <td className={`border-b border-line-soft px-2 py-[7px] whitespace-nowrap ${sum ? 'text-[14px]' : 'pl-7'}`}>
                       {l.codes.length ? (
                         <Link href={hrefFor(l.key)} className="hover:underline" data-testid="pl-line-link">
                           {l.label}
@@ -79,11 +79,11 @@ export function PlTab({ ctx, period, hrefFor, selected, officials, upload, busin
                         l.label
                       )}
                     </td>
-                    <td className="border-b border-[#eef1ef] px-2 py-[7px] text-right whitespace-nowrap">{won(l.amount)}</td>
-                    <td className="border-b border-[#eef1ef] px-2 py-[7px] text-right">{won(p)}</td>
-                    <td className={`border-b border-[#eef1ef] px-2 py-[7px] text-right ${dTone}`}>{/open|close/.test(l.key) ? '' : won(d, true)}</td>
-                    <td className="border-b border-[#eef1ef] px-2 py-[7px] text-right">{/open|close/.test(l.key) ? '' : won(y)}</td>
-                    <td className="border-b border-[#eef1ef] px-2 py-[7px] text-right">{share}</td>
+                    <td className="border-b border-line-soft px-2 py-[7px] text-right whitespace-nowrap">{won(l.amount)}</td>
+                    <td className="border-b border-line-soft px-2 py-[7px] text-right">{won(p)}</td>
+                    <td className={`border-b border-line-soft px-2 py-[7px] text-right ${dTone}`}>{/open|close/.test(l.key) ? '' : won(d, true)}</td>
+                    <td className="border-b border-line-soft px-2 py-[7px] text-right">{/open|close/.test(l.key) ? '' : won(y)}</td>
+                    <td className="border-b border-line-soft px-2 py-[7px] text-right">{share}</td>
                   </tr>
                 )
               })}
@@ -110,17 +110,17 @@ export function PlTab({ ctx, period, hrefFor, selected, officials, upload, busin
       </section>
 
       <div className="flex min-w-0 flex-col gap-4">
-        <section className="flex flex-col gap-2.5 rounded-[10px] border border-[#e1e6e3] bg-white px-[18px] py-4">
+        <section className="flex flex-col gap-2.5 rounded-[10px] border border-line bg-card px-[18px] py-4">
           <h2 className="text-[15px] font-bold">월별 흐름 — 올해 1~{Number(period.slice(5, 7))}월</h2>
-          <div className="text-[14px] lg:text-[12px] text-[#6b7772]">막대 = 매출 · 위 숫자 = 영업이익률</div>
-          <div className="flex h-[150px] items-end gap-1.5 border-b border-[#e1e6e3] px-0.5">
+          <div className="text-[14px] lg:text-[12px] text-ink-muted">막대 = 매출 · 위 숫자 = 영업이익률</div>
+          <div className="flex h-[150px] items-end gap-1.5 border-b border-line px-0.5">
             {bars.map((b, i) => {
               const last = i === bars.length - 1
               return (
                 <div key={b.p} className="flex flex-1 flex-col items-center gap-[3px]" title={`${monthKo(b.p)} 매출 ${eok(b.rev)}`}>
-                  <div className={`text-[14px] lg:text-[10px] ${last ? 'font-semibold text-[#1a211e]' : 'text-[#6b7772]'}`}>{b.margin === null ? '' : `${b.margin.toFixed(1)}%`}</div>
-                  <div className={`w-full rounded-t-[3px] ${last ? 'bg-[#0f6b5c]' : 'bg-[#b9d8d0]'}`} style={{ height: `${b.rev ? Math.max(4, Math.round((b.rev / maxRev) * 120)) : 2}px` }} />
-                  <div className={`text-[14px] lg:text-[11px] ${last ? 'font-semibold text-[#1a211e]' : 'text-[#6b7772]'}`}>{Number(b.p.slice(5, 7))}</div>
+                  <div className={`text-[14px] lg:text-[10px] ${last ? 'font-semibold text-ink' : 'text-ink-muted'}`}>{b.margin === null ? '' : `${b.margin.toFixed(1)}%`}</div>
+                  <div className={`w-full rounded-t-[3px] ${last ? 'bg-accent' : 'bg-accent-soft'}`} style={{ height: `${b.rev ? Math.max(4, Math.round((b.rev / maxRev) * 120)) : 2}px` }} />
+                  <div className={`text-[14px] lg:text-[11px] ${last ? 'font-semibold text-ink' : 'text-ink-muted'}`}>{Number(b.p.slice(5, 7))}</div>
                 </div>
               )
             })}
@@ -128,20 +128,20 @@ export function PlTab({ ctx, period, hrefFor, selected, officials, upload, busin
           {done.length < bars.length ? <Note>빈 막대 = 그 달 손익 자료 없음</Note> : null}
         </section>
 
-        <section className="flex flex-col gap-2 rounded-[10px] border border-[#e1e6e3] bg-white px-[18px] py-4">
+        <section className="flex flex-col gap-2 rounded-[10px] border border-line bg-card px-[18px] py-4">
           <h2 className="text-[15px] font-bold">{dOp === null ? '이번 달 이익 변동 이유' : `이번 달 이익이 ${dOp < 0 ? '줄어든' : '늘어난'} 이유 (전월 대비 ${dOp < 0 ? '−' : '+'}${Math.round(Math.abs(dOp) / 10_000).toLocaleString('ko-KR')}만)`}</h2>
           {reasons.length ? (
             <table className="w-full border-collapse tnum">
               <tbody>
                 {reasons.map((r) => (
                   <tr key={r.label}>
-                    <td className="border-b border-[#eef1ef] px-2 py-[7px] text-[14px]">{r.label}</td>
-                    <td className={`border-b border-[#eef1ef] px-2 py-[7px] text-right text-[14px] ${r.amount < 0 ? 'text-[#b4432b]' : 'text-[#0f6b5c]'}`}>{won(r.amount, true)}</td>
+                    <td className="border-b border-line-soft px-2 py-[7px] text-[14px]">{r.label}</td>
+                    <td className={`border-b border-line-soft px-2 py-[7px] text-right text-[14px] ${r.amount < 0 ? 'text-negative' : 'text-positive'}`}>{won(r.amount, true)}</td>
                   </tr>
                 ))}
-                <tr className="border-t border-[#d7ddda] bg-[#f7f9f8] font-bold">
+                <tr className="border-t border-line bg-raised font-bold">
                   <td className="px-2 py-[7px] text-[14px]">합계</td>
-                  <td className={`px-2 py-[7px] text-right text-[14px] ${dOp! < 0 ? 'text-[#b4432b]' : 'text-[#0f6b5c]'}`}>{won(dOp, true)}</td>
+                  <td className={`px-2 py-[7px] text-right text-[14px] ${dOp! < 0 ? 'text-negative' : 'text-positive'}`}>{won(dOp, true)}</td>
                 </tr>
               </tbody>
             </table>
@@ -150,26 +150,26 @@ export function PlTab({ ctx, period, hrefFor, selected, officials, upload, busin
           )}
         </section>
 
-        <section className="flex flex-col gap-2 rounded-[10px] border border-[#e1e6e3] bg-white px-[18px] py-4">
+        <section className="flex flex-col gap-2 rounded-[10px] border border-line bg-card px-[18px] py-4">
           <h2 className="text-[15px] font-bold">공식 결산과 비교</h2>
           <table className="w-full border-collapse tnum">
             <thead>
               <tr>
                 {['연도', '매출 (공식)', '영업이익', '이익률'].map((h, i) => (
-                  <th key={h} className={`border-b border-[#e1e6e3] px-2 py-1.5 text-[14px] lg:text-[12px] font-medium text-[#6b7772] ${i ? 'text-right' : 'text-left'}`}>{h}</th>
+                  <th key={h} className={`border-b border-line px-2 py-1.5 text-[14px] lg:text-[12px] font-medium text-ink-muted ${i ? 'text-right' : 'text-left'}`}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {officials.slice(-3).map((o) => (
                 <tr key={o.year}>
-                  <td className="border-b border-[#eef1ef] px-2 py-[7px] text-[14px]">{o.year}</td>
-                  <td className="border-b border-[#eef1ef] px-2 py-[7px] text-right text-[14px]">{eok(o.revenue)}</td>
-                  <td className="border-b border-[#eef1ef] px-2 py-[7px] text-right text-[14px]">{eok(o.op)}</td>
-                  <td className="border-b border-[#eef1ef] px-2 py-[7px] text-right text-[14px]">{ratio(pct(o.op, o.revenue))}</td>
+                  <td className="border-b border-line-soft px-2 py-[7px] text-[14px]">{o.year}</td>
+                  <td className="border-b border-line-soft px-2 py-[7px] text-right text-[14px]">{eok(o.revenue)}</td>
+                  <td className="border-b border-line-soft px-2 py-[7px] text-right text-[14px]">{eok(o.op)}</td>
+                  <td className="border-b border-line-soft px-2 py-[7px] text-right text-[14px]">{ratio(pct(o.op, o.revenue))}</td>
                 </tr>
               ))}
-              <tr className="bg-[#f8eadf]">
+              <tr className="bg-warning/10">
                 <td className="px-2 py-[7px] text-[14px]">{yr} 잠정 (1~{Number(period.slice(5, 7))}월 + 전망)</td>
                 <td className="px-2 py-[7px] text-right text-[14px]">{eok(fRev, 0)}</td>
                 <td className="px-2 py-[7px] text-right text-[14px]">{eok(fOp)}</td>
@@ -215,10 +215,10 @@ function LedgerLines({ ctx, period, line, clear }: { ctx: Ctx; period: string; l
   // 장부(전표 · ECOUNT 월별 손익 전표)에서 온 달 — 원장 파일 줄이 없으니 그 달 장부의 계정별 금액(차변 − 대변)을.
   const books = !detail.length && !sums.length && ctx.scope.periods.includes(period) ? [...ctx.scope.cellsAt(period)].filter(([c]) => codes.has(c)).map(([c, f]) => ({ code: c, name: ctx.accounts.get(c)?.name ?? c, amount: f.value })) : []
   return (
-    <div id="ledger" className="mt-2 rounded-md border border-[#0f6b5c] px-3 py-2" data-testid="ledger-lines">
+    <div id="ledger" className="mt-2 rounded-md border border-accent px-3 py-2" data-testid="ledger-lines">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <div className="text-[14px] font-semibold">계정별 원장 — {line.label}</div>
-        <Link href={clear} scroll={false} className="inline-flex items-center text-[13px] text-[#0f6b5c] hover:underline">
+        <Link href={clear} scroll={false} className="inline-flex items-center text-[13px] text-accent hover:underline">
           닫기
         </Link>
       </div>
@@ -228,19 +228,19 @@ function LedgerLines({ ctx, period, line, clear }: { ctx: Ctx; period: string; l
           <thead>
             <tr>
               {['일자', '계정', '거래처', '적요', '차변', '대변'].map((h, i) => (
-                <th key={h} className={`border-b border-[#e1e6e3] px-2 py-1 text-[14px] lg:text-[12px] font-medium text-[#6b7772] ${i >= 4 ? 'text-right' : 'text-left'}`}>{h}</th>
+                <th key={h} className={`border-b border-line px-2 py-1 text-[14px] lg:text-[12px] font-medium text-ink-muted ${i >= 4 ? 'text-right' : 'text-left'}`}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {detail.slice(0, 50).map((r, i) => (
               <tr key={i}>
-                <td className="border-b border-[#eef1ef] px-2 py-1">{String(r.tx_date ?? '').slice(5, 10)}</td>
-                <td className="border-b border-[#eef1ef] px-2 py-1">{String(r.account_name ?? r.account_code ?? '')}</td>
-                <td className="border-b border-[#eef1ef] px-2 py-1">{String(r.counterparty ?? '')}</td>
-                <td className="border-b border-[#eef1ef] px-2 py-1">{String(r.memo ?? '')}</td>
-                <td className="border-b border-[#eef1ef] px-2 py-1 text-right">{r.debit ? won(Number(r.debit)) : ''}</td>
-                <td className="border-b border-[#eef1ef] px-2 py-1 text-right">{r.credit ? won(Number(r.credit)) : ''}</td>
+                <td className="border-b border-line-soft px-2 py-1">{String(r.tx_date ?? '').slice(5, 10)}</td>
+                <td className="border-b border-line-soft px-2 py-1">{String(r.account_name ?? r.account_code ?? '')}</td>
+                <td className="border-b border-line-soft px-2 py-1">{String(r.counterparty ?? '')}</td>
+                <td className="border-b border-line-soft px-2 py-1">{String(r.memo ?? '')}</td>
+                <td className="border-b border-line-soft px-2 py-1 text-right">{r.debit ? won(Number(r.debit)) : ''}</td>
+                <td className="border-b border-line-soft px-2 py-1 text-right">{r.credit ? won(Number(r.credit)) : ''}</td>
               </tr>
             ))}
           </tbody>
@@ -251,9 +251,9 @@ function LedgerLines({ ctx, period, line, clear }: { ctx: Ctx; period: string; l
           <tbody>
             {sums.map((r, i) => (
               <tr key={i}>
-                <td className="border-b border-[#eef1ef] px-2 py-1">{String(r.account_code ?? '')} {String(r.account_name ?? '')}</td>
-                <td className="border-b border-[#eef1ef] px-2 py-1 text-right">차변 {won(Number(r.debit ?? 0))}</td>
-                <td className="border-b border-[#eef1ef] px-2 py-1 text-right">대변 {won(Number(r.credit ?? 0))}</td>
+                <td className="border-b border-line-soft px-2 py-1">{String(r.account_code ?? '')} {String(r.account_name ?? '')}</td>
+                <td className="border-b border-line-soft px-2 py-1 text-right">차변 {won(Number(r.debit ?? 0))}</td>
+                <td className="border-b border-line-soft px-2 py-1 text-right">대변 {won(Number(r.credit ?? 0))}</td>
               </tr>
             ))}
           </tbody>
@@ -263,19 +263,19 @@ function LedgerLines({ ctx, period, line, clear }: { ctx: Ctx; period: string; l
           <tbody>
             {books.map((r) => (
               <tr key={r.code}>
-                <td className="border-b border-[#eef1ef] px-2 py-1">
+                <td className="border-b border-line-soft px-2 py-1">
                   {r.code} {r.name}
                 </td>
-                <td className="border-b border-[#eef1ef] px-2 py-1 text-right">장부 {won(r.amount)}</td>
+                <td className="border-b border-line-soft px-2 py-1 text-right">장부 {won(r.amount)}</td>
               </tr>
             ))}
           </tbody>
         </table>
       ) : (
-        <div className="mt-1 text-[13px] text-[#6b7772]">이 달 원장 줄이 없습니다(장부 전표에서 온 값이면 «전표» 화면에서 봅니다).</div>
+        <div className="mt-1 text-[13px] text-ink-muted">이 달 원장 줄이 없습니다(장부 전표에서 온 값이면 «전표» 화면에서 봅니다).</div>
       )}
-      {books.length ? <div className="text-[14px] lg:text-[12px] text-[#6b7772]">이 달은 장부 전표에서 온 값입니다 — 계정별 합계(차변 − 대변)만, 거래 줄은 «전표» 화면에서.</div> : null}
-      {detail.length > 50 ? <div className="text-[14px] lg:text-[12px] text-[#6b7772]">앞 50줄만 — 전체는 원장 파일에서</div> : null}
+      {books.length ? <div className="text-[14px] lg:text-[12px] text-ink-muted">이 달은 장부 전표에서 온 값입니다 — 계정별 합계(차변 − 대변)만, 거래 줄은 «전표» 화면에서.</div> : null}
+      {detail.length > 50 ? <div className="text-[14px] lg:text-[12px] text-ink-muted">앞 50줄만 — 전체는 원장 파일에서</div> : null}
     </div>
   )
 }

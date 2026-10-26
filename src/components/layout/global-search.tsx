@@ -111,7 +111,7 @@ export function GlobalSearch() {
         <div className="relative min-w-0 flex-1">
           <Icon
             name="search"
-            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-ink-muted"
+            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-ink-muted ui-new:left-3.5"
           />
           <input
             type="search"
@@ -126,7 +126,7 @@ export function GlobalSearch() {
             aria-controls="global-search-results"
             autoFocus={expanded}
             placeholder="전체 검색 (회사, 프로젝트, 업무, 결정, 문서)"
-            className="h-11 w-full md:h-9 rounded-lg border border-line bg-panel pr-3 pl-9 text-t13 text-ink placeholder:text-ink-muted focus:border-accent focus:outline-none"
+            className="h-11 w-full md:h-9 rounded-lg border border-line bg-panel pr-3 pl-9 text-t13 text-ink placeholder:text-ink-muted focus:border-accent focus:outline-none ui-new:rounded-full ui-new:bg-card ui-new:pl-10 ui-new:md:h-10"
           />
 
           {showPanel ? (

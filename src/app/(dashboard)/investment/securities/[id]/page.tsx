@@ -110,7 +110,7 @@ export default async function SecurityPage(props: PageProps<'/investment/securit
                 return (
                   <li key={k} className="grid grid-cols-[3rem_minmax(0,1fr)_auto] items-center gap-2">
                     <span className="text-[14px] font-semibold">{k[0].toUpperCase() + k.slice(1)}</span>
-                    <div className="h-3 rounded bg-raised"><div className={`h-3 rounded ${k === 'bear' ? 'bg-ink-muted/60' : k === 'base' ? 'bg-[#3b74d6]/70' : 'bg-[#1e3a8a]'}`} style={{ width: `${x ? (x.futurePrice / max) * 100 : 0}%` }} /></div>
+                    <div className="h-3 rounded bg-raised"><div className={`h-3 rounded ${k === 'bear' ? 'bg-ink-muted/60' : k === 'base' ? 'bg-chart-3/70' : 'bg-chart-3'}`} style={{ width: `${x ? (x.futurePrice / max) * 100 : 0}%` }} /></div>
                     <span className="text-[14px] tnum">{x ? `${usd(x.futurePrice)} (${pct(x.upsidePct, 0, true)})` : '—'}</span>
                   </li>
                 )
@@ -163,7 +163,7 @@ export default async function SecurityPage(props: PageProps<'/investment/securit
                     ) : (
                       <span className="flex h-7 items-end gap-1" title={r.points.map((p) => `${p.as_of}: ${p.shares === null ? '보유 없음' : shares(p.shares)}`).join('\n')}>
                         {r.points.map((p) => (
-                          <span key={p.as_of} className={`w-3 rounded-sm ${p.shares ? 'bg-[#3b74d6]' : 'bg-line'}`} style={{ height: `${p.shares ? Math.max(12, (p.shares / max) * 100) : 8}%` }} />
+                          <span key={p.as_of} className={`w-3 rounded-sm ${p.shares ? 'bg-chart-3' : 'bg-line'}`} style={{ height: `${p.shares ? Math.max(12, (p.shares / max) * 100) : 8}%` }} />
                         ))}
                       </span>
                     )}

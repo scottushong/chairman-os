@@ -122,7 +122,7 @@ export default async function MePage({ searchParams }: PageProps<'/me'>) {
             key={t.key}
             href={`/me?tab=${t.key}`}
             aria-current={tab === t.key ? 'page' : undefined}
-            className={`shrink-0 rounded-lg px-3 py-1.5 text-t12h font-semibold ${tab === t.key ? 'bg-accent text-white' : 'border border-line bg-raised'}`}
+            className={`shrink-0 rounded-lg px-3 py-1.5 text-t12h font-semibold ${tab === t.key ? 'bg-accent text-on-accent' : 'border border-line bg-raised'}`}
           >
             {t.label}
             {t.badge ? <span className="ml-1 tnum">{t.badge}</span> : null}
@@ -167,7 +167,7 @@ export default async function MePage({ searchParams }: PageProps<'/me'>) {
             />
           ) : (
             <>
-              <Link href="/me?tab=requests&new=1" className="mb-2 block rounded-lg bg-accent px-3 py-3 text-center text-t14 font-semibold text-white">
+              <Link href="/me?tab=requests&new=1" className="mb-2 block rounded-lg bg-accent px-3 py-3 text-center text-t14 font-semibold text-on-accent">
                 + {tr(lang, '요청 올리기', 'New request')}
               </Link>
               {myRequests.length === 0 ? (

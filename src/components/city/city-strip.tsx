@@ -100,7 +100,7 @@ export function CityStrip({
               key={item.layout.id}
               href={`/group?focus=${item.layout.id}`}
               aria-label={`${item.name} — ${hotspotFacts(item).join(' · ')}`}
-              className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-md bg-black/60 max-md:hidden px-2 py-1 text-t11 leading-tight text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-black/80"
+              className="absolute -translate-x-1/2 -translate-y-1/2 whitespace-nowrap rounded-md bg-scrim/60 max-md:hidden px-2 py-1 text-t11 leading-tight text-on-dark shadow-lg backdrop-blur-sm transition-colors hover:bg-scrim/80"
               style={{
                 left: `clamp(64px, ${cx}%, calc(100% - 64px))`,
                 // 건물의 세로 가운데. 창 밖이면 띠의 위·아래 끝에 붙인다 — 가로는 건물 그대로라
@@ -110,7 +110,7 @@ export function CityStrip({
               }}
             >
               <span className="font-semibold">{item.name}</span>
-              <span className="ml-1.5 text-white/80 tnum">{hotspotFacts(item).join(' · ')}</span>
+              <span className="ml-1.5 text-on-dark/80 tnum">{hotspotFacts(item).join(' · ')}</span>
             </Link>
           )
         })}

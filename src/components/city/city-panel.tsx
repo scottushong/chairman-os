@@ -25,14 +25,14 @@ export function CityPanel({ item }: { item: CityItem }) {
         <img src={main} alt={`${item.name} 클로즈업`} className="size-full object-cover" />
         {/* 회사 건물 그림 위에 공사 단계를 작은 그림으로 겹친다 — 둘이 같은 그림이면 겹치지 않는다. */}
         {main !== stageThumb ? (
-          <span className="absolute right-2 bottom-2 overflow-hidden rounded-md border border-white/70 shadow-lg">
+          <span className="absolute right-2 bottom-2 overflow-hidden rounded-md border border-on-dark/70 shadow-lg">
             {/* eslint-disable-next-line @next/next/no-img-element -- 위와 같다. */}
             <img src={stageThumb} alt="" className="h-16 w-20 object-cover" />
           </span>
         ) : null}
-        <span className="absolute top-2 left-2 rounded-md bg-black/65 px-2 py-0.5 text-t11 font-semibold text-white">
+        <span className="absolute top-2 left-2 rounded-md bg-scrim/65 px-2 py-0.5 text-t11 font-semibold text-on-dark">
           {CITY_STAGE_LABEL_KO[item.stage]}
-          {!lot && item.layout.stage_image ? <span className="ml-1 font-normal text-white/75">(고정)</span> : null}
+          {!lot && item.layout.stage_image ? <span className="ml-1 font-normal text-on-dark/75">(고정)</span> : null}
         </span>
       </div>
 

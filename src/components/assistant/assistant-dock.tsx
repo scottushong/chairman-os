@@ -177,7 +177,7 @@ export function AssistantDock({ lang, feedback = true }: { lang: Lang; /** 0073 
           onClick={openPanel}
           aria-label={tr(lang, 'AI 어시스턴트 열기', 'Open AI assistant')}
           title={tr(lang, 'AI 어시스턴트', 'AI assistant')}
-          className="fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] z-40 flex size-14 items-center justify-center rounded-full border border-gold/60 bg-gold text-ink shadow-lg shadow-black/20 transition-transform hover:scale-105 lg:right-6 lg:bottom-14"
+          className="fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+4.75rem)] z-40 flex size-14 items-center justify-center rounded-full border border-gold/60 bg-gold text-ink shadow-lg shadow-scrim/20 transition-transform hover:scale-105 lg:right-6 lg:bottom-14"
         >
           <Icon name="sparkles" className="size-6" />
         </button>

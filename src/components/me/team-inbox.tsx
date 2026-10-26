@@ -74,7 +74,7 @@ export function MyTurnInbox({ items, lang }: { items: MyTurnItem[]; lang: Lang }
                   type="button"
                   disabled={pendingUi || !reason.trim()}
                   onClick={() => act(d.decision_id, false, reason.trim())}
-                  className="rounded-md bg-critical px-3 py-1.5 text-t12 font-semibold text-white disabled:opacity-40"
+                  className="rounded-md bg-critical px-3 py-1.5 text-t12 font-semibold text-on-status disabled:opacity-40"
                 >
                   {tr(lang, '반려 확정', 'Reject')}
                 </button>
@@ -85,7 +85,7 @@ export function MyTurnInbox({ items, lang }: { items: MyTurnItem[]; lang: Lang }
             </div>
           ) : (
             <div className="mt-2 flex flex-wrap gap-1.5">
-              <button type="button" disabled={pendingUi} onClick={() => act(d.decision_id, true, null)} className="rounded-md bg-accent px-3 py-1.5 text-t12 font-semibold text-white disabled:opacity-40">
+              <button type="button" disabled={pendingUi} onClick={() => act(d.decision_id, true, null)} className="rounded-md bg-accent px-3 py-1.5 text-t12 font-semibold text-on-accent disabled:opacity-40">
                 {tr(lang, '승인', 'Approve')}
               </button>
               <button
@@ -148,7 +148,7 @@ export function TeamInbox({ pending, lang, viewerRole }: { pending: Decision[]; 
               <p className="mt-1 text-t11h font-semibold">{msg[d.decision_id]}</p>
             ) : (
               <div className="mt-2 flex flex-wrap gap-1.5">
-                <button type="button" disabled={pendingUi} onClick={() => act(d, true)} className="rounded-md bg-accent px-3 py-1.5 text-t12 font-semibold text-white disabled:opacity-40">
+                <button type="button" disabled={pendingUi} onClick={() => act(d, true)} className="rounded-md bg-accent px-3 py-1.5 text-t12 font-semibold text-on-accent disabled:opacity-40">
                   {tr(lang, '승인', 'Approve')}
                 </button>
                 <button type="button" disabled={pendingUi} onClick={() => act(d, false)} className="rounded-md border border-line bg-panel px-3 py-1.5 text-t12">
@@ -211,7 +211,7 @@ export function BundleComposer({ candidates, lang, viewerRole }: { candidates: D
             setResult(r.error ?? tr(lang, `${b} 기안으로 올렸습니다 (${r.id}).`, `Sent to ${bEn} (${r.id}).`))
           })
         }
-        className="w-full rounded-md bg-accent px-3 py-2 text-t12h font-semibold text-white disabled:opacity-40"
+        className="w-full rounded-md bg-accent px-3 py-2 text-t12h font-semibold text-on-accent disabled:opacity-40"
       >
         {tr(lang, `${picked.length}건 묶어 ${b}에게 올리기`, `Bundle ${picked.length} to ${bEn}`)}
       </button>

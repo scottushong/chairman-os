@@ -4,6 +4,8 @@ import { useFrame } from '@react-three/fiber'
 import { useRef } from 'react'
 import type { Group, MeshStandardMaterial, PointLight } from 'three'
 
+import { OBELISK_TINT } from '@/lib/design/scene-palette'
+
 import { OBELISK } from './layout3d'
 import { BOX, BOX_BASE, CYL, MAT, PYRAMID } from './shared'
 
@@ -52,14 +54,14 @@ export function Obelisk({ online, brief, still }: { online: boolean; brief: bool
       <mesh position-y={1.35 + SHAFT_H} scale={[0.52, 1.6, 0.52]} geometry={PYRAMID} castShadow>
         <meshStandardMaterial
           ref={tipMat}
-          color="#c9a35a"
+          color={OBELISK_TINT.tip}
           metalness={1}
           roughness={0.2}
-          emissive="#ffc766"
+          emissive={OBELISK_TINT.tipGlow}
           emissiveIntensity={0}
         />
       </mesh>
-      <pointLight ref={glow} position-y={1.35 + SHAFT_H + 1.4} color="#ffcf7a" intensity={0} distance={26} decay={2} />
+      <pointLight ref={glow} position-y={1.35 + SHAFT_H + 1.4} color={OBELISK_TINT.light} intensity={0} distance={26} decay={2} />
 
       {brief && (
         <group ref={envelope} position={[0, 2.1, 2.3]}>

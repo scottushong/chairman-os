@@ -13,6 +13,8 @@ import {
   SRGBColorSpace,
 } from 'three'
 
+import { MATERIAL, MATERIAL_GLOW, WINDOW_UNLIT, windowLit } from '@/lib/design/scene-palette'
+
 /**
  * 3D 씬(Phase 8 G-2a)이 함께 쓰는 재질 · 형상 · 하늘 상태.
  *
@@ -35,35 +37,35 @@ const std = (color: string, roughness: number, metalness = 0, extra: Partial<Mes
   Object.assign(new MeshStandardMaterial({ color, roughness, metalness }), extra)
 
 export const MAT = {
-  ground: std('#23201c', 0.95),
-  sidewalk: std('#3a352e', 0.85),
-  asphalt: std('#0d0d0f', 0.8),
-  laneLine: std('#bfb49c', 0.6),
-  marble: std('#e9e4da', 0.26),
-  marbleShade: std('#d6cfc2', 0.32),
-  brass: std('#b08d57', 0.26, 1),
-  brassDark: std('#8c6d40', 0.38, 1),
-  concrete: std('#9d978d', 0.92),
-  concreteDark: std('#6c665e', 0.95),
-  dirt: std('#3b2d21', 1),
-  rebar: std('#7b4a2c', 0.55, 0.6),
-  crane: std('#c69a3e', 0.55, 0.35),
-  steel: std('#8e959b', 0.45, 0.75),
-  lampPost: std('#2a2520', 0.5, 0.6),
-  signPanel: std('#1b1a18', 0.5, 0.2),
-  paper: std('#f4f1ea', 0.6),
-  wood: std('#4a3526', 0.7),
-  distant: std('#121318', 0.9, 0.1, { emissive: new Color('#ffcf8a'), emissiveIntensity: 0 }),
+  ground: std(MATERIAL.ground, 0.95),
+  sidewalk: std(MATERIAL.sidewalk, 0.85),
+  asphalt: std(MATERIAL.asphalt, 0.8),
+  laneLine: std(MATERIAL.laneLine, 0.6),
+  marble: std(MATERIAL.marble, 0.26),
+  marbleShade: std(MATERIAL.marbleShade, 0.32),
+  brass: std(MATERIAL.brass, 0.26, 1),
+  brassDark: std(MATERIAL.brassDark, 0.38, 1),
+  concrete: std(MATERIAL.concrete, 0.92),
+  concreteDark: std(MATERIAL.concreteDark, 0.95),
+  dirt: std(MATERIAL.dirt, 1),
+  rebar: std(MATERIAL.rebar, 0.55, 0.6),
+  crane: std(MATERIAL.crane, 0.55, 0.35),
+  steel: std(MATERIAL.steel, 0.45, 0.75),
+  lampPost: std(MATERIAL.lampPost, 0.5, 0.6),
+  signPanel: std(MATERIAL.signPanel, 0.5, 0.2),
+  paper: std(MATERIAL.paper, 0.6),
+  wood: std(MATERIAL.wood, 0.7),
+  distant: std(MATERIAL.distant, 0.9, 0.1, { emissive: new Color(MATERIAL_GLOW.distant), emissiveIntensity: 0 }),
   // 가로등 · 전조등. 밤에 emissive를 크게 올려 bloom 문턱을 넘긴다.
-  bulb: std('#fff1d6', 0.4, 0, { emissive: new Color('#ffd49a'), emissiveIntensity: 0.3 }),
-  screen: std('#cfe6ff', 0.3, 0, { emissive: new Color('#9fd0ff'), emissiveIntensity: 0.8 }),
-  cyan: std('#34e1ff', 0.3, 0, { emissive: new Color('#34e1ff'), emissiveIntensity: 2.2 }),
-  progressBg: std('#15130f', 0.8),
-  progressFill: std('#e8c27a', 0.4, 0.3, { emissive: new Color('#e8c27a'), emissiveIntensity: 1.2 }),
-  car: std('#cbb58a', 0.32, 0.65),
-  carGlass: std('#1a2228', 0.15, 0.8),
-  tire: std('#111111', 0.9),
-  blob: new MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.28, depthWrite: false }),
+  bulb: std(MATERIAL.bulb, 0.4, 0, { emissive: new Color(MATERIAL_GLOW.bulb), emissiveIntensity: 0.3 }),
+  screen: std(MATERIAL.screen, 0.3, 0, { emissive: new Color(MATERIAL_GLOW.screen), emissiveIntensity: 0.8 }),
+  cyan: std(MATERIAL.cyan, 0.3, 0, { emissive: new Color(MATERIAL_GLOW.cyan), emissiveIntensity: 2.2 }),
+  progressBg: std(MATERIAL.progressBg, 0.8),
+  progressFill: std(MATERIAL.progressFill, 0.4, 0.3, { emissive: new Color(MATERIAL_GLOW.progressFill), emissiveIntensity: 1.2 }),
+  car: std(MATERIAL.car, 0.32, 0.65),
+  carGlass: std(MATERIAL.carGlass, 0.15, 0.8),
+  tire: std(MATERIAL.tire, 0.9),
+  blob: new MeshBasicMaterial({ color: MATERIAL.blob, transparent: true, opacity: 0.28, depthWrite: false }),
 }
 
 /** 사람 옷 색 — 색마다 재질 하나를 나눠 쓴다. */
@@ -110,7 +112,7 @@ export function windowTexture(): CanvasTexture {
   c.width = cols * cw
   c.height = rows * ch
   const g = c.getContext('2d')!
-  g.fillStyle = '#000'
+  g.fillStyle = WINDOW_UNLIT
   g.fillRect(0, 0, c.width, c.height)
   const rnd = seeded(7)
   for (let r = 0; r < rows; r++) {
@@ -119,7 +121,7 @@ export function windowTexture(): CanvasTexture {
     for (let k = 0; k < cols; k++) {
       if (!floorLit || rnd() < 0.25) continue
       const v = 150 + Math.floor(rnd() * 105)
-      g.fillStyle = `rgb(${v},${Math.floor(v * 0.82)},${Math.floor(v * 0.55)})`
+      g.fillStyle = windowLit(v)
       g.fillRect(k * cw + 1, r * ch + 2, cw - 2, ch - 3)
     }
   }

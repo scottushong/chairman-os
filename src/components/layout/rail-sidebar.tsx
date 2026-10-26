@@ -100,7 +100,9 @@ export function RailSidebar({ user, hidden = [] }: { user: SessionUser | null; /
   return (
     // glass-nav = --color-nav 면 + backdrop-blur. 다크에서는 같은 이름이 흰색 4%로 뒤집힌다.
     // 셸에는 그림자를 주지 않는다 — 고정된 틀이 떠 보이면 그 위의 카드가 뜨지 못한다.
+    // data-surface="sidebar" — 0098 새 모양에서 진녹색 판(globals.css). 예전 모양은 다크 유리 그대로.
     <aside
+      data-surface="sidebar"
       className={`glass-nav flex shrink-0 flex-col border-r border-line-soft transition-[width] duration-200 ${
         expanded ? 'w-[212px]' : 'w-[76px] items-center'
       }`}
@@ -226,12 +228,11 @@ function CollapsedMenu({ pathname, role, hidden }: { pathname: string; role: Rol
             aria-current={pathname === item.href ? 'page' : undefined}
             className={[
               'flex size-11 items-center justify-center rounded-xl transition-colors',
-              // 활성 표시는 흰 필이다((dashboard) 사이드바와 같은 규칙 — 골드는 상태가 아니다).
-              // 다만 글자색은 text-ink가 아니라 text-app이다: 다크에서 --color-ink는
-              // 흰색에 가까운 #e9e6f2라 흰 필 위에 올리면 아이콘이 사라진다.
-              // --color-app(#0c1224)이 이 트리에서 '가장 어두운 면'이라 흰 필 위의 잉크가 된다.
+              // 활성 칸은 nav-active 토큰이다((dashboard) 사이드바와 같은 규칙 — 골드는 상태가 아니다).
+              // 예전 모양 다크에서는 흰 필 + 가장 어두운 잉크(#0c1224), 새 모양은 한 단계 밝은 녹색 칸 + 흰 글자 —
+              // 다크의 text-ink는 흰색에 가까워 흰 필 위에서 사라지므로 글자도 토큰(nav-active-ink)으로 짝을 맞춘다.
               pathname === item.href
-                ? 'bg-white/90 text-app shadow-sm'
+                ? 'bg-nav-active text-nav-active-ink shadow-sm'
                 : 'text-ink-dim hover:bg-raised hover:text-ink',
             ].join(' ')}
           >
@@ -265,7 +266,7 @@ function ExpandedMenu({ pathname, role, hidden }: { pathname: string; role: Role
                   className={[
                     'group flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-t13 transition-colors',
                     active(item)
-                      ? 'bg-white/90 font-semibold text-app shadow-sm'
+                      ? 'bg-nav-active font-semibold text-nav-active-ink shadow-sm'
                       : 'text-ink-dim hover:bg-raised hover:text-ink',
                     // 아직 없는 화면은 글자를 한 단계 죽인다. 눌러도 되지만 같은 무게는 아니다.
                     item.ready || active(item) ? '' : 'opacity-60',

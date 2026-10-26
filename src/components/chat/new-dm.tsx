@@ -34,7 +34,7 @@ export function NewDm({ people, lang }: { people: { id: string; name: string }[]
               else router.push(`/chat?c=${r.channelId}`)
             })
           }
-          className="rounded-md bg-accent px-2 py-1 text-t11 font-semibold text-white disabled:opacity-40"
+          className="rounded-md bg-accent px-2 py-1 text-t11 font-semibold text-on-accent disabled:opacity-40"
         >
           {tr(lang, '열기', 'Open')}
         </button>

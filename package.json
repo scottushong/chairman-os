@@ -56,6 +56,7 @@
     "check:intake-items": "tsx --conditions=react-server scripts/check-intake-items.ts",
     "check:home-widgets": "tsx --conditions=react-server scripts/check-home-widgets.ts",
     "check:dashboard": "tsx --conditions=react-server scripts/check-dashboard.ts",
+    "check:design": "tsx scripts/check-design.ts",
     "check:cost-candidates": "tsx scripts/check-cost-candidates.ts",
     "check:ledger-post": "tsx scripts/check-ledger-post.ts",
     "check:material-lock": "tsx --conditions=react-server scripts/check-material-lock.ts",

@@ -55,7 +55,7 @@ export default function CityScene(props: CitySceneProps) {
   }
 
   return (
-    <div ref={frame} className="relative aspect-video w-full overflow-hidden rounded-glass bg-[#16130f]">
+    <div ref={frame} className="relative aspect-video w-full overflow-hidden rounded-glass bg-scrim">
       <Canvas
         shadows="percentage"
         dpr={[1, 1.75]}
@@ -72,7 +72,7 @@ export default function CityScene(props: CitySceneProps) {
         aria-label={paused ? '자동 회전 다시' : '자동 회전 멈춤'}
         title={paused ? '자동 회전 다시' : '자동 회전 멈춤'}
         aria-pressed={paused}
-        className="absolute bottom-3 left-3 z-30 flex h-9 w-9 items-center justify-center rounded-full border border-[#b08d57]/60 bg-black/55 text-[#f3eee4] backdrop-blur-sm transition hover:bg-black/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#e8c27a]"
+        className="absolute bottom-3 left-3 z-30 flex h-9 w-9 items-center justify-center rounded-full border border-gold/60 bg-scrim/55 text-on-dark backdrop-blur-sm transition hover:bg-scrim/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold"
       >
         {paused ? (
           <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">

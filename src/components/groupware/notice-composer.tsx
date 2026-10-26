@@ -87,7 +87,7 @@ export function NoticeComposer({
         </p>
       ) : null}
       <div className="flex gap-2">
-        <button type="submit" disabled={pending} className="rounded-md bg-accent px-3 py-1.5 text-t12 font-semibold text-white disabled:opacity-50">
+        <button type="submit" disabled={pending} className="rounded-md bg-accent px-3 py-1.5 text-t12 font-semibold text-on-accent disabled:opacity-50">
           {pending ? tr(lang, '올리는 중…', 'Posting…') : tr(lang, '올리기', 'Post')}
         </button>
         <button type="button" onClick={() => setOpen(false)} className="rounded-md border border-line px-3 py-1.5 text-t12 text-ink-dim">

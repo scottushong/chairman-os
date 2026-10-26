@@ -66,7 +66,7 @@ export function ValuationSimulator({ initial, label, demo, currency = 'USD' }: S
               step={f.step}
               value={Math.min(f.max, Math.max(f.min, v[f.key]))}
               onChange={(e) => setV((x) => ({ ...x, [f.key]: f.int ? Math.round(Number(e.target.value)) : Number(e.target.value) }))}
-              className="h-11 w-full accent-[#b8862b] lg:h-6"
+              className="h-11 w-full accent-gold lg:h-6"
               aria-label={`${f.label} 슬라이더`}
             />
             <span className="text-[13px] text-ink-muted">{show(f, v[f.key])}</span>

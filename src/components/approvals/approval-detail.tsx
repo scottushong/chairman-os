@@ -313,7 +313,7 @@ export function ApprovalDetail({
             {canResubmit ? (
               <Link
                 href={`/approvals/new?resubmit=${encodeURIComponent(decision.decision_id)}`}
-                className="inline-flex rounded-lg border border-accent bg-accent px-3 py-2 text-t12 font-semibold text-white"
+                className="inline-flex rounded-lg border border-accent bg-accent px-3 py-2 text-t12 font-semibold text-on-accent"
               >
                 고쳐서 다시 올리기
               </Link>

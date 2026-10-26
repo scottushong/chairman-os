@@ -27,9 +27,9 @@ export default async function HomeWidgetsPage() {
     return (
       <div className={`${C.bg} min-h-full p-4 sm:p-6`}>
         <div className={`${C.card} max-w-xl px-5 py-6`}>
-          <h1 className="text-[18px] font-bold text-[#1f2329]">내 홈</h1>
-          <p className="mt-2 text-[14px] text-[#6b7280]">지금은 쓸 수 없는 기능입니다. 회사에서 «내 홈»을 켜면 이 자리에 내 위젯이 보입니다.</p>
-          <Link href="/me" className="mt-3 inline-flex min-h-11 items-center text-[14px] text-[#2f5bd3] hover:underline">
+          <h1 className="text-[18px] font-bold text-ink">내 홈</h1>
+          <p className="mt-2 text-[14px] text-ink-muted">지금은 쓸 수 없는 기능입니다. 회사에서 «내 홈»을 켜면 이 자리에 내 위젯이 보입니다.</p>
+          <Link href="/me" className="mt-3 inline-flex min-h-11 items-center text-[14px] text-link hover:underline">
             예전 직원 홈으로
           </Link>
         </div>
@@ -70,17 +70,17 @@ export default async function HomeWidgetsPage() {
           top={
           <section aria-label="필수 공지" data-testid="required-notices" className={`${C.card} flex flex-col gap-1.5 px-4 py-3`}>
             {!notices.ok ? (
-              <p className="text-[14px] text-[#b4372b]">필수 공지를 불러오지 못했습니다.</p>
+              <p className="text-[14px] text-critical">필수 공지를 불러오지 못했습니다.</p>
             ) : notices.items.length === 0 ? (
-              <p className="text-[14px] text-[#6b7280]">
-                <span className="mr-2 font-semibold text-[#1f2329]">필수 공지</span>지금 꼭 봐야 할 공지가 없습니다.
+              <p className="text-[14px] text-ink-muted">
+                <span className="mr-2 font-semibold text-ink">필수 공지</span>지금 꼭 봐야 할 공지가 없습니다.
               </p>
             ) : (
               notices.items.map((n) => (
-                <Link key={n.id} href="/groupware" className="flex min-h-11 min-w-0 items-center gap-2 text-[14px] text-[#1f2329] hover:underline">
+                <Link key={n.id} href="/groupware" className="flex min-h-11 min-w-0 items-center gap-2 text-[14px] text-ink hover:underline">
                   <Pill tone="red">필수 공지</Pill>
                   <span className="min-w-0 flex-1 truncate">{n.title}</span>
-                  <span className="shrink-0 text-[13px] text-[#6b7280] tnum">{n.date}</span>
+                  <span className="shrink-0 text-[13px] text-ink-muted tnum">{n.date}</span>
                 </Link>
               ))
             )}

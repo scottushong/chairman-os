@@ -6,6 +6,7 @@ import { CityCharacterSvg } from '@/components/city/city-character'
 import type { CityGhost } from '@/components/city/use-city-live'
 import type { CityItem } from '@/lib/city'
 import { anchorsOf, spotPoint, type CityActor, type CityLive, type CitySky, type CityVehicle } from '@/lib/city-live'
+import { CAR_SVG, ENVELOPE_SVG } from '@/lib/design/scene-palette'
 import type { CityLayout, CityPoint } from '@/types'
 
 import s from './city-live.module.css'
@@ -235,12 +236,12 @@ function Vehicle({ vehicle, layoutById, still }: { vehicle: CityVehicle; layoutB
   return (
     <div ref={ref} className={s.vehicle} style={at(from)} data-vehicle={vehicle.id} title={vehicle.label}>
       <svg viewBox="0 0 24 14" aria-hidden="true" style={{ display: 'block', width: '100%', height: 'auto' }}>
-        <ellipse cx="12" cy="12.8" rx="10" ry="1.2" fill="rgba(0,0,0,.3)" />
-        <path d="M2 9 Q2 6 5 6 L7.5 3 Q8.3 2 9.6 2 L15 2 Q16.4 2 17.2 3 L19.4 6 Q22 6.2 22 9 L22 10.5 L2 10.5 Z" fill="#c8a55e" />
-        <path d="M8.3 3.4 L10.6 3.4 L10.6 6 L6.6 6 Z M12 3.4 L15 3.4 Q15.8 3.4 16.3 4 L17.6 6 L12 6 Z" fill="#23303b" />
-        <circle cx="6.5" cy="10.8" r="2" fill="#1b1b1b" />
-        <circle cx="17.5" cy="10.8" r="2" fill="#1b1b1b" />
-        <rect x="20.6" y="7.4" width="1.4" height="1" rx=".4" fill="#fff4c8" />
+        <ellipse cx="12" cy="12.8" rx="10" ry="1.2" className="fill-scrim" fillOpacity={0.3} />
+        <path d="M2 9 Q2 6 5 6 L7.5 3 Q8.3 2 9.6 2 L15 2 Q16.4 2 17.2 3 L19.4 6 Q22 6.2 22 9 L22 10.5 L2 10.5 Z" fill={CAR_SVG.body} />
+        <path d="M8.3 3.4 L10.6 3.4 L10.6 6 L6.6 6 Z M12 3.4 L15 3.4 Q15.8 3.4 16.3 4 L17.6 6 L12 6 Z" fill={CAR_SVG.glass} />
+        <circle cx="6.5" cy="10.8" r="2" fill={CAR_SVG.tire} />
+        <circle cx="17.5" cy="10.8" r="2" fill={CAR_SVG.tire} />
+        <rect x="20.6" y="7.4" width="1.4" height="1" rx=".4" fill={CAR_SVG.lamp} />
       </svg>
     </div>
   )
@@ -250,9 +251,9 @@ function Envelope() {
   return (
     <div className={s.envelope} style={at(ENVELOPE)} data-envelope="brief">
       <svg viewBox="0 0 20 14" aria-hidden="true" style={{ display: 'block', width: '100%', height: 'auto' }}>
-        <rect x="1" y="1" width="18" height="12" rx="1.4" fill="#fbfaf6" stroke="#cbbf9f" strokeWidth=".6" />
-        <path d="M1.4 1.8 L10 8 L18.6 1.8" fill="none" stroke="#cbbf9f" strokeWidth=".7" />
-        <circle cx="10" cy="8" r="2.1" fill="#b8913f" />
+        <rect x="1" y="1" width="18" height="12" rx="1.4" fill={ENVELOPE_SVG.paper} stroke={ENVELOPE_SVG.edge} strokeWidth=".6" />
+        <path d="M1.4 1.8 L10 8 L18.6 1.8" fill="none" stroke={ENVELOPE_SVG.edge} strokeWidth=".7" />
+        <circle cx="10" cy="8" r="2.1" fill={ENVELOPE_SVG.seal} />
       </svg>
     </div>
   )

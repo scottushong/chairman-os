@@ -34,9 +34,10 @@ import { FavoritesEditor, WidgetContent } from './home-widget'
  */
 
 const SPAN: Record<WidgetSize, string> = { s: 'col-span-1', m: 'col-span-1 sm:col-span-2', l: 'col-span-1 sm:col-span-2 lg:col-span-3' }
-const BTN = 'inline-flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-lg border border-line bg-raised px-2.5 text-t13 text-ink hover:border-accent disabled:opacity-40'
-const BTN_MAIN = 'inline-flex min-h-11 items-center justify-center gap-1 rounded-lg bg-[#40594b] px-4 text-t14 font-semibold text-white hover:bg-[#344a3e] disabled:opacity-50'
-const BTN_EDIT = 'inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-accent bg-accent-soft px-4 text-t14 font-semibold text-ink hover:brightness-105 disabled:opacity-50'
+const BTN = 'inline-flex min-h-11 min-w-11 items-center justify-center gap-1 rounded-lg border border-line bg-card px-2.5 text-t13 text-ink hover:border-accent disabled:opacity-40'
+const BTN_MAIN = 'inline-flex min-h-11 items-center justify-center gap-1 rounded-lg bg-accent px-4 text-t14 font-semibold text-on-accent hover:bg-accent/90 disabled:opacity-50'
+// 0098 시안 «편집 모드» — 금색 테두리 + 옅은 금색 면(주 버튼 «저장하기»는 진녹 채움, 보조 «취소»는 흰 바탕 테두리).
+const BTN_EDIT = 'inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-gold bg-gold/10 px-4 text-t14 font-semibold text-gold hover:bg-gold/15 disabled:opacity-50'
 const SELECT = 'min-h-11 max-w-full rounded-lg border border-line bg-raised px-2 text-t13 text-ink'
 type DragRef = { current: { section: string; index: number } | null }
 
@@ -257,7 +258,7 @@ export function HomeBoard({
       </header>
 
       {editing ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-glass border border-dashed border-[#7aa58a] bg-[#eef5ef]/70 px-3 py-2 text-t13 text-ink-dim">
+        <div className="flex flex-wrap items-center gap-2 rounded-glass border border-dashed border-accent/50 bg-accent-soft/70 px-3 py-2 text-t13 text-ink-dim">
           <span className="min-w-0 flex-1">구역과 위젯을 끌어 옮기거나(PC) 앞·뒤 버튼으로 옮기세요. 바꾼 것은 «저장하기»를 눌러야 반영됩니다.</span>
           <button type="button" data-testid="home-add" onClick={() => setLibFor((v) => (v ? null : (draft[0]?.id ?? null)))} disabled={!draft.length} className={BTN} aria-expanded={!!libFor}>
             ▦ 위젯 라이브러리
@@ -330,7 +331,7 @@ export function HomeBoard({
                     type="button"
                     data-testid={`add-section-${si}`}
                     onClick={() => change((d) => addSection(d, '새 구역', si + 1))}
-                    className="flex min-h-11 items-center justify-center gap-2 rounded-glass border border-dashed border-[#7aa58a] bg-[#eef5ef]/60 text-t14 font-semibold text-[#2f5a40] hover:bg-[#e3efe6]"
+                    className="flex min-h-11 items-center justify-center gap-2 rounded-glass border border-dashed border-accent/50 bg-accent-soft/60 text-t14 font-semibold text-accent hover:bg-accent-soft"
                   >
                     ⊕ 새 구역 만들기
                   </button>
@@ -459,7 +460,7 @@ function SectionBox({
       data-hidden={s.hidden ? '1' : undefined}
       data-collapsed={s.collapsed ? '1' : undefined}
       aria-label={s.title}
-      className={`${CARD} flex min-w-0 flex-col gap-3 p-3 sm:p-4 ${editing ? 'border-dashed border-[#7aa58a]' : ''} ${s.hidden ? 'opacity-60' : ''} ${over ? 'ring-2 ring-[#7aa58a]' : ''}`}
+      className={`${CARD} flex min-w-0 flex-col gap-3 p-3 sm:p-4 ${editing ? 'border-dashed border-accent/50' : ''} ${s.hidden ? 'opacity-60' : ''} ${over ? 'ring-2 ring-accent/50' : ''}`}
       onDragOver={(e) => {
         if (editing && dragRef.current) {
           e.preventDefault()
@@ -552,7 +553,7 @@ function SectionBox({
       {s.collapsed ? (
         <p className="text-t13 text-ink-muted">접힌 구역 — 위젯 {shown.length}개</p>
       ) : shown.length === 0 ? (
-        <div className={`rounded-lg px-4 py-6 text-center text-t14 text-ink-dim ${editing ? 'border border-dashed border-[#7aa58a] bg-[#eef5ef]/50' : 'bg-raised/50'}`}>
+        <div className={`rounded-lg px-4 py-6 text-center text-t14 text-ink-dim ${editing ? 'border border-dashed border-accent/50 bg-accent-soft/50' : 'bg-raised/50'}`}>
           {editing ? '여기로 위젯을 끌어 놓거나 «+ 위젯»으로 넣으세요.' : '위젯이 없는 구역입니다.'}
         </div>
       ) : (
@@ -580,7 +581,7 @@ function SectionBox({
           {editing ? (
             <div
               aria-hidden
-              className="hidden min-h-24 items-center justify-center rounded-lg border border-dashed border-[#7aa58a] bg-[#eef5ef]/50 text-t13 text-[#2f5a40] lg:flex"
+              className="hidden min-h-24 items-center justify-center rounded-lg border border-dashed border-accent/50 bg-accent-soft/50 text-t13 text-accent lg:flex"
               onDragOver={(e) => dragRef.current && e.preventDefault()}
               onDrop={(e) => {
                 e.preventDefault()
@@ -642,7 +643,7 @@ function WidgetBox({
       data-size={w.size}
       data-section={s.id}
       aria-label={def.label}
-      className={`${SPAN[w.size]} flex min-w-0 flex-col overflow-hidden rounded-lg border bg-panel ${editing ? 'border-dashed border-[#9bbca6]' : 'border-line-soft'}`}
+      className={`${SPAN[w.size]} flex min-w-0 flex-col overflow-hidden rounded-lg border bg-panel ${editing ? 'border-dashed border-accent/40' : 'border-line-soft'}`}
       draggable={editing}
       onDragStart={(e) => {
         dragRef.current = { section: s.id, index: i }
@@ -798,7 +799,7 @@ function Library({
       </label>
       <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="위젯 종류">
         {(['all', ...groups] as const).map((g) => (
-          <button key={g} type="button" role="tab" aria-selected={tab === g} onClick={() => setTab(g)} className={`min-h-11 rounded-lg px-3 text-t13 ${tab === g ? 'bg-[#40594b] font-semibold text-white' : 'border border-line bg-raised text-ink-dim'}`}>
+          <button key={g} type="button" role="tab" aria-selected={tab === g} onClick={() => setTab(g)} className={`min-h-11 rounded-lg px-3 text-t13 ${tab === g ? 'bg-accent font-semibold text-on-accent' : 'border border-line bg-raised text-ink-dim'}`}>
             {g === 'all' ? '전체' : g}
           </button>
         ))}

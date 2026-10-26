@@ -136,7 +136,7 @@ export function FeatureSwitchCard({
         <button
           type="submit"
           disabled={disabled || busy || reason.trim().length < 2}
-          className="min-h-9 rounded-md bg-accent px-3 text-t11h font-semibold text-white disabled:opacity-50"
+          className="min-h-9 rounded-md bg-accent px-3 text-t11h font-semibold text-on-accent disabled:opacity-50"
         >
           {busy ? '저장 중…' : '저장'}
         </button>

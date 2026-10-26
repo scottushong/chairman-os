@@ -282,7 +282,7 @@ export function MetricTrendChart({
                */}
               <span
                 data-theme="dark"
-                className={`pointer-events-none absolute z-10 -translate-x-1/2 rounded-md bg-app px-1.5 py-0.5 text-t10 font-semibold whitespace-nowrap text-ink shadow-sm ring-1 ring-white/15 tnum ${
+                className={`pointer-events-none absolute z-10 -translate-x-1/2 rounded-md bg-app px-1.5 py-0.5 text-t10 font-semibold whitespace-nowrap text-ink shadow-sm ring-1 ring-card/15 tnum ${
                   bubbleBelow ? 'translate-y-2' : '-translate-y-[calc(100%+0.5rem)]'
                 }`}
                 style={{ left: `${cx(lastIndex)}%`, top: `${lastY}%` }}

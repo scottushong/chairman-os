@@ -51,9 +51,9 @@ export function NavDrawer({ children }: { children: ReactNode }) {
         type="button"
         aria-label="메뉴 닫기"
         onClick={() => setOpen(false)}
-        className="flex-1 bg-black/35 backdrop-blur-[2px]"
+        className="flex-1 bg-scrim/35 backdrop-blur-[2px]"
       >
-        <Icon name="x" className="safe-top mt-3 ml-3 size-6 text-white" />
+        <Icon name="x" className="safe-top mt-3 ml-3 size-6 text-on-dark" />
       </button>
     </div>
   )
