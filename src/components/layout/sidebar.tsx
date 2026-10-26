@@ -250,27 +250,18 @@ export function Sidebar({
         <div className={drawer ? '' : 'ui-classic-only'}>
           <ProfileBlock user={user} />
         </div>
-        {/* 0098 새 모양: 맨 아래 «설정»(시안) + 메뉴 설정 바로가기. 예전 모양은 점선 «메뉴 설정» 그대로. */}
-        <div className="ui-new-only flex items-center gap-1">
-          <Link
-            href="/settings"
-            aria-current={pathname === '/settings' ? 'page' : undefined}
-            className={`flex min-w-0 flex-1 items-center gap-3 rounded-lg px-2.5 py-2 text-t14 transition-colors ${
-              pathname === '/settings' ? 'bg-nav-active font-semibold text-nav-active-ink' : 'text-ink-dim hover:bg-raised hover:text-ink'
-            }`}
-          >
-            <Icon name="settings" className="size-[17px] shrink-0" />
-            설정
-          </Link>
-          <Link
-            href="/settings/sidebar"
-            aria-label="메뉴 설정"
-            title="메뉴 설정"
-            className="flex size-9 shrink-0 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-raised hover:text-ink"
-          >
-            <Icon name="grid" className="size-4" />
-          </Link>
-        </div>
+        {/* 0098 새 모양: 맨 아래 한 줄(시안의 «설정» 자리). 메뉴에 «설정»이 이미 있어(순서 그대로) 여기는 «메뉴 설정»을 메뉴 칸 모양으로.
+            예전 모양은 점선 «메뉴 설정» 그대로. */}
+        <Link
+          href="/settings/sidebar"
+          aria-current={pathname === '/settings/sidebar' ? 'page' : undefined}
+          className={`ui-new-only flex items-center gap-3 rounded-lg px-2.5 py-2 text-t14 transition-colors ${
+            pathname === '/settings/sidebar' ? 'bg-nav-active font-semibold text-nav-active-ink' : 'text-ink-dim hover:bg-raised hover:text-ink'
+          }`}
+        >
+          <Icon name="settings" className="size-[17px] shrink-0" />
+          메뉴 설정
+        </Link>
         <Link
           href="/settings/sidebar"
           className="ui-classic-only flex w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-line py-2 text-t11h text-ink-dim transition-colors hover:border-accent hover:text-ink"

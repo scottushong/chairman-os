@@ -540,8 +540,13 @@ function ownerLabel(ownerId: string): string {
   return dummyPerson(ownerId)?.display_name ?? ownerId
 }
 
-/** 개인 설정도 마찬가지다. 서버가 살아 있는 동안만 남는다. */
-const memorySettings: UserSettings = {
+/**
+ * 개인 설정도 마찬가지다. 서버가 살아 있는 동안만 남는다.
+ * 프로세스 전역(globalThis)에 둔다 — dev 서버는 서버 액션과 화면 렌더가 이 모듈을 따로 읽어 들일 수 있고,
+ * 모듈 변수면 액션이 저장한 값(0098 화면 모양 · 테마)을 다음 화면이 못 본다.
+ */
+const settingsHolder = globalThis as typeof globalThis & { __chairmanDummySettings?: UserSettings }
+const memorySettings: UserSettings = (settingsHolder.__chairmanDummySettings ??= {
   hidden_businesses: [],
   pinned_businesses: null,
   // 0030의 두 주머니. dummy에서도 실제로 저장돼야 사이드바 숨김·테마를 화면에서 눌러 볼 수 있다.
@@ -550,7 +555,7 @@ const memorySettings: UserSettings = {
   app_prefs: {},
   // 0098 화면 모양. null = 고른 적 없음 = 새 모양.
   ui_theme: null,
-}
+})
 
 /**
  * Phase 5-E 1-2절. dummy의 알림함은 **비어 있다.**
